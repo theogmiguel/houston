@@ -2,6 +2,11 @@
 const launcher = __LAUNCHER__;
 const sentinel = __SENTINEL__;
 
+// Covers starting Git Bash and the helper: on a loaded Windows machine that start measured up
+// to 1.3 s. Matches the 30 s managed hook timeout; the host's own default is 30 s and its
+// maximum ten minutes. A hung helper still ends, and the report fails soft.
+const HELPER_TIMEOUT_MS = 30000;
+
 async function report($, event, turnId) {
   const pane = await $.env.get('TR_SESSION');
   const channel = await $.env.get('HOUSTON_CHANNEL');
@@ -11,7 +16,7 @@ async function report($, event, turnId) {
   await $.process.run([launcher, 'hook', event, sentinel], {
     env: { TR_SESSION: pane, HOUSTON_CHANNEL: channel || 'release' },
     stdin: JSON.stringify({ session_id: sessionId, cwd, turn_id: turnId }),
-    timeoutMs: 1000, // Bound the local helper; a failed report leaves classic hooks intact.
+    timeoutMs: HELPER_TIMEOUT_MS, // A failed report leaves classic hooks intact.
   });
 }
 

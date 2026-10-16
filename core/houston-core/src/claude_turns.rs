@@ -60,6 +60,30 @@ fn write_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> std::io:
 #[cfg(test)]
 mod tests {
     #[test]
+    fn helper_bound_outlasts_a_slow_start_and_stays_under_the_host_cap() {
+        let source = include_str!("claude_turns.js");
+        let value = source
+            .lines()
+            .find_map(|line| line.strip_prefix("const HELPER_TIMEOUT_MS = "))
+            .and_then(|rest| rest.trim_end_matches(';').parse::<u64>().ok())
+            .expect("claude_turns.js defines `const HELPER_TIMEOUT_MS = <ms>;`");
+        assert!(
+            source.contains("timeoutMs: HELPER_TIMEOUT_MS"),
+            "the helper run must use HELPER_TIMEOUT_MS"
+        );
+        // 1.3 s is the slowest helper start measured on a loaded Windows machine.
+        assert!(
+            value >= 30_000,
+            "HELPER_TIMEOUT_MS is {value}; expected >= 30000"
+        );
+        // The mods host rejects a longer bound than ten minutes.
+        assert!(
+            value <= 600_000,
+            "HELPER_TIMEOUT_MS is {value}; expected <= 600000"
+        );
+    }
+
+    #[test]
     fn versions_without_the_documented_contract_are_not_enabled() {
         for version in [
             None,

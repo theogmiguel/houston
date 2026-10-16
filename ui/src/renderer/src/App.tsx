@@ -166,6 +166,9 @@ import {
   browserFocusUrl,
   expandPane,
   tidyGrid,
+  tidyRow,
+  tidyColumn,
+  tidyShapeFor,
   equalizePanes,
   focusNextPane,
   focusPrevPane,
@@ -221,7 +224,9 @@ import type { ReviewDiffsData } from "./git/review";
 import { useNotices } from "./notices";
 import { NoticeStack } from "./components/NoticeStack";
 import {
+  IconColumns,
   IconGrid,
+  IconRows,
   IconPanelLeft,
 } from "./components/icons";
 import { setRailWidth, useRailWidth } from "./railWidth";
@@ -267,6 +272,7 @@ import {
   preorderNonSessionPanes,
   preorderSessions,
   tidy,
+  type TidyShape,
   equalize,
   adjacentPaneKey,
   regrid,
@@ -366,6 +372,7 @@ import {
   GridSlot,
   QuietButton,
   SidePanelRow,
+  SplitButton,
   Text,
   ToolbarActions,
   WindowControlDock,
@@ -2334,10 +2341,22 @@ export function App(): React.JSX.Element {
     [sessions, mutateTree],
   );
 
-  const tidyPanes = useCallback((): void => {
-    setExpandedId(null);
-    mutateTree((t) => tidy(t));
-  }, [mutateTree, setExpandedId]);
+  const tidyPanesAs = useCallback(
+    (shape: TidyShape): void => {
+      setExpandedId(null);
+      mutateTree((t) => tidy(t, shape));
+    },
+    [mutateTree, setExpandedId],
+  );
+  const tidyPanes = useCallback((): void => tidyPanesAs("grid"), [tidyPanesAs]);
+  const tidyPanesRow = useCallback((): void => tidyPanesAs("row"), [tidyPanesAs]);
+  const tidyPanesColumn = useCallback((): void => tidyPanesAs("column"), [tidyPanesAs]);
+  const tidyPanesFromKey = useCallback(
+    (shape: TidyShape): void => {
+      if (preorderLeaves(currentTree).length > 1) tidyPanesAs(shape);
+    },
+    [currentTree, tidyPanesAs],
+  );
   const equalizePanesNow = useCallback((): void => {
     mutateTree((t) => equalize(t));
   }, [mutateTree]);
@@ -3197,8 +3216,8 @@ export function App(): React.JSX.Element {
             ) ??
             null);
         if (target !== null) handleSplitFromLayout(target, side);
-      } else if (resolveGlobalMatch(tidyGrid, keymapOverrides)(e)) {
-        if (paneCount > 1) tidyPanes();
+      } else if (tidyShapeFor(e, keymapOverrides) !== null) {
+        tidyPanesFromKey(tidyShapeFor(e, keymapOverrides) as TidyShape);
       } else if (resolveGlobalMatch(equalizePanes, keymapOverrides)(e)) {
         if (paneCount > 1) equalizePanesNow();
       } else if (resolveGlobalMatch(focusNextPane, keymapOverrides)(e)) {
@@ -3279,7 +3298,7 @@ export function App(): React.JSX.Element {
     keymapOverrides,
     toggleTitlebarAddPane,
     paneCount,
-    tidyPanes,
+    tidyPanesFromKey,
     equalizePanesNow,
     activeSurface,
     focusAdjacentPane,
@@ -3429,7 +3448,7 @@ export function App(): React.JSX.Element {
       setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite"),
     openAddPanePopover: toggleTitlebarAddPane,
     setGridLayout: (cols) => resetLayout(cols),
-    tidyPanes: paneCount > 1 ? tidyPanes : undefined,
+    ...(paneCount > 1 ? { tidyPanes, tidyPanesRow, tidyPanesColumn } : {}),
     equalizePanes: paneCount > 1 ? equalizePanesNow : undefined,
     openShortcutSheet: () => setShortcutSheet(true),
     windowMinimize: () =>
@@ -3634,22 +3653,35 @@ export function App(): React.JSX.Element {
                   sessionsRef.current.get(session)?.title ?? null
                 }
               />
-              <Tooltip
-                label={
-                  paneCount > 1
-                    ? "Tidy panes into a balanced grid"
-                    : "Open a second pane to tidy the grid"
-                }
-              >
-                <Button
-                  variant="legacy-titlebar-icon"
-                  aria-label="Tidy panes"
-                  disabled={paneCount < 2}
-                  onClick={tidyPanes}
-                >
-                  <Icon glyph={IconGrid} role="ui" />
-                </Button>
-              </Tooltip>
+              <SplitButton
+                variant="titlebar-icon"
+                label="Tidy panes"
+                tooltip="Tidy panes into a balanced grid"
+                disabled={paneCount < 2}
+                disabledReason="Open a second pane to tidy the grid"
+                icon={<Icon glyph={IconGrid} role="ui" />}
+                onClick={tidyPanes}
+                items={[
+                  {
+                    label: "Balanced grid",
+                    icon: <Icon glyph={IconGrid} role="ui" />,
+                    shortcut: effectiveLabel(tidyGrid, keymapOverrides),
+                    onClick: tidyPanes,
+                  },
+                  {
+                    label: "One row",
+                    icon: <Icon glyph={IconRows} role="ui" />,
+                    shortcut: effectiveLabel(tidyRow, keymapOverrides),
+                    onClick: tidyPanesRow,
+                  },
+                  {
+                    label: "One column",
+                    icon: <Icon glyph={IconColumns} role="ui" />,
+                    shortcut: effectiveLabel(tidyColumn, keymapOverrides),
+                    onClick: tidyPanesColumn,
+                  },
+                ]}
+              />
               <SourceControlToggle
                 open={scmOpen}
                 chord={effectiveLabel(toggleGit, keymapOverrides)}

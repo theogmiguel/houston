@@ -1049,6 +1049,10 @@ export function TerminalPane({
       catchup: false,
       awaitingSnapshot: false
     }
+    const disposePaint = term.onRender(() => {
+      const s = seqRef.current
+      if (s.synced && !s.catchup && writeQueue.backlogBytes === 0) clientRef.current.notePainted(info.id)
+    })
     const writeFrom = (offset: number, data: Uint8Array, exempt = false): boolean => {
       const s = seqRef.current
       if (offset + data.length <= s.cursor) return true
@@ -1239,6 +1243,7 @@ export function TerminalPane({
         term.textarea?.removeEventListener('keydown', onKeyDownTrace)
       }
       disposeData.dispose()
+      disposePaint.dispose()
       linkProviderDisposable.dispose()
       webLinkProviderDisposable.dispose()
       taskLinkProviderDisposable.dispose()

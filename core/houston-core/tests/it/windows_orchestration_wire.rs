@@ -18,7 +18,7 @@ fn fixture() -> &'static Path {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\nif($env:HOUSTON_WINDOWS_EXIT_NOW){ Write-Output $env:HOUSTON_WINDOWS_EXIT_NOW; exit 3 }\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
+        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION -or $args -contains '--version'){exit 0}\nif($env:HOUSTON_WINDOWS_EXIT_NOW){ Write-Output $env:HOUSTON_WINDOWS_EXIT_NOW; exit 3 }\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
         std::fs::write(root.path().join("fixture.ps1"), script).unwrap();
         for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
             std::fs::write(root.path().join(format!("{provider}.cmd")), "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fixture.ps1\" %*\r\n").unwrap();

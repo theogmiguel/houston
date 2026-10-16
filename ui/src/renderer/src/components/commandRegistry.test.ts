@@ -271,6 +271,8 @@ describe('commandRegistry — buildCommands', () => {
     const gridCommands = commands.filter((c) => c.group === 'Grid')
     expect(gridCommands.map((c) => c.id)).toEqual([
       'grid.tidy',
+      'grid.tidy-row',
+      'grid.tidy-column',
       'grid.equalize',
       'grid.prev',
       'grid.next',
@@ -285,7 +287,7 @@ describe('commandRegistry — buildCommands', () => {
 
   it('Tidy and Equalize name the reason they are dead when the grid holds one pane', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
-    for (const id of ['grid.tidy', 'grid.equalize']) {
+    for (const id of ['grid.tidy', 'grid.tidy-row', 'grid.tidy-column', 'grid.equalize']) {
       const cmd = commands.find((c) => c.id === id)
       expect(cmd?.enabled).toBe(false)
       expect(cmd?.disabledReason).toMatch(/second pane/i)
@@ -304,6 +306,21 @@ describe('commandRegistry — buildCommands', () => {
     commands.find((c) => c.id === 'grid.equalize')?.run()
     expect(tidyPanes).toHaveBeenCalled()
     expect(equalizePanes).toHaveBeenCalled()
+  })
+
+  it('Tidy into one row and one column dispatch their own actions', () => {
+    const tidyPanesRow = vi.fn()
+    const tidyPanesColumn = vi.fn()
+    const commands = buildCommands({
+      actions: makeActions({ tidyPanesRow, tidyPanesColumn }),
+      hasWorkspace: true,
+      workspaces: []
+    })
+    commands.find((c) => c.id === 'grid.tidy-row')?.run()
+    expect(tidyPanesRow).toHaveBeenCalledTimes(1)
+    expect(tidyPanesColumn).not.toHaveBeenCalled()
+    commands.find((c) => c.id === 'grid.tidy-column')?.run()
+    expect(tidyPanesColumn).toHaveBeenCalledTimes(1)
   })
 
   it('one workspace-switch command per supplied workspace, plus the all-workspaces entry', () => {

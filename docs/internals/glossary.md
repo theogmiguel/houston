@@ -56,7 +56,7 @@ named.
 | **pairing code** | A single-use, ten-minute, 128-bit code carried in a pairing link's URL fragment. Starting a new pairing invalidates the previous code. | `remote::Runtime::start_pairing` |
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |
 | **title source** | Where a pane's current name came from: `codename < prompt < auto < role < cli < task < user`. CLI covers OSC and supported ACP title metadata. A weaker source never overwrites a stronger one; Reset to automatic removes the user override and selects the strongest available candidate. | `daemon.rs`, `osc_title.rs` |
-| **Tidy** | The topbar action that rebalances the grid into even splits. | `App.tsx` |
+| **Tidy** | The topbar action that rebuilds the grid into even splits: a balanced grid, one row or one column. | `App.tsx` |
 | **prefix key** | The one chord Houston keeps from a focused terminal (`Ctrl+Space` by default): it arms the prefix layer. Rebindable, never unbound; a second press sends the chord itself. | `keymap.ts::prefixShortcut` |
 | **prefix layer** | The one-shot state the prefix key arms: the next key resolves as a Houston shortcut, then the layer is down. `Esc` or an unbound key cancels it; an 8 s safety timeout forgets a stray prefix. The terminal pane recognises it before ghostty encodes the key. | `prefixLayer.ts`, `PrefixHint.tsx` |
 | **rail** | The resizable sidebar containing work destinations and the workspace tree, or Settings navigation while Settings is open. It can be hidden and its saved width restored. | `Sidebar.tsx` |

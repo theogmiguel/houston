@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
+import { Button } from './Button'
 import { Icon } from './Icon'
-import { IconChevronDown } from '../icons'
+import { IconChevronDown, IconColumns, IconGrid, IconRows } from '../icons'
+import { MenuItem } from './MenuItem'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { Tooltip } from './Tooltip'
 import type { ReactNode } from 'react'
@@ -14,6 +16,10 @@ export interface SplitButtonItem {
   disabled?: boolean
   disabledReason?: string
   testId?: string
+  /** `titlebar-icon` menus only: leading glyph. */
+  icon?: ReactNode
+  /** `titlebar-icon` menus only: the chord, shown at the row's trailing edge. */
+  shortcut?: string
 }
 
 export interface SplitButtonProps {
@@ -26,6 +32,10 @@ export interface SplitButtonProps {
   menuSide?: 'above' | 'below'
   glass?: boolean
   icon?: ReactNode
+  /** `primary` is a filled text button; `titlebar-icon` is a quiet icon button for the topbar, where `label` is the accessible name. */
+  variant?: 'primary' | 'titlebar-icon'
+  /** `titlebar-icon` only: hover label for the main button when enabled. */
+  tooltip?: string
 }
 
 export function SplitButton({
@@ -37,12 +47,81 @@ export function SplitButton({
   disabledReason,
   menuSide = 'above',
   glass = false,
-  icon
+  icon,
+  variant = 'primary',
+  tooltip
 }: SplitButtonProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (disabled) setOpen(false)
   }, [disabled])
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+  if (variant === 'titlebar-icon') {
+    return (
+      <div ref={rootRef} className="relative inline-flex items-center">
+        <Tooltip label={disabled ? disabledReason : tooltip}>
+          <Button variant="legacy-titlebar-icon" aria-label={label} data-testid={testId} disabled={disabled} onClick={onClick}>
+            {icon}
+          </Button>
+        </Tooltip>
+        <Tooltip label={`${label} options`}>
+          <Button
+            variant="legacy-titlebar-icon"
+            className="!w-[var(--sz-split-chevron)]"
+            aria-label={`${label} options`}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            data-testid={testId ? `${testId}-options` : undefined}
+            disabled={disabled}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <Icon glyph={IconChevronDown} role="small" />
+          </Button>
+        </Tooltip>
+        {open && (
+          <div
+            role="menu"
+            className={`absolute right-0 top-[calc(100%+var(--space-1))] z-[var(--z-sticky)] min-w-[200px] flex flex-col gap-[var(--space-1)] p-[var(--space-1)] rounded-[var(--tr-radius-md)] [-webkit-app-region:no-drag] ${MATERIAL_CLS.raised}`}
+            {...materialAttrs('raised')}
+          >
+            {items.map((item) => (
+              <MenuItem
+                key={item.label}
+                data-testid={item.testId}
+                disabled={item.disabled}
+                disabledReason={item.disabledReason}
+                shortcut={item.shortcut}
+                onClick={() => {
+                  setOpen(false)
+                  item.onClick()
+                }}
+              >
+                <span className="flex items-center gap-[var(--space-2)]">
+                  {item.icon}
+                  {item.label}
+                </span>
+              </MenuItem>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="relative inline-flex">
       <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
@@ -101,13 +180,29 @@ export function SplitButton({
 
 export function SplitButtonSpecimen(): React.JSX.Element {
   return (
-    <SplitButton
-      label="Commit"
-      onClick={() => {}}
-      items={[
-        { label: 'Commit and push', onClick: () => {} },
-        { label: 'Amend', onClick: () => {}, disabled: true, disabledReason: 'Nothing to amend' }
-      ]}
-    />
+    <div className="flex flex-wrap items-start gap-[var(--space-6)]">
+      <SplitButton
+        label="Commit"
+        onClick={() => {}}
+        items={[
+          { label: 'Commit and push', onClick: () => {} },
+          { label: 'Amend', onClick: () => {}, disabled: true, disabledReason: 'Nothing to amend' }
+        ]}
+      />
+      <div className="h-[var(--h-primitives-preview)] w-[var(--w-split-specimen)] flex justify-end">
+        <SplitButton
+          variant="titlebar-icon"
+          label="Tidy panes"
+          tooltip="Tidy panes into a balanced grid"
+          icon={<Icon glyph={IconGrid} role="ui" />}
+          onClick={() => {}}
+          items={[
+            { label: 'Balanced grid', icon: <Icon glyph={IconGrid} role="ui" />, shortcut: 'y', onClick: () => {} },
+            { label: 'One row', icon: <Icon glyph={IconRows} role="ui" />, shortcut: 'h', onClick: () => {} },
+            { label: 'One column', icon: <Icon glyph={IconColumns} role="ui" />, shortcut: 'v', onClick: () => {} }
+          ]}
+        />
+      </div>
+    </div>
   )
 }

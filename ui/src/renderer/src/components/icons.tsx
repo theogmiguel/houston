@@ -152,6 +152,26 @@ export function IconGrid(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconRows(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="3" width="4.5" height="18" rx="1" />
+      <rect x="9.75" y="3" width="4.5" height="18" rx="1" />
+      <rect x="16.5" y="3" width="4.5" height="18" rx="1" />
+    </Svg>
+  )
+}
+
+export function IconColumns(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="3" width="18" height="4.5" rx="1" />
+      <rect x="3" y="9.75" width="18" height="4.5" rx="1" />
+      <rect x="3" y="16.5" width="18" height="4.5" rx="1" />
+    </Svg>
+  )
+}
+
 export function IconGear(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>

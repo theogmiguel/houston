@@ -1642,6 +1642,8 @@
   --sz-rail-row-action: 20px;
   --sz-workspace-selection-rail: 3px;
   --sz-rail-compact-action: 24px;
+  --sz-split-chevron: 14px;
+  --w-split-specimen: 240px;
   --sz-grid-state-dot: 6px;
   --sz-workspace-empty-spinner: 20px;
   --h-tag-chip: 16px;

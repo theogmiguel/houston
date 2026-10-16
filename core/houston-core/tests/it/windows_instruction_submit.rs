@@ -16,10 +16,18 @@ async fn steer_submits_after_the_console_paste_guard() {
     let script = workspace.path().join("composer.ps1");
     std::fs::write(&script, r#"
 $ErrorActionPreference = 'Stop'
-[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'ready'), 'ready')
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $last = -1000
 $text = ''
+# A console CLI is ready when its input loop is running. Pay the first-use
+# costs (console input handle, file write, string ops) before announcing it:
+# otherwise a loaded runner is still initialising when the paste arrives, drains
+# paste and Enter back to back, and measures an interval the daemon's wait
+# before Enter cannot influence.
+[void][Console]::KeyAvailable
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'warm'), [string]$clock.ElapsedMilliseconds)
+[void]$text.Contains('SUBMIT-ME')
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'ready'), 'ready')
 while ($true) {
     $key = [Console]::ReadKey($true)
     if ($key.Key -eq [ConsoleKey]::Enter) {
