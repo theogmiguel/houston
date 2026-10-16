@@ -131,9 +131,9 @@ pub fn run(home: &Path) -> Result<String, String> {
     }
 }
 
-pub fn spawn_at_boot() {
-    tokio::task::spawn_blocking(|| {
-        let home = match crate::agent_hooks::ConfigHome::from_env() {
+pub fn spawn_at_boot(env: crate::host_env::HostEnv) {
+    tokio::task::spawn_blocking(move || {
+        let home = match crate::agent_hooks::ConfigHome::from_env(&env) {
             Ok(h) => h.home,
             Err(e) => {
                 tracing::warn!("antigravity mcp self-registration: no home dir ({e}); skipped");

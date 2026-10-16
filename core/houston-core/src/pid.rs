@@ -494,6 +494,24 @@ pub fn process_creation_token(pid: u32) -> Option<u64> {
     stat[cut..].split_whitespace().nth(19)?.parse::<u64>().ok()
 }
 
+/// Runs `f` with a handle to `pid` that can read and set process information (power
+/// throttling, times) but not terminate it. The handle is closed after `f` returns.
+#[cfg(windows)]
+pub fn with_process_info_handle<T>(
+    pid: u32,
+    f: impl FnOnce(windows_sys::Win32::Foundation::HANDLE) -> T,
+) -> std::io::Result<T> {
+    use windows_sys::Win32::System::Threading::{
+        PROCESS_QUERY_INFORMATION, PROCESS_SET_INFORMATION,
+    };
+    let pid =
+        checked_pid(pid).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let handle = win::open(pid, PROCESS_QUERY_INFORMATION | PROCESS_SET_INFORMATION)?;
+    let out = f(handle);
+    win::close(handle);
+    Ok(out)
+}
+
 #[cfg(windows)]
 pub fn self_creation_token() -> Option<u64> {
     // SAFETY: GetCurrentProcess returns a pseudo-handle that needs no close;

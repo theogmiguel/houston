@@ -62,7 +62,7 @@ describe('checkout header identity', () => {
     })
     if (!appHarness) throw new Error('renderReadyApp did not return an app harness')
     harness = appHarness
-    deliverControl({ type: 'session_checkout', id: 1, checkout: { root: ROOT, kind: 'primary', branch: 'feat/new-branch', head: null } })
+    deliverControl({ type: 'session_checkout', id: 1, checkout: { root: ROOT, kind: 'primary', branch: 'feat/new-branch', head: null }, checkout_root: ROOT, worktree: null })
     expect(paneChip(appHarness, 1)?.textContent).toContain('primary · feat/new-branch')
     expect(paneChip(appHarness, 1)?.textContent).not.toContain('feat/rebalancing')
   })

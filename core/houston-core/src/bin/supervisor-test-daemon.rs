@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 #[cfg(unix)]
 use houston_core::supervisor;
 #[cfg(unix)]

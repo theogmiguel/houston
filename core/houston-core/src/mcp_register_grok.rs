@@ -164,16 +164,16 @@ pub async fn run(home: &Path, grok_bin: &Path) -> Result<String, String> {
 
 /// No channel gating: the entry holds only placeholders and never goes stale,
 /// unlike Codex's literal-port entry.
-pub fn spawn_at_boot() {
-    tokio::spawn(async {
-        let home = match crate::agent_hooks::ConfigHome::from_env() {
+pub fn spawn_at_boot(env: crate::host_env::HostEnv) {
+    tokio::spawn(async move {
+        let home = match crate::agent_hooks::ConfigHome::from_env(&env) {
             Ok(h) => h.home,
             Err(e) => {
                 tracing::warn!("grok mcp self-registration: no home dir ({e}); skipped");
                 return;
             }
         };
-        let Some(grok_bin) = crate::exe_path::resolve("grok") else {
+        let Some(grok_bin) = crate::exe_path::resolve_in(&env, "grok") else {
             tracing::info!("grok mcp self-registration: `grok` not found on PATH; skipped");
             return;
         };

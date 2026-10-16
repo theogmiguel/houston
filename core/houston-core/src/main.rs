@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{Context, Result};
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::server;
@@ -266,10 +267,11 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let daemon = match Daemon::new_adopting(
-        DaemonConfig {
-            token: manifest.token.clone(),
-            db_path: dir.join("houston.db"),
-        },
+        DaemonConfig::new(
+            manifest.token.clone(),
+            dir.join("houston.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         port,
         reconstructed,
     ) {
@@ -507,6 +509,8 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
 
     let _log_guard = houston_core::logging::init();
 
+    houston_core::power_throttling::opt_out_execution_speed_throttling();
+
     houston_core::login_path::adopt();
 
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -516,10 +520,11 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
 
     let token = uuid::Uuid::new_v4().to_string();
     let listener = server::bind("127.0.0.1:0".parse()?).await?;
-    let cfg = DaemonConfig {
-        token: token.clone(),
-        db_path: dir.join("houston.db"),
-    };
+    let cfg = DaemonConfig::new(
+        token.clone(),
+        dir.join("houston.db"),
+        houston_core::host_env::HostEnv::capture(),
+    );
     #[cfg(target_os = "linux")]
     let daemon = Daemon::new_bound_with_session_launcher(
         cfg,

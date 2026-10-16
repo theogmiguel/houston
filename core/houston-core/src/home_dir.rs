@@ -1,6 +1,7 @@
 //! The home directory, resolved environment-first. On Windows `dirs::home_dir()`
 //! reads the registry and IGNORES the environment, so hermetic tests could not
 //! redirect the state dir and a daemon could silently boot against the real one.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use std::path::PathBuf;
 

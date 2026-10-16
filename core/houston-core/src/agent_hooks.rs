@@ -74,20 +74,19 @@ pub struct ConfigHome {
 }
 
 impl ConfigHome {
-    pub fn from_env() -> Result<Self> {
+    pub fn from_env(env: &crate::host_env::HostEnv) -> Result<Self> {
         #[cfg(unix)]
-        let raw = std::env::var("HOME");
+        let raw = env.var("HOME");
         #[cfg(windows)]
-        let raw = match std::env::var("HOME") {
-            Ok(h) if !h.trim().is_empty() => Ok(h),
-            _ => std::env::var("USERPROFILE"),
+        let raw = match env.var("HOME") {
+            Some(h) if !h.trim().is_empty() => Some(h),
+            _ => env.var("USERPROFILE"),
         };
         let home = raw
-            .ok()
             .filter(|h| !h.trim().is_empty())
             .ok_or_else(|| anyhow!("HOME is unset or empty — cannot locate a CLI's config dir"))?;
-        let xdg = std::env::var("XDG_CONFIG_HOME")
-            .ok()
+        let xdg = env
+            .var("XDG_CONFIG_HOME")
             .filter(|d| !d.trim().is_empty())
             .map(PathBuf::from);
         Ok(Self {

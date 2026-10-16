@@ -57,16 +57,22 @@ impl Daemon {
         {
             return;
         }
-        if let Err(error) = self.generate_title(id) {
+        if let Err(error) = self.generate_title_job(id, true) {
             tracing::debug!("session {id}: automatic title generation: {error:#}");
         }
     }
 
     pub fn generate_title(self: &Arc<Self>, id: u32) -> Result<()> {
+        self.generate_title_job(id, false)
+    }
+
+    fn generate_title_job(self: &Arc<Self>, id: u32, automatic: bool) -> Result<()> {
         let session = self.get(id)?;
         let info = session.snapshot_info();
+        // A shell pane qualifies once hooks have detected the agent running inside it.
+        let provider = info.detected_agent.unwrap_or(info.agent);
         if info.hidden
-            || info.agent == proto::AgentKind::Shell
+            || provider == proto::AgentKind::Shell
             || info.state != proto::SessionState::Running
         {
             bail!("session {id} title generation requires a live agent pane");
@@ -74,7 +80,6 @@ impl Daemon {
         if info.title_source > TitleSource::Prompt {
             bail!("session {id} title source {:?} outranks generated titles; expected prompt or codename", info.title_source);
         }
-        let provider = info.detected_agent.unwrap_or(info.agent);
         crate::generated_title::argv(provider, String::new())?;
         if info.profile_label.is_some() && session.title_profile_env.is_none() {
             bail!("{provider:?} title generation refused for session {id}: the original account profile cannot be recovered");
@@ -103,6 +108,7 @@ impl Daemon {
                 bail!("session {id} title generation limit 1 reached (actual 1); cannot generate again");
             }
             let job = TitleJob {
+                automatic,
                 revision: session.title_revision.load(Ordering::Relaxed),
                 prompt,
                 directory: tempfile::Builder::new()
@@ -167,10 +173,19 @@ impl Daemon {
             Ok(())
         })();
         if let Err(error) = result {
-            self.broadcast_control(&proto::ServerMsg::Error {
-                message: format!("session {}: {error:#}", job.source),
-                context: Some("session_title_generate".into()),
-            });
+            // An automatic title is a convenience: the pane keeps the title it has and the
+            // operator, who asked for nothing, is not shown an error.
+            if job.title_job.as_ref().is_some_and(|t| t.automatic) {
+                tracing::warn!(
+                    "session {}: automatic title generation: {error:#}",
+                    job.source
+                );
+            } else {
+                self.broadcast_control(&proto::ServerMsg::Error {
+                    message: format!("session {}: {error:#}", job.source),
+                    context: Some("session_title_generate".into()),
+                });
+            }
         }
         self.title_generation_busy.store(false, Ordering::Release);
     }

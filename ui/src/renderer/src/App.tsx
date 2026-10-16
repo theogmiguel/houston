@@ -482,7 +482,7 @@ function patchRosterFields(
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
     msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
-      ? { checkout: msg.checkout ?? null }
+      ? { checkout: msg.checkout ?? null, checkout_root: msg.checkout_root ?? null, worktree: msg.worktree ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title, title_source: msg.title_source }
         : msg.type === "session_reparented"
