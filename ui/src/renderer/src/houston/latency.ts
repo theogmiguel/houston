@@ -78,10 +78,9 @@ export interface WriteLatencyTrackerOptions {
   sink?: (entry: LogPayload) => void
 }
 
-/** Times each keystroke until the next output frame of its session reaches the socket
- * handler, and again until the pane's first paint after that frame was parsed. The daemon
- * merges a session's queued output into one frame, so a frame closes every keystroke sent
- * before it; the record names the oldest. */
+/** Times keystrokes to their session's next frame and to the paint after it. The daemon
+ * merges queued output into one frame, so a frame closes every earlier keystroke and the
+ * record names the oldest. */
 export class WriteLatencyTracker {
   private readonly now: () => number
   private readonly sink: (entry: LogPayload) => void
