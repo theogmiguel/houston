@@ -1266,10 +1266,11 @@ mod tests {
             return;
         }
         let tmp = tempfile::tempdir().expect("tempdir");
-        let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig {
-            token: "byte-accounting-token".to_string(),
-            db_path: tmp.path().join("houston.db"),
-        })
+        let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
+            "byte-accounting-token".to_string(),
+            tmp.path().join("houston.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .expect("construct a daemon for byte accounting");
         daemon.mcp_tools.register(std::sync::Arc::new(
             houston_core::mcp_orchestration::OrchestrationTools::new(&daemon),

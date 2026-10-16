@@ -3162,6 +3162,7 @@ impl Daemon {
                 repo: repo.to_path_buf(),
                 path,
                 branch: branch.to_string(),
+                include_warnings: Vec::new(),
             });
         }
         if let Some(parent) = dest.parent() {
@@ -3172,10 +3173,11 @@ impl Daemon {
         let _ = crate::worktrees::prune(repo);
         crate::worktrees::create_task(repo, branch, base, dest).context("task_start refused")?;
         let path = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
-        let created = CreatedWorktree {
+        let mut created = CreatedWorktree {
             repo: repo.to_path_buf(),
             path,
             branch: branch.to_string(),
+            include_warnings: Vec::new(),
         };
         let row = ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -3198,7 +3200,24 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording task worktree {}: {e:#}", created.path.display());
         }
+        created.include_warnings =
+            crate::worktree_include::carry_over(repo, &created.path).warnings;
         Ok(created)
+    }
+
+    /// A task's start reply has no warnings field, so the agent that needs the files
+    /// hears what `.worktreeinclude` did not copy; a note past the brief limit stays in
+    /// the log.
+    fn with_include_note(brief: String, warnings: &[String]) -> String {
+        if warnings.is_empty() {
+            return brief;
+        }
+        let noted = format!("{brief}\n\nWorktree setup: {}", warnings.join("; "));
+        if noted.len() <= proto::TASK_BRIEF_MAX_BYTES {
+            noted
+        } else {
+            brief
+        }
     }
 
     /// Starts one attempt of a task: the run row, the pane in `created`, the
@@ -3236,6 +3255,7 @@ impl Daemon {
                 "bytes in the task brief",
             ));
         }
+        let brief = Self::with_include_note(brief, &created.include_warnings);
         let base_commit = crate::git::head_sha(&created.path).ok();
         let run = self.db.create_task_run(&TaskRunWrite {
             task_id: row.id,
@@ -3252,7 +3272,7 @@ impl Daemon {
             started_at_ms: now,
         })?;
         let mut spawn_args = Vec::new();
-        match crate::launch::prepare_worktree_trust(agent, &created.path)
+        match crate::launch::prepare_worktree_trust(&self.env(), agent, &created.path)
             .and_then(|()| crate::launch::worktree_trust_args(agent, &created.path))
         {
             Ok(args) => spawn_args.extend(args),
@@ -4202,6 +4222,7 @@ impl Daemon {
                 "bytes in the task brief",
             ));
         }
+        let brief = Self::with_include_note(brief, &created.include_warnings);
         let base_commit = crate::git::head_sha(&created.path).ok();
         let run = self.db.create_task_run(&TaskRunWrite {
             task_id: row.id,
@@ -4592,6 +4613,7 @@ impl Daemon {
                         repo: project_dir.to_path_buf(),
                         path,
                         branch: branch.to_string(),
+                        include_warnings: Vec::new(),
                     });
                 }
             }
@@ -4636,10 +4658,13 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording review worktree {}: {e:#}", path.display());
         }
+        // A reviewer reads the branch; `carry_over` logs what it could not copy.
+        crate::worktree_include::carry_over(project_dir, &path);
         Ok(CreatedWorktree {
             repo: project_dir.to_path_buf(),
             path,
             branch: branch.to_string(),
+            include_warnings: Vec::new(),
         })
     }
 
@@ -5362,9 +5387,9 @@ impl Daemon {
         }
     }
 
-    /// The PR watch: one `gh pr view` per in-review task with a run branch.
-    /// A merged PR closes the task; a missing or unauthenticated `gh` leaves
-    /// the task in review with the reason on its run.
+    /// One `gh pr view` per in-review task with a run branch, unless a pane watch
+    /// read that branch this minute. A merged PR closes the task; an unready `gh`
+    /// or a rate-limit pause leaves it in review with the reason on its run.
     pub fn task_pr_watch_tick(&self) {
         let rows = match self.db.tasks_in_review_with_runs() {
             Ok(rows) => rows,
@@ -5387,29 +5412,63 @@ impl Daemon {
                 );
                 continue;
             }
-            let gh = crate::gh::state(&dir);
-            if gh != proto::GhState::Ready {
-                let reason = crate::gh::hint_for(gh)
-                    .unwrap_or_else(|| format!("gh reported {gh:?} in {path}"));
-                self.note_task_run_reason(run.id, Some(&reason));
+            let now_ms = now_unix_ms();
+            let paused = |until_ms| {
+                format!(
+                    "{}; the task stays in review",
+                    crate::pull_requests::shared::pause_text(until_ms)
+                )
+            };
+            if let Some(until_ms) = self.pr_reads.paused_until(now_ms) {
+                self.note_task_run_reason(run.id, Some(&paused(until_ms)));
                 continue;
             }
-            match crate::gh::pr_for_checkout(&dir) {
-                crate::gh::PrLookup::Found(facts) if facts.state == "MERGED" => {
-                    self.note_task_run_reason(run.id, None);
-                    if let Err(e) = self.complete_task_from_merge(&task, &run) {
-                        tracing::warn!("tasks: closing task {} on its merged PR: {e}", task.id);
+            let shared = crate::git::remote_url(&dir)
+                .and_then(|url| crate::gh::split_repository(&url))
+                .and_then(|(owner, name)| {
+                    self.pr_reads
+                        .branch_state(&format!("{owner}/{name}"), &branch, now_ms)
+                });
+            let merged = if let Some((_, state)) = shared {
+                state == proto::PullRequestState::Merged
+            } else {
+                let gh = crate::gh::state(&dir);
+                if gh != proto::GhState::Ready {
+                    let reason = crate::gh::hint_for(gh)
+                        .unwrap_or_else(|| format!("gh reported {gh:?} in {path}"));
+                    self.note_task_run_reason(run.id, Some(&reason));
+                    continue;
+                }
+                match crate::gh::pr_for_checkout(&dir) {
+                    crate::gh::PrLookup::Found(facts) => facts.state == "MERGED",
+                    crate::gh::PrLookup::NoPr => {
+                        self.note_task_run_reason(
+                            run.id,
+                            Some(&format!(
+                                "no pull request found for branch {branch:?} yet; the task \
+                                 stays in review"
+                            )),
+                        );
+                        continue;
+                    }
+                    crate::gh::PrLookup::Failed(e) if crate::gh::is_rate_limited(&e) => {
+                        let until_ms = self
+                            .pr_reads
+                            .pause(now_ms, &e, || crate::gh::rate_limit_reset(&dir, now_ms));
+                        self.note_task_run_reason(run.id, Some(&paused(until_ms)));
+                        continue;
+                    }
+                    crate::gh::PrLookup::Failed(e) => {
+                        self.note_task_run_reason(run.id, Some(&e));
+                        continue;
                     }
                 }
-                crate::gh::PrLookup::Found(_) => self.note_task_run_reason(run.id, None),
-                crate::gh::PrLookup::NoPr => self.note_task_run_reason(
-                    run.id,
-                    Some(&format!(
-                        "no pull request found for branch {branch:?} yet; the task stays in \
-                         review"
-                    )),
-                ),
-                crate::gh::PrLookup::Failed(e) => self.note_task_run_reason(run.id, Some(&e)),
+            };
+            self.note_task_run_reason(run.id, None);
+            if merged {
+                if let Err(e) = self.complete_task_from_merge(&task, &run) {
+                    tracing::warn!("tasks: closing task {} on its merged PR: {e}", task.id);
+                }
             }
         }
     }
@@ -5500,12 +5559,22 @@ impl Daemon {
             anyhow::bail!("PR watch cannot wake provider {:?}; supported providers are Claude, Codex, Antigravity, OpenCode, Cursor and Grok", info.agent);
         }
         let number = pr_watch_number(target)?;
-        let (link, detail) = crate::pull_requests::read(
+        let (link, detail) = match self.pr_reads.tick_read(
+            &mut Default::default(),
             Path::new(&info.project_dir),
-            Some(number),
+            number,
             proto::PullRequestLinkSource::Agent,
             None,
-        )?;
+            now_unix_ms(),
+        ) {
+            crate::pull_requests::shared::Read::Done(result) => {
+                (*result).map_err(anyhow::Error::msg)?
+            }
+            crate::pull_requests::shared::Read::Paused { until_ms } => anyhow::bail!(
+                "{}; watch PR #{number} after then",
+                crate::pull_requests::shared::pause_text(until_ms)
+            ),
+        };
         if link.state != proto::PullRequestState::Open {
             anyhow::bail!(
                 "PR #{} is {:?}; expected an open pull request",
@@ -5623,18 +5692,26 @@ impl Daemon {
                 return;
             }
         };
+        let mut tick = crate::pull_requests::shared::Tick::default();
         for row in watches {
             let Ok(session) = self.get(row.session_id) else {
                 continue;
             };
             let info = session.snapshot_info();
             let target = Path::new(&info.project_dir);
-            let result = crate::pull_requests::read(
+            let result = match self.pr_reads.tick_read(
+                &mut tick,
                 target,
-                Some(row.link.number),
+                row.link.number,
                 row.link.source,
                 Some(&row.link),
-            );
+                now_unix_ms(),
+            ) {
+                crate::pull_requests::shared::Read::Done(result) => *result,
+                // A rate limit is not the PR's failure: the watch keeps its
+                // state, failure count included, until the reset.
+                crate::pull_requests::shared::Read::Paused { .. } => continue,
+            };
             let evaluation = match result {
                 Ok((link, detail)) => {
                     let own_login = row.state.own_login.clone();

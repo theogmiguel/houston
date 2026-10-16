@@ -4,25 +4,17 @@ import type { RailAgentRow } from '../../rail/railCardModel'
 import type { AgentActivityMode, RailCardMode, RailCardProperty } from '../../../railPrefs'
 import { AgentSummaryPill } from '../AgentSummaryPill'
 import { IconAgent } from '../../icons'
-import { Tooltip } from '../Tooltip'
+import { WorkingSpinner } from '../Spinner'
 
-function AgentStatusDot({ session, now }: { session: SessionInfo; now: number }): React.JSX.Element {
-  const quiet = attentionStatus(session) === 'working' && session.status_since_ms != null && now - session.status_since_ms >= 10 * 60_000
-  return quiet ? (
-    <Tooltip label={`No recent update from ${session.agent}`}>
-      <span aria-label={`No recent update from ${session.agent}`} className="inline-block size-2 flex-none rounded-full border border-[var(--info)] bg-transparent" />
-    </Tooltip>
-  ) : (
-    <span aria-label={attentionLabel(session)} data-testid="agent-row-dot" className={`inline-block ${attentionStatus(session) === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${agentRowDotClass(attentionStatus(session))}`} />
-  )
+function AgentStatusDot({ session }: { session: SessionInfo }): React.JSX.Element {
+  if (attentionStatus(session) === 'working') return <WorkingSpinner testId="agent-row-dot" label={attentionLabel(session)} />
+  return <span aria-label={attentionLabel(session)} data-testid="agent-row-dot" className={`inline-block size-2 flex-none rounded-full ${agentRowDotClass(attentionStatus(session))}`} />
 }
 
 function agentRowDotClass(status: SessionInfo['status']): string {
   switch (status) {
     case 'needs-input':
       return 'bg-[var(--warn)]'
-    case 'working':
-      return 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent'
     case 'spawning':
       return 'bg-[var(--accent)]'
     case 'idle':
@@ -55,7 +47,7 @@ function AgentRow({ agent, now, onFocusPane, lastMessage }: { agent: RailAgentRo
   const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
     <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-left text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
-      <AgentStatusDot session={agent.session} now={now} />
+      <AgentStatusDot session={agent.session} />
       <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
         {agent.leading}{shellLabel}

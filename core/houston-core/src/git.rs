@@ -1879,7 +1879,7 @@ mod tests {
 
     #[test]
     fn head_file_is_none_outside_a_repository() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::fixture_dirs::tempdir_outside_git();
         assert_eq!(head_file(dir.path()), None);
         assert_eq!(branch(dir.path()), None);
     }
@@ -1956,7 +1956,7 @@ mod tests {
 
     #[test]
     fn non_git_dir_fails_loud() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::fixture_dirs::tempdir_outside_git();
         let err = status(tmp.path()).unwrap_err().to_string();
         assert!(err.contains("not a git repository"), "unexpected: {err}");
     }
@@ -1970,7 +1970,7 @@ mod tests {
 
     #[test]
     fn branch_is_none_for_non_repo() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::fixture_dirs::tempdir_outside_git();
         assert_eq!(branch(tmp.path()), None);
     }
 
@@ -2017,7 +2017,7 @@ mod tests {
 
     #[test]
     fn checkout_facts_is_none_for_non_repo() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::fixture_dirs::tempdir_outside_git();
         assert_eq!(checkout_facts(tmp.path()), CheckoutFacts::default());
     }
 
@@ -2143,7 +2143,7 @@ mod tests {
 
     #[test]
     fn is_git_repo_true_for_repo_false_otherwise() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::fixture_dirs::tempdir_outside_git();
         assert!(!is_git_repo(tmp.path()));
         init_repo(tmp.path());
         assert!(is_git_repo(tmp.path()));

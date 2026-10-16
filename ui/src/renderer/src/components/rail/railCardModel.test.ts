@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRailCard, isRailCardQuiet } from './railCardModel'
+import { buildRailCard } from './railCardModel'
 import type { SessionInfo } from '../../houston/client'
 
 function session(overrides: Partial<SessionInfo> = {}): SessionInfo {
@@ -80,10 +80,3 @@ describe('buildRailCard', () => {
   })
 })
 
-describe('rail card quiet status', () => {
-  it('marks working status quiet at ten minutes and keeps the threshold inclusive', () => {
-    expect(isRailCardQuiet({ kind: 'working', label: 'Working', since: 1_000 }, 600_999)).toBe(false)
-    expect(isRailCardQuiet({ kind: 'working', label: 'Working', since: 1_000 }, 601_000)).toBe(true)
-    expect(isRailCardQuiet({ kind: 'idle', label: 'Idle', since: 1_000 }, 601_000)).toBe(false)
-  })
-})

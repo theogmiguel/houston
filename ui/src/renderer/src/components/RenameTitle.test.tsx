@@ -5,13 +5,13 @@ import { RenameTitle } from './RenameTitle'
 
 afterEach(cleanup)
 
-it('identifies automatic names and lets a user override return to automatic', () => {
+it('shows no title-source label and lets a user override return to automatic', () => {
   const reset = vi.fn()
   const view = render(<RenameTitle title="Review parser" titleSource="cli" onRename={vi.fn()} onReset={reset} />)
-  expect(screen.getByText('Auto')).toBeTruthy()
+  expect(screen.queryByText('Auto')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Reset to automatic' })).toBeNull()
   view.rerender(<RenameTitle title="Mine" titleSource="user" onRename={vi.fn()} onReset={reset} />)
-  expect(screen.getByText('Manual')).toBeTruthy()
+  expect(screen.queryByText('Manual')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Reset to automatic' }))
   expect(reset).toHaveBeenCalledOnce()
 })
