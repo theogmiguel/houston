@@ -338,8 +338,10 @@ panes, the banner sniffer, the roster activity tick, the ACP decoder. It encodes
 `proto::encode_output_frame(id, offset, chunk)` once and offers the same `Arc` to each
 per-connection tap (`FrameRegistry::offer`, `frame_queue.rs`). A hidden session
 short-circuits into `handoff_output` before any of that. Backpressure is per-connection, not a
-shared broadcast. Hiding a session unregisters its tap and clears queued output; showing it
-creates a fresh tap while preserving the live session's attach attempt count. Session
+shared broadcast. The connection loop writes its taps in turns of `FLUSH_TURN_BYTES` (64 KiB)
+each and re-arms its wake for what remains, so one session's backlog delays another session's
+echo by one turn per busy session rather than by whole queues. Hiding a session unregisters
+its tap and clears queued output; showing it creates a fresh tap while preserving the live session's attach attempt count. Session
 removal reclaims connection-owned taps, attempt counters and visibility votes. Late hide
 reports after removal clear connection state without error or new visibility votes; the
 renderer suppresses reports once it receives removal. Invalid session IDs do not allocate

@@ -170,6 +170,7 @@ mod ws_frame_queue_wire;
 mod ws_input;
 mod ws_input_backpressure_wire;
 mod ws_input_wire;
+mod ws_output_fairness_wire;
 mod ws_shutdown_gate_wire;
 mod wsl_wire;
 mod zcode_hooks_wire;

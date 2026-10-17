@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
-use common::{collect_broadcast_until, TOKEN};
+use common::{escaped_tail, TOKEN};
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;
 
@@ -31,14 +31,12 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     ))
     .unwrap();
 
-    let mut rx = daemon.observe();
-
     let dump_sh = dump.display().to_string().replace('\\', "/");
     #[cfg(unix)]
     let cmd = vec![
         "sh".to_string(),
         "-c".to_string(),
-        format!("env > '{dump_sh}' && touch '{dump_sh}.ready' && echo DUMPED && sleep 30"),
+        format!("env > '{dump_sh}' && touch '{dump_sh}.ready' && sleep 30"),
     ];
     #[cfg(windows)]
     let cmd = vec![
@@ -50,7 +48,7 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
             "Get-ChildItem Env: | ForEach-Object {{ $_.Name + '=' + $_.Value }} | \
              Set-Content -Encoding utf8 -LiteralPath '{dump_sh}'; \
              [IO.File]::WriteAllText('{dump_sh}.ready', 'ready'); \
-             Write-Output DUMPED; Start-Sleep -Seconds 30"
+             Start-Sleep -Seconds 30"
         ),
     ];
     let info = daemon
@@ -70,15 +68,24 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
             effort: None,
         })
         .unwrap();
-    collect_broadcast_until(&mut rx, info.id, "DUMPED").await;
 
-    // ConPTY may echo the launch command before its output file is ready.
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    while !tmp.path().join("child-env.txt.ready").is_file() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "environment dump was not created"
-        );
+    // Passing Windows CI runs took up to 14 s to start PowerShell and dump, against a 15 s
+    // output budget; this waits on the dump itself, with headroom that still ends a hang.
+    const DUMP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+    let ready = tmp.path().join("child-env.txt.ready");
+    let deadline = tokio::time::Instant::now() + DUMP_DEADLINE;
+    while !ready.is_file() {
+        if tokio::time::Instant::now() >= deadline {
+            let output = daemon.scrollback(info.id, None).map_or_else(
+                |e| format!("<scrollback unavailable: {e}>"),
+                |replay| escaped_tail(&replay.data),
+            );
+            panic!(
+                "session {} did not write {} within {DUMP_DEADLINE:?}; its output so far: \"{output}\"",
+                info.id,
+                ready.display()
+            );
+        }
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
 
