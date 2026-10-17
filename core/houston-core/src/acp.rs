@@ -25,16 +25,6 @@ const OMP: KnownAcpAgent = KnownAcpAgent {
     model_select_flag: None,
 };
 
-// `--model` here is a different flag than Houston's hook-driven grok kind
-// uses (`-m`, in `swarm.rs::flags_only`). Recorded as-is, not reconciled —
-// that resolution is wiring work this module deliberately excludes.
-const GROK: KnownAcpAgent = KnownAcpAgent {
-    slug: "acp-grok",
-    display_name: "Grok Build",
-    argv: &["grok", "agent", "stdio"],
-    model_select_flag: Some("--model"),
-};
-
 const HERMES: KnownAcpAgent = KnownAcpAgent {
     slug: "acp-hermes-agent",
     display_name: "Hermes Agent",
@@ -42,7 +32,7 @@ const HERMES: KnownAcpAgent = KnownAcpAgent {
     model_select_flag: None,
 };
 
-pub const KNOWN_ACP_AGENTS: &[KnownAcpAgent] = &[OPENCODE, OMP, GROK, HERMES];
+pub const KNOWN_ACP_AGENTS: &[KnownAcpAgent] = &[OPENCODE, OMP, HERMES];
 
 pub fn find_known_acp_agent(slug: &str) -> Option<&'static KnownAcpAgent> {
     KNOWN_ACP_AGENTS.iter().find(|agent| agent.slug == slug)
@@ -176,7 +166,6 @@ pub fn event_for_message(message: &serde_json::Value) -> Option<crate::agent_eve
 pub fn agent_kind_for(agent: &KnownAcpAgent) -> proto::AgentKind {
     match agent.argv.first().copied() {
         Some("opencode") => proto::AgentKind::Opencode,
-        Some("grok") => proto::AgentKind::Grok,
         _ => proto::AgentKind::Custom,
     }
 }
@@ -199,7 +188,6 @@ mod tests {
     fn a_rows_agent_kind_follows_its_command_not_its_slug() {
         use proto::AgentKind::*;
         assert_eq!(agent_kind_for(&OPENCODE), Opencode);
-        assert_eq!(agent_kind_for(&GROK), Grok);
         assert_eq!(agent_kind_for(&OMP), Custom);
         assert_eq!(agent_kind_for(&HERMES), Custom);
     }
@@ -227,9 +215,10 @@ mod tests {
 
     #[test]
     fn find_known_acp_agent_returns_the_matching_row() {
-        let grok = find_known_acp_agent("acp-grok").expect("acp-grok is a known agent");
-        assert_eq!(grok.argv, &["grok", "agent", "stdio"]);
-        assert_eq!(grok.model_select_flag, Some("--model"));
+        let omp = find_known_acp_agent("acp-omp").expect("acp-omp is a known agent");
+        assert_eq!(omp.argv, &["omp", "acp"]);
+        assert_eq!(omp.model_select_flag, None);
+        assert!(find_known_acp_agent("acp-grok").is_none());
     }
 
     #[test]

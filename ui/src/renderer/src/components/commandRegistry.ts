@@ -145,8 +145,6 @@ const AGENT_KINDS: readonly { kind: AgentKind; label: string }[] = [
   { kind: 'codex', label: 'Codex' },
   { kind: 'antigravity', label: 'Antigravity' },
   { kind: 'opencode', label: 'opencode' },
-  { kind: 'cursor', label: 'Cursor Agent' },
-  { kind: 'grok', label: 'Grok' },
   { kind: 'zcode', label: 'ZCode' }
 ]
 

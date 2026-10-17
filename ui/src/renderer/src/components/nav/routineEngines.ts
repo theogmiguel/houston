@@ -5,7 +5,7 @@ import type { SelectOption } from '../ui/Select'
 import { engineLabel } from '../engineLabel'
 
 /** The providers a routine, and so a Harness review, can run with. */
-export const ROUTINE_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']
+export const ROUTINE_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'zcode']
 
 const ACCESS_NEEDED: Record<ChatPermissionMode, string> = {
   accept_edits: 'isolated full access',

@@ -42,7 +42,5 @@ pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     });
     crate::mcp_register::spawn_at_boot(env.clone());
     crate::mcp_register_codex::spawn_at_boot(env.clone(), bound_port);
-    crate::mcp_register_grok::spawn_at_boot(env.clone());
-    crate::mcp_register_cursor::spawn_at_boot(env.clone());
     crate::mcp_register_antigravity::spawn_at_boot(env.clone());
 }

@@ -4,7 +4,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
   appearance: ['Background', 'Tasks', 'Pull requests', 'Routines', 'Usage', 'Open diff when an agent stops', 'App zoom', 'Mascot', 'Position', 'Style', 'Colors', 'Hat', 'Celebrate holidays', 'Sounds', 'Break reminders', "Nap when I'm away", 'Meet the mascot again', 'Animate when Houston is in the background'],
   terminal: ['Palette', 'Font size', 'Font family', 'Line height', 'Cursor blink', 'Scrollback', 'Shell integration', 'Shift+Enter inserts a newline', 'Clipboard access', 'Copy on select', 'Copy the text, not the box', 'Panes per stack', 'Idle quiet window'],
   shortcuts: ['Enable shortcuts', 'Pass through to terminal'],
-  'agents-clis': ['Claude Code', 'Codex', 'OpenCode', 'Cursor', 'Grok', 'ZCode', 'Claude Code accounts', 'Codex accounts'],
+  'agents-clis': ['Claude Code', 'Codex', 'OpenCode', 'ZCode', 'Claude Code accounts', 'Codex accounts'],
   workspaces: ['Restore budget', 'Resume conversations when restoring panes', 'Remove worktrees automatically', 'Grace after merge', 'Remove idle worktrees after', 'Close idle background sessions', 'Idle for', 'Start Claude in fullscreen', 'Open links in a browser pane'],
   orchestration: ['Max child panes per agent', 'Max nesting depth', 'Enable orchestration', 'Mailbox retention'],
   tasks: ['Agent access', 'Task key prefix'],

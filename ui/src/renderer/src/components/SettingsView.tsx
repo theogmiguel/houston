@@ -9,6 +9,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
+import type { AgentAccountIdentity } from '../houston/generated/AgentAccountIdentity'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { UpdatePolicy } from '../houston/generated/UpdatePolicy'
 import type { UpdateState } from '../houston/generated/UpdateState'
@@ -171,6 +172,7 @@ export interface Props {
 
   hostInfo: HostInfo | null
   agentHooks: AgentHookState[] | null
+  agentAccounts?: AgentAccountIdentity[] | null
   agentHooksCheckedAt?: number | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
   onAgentHooksRefresh: () => void
@@ -262,6 +264,7 @@ function SectionDispatch({
   onMailboxRetentionSet,
   hostInfo,
   agentHooks,
+  agentAccounts,
   agentHooksCheckedAt = null,
   onAgentHooksSet,
   onAgentHooksRefresh,
@@ -348,6 +351,7 @@ function SectionDispatch({
           <>
             <AgentStatusSection
               providers={agentHooks}
+              agentAccounts={agentAccounts}
               onSet={onAgentHooksSet}
               onRefresh={onAgentHooksRefresh}
               checkedAt={agentHooksCheckedAt}

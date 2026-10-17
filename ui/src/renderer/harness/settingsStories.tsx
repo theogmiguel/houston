@@ -275,9 +275,7 @@ export function SettingsDaemonError(): React.JSX.Element {
 const agentHookFixture: AgentHookState[] = [
   { provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '2.1.263', trust: null },
   { provider: 'codex', path: '~/.codex/config.toml', scope: 'global', enabled: false, installed: false, error: null, present: false, version: null, trust: 'not_confirmed' },
-  { provider: 'opencode', path: '~/.config/opencode/plugins/houston.ts', scope: 'global', enabled: true, installed: false, error: 'Managed hook file is missing', present: true, version: '1.18.27', trust: null },
-  { provider: 'grok', path: '~/.config/grok/settings.json', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '0.9.2', trust: null },
-  { provider: 'cursor', path: '~/.cursor/hooks.json', scope: 'global', enabled: false, installed: false, error: null, present: false, version: null, trust: null }
+  { provider: 'opencode', path: '~/.config/opencode/plugins/houston.ts', scope: 'global', enabled: true, installed: false, error: 'Managed hook file is missing', present: true, version: '1.18.27', trust: null }
 ]
 
 function routingClient(routes: RoleRoute[]): HoustonClient {
@@ -345,8 +343,8 @@ const remoteFixture: RemoteInfo = {
   tls: false,
   ca_fingerprint: null,
   devices: [
-    { id: 1, name: 'Pixel 8 · Chrome', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
-    { id: 2, name: 'MacBook · Safari', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }
+    { id: 1, name: 'Pixel 8 · Chrome', tier: 'drive', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
+    { id: 2, name: 'MacBook · Safari', tier: 'manage', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }
   ]
 }
 

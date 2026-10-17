@@ -116,12 +116,6 @@ pub fn sanitize(raw: &str, app: Option<&str>, max_len: usize) -> Option<String> 
         .collect();
     let mut text = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
 
-    if let Some(app) = app {
-        if app.eq_ignore_ascii_case("grok") && grok_spinner_title(&text) {
-            return None;
-        }
-    }
-
     text = text
         .trim_start_matches(|c: char| c.is_whitespace() || is_decoration_glyph(c))
         .to_string();
@@ -174,15 +168,6 @@ fn strip_opencode_prefix(text: &str) -> String {
         Regex::new(r"^(?:[^|]+\|\s*)?OC\s*\|\s*").expect("static OpenCode prefix regex")
     });
     re.replace(text, "").into_owned()
-}
-
-fn grok_spinner_title(text: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)^[\u{2800}-\u{28ff}]+\s*-\s*.+?\s*-\s*grok\s*$")
-            .expect("static Grok spinner title regex")
-    });
-    re.is_match(text)
 }
 
 /// True when the title is the CLI's own name, alone or followed by one more word
@@ -399,27 +384,6 @@ mod tests {
         assert_eq!(
             sanitize("OC | Fix parser", Some("Claude"), 40).as_deref(),
             Some("OC | Fix parser")
-        );
-    }
-
-    #[test]
-    fn grok_build_spinner_title_names_nothing() {
-        assert_eq!(
-            sanitize("⠋⠙⠹ - wiring the parser - grok", Some("Grok"), 40),
-            None
-        );
-        assert_eq!(
-            sanitize("⠋⠙⠹ - wiring the parser - Grok", Some("Grok"), 40),
-            None,
-            "case-insensitive on the trailing grok"
-        );
-    }
-
-    #[test]
-    fn grok_title_without_a_spinner_still_loses_its_app_suffix() {
-        assert_eq!(
-            sanitize("Fix the auth bug - grok", Some("Grok"), 40).as_deref(),
-            Some("Fix the auth bug")
         );
     }
 }

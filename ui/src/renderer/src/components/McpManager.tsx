@@ -32,9 +32,7 @@ const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
-  cursor: 'Cursor',
   antigravity: 'Antigravity',
-  grok: 'Grok',
   zcode: 'ZCode'
 }
 
@@ -80,15 +78,13 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
     name: row.name,
     claude: cell(row, 'claude'),
     codex: cell(row, 'codex'),
-    opencode: cell(row, 'opencode'),
-    cursor: cell(row, 'cursor')
+    opencode: cell(row, 'opencode')
   }))
   const columns: TableColumn<ConnectionDisplayRow>[] = [
     { key: 'name', header: 'Server', width: '18%', render: (name) => <strong>{name}</strong> },
     { key: 'claude', header: 'Claude Code', width: '16%', render: (value) => value },
     { key: 'codex', header: 'Codex', width: '16%', render: (value) => value },
-    { key: 'opencode', header: 'OpenCode', width: '16%', render: (value) => value },
-    { key: 'cursor', header: 'Cursor', width: '16%', render: (value) => value }
+    { key: 'opencode', header: 'OpenCode', width: '16%', render: (value) => value }
   ]
   const selectedDiff = diffRow ? rows.find((row) => row.name === diffRow) : undefined
   const unmanaged = TASK_AGENTS.filter((agent) => !DESTINATIONS.includes(agent)).reverse().map(label).join(', ')
@@ -199,7 +195,7 @@ function label(tool: AgentKind): string {
   return TOOL_LABEL[tool] ?? tool
 }
 
-const DESTINATIONS: AgentKind[] = ['claude', 'codex', 'opencode', 'cursor']
+const DESTINATIONS: AgentKind[] = ['claude', 'codex', 'opencode']
 
 interface ConnectionDisplayRow {
   id: string
@@ -207,7 +203,6 @@ interface ConnectionDisplayRow {
   claude: React.ReactNode
   codex: React.ReactNode
   opencode: React.ReactNode
-  cursor: React.ReactNode
 }
 
 function destinationsLabel(destinations: AgentKind[]): string {

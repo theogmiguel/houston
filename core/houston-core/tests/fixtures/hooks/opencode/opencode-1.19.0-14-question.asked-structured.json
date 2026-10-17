@@ -1,0 +1,18 @@
+{
+  "_note": "the plugin's constructed payload for question.asked; the dialog (1. Option A, 2. Option B, 3. Type your own answer) was captured live on 1.19.0, the payload itself is constructed",
+  "session_id": "ses_root01",
+  "request_id": "que_01",
+  "message": "Do you prefer option A or option B?",
+  "questions": [
+    {
+      "header": "Choice",
+      "question": "Do you prefer option A or option B?",
+      "multiple": false,
+      "custom": true,
+      "options": [
+        { "label": "Option A", "description": "Choose option A" },
+        { "label": "Option B", "description": "Choose option B" }
+      ]
+    }
+  ]
+}

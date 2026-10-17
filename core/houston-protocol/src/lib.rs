@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 143;
+pub const PROTOCOL_VERSION: u32 = 144;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -172,6 +172,46 @@ pub struct AgentProfileActive {
     pub agent: AgentKind,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSignIn {
+    SignedIn,
+    SignedOut,
+    /// The CLI's sign-in storage cannot be read, or its absence proves nothing.
+    Unknown,
+}
+
+/// The identity one CLI is signed in to for one account directory. Carries only an
+/// identifier (email, plan, provider names), never a credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct AgentAccountIdentity {
+    pub agent: AgentKind,
+    /// `None` is the default account; otherwise the `AgentProfile` id.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub profile_id: Option<u32>,
+    pub sign_in: AgentSignIn,
+    /// Email address, or "API key" when the CLI authenticates with a key.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub identity: Option<String>,
+    /// Organization or plan next to the identity.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub detail: Option<String>,
+    /// Provider names the CLI holds credentials for (OpenCode).
+    #[serde(default)]
+    pub providers: Vec<String>,
+    /// Why the state is not `signed_in`: the file read, or what went wrong reading it.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub reason: Option<String>,
+    /// False when the storage location was not confirmed against the CLI's own source or docs.
+    pub verified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3291,6 +3331,34 @@ pub enum RemoteNotifyDetail {
     PaneName,
 }
 
+/// What a paired device may do, each tier including the one before it:
+/// `Observe` reads, `Drive` also answers panes, `Manage` also changes panes
+/// and commits or pushes. Pairing and configuration stay on the computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteTier {
+    Observe,
+    Drive,
+    Manage,
+}
+
+impl RemoteTier {
+    pub const ALL: [RemoteTier; 3] = [RemoteTier::Observe, RemoteTier::Drive, RemoteTier::Manage];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RemoteTier::Observe => "observe",
+            RemoteTier::Drive => "drive",
+            RemoteTier::Manage => "manage",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.as_str() == raw)
+    }
+}
+
 /// A device paired for remote access; its token never leaves the pairing reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -3298,6 +3366,7 @@ pub struct RemoteDevice {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub name: String,
+    pub tier: RemoteTier,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
@@ -4627,6 +4696,12 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
+    /// Sets what a paired device may do; it applies from the device's next request.
+    RemoteDeviceSetTier {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        tier: RemoteTier,
+    },
     /// Replaces the grids paired devices group panes by. No reply; a refusal
     /// is an `error` with context `remote`.
     RemoteGridsPublish {
@@ -5234,6 +5309,10 @@ pub enum ServerMsg {
     AgentProfileState {
         profiles: Vec<AgentProfile>,
         active: Vec<AgentProfileActive>,
+    },
+    /// Sent after `AgentHooks` on every Settings check.
+    AgentAccounts {
+        accounts: Vec<AgentAccountIdentity>,
     },
 
     Routines {

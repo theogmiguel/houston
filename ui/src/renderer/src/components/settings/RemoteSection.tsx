@@ -4,6 +4,7 @@ import { REMOTE_NOTIFY_DELAY_MAX_SECS } from '../../houston/generated/DEFAULTS'
 import type { RemoteDevice } from '../../houston/generated/RemoteDevice'
 import type { RemoteInfo } from '../../houston/generated/RemoteInfo'
 import type { RemoteNotifyDetail } from '../../houston/generated/RemoteNotifyDetail'
+import type { RemoteTier } from '../../houston/generated/RemoteTier'
 import { plainHttpOffLoopback, useRemote } from '../../houston/useRemote'
 import { Select, type SelectOption } from '../ui/Select'
 import { SettingsList, Toggle } from '../ui/settingsPrimitives'
@@ -21,6 +22,12 @@ import { SetupDot } from '../ui/AgentSetupRow'
 const DETAIL_OPTIONS: SelectOption[] = [
   { value: 'generic', label: 'Generic message' },
   { value: 'pane_name', label: 'Include the pane name' }
+]
+
+export const TIER_OPTIONS: SelectOption[] = [
+  { value: 'observe', label: 'Observe', title: 'Reads panes, changes, pull requests, tasks and usage.' },
+  { value: 'drive', label: 'Drive', title: 'Also answers panes: types, decides and dictates.' },
+  { value: 'manage', label: 'Manage', title: 'Also opens, renames, restarts, sleeps and closes panes, and commits or pushes.' }
 ]
 
 const OFF_REASON = 'Turn on remote access first.'
@@ -245,12 +252,14 @@ function DeviceRow({
   device,
   enabled,
   onRevoke,
+  onSetTier,
   now
 }: {
   now: number
   device: RemoteDevice
   enabled: boolean
   onRevoke: (device: RemoteDevice) => void
+  onSetTier: (device: RemoteDevice, tier: RemoteTier) => void
 }): React.JSX.Element {
   const activity = deviceActivity(device.last_seen_at, now)
   const active = activity === 'Active now'
@@ -259,7 +268,14 @@ function DeviceRow({
       title={device.name}
       desc={`Paired ${shortDate(device.created_at)}`}
     >
-      <Inline gap="large"><Inline gap="small"><SetupDot tone={active ? 'ok' : 'muted'} /><Text size="small" tone={active ? 'success' : 'muted'}>{activity}</Text></Inline><Button
+      <Inline gap="large"><Select
+        aria-label={`Access for ${device.name}`}
+        data-testid={`settings-remote-tier-${device.id}`}
+        value={device.tier}
+        options={TIER_OPTIONS}
+        disabled={!enabled}
+        onChange={(tier) => onSetTier(device, tier as RemoteTier)}
+      /><Inline gap="small"><SetupDot tone={active ? 'ok' : 'muted'} /><Text size="small" tone={active ? 'success' : 'muted'}>{activity}</Text></Inline><Button
         variant="muted-link"
         disabled={!enabled}
         data-testid={`settings-remote-revoke-${device.id}`}
@@ -281,7 +297,7 @@ export function RemoteSection({
   onChangeRoute: () => void
 }): React.JSX.Element {
   const state = useRemote(client)
-  const { remote, error, configure, revoke, regenerateCertificate } = state
+  const { remote, error, configure, revoke, setTier, regenerateCertificate } = state
   const [regenerating, setRegenerating] = useState(false)
   const [editingBind, setEditingBind] = useState(false)
   const [editingNtfy, setEditingNtfy] = useState(false)
@@ -309,6 +325,7 @@ export function RemoteSection({
           onEditBind={() => setEditingBind(true)}
           onEditNtfy={() => setEditingNtfy(true)}
           onRevoke={setRevoking}
+          onSetTier={(device, tier) => setTier(device.id, tier)}
           onRegenerate={() => setRegenerating(true)}
         />
       )}
@@ -364,11 +381,12 @@ type RemoteGroupProps = {
   onEditBind: () => void
   onEditNtfy: () => void
   onRevoke: (device: RemoteDevice) => void
+  onSetTier: (device: RemoteDevice, tier: RemoteTier) => void
   onRegenerate: () => void
 }
 
 function RemoteGroups(props: RemoteGroupProps): React.JSX.Element {
-  const { remote, onRevoke } = props
+  const { remote, onRevoke, onSetTier } = props
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     // Last-seen labels age without polling; minute precision matches their displayed units.
@@ -377,7 +395,7 @@ function RemoteGroups(props: RemoteGroupProps): React.JSX.Element {
   }, [])
   return <>
     <SectionHead variant="section" title="Paired devices" count={remote.devices.length} />
-    <SettingsList>{remote.devices.length ? remote.devices.map((device) => <DeviceRow key={device.id} device={device} enabled={remote.enabled} now={now} onRevoke={onRevoke} />) : <Row title="No devices paired" desc="Show a code above to pair your first device." />}</SettingsList>
+    <SettingsList>{remote.devices.length ? remote.devices.map((device) => <DeviceRow key={device.id} device={device} enabled={remote.enabled} now={now} onRevoke={onRevoke} onSetTier={onSetTier} />) : <Row title="No devices paired" desc="Show a code above to pair your first device." />}</SettingsList>
     <Card shape="card"><SettingsDisclosure heading="Phone notifications" status={<Text size="small" tone="muted">{remote.ntfy_server ? `${remote.ntfy_server} · after ${remote.notify_delay_secs}s waiting` : 'Off'}</Text>}><RemoteNotifications {...props} /></SettingsDisclosure></Card>
     <Card shape="card"><SettingsDisclosure heading="Route and address" status={<Text size="small" tone="muted">{routeKind(remote)} · {remote.bind}</Text>}><RemoteRoute {...props} /></SettingsDisclosure></Card>
     <Card shape="card"><SettingsDisclosure heading="Dictation" status={<Text size="small" tone="muted">{remote.dictation && remote.enabled ? 'On' : 'Off'}</Text>}><RemoteDictation {...props} /></SettingsDisclosure></Card>

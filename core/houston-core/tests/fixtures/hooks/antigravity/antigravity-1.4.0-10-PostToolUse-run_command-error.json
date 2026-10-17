@@ -1,0 +1,12 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "modelName": "gemini-3.6-flash-medium",
+  "stepIdx": 4,
+  "toolCall": {
+    "name": "run_command",
+    "args": { "CommandLine": "cargo test --workspace", "Cwd": "/home/user/code/myproj" }
+  },
+  "error": "exit status 101",
+  "_note": "field names from the Antigravity hooks documentation (PostToolUse: toolCall, stepIdx, optional error, common fields; run_command takes CommandLine and Cwd); values are synthetic"
+}

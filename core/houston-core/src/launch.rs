@@ -112,28 +112,44 @@ fn write_owner_only(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Providers Houston still recognises (stored rows, detected processes) but no longer launches.
+pub const RETIRED_PROVIDERS: [proto::AgentKind; 2] =
+    [proto::AgentKind::Cursor, proto::AgentKind::Grok];
+
+/// The providers Houston launches, in the order refusals list them.
+pub const LAUNCHABLE_PROVIDER_NAMES: &str = "claude, codex, antigravity, opencode or zcode";
+
+/// The refusal for a retired provider, or `None` when `agent` is not retired.
+pub fn retired_provider_refusal(agent: proto::AgentKind) -> Option<String> {
+    let name = match agent {
+        proto::AgentKind::Cursor => "cursor",
+        proto::AgentKind::Grok => "grok",
+        _ => return None,
+    };
+    Some(format!(
+        "{name} is no longer a supported provider: Houston recognises it but cannot launch it; \
+         close this pane or choose {LAUNCHABLE_PROVIDER_NAMES}"
+    ))
+}
+
+pub fn ensure_launchable(agent: proto::AgentKind) -> Result<()> {
+    match retired_provider_refusal(agent) {
+        Some(refusal) => bail!("{refusal}"),
+        None => Ok(()),
+    }
+}
+
 pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
         proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
-        proto::AgentKind::Grok => [
-            "pane_submit",
-            "pane_report",
-            "pane_reply",
-            "pane_message",
-            "pane_wait",
-            "pane_deny",
-            "pane_escalate",
-        ]
-        .into_iter()
-        .flat_map(|name| ["--allow".into(), format!("mcp__houston__{name}")])
-        .collect(),
         _ => Vec::new(),
     }
 }
 
 pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<String>> {
     use proto::AgentKind::*;
+    ensure_launchable(agent)?;
     match agent {
         Codex => {
             let directory = cwd.display().to_string();
@@ -153,8 +169,6 @@ pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<St
             }
             Ok(vec!["-c".into(), format!("projects={{{projects}}}")])
         }
-        Cursor => Ok(vec!["--trust".into()]),
-        Grok => Ok(Vec::new()),
         Claude | Antigravity | Opencode | Zcode => Ok(Vec::new()),
         other => {
             bail!("worktree spawn refused for provider {other:?}: expected a spawnable provider")
@@ -172,70 +186,20 @@ pub fn worktree_trust_warning(agent: proto::AgentKind) -> Option<String> {
     Some(format!("{provider} may ask to trust this new worktree folder before it starts; answer it in the child's pane"))
 }
 
-pub fn prepare_worktree_trust(
-    env: &crate::host_env::HostEnv,
-    agent: proto::AgentKind,
-    cwd: &Path,
-) -> Result<()> {
-    if agent != proto::AgentKind::Grok {
-        return Ok(());
-    }
-    let home = crate::agent_hooks::ConfigHome::from_env(env)?;
-    let path = home.home.join(".grok/trusted_folders.toml");
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = LOCK.lock().expect("worktree trust lock");
-    let contents = match std::fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e.into()),
-    };
-    let parsed: toml::Value = contents.parse().map_err(|e| {
-        anyhow::anyhow!(
-            "Grok worktree trust refused: {} must be valid TOML: {e}",
-            path.display()
-        )
-    })?;
-    let directory = cwd.display().to_string();
-    if let Some(entry) = parsed
-        .get("folders")
-        .and_then(|folders| folders.get(&directory))
-    {
-        if entry.get("trusted").and_then(toml::Value::as_bool) == Some(true) {
-            return Ok(());
-        }
-        bail!("Grok worktree trust refused: directory {directory:?} already has an unmanaged trust entry; expected trusted = true");
-    }
-    let quoted = toml::Value::String(directory).to_string();
-    let block = format!("\n# >>> houston managed worktree trust >>>\n[folders.{quoted}]\ntrusted = true\ndecided_at = {}\n# <<< houston managed worktree trust <<<\n", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs());
-    let updated = format!("{contents}{block}");
-    updated.parse::<toml::Value>().map_err(|e| {
-        anyhow::anyhow!(
-            "Grok worktree trust refused: {} must remain valid TOML: {e}",
-            path.display()
-        )
-    })?;
-    let parent = path.parent().expect("trust store has a parent");
-    std::fs::create_dir_all(parent)?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    use std::io::Write;
-    temporary.write_all(updated.as_bytes())?;
-    temporary.persist(&path).map_err(|e| e.error)?;
-    Ok(())
-}
-
 fn executable(agent: proto::AgentKind) -> Result<&'static str> {
     match agent {
         proto::AgentKind::Claude => Ok("claude"),
         proto::AgentKind::Codex => Ok("codex"),
         proto::AgentKind::Antigravity => Ok("agy"),
         proto::AgentKind::Opencode => Ok("opencode"),
-        proto::AgentKind::Cursor => Ok("cursor-agent"),
-        proto::AgentKind::Grok => Ok("grok"),
         proto::AgentKind::Zcode => Ok("zcode"),
-        other => bail!(
-            "agent kind {other:?} cannot run a routine in a pane (expected claude, codex, \
-             antigravity, opencode, cursor, grok or zcode)"
-        ),
+        other => {
+            ensure_launchable(other)?;
+            bail!(
+                "agent kind {other:?} cannot run a routine in a pane (expected claude, codex, \
+                 antigravity, opencode or zcode)"
+            )
+        }
     }
 }
 
@@ -258,6 +222,7 @@ pub fn launch_args(
     prompt_file_dir: Option<&Path>,
     label: &str,
 ) -> Result<LaunchArgs> {
+    ensure_launchable(agent)?;
     if prompt.trim().is_empty() {
         return Ok((flags_only(agent, auto_approve, plan_mode, model)?, None));
     }
@@ -274,12 +239,11 @@ pub fn launch_args(
         proto::AgentKind::Codex => vec![prompt_arg],
         proto::AgentKind::Antigravity => vec!["-i".into(), prompt_arg],
         proto::AgentKind::Opencode => vec!["--prompt".into(), prompt_arg],
-        proto::AgentKind::Cursor | proto::AgentKind::Grok => vec![prompt_arg],
         proto::AgentKind::Custom => return Ok((Vec::new(), None)),
         other => {
             bail!(
                 "agent kind {other:?} is not spawnable (expected claude, codex, antigravity, \
-                 opencode, cursor or grok)"
+                 opencode or zcode)"
             )
         }
     };
@@ -338,19 +302,18 @@ pub(crate) fn flags_only(
     model: Option<&str>,
 ) -> Result<Vec<String>> {
     let mut args: Vec<String> = Vec::new();
+    ensure_launchable(agent)?;
     match agent {
         proto::AgentKind::Claude
         | proto::AgentKind::Codex
         | proto::AgentKind::Antigravity
         | proto::AgentKind::Opencode
-        | proto::AgentKind::Cursor
-        | proto::AgentKind::Grok
         | proto::AgentKind::Zcode => {}
         proto::AgentKind::Custom => return Ok(args),
         other => {
             bail!(
                 "agent kind {other:?} is not spawnable (expected claude, codex, antigravity, \
-                 opencode, cursor, grok or zcode)"
+                 opencode or zcode)"
             )
         }
     }
@@ -386,11 +349,6 @@ pub(crate) fn flags_only(
                 args.push("--agent".into());
                 args.push("plan".into());
             }
-            proto::AgentKind::Cursor => args.push("--plan".into()),
-            proto::AgentKind::Grok => {
-                args.push("--permission-mode".into());
-                args.push("plan".into());
-            }
             _ => unreachable!("filtered above"),
         }
     } else if auto_approve {
@@ -398,12 +356,8 @@ pub(crate) fn flags_only(
     }
     if let Some(model) = model.filter(|m| !m.trim().is_empty()) {
         match agent {
-            proto::AgentKind::Claude | proto::AgentKind::Cursor | proto::AgentKind::Antigravity => {
-                args.push("--model".into())
-            }
-            proto::AgentKind::Codex | proto::AgentKind::Opencode | proto::AgentKind::Grok => {
-                args.push("-m".into())
-            }
+            proto::AgentKind::Claude | proto::AgentKind::Antigravity => args.push("--model".into()),
+            proto::AgentKind::Codex | proto::AgentKind::Opencode => args.push("-m".into()),
             _ => unreachable!("filtered above; ZCode's model is refused"),
         }
         args.push(model.trim().into());
@@ -416,8 +370,9 @@ pub(crate) fn effort_args(
     effort: proto::ChatEffort,
 ) -> Result<Vec<String>> {
     let value = effort.cli_value().to_string();
+    ensure_launchable(agent)?;
     match agent {
-        proto::AgentKind::Claude | proto::AgentKind::Antigravity | proto::AgentKind::Grok => {
+        proto::AgentKind::Claude | proto::AgentKind::Antigravity => {
             Ok(vec!["--effort".into(), value])
         }
         proto::AgentKind::Codex => Ok(vec![
@@ -448,7 +403,7 @@ pub fn planning_refusal(agent: proto::AgentKind) -> Option<&'static str> {
 /// Every refusal `planning_refusal` makes, for the planning control.
 pub fn planning_refusals() -> Vec<proto::PlanningRefusal> {
     use proto::AgentKind::*;
-    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+    [Claude, Codex, Antigravity, Opencode, Zcode]
         .into_iter()
         .filter_map(|agent| {
             planning_refusal(agent).map(|reason| proto::PlanningRefusal {
@@ -487,7 +442,7 @@ pub fn routine_access_refusal(
 pub fn routine_engine_refusals() -> Vec<proto::RoutineEngineRefusal> {
     use proto::AgentKind::*;
     use proto::ChatPermissionMode::*;
-    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+    [Claude, Codex, Antigravity, Opencode, Zcode]
         .into_iter()
         .flat_map(|engine| [AcceptEdits, BypassPermissions].map(|mode| (engine, mode)))
         .filter_map(|(engine, permission_mode)| {
@@ -551,8 +506,6 @@ pub fn auto_approve_args(agent: proto::AgentKind) -> Option<Vec<String>> {
             "--dangerously-bypass-approvals-and-sandbox".to_string()
         ]),
         proto::AgentKind::Opencode => Some(vec!["--auto".to_string()]),
-        proto::AgentKind::Cursor => Some(vec!["--yolo".to_string()]),
-        proto::AgentKind::Grok => Some(vec!["--always-approve".to_string()]),
         proto::AgentKind::Zcode => Some(vec!["--mode".to_string(), "yolo".to_string()]),
         _ => None,
     }
@@ -589,12 +542,9 @@ pub fn resume_needs_transcript(agent: proto::AgentKind) -> bool {
 
 pub fn auto_mode_args(agent: proto::AgentKind) -> Option<Vec<String>> {
     match agent {
-        proto::AgentKind::Claude | proto::AgentKind::Grok => {
-            Some(vec!["--permission-mode".to_string(), "auto".to_string()])
-        }
+        proto::AgentKind::Claude => Some(vec!["--permission-mode".to_string(), "auto".to_string()]),
         proto::AgentKind::Opencode => Some(vec!["--auto".to_string()]),
         proto::AgentKind::Codex => Some(vec!["--approve-for-me".to_string()]),
-        proto::AgentKind::Cursor => Some(vec!["--auto-review".to_string()]),
         proto::AgentKind::Antigravity => {
             Some(vec!["--mode".to_string(), "accept-edits".to_string()])
         }
@@ -774,26 +724,7 @@ mod tests {
             super::dialogue_permission_args(Claude),
             ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
         );
-        assert_eq!(
-            super::dialogue_permission_args(Grok),
-            [
-                "--allow",
-                "mcp__houston__pane_submit",
-                "--allow",
-                "mcp__houston__pane_report",
-                "--allow",
-                "mcp__houston__pane_reply",
-                "--allow",
-                "mcp__houston__pane_message",
-                "--allow",
-                "mcp__houston__pane_wait",
-                "--allow",
-                "mcp__houston__pane_deny",
-                "--allow",
-                "mcp__houston__pane_escalate"
-            ]
-        );
-        for agent in [Codex, Antigravity, Opencode, Cursor] {
+        for agent in [Codex, Antigravity, Opencode, Cursor, Grok] {
             assert!(super::dialogue_permission_args(agent).is_empty());
         }
     }
@@ -880,7 +811,7 @@ mod tests {
             .map(|r| (r.agent, r.reason))
             .collect();
         assert_eq!(listed.iter().map(|(a, _)| *a).collect::<Vec<_>>(), [Zcode]);
-        for agent in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+        for agent in [Claude, Codex, Antigravity, Opencode, Zcode] {
             let refused = flags_only(agent, false, true, None).err();
             match listed.iter().find(|(a, _)| *a == agent) {
                 Some((_, reason)) => {
@@ -923,7 +854,7 @@ mod tests {
             .collect();
         let pairs: Vec<_> = listed.iter().map(|(e, m, _)| (*e, *m)).collect();
         assert_eq!(pairs, [(Opencode, AcceptEdits), (Zcode, AcceptEdits)]);
-        for engine in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+        for engine in [Claude, Codex, Antigravity, Opencode, Zcode] {
             for mode in [AcceptEdits, BypassPermissions] {
                 let refused = routine_argv(engine, None, None, mode).err();
                 match listed.iter().find(|(e, m, _)| (*e, *m) == (engine, mode)) {
@@ -991,7 +922,7 @@ mod tests {
     #[test]
     fn auto_mode_is_never_the_dangerous_bypass() {
         use proto::AgentKind::*;
-        for kind in [Claude, Codex, Antigravity, Cursor, Grok] {
+        for kind in [Claude, Codex, Antigravity] {
             let (Some(auto), Some(bypass)) = (auto_mode_args(kind), auto_approve_args(kind)) else {
                 continue;
             };
@@ -1002,12 +933,9 @@ mod tests {
             auto_mode_args(Claude).unwrap(),
             vec!["--permission-mode", "auto"]
         );
-        assert_eq!(
-            auto_mode_args(Grok).unwrap(),
-            vec!["--permission-mode", "auto"]
-        );
         assert_eq!(auto_mode_args(Opencode).unwrap(), vec!["--auto"]);
-        assert_eq!(auto_mode_args(Cursor).unwrap(), vec!["--auto-review"]);
+        assert_eq!(auto_mode_args(Cursor), None);
+        assert_eq!(auto_mode_args(Grok), None);
         assert_eq!(auto_mode_args(Codex).unwrap(), vec!["--approve-for-me"]);
         assert_eq!(
             auto_mode_args(Antigravity).unwrap(),
@@ -1036,7 +964,7 @@ mod tests {
             Claude,
             "some-model-shipped-next-year"
         ));
-        for kind in [Grok, Codex, Antigravity, Opencode, Cursor, Shell] {
+        for kind in [Codex, Antigravity, Opencode, Shell] {
             assert!(
                 !model_blocks_auto_mode(kind, "haiku"),
                 "{kind:?} was never measured"
@@ -1098,7 +1026,7 @@ mod tests {
         assert!(err.contains("no bounded accept-edits mode"), "{err}");
 
         let err = routine_argv(
-            proto::AgentKind::Cursor,
+            proto::AgentKind::Opencode,
             None,
             Some(proto::ChatEffort::High),
             proto::ChatPermissionMode::BypassPermissions,
@@ -1112,7 +1040,7 @@ mod tests {
     fn approval_mode_args_delegate_to_the_underlying_tables() {
         use proto::AgentKind::*;
         assert_eq!(ApprovalMode::Default.args(Claude), Some(Vec::new()));
-        for kind in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Shell] {
+        for kind in [Claude, Codex, Antigravity, Opencode, Shell] {
             assert_eq!(ApprovalMode::Auto.args(kind), auto_mode_args(kind));
             assert_eq!(ApprovalMode::Bypass.args(kind), auto_approve_args(kind));
         }
@@ -1179,28 +1107,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(a, vec!["--prompt", "p", "--auto"]);
-        let (a, _) = launch_args(
-            proto::AgentKind::Cursor,
-            true,
-            false,
-            None,
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "--yolo"]);
-        let (a, _) = launch_args(
-            proto::AgentKind::Grok,
-            true,
-            false,
-            None,
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "--always-approve"]);
         let err = launch_args(
             proto::AgentKind::Shell,
             false,
@@ -1213,14 +1119,7 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("Shell"), "error should name the kind: {err}");
-        for expected in [
-            "claude",
-            "codex",
-            "antigravity",
-            "opencode",
-            "cursor",
-            "grok",
-        ] {
+        for expected in ["claude", "codex", "antigravity", "opencode", "zcode"] {
             assert!(err.contains(expected), "{expected} missing from: {err}");
         }
     }
@@ -1280,28 +1179,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(a, vec!["--prompt", "p", "-m", "anthropic/claude-opus-5"]);
-        let (a, _) = launch_args(
-            proto::AgentKind::Cursor,
-            false,
-            false,
-            Some("sonnet-4.5"),
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "--model", "sonnet-4.5"]);
-        let (a, _) = launch_args(
-            proto::AgentKind::Grok,
-            false,
-            false,
-            Some("grok-4"),
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "-m", "grok-4"]);
         let (a, _) = launch_args(
             proto::AgentKind::Claude,
             false,
@@ -1363,37 +1240,16 @@ mod tests {
         .unwrap();
         assert_eq!(a, vec!["--prompt", "p", "--agent", "plan"]);
         let (a, _) = launch_args(
-            proto::AgentKind::Cursor,
-            false,
-            true,
-            None,
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "--plan"]);
-        let (a, _) = launch_args(
-            proto::AgentKind::Grok,
-            false,
-            true,
-            None,
-            "p",
-            Some(dir),
-            "x",
-        )
-        .unwrap();
-        assert_eq!(a, vec!["p", "--permission-mode", "plan"]);
-        for kind in [
             proto::AgentKind::Opencode,
-            proto::AgentKind::Cursor,
-            proto::AgentKind::Grok,
-        ] {
-            let (a, _) = launch_args(kind, true, true, None, "p", Some(dir), "x").unwrap();
-            for bypass in ["--auto", "--yolo", "--always-approve"] {
-                assert!(!a.iter().any(|f| f == bypass), "{kind:?} emitted {bypass}");
-            }
-        }
+            true,
+            true,
+            None,
+            "p",
+            Some(dir),
+            "x",
+        )
+        .unwrap();
+        assert!(!a.iter().any(|f| f == "--auto"), "opencode emitted --auto");
         let (a, _) = launch_args(
             proto::AgentKind::Claude,
             true,
@@ -1434,11 +1290,54 @@ mod tests {
     }
 
     #[test]
+    fn retired_providers_are_refused_by_name_at_every_launch_entry_point() {
+        use proto::AgentKind::{Cursor, Grok};
+        let dir = Path::new("/tmp/scope");
+        let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
+        for (kind, name) in [(Cursor, "cursor"), (Grok, "grok")] {
+            let expected = format!(
+                "{name} is no longer a supported provider: Houston recognises it but cannot \
+                 launch it; close this pane or choose claude, codex, antigravity, opencode or zcode"
+            );
+            let errors = [
+                launch_args(kind, false, false, None, "p", Some(dir), "x").unwrap_err(),
+                launch_args(kind, false, false, None, "", None, "x").unwrap_err(),
+                launch_args(kind, false, false, None, &long, None, "x").unwrap_err(),
+                flags_only(kind, true, false, None).unwrap_err(),
+                routine_argv(
+                    kind,
+                    None,
+                    None,
+                    proto::ChatPermissionMode::BypassPermissions,
+                )
+                .unwrap_err(),
+                effort_args(kind, proto::ChatEffort::High).unwrap_err(),
+                worktree_trust_args(kind, dir).unwrap_err(),
+                ensure_launchable(kind).unwrap_err(),
+            ];
+            for err in errors {
+                assert_eq!(err.to_string(), expected);
+            }
+            assert_eq!(auto_approve_args(kind), None);
+            assert!(!SessionLaunchSelections::supports(kind));
+        }
+        assert_eq!(retired_provider_refusal(proto::AgentKind::Claude), None);
+    }
+
+    #[test]
     fn long_prompt_without_a_file_dir_is_refused_by_name() {
         let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
-        let err = launch_args(proto::AgentKind::Grok, false, false, None, &long, None, "x")
-            .unwrap_err()
-            .to_string();
+        let err = launch_args(
+            proto::AgentKind::Codex,
+            false,
+            false,
+            None,
+            &long,
+            None,
+            "x",
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains(&long.len().to_string()), "{err}");
         assert!(err.contains(&PROMPT_FILE_THRESHOLD.to_string()), "{err}");
     }

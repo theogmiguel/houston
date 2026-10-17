@@ -48,8 +48,8 @@ another. Press `/` to focus the filename filter, then use `J` and `K` to move th
 matching files when you are not typing into a field. **Unified** and **Split** choose the
 diff layout. Press **Esc** to restore the panel's previous width.
 
-Review with agent opens a picker with the seven engines Houston can spawn — Claude Code,
-Codex, Cursor Agent, Antigravity, OpenCode, Grok or ZCode — and starts the one you choose in a
+Review with agent opens a picker with the five engines Houston can spawn — Claude Code,
+Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
 review; Cancel sends nothing at all.
 

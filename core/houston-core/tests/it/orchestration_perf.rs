@@ -91,7 +91,7 @@ fn shim_dir() -> &'static Path {
             }
         }
         let shims = home.join("provider-shims");
-        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for name in ["claude", "codex", "agy", "opencode"] {
             let shim = shims.join(name);
             std::fs::remove_file(&shim).unwrap();
             std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), shim).unwrap();

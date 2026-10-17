@@ -279,14 +279,12 @@ function humanizeState(state: string): string {
 }
 
 // The providers a task can start with, in the composer's order. Slice 3's
-// Start has no base-branch choice yet; the daemon admits exactly these six.
+// Start has no base-branch choice yet; the daemon admits exactly these five.
 export const TASK_AGENTS: readonly AgentKind[] = [
   'claude',
   'codex',
   'antigravity',
   'opencode',
-  'cursor',
-  'grok',
   'zcode'
 ]
 
@@ -295,8 +293,6 @@ const TASK_AGENT_LABEL: Readonly<Record<string, string>> = {
   codex: 'Codex',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
-  cursor: 'Cursor',
-  grok: 'Grok',
   zcode: 'ZCode'
 }
 

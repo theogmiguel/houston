@@ -22,7 +22,6 @@ describe('firstRunHookRows', () => {
     const rows = firstRunHookRows([
       state({ provider: 'claude', installed: true, version: '2.3.1' }),
       state({ provider: 'codex', version: '0.98.0' }),
-      state({ provider: 'cursor', present: false, version: null }),
       state({ provider: 'zcode', present: false, version: null })
     ])
 
@@ -30,8 +29,6 @@ describe('firstRunHookRows', () => {
       ['claude', 'reporting'],
       ['codex', 'silent'],
       ['opencode', 'not-found'],
-      ['grok', 'not-found'],
-      ['cursor', 'not-found'],
       ['antigravity', 'not-found'],
       ['zcode', 'not-found']
     ])

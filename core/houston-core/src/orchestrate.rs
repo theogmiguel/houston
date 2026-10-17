@@ -15,35 +15,22 @@ pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
 // Stay below Claude's 120-second foreground auto-background threshold.
 pub const CLAUDE_WAIT_CAP_MS: u64 = 90_000;
-// Leave thirty seconds under Cursor's inspected sixty-second MCP timeout.
-pub const CURSOR_WAIT_CAP_MS: u64 = 30_000;
 // Houston launches Codex with a 630-second tool timeout.
 pub const CODEX_WAIT_CAP_MS: u64 = 600_000;
 // Managed OpenCode launch configuration leaves thirty seconds for transport.
 pub const OPENCODE_WAIT_CAP_MS: u64 = 600_000;
-// Grok's effective per-tool timeout must also cover a transport margin.
-pub const GROK_WAIT_CAP_MS: u64 = 600_000;
 // Houston's ZCode plugin sets a 630-second tool timeout.
 pub const ZCODE_WAIT_CAP_MS: u64 = 600_000;
 // Unknown client limits get a provisional thirty-second ceiling.
 pub const UNKNOWN_WAIT_CAP_MS: u64 = 30_000;
 // Five minutes allows ordinary reviewer delays before reporting a diagnostic heuristic.
 pub const CODEX_AUTO_REVIEW_STALL_MS: u64 = 300_000;
-// Leave room for client response handling even with a short Grok override.
-const GROK_WAIT_MARGIN_MS: u64 = 30_000;
-
-pub fn provider_wait_cap(provider: proto::AgentKind, grok_timeout_ms: Option<u64>) -> u64 {
+pub fn provider_wait_cap(provider: proto::AgentKind) -> u64 {
     match provider {
         proto::AgentKind::Claude => CLAUDE_WAIT_CAP_MS,
-        proto::AgentKind::Cursor => CURSOR_WAIT_CAP_MS,
         proto::AgentKind::Codex => CODEX_WAIT_CAP_MS,
         proto::AgentKind::Opencode => OPENCODE_WAIT_CAP_MS,
         proto::AgentKind::Zcode => ZCODE_WAIT_CAP_MS,
-        proto::AgentKind::Grok => grok_timeout_ms.map_or(UNKNOWN_WAIT_CAP_MS, |timeout| {
-            timeout
-                .saturating_sub(GROK_WAIT_MARGIN_MS)
-                .clamp(1, GROK_WAIT_CAP_MS)
-        }),
         _ => UNKNOWN_WAIT_CAP_MS,
     }
 }
@@ -411,7 +398,6 @@ pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'stat
     use proto::AgentKind::*;
     match provider {
         Codex => Ok(b"\x1b"),
-        Grok => Ok(b"\x03"),
         Claude => anyhow::bail!("mode restart refused for provider Claude: native interrupt reporting requires a supported launch-scoped mod and no live restart contract is verified; accepted modes: queue, steer"),
         Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
         Zcode => anyhow::bail!("mode restart refused for provider ZCode: Stop does not run after an interrupt and the interrupt cancels ZCode's own hooks, so no idle is reported; accepted modes: queue, steer"),
@@ -424,8 +410,8 @@ pub fn prompt_mode_supported(provider: proto::AgentKind, mode: PromptMode) -> an
     if mode == PromptMode::Queue {
         return Ok(());
     }
-    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Cursor | Grok | Zcode),
-        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode, Cursor, Grok or ZCode");
+    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Zcode),
+        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode or ZCode");
     if mode == PromptMode::Restart {
         prompt_interrupt_key(provider)?;
     }
@@ -821,11 +807,10 @@ pub struct ProviderCapabilities {
     pub door2: bool,
 }
 
-const LAST_MESSAGE_PROVIDERS: [proto::AgentKind; 6] = [
+const LAST_MESSAGE_PROVIDERS: [proto::AgentKind; 5] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
-    proto::AgentKind::Cursor,
     proto::AgentKind::Antigravity,
     proto::AgentKind::Zcode,
 ];
@@ -884,7 +869,6 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
         proto::AgentKind::Codex
             | proto::AgentKind::Antigravity
             | proto::AgentKind::Opencode
-            | proto::AgentKind::Cursor
             | proto::AgentKind::Zcode
     ) {
         notes.push(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode"));
@@ -967,7 +951,6 @@ pub const ENABLED_KEY: &str = "agent_orchestration_master";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusSource {
     HooksFull,
-    HooksPartial,
     ProcessOnly,
 }
 
@@ -975,7 +958,6 @@ impl StatusSource {
     pub fn label(self) -> &'static str {
         match self {
             StatusSource::HooksFull => "hooks-full",
-            StatusSource::HooksPartial => "hooks-partial",
             StatusSource::ProcessOnly => "process-only",
         }
     }
@@ -989,11 +971,9 @@ pub fn status_source(agent: proto::AgentKind) -> StatusSource {
     match agent {
         proto::AgentKind::Claude
         | proto::AgentKind::Codex
-        | proto::AgentKind::Grok
         | proto::AgentKind::Opencode
         | proto::AgentKind::Antigravity
         | proto::AgentKind::Zcode => StatusSource::HooksFull,
-        proto::AgentKind::Cursor => StatusSource::HooksPartial,
         _ => StatusSource::ProcessOnly,
     }
 }
@@ -2633,7 +2613,7 @@ Only the operator may approve. Denial remains pending until provider evidence;
 unsupported provider paths refuse. Input episode ids are distinct from worker
 `request_id`. Escalation transfers ownership to User, showing amber and notifications.
 A bare Codex Auto PermissionRequest is approval activity, not evidence of a human
-wait, and does not alert. Cursor has no needs-input signal. The operator can
+wait, and does not alert. The operator can
 intervene before escalation; the parent receives a note. Accepted Stop/ACP turn
 end or parent close/death escalates unanswered input; quiet-settle never does.
 Do not paste a new task over a question or approval prompt.
@@ -2664,8 +2644,7 @@ For reusable workers, `pane_prompt` / `hs-pane prompt --mode` supports:
 - `steer`: write during work; delivery does not prove adoption. Authoritative
   adoption starts a distinct request round.
 - `restart`: interrupt, wait for authoritative idle, then write. Verified only
-  for Codex (Escape) and Grok (Ctrl+C); Claude, Antigravity, OpenCode and Cursor
-  are refused. Never derive idle from terminal text.
+  for Codex (Escape); Claude, Antigravity, OpenCode and ZCode are refused. Never derive idle from terminal text.
 
 Every accepted prompt returns a stable `instruction_id`, `accepted` and current
 `state`; acceptance does not prove delivery or completion. With CLI `--wait`,
@@ -2687,7 +2666,7 @@ HTTP uses GET `/orchestrate/instruction-list?session=SESSION` and
 POST `/orchestrate/escalate` takes `{child,reason}`.
 These doors use the pane credential and the same ancestry rules as MCP and CLI.
 
-Houston preserves the selected approval mode. Claude and Grok receive launch-only
+Houston preserves the selected approval mode. Claude receives launch-only
 allow rules for the local dialogue tools: submit, report, reply, wait, deny and escalate.
 Other providers may require approval for these tools in ask mode. Delivery failures stay in your inbox and `pane_wait` reports
 why automatic delivery stopped. A dead parent passes rows to its nearest live
@@ -2980,7 +2959,7 @@ const USAGE: &str = "\
 hs-pane — a Houston pane controlling sibling agent panes
 
   hs-pane whoami
-  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok|zcode> --prompt \"…\" [--client-request-id KEY]
+  hs-pane spawn --kind <claude|codex|antigravity|opencode|zcode> --prompt \"…\" [--client-request-id KEY]
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
@@ -3244,9 +3223,7 @@ fn pane_cli_inner(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Re
         }
         "spawn" => {
             let kind = flags.get("kind").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "spawn needs --kind <claude|codex|antigravity|opencode|cursor|grok|zcode>"
-                )
+                anyhow::anyhow!("spawn needs --kind <claude|codex|antigravity|opencode|zcode>")
             })?;
             let prompt = flags.get("prompt").ok_or_else(|| {
                 anyhow::anyhow!(
@@ -4318,7 +4295,7 @@ mod tests {
     #[test]
     fn turn_end_is_observable_for_every_provider_but_the_unmapped_ones() {
         use proto::AgentKind::*;
-        for kind in [Claude, Codex, Antigravity, Opencode, Cursor, Grok] {
+        for kind in [Claude, Codex, Antigravity, Opencode] {
             assert!(signals_turn_end(kind), "{kind:?} maps a turn end");
         }
         assert!(!signals_turn_end(Custom));
@@ -4327,7 +4304,7 @@ mod tests {
     #[test]
     fn turn_start_is_observable_for_every_provider_but_the_unmapped_ones() {
         use proto::AgentKind::*;
-        for kind in [Claude, Codex, Antigravity, Opencode, Cursor, Grok] {
+        for kind in [Claude, Codex, Antigravity, Opencode] {
             assert!(signals_turn_start(kind), "{kind:?} maps a turn start");
         }
         assert!(!signals_turn_start(Custom));
@@ -4541,7 +4518,7 @@ mod tests {
     #[test]
     fn every_provider_gets_a_turn_end_source_and_acp_outranks_the_table() {
         use proto::AgentKind::*;
-        for hooked in [Claude, Codex, Antigravity, Opencode, Cursor, Grok] {
+        for hooked in [Claude, Codex, Antigravity, Opencode] {
             assert_eq!(
                 turn_end_source(hooked, false, false),
                 TurnEndSource::QuietSettle
@@ -4636,16 +4613,14 @@ mod tests {
     #[test]
     fn status_source_matches_the_provider_maps() {
         use proto::AgentKind::*;
-        for k in [Claude, Codex, Grok, Opencode, Antigravity] {
+        for k in [Claude, Codex, Opencode, Antigravity] {
             assert_eq!(status_source(k), StatusSource::HooksFull);
             assert!(
                 status_source(k).reports_block(),
                 "{k:?} must see NeedsInput"
             );
         }
-        assert_eq!(status_source(Cursor), StatusSource::HooksPartial);
-        assert!(!status_source(Cursor).reports_block());
-        for k in [Shell, Custom, Ssh] {
+        for k in [Shell, Custom, Ssh, Cursor, Grok] {
             assert_eq!(status_source(k), StatusSource::ProcessOnly);
         }
     }
@@ -4658,8 +4633,6 @@ mod tests {
             Claude,
             Codex,
             Opencode,
-            Cursor,
-            Grok,
             Antigravity,
             Shell,
             Custom,
@@ -4692,7 +4665,6 @@ mod tests {
         );
         assert!(provider_capabilities(Claude).last_message);
         assert!(provider_capabilities(Codex).last_message);
-        assert!(provider_capabilities(Cursor).last_message);
         assert!(provider_capabilities(Antigravity).last_message);
     }
 
@@ -4711,13 +4683,11 @@ mod tests {
             assert_eq!(v["decision"], decision, "{provider:?}");
             assert_eq!(v["reason"], text, "{provider:?}");
         }
-        for provider in [Grok, Opencode, Cursor] {
-            assert_eq!(
-                door2_continue_json(provider, text),
-                None,
-                "{provider:?} has no verified shape"
-            );
-        }
+        assert_eq!(
+            door2_continue_json(Opencode, text),
+            None,
+            "Opencode has no verified shape"
+        );
     }
 
     #[test]
@@ -4997,7 +4967,6 @@ mod tests {
             proto::AgentKind::Codex,
             proto::AgentKind::Antigravity,
             proto::AgentKind::Opencode,
-            proto::AgentKind::Cursor,
         ] {
             assert!(
                 capability_note(kind)
@@ -5014,26 +4983,6 @@ mod tests {
             let provider = provider_label(kind);
             assert_eq!(capability_note(kind), Some(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode")));
         }
-        assert_eq!(
-            capability_note(proto::AgentKind::Cursor).as_deref(),
-            Some(
-                "cursor: needs-input not reported by this provider; cursor has no \
-                 turn-end continuation; results wait for its next idle; cursor has no \
-                 handback-only launch rule configured; pane_submit follows its approval mode"
-            )
-        );
-        let provider = provider_label(proto::AgentKind::Grok);
-        assert_eq!(
-            capability_note(proto::AgentKind::Grok).as_deref(),
-            Some(
-                format!(
-                    "{provider} reports no last message; the exit or the submit is what the \
-                     parent gets; {provider} has no turn-end continuation; results wait for \
-                     its next idle"
-                )
-                .as_str()
-            )
-        );
         assert_eq!(
             capability_note(proto::AgentKind::Opencode).as_deref(),
             Some("opencode has no turn-end continuation; results wait for its next idle; opencode has no handback-only launch rule configured; pane_submit follows its approval mode")
@@ -5063,7 +5012,6 @@ mod tests {
     #[test]
     fn labels_are_the_plan_spellings() {
         assert_eq!(StatusSource::HooksFull.label(), "hooks-full");
-        assert_eq!(StatusSource::HooksPartial.label(), "hooks-partial");
         assert_eq!(StatusSource::ProcessOnly.label(), "process-only");
     }
 
@@ -7250,25 +7198,18 @@ mod provider_wait_tests {
         use proto::AgentKind::*;
         for (provider, expected) in [
             (Claude, 90_000),
-            (Cursor, 30_000),
             (Codex, 600_000),
-            (Grok, 600_000),
             (Opencode, 600_000),
             (Antigravity, 30_000),
         ] {
-            assert_eq!(
-                provider_wait_cap(provider, Some(630_000)),
-                expected,
-                "{provider:?}"
-            );
+            assert_eq!(provider_wait_cap(provider), expected, "{provider:?}");
             let note = wait_cap_note(provider, 700_000, expected).unwrap();
             assert!(note.contains("700000") && note.contains(&expected.to_string()));
             assert!(note.contains(&provider_label(provider)));
             assert!(wait_cap_note(provider, 1, expected).is_none());
         }
-        assert_eq!(provider_wait_cap(Grok, Some(45_000)), 15_000);
-        assert_eq!(provider_wait_cap(Grok, None), 30_000);
-        assert_eq!(provider_wait_cap(Grok, Some(1_000)), 1);
+        assert_eq!(provider_wait_cap(Grok), 30_000);
+        assert_eq!(provider_wait_cap(Cursor), 30_000);
     }
 
     #[test]
@@ -7360,15 +7301,11 @@ mod prompt_delivery_tests {
             prompt_interrupt_key(proto::AgentKind::Codex).unwrap(),
             b"\x1b"
         );
-        assert_eq!(
-            prompt_interrupt_key(proto::AgentKind::Grok).unwrap(),
-            b"\x03"
-        );
         for (provider, name) in [
             (proto::AgentKind::Claude, "Claude"),
             (proto::AgentKind::Opencode, "OpenCode"),
             (proto::AgentKind::Antigravity, "Antigravity"),
-            (proto::AgentKind::Cursor, "Cursor"),
+            (proto::AgentKind::Zcode, "ZCode"),
         ] {
             assert!(prompt_mode_supported(provider, PromptMode::Steer).is_ok());
             let error = prompt_mode_supported(provider, PromptMode::Restart)

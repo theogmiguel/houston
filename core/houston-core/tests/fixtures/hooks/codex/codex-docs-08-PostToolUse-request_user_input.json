@@ -1,21 +1,26 @@
 {
-  "_note": "reconstructed from the Codex hook reference local-function PostToolUse schema",
+  "_note": "derived from the openai/codex rust-v0.163.0 sources (request_user_input.rs, registry.rs default post_tool_use_payload): tool_response is the tool's text body, a JSON string keyed by question id; not captured live",
   "hook_event_name": "PostToolUse",
   "session_id": "codex-session-1",
   "turn_id": "turn-question-1",
+  "cwd": "/home/user/code/myproj",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "transcript_path": null,
   "tool_name": "request_user_input",
+  "tool_use_id": "call_question_1",
   "tool_input": {
     "questions": [
       {
-        "header": "Choice",
+        "id": "scope",
+        "header": "Scope",
         "question": "Which option should be used?",
-        "options": []
+        "options": [
+          { "label": "First", "description": "The smaller change." },
+          { "label": "Second", "description": "The wider change." }
+        ]
       }
     ]
   },
-  "tool_output": {
-    "answers": {
-      "Which option should be used?": "First"
-    }
-  }
+  "tool_response": "{\"answers\":{\"scope\":{\"answers\":[\"First\"]}}}"
 }

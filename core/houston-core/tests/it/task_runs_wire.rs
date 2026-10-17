@@ -18,7 +18,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -201,7 +201,7 @@ impl Rig {
         conn.execute(
             "INSERT INTO backlog_task_runs (task_id, attempt, kind, state, provider, session_id, \
                  worktree_path, branch, initial_revision, summary, reason, started_at, ended_at) \
-             VALUES (?1, 1, 'implementation', 'running', 'grok', ?2, ?3, ?4, ?5, NULL, NULL, 0, \
+             VALUES (?1, 1, 'implementation', 'running', 'codex', ?2, ?3, ?4, ?5, NULL, NULL, 0, \
                  NULL)",
             rusqlite::params![
                 task_id,

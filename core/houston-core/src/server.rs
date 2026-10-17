@@ -2060,6 +2060,7 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || {
                 let providers = daemon.agent_hooks_state_rescanned();
                 daemon.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+                daemon.send_control_to(conn_id, &daemon.agent_accounts_state());
             });
             Ok(())
         }
@@ -3881,6 +3882,14 @@ async fn dispatch(
             let result = tokio::task::spawn_blocking(move || d.remote_device_revoke(id))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("remote revoke panicked: {e}")));
+            remote_reply(sink, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::RemoteDeviceSetTier { id, tier } => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_device_set_tier(id, tier))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("remote tier change panicked: {e}")));
             remote_reply(sink, result).await;
             Ok(())
         }

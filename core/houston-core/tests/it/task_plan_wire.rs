@@ -1023,8 +1023,8 @@ async fn next_and_queue_skip_higher_priority_unready_task_for_ready_work() {
     let shim_root = tempfile::tempdir().unwrap();
     let home = shim_root.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let argv_path = shim_root.path().join("grok-argv.txt");
-    let env = provider_shim(&common::base_env(), &home, "grok", &argv_path);
+    let argv_path = shim_root.path().join("codex-argv.txt");
+    let env = provider_shim(&common::base_env(), &home, "codex", &argv_path);
     let (addr, state, daemon) = start_daemon_with_handle_in(env).await;
     let workspace_path = workspace(state.path());
     let workspace = workspace_path.display().to_string();
@@ -1117,7 +1117,7 @@ async fn next_and_queue_skip_higher_priority_unready_task_for_ready_work() {
     );
 
     let queued = daemon
-        .task_queue_run(parent, 1, Some(proto::AgentKind::Grok))
+        .task_queue_run(parent, 1, Some(proto::AgentKind::Codex))
         .unwrap();
     let proto::ServerMsg::TaskQueueResult {
         started,

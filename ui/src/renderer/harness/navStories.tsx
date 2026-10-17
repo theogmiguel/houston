@@ -315,8 +315,7 @@ export function NavMcp({ slackClient = null, results = [], inSettings = false }:
         tools={[
           mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]),
           mcpColumn('codex', [mcpServer('linear', 'L')]),
-          mcpColumn('opencode', [mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')]),
-          mcpColumn('cursor', [mcpServer('postgres-local', 'P')])
+          mcpColumn('opencode', [mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')])
         ]}
         results={results}
         checks={[["github", { state: 'failed', message: 'npx was not found on PATH' }]]}
@@ -393,12 +392,11 @@ export function NavHooks(): React.JSX.Element {
           hook({ provider: 'codex', path: '~/.codex/config.toml', scope: 'global', enabled: true }),
           hook({ provider: 'opencode', path: '~/.config/opencode/plugin/tr.js', scope: 'global' }),
           hook({
-            provider: 'cursor',
-            path: '~/.cursor/hooks.json',
+            provider: 'antigravity',
+            path: '~/.gemini/config/hooks.json',
             scope: 'global',
             error: 'hooks.json is not valid JSON — Houston refused to rewrite it.'
           }),
-          hook({ provider: 'grok', path: '~/.grok/hooks/houston.json', scope: 'global' }),
           hook({ provider: 'zcode', path: '~/.zcode/cli/config.json', scope: 'global' })
         ]}
         onSet={noop}

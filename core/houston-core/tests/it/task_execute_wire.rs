@@ -21,7 +21,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -311,7 +311,7 @@ async fn execute_is_advertised_only_to_a_spawnable_caller_and_refused_by_name() 
             "tools/call",
             json!({
                 "name": "task_execute",
-                "arguments": { "id": 1, "agent": "grok" },
+                "arguments": { "id": 1, "agent": "codex" },
             }),
         )
         .await;
@@ -329,7 +329,7 @@ async fn execute_is_advertised_only_to_a_spawnable_caller_and_refused_by_name() 
         .daemon
         .orchestrate_spawn(
             parent,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             None,
             None,
             "leaf brief".to_string().into(),
@@ -360,7 +360,7 @@ async fn execute_spawns_a_child_with_a_delegation_and_the_task_worktree() {
             &r.workspace(),
             id,
             parent,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             None,
             "task_execute",
         )
@@ -420,7 +420,7 @@ async fn a_structured_result_ticks_acceptance_and_moves_to_review() {
             &r.workspace(),
             id,
             parent,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             None,
             "task_execute",
         )
@@ -464,7 +464,7 @@ async fn a_malformed_result_leaves_the_run_needing_review_with_the_raw_text() {
             &r.workspace(),
             id,
             parent,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             None,
             "task_execute",
         )
