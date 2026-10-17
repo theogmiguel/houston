@@ -79,6 +79,7 @@ fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
         launcher.is_file(),
         "Codex consent must prepare its own native launcher"
     );
+    houston_core::claude_hooks::wait_for_launcher_prewarm();
     std::fs::remove_file(&launcher).unwrap();
     daemon.install_consented_agent_hooks();
     assert!(
@@ -276,6 +277,7 @@ fn installed_codex_hooks_deliver_events_through_cmd_and_survive_refresh() {
         groups.keys().map(String::as_str).collect::<Vec<_>>()
     );
 
+    houston_core::claude_hooks::wait_for_launcher_prewarm();
     std::fs::remove_file(executable_launcher(&launcher)).unwrap();
     let missing = run_hook(
         command_of("SessionStart"),
