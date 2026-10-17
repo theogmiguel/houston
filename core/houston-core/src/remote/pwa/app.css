@@ -846,3 +846,36 @@ body[data-view="list"] .banner { top: calc(64px + env(safe-area-inset-top)); }
 #menu-note { margin-bottom: 8px; }
 #menu-note.error { color: var(--stop-text); }
 body.composing .changes, body.composing .term-view { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+/* ---------- Workspace tab, New pane ---------- */
+.ws-line { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s2); min-width: 0; }
+.ws-line small { color: var(--text-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-picker svg { width: 15px; height: 15px; }
+.ws-picker:disabled { opacity: 1; }
+.section-count { margin-left: auto; font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.ws-empty { margin: 0 0 var(--s2); color: var(--text-muted); font-size: 13.5px; }
+.ws-card { display: grid; gap: 8px; padding: 12px; margin-bottom: var(--s2); color: inherit; text-decoration: none; }
+.ws-task { grid-template-columns: 1fr auto; align-items: center; }
+.ws-task-main { display: grid; gap: 2px; min-width: 0; }
+.ws-task-main small { color: var(--text-muted); font-size: 12px; }
+.tag.bad { background: var(--stop-bg); color: var(--stop-text); }
+.usage-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.usage-row .mono { font-size: 12.5px; color: var(--text-secondary); }
+.meter { height: 6px; border-radius: 3px; background: var(--press-fill); overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.meter.hot i { background: var(--warn); }
+.fab {
+  position: fixed; right: calc(var(--gutter) + env(safe-area-inset-right)); bottom: calc(var(--tab-h) + 16px + env(safe-area-inset-bottom)); z-index: 21;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 18px 0 14px; border: 0; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--accent-ink); font-size: 14.5px; font-weight: 600; box-shadow: var(--shadow-lg);
+  transition: transform var(--fast) var(--ease);
+}
+.fab:active { transform: scale(0.95); }
+.spawn-body { display: grid; gap: 14px; margin-bottom: 12px; }
+.spawn-body .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.spawn-body select.input { appearance: auto; min-height: 44px; }
+.field-hint { margin: 4px 2px 0; font-size: 12px; color: var(--text-muted); }
+.sheet .callout { margin-bottom: 10px; }
+.sheet-row svg.on { margin-left: auto; color: var(--accent); }
+.tag.plain { text-transform: none; }
+#spawn-submit { position: sticky; bottom: 0; }

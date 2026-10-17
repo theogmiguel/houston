@@ -5,6 +5,7 @@
   var REPLIES_KEY = "houston.remote.replies";
   var COLLAPSED_KEY = "houston.remote.collapsed";
   var KEYBOARD_KEY = "houston.remote.keyboard";
+  var WORKSPACE_KEY = "houston.remote.wsTab";
   // With the event stream up, polling is only a safety net; without it, the
   // client polls at these rates until the stream reconnects.
   var SAFETY_MS = 30000, LIST_MS = 3000, FEED_MS = 2500, SCREEN_MS = 1500, SCREEN_LINES = 40;
@@ -35,6 +36,8 @@
     antigravity: ["/help", "/clear"],
     zcode: ["/help", "/clear"]
   };
+  // Provider kinds a phone may start; the daemon refuses the rest by name.
+  var SPAWNABLE = { claude: 1, codex: 1, antigravity: 1, opencode: 1, zcode: 1 };
   var KEYS = [
     ["Esc", ["esc"]], ["↑", ["up"]], ["↓", ["down"]], ["←", ["left"]], ["→", ["right"]], ["Tab", ["tab"]], ["⏎", ["enter"]], ["^C", ["ctrl+c"], true]
   ];
@@ -72,6 +75,7 @@
     sent: {}, seenPending: {}, selection: {}, activityFilter: "all", activityAt: null, feedBusy: false, activityBusy: false,
     swapIn: null, inboxDir: null,
     authGeneration: 0, paneGeneration: 0, requests: {}, httpRequests: new Set(),
+    ws: { loaded: false, list: [], path: null, prs: null, tasks: null, usage: null, errors: {} }, spawn: null,
     features: {}, back: "conv", termChosen: false, autoTerm: false, changes: null, changesError: "", pr: null, diffPath: null, diff: null, diffError: ""
   };
 
@@ -424,6 +428,7 @@
   function refreshAll() {
     loadSessions();
     if (S.home === "activity") loadActivity();
+    if (S.home === "workspace" && S.view === "list") loadWorkspace();
     if (S.pane != null) { loadFeed(); if (S.tab === "term") loadScreen(); else if (S.tab === "changes" && S.diffPath == null) loadChanges(); }
   }
 
@@ -449,6 +454,7 @@
     $("pane-menu").classList.toggle("hidden", view !== "pane");
     $("term-toggle").classList.toggle("hidden", view !== "pane");
     $("provider-avatar").classList.toggle("hidden", view !== "pane");
+    if (view !== "list") $("fab").classList.add("hidden");
     $("tabbar").classList.toggle("hidden", view !== "list");
     $("bar-meta").classList.add("hidden");
     $("jump").classList.add("hidden");
@@ -558,11 +564,11 @@
   function unpair(ending) {
     resetAuthRequests();
     S.token = null;
-    S.sessions = []; S.grids = []; S.entries = []; S.pending = null; S.inboxFeed = {}; S.activity = []; S.activityLast = 0; S.activityEpoch = null; S.activityLoaded = false; S.me = {}; S.sent = {}; S.seenPending = {}; S.pendingPair = null; S.deepLink = false; S.reachable = false; S.loaded = false; S.selection = {}; S.busy = false; S.feedBusy = false; S.activityBusy = false; S.stopArmed = false; S.activityAt = null; S.features = {}; S.changes = null; S.pr = null; S.diffPath = null; S.diff = null;
+    S.sessions = []; S.grids = []; S.entries = []; S.pending = null; S.inboxFeed = {}; S.activity = []; S.activityLast = 0; S.activityEpoch = null; S.activityLoaded = false; S.me = {}; S.sent = {}; S.seenPending = {}; S.pendingPair = null; S.deepLink = false; S.reachable = false; S.loaded = false; S.selection = {}; S.busy = false; S.feedBusy = false; S.activityBusy = false; S.stopArmed = false; S.activityAt = null; S.features = {}; S.ws = { loaded: false, list: [], path: null, prs: null, tasks: null, usage: null, errors: {} }; S.spawn = null; S.changes = null; S.pr = null; S.diffPath = null; S.diff = null;
     $("text").value = ""; setOther(null); toggleKeys(false);
     $("quick-replies").replaceChildren(); $("children").replaceChildren(); $("child-band").replaceChildren(); $("changes-view").replaceChildren();
     $("feed").replaceChildren(); $("list").replaceChildren(); $("card").replaceChildren(); $("screen").textContent = "";
-    ["commands-sheet", "menu-sheet", "replies-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
+    ["commands-sheet", "menu-sheet", "replies-sheet", "ws-sheet", "spawn-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
     document.body.classList.remove("offline");
     document.title = "Houston";
     store(TOKEN_KEY, null);
@@ -632,7 +638,7 @@
 
   // ---- Home ----
 
-  function homeTitle() { return { inbox: "Inbox", panes: "Panes", activity: "Activity", computer: "Computer" }[S.home]; }
+  function homeTitle() { return { inbox: "Inbox", panes: "Panes", workspace: "Workspace", activity: "Activity", computer: "Computer" }[S.home]; }
 
   function renderList() {
     document.body.dataset.home = S.home;
@@ -645,7 +651,9 @@
     if (S.home === "inbox") renderInbox(root);
     else if (S.home === "activity") renderActivity(root);
     else if (S.home === "computer") renderComputer(root);
+    else if (S.home === "workspace") renderWorkspace(root);
     else renderPanes(root);
+    renderFab();
     if (S.swapIn) { animate(root, "enter-fade"); S.swapIn = null; }
   }
 
@@ -655,13 +663,14 @@
     window.scrollTo(0, 0);
     renderList();
     if (tab === "activity") loadActivity();
+    if (tab === "workspace") loadWorkspace();
     if (tab === "computer") { loadMe().catch(function (e) { if (!e.stale) toast(e.message, true); }); loadCa(); }
   }
 
   function renderTabs() {
     var root = $("tabbar"), n = S.sessions.filter(needsYou).length;
     if (!root.children.length) {
-      [["inbox", "Inbox", "inbox"], ["panes", "Panes", "grid"], ["activity", "Activity", "activity"], ["computer", "Computer", "computer"]].forEach(function (t) {
+      [["inbox", "Inbox", "inbox"], ["panes", "Panes", "grid"], ["workspace", "Workspace", "branch"], ["activity", "Activity", "activity"], ["computer", "Computer", "computer"]].forEach(function (t) {
         var b = button("nav-tab", null, function () { setHome(t[0]); });
         b.dataset.tab = t[0];
         b.appendChild(icon(t[2])); b.appendChild(el("span", null, t[1]));
@@ -989,7 +998,7 @@
 
   function loadMe() {
     var request = beginRequest("me", false);
-    return api("GET", "/api/me", null, request).then(function (d) { if (!request.current()) return; S.me = d; setLive(S.live); renderMic(); if (S.view === "list" && S.home === "computer") renderList(); });
+    return api("GET", "/api/me", null, request).then(function (d) { if (!request.current()) return; S.me = d; setLive(S.live); renderMic(); if (S.view === "list" && (S.home === "computer" || S.home === "panes")) renderList(); });
   }
 
   function loadActivity() {
@@ -2288,6 +2297,269 @@
     return card;
   }
 
+  // ---- Workspace tab: pull requests, tasks, usage ----
+
+  // Meters turn amber from here, as the context bar does.
+  var USAGE_WARN = 80;
+
+  function wsGet(request, feature, path) {
+    if (S.features[feature] === false) return Promise.resolve(null);
+    return api("GET", path, null, request).then(function (d) { delete S.ws.errors[feature]; return d; }, function (e) {
+      if (e.stale) throw e;
+      if (missing(e)) S.features[feature] = false; else S.ws.errors[feature] = e.message;
+      return null;
+    });
+  }
+
+  // Each section loads on its own, so a computer missing one route still shows the others.
+  function loadWorkspace() {
+    if (!S.token) return Promise.resolve();
+    var request = beginRequest("workspace", false), ws = S.ws;
+    var usage = wsGet(request, "usage", "/api/usage");
+    return wsGet(request, "workspaces", "/api/workspaces").then(function (list) {
+      if (!request.current()) return;
+      ws.list = Array.isArray(list) ? list : workspaces();
+      var wanted = ws.path || stored(WORKSPACE_KEY) || S.filter;
+      if (!ws.list.some(function (w) { return w.path === wanted; })) wanted = ws.list.length ? ws.list[0].path : null;
+      ws.path = wanted;
+      var q = encodeURIComponent(wanted || "");
+      return Promise.all([
+        wanted ? wsGet(request, "prs", "/api/workspaces/prs?path=" + q) : null,
+        wanted ? wsGet(request, "tasks", "/api/tasks?workspace=" + q) : null,
+        usage
+      ]);
+    }).then(function (r) {
+      if (!r || !request.current()) return;
+      ws.prs = r[0]; ws.tasks = r[1]; ws.usage = r[2]; ws.loaded = true;
+      if (S.view === "list" && S.home === "workspace") renderList();
+    }).catch(function (e) { if (!e.stale && request.current()) { ws.loaded = true; ws.errors.all = e.message; if (S.view === "list" && S.home === "workspace") renderList(); } });
+  }
+
+  function meter(percent) {
+    var m = el("div", "meter" + (percent >= USAGE_WARN ? " hot" : "")), bar = el("i");
+    bar.style.width = Math.max(0, Math.min(100, percent)) + "%";
+    m.setAttribute("role", "meter"); m.setAttribute("aria-valuemin", "0"); m.setAttribute("aria-valuemax", "100"); m.setAttribute("aria-valuenow", String(Math.round(percent)));
+    m.appendChild(bar);
+    return m;
+  }
+
+  function money(v) { return "$" + (Number(v) || 0).toFixed(2); }
+
+  function checksText(c) {
+    if (!c) return "";
+    var parts = [(c.passed || 0) + " passed"];
+    if (c.pending) parts.push(c.pending + " pending");
+    if (c.failed) parts.push(c.failed + " failed");
+    return parts.join(" · ");
+  }
+
+  function renderWorkspace(root) {
+    var ws = S.ws;
+    if (!ws.loaded) { skeleton(root, "card", 3); return; }
+    var features = ["workspaces", "prs", "tasks", "usage"];
+    if (features.every(function (f) { return S.features[f] === false; })) { emptyState(root, "branch", "Workspace isn't available", "This computer runs a Houston that does not report pull requests, tasks or usage to phones yet."); return; }
+    if (ws.errors.all) root.appendChild(el("p", "callout danger", ws.errors.all));
+    var current = ws.list.filter(function (w) { return w.path === ws.path; })[0];
+    if (current) {
+      var picker = button("chip ws-picker", null, function () { if (ws.list.length > 1) openWorkspacePicker(); });
+      picker.appendChild(icon("folder")); picker.appendChild(el("span", null, current.name));
+      if (ws.list.length > 1) { picker.appendChild(icon("chevD", "chev")); picker.setAttribute("aria-haspopup", "dialog"); picker.setAttribute("aria-label", "Workspace " + current.name + ", change"); }
+      else picker.disabled = true;
+      var line = el("div", "ws-line"); line.appendChild(picker);
+      if (current.branch) line.appendChild(el("small", null, current.branch + (current.dirty === true ? " · uncommitted changes" : current.dirty === false ? " · clean" : "")));
+      root.appendChild(line);
+    }
+    if (S.features.prs !== false) {
+      root.appendChild(sectionHead("Pull requests", ws.prs ? String(ws.prs.length) : ""));
+      if (ws.errors.prs) root.appendChild(el("p", "callout danger", ws.errors.prs));
+      else if (!ws.prs || !ws.prs.length) root.appendChild(el("p", "ws-empty", "No open pull requests."));
+      else ws.prs.forEach(function (pr) {
+        var card = el(safeUrl(pr.url) ? "a" : "div", "card ws-card");
+        if (safeUrl(pr.url)) { card.href = safeUrl(pr.url); card.target = "_blank"; card.rel = "noopener noreferrer"; }
+        var head = el("div", "pr-head"); head.appendChild(el("span", "pr-n mono", "#" + pr.number)); head.appendChild(el("b", null, pr.title || "")); card.appendChild(head);
+        var meta = el("div", "pr-meta");
+        if (pr.review) meta.appendChild(el("span", "tag", String(pr.review).replace(/_/g, " ")));
+        if (pr.checks) meta.appendChild(el("span", "tag plain" + (pr.checks.failed ? " bad" : ""), checksText(pr.checks)));
+        if (meta.children.length) card.appendChild(meta);
+        root.appendChild(card);
+      });
+    }
+    if (S.features.tasks !== false) {
+      root.appendChild(sectionHead("Open tasks", ws.tasks ? String(ws.tasks.length) : ""));
+      if (ws.errors.tasks) root.appendChild(el("p", "callout danger", ws.errors.tasks));
+      else if (!ws.tasks || !ws.tasks.length) root.appendChild(el("p", "ws-empty", "No open tasks."));
+      else ws.tasks.forEach(function (t) {
+        var card = el("div", "card ws-card ws-task"), main = el("span", "ws-task-main");
+        main.appendChild(el("b", null, t.title || "Task " + t.id));
+        main.appendChild(el("small", null, (t.state || "") + (t.pane != null ? " · pane " + t.pane : "")));
+        card.appendChild(main);
+        if (t.pane != null && session(t.pane)) card.appendChild(button("btn", "Open", function () { openPane(t.pane); }));
+        root.appendChild(card);
+      });
+    }
+    if (S.features.usage !== false) {
+      var u = ws.usage;
+      root.appendChild(sectionHead("Usage today", u && u.today ? money(u.today.cost_usd) : ""));
+      if (ws.errors.usage) root.appendChild(el("p", "callout danger", ws.errors.usage));
+      else if (!u) root.appendChild(el("p", "ws-empty", "No usage reported."));
+      else {
+        var card2 = el("div", "card ws-card");
+        ((u.today && u.today.by_provider) || []).forEach(function (r) {
+          var row2 = el("div", "usage-row"); row2.appendChild(el("span", null, kindName(r.kind))); row2.appendChild(el("span", "mono", money(r.cost_usd))); card2.appendChild(row2);
+        });
+        (u.limits || []).forEach(function (l) {
+          var row3 = el("div", "usage-row"); row3.appendChild(el("span", null, kindName(l.kind) + " " + l.window)); row3.appendChild(el("span", "mono", Math.round(l.percent) + "%")); card2.appendChild(row3); card2.appendChild(meter(l.percent));
+        });
+        if (u.stale) card2.appendChild(el("p", "decision-note", "Cached figures; the computer could not refresh them in time."));
+        root.appendChild(card2);
+      }
+    }
+  }
+
+  function sectionHead(title, count) {
+    var h = el("h2", "section-head", title);
+    if (count) h.appendChild(el("span", "section-count", count));
+    return h;
+  }
+
+  function openWorkspacePicker() {
+    var list = $("ws-list");
+    list.replaceChildren();
+    S.ws.list.forEach(function (w) {
+      var b = button("sheet-row", null, function () {
+        closeSheet($("ws-sheet"));
+        if (S.ws.path === w.path) return;
+        S.ws.path = w.path; S.ws.loaded = false; store(WORKSPACE_KEY, w.path);
+        renderList(); loadWorkspace();
+      });
+      b.appendChild(icon("folder")); b.appendChild(el("span", null, w.name));
+      if (w.path === S.ws.path) b.appendChild(icon("check", "on"));
+      list.appendChild(b);
+    });
+    openSheet($("ws-sheet"));
+  }
+
+  // ---- New pane ----
+
+  function renderFab() {
+    var show = S.view === "list" && S.home === "panes" && atLeast("manage") && S.features.spawn !== false;
+    $("fab").classList.toggle("hidden", !show);
+  }
+
+  function spawnProviders() {
+    return ((S.spawn && S.spawn.opts.providers) || []).filter(function (p) { return p.installed && SPAWNABLE[p.kind] === 1; });
+  }
+
+  // Only these fields leave the phone: approval mode is not one of them, so a new pane always asks first.
+  function spawnPayload(form) {
+    var text = function (v) { v = String(v == null ? "" : v).trim(); return v || null; };
+    return { kind: form.kind, workspace: form.workspace, model: text(form.model), effort: text(form.effort), profile: form.profile == null || form.profile === "" ? null : form.profile, worktree: text(form.worktree), prompt: text(form.prompt) };
+  }
+
+  function openSpawn() {
+    if (!atLeast("manage")) return;
+    var request = beginRequest("spawn-options", false);
+    api("GET", "/api/spawn-options", null, request).then(function (d) {
+      if (!request.current()) return;
+      S.spawn = { opts: d, form: {}, busy: false, error: "" };
+      var kinds = spawnProviders();
+      if (!kinds.length) { toast("No installed agent can be started from here.", true); return; }
+      var wsList = d.workspaces || [];
+      var path = (S.filter && wsList.some(function (w) { return w.path === S.filter; })) ? S.filter : wsList.length ? wsList[0].path : null;
+      S.spawn.form = { kind: kinds[0].kind, workspace: path, model: "", effort: "", profile: null, worktree: "", prompt: "" };
+      renderSpawn();
+      openSheet($("spawn-sheet"));
+    }).catch(function (e) {
+      if (!request.current() || e.stale) return;
+      if (missing(e)) { S.features.spawn = false; renderFab(); toast("This computer's Houston can't start panes from a phone yet. Update Houston on the computer.", true); }
+      else toast(e.message, true);
+    });
+  }
+
+  function field(label, control, hint) {
+    var wrap = el("div", "field"), l = el("label", "field-label", label);
+    control.id = control.id || "sp-" + label.toLowerCase().replace(/\W+/g, "-");
+    l.htmlFor = control.id;
+    wrap.appendChild(l); wrap.appendChild(control);
+    if (hint) wrap.appendChild(el("p", "field-hint", hint));
+    return wrap;
+  }
+
+  function choiceRow(label, values, current, onPick) {
+    var wrap = el("div", "field"), row = el("div", "opts");
+    wrap.appendChild(el("span", "field-label", label));
+    row.setAttribute("role", "group"); row.setAttribute("aria-label", label);
+    values.forEach(function (v) {
+      var b = button("chip", v[1], function () { onPick(v[0]); });
+      b.setAttribute("aria-pressed", String(current === v[0]));
+      row.appendChild(b);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  function renderSpawn() {
+    var st = S.spawn, form = st.form, root = $("spawn-body"), prov = spawnProviders().filter(function (p) { return p.kind === form.kind; })[0];
+    root.replaceChildren();
+    root.appendChild(choiceRow("Agent", spawnProviders().map(function (p) { return [p.kind, kindName(p.kind)]; }), form.kind, function (kind) {
+      form.kind = kind; form.model = ""; form.effort = ""; form.profile = null; renderSpawn();
+    }));
+    var wsel = el("select", "input");
+    (st.opts.workspaces || []).forEach(function (w) { var o = el("option", null, w.name); o.value = w.path; o.selected = w.path === form.workspace; wsel.appendChild(o); });
+    wsel.addEventListener("change", function () { form.workspace = wsel.value; });
+    root.appendChild(field("Workspace", wsel));
+    if (prov && prov.models && prov.models.length) {
+      var msel = el("select", "input"), def = el("option", null, "Default"); def.value = ""; msel.appendChild(def);
+      prov.models.forEach(function (m) { var o = el("option", null, m); o.value = m; o.selected = m === form.model; msel.appendChild(o); });
+      msel.addEventListener("change", function () { form.model = msel.value; });
+      root.appendChild(field("Model", msel));
+    } else {
+      var minput = el("input", "input"); minput.value = form.model; minput.placeholder = "Default"; minput.autocomplete = "off"; minput.autocapitalize = "off";
+      minput.addEventListener("input", function () { form.model = minput.value; });
+      root.appendChild(field("Model", minput));
+    }
+    if (prov && prov.efforts && prov.efforts.length) {
+      root.appendChild(choiceRow("Effort", [["", "Default"]].concat(prov.efforts.map(function (e) { return [e, e]; })), form.effort, function (e) { form.effort = e; renderSpawn(); }));
+    }
+    if (prov && prov.accounts && prov.accounts.length > 1) {
+      var asel = el("select", "input");
+      prov.accounts.forEach(function (a) { var o = el("option", null, a.name); o.value = a.id == null ? "" : String(a.id); o.selected = (a.id == null ? null : a.id) === form.profile; asel.appendChild(o); });
+      asel.addEventListener("change", function () {
+        var hit = prov.accounts.filter(function (a) { return (a.id == null ? "" : String(a.id)) === asel.value; })[0];
+        form.profile = hit && hit.id != null ? hit.id : null;
+      });
+      root.appendChild(field("Account", asel));
+    }
+    var wt = el("input", "input"); wt.value = form.worktree; wt.placeholder = "None (main checkout)"; wt.autocomplete = "off"; wt.autocapitalize = "off";
+    wt.addEventListener("input", function () { form.worktree = wt.value; });
+    root.appendChild(field("Worktree", wt, "A name starts the pane in its own Houston worktree."));
+    var pr = el("textarea", "input"); pr.rows = 3; pr.value = form.prompt; pr.placeholder = "Optional";
+    pr.addEventListener("input", function () { form.prompt = pr.value; });
+    root.appendChild(field("First prompt", pr));
+    root.appendChild(el("p", "sheet-note", "The pane asks before acting. Auto-approve can only be turned on from the computer."));
+    $("spawn-error").textContent = st.error; $("spawn-error").classList.toggle("hidden", !st.error);
+    $("spawn-submit").disabled = st.busy || !form.workspace;
+  }
+
+  function submitSpawn(form) {
+    if (!atLeast("manage")) { S.spawn.error = "This phone is paired as " + tier() + ": starting a pane needs manage. Change it in " + TIER_WHERE + "."; renderSpawn(); return Promise.resolve(false); }
+    S.spawn.busy = true; S.spawn.error = ""; renderSpawn();
+    return api("POST", "/api/sessions", spawnPayload(form)).then(function (d) {
+      S.spawn.busy = false;
+      closeSheet($("spawn-sheet"));
+      toast("Pane " + d.id + " opened");
+      later("sessions", loadSessions, 150);
+      if (d && d.id != null) openPane(d.id);
+      return true;
+    }).catch(function (e) {
+      if (e.stale) return false;
+      S.spawn.busy = false;
+      S.spawn.error = missing(e) ? "This computer's Houston can't start panes from a phone yet." : e.message;
+      renderSpawn();
+      return false;
+    });
+  }
+
   // ---- Dictation ----
 
   // The daemon refuses longer recordings; recording stops here first.
@@ -2743,6 +3015,10 @@
   $("term-toggle").addEventListener("click", function () { setTerminal(S.tab !== "term"); });
   $("term-smaller").addEventListener("click", function () { bumpScreenSize(-1); });
   $("term-larger").addEventListener("click", function () { bumpScreenSize(1); });
+  $("fab").addEventListener("click", openSpawn);
+  $("spawn-close").addEventListener("click", function () { closeSheet($("spawn-sheet")); });
+  $("spawn-submit").addEventListener("click", function () { if (S.spawn) submitSpawn(S.spawn.form); });
+  $("ws-close").addEventListener("click", function () { closeSheet($("ws-sheet")); });
   $("commands-close").addEventListener("click", function () { closeSheet($("commands-sheet")); });
   $("replies-close").addEventListener("click", function () { closeSheet($("replies-sheet")); });
   $("replies-form").addEventListener("submit", function (ev) {
@@ -2760,6 +3036,8 @@
   sheetGestures($("menu-sheet"));
   sheetGestures($("replies-sheet"), function () { if (S.view === "list" && S.home === "computer") renderList(); });
   sheetGestures($("commands-sheet"));
+  sheetGestures($("ws-sheet"));
+  sheetGestures($("spawn-sheet"));
   $("send").addEventListener("click", send);
   $("mic").addEventListener("click", function () {
     if (D.state === "idle") startDictation();

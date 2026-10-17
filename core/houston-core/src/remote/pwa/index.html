@@ -142,6 +142,7 @@
   </div>
 </main>
 
+<button id="fab" class="fab hidden" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>New pane</span></button>
 <nav id="tabbar" class="tabbar hidden" aria-label="Main navigation"></nav>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -159,6 +160,20 @@
   <div class="sheet-head"><b id="commands-title">Commands</b><span id="commands-sub"></span><button id="commands-close" class="link-btn" type="button">Done</button></div>
   <div id="commands-list" class="sheet-list"></div>
   <p class="sheet-note">A tap puts the command in the message box; nothing is sent until you press send.</p>
+</dialog>
+
+<dialog id="ws-sheet" class="sheet" tabindex="-1" aria-labelledby="ws-title">
+  <div class="grabber" aria-hidden="true"></div>
+  <div class="sheet-head"><b id="ws-title">Workspace</b><button id="ws-close" class="link-btn" type="button">Done</button></div>
+  <div id="ws-list" class="sheet-list"></div>
+</dialog>
+
+<dialog id="spawn-sheet" class="sheet tall" tabindex="-1" aria-labelledby="spawn-title">
+  <div class="grabber" aria-hidden="true"></div>
+  <div class="sheet-head"><b id="spawn-title">New pane</b><button id="spawn-close" class="link-btn" type="button">Cancel</button></div>
+  <div id="spawn-body" class="spawn-body"></div>
+  <p id="spawn-error" class="callout danger hidden" role="alert"></p>
+  <button id="spawn-submit" class="btn primary block lg" type="button">Open pane</button>
 </dialog>
 
 <dialog id="replies-sheet" class="sheet" tabindex="-1" aria-labelledby="replies-title">

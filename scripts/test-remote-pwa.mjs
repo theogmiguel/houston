@@ -559,3 +559,38 @@ test('a pane opens on its screen when it has nothing to read or waits on a gener
   assert.equal(ctx.wantsTerminal({ kind: 'claude' }, reply, { type: 'permission' }), false);
   assert.equal(ctx.wantsTerminal({ kind: 'claude' }, reply, null), false);
 });
+
+test('a new pane request never carries auto_approve, whatever the form holds', async () => {
+  const { ctx, S } = tierHarness('manage'), calls = [];
+  vm.runInContext(['spawnPayload', 'submitSpawn'].map(production).join('\n'), ctx);
+  Object.assign(ctx, { renderSpawn: () => {}, closeSheet: () => {}, toast: () => {}, openPane: () => {} });
+  ctx.api = (method, path, body) => { calls.push({ method, path, body: JSON.parse(JSON.stringify(body)) }); return Promise.resolve({ id: 462 }); };
+  S.spawn = { opts: {}, form: {}, busy: false, error: '' };
+  const form = { kind: 'claude', workspace: '/w', model: ' opus ', effort: '', profile: 3, worktree: '', prompt: 'hi', auto_approve: true, autoApprove: true, approval: 'auto' };
+  assert.equal(await ctx.submitSpawn(form), true);
+  assert.equal(calls[0].method, 'POST'); assert.equal(calls[0].path, '/api/sessions');
+  assert.deepEqual(Object.keys(calls[0].body).sort(), ['effort', 'kind', 'model', 'profile', 'prompt', 'workspace', 'worktree']);
+  assert.deepEqual(calls[0].body, { kind: 'claude', workspace: '/w', model: 'opus', effort: null, profile: 3, worktree: null, prompt: 'hi' });
+});
+
+test('a device below manage cannot start a pane', async () => {
+  const { ctx, S } = tierHarness('drive'), calls = [];
+  vm.runInContext(['spawnPayload', 'submitSpawn'].map(production).join('\n'), ctx);
+  ctx.renderSpawn = () => {}; ctx.api = (...a) => { calls.push(a); return Promise.resolve({}); };
+  S.spawn = { opts: {}, form: {}, busy: false, error: '' };
+  assert.equal(await ctx.submitSpawn({ kind: 'claude', workspace: '/w' }), false);
+  assert.equal(calls.length, 0); assert.match(S.spawn.error, /paired as drive.*needs manage/);
+});
+
+test('a computer without the workspace routes hides each section and still shows the rest', async () => {
+  const { ctx, S } = tierHarness('drive'), seen = [];
+  vm.runInContext(['wsGet', 'loadWorkspace', 'beginRequest'].map(production).join('\n'), ctx);
+  vm.runInContext(source.match(/  var WORKSPACE_KEY =[^\n]+/)[0], ctx);
+  Object.assign(ctx, { stored: () => null, workspaces: () => [{ name: 'W', path: '/w' }], renderList: () => {}, store: () => {} });
+  S.ws = { loaded: false, list: [], path: null, errors: {} }; S.requests = {}; S.view = 'pane';
+  ctx.api = (method, path) => { seen.push(path); return /prs|workspaces$/.test(path) ? Promise.reject(Object.assign(new Error('x'), { status: 404 })) : Promise.resolve(/tasks/.test(path) ? [{ id: 1 }] : { today: { cost_usd: 1 }, limits: [] }); };
+  await ctx.loadWorkspace(); await flush();
+  assert.equal(S.features.workspaces, false); assert.equal(S.features.prs, false);
+  assert.equal(S.ws.loaded, true); assert.equal(S.ws.tasks.length, 1); assert.equal(S.ws.usage.today.cost_usd, 1);
+  assert.equal(S.ws.path, '/w', 'the workspace list falls back to the panes already known');
+});
