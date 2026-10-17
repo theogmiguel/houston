@@ -46,7 +46,8 @@ function fakeClient() {
     remoteConfigure: vi.fn(),
     remotePairStart: vi.fn(),
     remoteCaRegenerate: vi.fn(),
-    remoteDeviceRevoke: vi.fn()
+    remoteDeviceRevoke: vi.fn(),
+    remoteDeviceSetTier: vi.fn()
   }
   const emit = (msg: ServerMsg): void => {
     act(() => {
@@ -64,7 +65,7 @@ describe('RemoteSection', () => {
     renderSection(asClient)
     expect(client.remoteGet).toHaveBeenCalledOnce()
     expect(screen.getByText(/Asking the daemon/)).toBeTruthy()
-    emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', tier: 'drive', created_at: 1, last_seen_at: null }] }) })
     expect(screen.getByTestId('settings-remote-status').textContent).toBe('Off. Nothing listens and nothing is sent.')
     for (const id of ['settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished', 'settings-remote-dictation']) {
       expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true)
@@ -133,7 +134,7 @@ describe('RemoteSection', () => {
     expect(screen.getByRole('img', { name: 'Pairing code' })).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByText('Scan with your phone')).toBeTruthy()
-    emit({ type: 'remote_state', remote: { ...remote, enabled: true, listening: true, devices: [{ id: 7, name: 'Phone', created_at: Date.now(), last_seen_at: Date.now() }] } })
+    emit({ type: 'remote_state', remote: { ...remote, enabled: true, listening: true, devices: [{ id: 7, name: 'Phone', tier: 'drive', created_at: Date.now(), last_seen_at: Date.now() }] } })
     expect(screen.queryByRole('img', { name: 'Pairing code' })).toBeNull()
     expect(screen.getByText('Phone')).toBeTruthy()
   })
@@ -142,9 +143,9 @@ describe('RemoteSection', () => {
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, devices: [
-      { id: 1, name: 'Phone', created_at: 1, last_seen_at: Date.now() - 30_000 },
-      { id: 2, name: 'Laptop', created_at: 1, last_seen_at: Date.now() - 3 * 3_600_000 },
-      { id: 3, name: 'Unknown', created_at: 1, last_seen_at: null }
+      { id: 1, name: 'Phone', tier: 'drive', created_at: 1, last_seen_at: Date.now() - 30_000 },
+      { id: 2, name: 'Laptop', tier: 'drive', created_at: 1, last_seen_at: Date.now() - 3 * 3_600_000 },
+      { id: 3, name: 'Unknown', tier: 'drive', created_at: 1, last_seen_at: null }
     ] }) })
     expect(screen.getByText('Active now')).toBeTruthy()
     expect(screen.getByText('Last seen 3h ago')).toBeTruthy()
@@ -161,7 +162,7 @@ describe('RemoteSection', () => {
     })
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', created_at: Date.UTC(2026, 9, 8, 12), last_seen_at: null }] }) })
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', tier: 'drive', created_at: Date.UTC(2026, 9, 8, 12), last_seen_at: null }] }) })
     expect(screen.getByText('Paired Oct 8')).toBeTruthy()
     vi.restoreAllMocks()
   })
@@ -169,7 +170,7 @@ describe('RemoteSection', () => {
   it('renders Revoke as an underlined link and Show pairing code with a phone glyph', () => {
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 7, name: 'Laptop', tier: 'drive', created_at: 1, last_seen_at: null }] }) })
     expect(screen.getByTestId('settings-remote-revoke-7').className).toContain('underline')
     expect(screen.getByTestId('settings-remote-connect-phone').querySelector('svg')).toBeTruthy()
   })
@@ -187,7 +188,7 @@ describe('RemoteSection', () => {
   it('gives Paired devices primary medium heading chrome and a right-aligned count', () => {
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: null }] }) })
+    emit({ type: 'remote_state', remote: info({ devices: [{ id: 1, name: 'Phone', tier: 'drive', created_at: 1, last_seen_at: null }] }) })
     const heading = screen.getByRole('heading', { name: /Paired devices/ })
     expect(heading.classList.contains('text-[var(--text-primary)]')).toBe(true)
     expect(heading.classList.contains('font-medium')).toBe(true)
@@ -198,7 +199,7 @@ describe('RemoteSection', () => {
   it('paints Active now text in the success tone and retains the access warning', () => {
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: Date.now() }] }) })
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', tier: 'drive', created_at: 1, last_seen_at: Date.now() }] }) })
     expect(screen.getByText('Active now').classList.contains('text-[var(--success)]')).toBe(true)
     expect(screen.getByText(/A paired device can read and type into any pane/)).toBeTruthy()
   })
@@ -211,7 +212,7 @@ describe('RemoteSection', () => {
     expect(deviceActivity(now - 120_000, now)).toBe('Last seen 2m ago')
     const { emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: now - 60_000 }] }) })
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Phone', tier: 'drive', created_at: 1, last_seen_at: now - 60_000 }] }) })
     expect(screen.getByText('Active now')).toBeTruthy()
     emit({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=fixture', qr_svg: '<svg/>', expires_at: now + 60_000 })
     expect(screen.getByRole('img', { name: 'Pairing code' })).toBeTruthy()
@@ -254,12 +255,31 @@ describe('RemoteSection', () => {
   it('lists devices and revokes only after confirmation', () => {
     const { client, emit, asClient } = fakeClient()
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 7, name: 'Laptop', tier: 'drive', created_at: 1, last_seen_at: null }] }) })
     expect(screen.getByText('Laptop')).toBeTruthy()
     fireEvent.click(screen.getByTestId('settings-remote-revoke-7'))
     expect(client.remoteDeviceRevoke).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('Revoke', { selector: 'button *' }))
     expect(client.remoteDeviceRevoke).toHaveBeenCalledWith(7)
+  })
+
+  it('shows each device tier and changes it from the select', () => {
+    const { client, emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [
+      { id: 7, name: 'Laptop', tier: 'observe', created_at: 1, last_seen_at: null },
+      { id: 8, name: 'Phone', tier: 'drive', created_at: 1, last_seen_at: null }
+    ] }) })
+    expect(screen.getByTestId('settings-remote-tier-7').textContent).toContain('Observe')
+    expect(screen.getByTestId('settings-remote-tier-8').textContent).toContain('Drive')
+    fireEvent.mouseDown(screen.getByTestId('settings-remote-tier-8'))
+    fireEvent.mouseUp(screen.getByRole('option', { name: 'Manage' }))
+    expect(client.remoteDeviceSetTier).toHaveBeenCalledWith(8, 'manage')
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [
+      { id: 7, name: 'Laptop', tier: 'observe', created_at: 1, last_seen_at: null },
+      { id: 8, name: 'Phone', tier: 'manage', created_at: 1, last_seen_at: null }
+    ] }) })
+    expect(screen.getByTestId('settings-remote-tier-8').textContent).toContain('Manage')
   })
 
   it('shows remote refusals and ignores other errors', () => {

@@ -1524,12 +1524,14 @@ mod conflict_pass;
 mod harness_review;
 mod provider_deny;
 mod remote;
+mod remote_phone;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod title_generation;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
+pub use remote_phone::RemoteSpawn;
 
 type TranscriptLink = (Option<String>, Option<String>);
 

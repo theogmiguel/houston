@@ -113,7 +113,7 @@ describe('ConnectPhoneDialog', () => {
 
   it('shows only a newly paired device as confirmed, then connects another', () => {
     const { client, emit, onClose } = setup()
-    const old = { id: 1, name: 'Old phone', created_at: 1, last_seen_at: null }
+    const old = { id: 1, name: 'Old phone', tier: 'drive' as const, created_at: 1, last_seen_at: null }
     emit({ type: 'remote_state', remote: info({ ...ready, devices: [old] }) })
     emit(code())
     emit({ type: 'remote_state', remote: info({ ...ready, devices: [old] }) })

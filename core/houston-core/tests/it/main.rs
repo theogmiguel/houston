@@ -90,6 +90,7 @@ mod recovery_ownership;
 mod remote_access_wire;
 mod remote_feed_wire;
 mod remote_notify_wire;
+mod remote_phone_wire;
 mod remote_pwa_script;
 mod remote_tls_wire;
 mod remote_ws_wire;

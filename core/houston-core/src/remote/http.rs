@@ -33,6 +33,7 @@ use super::{
 };
 use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
+use houston_protocol as proto;
 
 const INDEX_HTML: &str = include_str!("pwa/index.html");
 const APP_JS: &str = include_str!("pwa/app.js");
@@ -371,13 +372,14 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/sessions/{id}/decide", post(decide))
         .route("/api/sessions/{id}/dictate", post(dictate))
         .route("/api/events", get(events))
+        .merge(super::http_phone::routes())
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(daemon.clone(), guard))
         .with_state(daemon)
 }
 
-fn error(status: StatusCode, message: impl Into<String>) -> Response {
+pub(super) fn error(status: StatusCode, message: impl Into<String>) -> Response {
     (status, Json(json!({ "error": message.into() }))).into_response()
 }
 
@@ -630,6 +632,58 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .filter(|t| !t.is_empty())
 }
 
+/// Every authenticated route and the tier a device needs to call it. The only
+/// place a route is bound to a tier, so a handler cannot forget the check.
+#[derive(Clone, Copy)]
+pub(super) enum Route {
+    Read(&'static str),
+    Drive(&'static str),
+    Manage(&'static str),
+}
+
+impl Route {
+    fn label(self) -> &'static str {
+        match self {
+            Route::Read(l) | Route::Drive(l) | Route::Manage(l) => l,
+        }
+    }
+
+    fn needs(self) -> proto::RemoteTier {
+        match self {
+            Route::Read(_) => proto::RemoteTier::Observe,
+            Route::Drive(_) => proto::RemoteTier::Drive,
+            Route::Manage(_) => proto::RemoteTier::Manage,
+        }
+    }
+}
+
+fn tier_refusal(device: &RemoteDeviceRow, route: Route) -> Refused {
+    Refused::from(error(
+        StatusCode::FORBIDDEN,
+        format!(
+            "this device is paired as {}: {} needs {}; change it in Settings > Phone & remote \
+             access > Paired devices on the computer",
+            device.tier.as_str(),
+            route.label(),
+            route.needs().as_str()
+        ),
+    ))
+}
+
+/// `authenticate`, then the device's tier against what `route` needs.
+pub(super) fn authorize(
+    daemon: &Daemon,
+    headers: &HeaderMap,
+    source: IpAddr,
+    route: Route,
+) -> Result<RemoteDeviceRow, Refused> {
+    let device = authenticate(daemon, headers, source)?;
+    if device.tier < route.needs() {
+        return Err(tier_refusal(&device, route));
+    }
+    Ok(device)
+}
+
 /// A missing token is not a guess and does not count. A valid token always
 /// passes: the lockout slows guessing and must not lock out paired devices.
 /// Only a wrong token counts toward, and is refused by, its source's lockout.
@@ -668,7 +722,7 @@ fn authenticate(
 }
 
 /// A refusal on its way out; boxed so `Result`s that carry it stay small.
-struct Refused(Box<Response>);
+pub(super) struct Refused(Box<Response>);
 
 impl From<Response> for Refused {
     fn from(resp: Response) -> Self {
@@ -688,7 +742,7 @@ impl IntoResponse for Refused {
     }
 }
 
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Refused> + Send + 'static,
 ) -> Result<T, Refused> {
     tokio::task::spawn_blocking(f).await.unwrap_or_else(|e| {
@@ -751,12 +805,13 @@ async fn me(
     headers: HeaderMap,
 ) -> Response {
     let result = blocking(move || {
-        let device = authenticate(&daemon, &headers, peer.0.ip())?;
+        let device = authorize(&daemon, &headers, peer.0.ip(), Route::Read("GET /api/me"))?;
         let config = daemon.remote_config();
         let url = config.effective_url();
         Ok(json!({
             "device_id": device.id,
             "name": device.name,
+            "tier": device.tier,
             "dictation": config.dictation,
             "host": {"name": super::host_name(), "version": env!("CARGO_PKG_VERSION")},
             "connection": {"url": super::feed::mask(&url), "https": url.starts_with("https://")},
@@ -775,7 +830,12 @@ async fn sessions(
     headers: HeaderMap,
 ) -> Response {
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions"),
+        )?;
         let sessions = daemon.remote_sessions();
         let grids = daemon.remote_grids(&sessions);
         Ok((sessions, grids))
@@ -809,7 +869,12 @@ async fn screen(
     };
     let lines = query.lines.unwrap_or(SCREEN_LINES_DEFAULT);
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions/{id}/screen"),
+        )?;
         daemon.remote_screen(id, lines).map_err(Refused::from)
     })
     .await;
@@ -848,7 +913,12 @@ async fn input(
         }
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Drive("POST /api/sessions/{id}/input"),
+        )?;
         daemon
             .remote_input(id, body.text.as_deref(), &body.keys)
             .map_err(Refused::from)
@@ -879,7 +949,12 @@ async fn dictate(
         let daemon = Arc::clone(&daemon);
         let source = peer.0.ip();
         blocking(move || {
-            authenticate(&daemon, &headers, source)?;
+            authorize(
+                &daemon,
+                &headers,
+                source,
+                Route::Drive("POST /api/sessions/{id}/dictate"),
+            )?;
             daemon.remote_dictate_check(id).map_err(Refused::from)
         })
         .await
@@ -951,7 +1026,12 @@ async fn activity(
         );
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/activity"),
+        )?;
         Ok(daemon.remote.feed.activity_page(query.after))
     })
     .await;
@@ -975,7 +1055,12 @@ async fn feed(
         );
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions/{id}/feed"),
+        )?;
         daemon.remote_feed(id, query.after).map_err(Refused::from)
     })
     .await;
@@ -1014,7 +1099,12 @@ async fn decide(
         }
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Drive("POST /api/sessions/{id}/decide"),
+        )?;
         daemon
             .remote_decide(
                 id,
@@ -1042,7 +1132,15 @@ async fn events(
 ) -> Response {
     let auth = {
         let daemon = Arc::clone(&daemon);
-        blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await
+        blocking(move || {
+            authorize(
+                &daemon,
+                &headers,
+                peer.0.ip(),
+                Route::Read("GET /api/events"),
+            )
+        })
+        .await
     };
     let device = match auth {
         Ok(device) => device,
@@ -1087,6 +1185,7 @@ async fn events(
                 Ok(Change::Feed(id, seq)) => Event::default()
                     .event("feed")
                     .data(json!({ "id": id, "seq": seq }).to_string()),
+                Ok(Change::Sessions) => Event::default().event("sessions").data("{}"),
                 Ok(Change::Grids) => Event::default().event("grids").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Event::default().event("resync").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,

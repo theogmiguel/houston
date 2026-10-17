@@ -3331,6 +3331,34 @@ pub enum RemoteNotifyDetail {
     PaneName,
 }
 
+/// What a paired device may do, each tier including the one before it:
+/// `Observe` reads, `Drive` also answers panes, `Manage` also changes panes
+/// and commits or pushes. Pairing and configuration stay on the computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteTier {
+    Observe,
+    Drive,
+    Manage,
+}
+
+impl RemoteTier {
+    pub const ALL: [RemoteTier; 3] = [RemoteTier::Observe, RemoteTier::Drive, RemoteTier::Manage];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RemoteTier::Observe => "observe",
+            RemoteTier::Drive => "drive",
+            RemoteTier::Manage => "manage",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.as_str() == raw)
+    }
+}
+
 /// A device paired for remote access; its token never leaves the pairing reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -3338,6 +3366,7 @@ pub struct RemoteDevice {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub name: String,
+    pub tier: RemoteTier,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
@@ -4666,6 +4695,12 @@ pub enum ClientMsg {
     RemoteDeviceRevoke {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
+    },
+    /// Sets what a paired device may do; it applies from the device's next request.
+    RemoteDeviceSetTier {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        tier: RemoteTier,
     },
     /// Replaces the grids paired devices group panes by. No reply; a refusal
     /// is an `error` with context `remote`.

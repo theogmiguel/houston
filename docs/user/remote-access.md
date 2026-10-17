@@ -12,10 +12,35 @@ Remote access is off by default. While it is off, nothing listens and nothing is
 
 ## What a paired device can do
 
-A paired device can read the screen of any pane and type into any pane, including shell
-panes. That is as much access as a shell on this computer as your user: treat a paired
-device, and the link it was paired with, like an unlocked terminal. A device cannot pair
-other devices, change settings, open or close panes. Revoke a device you lose straight away.
+At the default tier a paired device can read the screen of any pane and type into any pane,
+including shell panes. That is as much access as a shell on this computer as your user: treat
+a paired device, and the link it was paired with, like an unlocked terminal. At every tier a
+device cannot pair other devices, change settings or revoke devices; those stay on this
+computer. Revoke a device you lose straight away.
+
+### Device tiers
+
+Each paired device has a tier, shown beside its name under **Settings ▸ Phone & remote
+access ▸ Paired devices**. Each tier includes the one before it:
+
+| Tier | The device can |
+|---|---|
+| **Observe** | Read panes, their conversations and screens, activity and status. It cannot type, answer a request or dictate. |
+| **Drive** | Also type and press keys, answer permission requests and questions, and dictate. |
+| **Manage** | Also open, rename, restart, sleep, wake and close panes, and commit or push a pane's changes. |
+
+At **Observe** and above a device also sees each pane's model, context use, branch, changed
+files and diffs (credential-looking files are listed but never shown), pull requests, open
+tasks, usage and the providers it could open. At **Manage**, opening a pane offers only
+Claude, Codex, Antigravity, OpenCode and ZCode, never a shell or auto-approve. Closing a pane
+needs a confirmation that repeats its id and is refused while the pane has live children. A
+commit stages only the files the device was shown, and each manage action appears in
+Activity with the device's name.
+
+Devices paired before tiers existed, and every new pairing, are **Drive**. Choose another
+tier from the device's selector; choosing the previous one reverses it. A change applies on
+the device's next request, and a request above the device's tier is refused with a message
+naming the tier it needs.
 
 **View screen**, in a pane's **⋯** menu, is a read-only text snapshot of the last 40 lines that refreshes while the
 sheet is open. Its key row sends input to the pane; the snapshot never resizes or takes

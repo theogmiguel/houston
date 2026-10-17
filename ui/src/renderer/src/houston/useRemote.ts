@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HoustonClient, RemoteConfigurePatch } from './client'
 import type { RemoteInfo } from './generated/RemoteInfo'
+import type { RemoteTier } from './generated/RemoteTier'
 
 export interface RemotePairing {
   url: string
@@ -16,6 +17,7 @@ export interface UseRemote {
   pairStart: () => void
   pairCancel: () => void
   revoke: (id: number) => void
+  setTier: (id: number, tier: RemoteTier) => void
   regenerateCertificate: () => void
 }
 
@@ -98,12 +100,20 @@ export function useRemote(client: HoustonClient | null): UseRemote {
     [client]
   )
 
+  const setTier = useCallback(
+    (id: number, tier: RemoteTier) => {
+      setError(null)
+      client?.remoteDeviceSetTier(id, tier)
+    },
+    [client]
+  )
+
   const regenerateCertificate = useCallback(() => {
     setError(null)
     client?.remoteCaRegenerate()
   }, [client])
 
-  return { remote, pairing, error, configure, pairStart, pairCancel, revoke, regenerateCertificate }
+  return { remote, pairing, error, configure, pairStart, pairCancel, revoke, setTier, regenerateCertificate }
 }
 
 /// True when a device's token and the pane text it reads would cross the

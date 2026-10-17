@@ -3885,6 +3885,14 @@ async fn dispatch(
             remote_reply(sink, result).await;
             Ok(())
         }
+        proto::ClientMsg::RemoteDeviceSetTier { id, tier } => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_device_set_tier(id, tier))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("remote tier change panicked: {e}")));
+            remote_reply(sink, result).await;
+            Ok(())
+        }
         proto::ClientMsg::RemoteGridsPublish { grids } => {
             if let Err(e) = daemon.remote_grids_publish(grids) {
                 send_error(sink, format!("{e:#}"), Some("remote".into())).await;
