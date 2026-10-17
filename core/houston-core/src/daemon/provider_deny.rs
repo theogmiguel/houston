@@ -64,11 +64,6 @@ fn default_bytes(
         }
         // Codex bottom_pane handles Esc through ApprovalOverlay::on_ctrl_c (cancel/deny).
         proto::AgentKind::Codex => Ok(b"\x1b"),
-        // Grok Esc parks the permission card; Ctrl+C cancels the request.
-        proto::AgentKind::Grok => {
-            require_default_bindings(provider, &home.join(".grok/keybindings.json"))?;
-            Ok(b"\x03")
-        }
         proto::AgentKind::Antigravity => {
             let root = profile.map(Path::to_path_buf).unwrap_or_else(|| home.join(".gemini"));
             require_default_bindings(provider, &root.join("antigravity-cli/keybindings.json"))?;
@@ -76,7 +71,6 @@ fn default_bytes(
             Ok(b"n") // confirm.no acts immediately; Enter could answer the next prompt.
         }
         proto::AgentKind::Opencode => bail!("deny refused for OpenCode: permission stages and feedback do not have a verified denial sequence; use pane_escalate"),
-        proto::AgentKind::Cursor => bail!("deny refused for Cursor: no supported NeedsInput permission evidence or verified denial sequence; use pane_escalate"),
         other => bail!("deny refused for {other:?}: no verified provider denial sequence; use pane_escalate"),
     }
 }
@@ -107,7 +101,6 @@ mod tests {
         for (provider, expected) in [
             (proto::AgentKind::Claude, b"\x1b".as_slice()),
             (proto::AgentKind::Codex, b"\x1b".as_slice()),
-            (proto::AgentKind::Grok, b"\x03".as_slice()),
             (proto::AgentKind::Antigravity, b"n".as_slice()),
         ] {
             assert_eq!(
@@ -136,6 +129,7 @@ mod tests {
         for provider in [
             proto::AgentKind::Opencode,
             proto::AgentKind::Cursor,
+            proto::AgentKind::Grok,
             proto::AgentKind::Shell,
         ] {
             assert!(default_bytes(provider, home.path(), None).is_err());

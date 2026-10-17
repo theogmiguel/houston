@@ -156,6 +156,6 @@ describe('wide surfaces have room for their main content', () => {
     expect(table).not.toBeNull()
     expect(table!.className).toContain('overflow-x-auto')
     expect(container.textContent).toContain('Claude Code')
-    expect(container.textContent).toContain('Cursor')
+    expect(container.textContent).toContain('OpenCode')
   })
 })

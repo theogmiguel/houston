@@ -1236,7 +1236,7 @@ impl Daemon {
             ));
         };
         if !Self::task_agent_spawnable(agent) {
-            return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode, cursor, grok or zcode")));
+            return Ok(Self::task_invalid(Some(id), operation, crate::launch::retired_provider_refusal(agent).unwrap_or_else(|| format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode or zcode"))));
         }
         let project_dir = PathBuf::from(workspace);
         if !project_dir.is_dir() {
@@ -2674,7 +2674,7 @@ impl Daemon {
     /// Why `agent` cannot run a task: the providers that can.
     fn task_agent_refusal(none_allowed: bool) -> String {
         format!(
-            "expected claude, codex, antigravity, opencode, cursor, grok or zcode{}",
+            "expected claude, codex, antigravity, opencode or zcode{}",
             if none_allowed { ", or none" } else { "" }
         )
     }
@@ -2687,8 +2687,6 @@ impl Daemon {
                 | proto::AgentKind::Codex
                 | proto::AgentKind::Antigravity
                 | proto::AgentKind::Opencode
-                | proto::AgentKind::Cursor
-                | proto::AgentKind::Grok
                 | proto::AgentKind::Zcode
         )
     }
@@ -3272,9 +3270,7 @@ impl Daemon {
             started_at_ms: now,
         })?;
         let mut spawn_args = Vec::new();
-        match crate::launch::prepare_worktree_trust(&self.env(), agent, &created.path)
-            .and_then(|()| crate::launch::worktree_trust_args(agent, &created.path))
-        {
+        match crate::launch::worktree_trust_args(agent, &created.path) {
             Ok(args) => spawn_args.extend(args),
             Err(e) => {
                 let reason = format!("{e:#}");
@@ -3295,7 +3291,7 @@ impl Daemon {
             None => {
                 let reason = format!(
                     "provider {agent:?} has no unattended launch mode, so a task cannot start \
-                     with it (expected claude, codex, antigravity, opencode, cursor, grok or zcode)"
+                     with it (expected claude, codex, antigravity, opencode or zcode)"
                 );
                 self.db.task_run_set_state(
                     run.id,
@@ -5553,10 +5549,8 @@ impl Daemon {
                 | proto::AgentKind::Codex
                 | proto::AgentKind::Antigravity
                 | proto::AgentKind::Opencode
-                | proto::AgentKind::Cursor
-                | proto::AgentKind::Grok
         ) {
-            anyhow::bail!("PR watch cannot wake provider {:?}; supported providers are Claude, Codex, Antigravity, OpenCode, Cursor and Grok", info.agent);
+            anyhow::bail!("PR watch cannot wake provider {:?}; supported providers are Claude, Codex, Antigravity and OpenCode", info.agent);
         }
         let number = pr_watch_number(target)?;
         let (link, detail) = match self.pr_reads.tick_read(

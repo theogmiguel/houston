@@ -1,4 +1,4 @@
-# Wire protocol v143
+# Wire protocol v144
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -1276,10 +1276,10 @@ Claude `PostToolUseFailure` produces a step with `failed: true`; successful step
 `failed: false` (older daemons may omit it). Failed `AskUserQuestion` calls produce no step
 or answer. Counts include successful and failed steps and survive feed eviction; files contain at most 32 distinct
 masked edited paths, each at most 300 characters, including paths from failed edit calls.
-These paths describe attempted edits, not confirmation that a file changed. Codex, Cursor,
-Grok, OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
-steps; `PostToolUseFailure` is ignored for these providers. Grok `StopFailure` and OpenCode
-`session.error` report turn failures rather than tool steps. Supported failure/interruption hooks select
+These paths describe attempted edits, not confirmation that a file changed. Codex,
+OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
+steps; `PostToolUseFailure` is ignored for these providers. OpenCode
+`session.error` reports turn failures rather than tool steps. Supported failure/interruption hooks select
 `failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.
@@ -1337,6 +1337,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 144 | **Cursor and Grok are recognised only.** `AgentKind` keeps `cursor` and `grok` so stored rows and detected processes still deserialize, but no request launches them: `session_create`, `session_respawn`, restore, `pane_spawn`, `task_start`, routine engines and task providers refuse them by name (`grok is no longer a supported provider: Houston recognises it but cannot launch it; close this pane or choose claude, codex, antigravity, opencode or zcode`). The spawnable set is `claude`, `codex`, `antigravity`, `opencode` and `zcode`; `agent_hook` accepts no Cursor or Grok slug. No type shape changes. |
 | 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |

@@ -373,17 +373,9 @@ fn plan_submit_spec() -> ToolSpec {
     )
 }
 
-/// The providers a task child or reviewer can be launched as; the same seven
+/// The providers a task child or reviewer can be launched as; the same five
 /// `pane_spawn` accepts.
-const SPAWNABLE_AGENTS: [&str; 7] = [
-    "claude",
-    "codex",
-    "antigravity",
-    "opencode",
-    "cursor",
-    "grok",
-    "zcode",
-];
+const SPAWNABLE_AGENTS: [&str; 5] = ["claude", "codex", "antigravity", "opencode", "zcode"];
 
 fn read_specs() -> Vec<ToolSpec> {
     all_specs()

@@ -33,16 +33,6 @@ export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
     writes:
       'Drops a small plugin file Houston owns. If a file is already there and Houston did not write it, the install refuses instead of overwriting it.'
   },
-  cursor: {
-    label: 'Cursor',
-    writes:
-      'Adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and `stop` hooks. Your other entries stay where they are.'
-  },
-  grok: {
-    label: 'Grok',
-    writes:
-      'Writes its own hooks file in `~/.grok/hooks/`, with one entry per lifecycle event. Any entries of yours in that file stay, and turning this off removes only Houston’s — deleting the file once nothing is left in it.'
-  },
   zcode: {
     label: 'ZCode',
     writes:
@@ -267,7 +257,7 @@ function ProviderRow({ state, agentProfiles, pending, onSet, onOpen }: { state: 
 }
 
 function providerPresentation(state: AgentHookState, mark: StatusIconState, accounts: string): { detail: string; status: string; tone: import('../ui/AgentSetupRow').SetupTone } {
-  if (!state.present) return { detail: `${state.provider === 'cursor' ? 'cursor-agent' : state.provider} is not on PATH`, status: 'Not installed', tone: 'muted' }
+  if (!state.present) return { detail: `${state.provider} is not on PATH`, status: 'Not installed', tone: 'muted' }
   if (mark === 'differs') return { detail: 'Status will fall back to “unknown”', status: 'Hooks need repair', tone: 'warn' }
   if (mark === 'off') return { detail: 'Hooks are off · status is unknown', status: 'Hooks off', tone: 'muted' }
   if (state.trust === 'not_confirmed') return { detail: 'Accept the hook once in the Codex review screen', status: 'Hooks not confirmed', tone: 'warn' }

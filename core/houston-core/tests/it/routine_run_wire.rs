@@ -35,7 +35,7 @@ fn make_routine(daemon: &Daemon, name: &str, dir: Option<&Path>) -> u32 {
             "do the thing",
             proto::Cadence::Interval { seconds: 86_400 },
             dir.map(|d| d.display().to_string()),
-            proto::AgentKind::Cursor,
+            proto::AgentKind::Codex,
             None,
             None,
         )

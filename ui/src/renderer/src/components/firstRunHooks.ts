@@ -5,8 +5,6 @@ export const FIRST_RUN_HOOK_PROVIDERS = [
   { provider: 'claude', name: 'Claude Code' },
   { provider: 'codex', name: 'Codex' },
   { provider: 'opencode', name: 'OpenCode' },
-  { provider: 'grok', name: 'Grok' },
-  { provider: 'cursor', name: 'Cursor' },
   { provider: 'antigravity', name: 'Antigravity' },
   { provider: 'zcode', name: 'ZCode' }
 ] as const satisfies ReadonlyArray<{ provider: AgentKind; name: string }>

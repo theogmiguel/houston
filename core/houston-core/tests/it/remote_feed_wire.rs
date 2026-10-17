@@ -143,7 +143,6 @@ fn pane(daemon: &Arc<Daemon>, cmd: &[&str]) -> (proto::SessionInfo, tempfile::Te
 fn hook(agent: Option<&str>, event: &str, session: u32, payload: &serde_json::Value) -> HookDrop {
     let provider = match agent {
         Some("codex") => proto::AgentKind::Codex,
-        Some("grok") => proto::AgentKind::Grok,
         _ => proto::AgentKind::Claude,
     };
     let text = payload.to_string();
@@ -874,10 +873,7 @@ async fn turn_end_counts_steps_and_distinct_edited_paths_from_the_prompt() {
         end["duration_ms"].as_u64().unwrap(),
         end["at"].as_u64().unwrap() - prompt_at
     );
-    for (agent, event, outcome) in [
-        (None, "StopFailure", "failed"),
-        (Some("grok"), "StopCancelled", "stopped"),
-    ] {
+    for (agent, event, outcome) in [(None, "StopFailure", "failed")] {
         apply(
             state.path(),
             &hook(

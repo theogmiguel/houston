@@ -5,12 +5,10 @@ use std::path::{Path, PathBuf};
 
 use crate::agent_hooks::ConfigHome;
 
-pub const SKILL_TOOLS: [proto::AgentKind; 6] = [
+pub const SKILL_TOOLS: [proto::AgentKind; 4] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
-    proto::AgentKind::Cursor,
-    proto::AgentKind::Grok,
     proto::AgentKind::Zcode,
 ];
 
@@ -19,22 +17,17 @@ pub fn skills_dir(tool: proto::AgentKind, home: &ConfigHome) -> Option<PathBuf> 
         proto::AgentKind::Claude => Some(home.home.join(".claude").join("skills")),
         proto::AgentKind::Codex => Some(home.home.join(".codex").join("skills")),
         proto::AgentKind::Opencode => Some(home.config_dir().join("opencode").join("skills")),
-        proto::AgentKind::Cursor => Some(home.home.join(".cursor").join("skills")),
-        proto::AgentKind::Grok => Some(home.home.join(".grok").join("skills")),
         // ZCode also reads `~/.agents/skills`, shared with other CLIs; its own is this one.
         proto::AgentKind::Zcode => Some(home.home.join(".zcode").join("skills")),
         _ => None,
     }
 }
 
-/// OpenCode, Cursor and Grok also load `~/.claude/skills`, so a skill only there
+/// OpenCode also loads `~/.claude/skills`, so a skill only there
 /// is genuinely visible to them — calling that cell "missing" would be a lie. The
 /// renderer gets `inherits_claude` and shows it as inherited.
 pub fn inherits_claude_skills(tool: proto::AgentKind) -> bool {
-    matches!(
-        tool,
-        proto::AgentKind::Opencode | proto::AgentKind::Cursor | proto::AgentKind::Grok
-    )
+    matches!(tool, proto::AgentKind::Opencode)
 }
 
 pub fn digest(bytes: &[u8]) -> String {
@@ -249,9 +242,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let h = home(&dir);
         let claude = skills_dir(proto::AgentKind::Claude, &h).expect("path");
-        let cursor = skills_dir(proto::AgentKind::Cursor, &h).expect("path");
+        let codex = skills_dir(proto::AgentKind::Codex, &h).expect("path");
         write_skill(&claude, "triage", "---\nname: triage\n---\nbody\n");
-        write_skill(&cursor, "triage", "---\nname: triage\n---\nbody, edited\n");
+        write_skill(&codex, "triage", "---\nname: triage\n---\nbody, edited\n");
 
         let cols = read_tools(&h);
         let by = |tool| {
@@ -261,7 +254,7 @@ mod tests {
                 .clone()
         };
         let a = by(proto::AgentKind::Claude);
-        let b = by(proto::AgentKind::Cursor);
+        let b = by(proto::AgentKind::Codex);
         assert_eq!(a.skills.len(), 1);
         assert_eq!(b.skills.len(), 1);
         assert_ne!(
@@ -269,11 +262,11 @@ mod tests {
             "an edited copy is exactly what this screen exists to show"
         );
 
-        write_skill(&cursor, "triage", "---\nname: triage\n---\nbody\n");
+        write_skill(&codex, "triage", "---\nname: triage\n---\nbody\n");
         let cols = read_tools(&h);
         let b = cols
             .iter()
-            .find(|c| c.tool == proto::AgentKind::Cursor)
+            .find(|c| c.tool == proto::AgentKind::Codex)
             .expect("column");
         assert_eq!(b.skills[0].digest, a.skills[0].digest);
     }
@@ -283,10 +276,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let h = home(&dir);
         for col in read_tools(&h) {
-            let expected = matches!(
-                col.tool,
-                proto::AgentKind::Opencode | proto::AgentKind::Cursor | proto::AgentKind::Grok
-            );
+            let expected = matches!(col.tool, proto::AgentKind::Opencode);
             assert_eq!(col.inherits_claude, expected, "{col:?}");
         }
     }
@@ -325,26 +315,26 @@ mod tests {
         write_skill(&claude, "triage", "---\nname: triage\n---\nbody\n");
 
         let canonical = canonical_skills(&h);
-        let out = push_tool(proto::AgentKind::Cursor, &h, &canonical, None);
+        let out = push_tool(proto::AgentKind::Codex, &h, &canonical, None);
         assert_eq!(out.skipped, Vec::<String>::new(), "{out:?}");
         assert_eq!(out.written.len(), 1);
         let pushed = &out.written[0];
         assert_eq!(pushed.name, "triage");
         assert!(pushed.backup.is_none(), "no pre-existing file to back up");
 
-        let cursor_col = read_tool(proto::AgentKind::Cursor, &h);
-        assert_eq!(cursor_col.skills.len(), 1);
-        assert_eq!(cursor_col.skills[0].digest, canonical[0].digest);
+        let codex_col = read_tool(proto::AgentKind::Codex, &h);
+        assert_eq!(codex_col.skills.len(), 1);
+        assert_eq!(codex_col.skills[0].digest, canonical[0].digest);
 
         undo_push(
-            proto::AgentKind::Cursor,
+            proto::AgentKind::Codex,
             &h,
             "triage",
             pushed.backup.as_deref(),
         )
         .expect("undo");
         assert!(
-            !skills_dir(proto::AgentKind::Cursor, &h)
+            !skills_dir(proto::AgentKind::Codex, &h)
                 .unwrap()
                 .join("triage")
                 .exists(),
@@ -357,12 +347,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let h = home(&dir);
         let claude = skills_dir(proto::AgentKind::Claude, &h).expect("path");
-        let cursor = skills_dir(proto::AgentKind::Cursor, &h).expect("path");
+        let codex = skills_dir(proto::AgentKind::Codex, &h).expect("path");
         write_skill(&claude, "triage", "---\nname: triage\n---\ncanonical\n");
-        write_skill(&cursor, "triage", "---\nname: triage\n---\ndrifted\n");
+        write_skill(&codex, "triage", "---\nname: triage\n---\ndrifted\n");
 
         let canonical = canonical_skills(&h);
-        let out = push_tool(proto::AgentKind::Cursor, &h, &canonical, None);
+        let out = push_tool(proto::AgentKind::Codex, &h, &canonical, None);
         assert_eq!(out.written.len(), 1);
         let pushed = &out.written[0];
         let backup = pushed.backup.clone().expect("drifted file was backed up");
@@ -371,11 +361,11 @@ mod tests {
             "---\nname: triage\n---\ndrifted\n"
         );
 
-        let cursor_col = read_tool(proto::AgentKind::Cursor, &h);
-        assert_eq!(cursor_col.skills[0].digest, canonical[0].digest);
+        let codex_col = read_tool(proto::AgentKind::Codex, &h);
+        assert_eq!(codex_col.skills[0].digest, canonical[0].digest);
 
-        undo_push(proto::AgentKind::Cursor, &h, "triage", Some(&backup)).expect("undo");
-        let restored = std::fs::read_to_string(cursor.join("triage").join("SKILL.md"))
+        undo_push(proto::AgentKind::Codex, &h, "triage", Some(&backup)).expect("undo");
+        let restored = std::fs::read_to_string(codex.join("triage").join("SKILL.md"))
             .expect("restored file reads back");
         assert_eq!(restored, "---\nname: triage\n---\ndrifted\n");
     }
@@ -385,12 +375,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let h = home(&dir);
         let claude = skills_dir(proto::AgentKind::Claude, &h).expect("path");
-        let cursor = skills_dir(proto::AgentKind::Cursor, &h).expect("path");
+        let codex = skills_dir(proto::AgentKind::Codex, &h).expect("path");
         write_skill(&claude, "triage", "---\nname: triage\n---\nbody\n");
-        write_skill(&cursor, "triage", "---\nname: triage\n---\nbody\n");
+        write_skill(&codex, "triage", "---\nname: triage\n---\nbody\n");
 
         let canonical = canonical_skills(&h);
-        let out = push_tool(proto::AgentKind::Cursor, &h, &canonical, None);
+        let out = push_tool(proto::AgentKind::Codex, &h, &canonical, None);
         assert!(
             out.written.is_empty(),
             "an identical copy is not drift — nothing to push, nothing to undo: {out:?}"

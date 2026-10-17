@@ -10,14 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-const PROVIDERS: [&str; 6] = [
-    "claude",
-    "codex",
-    "antigravity",
-    "opencode",
-    "cursor",
-    "grok",
-];
+const PROVIDERS: [&str; 4] = ["claude", "codex", "antigravity", "opencode"];
 const SEEDS: [u64; 3] = [1, 42, 0x5eed];
 // Covers the twelve-child concurrency case with spare capacity for nested fixtures.
 const LIVE_CAP: u32 = 16;
@@ -30,7 +23,7 @@ static SHIM: OnceLock<tempfile::TempDir> = OnceLock::new();
 fn shim_dir() -> &'static Path {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for name in ["claude", "codex", "agy", "opencode"] {
             std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), dir.path().join(name))
                 .unwrap();
         }
@@ -853,10 +846,6 @@ async fn concurrency(provider: &str, seed: u64) {
 }
 
 async fn needs_input(provider: &str, seed: u64) {
-    if provider == "cursor" {
-        eprintln!("SKIP needs_input provider=cursor: no supported lifecycle event fixture");
-        return;
-    }
     let r = Rig::new().await;
     let parent = r.parent();
     let script = r.script(
@@ -911,11 +900,6 @@ async fn needs_input(provider: &str, seed: u64) {
         timed_out["timed_out"], true,
         "unanswered question stays visible"
     );
-    if provider == "grok" {
-        eprintln!("PARTIAL needs_input provider=grok: visibility verified; no captured resolution fixture");
-        r.check(parent, &[(child, rows)], "needs_input");
-        return;
-    }
     if input.kind == proto::ChildInputKind::Permission {
         let refused = r
             .raw_call(
@@ -1480,9 +1464,7 @@ async fn h4_wait_caps_follow_the_parent_not_its_children() {
     let rig = Rig::new().await;
     for (provider, expected) in [
         ("claude", 90_000),
-        ("cursor", 30_000),
         ("codex", 600_000),
-        ("grok", 600_000),
         ("opencode", 600_000),
         ("antigravity", 30_000),
     ] {
@@ -1495,54 +1477,6 @@ async fn h4_wait_caps_follow_the_parent_not_its_children() {
         assert_eq!(result["wait_cap_ms"], expected, "{provider}: {result}");
         assert_eq!(result["requested_timeout_ms"], 700_000);
         assert!(result["cap_note"].as_str().unwrap().contains(provider));
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn h4_grok_schema_terminals_reach_the_parent_with_distinct_outcomes() {
-    let _serial = SERIAL.lock().await;
-    for (event, outcome) in [
-        ("StopFailure", "turn_failed"),
-        ("StopCancelled", "turn_interrupted"),
-        ("SessionEnd", "session_ended"),
-    ] {
-        let rig = Rig::new().await;
-        let parent = rig.parent();
-        let script = rig.script(
-            "grok",
-            42,
-            "terminal",
-            json!([
-                {"op":"hook", "event":event, "fixture":format!("grok-1.0.13-schema-{event}.json")},
-                {"op":"hang"}
-            ]),
-        );
-        let child = rig.spawn(parent, "grok", &script, json!({})).await;
-        let response = rig
-            .call(
-                parent,
-                "pane_wait",
-                json!({"session":child,"timeout_ms":20_000}),
-            )
-            .await;
-        let rows = rig.daemon.inbox_rows_for_test(parent);
-        assert!(
-            rows.iter()
-                .any(|row| row.reason.as_deref() == Some(outcome)),
-            "{event}: {response}"
-        );
-        assert_eq!(
-            rig.daemon.session_status(child).unwrap(),
-            Some(proto::AgentStatus::Idle)
-        );
-        assert!(rig
-            .daemon
-            .list()
-            .iter()
-            .find(|pane| pane.id == child)
-            .unwrap()
-            .state
-            .is_live());
     }
 }
 
@@ -1807,8 +1741,6 @@ mod daemon_crash {
                 ("codex", "codex"),
                 ("agy", "antigravity"),
                 ("opencode", "opencode"),
-                ("cursor-agent", "cursor"),
-                ("grok", "grok"),
             ] {
                 let script = rig.script(
                     &format!("resume-{provider}"),
@@ -1936,7 +1868,7 @@ mod daemon_crash {
             rig.await_child().await
         };
         rig.seed_resume(parent);
-        if provider != "grok" {
+        if provider != "opencode" {
             rig.seed_resume(child);
         }
         if point != "spawn" {
@@ -1951,7 +1883,7 @@ mod daemon_crash {
                     )
                     .ok();
                 if let Some(probe) = probe {
-                    if provider != "grok" {
+                    if provider != "opencode" {
                         rig.seed_resume(probe);
                     }
                     break;
@@ -2160,7 +2092,7 @@ mod daemon_crash {
             .unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&notice).unwrap()[0]["resumed"],
-            provider != "grok"
+            provider != "opencode"
         );
         eprintln!("h4 crash provider={provider} point={point} results={pending} restored=1");
     }
@@ -2175,12 +2107,12 @@ mod daemon_crash {
             {"op":"call","tool":"pane_submit","args":{"body":"ANCESTOR","summary":"ANCESTOR","request_id":0}},
             {"op":"stop"},{"op":"hang"}
         ]));
-        let middle_script = rig.script("middle", "grok", json!([
+        let middle_script = rig.script("middle", "opencode", json!([
             {"op":"spawn","args":{"kind":"codex","prompt":format!("@fake:{}",leaf_script.display()),"role":"leaf","reusable":true}},
             {"op":"hang"}
         ]));
         let root_script = rig.script("root", "claude", json!([
-            {"op":"spawn","args":{"kind":"grok","prompt":format!("@fake:{}",middle_script.display()),"role":"middle","reusable":true}},
+            {"op":"spawn","args":{"kind":"opencode","prompt":format!("@fake:{}",middle_script.display()),"role":"middle","reusable":true}},
             {"op":"hang"}
         ]));
         rig.start().await;
@@ -2278,7 +2210,7 @@ mod daemon_crash {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn h4_exact_daemon_crash_points_recover_durable_inbox_rows() {
         let _serial = SERIAL.lock().await;
-        for provider in ["claude", "codex", "grok"] {
+        for provider in ["claude", "codex", "opencode"] {
             for point in ["spawn", "staging", "reservation", "completion"] {
                 if std::env::var("HOUSTON_CRASH_CASE")
                     .is_ok_and(|case| case != format!("{provider}/{point}"))

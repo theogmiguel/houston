@@ -24,8 +24,6 @@ const HOOK_LABELS: Partial<Record<AgentKind, string>> = {
   codex: 'Codex',
   antigravity: 'Antigravity',
   opencode: 'opencode',
-  cursor: 'Cursor',
-  grok: 'Grok',
   zcode: 'ZCode'
 }
 

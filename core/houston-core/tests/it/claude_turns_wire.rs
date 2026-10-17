@@ -163,7 +163,7 @@ async fn claude_native_interrupt_releases_a_staged_handback_to_its_parent() {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join("bin");
         std::fs::create_dir(&bin).unwrap();
-        for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for provider in ["claude", "codex", "agy", "opencode"] {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;

@@ -8,11 +8,11 @@ import { IconAgent } from '../icons'
 import { ICON_ROLE_CLS } from './Icon'
 import { FieldLabel } from './Field'
 
-const AGENTS: readonly AgentKind[] = ['claude', 'codex', 'cursor', 'antigravity', 'opencode', 'grok', 'zcode', 'shell']
+const AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'zcode', 'shell']
 const LABELS: Record<AgentKind, string> = {
-  claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor Agent', antigravity: 'Antigravity',
-  opencode: 'OpenCode', grok: 'Grok Build', zcode: 'ZCode', shell: 'Terminal', custom: 'Custom', ssh: 'SSH',
-  droid: 'Droid', copilot: 'Copilot', aider: 'Aider'
+  claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity',
+  opencode: 'OpenCode', zcode: 'ZCode', shell: 'Terminal', custom: 'Custom', ssh: 'SSH',
+  droid: 'Droid', copilot: 'Copilot', aider: 'Aider', cursor: 'Cursor', grok: 'Grok'
 }
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 

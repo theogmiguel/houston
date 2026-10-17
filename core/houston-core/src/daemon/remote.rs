@@ -967,8 +967,7 @@ impl Daemon {
         ) && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
-        let speaks =
-            turn_ended || (provider == proto::AgentKind::Cursor && d.event == "afterAgentResponse");
+        let speaks = turn_ended;
         if speaks {
             if let Some(text) = d
                 .last_message

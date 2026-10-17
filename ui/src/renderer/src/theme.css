@@ -292,8 +292,6 @@
   --antigravity: #a78bfa;
   --codex: var(--text-primary);
   --opencode: var(--text-primary);
-  --cursor: var(--text-primary);
-  --grok: var(--text-primary);
   --zcode: var(--text-primary);
   --status-doing-bg: color-mix(in srgb, #7cb7ff 14%, transparent);
   --status-doing-text: #7cb7ff;
@@ -799,8 +797,6 @@
   --antigravity: #a78bfa;
   --codex: var(--text-primary);
   --opencode: var(--text-primary);
-  --cursor: var(--text-primary);
-  --grok: var(--text-primary);
   --zcode: var(--text-primary);
   --status-doing-bg: color-mix(in srgb, #0891b2 14%, transparent);
   --status-doing-text: #0891b2;

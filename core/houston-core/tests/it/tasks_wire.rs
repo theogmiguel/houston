@@ -438,7 +438,7 @@ async fn workspace_remove_unassigns_tasks_and_interrupts_runs() {
     ));
 
     let conn = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
-    conn.execute("INSERT INTO backlog_task_runs (task_id, attempt, kind, state, provider, initial_revision, started_at) VALUES (?1, 1, 'implementation', 'running', 'grok', 1, 0)", [id]).unwrap();
+    conn.execute("INSERT INTO backlog_task_runs (task_id, attempt, kind, state, provider, initial_revision, started_at) VALUES (?1, 1, 'implementation', 'running', 'codex', 1, 0)", [id]).unwrap();
     daemon.workspace_remove(&workspace).unwrap();
 
     let proto::ServerMsg::TaskSnapshot { tasks, counts, .. } =

@@ -51,8 +51,6 @@ pub mod mcp_orchestration;
 pub mod mcp_register;
 pub mod mcp_register_antigravity;
 pub mod mcp_register_codex;
-pub mod mcp_register_cursor;
-pub mod mcp_register_grok;
 pub mod mcp_server;
 pub mod mcp_tasks;
 pub mod model_catalog;

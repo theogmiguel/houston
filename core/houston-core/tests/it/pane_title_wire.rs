@@ -20,7 +20,7 @@ fn shim_dir() -> PathBuf {
     SHIMS
         .get_or_init(|| {
             let dir = tempfile::tempdir().expect("shim tempdir").keep();
-            for (name, title) in [("claude", "◐ Reviewing the parser"), ("grok", "")] {
+            for (name, title) in [("claude", "◐ Reviewing the parser"), ("codex", "")] {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
@@ -271,7 +271,7 @@ async fn a_spawned_child_uses_its_role_until_its_cli_names_it() {
     let child = daemon
         .orchestrate_spawn(
             parent.id,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             None,
             None,
             Brief::from("register the server".to_string()),

@@ -21,12 +21,10 @@ fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
         for name in [
-            "grok",
             "codex",
             "claude",
             "agy",
             "opencode",
-            "cursor-agent",
             "zcode",
         ] {
             let path = dir.join(name);
@@ -217,7 +215,7 @@ async fn start_creates_a_worktree_branch_and_a_bound_session() {
 
     let reply = r
         .daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let proto::ServerMsg::TaskChanged { id: changed, .. } = reply else {
         panic!("expected TaskChanged, got {reply:?}");
@@ -228,7 +226,7 @@ async fn start_creates_a_worktree_branch_and_a_bound_session() {
     assert_eq!(runs.len(), 1, "{runs:?}");
     let run = &runs[0];
     assert_eq!(run.state, "running");
-    assert_eq!(run.provider, "grok");
+    assert_eq!(run.provider, "codex");
     assert_eq!(run.attempt, 1);
     let session = run.session_id.expect("the run bounds a session");
     let branch = run.branch.clone().unwrap();
@@ -300,11 +298,11 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     // A second live run while the first is running.
     let first = r.create_task("Held", "", &["The task can be claimed"]);
     r.daemon
-        .task_start(first, proto::AgentKind::Grok, None)
+        .task_start(first, proto::AgentKind::Codex, None)
         .unwrap();
     let msg = r
         .daemon
-        .task_start(first, proto::AgentKind::Grok, None)
+        .task_start(first, proto::AgentKind::Codex, None)
         .unwrap();
     let proto::ServerMsg::TaskRefused {
         kind,
@@ -334,7 +332,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     let _ = revision;
     let msg = r
         .daemon
-        .task_start(archived, proto::AgentKind::Grok, None)
+        .task_start(archived, proto::AgentKind::Codex, None)
         .unwrap();
     let proto::ServerMsg::TaskRefused { kind, message, .. } = msg else {
         panic!("expected TaskRefused, got {msg:?}");
@@ -353,7 +351,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
         .unwrap();
     let msg = r
         .daemon
-        .task_start(guarded, proto::AgentKind::Grok, None)
+        .task_start(guarded, proto::AgentKind::Codex, None)
         .unwrap();
     assert!(
         matches!(msg, proto::ServerMsg::TaskChanged { .. }),
@@ -393,7 +391,7 @@ async fn a_restart_reuses_the_same_branch_and_worktree() {
     let id = r.create_task("Reuse me", "desc", &["The task can be started again"]);
 
     r.daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let first = r.runs().pop().unwrap();
     let first_branch = first.branch.clone().unwrap();
@@ -406,7 +404,7 @@ async fn a_restart_reuses_the_same_branch_and_worktree() {
     assert_eq!(r.runs()[0].state, "cancelled");
 
     r.daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let runs = r.runs();
     assert_eq!(runs.len(), 2, "{runs:?}");
@@ -434,7 +432,7 @@ async fn a_brief_over_the_cap_is_refused_before_anything_is_created() {
 
     let msg = r
         .daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let proto::ServerMsg::TaskRefused {
         kind,
@@ -469,7 +467,7 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
     );
 
     r.daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let first = r.runs().pop().unwrap();
     let first_session = first.session_id.unwrap();
@@ -513,7 +511,7 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
         .task_run_control(first.id, proto::TaskRunAction::Stop)
         .unwrap();
     r.daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let runs = r.runs();
     assert_eq!(runs.len(), 2, "{runs:?}");
@@ -587,12 +585,12 @@ async fn prefill_places_the_brief_in_the_input_box_without_submitting_it() {
     r.daemon
         .tasks_start_settings_set(
             &r.workspace(),
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             proto::TaskPromptDelivery::Prefill,
         )
         .unwrap();
     r.daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap();
     let run = r.runs().pop().unwrap();
     let session = run.session_id.unwrap();
@@ -785,7 +783,7 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
     };
     let proto::ServerMsg::TaskRefused { message, .. } = r
         .daemon
-        .task_start(id, proto::AgentKind::Grok, None)
+        .task_start(id, proto::AgentKind::Codex, None)
         .unwrap()
     else {
         panic!("expected refusal");
@@ -797,7 +795,7 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
     assert!(r.runs().is_empty());
     let started = r
         .daemon
-        .task_start_in(id, proto::AgentKind::Grok, None, Some(r.workspace()))
+        .task_start_in(id, proto::AgentKind::Codex, None, Some(r.workspace()))
         .unwrap();
     assert!(
         matches!(started, proto::ServerMsg::TaskChanged { .. }),

@@ -76,7 +76,7 @@ export function WorkspaceEmpty({
         </Button>
       </EmptyStateActions>
       <Inline gap="small" wrap className="justify-center">
-        {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'].includes(agent)).map((agent) => (
+        {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'zcode'].includes(agent)).map((agent) => (
           <div key={agent}><PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} /></div>
         ))}
       </Inline>

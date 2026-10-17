@@ -2334,11 +2334,9 @@ fn restore_priority(agent: proto::AgentKind) -> u8 {
         proto::AgentKind::Codex => 1,
         proto::AgentKind::Antigravity => 2,
         proto::AgentKind::Opencode => 3,
-        proto::AgentKind::Cursor => 4,
-        proto::AgentKind::Grok => 5,
-        proto::AgentKind::Zcode => 6,
-        proto::AgentKind::Shell => 7,
-        _ => 8,
+        proto::AgentKind::Zcode => 4,
+        proto::AgentKind::Shell => 5,
+        _ => 6,
     }
 }
 
@@ -6600,9 +6598,10 @@ impl Daemon {
         let Some(engine) = engine else {
             bail!(
                 "a routine needs its own engine: pass engine (one of claude, codex, \
-                 antigravity, opencode, cursor, grok, zcode)"
+                 antigravity, opencode, zcode)"
             );
         };
+        crate::launch::ensure_launchable(engine)?;
         self.routine_create_impl(
             name,
             prompt,
@@ -9179,6 +9178,7 @@ impl Daemon {
         prefill_follows: bool,
         launch_override: Option<crate::launch::SessionLaunchSelections>,
     ) -> Result<proto::SessionInfo> {
+        crate::launch::ensure_launchable(p.agent)?;
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
         }
@@ -9198,7 +9198,7 @@ impl Daemon {
         if p.auto_approve && crate::launch::auto_approve_args(p.agent).is_none() {
             bail!(
                 "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
-                 (expected claude, codex, antigravity, opencode, cursor, grok or zcode)",
+                 (expected claude, codex, antigravity, opencode or zcode)",
                 p.agent
             );
         }
@@ -11202,6 +11202,8 @@ impl Daemon {
             replacement,
             pastes_first_prompt,
         } = p;
+        // Create, respawn and restore all start here; a stored grok/cursor row stays a row.
+        crate::launch::ensure_launchable(agent)?;
         let command_override = custom_cmd.as_ref().is_some_and(|argv| !argv.is_empty());
         let pty = native_pty_system();
         let pair = pty
@@ -11297,8 +11299,6 @@ impl Daemon {
                 (proto::AgentKind::Codex, _) => ("codex".to_string(), Vec::new()),
                 (proto::AgentKind::Antigravity, _) => ("agy".to_string(), Vec::new()),
                 (proto::AgentKind::Opencode, _) => ("opencode".to_string(), Vec::new()),
-                (proto::AgentKind::Cursor, _) => ("cursor-agent".to_string(), Vec::new()),
-                (proto::AgentKind::Grok, _) => ("grok".to_string(), Vec::new()),
                 (proto::AgentKind::Zcode, _) => ("zcode".to_string(), Vec::new()),
                 (proto::AgentKind::Custom, _) => {
                     bail!("agent \"custom\" requires a non-empty cmd argv")
@@ -14557,26 +14557,6 @@ impl Daemon {
                 ],
                 "opencode".into(),
             ),
-            (proto::AgentKind::Cursor, _) => (
-                vec![
-                    "sh".into(),
-                    "-c".into(),
-                    r#"exec "$0" -p "$(cat "$1")""#.into(),
-                    "cursor-agent".into(),
-                    path_arg,
-                ],
-                "cursor".into(),
-            ),
-            (proto::AgentKind::Grok, _) => (
-                vec![
-                    "sh".into(),
-                    "-c".into(),
-                    r#"exec "$0" -p "$(cat "$1")""#.into(),
-                    "grok".into(),
-                    path_arg,
-                ],
-                "grok".into(),
-            ),
             // `-p` defaults to yolo and refuses `--mode plan`. In build mode `-p` denies
             // every call that would ask (edits, shell, MCP), so the summary stays read-only.
             (proto::AgentKind::Zcode, _) => (
@@ -14592,8 +14572,8 @@ impl Daemon {
             (other, _) => {
                 let _ = std::fs::remove_file(&prompt_path);
                 bail!(
-                    "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                     cursor, grok or zcode"
+                    "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode \
+                     or zcode"
                 )
             }
         }
@@ -14636,14 +14616,6 @@ impl Daemon {
                         vec!["opencode".into(), "run".into(), read_the_file(&path_arg)],
                         "opencode".into(),
                     ),
-                    (proto::AgentKind::Cursor, _) => (
-                        vec!["cursor-agent".into(), "-p".into(), read_the_file(&path_arg)],
-                        "cursor".into(),
-                    ),
-                    (proto::AgentKind::Grok, _) => (
-                        vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
-                        "grok".into(),
-                    ),
                     (proto::AgentKind::Zcode, _) => (
                         vec![
                             "zcode".into(),
@@ -14657,8 +14629,8 @@ impl Daemon {
                     (other, _) => {
                         let _ = std::fs::remove_file(&prompt_path);
                         bail!(
-                        "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                         cursor, grok or zcode"
+                        "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode \
+                         or zcode"
                     )
                     }
                 }
@@ -15279,12 +15251,6 @@ impl Daemon {
             turns.remove(&d.session);
         }
 
-        if provider == proto::AgentKind::Grok
-            && d.event == "SessionEnd"
-            && d.subagent_type.is_some()
-        {
-            return crate::hook_drop::DropVerdict::Applied;
-        }
         if crate::agent_events::AgentEvent::from_provider(provider, &d.event)
             == Some(crate::agent_events::AgentEvent::TurnFailed)
         {
@@ -15352,33 +15318,6 @@ impl Daemon {
                     }
                     self.broadcast_delegation(d.session);
                 }
-            }
-        }
-        if provider == proto::AgentKind::Grok
-            && matches!(d.event.as_str(), "StopCancelled" | "SessionEnd")
-        {
-            let outcome = match d.event.as_str() {
-                "StopCancelled" => "turn_interrupted",
-                _ => "session_ended",
-            };
-            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
-                let _ = self.inbox_write(
-                    row.parent_session,
-                    &self.current_workspace(d.session).unwrap_or_default(),
-                    Some(d.session),
-                    Some(row.round),
-                    orchestrate::InboxKind::OperatorNote,
-                    &format!("grok {outcome}"),
-                    &format!(
-                        "grok {}: {outcome}; PTY exit is reported separately",
-                        d.event
-                    ),
-                    Vec::new(),
-                    Some(outcome),
-                    None,
-                    false,
-                    true,
-                );
             }
         }
         let session = self
@@ -15456,7 +15395,7 @@ impl Daemon {
                 self.note_transcript_link(d.session, provider, d);
             }
             if matches!(d.event.as_str(), "SessionEnd")
-                && matches!(provider, proto::AgentKind::Codex | proto::AgentKind::Grok)
+                && provider == proto::AgentKind::Codex
                 && d.agent_id.is_none()
                 && d.subagent_type.is_none()
             {
@@ -19314,7 +19253,7 @@ impl Daemon {
 
     fn orchestration_provider_catalog(&self) -> Vec<serde_json::Value> {
         use proto::AgentKind::*;
-        [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode].into_iter().map(|provider| {
+        [Claude, Codex, Antigravity, Opencode, Zcode].into_iter().map(|provider| {
             let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
             let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(&self.env(), binary);
             let caps = orchestrate::provider_capabilities(provider);
@@ -19838,11 +19777,12 @@ impl Daemon {
             .lock()
             .expect("temporary cleanup lock");
         self.ensure_spawn_parent_locked(caller)?;
+        crate::launch::ensure_launchable(kind).map_err(|e| anyhow!("spawn refused: {e}"))?;
         if kind == proto::AgentKind::Custom {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
                  has no hooks, so Houston could never tell its parent when it finished; pick \
-                 one of claude, codex, opencode, cursor, grok, antigravity, zcode"
+                 one of claude, codex, opencode, antigravity, zcode"
             );
         }
         let role = match role.as_deref() {
@@ -20068,9 +20008,7 @@ impl Daemon {
         }
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
         if let Some(created) = &created {
-            match crate::launch::prepare_worktree_trust(&self.env(), kind, &cwd)
-                .and_then(|()| crate::launch::worktree_trust_args(kind, &cwd))
-            {
+            match crate::launch::worktree_trust_args(kind, &cwd) {
                 Ok(args) => extra_args.extend(args),
                 Err(error) => {
                     if created_here {
@@ -20273,12 +20211,6 @@ impl Daemon {
                     message: Self::codex_status_unavailable_message(cause),
                 });
             }
-        }
-        if info.agent == proto::AgentKind::Cursor {
-            warnings.push(proto::PaneSpawnWarning {
-                code: "needs_input_unreported".into(),
-                message: "cursor: needs-input not reported by this provider".into(),
-            });
         }
         warnings
     }
@@ -20716,23 +20648,7 @@ impl Daemon {
         let provider = self
             .agent_kind_of(caller)
             .unwrap_or(proto::AgentKind::Custom);
-        let grok_timeout = if provider == proto::AgentKind::Grok {
-            self.env().home_dir().and_then(|home| {
-                match std::fs::read_to_string(home.join(".grok/config.toml")) {
-                    Ok(text) => crate::mcp_register_grok::effective_wait_timeout_ms(Some(&text)),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        crate::mcp_register_grok::effective_wait_timeout_ms(None)
-                    }
-                    Err(_) => None,
-                }
-            })
-        } else {
-            None
-        };
-        (
-            provider,
-            orchestrate::provider_wait_cap(provider, grok_timeout),
-        )
+        (provider, orchestrate::provider_wait_cap(provider))
     }
 
     pub async fn orchestrate_wait_reserved(
