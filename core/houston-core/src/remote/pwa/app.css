@@ -407,6 +407,7 @@ body[data-view="list"] .view { padding-bottom: calc(var(--tab-h) + 32px + env(sa
 .clear-icon svg { width: 30px; height: 30px; stroke-width: 2.4; }
 .empty-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.015em; }
 .empty-body { margin: 0 auto; max-width: 300px; font-size: 14px; }
+.empty .btn { margin-top: var(--s4); }
 .all-clear { padding: var(--s6) 0 var(--s2); text-align: center; }
 
 /* Skeleton */

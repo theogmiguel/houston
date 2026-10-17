@@ -1310,7 +1310,7 @@
   function renderFeed(reset) {
     var root = $("feed"), s = session(S.pane);
     if (reset) { root.replaceChildren(); S.shown = 0; S.tailSteps = null; S.tailNode = null; }
-    $("feed-empty").classList.toggle("hidden", S.entries.length > 0 || S.epoch == null);
+    $("feed-empty").classList.toggle("hidden", hasConversation(S.entries) || S.epoch == null);
     var arrive = !reset && S.shown > 0;
     while (S.shown < S.entries.length) {
       var e = S.entries[S.shown++];
@@ -1350,6 +1350,14 @@
       node.classList.toggle("hidden", !!S.pending && S.pending.epoch === S.epoch && String(S.pending.seq) === node.dataset.feedSeq && !cardState(S.pane, S.pending));
     });
     renderWorking();
+  }
+
+  // Entry types that carry something to read; a feed of only turn and status
+  // markers (an OpenCode pane before any prompt is reported) has no conversation.
+  var CONVERSATION = { prompt: 1, reply: 1, step: 1, question: 1, permission: 1, answer: 1, usage_limit: 1 };
+
+  function hasConversation(entries) {
+    return entries.some(function (e) { return CONVERSATION[e.type] === 1; });
   }
 
   function renderWorking() {
@@ -1470,6 +1478,7 @@
   }
 
   function finishTurn(e, root) {
+    var worked = !!S.tailSteps;
     if (S.tailSteps) {
       var key = String(S.tailSteps[0].seq);
       S.turns[key] = e;
@@ -1486,7 +1495,13 @@
     if (e.outcome === "stopped" || e.outcome === "failed") {
       var d = el("div", "tdiv warn");
       d.appendChild(icon("square")); d.appendChild(document.createTextNode((e.outcome === "stopped" ? "Stopped" : "Failed") + " · " + clock(e.at)));
+      d.dataset.feedSeq = e.seq; d.dataset.feedType = "turn_end";
       root.appendChild(d);
+    } else {
+      // A turn without steps has no worklog header to carry its duration.
+      var done = el("div", "tdiv", "Turn finished · " + clock(e.at) + (!worked && e.duration_ms > 0 ? " · " + duration(e.duration_ms) : ""));
+      done.dataset.feedSeq = e.seq; done.dataset.feedType = "turn_end";
+      root.appendChild(done);
     }
     S.tailSteps = null; S.tailNode = null;
   }
@@ -2300,6 +2315,7 @@
   $("more").addEventListener("click", function () { toggleKeys(); });
   $("other-cancel").addEventListener("click", function () { setOther(null); });
   $("jump").addEventListener("click", function () { toBottom(true); });
+  $("empty-term").addEventListener("click", function () { selectTab("term"); });
   $("text").addEventListener("input", function () { grow(); renderQuickReplies(); });
   $("text").addEventListener("keydown", function (ev) {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }

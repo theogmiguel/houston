@@ -443,3 +443,52 @@ test('stale upload callbacks cannot reset a newer transcription even if API canc
     assert.equal(ctx.D.state, 'idle'); assert.equal(node('text').value, 'current new');
   }
 });
+
+// A minimal DOM: enough structure to run the shipped feed renderer and read what it produced.
+class FakeNode {
+  constructor(tag) { this.tag = tag; this.children = []; this.className = ''; this.dataset = {}; this.style = {}; this.own = ''; this.hiddenFlag = null;
+    this.classList = { add: () => {}, remove: () => {}, contains: () => false, toggle: (name, on) => { if (name === 'hidden') this.hiddenFlag = !!on; } }; }
+  appendChild(child) { this.children.push(child); child.parent = this; return child; }
+  replaceChildren(...next) { this.children = next; }
+  replaceWith(next) { const at = this.parent.children.indexOf(this); if (at >= 0) this.parent.children[at] = next; next.parent = this.parent; }
+  set textContent(value) { this.own = String(value); this.children = []; }
+  get textContent() { return this.own + this.children.map(c => c.textContent).join(''); }
+  setAttribute() {}
+  addEventListener() {}
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+}
+function renderingHarness(entries) {
+  const nodes = new Map();
+  const $ = id => { if (!nodes.has(id)) nodes.set(id, new FakeNode(id)); return nodes.get(id); };
+  const noop = () => {};
+  const S = { pane: 1, view: 'pane', sessions: [{ id: 1, state: 'running', status: 'idle', kind: 'opencode' }], entries, epoch: 'e', shown: 0, tailSteps: null, tailNode: null, pending: null, expanded: {}, turns: {}, timers: {} };
+  const ctx = {
+    S, $, Date, Math, Number, String, Array, document: { hidden: true, createElement: tag => new FakeNode(tag), createElementNS: (_, tag) => new FakeNode(tag), createTextNode: text => { const n = new FakeNode('#text'); n.own = text; return n; } },
+    setTimeout: noop, clearTimeout: noop, cardState: () => '', later: noop, markdown: () => new FakeNode('md'),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(source.match(/  var ICONS = \{[\s\S]*?\n  \};/)[0], ctx);
+  vm.runInContext(source.match(/  var CONVERSATION =[^\n]+/)[0], ctx);
+  vm.runInContext(['el', 'icon', 'button', 'clock', 'duration', 'plural', 'session', 'hasConversation', 'renderFeed', 'renderWorking', 'safeEntry', 'entryNode', 'finishTurn', 'stepGroup', 'stepRow', 'stepWords', 'stepCategory', 'turnSummary', 'permissionWords'].map(production).join('\n'), ctx);
+  return { ctx, S, $ };
+}
+
+test('an OpenCode feed of only turn_end and status renders a turn row and no blank pane', () => {
+  const at = Date.UTC(2026, 9, 16, 22, 45);
+  const { ctx, $ } = renderingHarness([{ seq: 1, type: 'turn_end', outcome: 'done', duration_ms: 62000, at }, { seq: 2, type: 'status', status: 'finished', at }]);
+  ctx.renderFeed(true);
+  const feed = $('feed');
+  assert.equal(feed.children.length, 1, 'the compatibility status after a turn summary stays folded into it');
+  assert.match(feed.textContent, /Turn finished/);
+  assert.match(feed.textContent, /1m 02s/);
+  assert.equal($('feed-empty').hiddenFlag, false, 'no messages were reported, so the empty state with View as terminal shows');
+});
+
+test('a feed with a reply hides the empty state and keeps the turn row', () => {
+  const at = Date.UTC(2026, 9, 16, 22, 45);
+  const { ctx, $ } = renderingHarness([{ seq: 1, type: 'reply', text: 'done', at }, { seq: 2, type: 'turn_end', outcome: 'done', duration_ms: 0, at }]);
+  ctx.renderFeed(true);
+  assert.equal($('feed-empty').hiddenFlag, true);
+  assert.match($('feed').textContent, /Turn finished/);
+});
