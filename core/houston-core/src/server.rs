@@ -2060,6 +2060,7 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || {
                 let providers = daemon.agent_hooks_state_rescanned();
                 daemon.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+                daemon.send_control_to(conn_id, &daemon.agent_accounts_state());
             });
             Ok(())
         }

@@ -6330,6 +6330,39 @@ impl Daemon {
         proto::ServerMsg::AgentProfileState { profiles, active }
     }
 
+    /// Blocking: reads each CLI's local sign-in files.
+    pub fn agent_accounts_state(&self) -> proto::ServerMsg {
+        let accounts = match self.hook_config_home() {
+            Ok(home) => {
+                let mut profiles = Vec::new();
+                for (agent, slug) in [
+                    (proto::AgentKind::Claude, "claude"),
+                    (proto::AgentKind::Codex, "codex"),
+                ] {
+                    match self.db.list_agent_profiles(slug) {
+                        Ok(rows) => profiles.extend(rows.into_iter().map(|r| {
+                            crate::cli_accounts::ProfileDir {
+                                id: r.id,
+                                agent,
+                                config_dir: crate::agent_accounts::expand_tilde(
+                                    &r.config_dir,
+                                    &home.home,
+                                ),
+                            }
+                        })),
+                        Err(e) => tracing::warn!("listing {slug} agent profiles: {e:#}"),
+                    }
+                }
+                crate::cli_accounts::read_all(&self.env(), &home, &profiles)
+            }
+            Err(e) => {
+                tracing::warn!("reading CLI accounts: {e:#}");
+                Vec::new()
+            }
+        };
+        proto::ServerMsg::AgentAccounts { accounts }
+    }
+
     pub fn agent_profile_upsert(
         &self,
         id: Option<u32>,

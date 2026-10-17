@@ -103,6 +103,29 @@ This screen lists every CLI Houston knows how to wire, and what each row means:
   mismatched, or something Houston did not expect — "the file may have been edited
   outside Houston."
 
+Each row also shows the account the CLI is signed in to, and each account card under
+the list shows the identity of that directory. Checking again re-reads these files. Houston
+reads only an identifier and never changes the file:
+
+- **Claude Code** — `oauthAccount.emailAddress` (and `organizationName`) in `~/.claude.json`,
+  or in `.claude.json` inside `CLAUDE_CONFIG_DIR` and each account profile directory.
+- **Codex** — the email and plan in the `id_token` of `auth.json` in `CODEX_HOME`
+  (default `~/.codex`) and each account profile directory. An API-key sign-in shows
+  "API key" with no identifier.
+- **OpenCode** — the provider names in `auth.json` under `$XDG_DATA_HOME/opencode`
+  (default `~/.local/share/opencode`). OpenCode 2 moves credentials into its own database,
+  which Houston does not read, so a missing file shows "Sign-in unknown".
+- **Antigravity** — only whether `~/.gemini/antigravity-cli/antigravity-oauth-token`
+  exists. This location is unverified against Antigravity's own documentation, so the row
+  reads "Signed in (unverified)", and a missing file shows "Sign-in unknown" because the
+  token may be in the OS keyring.
+- **ZCode** — "Sign-in unknown"; its sign-in storage is not documented.
+
+Tokens and keys are never stored in Houston's database, written to logs or sent anywhere.
+The identifier is read on demand, shown in this screen and discarded; nothing leaves your
+machine. A file that is missing, unreadable, malformed or larger than the read limit shows
+"Not signed in" with the reason.
+
 Claude Code and Codex status hooks are on by default. An explicit off setting stays off
 across restarts. Turning the switch on writes into that CLI's own config, and turning
 it off removes exactly what Houston added:

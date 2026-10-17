@@ -2,11 +2,26 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AgentAccountIdentity } from '../../houston/generated/AgentAccountIdentity'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { AgentStatusSection, HOOK_COPY } from './AgentStatusSection'
 
 function noop(): void {}
+
+function account(overrides: Partial<AgentAccountIdentity> = {}): AgentAccountIdentity {
+  return {
+    agent: 'claude',
+    profile_id: null,
+    sign_in: 'signed_in',
+    identity: 'theo@example.com',
+    detail: null,
+    providers: [],
+    reason: null,
+    verified: true,
+    ...overrides
+  }
+}
 
 function state(overrides: Partial<AgentHookState> = {}): AgentHookState {
   return {
@@ -121,6 +136,59 @@ describe('AgentStatusSection', () => {
     expect(sub('codex')).toContain('Hooks off')
     expect(sub('cursor')).toContain('cursor-agent is not on PATH')
     expect(sub('grok')).toContain('Hooks need repair')
+  })
+
+  it('shows the signed-in identity per CLI instead of a profile count', () => {
+    render({
+      providers: [
+        state({ provider: 'claude', enabled: true, installed: true }),
+        state({ provider: 'codex', enabled: true, installed: true }),
+        state({ provider: 'opencode', enabled: true, installed: true }),
+        state({ provider: 'antigravity', enabled: true, installed: true })
+      ],
+      agentProfiles: { profiles: [], active: [] },
+      agentAccounts: [
+        account(),
+        account({ agent: 'codex', sign_in: 'signed_out', identity: null }),
+        account({ agent: 'opencode', identity: null, providers: ['anthropic', 'openai'] }),
+        account({ agent: 'antigravity', identity: null, verified: false })
+      ]
+    })
+    const text = (provider: AgentKind): string => rowFor(provider).textContent ?? ''
+    expect(text('claude')).toContain('theo@example.com')
+    expect(text('claude')).not.toContain('0 accounts')
+    expect(text('codex')).toContain('Not signed in')
+    expect(text('opencode')).toContain('Signed in: anthropic, openai')
+    expect(text('antigravity')).toContain('Signed in (unverified)')
+  })
+
+  it('names the identity new panes use when a CLI has several accounts', () => {
+    render({
+      providers: [state({ provider: 'claude', enabled: true, installed: true })],
+      agentProfiles: {
+        profiles: [{ id: 4, agent: 'claude', name: 'work', config_dir: '/w' }],
+        active: [{ agent: 'claude', id: 4 }]
+      },
+      agentAccounts: [account(), account({ profile_id: 4, identity: 'work@example.com' })]
+    })
+    expect(rowFor('claude').textContent).toContain('2 accounts · work@example.com is used for new panes')
+  })
+
+  it('shows the identity on each account card', () => {
+    render({
+      providers: [state({ provider: 'claude', enabled: true, installed: true })],
+      agentProfiles: {
+        profiles: [{ id: 4, agent: 'claude', name: 'work', config_dir: '/w' }],
+        active: []
+      },
+      agentAccounts: [
+        account(),
+        account({ profile_id: 4, identity: 'work@example.com', detail: 'Acme' })
+      ]
+    })
+    const text = container.textContent ?? ''
+    expect(text).toContain('work@example.com · Acme')
+    expect(text).toContain('theo@example.com')
   })
 
   it('carries a severity dot per row matching the reported state', () => {
