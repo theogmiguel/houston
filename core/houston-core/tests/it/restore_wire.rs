@@ -50,6 +50,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         })
         .unwrap();
     }
@@ -106,6 +107,7 @@ fn seed_one(
         latest_prompt: None,
         last_agent_message: None,
         slept_at_ms: None,
+        limit: None,
     })
     .unwrap();
 }
@@ -350,6 +352,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
         latest_prompt: None,
         last_agent_message: None,
         slept_at_ms: None,
+        limit: None,
     })
     .unwrap();
     drop(db);
@@ -640,6 +643,7 @@ fn no_flags_set_runs_normal_restore_policy() {
         latest_prompt: None,
         last_agent_message: None,
         slept_at_ms: None,
+        limit: None,
     })
     .unwrap();
     drop(db);

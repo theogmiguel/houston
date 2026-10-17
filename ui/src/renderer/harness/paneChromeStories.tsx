@@ -192,6 +192,15 @@ export function PaneSleepingStory(): React.JSX.Element {
   return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={sleeping} branch="feature/session-recovery" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
 }
 
+export function PaneLimitedStory(): React.JSX.Element {
+  const limited = mkInfo({
+    status: 'idle', title: 'Usage limit', tags: [],
+    limit: { error: 'rate_limit', details: 'Usage limit reached', since_ms: Date.now() - 4 * 60_000 }
+  })
+  const store = React.useMemo(() => createSessionsStore(new Map([[limited.id, limited]])), [])
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={limited} branch="feature/plan-limit" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+}
+
 export function PaneRecoveryDeferredStory(): React.JSX.Element {
   const deferred = mkInfo({
     state: 'interrupted', status: null, resumable: false, restore_deferred: 'spawn-failed', tags: [],

@@ -6,6 +6,7 @@ import type { RestoreReason } from "./RestoreReason";
 import type { SessionActivity } from "./SessionActivity";
 import type { SessionCheckout } from "./SessionCheckout";
 import type { SessionContext } from "./SessionContext";
+import type { SessionLimit } from "./SessionLimit";
 import type { SessionState } from "./SessionState";
 import type { SessionTask } from "./SessionTask";
 import type { SessionWorktree } from "./SessionWorktree";
@@ -35,4 +36,4 @@ compactions?: number | null,
  * pane launched or claimed by a task carries it so the header can show a
  * chip without the Tasks tab being open.
  */
-task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, };
+task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, limit?: SessionLimit | null, };

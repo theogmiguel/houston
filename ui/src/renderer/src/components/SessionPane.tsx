@@ -64,7 +64,7 @@ import {
   type IconComponent
 } from './icons'
 import { usePaneFocusTier } from '../windowFocus'
-import { Button, Card, Inline, Inset, Notice, PaneHeader, Text } from './ui'
+import { Button, Card, Inline, Inset, Notice, PaneHeader, StatusLabel, Text } from './ui'
 import {
   PaneEngineGlyph,
   PaneHeadActions,
@@ -862,6 +862,13 @@ function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boole
   return <StatusDot status={status} live={live || info.children_waiting > 0} />
 }
 
+// Provider-reported only: no hook reports a reset time, so none is shown.
+function PaneLimitDetail({ limit }: { limit: SessionInfo['limit'] }): React.JSX.Element | null {
+  if (limit == null) return null
+  const label = `Limited: the provider reported ${limit.error}${limit.details ? ` (${limit.details})` : ''} with no reset time. It clears when the next turn starts.`
+  return <Tooltip label={label}><span data-testid="pane-limit" aria-label={label} className="flex-none"><StatusLabel variant="detail" status="Limited" /></span></Tooltip>
+}
+
 function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element | null {
   if (!(info.inbox_unread > 0)) return null
   const label = `${info.inbox_unread} unread inbox messages`
@@ -876,6 +883,7 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
   openMenuAtButton: (rect: DOMRect) => void
 }): React.JSX.Element {
   return (<PaneHeadActions>
+          {live && <PaneLimitDetail limit={info.limit} />}
           <ContextIndicator context={info.context} />
           {ended && (
             <PaneStateChip data-testid="pane-state" className="[@container_(max-width:490px)]:hidden" state={info.state}>

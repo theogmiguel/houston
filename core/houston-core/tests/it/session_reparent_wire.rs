@@ -113,6 +113,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         })
         .unwrap();
     }
@@ -198,6 +199,7 @@ fn reparent_refuses_a_swarm_tied_session() {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

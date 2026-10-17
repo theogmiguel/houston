@@ -133,9 +133,13 @@
     "Re-cut against 946,074 bytes (one boot chunk) with the 126 bytes of headroom",
     "the previous cut left: input typed while a pane's attach snapshot is pending",
     "is held and released in order inside every mounted pane, so it is boot-path",
-    "code like the write-queue overflow resync."
+    "code like the write-queue overflow resync.",
+    "",
+    "Re-cut against 946,628 bytes (one boot chunk) with 172 bytes of headroom:",
+    "the provider-reported Limited detail renders in every mounted pane header",
+    "and its `session_limit` handler runs in App, so both are boot-path code."
   ],
-  "maxBootBytes": 946200,
+  "maxBootBytes": 946800,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
