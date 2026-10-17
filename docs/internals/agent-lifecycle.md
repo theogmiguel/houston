@@ -109,7 +109,7 @@ Per-provider event names:
 |---|---|
 | Claude | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `PermissionRequest`, `PermissionDenied`, `Elicitation`, `ElicitationResult`, and typed blocking `Notification`; `AskUserQuestion`/`ExitPlanMode` are detected through matched `PreToolUse`, then cleared by the matching tool result |
 | Codex | `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, `Interrupt`; matched `PreToolUse(request_user_input)` reports a question and its `PostToolUse` resumes the turn; `Interrupt` settles to `Idle` without completion attention |
-| OpenCode | `session.created`, root `message.updated`, `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
+| OpenCode | `session.created`, root `message.updated` (raised by the plugin's `chat.message` hook with the prompt text), `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
 | ZCode | `SessionStart` (once per process, inside the first turn or on resume), `UserPromptSubmit`, `Stop` (successful turns only), `PermissionRequest`; matched `PreToolUse(AskUserQuestion)` reports a question and the `PostToolUse` with its `tool_use_id` resumes the turn; an interrupt cancels ZCode's hooks, so it reports no turn end |
 | Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below); the matching `PostToolUse` resumes `Working` once no permission episode remains (`PostInvocation` maps to nothing: it fires per step, not per turn) |
 | Cursor, Grok, Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
@@ -127,7 +127,7 @@ transitions — are Claude's `SubagentStart`/`SubagentStop` and matched
 `SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; ZCode's
 `PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
 block); and the OpenCode plugin's synthesized
-`SubagentStop`, a name Houston invented so a task-tool child session's own idle
+`SubagentStop`, `PostToolUse` and `PostToolUseFailure` (completed and errored tool parts, which map to no status and feed only the remote activity feed), names Houston invented so a task-tool child session's own idle
 is told apart from the pane's. `events_for` returns nothing for them, so they
 cannot drive a status by accident; the one near-miss is Claude's `StopFailure`,
 which maps to `TurnEnded` but emits error attention rather than successful completion.

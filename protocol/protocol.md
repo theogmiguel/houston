@@ -1289,7 +1289,7 @@ List routes that were cut answer with `x-houston-truncated: <cap>`. Every manage
 
 `FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
-[{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
+[{label, description}], multi_select, previews, free_text}], answers?}` (`free_text: false` when the dialog has no typed-answer row), `answer {answers}`,
 `permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target, failed?: boolean}` and
 `status {status: finished | exited}`, and
 `turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,

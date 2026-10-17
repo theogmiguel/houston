@@ -275,9 +275,13 @@ Claude edit permission cards also show the file path and a masked preview of rem
 added lines. Large previews are shortened; approve those in the pane's terminal after
 reviewing the full request, or deny from the phone.
 
-Cards you can answer with a tap are available for Claude Code permission requests and
-single questions with one answer. Questions with several parts or several answers, and
-requests from Codex, OpenCode, Antigravity and ZCode, show a waiting card with
+Cards you can answer with a tap are available for Claude Code, Codex and OpenCode permission
+requests and for their single questions with one answer. Codex reports only command approvals, so
+its other approvals are answered in the terminal. OpenCode permission requests raised by a
+sub-agent session are answered in the terminal, and a question that takes no typed answer
+offers no **Something else…**. Antigravity lists its questions and their options but reports no
+permission requests, so every Antigravity request is answered in the terminal. Questions with
+several parts or several answers, and requests from ZCode, show a waiting card with
 the bottom of the screen, where the program's dialog sits, the key row and **View as terminal**; replies
 and status still appear in their conversation. A request the agent did not describe opens the terminal view.
 

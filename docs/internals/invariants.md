@@ -315,10 +315,19 @@ serves as an orchestration address. Native CLI titles and user overrides retain 
 ### The remote feed comes from hook payloads and lives in memory
 
 The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from
-hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
-answers, and a permission request's or finished tool call's name and one target (a command,
-path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
-status transitions; it never sets one. Claude's `PostToolUseFailure` marks a failed tool
+hook payload fields: the prompt, the turn's last message, a structured question's options and
+answers (Claude's `AskUserQuestion`, Codex's `request_user_input`, Antigravity's `ask_question`,
+OpenCode's `question.asked`), and a permission request's or finished tool call's name and one
+target (a command, path, URL or pattern; for `apply_patch`, the files named by the patch
+headers, never the patch text). `feed.rs` reads no transcript and no screen. The one
+transcript-derived value, Antigravity's final message, is read by the hook helper under
+carve-out 4 and arrives as `last_message`; Antigravity's prompt is not in any hook payload,
+so its feed shows no prompt. Houston's OpenCode plugin forwards the prompt text, completed and
+errored tool parts, and the structured payloads of `permission.asked` and `question.asked`.
+Its decision card follows status transitions; it never sets one. Codex's approval hook fires
+only for commands, and Antigravity has no permission hook, so Antigravity's permission dialogs
+stay generic input cards rather than being inferred from the screen. Claude's `PostToolUseFailure`, the OpenCode plugin's equivalent for an errored tool part
+and an Antigravity `PostToolUse` carrying an `error` mark a failed tool
 step using the same masked target and bounds as a successful call; failed
 `AskUserQuestion` calls produce neither steps nor answers. Turn counts include failed
 steps, and edited paths record attempts rather than confirmed filesystem changes.
