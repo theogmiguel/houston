@@ -138,6 +138,17 @@ test('stale screen cannot replace a newer A screen or schedule more polling', as
   assert.equal(node('screen').textContent, 'new');
 });
 
+test('a blank or unreadable screen says why instead of showing an empty box', async () => {
+  const { ctx, S, node } = harness(), requests = [];
+  ctx.api = () => new Promise((resolve, reject) => requests.push({ resolve, reject })); S.pane = 1; S.tab = 'term';
+  const blank = ctx.loadScreen(); requests[0].resolve({ lines: ['', '   ', ''], source: 'screen' }); await blank;
+  assert.match(node('screen-note').textContent, /no text right now/);
+  const failed = ctx.loadScreen(); requests[1].reject(new Error('no pane has id 1')); await failed;
+  assert.equal(node('screen-note').textContent, 'Could not read the screen: no pane has id 1');
+  const shown = ctx.loadScreen(); requests[2].resolve({ lines: ['$ ls'], source: 'screen' }); await shown;
+  assert.equal(node('screen-note').textContent, '');
+});
+
 test('stale decision success or failure cannot update another navigation or release its busy state', async () => {
   for (const fails of [false, true]) {
     const { ctx, S, status } = harness(), requests = [];

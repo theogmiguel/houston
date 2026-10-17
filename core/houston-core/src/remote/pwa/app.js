@@ -2912,12 +2912,20 @@
       if (!request.current()) return;
       var pre = $("screen"), stick = !pre.textContent || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40;
       fitScreen();
-      pre.textContent = (d.lines || []).join("\n");
+      var lines = d.lines || [];
+      pre.textContent = lines.join("\n");
       var raw = d.source === "scrollback";
-      $("screen-note").textContent = raw ? "Raw output: this build has no terminal emulator." : "";
-      $("screen-note").classList.toggle("hidden", !raw);
+      var blank = !lines.some(function (l) { return /\S/.test(l); });
+      $("screen-note").textContent = blank ? "The screen has no text right now. A program may be clearing it or drawing only colours; send a key to redraw it."
+        : raw ? "Raw output: this build has no terminal emulator." : "";
+      $("screen-note").classList.toggle("hidden", !raw && !blank);
       if (stick) pre.scrollTop = pre.scrollHeight;
-    }).catch(function (e) { if (request.current() && !e.stale) setDockStatus(e.message, true); })
+    }).catch(function (e) {
+      if (!request.current() || e.stale) return;
+      $("screen-note").textContent = "Could not read the screen: " + e.message;
+      $("screen-note").classList.remove("hidden");
+      setDockStatus(e.message, true);
+    })
       .then(function () {
         if (request.current() && S.tab === "term") S.timers.screen = setTimeout(loadScreen, SCREEN_MS);
       }).finally(function () { request.promise = null; });
