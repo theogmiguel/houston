@@ -257,6 +257,7 @@ impl Daemon {
             .map(|d| proto::RemoteDevice {
                 id: d.id,
                 name: d.name,
+                tier: d.tier,
                 created_at: d.created_at,
                 last_seen_at: d.last_seen_at,
             })
@@ -332,6 +333,15 @@ impl Daemon {
 
     pub fn remote_devices(&self) -> Result<Vec<RemoteDeviceRow>> {
         self.db.remote_devices()
+    }
+
+    /// Takes effect on the device's next request: every request re-reads its row.
+    pub fn remote_device_set_tier(&self, id: i64, tier: proto::RemoteTier) -> Result<()> {
+        if !self.db.remote_device_set_tier(id, tier)? {
+            anyhow::bail!("no paired device has id {id}: expected an id from the device list");
+        }
+        self.remote_broadcast_state();
+        Ok(())
     }
 
     pub fn remote_device_revoke(&self, id: i64) -> Result<()> {

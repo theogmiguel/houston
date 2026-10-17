@@ -33,6 +33,7 @@ use super::{
 };
 use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
+use houston_protocol as proto;
 
 const INDEX_HTML: &str = include_str!("pwa/index.html");
 const APP_JS: &str = include_str!("pwa/app.js");
@@ -630,6 +631,58 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .filter(|t| !t.is_empty())
 }
 
+/// Every authenticated route and the tier a device needs to call it. The only
+/// place a route is bound to a tier, so a handler cannot forget the check.
+#[derive(Clone, Copy)]
+enum Route {
+    Read(&'static str),
+    Drive(&'static str),
+    Manage(&'static str),
+}
+
+impl Route {
+    fn label(self) -> &'static str {
+        match self {
+            Route::Read(l) | Route::Drive(l) | Route::Manage(l) => l,
+        }
+    }
+
+    fn needs(self) -> proto::RemoteTier {
+        match self {
+            Route::Read(_) => proto::RemoteTier::Observe,
+            Route::Drive(_) => proto::RemoteTier::Drive,
+            Route::Manage(_) => proto::RemoteTier::Manage,
+        }
+    }
+}
+
+fn tier_refusal(device: &RemoteDeviceRow, route: Route) -> Refused {
+    Refused::from(error(
+        StatusCode::FORBIDDEN,
+        format!(
+            "this device is paired as {}: {} needs {}; change it in Settings > Phone & remote \
+             access > Paired devices on the computer",
+            device.tier.as_str(),
+            route.label(),
+            route.needs().as_str()
+        ),
+    ))
+}
+
+/// `authenticate`, then the device's tier against what `route` needs.
+fn authorize(
+    daemon: &Daemon,
+    headers: &HeaderMap,
+    source: IpAddr,
+    route: Route,
+) -> Result<RemoteDeviceRow, Refused> {
+    let device = authenticate(daemon, headers, source)?;
+    if device.tier < route.needs() {
+        return Err(tier_refusal(&device, route));
+    }
+    Ok(device)
+}
+
 /// A missing token is not a guess and does not count. A valid token always
 /// passes: the lockout slows guessing and must not lock out paired devices.
 /// Only a wrong token counts toward, and is refused by, its source's lockout.
@@ -751,12 +804,13 @@ async fn me(
     headers: HeaderMap,
 ) -> Response {
     let result = blocking(move || {
-        let device = authenticate(&daemon, &headers, peer.0.ip())?;
+        let device = authorize(&daemon, &headers, peer.0.ip(), Route::Read("GET /api/me"))?;
         let config = daemon.remote_config();
         let url = config.effective_url();
         Ok(json!({
             "device_id": device.id,
             "name": device.name,
+            "tier": device.tier,
             "dictation": config.dictation,
             "host": {"name": super::host_name(), "version": env!("CARGO_PKG_VERSION")},
             "connection": {"url": super::feed::mask(&url), "https": url.starts_with("https://")},
@@ -775,7 +829,12 @@ async fn sessions(
     headers: HeaderMap,
 ) -> Response {
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions"),
+        )?;
         let sessions = daemon.remote_sessions();
         let grids = daemon.remote_grids(&sessions);
         Ok((sessions, grids))
@@ -809,7 +868,12 @@ async fn screen(
     };
     let lines = query.lines.unwrap_or(SCREEN_LINES_DEFAULT);
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions/{id}/screen"),
+        )?;
         daemon.remote_screen(id, lines).map_err(Refused::from)
     })
     .await;
@@ -848,7 +912,12 @@ async fn input(
         }
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Drive("POST /api/sessions/{id}/input"),
+        )?;
         daemon
             .remote_input(id, body.text.as_deref(), &body.keys)
             .map_err(Refused::from)
@@ -879,7 +948,12 @@ async fn dictate(
         let daemon = Arc::clone(&daemon);
         let source = peer.0.ip();
         blocking(move || {
-            authenticate(&daemon, &headers, source)?;
+            authorize(
+                &daemon,
+                &headers,
+                source,
+                Route::Drive("POST /api/sessions/{id}/dictate"),
+            )?;
             daemon.remote_dictate_check(id).map_err(Refused::from)
         })
         .await
@@ -951,7 +1025,12 @@ async fn activity(
         );
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/activity"),
+        )?;
         Ok(daemon.remote.feed.activity_page(query.after))
     })
     .await;
@@ -975,7 +1054,12 @@ async fn feed(
         );
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Read("GET /api/sessions/{id}/feed"),
+        )?;
         daemon.remote_feed(id, query.after).map_err(Refused::from)
     })
     .await;
@@ -1014,7 +1098,12 @@ async fn decide(
         }
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers, peer.0.ip())?;
+        authorize(
+            &daemon,
+            &headers,
+            peer.0.ip(),
+            Route::Drive("POST /api/sessions/{id}/decide"),
+        )?;
         daemon
             .remote_decide(
                 id,
@@ -1042,7 +1131,15 @@ async fn events(
 ) -> Response {
     let auth = {
         let daemon = Arc::clone(&daemon);
-        blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await
+        blocking(move || {
+            authorize(
+                &daemon,
+                &headers,
+                peer.0.ip(),
+                Route::Read("GET /api/events"),
+            )
+        })
+        .await
     };
     let device = match auth {
         Ok(device) => device,

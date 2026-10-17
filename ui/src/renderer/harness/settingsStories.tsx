@@ -345,8 +345,8 @@ const remoteFixture: RemoteInfo = {
   tls: false,
   ca_fingerprint: null,
   devices: [
-    { id: 1, name: 'Pixel 8 · Chrome', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
-    { id: 2, name: 'MacBook · Safari', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }
+    { id: 1, name: 'Pixel 8 · Chrome', tier: 'drive', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
+    { id: 2, name: 'MacBook · Safari', tier: 'manage', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }
   ]
 }
 
