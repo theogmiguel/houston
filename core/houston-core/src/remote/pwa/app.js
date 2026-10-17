@@ -1271,7 +1271,7 @@
   function fitSubtitle(node, s, parent) {
     var st = statusOf(s), parts = subtitleParts(s);
     if (parts.length < 2 && !s.model) {
-      parts = [parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind)];
+      parts = [{ key: "place", text: parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind) }];
     }
     var draw = function () {
       node.replaceChildren();
