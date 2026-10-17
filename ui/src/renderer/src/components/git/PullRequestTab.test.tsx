@@ -169,6 +169,28 @@ class FakeClient {
     this.prStackMergeCalls.push({ number, stackNumber, heads, method, request })
     return request
   }
+  mergeQueueGetCalls: string[] = []
+  mergeQueueEnqueueCalls: Array<{ number: number; dependsOn: number | null; request: number }> = []
+  mergeQueueDequeueCalls: Array<{ number: number; request: number }> = []
+  mergeQueueMergeHeadCalls: Array<{ number: number; sha: string; method: string; request: number }> = []
+  mergeQueueGet(dir: string): void {
+    this.mergeQueueGetCalls.push(dir)
+  }
+  mergeQueueEnqueue(_dir: string, number: number, dependsOn: number | null = null): number {
+    const request = this.next()
+    this.mergeQueueEnqueueCalls.push({ number, dependsOn, request })
+    return request
+  }
+  mergeQueueDequeue(_dir: string, number: number): number {
+    const request = this.next()
+    this.mergeQueueDequeueCalls.push({ number, request })
+    return request
+  }
+  mergeQueueMergeHead(_dir: string, number: number, sha: string, method: string): number {
+    const request = this.next()
+    this.mergeQueueMergeHeadCalls.push({ number, sha, method, request })
+    return request
+  }
   subscribe(kind: string, handler: (msg: never) => void): () => void {
     let set = this.subs.get(kind)
     if (!set) {
@@ -1480,4 +1502,69 @@ it('keeps the compact reviewer value in the shared left value column', () => {
   const client = mount({ compact: true })
   emit(client, detailMsg())
   expect(q('[data-testid="pr-reviewers-value"]')!.className).not.toContain('ml-auto')
+})
+
+describe('merge queue footer', () => {
+  const clean = detail({ merge_disabled_reason: null, checks: [{ name: 'safety-checks', state: 'passing', url: null, duration_ms: 72_000 }] })
+  const gates = [
+    { kind: 'mergeable', state: 'passed', reason: null },
+    { kind: 'review_threads', state: 'passed', reason: null },
+    { kind: 'reviewer', state: 'not_applicable', reason: null }
+  ]
+  function entry(o: Record<string, unknown> = {}): Record<string, unknown> {
+    return { number: 61, repository: 'o/r', url: 'https://github.com/o/r/pull/61', title: 'a change', head_ref: 'feat/x', head_sha: HEAD_SHA, base_ref: 'main', depends_on: null, session: null, position: 1, enqueued_at_ms: 1, read_at_ms: 2, status: 'ready', reason: null, gates, ...o }
+  }
+  function queue(client: FakeClient, entries: Record<string, unknown>[]): void {
+    act(() => client.emit({ type: 'merge_queue', workspace: '/repo', dir: '/repo', entries, merged: [], message: null }))
+  }
+  function byTestId(id: string): HTMLButtonElement | null {
+    return container!.querySelector(`[data-testid="${id}"]`)
+  }
+
+  it('offers "Add to merge queue" beside the usual merge control when the pull request is not queued', () => {
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    expect(client.mergeQueueGetCalls).toEqual(['/repo'])
+    queue(client, [entry({ number: 60, url: 'https://github.com/o/r/pull/60' })])
+    expect(container!.textContent).toContain('Not queued; joins after #60')
+    expect(byTestId('pr-merge')).not.toBeNull()
+    act(() => byTestId('pr-queue-add')!.click())
+    expect(client.mergeQueueEnqueueCalls.map((c) => c.number)).toEqual([61])
+  })
+
+  it('gives the queue head a primary Merge pinned to the head it shows, in place of the merge control', () => {
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    queue(client, [entry()])
+    expect(container!.textContent).toContain('1st in merge queue')
+    expect(container!.textContent).toContain('Ready')
+    expect(byTestId('pr-merge')).toBeNull()
+    const merge = byTestId('pr-queue-merge')!
+    expect(merge.disabled).toBe(false)
+    act(() => merge.click())
+    expect(client.mergeQueueMergeHeadCalls).toEqual([expect.objectContaining({ number: 61, sha: HEAD_SHA })])
+    act(() => client.emit({ type: 'merge_queue_reply', dir: '/repo', request: client.mergeQueueMergeHeadCalls[0].request, number: 61, ok: false, message: 'GitHub refused the squash merge of PR #61: not allowed' }))
+    expect(container!.textContent).toContain('The merge queue refused')
+    expect(container!.textContent).toContain('GitHub refused the squash merge of PR #61')
+  })
+
+  it('shows a queued entry behind the head with its one blocking reason and Dequeue, and no merge', () => {
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    queue(client, [entry({ number: 60, url: 'https://github.com/o/r/pull/60' }), entry({ position: 2, status: 'blocked', reason: 'PR #61 has 1 unresolved review thread' })])
+    expect(container!.textContent).toContain('2nd in merge queue · PR #61 has 1 unresolved review thread')
+    expect(container!.textContent).toContain('Blocked')
+    expect(byTestId('pr-queue-merge')).toBeNull()
+    expect(byTestId('pr-merge')).toBeNull()
+    act(() => byTestId('pr-queue-dequeue')!.click())
+    expect(client.mergeQueueDequeueCalls.map((c) => c.number)).toEqual([61])
+  })
+
+  it('shows no queue footer where the workspace has no merge queue', () => {
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    act(() => client.emit({ type: 'merge_queue', workspace: '', dir: '/repo', entries: [], merged: [], message: '/repo has no git remote, so it has no merge queue' }))
+    expect(byTestId('pr-queue-add')).toBeNull()
+    expect(byTestId('pr-merge')).not.toBeNull()
+  })
 })

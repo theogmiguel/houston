@@ -12,6 +12,7 @@ import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { PrPageSpecimen } from '../src/components/ui/PrPage'
+import { MergeQueueSpecimen } from '../src/components/ui/MergeQueue'
 import { MarkdownDocument } from '../src/components/markdownPipeline'
 import { PrHeaderSpecimen, PrMergeSpecimen, PrViewTabs, PrChangeStats, PrMenuSpecimen } from '../src/components/ui/PrPresentation'
 import { changeRowClass } from '../src/components/ui/inspectorChangeClasses'
@@ -582,6 +583,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Pull request merge readiness"><PrMergeSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Pull request tabs"><PrViewTabs value="summary" timelineCount={5} fileCount={4} onChange={() => {}} onPreload={() => {}} /></SpecimenGroup>
         <SpecimenGroup heading="Pull request page"><PrPageSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Merge queue"><MergeQueueSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Pull request actions menu"><PrMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Pull request property actions"><ReviewButton variant="text-link">Request</ReviewButton><ReviewButton variant="text-link">Edit</ReviewButton><ReviewButton variant="text-link">Show full description</ReviewButton><PrChangeStats additions={91} deletions={12} files={4} commits={5} /></SpecimenGroup>
         <SpecimenGroup heading="Panel Markdown"><MarkdownDocument variant="panel" source={"# Problem\n\nPanel headings stay below the title.\n\n## Changes\n\nUse `fit()` and a bounded preview."} /></SpecimenGroup>

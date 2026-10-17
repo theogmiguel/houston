@@ -7,8 +7,11 @@ import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
 import { PrCheckLogFrame, PrMergeFrame, PrMergeFooter, PrReadinessRow } from '../ui/PrPresentation'
 import { actionDisabledReason } from './prDetailUi'
+import { MergeQueueStanding } from '../ui/MergeQueue'
+import { entryStatus, ordinal, queueEntryFor, shortSha } from '../prs/mergeQueueModel'
+import type { MergeQueueController } from '../prs/useMergeQueue'
 
-type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState }
+type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState; queue?: MergeQueueController }
 
 function mergeConsequence(link: PullRequestLink, detail: PrDetail, method: PrMergeMethod, waiting: boolean): string {
   if (link.state === 'merged') return 'Merged'
@@ -53,14 +56,36 @@ function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, wait
   return <SplitButton label={labels[method]} testId="pr-merge" disabled={busy || mergeReason !== null} disabledReason={mergeReason ?? undefined} onClick={() => pr.merge(link.number, method, detail.head_sha)} items={(['squash', 'merge', 'rebase'] as const).map((value) => ({ label: `Use ${methods[value]}`, onClick: () => setMethod(value) }))} />
 }
 
+/** The merge queue's footer: where this pull request stands in the queue, with
+ *  Dequeue or "Add to merge queue". Only the head merges from the queue. */
+function PrQueueFooter({ link, detail, method, queue }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController }): React.JSX.Element | null {
+  if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
+  const entry = queueEntryFor(queue.entries, link.repository, link.number)
+  const busy = queue.busy !== null
+  if (!entry) {
+    const last = queue.entries.at(-1)
+    return <PrMergeFooter consequence={last ? `Not queued; joins after #${last.number}` : 'Not queued'}><Button variant="secondary" size="sm" data-testid="pr-queue-add" disabled={busy} onClick={() => queue.enqueue(link.number)}>Add to merge queue</Button></PrMergeFooter>
+  }
+  const head = entry.position === 1
+  const previous = queue.entries[entry.position - 2]
+  const line = entry.reason ?? (head ? `merges ${shortSha(detail.head_sha)} exactly, by ${method}` : `merges after #${previous?.number ?? entry.depends_on}`)
+  return <PrMergeFooter consequence={<MergeQueueStanding status={entryStatus(entry)}>{ordinal(entry.position)} in merge queue · {line}</MergeQueueStanding>}>
+    <Button variant={head ? 'ghost' : 'secondary'} size="sm" data-testid="pr-queue-dequeue" disabled={busy} onClick={() => queue.dequeue(link.number)}>Dequeue</Button>
+    {head && <Tooltip label={entry.reason ?? undefined}><Button variant="primary" size="sm" data-testid="pr-queue-merge" disabled={busy || entry.status !== 'ready'} onClick={() => queue.mergeHead(link.number, detail.head_sha, method)}>Merge</Button></Tooltip>}
+  </PrMergeFooter>
+}
+
 export function PrMergeBox(props: MergeBoxProps): React.JSX.Element {
-  const { link, detail, method, checks } = props
+  const { link, detail, method, checks, queue } = props
+  const queued = queue !== undefined && queueEntryFor(queue.entries, link.repository, link.number) !== null
   const waiting = detail.checks.some((check) => ['failing', 'running', 'queued', 'unknown'].includes(check.state))
   const headline = checks.failedCount > 0 ? checks.listProps.checks.find((check) => check.state === 'failing') : undefined
   const rest = checks.listProps.checks.filter((check) => check !== headline)
   return <PrMergeFrame>
     {checks.failedCount > 0 ? <PrFailedChecks checks={checks} /> : <PrSettledChecks checks={checks} waiting={waiting} />}
     {rest.length > 0 && <PrChecksList state={{ ...checks, listProps: { ...checks.listProps, checks: rest } }} />}
-    <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>
+    {queue?.reply && !queue.reply.ok && queue.reply.number === link.number && <PrReadinessRow tone="stop" heading="The merge queue refused" detail={queue.reply.text} />}
+    {!queued && <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>}
+    {queue && <PrQueueFooter link={link} detail={detail} method={method} queue={queue} />}
   </PrMergeFrame>
 }

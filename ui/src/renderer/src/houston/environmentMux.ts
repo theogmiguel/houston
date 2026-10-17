@@ -128,6 +128,10 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   pr_link: DIR,
   pr_unlink: DIR,
   pr_merge: DIR,
+  merge_queue_get: DIR,
+  merge_queue_enqueue: DIR,
+  merge_queue_dequeue: DIR,
+  merge_queue_merge_head: DIR,
   pr_action: DIR,
   pr_edit: DIR,
   pr_comment: DIR,
@@ -380,6 +384,10 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   pr_linked: 'forward',
   pr_unlinked: 'forward',
   pr_merged: 'forward',
+  merge_queue: (msg, tag) => {
+    for (const entry of msg.entries as Array<Record<string, unknown>>) if (typeof entry.session === 'number') entry.session = tag(entry.session)
+  },
+  merge_queue_reply: 'forward',
   pr_mutation: 'forward',
   pr_reviewer_candidates: 'forward',
   pr_label_candidates: 'forward',

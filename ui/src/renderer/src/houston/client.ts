@@ -83,6 +83,12 @@ export type { PrMutationKind } from './generated/PrMutationKind'
 export type { PrStack } from './generated/PrStack'
 export type { PrStackLayer } from './generated/PrStackLayer'
 export type { PrStackHead } from './generated/PrStackHead'
+export type { MergeQueueEntry } from './generated/MergeQueueEntry'
+export type { MergeQueueGate } from './generated/MergeQueueGate'
+export type { MergeQueueGateKind } from './generated/MergeQueueGateKind'
+export type { MergeQueueGateState } from './generated/MergeQueueGateState'
+export type { MergeQueueMerge } from './generated/MergeQueueMerge'
+export type { MergeQueueStatus } from './generated/MergeQueueStatus'
 export type { PullRequestLink } from './generated/PullRequestLink'
 export type { PullRequestLinkSource } from './generated/PullRequestLinkSource'
 export type { PullRequestState } from './generated/PullRequestState'
@@ -856,6 +862,30 @@ export class HoustonClient {
   prUnlink(dir: string): number {
     const request = this.nextPrRequest()
     this.send({ type: 'pr_unlink', dir, request })
+    return request
+  }
+
+  /** The merge queue of the workspace `dir` belongs to; the reply echoes `dir`. */
+  mergeQueueGet(dir: string): void {
+    this.send({ type: 'merge_queue_get', dir })
+  }
+
+  mergeQueueEnqueue(dir: string, number: number, dependsOn: number | null = null): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_enqueue', dir, number, depends_on: dependsOn, request })
+    return request
+  }
+
+  mergeQueueDequeue(dir: string, number: number): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_dequeue', dir, number, request })
+    return request
+  }
+
+  /** Merges the queue head, pinned to the head commit the user saw. */
+  mergeQueueMergeHead(dir: string, number: number, expectedHeadSha: string, method: PrMergeMethod): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_merge_head', dir, number, expected_head_sha: expectedHeadSha, method, request })
     return request
   }
 
