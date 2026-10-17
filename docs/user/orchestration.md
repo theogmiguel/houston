@@ -201,6 +201,15 @@ failed read; starting a watch during the pause is refused with "paused until HH:
 in-review task's run shows the same reason.
 Use `pane_pr_unwatch` when updates are no longer needed.
 
+## Queue a pull request for merging
+
+An agent cannot merge. When its pull request is ready to land, it calls
+`pane_pr_enqueue{pr, depends_on?}` (`hs-pane pr-enqueue PR [--depends-on N]`) to add it to its
+workspace's merge queue, optionally behind another queued pull request. The reply names the
+entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
+removes it. You merge the queue head from the Pull requests page; see
+[Merge queue](changes.md#merge-queue).
+
 ## Workspaces and child lifetime
 
 By default, a child starts in the parent's current directory when it is inside the

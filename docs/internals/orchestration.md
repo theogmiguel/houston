@@ -198,6 +198,7 @@ spelling, or a verb that is CLI-only).
 | `pane_message` | `mcp_orchestration.rs` | `hs-pane message` | send text to a live sibling with an open request, addressed by role or session id; the parent gets no copy |
 | `pane_deny` | `mcp_orchestration.rs` | `hs-pane deny CHILD --episode-id ID` | deny an exact pending descendant permission with verified provider input |
 | `pane_escalate` | `mcp_orchestration.rs` | `hs-pane escalate` | transfer an unresolved descendant input request to the user with a reason |
+| `pane_pr_enqueue` / `pane_pr_dequeue` | `mcp_orchestration.rs` | `hs-pane pr-enqueue` / `pr-dequeue` | add an open pull request of the caller's workspace repository to its merge queue (`depends_on` names a queued pull request it must follow), or remove one. There is deliberately no merge verb: only the user merges, and only the queue head (`Daemon::merge_queue_merge_head`) |
 | `pane_instruction_list` / `pane_instruction_get` | `mcp_orchestration.rs` | `hs-pane instruction-list` / `instruction-get` | inspect durable instruction delivery states or explicitly read a retained body |
 | `pane_instruction_cancel` / `pane_instruction_resume` | `mcp_orchestration.rs` | `hs-pane instruction-cancel` / `instruction-resume` | cancel an inactive pending instruction or explicitly resume an untouched recovery-held instruction |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
@@ -1217,8 +1218,8 @@ tool named directly is refused, naming `call_tool` as the way to reach it.
 plus `null` where null means something, and no `oneOf` or `anyOf` offers a string beside
 an integer, number or boolean. GLM, which ZCode drives, writes a string argument unquoted
 when the property's type is a union such as integer or string; ZCode cannot parse that
-call and drops the argument before validating it. A task `id` and `pane_pr_watch`'s `pr`
-are therefore strings, and the daemon still accepts an integer for either. `pane_spawn`'s
+call and drops the argument before validating it. A task `id` and the `pr` of `pane_pr_watch`,
+`pane_pr_enqueue` and `pane_pr_dequeue` are therefore strings, and the daemon still accepts an integer for each. `pane_spawn`'s
 `state_doc` is text or an object; how GLM fills that union has not been observed.
 `no_tool_property_unions_a_string_with_a_scalar_and_a_task_id_reads_in_every_form` checks
 every advertised schema.
