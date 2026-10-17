@@ -139,6 +139,7 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
 fn place_exe_launcher(dir: &Path, exe: &Path, plain: &Path) -> Result<()> {
     let exe_launcher = executable_launcher(plain);
     let changed = launcher_bytes_change(&exe_launcher, exe);
+    wait_for_launcher_prewarm();
     place_launcher(dir, exe, &exe_launcher)?;
     if changed {
         prewarm_launcher(&exe_launcher);
@@ -233,6 +234,22 @@ fn file_digest(path: &Path) -> Option<String> {
     }
 }
 
+#[cfg(windows)]
+static PREWARM: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> = std::sync::Mutex::new(None);
+
+/// Waits for an in-flight launcher pre-warm (bounded by its deadline): Windows refuses
+/// to replace or delete an executable while it runs. A no-op elsewhere.
+#[doc(hidden)]
+pub fn wait_for_launcher_prewarm() {
+    #[cfg(windows)]
+    {
+        let running = PREWARM.lock().expect("launcher prewarm lock").take();
+        if let Some(handle) = running {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// Covers the measured worst-case first-run scan (about 10 s on a debug
 /// helper) with margin, while still reaping a child that wedges.
 #[cfg(windows)]
@@ -253,8 +270,9 @@ fn prewarm_launcher(launcher: &Path) {
             let run = crate::spawn::output_within(cmd, PREWARM_DEADLINE);
             tracing::debug!("pre-warm run of {}: {run:?}", program.display());
         });
-    if let Err(e) = thread {
-        tracing::debug!("spawning the launcher pre-warm thread: {e}");
+    match thread {
+        Ok(handle) => *PREWARM.lock().expect("launcher prewarm lock") = Some(handle),
+        Err(e) => tracing::debug!("spawning the launcher pre-warm thread: {e}"),
     }
 }
 
