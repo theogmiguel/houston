@@ -55,8 +55,8 @@ async fn auto_push_defaults_off_and_a_plain_read_leaves_drift_alone() {
         "auto-push is off; a plain read must not have pushed anything: {pushes:?}"
     );
     assert!(
-        !home.path().join(".cursor/skills/triage/SKILL.md").exists(),
-        "a plain read with auto-push off must not touch Cursor's directory"
+        !home.path().join(".codex/skills/triage/SKILL.md").exists(),
+        "a plain read with auto-push off must not touch Codex's directory"
     );
 }
 
@@ -69,31 +69,31 @@ async fn explicit_push_writes_the_missing_copy_and_is_visible_in_the_ledger() {
     write_skill(home.path(), ".claude", "triage", "canonical body\n");
 
     let (tools, pushes, _) =
-        skill_sync(daemon.skill_push(Some(proto::AgentKind::Cursor), Some("triage".to_string())));
+        skill_sync(daemon.skill_push(Some(proto::AgentKind::Codex), Some("triage".to_string())));
     assert_eq!(pushes.len(), 1, "{pushes:?}");
     let record = &pushes[0];
-    assert_eq!(record.tool, proto::AgentKind::Cursor);
+    assert_eq!(record.tool, proto::AgentKind::Codex);
     assert_eq!(record.skill, "triage");
     assert!(
         !record.had_existing,
-        "no pre-existing Cursor copy — undo must remove, not restore"
-    );
-
-    let cursor_col = tools
-        .iter()
-        .find(|c| c.tool == proto::AgentKind::Cursor)
-        .expect("cursor column");
-    assert_eq!(cursor_col.skills.len(), 1);
-    assert_eq!(
-        std::fs::read_to_string(home.path().join(".cursor/skills/triage/SKILL.md")).unwrap(),
-        "canonical body\n"
+        "no pre-existing Codex copy — undo must remove, not restore"
     );
 
     let codex_col = tools
         .iter()
         .find(|c| c.tool == proto::AgentKind::Codex)
         .expect("codex column");
-    assert!(codex_col.skills.is_empty(), "{codex_col:?}");
+    assert_eq!(codex_col.skills.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(home.path().join(".codex/skills/triage/SKILL.md")).unwrap(),
+        "canonical body\n"
+    );
+
+    let untouched = tools
+        .iter()
+        .find(|c| c.tool == proto::AgentKind::Zcode)
+        .expect("zcode column");
+    assert!(untouched.skills.is_empty(), "{untouched:?}");
 }
 
 #[tokio::test]
@@ -103,25 +103,25 @@ async fn undo_restores_a_drifted_copy_that_push_overwrote() {
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
 
     write_skill(home.path(), ".claude", "triage", "canonical body\n");
-    write_skill(home.path(), ".cursor", "triage", "the user's own edit\n");
+    write_skill(home.path(), ".codex", "triage", "the user's own edit\n");
 
-    let (_, pushes, _) = skill_sync(daemon.skill_push(Some(proto::AgentKind::Cursor), None));
+    let (_, pushes, _) = skill_sync(daemon.skill_push(Some(proto::AgentKind::Codex), None));
     assert_eq!(pushes.len(), 1);
     assert!(pushes[0].had_existing, "a drifted copy existed to back up");
     assert_eq!(
-        std::fs::read_to_string(home.path().join(".cursor/skills/triage/SKILL.md")).unwrap(),
+        std::fs::read_to_string(home.path().join(".codex/skills/triage/SKILL.md")).unwrap(),
         "canonical body\n",
         "push overwrote the drifted copy"
     );
 
     let (_, pushes_after_undo, _) =
-        skill_sync(daemon.skill_push_undo(proto::AgentKind::Cursor, "triage".to_string()));
+        skill_sync(daemon.skill_push_undo(proto::AgentKind::Codex, "triage".to_string()));
     assert!(
         pushes_after_undo.is_empty(),
         "the ledger drops the record once undone: {pushes_after_undo:?}"
     );
     assert_eq!(
-        std::fs::read_to_string(home.path().join(".cursor/skills/triage/SKILL.md")).unwrap(),
+        std::fs::read_to_string(home.path().join(".codex/skills/triage/SKILL.md")).unwrap(),
         "the user's own edit\n",
         "undo restored the user's pre-push content, not Houston's"
     );
@@ -168,12 +168,12 @@ async fn undo_of_a_tr_created_file_removes_it() {
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
 
     write_skill(home.path(), ".claude", "triage", "canonical body\n");
-    skill_sync(daemon.skill_push(Some(proto::AgentKind::Cursor), None));
-    assert!(home.path().join(".cursor/skills/triage/SKILL.md").exists());
+    skill_sync(daemon.skill_push(Some(proto::AgentKind::Codex), None));
+    assert!(home.path().join(".codex/skills/triage/SKILL.md").exists());
 
-    skill_sync(daemon.skill_push_undo(proto::AgentKind::Cursor, "triage".to_string()));
+    skill_sync(daemon.skill_push_undo(proto::AgentKind::Codex, "triage".to_string()));
     assert!(
-        !home.path().join(".cursor/skills/triage").exists(),
+        !home.path().join(".codex/skills/triage").exists(),
         "undo of a Houston-created file removes the file and its now-empty directory"
     );
 }
@@ -195,11 +195,11 @@ async fn turning_auto_push_on_makes_the_very_next_read_push_the_drift() {
         !pushes.is_empty(),
         "drift-triggered auto-push must have run on this read: {pushes:?}"
     );
-    let cursor_col = tools
+    let codex_col = tools
         .iter()
-        .find(|c| c.tool == proto::AgentKind::Cursor)
-        .expect("cursor column");
-    assert_eq!(cursor_col.skills.len(), 1);
+        .find(|c| c.tool == proto::AgentKind::Codex)
+        .expect("codex column");
+    assert_eq!(codex_col.skills.len(), 1);
 
     let (_, _, enabled) = skill_sync(daemon.skill_auto_push_set(false));
     assert!(!enabled);

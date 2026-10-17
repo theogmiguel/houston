@@ -135,7 +135,7 @@ fn in_review_task(
     conn.execute(
         "INSERT INTO backlog_task_runs (task_id, attempt, kind, state, provider, \
              worktree_path, branch, initial_revision, summary, reason, started_at, ended_at) \
-         VALUES (?1, 1, 'implementation', 'handed_back', 'grok', ?2, 'feature', 1, 'done', NULL, \
+         VALUES (?1, 1, 'implementation', 'handed_back', 'codex', ?2, 'feature', 1, 'done', NULL, \
              0, 1)",
         rusqlite::params![id, worktree.display().to_string()],
     )

@@ -1,0 +1,19 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "modelName": "gemini-3.6-flash-medium",
+  "stepIdx": 5,
+  "toolCall": {
+    "name": "ask_question",
+    "args": {
+      "questions": [
+        {
+          "question": "Which branch should this land on?",
+          "options": ["main", "release"],
+          "is_multi_select": false
+        }
+      ]
+    }
+  },
+  "_note": "the documented ask_question args (questions[{question, options, is_multi_select}]); the option element shape (bare strings here) is NOT verified, the live captures only carry question"
+}

@@ -5,10 +5,8 @@ import type { RoleRoute } from '../houston/generated/RoleRoute'
 export const COMPOSER_AGENTS: readonly AgentKind[] = [
   'claude',
   'codex',
-  'cursor',
   'antigravity',
   'opencode',
-  'grok',
   'zcode',
   'shell'
 ]
@@ -16,10 +14,8 @@ export const COMPOSER_AGENTS: readonly AgentKind[] = [
 export const AGENT_LABEL: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  cursor: 'Cursor Agent',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
-  grok: 'Grok Build',
   zcode: 'ZCode',
   shell: 'Terminal'
 }
@@ -122,7 +118,7 @@ export interface ResolvedSlotsOptions {
   defaultAgentSource?: SlotValueSource
 }
 
-const EFFORT_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'grok']
+const EFFORT_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity']
 
 function routeForRole(routes: readonly RoleRoute[], role: string): RoleRoute | undefined {
   return routes.find((route) => route.pattern === '*' || route.pattern === role ||

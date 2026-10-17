@@ -1,6 +1,7 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,6 +62,37 @@ pub struct RemoteSession {
     pub waiting_since: Option<u64>,
     pub last_reply_excerpt: Option<String>,
     pub last_step: Option<String>,
+    pub model: Option<String>,
+    /// Launch effort is not recorded per pane, so this is always null.
+    pub effort: Option<String>,
+    pub provider_version: Option<String>,
+    pub account: Option<String>,
+    pub context: Option<RemoteContext>,
+    pub compactions: Option<u32>,
+    pub cwd: Option<String>,
+    pub branch: Option<String>,
+    pub worktree: Option<String>,
+    pub live_children: u32,
+    pub children_waiting: u32,
+    pub task: Option<RemoteTask>,
+    pub resumable: bool,
+    pub sleep_notice: Option<String>,
+    pub resume_notice: Option<String>,
+    /// Panes record no start time, so this is always null.
+    pub started_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteContext {
+    pub used_tokens: u64,
+    pub window: Option<u64>,
+    pub percent: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteTask {
+    pub id: i64,
+    pub title: String,
 }
 
 /// A device's recording, transcribed and assembled as the desktop would insert it.
@@ -257,6 +289,7 @@ impl Daemon {
             .map(|d| proto::RemoteDevice {
                 id: d.id,
                 name: d.name,
+                tier: d.tier,
                 created_at: d.created_at,
                 last_seen_at: d.last_seen_at,
             })
@@ -332,6 +365,15 @@ impl Daemon {
 
     pub fn remote_devices(&self) -> Result<Vec<RemoteDeviceRow>> {
         self.db.remote_devices()
+    }
+
+    /// Takes effect on the device's next request: every request re-reads its row.
+    pub fn remote_device_set_tier(&self, id: i64, tier: proto::RemoteTier) -> Result<()> {
+        if !self.db.remote_device_set_tier(id, tier)? {
+            anyhow::bail!("no paired device has id {id}: expected an id from the device list");
+        }
+        self.remote_broadcast_state();
+        Ok(())
     }
 
     pub fn remote_device_revoke(&self, id: i64) -> Result<()> {
@@ -425,13 +467,25 @@ impl Daemon {
         Ok((token, id))
     }
 
+    /// A provider's version if a probe already ran: a poll never starts a subprocess.
+    fn cli_version_cached(&self, kind: proto::AgentKind) -> Option<String> {
+        let binary = crate::cli_probe::binary_name(kind)?;
+        self.cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .cached_presence(&self.env(), binary)
+            .version
+    }
+
     pub fn remote_sessions(&self) -> Vec<RemoteSession> {
         let workspaces = self.db.list_workspaces().unwrap_or_default();
+        let mut versions: Vec<(proto::AgentKind, Option<String>)> = Vec::new();
         let mut out: Vec<RemoteSession> = self
             .list()
             .into_iter()
             .filter(|info| !info.hidden)
             .map(|info| {
+                let kind = info.detected_agent.unwrap_or(info.agent);
                 let workspace = workspaces
                     .iter()
                     .find(|w| w.path == info.project_dir)
@@ -462,7 +516,7 @@ impl Daemon {
                         .and_then(|d| d.role)
                         .map(|role| feed::mask(&role)),
                     workspace,
-                    kind: info.detected_agent.unwrap_or(info.agent),
+                    kind,
                     state: info.state,
                     status: info.status,
                     reason: None,
@@ -471,6 +525,55 @@ impl Daemon {
                     waiting_since: seen.filter(|_| waiting).map(|s| s.since_ms),
                     last_reply_excerpt: summary.last_reply_excerpt,
                     last_step: summary.last_step,
+                    model: info
+                        .activity
+                        .as_ref()
+                        .and_then(|a| a.model.as_deref())
+                        .map(feed::mask),
+                    effort: None,
+                    provider_version: match versions.iter().find(|(k, _)| *k == kind) {
+                        Some((_, version)) => version.clone(),
+                        None => {
+                            let version = self.cli_version_cached(kind);
+                            versions.push((kind, version.clone()));
+                            version
+                        }
+                    },
+                    account: info.profile_label.as_deref().map(feed::mask),
+                    context: info
+                        .context
+                        .as_ref()
+                        .filter(|c| c.state != proto::ContextState::Unknown)
+                        .map(|c| RemoteContext {
+                            used_tokens: c.used_tokens,
+                            window: c.window_tokens,
+                            percent: c.used_percent,
+                        }),
+                    compactions: info.compactions,
+                    cwd: Some(feed::mask(&info.cwd)),
+                    branch: info
+                        .checkout
+                        .as_ref()
+                        .and_then(|c| c.branch.as_deref())
+                        .map(feed::mask),
+                    worktree: match info.checkout.as_ref().map(|c| &c.kind) {
+                        Some(proto::CheckoutKind::Worktree { slug }) => Some(feed::mask(slug)),
+                        _ => info.worktree.as_ref().and_then(|w| {
+                            Path::new(&w.path)
+                                .file_name()
+                                .map(|n| feed::mask(&n.to_string_lossy()))
+                        }),
+                    },
+                    live_children: info.live_children,
+                    children_waiting: info.children_waiting,
+                    task: info.task.as_ref().map(|t| RemoteTask {
+                        id: t.task_id,
+                        title: feed::mask(&t.title),
+                    }),
+                    resumable: info.resumable,
+                    sleep_notice: info.sleep_notice.as_deref().map(feed::mask),
+                    resume_notice: info.resume_notice.as_deref().map(feed::mask),
+                    started_at: None,
                 }
             })
             .collect();
@@ -549,7 +652,7 @@ impl Daemon {
             .collect()
     }
 
-    fn remote_target(&self, id: u32) -> Result<Arc<super::Session>, ApiError> {
+    pub(super) fn remote_target(&self, id: u32) -> Result<Arc<super::Session>, ApiError> {
         match self.get(id) {
             Ok(s) if !s.info.hidden => Ok(s),
             _ => Err(ApiError::NotFound(format!(
@@ -891,13 +994,17 @@ impl Daemon {
                     .feed
                     .answer_question(id, tool_use_id.as_deref(), answers.clone())
                 {
-                    self.remote_push(
-                        id,
-                        FeedItem::Answer {
-                            answers: answers.clone(),
-                        },
-                        now,
-                    );
+                    // Antigravity's completion carries no result: the card closes, and
+                    // there is no answer to show.
+                    if !answers.is_empty() {
+                        self.remote_push(
+                            id,
+                            FeedItem::Answer {
+                                answers: answers.clone(),
+                            },
+                            now,
+                        );
+                    }
                     self.remote_emit(id, Change::Session(id));
                 }
             }
@@ -941,10 +1048,10 @@ impl Daemon {
             Some(HookFeed::Step {
                 tool,
                 target,
-                edited_path,
+                edited_paths,
                 failed,
             }) => {
-                if let Some(path) = edited_path {
+                for path in edited_paths {
                     self.remote.feed.note_edited_path(id, path);
                 }
                 self.remote_push(
@@ -967,19 +1074,18 @@ impl Daemon {
         ) && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
-        let speaks =
-            turn_ended || (provider == proto::AgentKind::Cursor && d.event == "afterAgentResponse");
-        if speaks {
-            if let Some(text) = d
-                .last_message
-                .as_deref()
-                .map(feed::reply_text)
-                .filter(|t| !t.is_empty())
-            {
+        let reply = d
+            .last_message
+            .as_deref()
+            .map(feed::reply_text)
+            .filter(|t| !t.is_empty());
+        let repeated = turn_ended && self.remote.feed.repeats_turn_end(id, reply.as_deref());
+        if turn_ended && !repeated {
+            if let Some(text) = reply {
                 self.remote_push(id, FeedItem::Reply { text }, now);
             }
         }
-        if turn_ended {
+        if turn_ended && !repeated {
             let outcome = match event {
                 Some(AgentEvent::TurnFailed) => "failed",
                 Some(AgentEvent::TurnInterrupted) => "stopped",

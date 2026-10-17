@@ -25,7 +25,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy"] {
+        for name in ["opencode", "codex", "claude", "agy"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -136,7 +136,7 @@ impl Rig {
         let addr = self.addr;
         let (status, body): (u16, serde_json::Value) =
             tokio::task::spawn_blocking(move || {
-                let payload = serde_json::json!({"kind": "grok", "prompt": prompt}).to_string();
+                let payload = serde_json::json!({"kind": "opencode", "prompt": prompt}).to_string();
                 let req = format!(
                     "POST /orchestrate/spawn HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {parent_token}\r\n\
                      Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",

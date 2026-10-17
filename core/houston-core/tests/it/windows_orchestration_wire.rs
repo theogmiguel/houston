@@ -20,7 +20,7 @@ fn fixture() -> &'static Path {
         std::fs::create_dir_all(&home).unwrap();
         let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION -or $args -contains '--version'){exit 0}\nif($env:HOUSTON_WINDOWS_EXIT_NOW){ Write-Output $env:HOUSTON_WINDOWS_EXIT_NOW; exit 3 }\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
         std::fs::write(root.path().join("fixture.ps1"), script).unwrap();
-        for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for provider in ["claude", "codex", "agy", "opencode"] {
             std::fs::write(root.path().join(format!("{provider}.cmd")), "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fixture.ps1\" %*\r\n").unwrap();
         }
         let path = std::env::var("PATH").unwrap_or_default();
@@ -208,8 +208,6 @@ async fn tasks_start_stop_and_resume_in_the_same_windows_worktree_for_each_provi
         proto::AgentKind::Codex,
         proto::AgentKind::Antigravity,
         proto::AgentKind::Opencode,
-        proto::AgentKind::Cursor,
-        proto::AgentKind::Grok,
     ] {
         let id = rig.task(&format!("Verify {agent:?}"));
         let reply = rig.daemon.task_start(id, agent, None).unwrap();
@@ -319,7 +317,7 @@ async fn windows_task_queue_result_and_independent_review_complete_a_task() {
             workspace,
             id,
             parent.id,
-            proto::AgentKind::Grok,
+            proto::AgentKind::Codex,
             "task_review",
         )
         .unwrap();
@@ -548,36 +546,4 @@ async fn canonical_workspace_spawns_a_recorded_worktree_over_http_and_mcp() {
         assert_eq!(Path::new(&recorded.0).canonicalize().unwrap(), expected);
         assert_eq!(recorded.1, format!("houston/{slug}"));
     }
-}
-
-#[tokio::test]
-async fn failed_provider_preparation_rolls_back_the_tree_and_can_retry_the_same_slug() {
-    let _guard = SERIAL.lock().await;
-    let rig = Rig::new().await;
-    let parent = rig.parent();
-    let token = rig.token(parent.id);
-    let config = fixture().join("home/.grok/trusted_folders.toml");
-    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
-    std::fs::write(&config, "invalid = [").unwrap();
-    let ask = json!({"kind":"grok", "prompt":"Verify rollback", "worktree":"retry-child"});
-    let (status, error) = rig.post(&token, "/orchestrate/spawn", ask.clone()).await;
-    std::fs::write(&config, "").unwrap();
-    assert_ne!(status, 200, "{error}");
-    assert!(error.to_string().contains("valid TOML"), "{error}");
-    assert!(!houston_core::worktrees::spawn_path(&rig.repo, "retry-child").exists());
-    assert!(git(&rig.repo, &["branch", "--list", "houston/retry-child"])
-        .trim()
-        .is_empty());
-    assert_eq!(houston_core::worktrees::list(&rig.repo).unwrap().len(), 1);
-    let db = rusqlite::Connection::open(rig._state.path().join("test.db")).unwrap();
-    let count: u32 = db
-        .query_row("SELECT COUNT(*) FROM managed_worktrees", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(count, 0);
-    let (status, body) = rig.post(&token, "/orchestrate/spawn", ask).await;
-    assert_eq!(status, 200, "{body}");
-    rig.child_cwd(body["session_id"].as_u64().unwrap() as u32)
-        .await;
 }

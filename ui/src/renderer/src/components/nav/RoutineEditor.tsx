@@ -40,7 +40,7 @@ export type RoutineFormValue = {
 }
 
 const WEEKDAYS_MON_FRI = [2, 3, 4, 5, 6]
-const EFFORT_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'grok']
+const EFFORT_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity']
 
 function supportsEffort(engine: AgentKind): boolean {
   return EFFORT_ENGINES.includes(engine)

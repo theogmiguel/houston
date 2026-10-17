@@ -1,0 +1,8 @@
+{
+  "_note": "the plugin's constructed payload for question.replied: answers holds one list of selected labels per question (schema/src/v1/question.ts at v1.19.0); not captured live",
+  "session_id": "ses_root01",
+  "request_id": "que_01",
+  "message": "",
+  "questions": [],
+  "answers": [["Option B"]]
+}

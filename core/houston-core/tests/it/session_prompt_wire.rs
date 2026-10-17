@@ -150,15 +150,15 @@ async fn launch_model_and_effort_reach_the_cli_argv() {
 async fn unsupported_effort_is_refused_with_the_provider_name() {
     let _serial = SERIAL.lock().await;
     let (_addr, state, daemon) = start_daemon_with_handle().await;
-    let mut params = params(state.path(), proto::AgentKind::Cursor, None);
+    let mut params = params(state.path(), proto::AgentKind::Opencode, None);
     params.effort = Some(proto::ChatEffort::High);
 
     let err = daemon
         .create_session(params)
-        .expect_err("Cursor does not expose per-run reasoning effort");
+        .expect_err("OpenCode does not expose per-run reasoning effort");
     let message = err.to_string();
     assert!(
-        message.contains("Cursor") && message.contains("per-run reasoning-effort"),
+        message.contains("Opencode") && message.contains("per-run reasoning-effort"),
         "the refusal must name the unsupported provider; got {message:?}"
     );
 }

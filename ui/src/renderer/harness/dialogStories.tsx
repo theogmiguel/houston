@@ -151,7 +151,7 @@ function connectPhoneClient(scenario: ConnectPhoneScenario): HoustonClient {
       const expiresAt = scenario === 'expired' ? Date.now() - 1 : Date.now() + 9 * 60_000 + 41_000
       emit({ type: 'remote_pairing', url: `${remote.url}/#pair=story`, qr_svg: QR_SVG, expires_at: expiresAt })
       if (scenario === 'connected') {
-        setTimeout(() => emit({ type: 'remote_state', remote: { ...remote, devices: [{ id: 1, name: 'Pixel 8', created_at: 1, last_seen_at: null }] } }), 0)
+        setTimeout(() => emit({ type: 'remote_state', remote: { ...remote, devices: [{ id: 1, name: 'Pixel 8', tier: 'drive', created_at: 1, last_seen_at: null }] } }), 0)
       }
     }, 0)
   }

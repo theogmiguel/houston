@@ -147,6 +147,19 @@ fn local_tm_from_ms(ms: i64) -> Option<libc::tm> {
     valid.then(|| unsafe { local.assume_init() })
 }
 
+/// Local midnight at or before `ms`; UTC midnight when the platform cannot convert.
+pub fn local_midnight_ms(ms: i64) -> i64 {
+    match local_tm_from_ms(ms) {
+        Some(local) => {
+            let into_day = i64::from(local.tm_hour) * 3_600
+                + i64::from(local.tm_min) * 60
+                + i64::from(local.tm_sec);
+            ms.div_euclid(1_000) * 1_000 - into_day * 1_000
+        }
+        None => ms.div_euclid(86_400_000) * 86_400_000,
+    }
+}
+
 pub fn local_date_from_ms(ms: i64) -> String {
     let Some(local) = local_tm_from_ms(ms) else {
         return ms.div_euclid(86_400_000).to_string();

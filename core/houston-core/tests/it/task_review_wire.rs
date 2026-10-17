@@ -18,7 +18,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -210,7 +210,7 @@ impl Rig {
                 &self.workspace(),
                 id,
                 parent,
-                proto::AgentKind::Grok,
+                proto::AgentKind::Codex,
                 reviewer,
                 "task_execute",
             )
@@ -270,7 +270,7 @@ async fn a_failed_review_leaves_the_findings_as_a_comment_and_the_run_needing_re
     let parent = r.parent();
     let id = r.create_task();
 
-    let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Grok));
+    let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
     r.submit_complete(impl_run.session_id.unwrap());
     assert_eq!(r.task_status(id), "inreview");
 
@@ -305,7 +305,7 @@ async fn retry_with_findings_opens_attempt_n_plus_one_in_the_same_worktree() {
     let parent = r.parent();
     let id = r.create_task();
 
-    let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Grok));
+    let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
     let first_tree = impl_run.worktree_path.clone().unwrap();
     r.submit_complete(impl_run.session_id.unwrap());
     let review_run = r.open_run_of("review");
@@ -363,7 +363,7 @@ async fn automatic_rework_stops_at_the_configured_cap() {
     let r = rig("review-auto-rework").await;
     r.daemon.orchestration_set(true).unwrap();
     r.daemon
-        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Grok), 1)
+        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Codex), 1)
         .unwrap();
     let parent = r.parent();
     let id = r.create_task();
@@ -423,7 +423,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
 
     let msg = r
         .daemon
-        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Grok), 2)
+        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Codex), 2)
         .unwrap();
     let proto::ServerMsg::TaskReviewSettings {
         reviewer,
@@ -433,7 +433,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
     else {
         panic!("expected TaskReviewSettings, got {msg:?}");
     };
-    assert_eq!(reviewer, Some(proto::AgentKind::Grok));
+    assert_eq!(reviewer, Some(proto::AgentKind::Codex));
     assert_eq!(rework_rounds, 2);
 
     let msg = r
@@ -450,7 +450,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
         .daemon
         .tasks_review_settings_set(
             &r.workspace(),
-            Some(proto::AgentKind::Grok),
+            Some(proto::AgentKind::Codex),
             proto::TASKS_REWORK_ROUNDS_MAX + 1,
         )
         .unwrap();

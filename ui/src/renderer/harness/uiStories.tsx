@@ -1203,7 +1203,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <ConnectionCell status="Failed" reason="npx was not found on PATH" server="github" agent="Claude Code" onClick={noop} />
             <ConnectionCell status="Differs" server="postgres-local" agent="OpenCode" onClick={noop} />
-            <ConnectionCell status="Off" server="linear" agent="Cursor" onClick={noop} />
+            <ConnectionCell status="Off" server="linear" agent="Codex" onClick={noop} />
           </SpecimenRow>
           <RoutineDetail
             routine={{ kind: 'user', id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}

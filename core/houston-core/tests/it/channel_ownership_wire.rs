@@ -15,7 +15,7 @@ fn bin() -> &'static str {
 fn the_hermetic_login_probe_cannot_restore_host_provider_executables() {
     let home = tempfile::tempdir().unwrap();
     let output = common::hermetic_command("/bin/sh", home.path())
-        .args(["-c", "\"$SHELL\" -lic ''; for provider in claude codex agy opencode cursor-agent grok; do command -v \"$provider\"; done"])
+        .args(["-c", "\"$SHELL\" -lic ''; for provider in claude codex agy opencode; do command -v \"$provider\"; done"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -31,7 +31,7 @@ fn the_hermetic_login_probe_cannot_restore_host_provider_executables() {
         "host PATH restored: {login}"
     );
     let providers: Vec<_> = lines.collect();
-    assert_eq!(providers.len(), 6);
+    assert_eq!(providers.len(), 4);
     for provider in providers {
         assert!(
             std::path::Path::new(provider).starts_with(home.path()),

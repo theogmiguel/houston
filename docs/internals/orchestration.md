@@ -86,7 +86,6 @@ Known limits:
 - A server body completing is not an application acknowledgement.
 - Codex has no authoritative human-escalation event; an unresolved Auto review shows the
   `stalled?` diagnostic described below, which can be a false positive.
-- Cursor has no needs-input signal.
 - Windows writer cancellation has no automated test yet.
 
 ## The MCP endpoint
@@ -125,17 +124,13 @@ all supported events. Every PTY additionally reports process exit independently.
 | Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s | Unsupported in hooks | Escape |
 | Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional | Unsupported in hooks | Refused: no verified key |
 | OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
-| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
-| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
 | ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; the PostToolUse/Failure with the same tool_use_id (a denial fires no hook) | Stop (successful turns only); an interrupt cancels ZCode's hooks and reports nothing | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported: a failed turn fires no hook and stays Working | Refused: an interrupt reports no idle |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
-stays below foreground auto-backgrounding; Cursor keeps a margin under its inspected
-60-second timeout. Codex's launch timeout is 630 seconds. OpenCode's Houston registration
-uses a process-scoped inline timeout of 630000 ms, reversed automatically on exit. Grok's
-`tool_timeouts.pane_wait` overrides the server timeout; unknown or invalid configuration
-uses a provisional 30-second cap. Antigravity's numeric client limit is still unknown.
+stays below foreground auto-backgrounding. Codex's launch timeout is 630 seconds. OpenCode's Houston registration
+uses a process-scoped inline timeout of 630000 ms, reversed automatically on exit. An
+unknown parent provider uses a provisional 30-second cap. Antigravity's numeric client limit is still unknown.
 A timeout returns one line asking the parent to call `pane_wait` again.
 
 Codex Auto PermissionRequest is approval-flow evidence, not human-wait evidence. An
@@ -251,7 +246,7 @@ untrusted page content, bounded to 256 entries of 4096 characters per surface. M
 capture includes console calls, uncaught errors and unhandled rejections on Linux;
 `browser_console_messages` refuses other platforms by name.
 
-`pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok | zcode`), `prompt`,
+`pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | zcode`), `prompt`,
 and optional `model`, `cwd`, `target_workspace`, `worktree`, `branch`, `reusable`, `handoff`, `state_doc`, `effort`,
 `auto_approve`, `profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
 workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
@@ -415,31 +410,14 @@ An agent pane's inline configuration takes precedence over that Windows entry.
 Codex gets the same user-scope entry through
 `codex mcp add`, holding the literal endpoint (Codex expands no placeholders) and the
 token's env-var name, refreshed each release-channel boot because the port is ephemeral.
-Grok has no per-spawn `mcp_launch.rs` mechanism at all, only this persistent one:
-`mcp_register_grok.rs` runs `grok mcp add --transport http houston ${HOUSTON_MCP_URL}
---header "Authorization: Bearer ${HOUSTON_MCP_TOKEN}"`, verified against
-`docs.x.ai/build/features/mcp-servers`; live authentication remains unverified.
-Grok's own `config.toml` expands `${VAR}` in both `url` and `headers` (unlike
-Codex's, which never expands `url`), so this entry holds `${VAR}` placeholders
-and is never refreshed once written — there is no literal port to go stale.
-Cursor has no `mcp add` subcommand at all (verified against `cursor.com/docs/cli/mcp`:
-only `list`/`list-tools`/`login`/`enable`/`disable` exist), so `mcp_register_cursor.rs`
-edits `~/.cursor/mcp.json`'s `mcpServers` object directly — the same file and key
-`mcp.rs`'s own third-party-server sync already uses for an unrelated feature, under a
-different server name. Being the writer here rather than a CLI's own command means the
-entry carries a sibling `_houston` marker key (`mcp.json` is strict JSON, no comments to
-carry one in), so a same-named entry someone else configured is never mistaken for
-Houston's own. Cursor expands `${env:VAR}` in both `url` and `headers`
-(`cursor.com/docs/context/mcp`), so this entry too holds placeholders and is never
-refreshed. Live authentication remains unverified.
 Antigravity has no `mcp add` subcommand documented either, so
 `mcp_register_antigravity.rs` writes `~/.gemini/config/mcp_config.json`'s `mcpServers`
-object directly, using the same marker scheme as Cursor. The provider's MCP documentation
+object directly, using a sibling `_houston` marker key (strict JSON has no comments to carry one), so a same-named entry someone else configured is never mistaken for Houston's own. The provider's MCP documentation
 names this home-level file in the same `~/.gemini/config/` directory
 `agent_hooks::config_path` already uses for this provider's `hooks.json`. The same doc
 states a remote entry's field is `serverUrl`, not `url`/`httpUrl` ("legacy fields ... are
-not supported"), so this entry holds `serverUrl` with the bare `${VAR}` placeholders
-Grok's entry uses. Placeholder expansion remains unverified.
+not supported"), so this entry holds `serverUrl` with the bare `${VAR}` placeholders.
+Placeholder expansion remains unverified.
 `google-antigravity/antigravity-cli` issue #25 reports the
 `headers.Authorization` bearer is accepted by the schema but silently ignored by the
 CLI's own HTTP MCP transport at runtime. Live authentication remains unverified.
@@ -654,15 +632,13 @@ the note, or the operator receives it when no ancestor is live.
 
 Restart supports Codex's default Escape binding and its documented
 [Interrupt hook](https://learn.chatgpt.com/docs/hooks#interrupt), mapped to idle.
-Grok 1.0.13's bundled hook documentation specifies `StopCancelled` for user
-interrupts, including Ctrl+C with an empty composer; that event maps to idle.
 Claude is refused: its native mod can report interruptions on supported launches,
 but a live key-to-interrupt restart contract has not been verified. Its
 [Stop hook](https://code.claude.com/docs/en/hooks#stop) excludes user interrupts.
 OpenCode is refused: the root `session.idle`
 fixture proves normal idle, not interruption; its installed TUI uses an Escape
 counter before abort, without a captured or documented interrupt-to-idle contract.
-Cursor and Antigravity have no verified interrupt/idle pair and are also refused.
+Antigravity and ZCode have no verified interrupt/idle pair and are also refused.
 Custom remapped interrupt bindings are not detected; supported providers must
 retain their default binding for restart delivery.
 
@@ -697,7 +673,7 @@ CLI splices the text into the same turn instead of ending it. `POST /inbox/deliv
 {delivery_id}` afterwards marks the row `delivered_via = 'stop_hook'`; a failed confirm
 just lets the reservation expire, leaving the row eligible again.
 `orchestrate::door2_continue_json(provider, text)` is the one place that shape lives,
-`None` for a provider door 2 does not serve — Grok, OpenCode and Cursor stay on door 3.
+`None` for a provider door 2 does not serve — OpenCode stays on door 3.
 Claude, Codex and ZCode print `{"decision":"block","reason"}` (Codex's `~/.codex/hooks.json`
 `Stop` hook takes the exact same shape, verified live on 0.153.4; ZCode's is read from its
 `hooks/output.ts`, which also caps continuations at three, matching
@@ -864,7 +840,7 @@ the installed CLI; it cannot be inferred from elapsed time or terminal text.
 **Tool-boundary context (door 2b).** Claude and Codex `PostToolUse` command hooks can
 return `hookSpecificOutput.additionalContext`. The hook queries the authenticated daemon
 for bounded, once-per-row needs-input hints. This does not consume the durable row, block
-the parent's turn or paste into a Working terminal. Antigravity, OpenCode, Cursor and Grok
+the parent's turn or paste into a Working terminal. Antigravity and OpenCode
 rely on the operator channel for immediate attention and their existing idle delivery.
 Post-tool context queries run after the lifecycle drop is written. Each pane receives a
 local signal path at spawn; the signal is created when it first hosts a child, including
@@ -1272,19 +1248,17 @@ with amber status and notifications. Input episode ids differ from worker `reque
 | Claude | `PermissionRequest`; typed `Notification.permission_prompt` | Escape with the default permission cancel binding. Custom rebinding is refused. `AskUserQuestion`, `ExitPlanMode` and elicitation are questions. |
 | Codex | Permission request outside Auto, or typed waiting notification | Escape cancels the approval overlay and may interrupt the turn. A bare Auto `PermissionRequest` is approval activity, with no input ownership or alert. `request_user_input` is a question. |
 | OpenCode | `permission.asked` / legacy `permission.updated` | Unsupported: root and native child permissions share pane input, and Escape depends on permission/reject/always stage. Event evidence does not prove which stage receives the key. Question events remain parent-owned questions. |
-| Cursor | No needs-input signal | Unsupported. A missing badge cannot prove the pane is working or awaiting permission. |
-| Grok | Typed `Notification.permission_prompt` | Ctrl+C cancels the permission; Escape is not a verified denial. Elicitation and unclassified blocking notifications remain parent-owned. |
 | Antigravity | Blocking `PreToolUse.ask_permission` / `ask_custom_permission` | n without Enter for the verified default prompt. Refuse when the default input contract cannot be verified. `ask_question` is a question. |
 | Supported ACP stream | `session/request_permission` | Unsupported response path: Houston observes the stream but does not answer ACP permissions. |
 | Houston report | `pane_report` question / blocked | Parent answers through `pane_reply`; a reply cannot approve a native permission. |
 
 Denial bindings are verified against the live provider process on Linux. Claude uses
 `~/.claude/keybindings.json` or the launched `CLAUDE_CONFIG_DIR`; a custom bindings
-file refuses denial. Grok's custom-binding guard checks `~/.grok/keybindings.json`.
+file refuses denial.
 Antigravity's documented default `confirm.no` is n and its customization file is
 `~/.gemini/antigravity-cli/keybindings.json` ([keybindings reference](https://www.antigravity.google/docs/cli/using/#keybindings));
 Houston refuses custom bindings rather than adding Enter or choosing a default button.
-Codex Escape and Grok Ctrl+C can interrupt the turn while denying. On other platforms,
+Codex Escape can interrupt the turn while denying. On other platforms,
 effective process bindings cannot currently be verified, so `pane_deny` explicitly
 refuses and directs the parent to `pane_escalate`. An agent adopted inside a shell also
 refuses denial when its effective provider configuration cannot be verified.
@@ -1318,16 +1292,16 @@ provider's captured payload shapes live under
 `core/houston-core/tests/fixtures/hooks/<provider>/` with the CLI version in the file
 name.
 
-| | Claude | Codex | Grok | OpenCode | Cursor | Antigravity (`agy`) |
-|---|---|---|---|---|---|---|
-| **Turn end** | `Stop`; main-loop mod `turn.complete.isAborted` for interruptions | `Stop` (hooks.json; `notify` retired) | `Stop` | `session.idle` for the root session only | `stop` (`status`, `loop_count`) | `Stop` (`fullyIdle`, `terminationReason`) |
-| **Last message** | `Stop.last_assistant_message` | `Stop.last_assistant_message` | not in payload: capped tail | plugin reads `client.session.messages` at idle | `afterAgentResponse.text` | not in payload; every payload carries `transcriptPath` (the CLI's own JSONL), read the last assistant entry there, never the screen |
-| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name`; `PostToolUse` resolves the matching permission episode | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
-| **Sub-agent vs child** | the round rule above | `SubagentStop` is separate; main `Stop` fires once, parent stays busy | `SubagentStart`/`Stop` separate; `spawn_subagent` blocks the parent by default | child is a session with `parentID`; plugin maps ids from `session.created`, parent stays busy | `subagentStart`/`Stop` carry `subagent_id`, `parent_conversation_id` | sub-agent is a second `conversationId` firing the same hooks; the parent's own `Stop` while it waits has `fullyIdle=false`. Pin the root id at the first `SessionStart`, drop the rest |
-| **Door 2** | `Stop` → `{"decision":"block","reason"}` | same shape, `exit 0`, live-verified | none enabled: docs contradict; door 3 carries the rows | none enabled: plugin injection still to probe; door 3 carries the rows | none enabled: `stop` → `{"followup_message"}` documented, not live-verified; door 3 carries the rows | `Stop` → `{"decision":"continue","reason"}`, exit 0; the re-fired `Stop` carries `executionNum: 1` |
-| **Houston tools in the child** | `--mcp-config`, added to the user's own servers (no `--strict-mcp-config`) | `-c mcp_servers.*` + token env | user-scope `grok mcp add` with a `${HOUSTON_MCP_TOKEN}` header | `OPENCODE_CONFIG_CONTENT` env with a `remote` server and bearer header | user-scope `~/.cursor/mcp.json` entry with `${env:HOUSTON_MCP_TOKEN}`, `_houston` marker | `~/.gemini/config/mcp_config.json` headers; bearer silently ignored upstream, smoke-test |
-| **Compaction (counted, never a status)** | `PreCompact`, live on 2.1.287 | `PreCompact`, in the 0.159.1 hook event list | `PreCompact`, in the 1.0.13 hook table | `session.compacted` for the root session only, 1.18.33 bus schema | `preCompact`, in the 2026.08.11 bundle | none: no count, and the overview says so |
-| **Verified how** | live, 2.1.263 | local schema + docs, 0.155.1 | docs + repo; login needed to probe | live, 1.18.27 (child sessions, idle, permission event) | docs; login needed to probe | live, 1.1.26 (all six rows) |
+| | Claude | Codex | OpenCode | Antigravity (`agy`) |
+|---|---|---|---|---|
+| **Turn end** | `Stop`; main-loop mod `turn.complete.isAborted` for interruptions | `Stop` (hooks.json; `notify` retired) | `session.idle` for the root session only | `Stop` (`fullyIdle`, `terminationReason`) |
+| **Last message** | `Stop.last_assistant_message` | `Stop.last_assistant_message` | plugin reads `client.session.messages` at idle | not in payload; every payload carries `transcriptPath` (the CLI's own JSONL), read the last assistant entry there, never the screen |
+| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name`; `PostToolUse` resolves the matching permission episode | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
+| **Sub-agent vs child** | the round rule above | `SubagentStop` is separate; main `Stop` fires once, parent stays busy | child is a session with `parentID`; plugin maps ids from `session.created`, parent stays busy | sub-agent is a second `conversationId` firing the same hooks; the parent's own `Stop` while it waits has `fullyIdle=false`. Pin the root id at the first `SessionStart`, drop the rest |
+| **Door 2** | `Stop` → `{"decision":"block","reason"}` | same shape, `exit 0`, live-verified | none enabled: plugin injection still to probe; door 3 carries the rows | `Stop` → `{"decision":"continue","reason"}`, exit 0; the re-fired `Stop` carries `executionNum: 1` |
+| **Houston tools in the child** | `--mcp-config`, added to the user's own servers (no `--strict-mcp-config`) | `-c mcp_servers.*` + token env | `OPENCODE_CONFIG_CONTENT` env with a `remote` server and bearer header | `~/.gemini/config/mcp_config.json` headers; bearer silently ignored upstream, smoke-test |
+| **Compaction (counted, never a status)** | `PreCompact`, live on 2.1.287 | `PreCompact`, in the 0.159.1 hook event list | `session.compacted` for the root session only, 1.18.33 bus schema | none: no count, and the overview says so |
+| **Verified how** | live, 2.1.263 | local schema + docs, 0.155.1 | live, 1.18.27 (child sessions, idle, permission event) | live, 1.1.26 (all six rows) |
 
 Capabilities are typed per session, not per provider name: `orchestrate::ProviderCapabilities`
 carries `turn_end`, `last_message`, `block` and `door2`, derived from the event map and the
@@ -1353,7 +1327,7 @@ What changes per provider, beyond the shared inbox:
 - **Codex.** `agent_hooks.rs` installs `~/.codex/hooks.json` in the Claude schema for
   `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, plus
   `SubagentStart`/`SubagentStop`/`SessionEnd`/`PreToolUse`/`PostToolUse` correlation-only, with the
-  same managed-marker discipline as Cursor's file; `notify` is removed from `config.toml`
+  same managed-marker discipline as the other providers' files; `notify` is removed from `config.toml`
   (parked, or deleted outright if it is Houston's own stale entry). Codex maps to
   `HooksFull`. In the 0.155.1 event shape, `PermissionRequest` has no `tool_use_id`;
   the helper carries its `turn_id` and a SHA-256 digest of `tool_input.command`, and
@@ -1386,15 +1360,6 @@ What changes per provider, beyond the shared inbox:
   Unsupported native options and hosts without user systemd retain hooks and, when available, `--no-daemon`.
   Other platforms keep hooks only. See [the app-server contract](https://learn.chatgpt.com/docs/app-server)
   and [agent lifecycle](agent-lifecycle.md).
-- **Grok.** Hooks already installed in `~/.grok/hooks/houston.json`. `SubagentStart`/
-  `SubagentStop` are installed correlation-only; `PermissionRequest` was NOT added — the
-  docs list `PermissionDenied`, the moment a permission has already been resolved, not the
-  "blocked asking" moment `NeedsInput` means — so `Notification` stays the one block
-  signal. Grok's field casing is unconfirmed (one docs fetch said camelCase, the code
-  assumed Claude's snake_case), so `parse_hook_payload` tries snake_case first, then the
-  camelCase twin, for Grok alone. Grok also reads Claude-format workspace hooks. A remaining
-  Claude-path entry could deliver the same event twice; the helper exits without writing a
-  drop when `--agent` is absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
 - **ZCode.** Hooks run only from ZCode's settings file (`setting.json` in the community
   package, `config.json` upstream) and only with `hooks.enabled`, so the installer parks
   the previous value (see invariants). The stdin carries Claude's snake_case aliases next
@@ -1444,11 +1409,6 @@ What changes per provider, beyond the shared inbox:
   `last_assistant_message`. A permission event (`permission.asked`, live; `permission.updated`,
   older builds) forwards `permission`/`patterns` as the reason, in whichever session it
   fired — a permission asked inside a child still blocks the pane.
-- **Cursor.** `~/.cursor/hooks.json` gains `afterAgentResponse` (the only place Cursor's
-  last-said text lives, `{"text": "..."}` — lifted into `last_message` but still never a
-  status, since it fires after every assistant message) and `subagentStart`/`subagentStop`
-  (correlation-only). No needs-input event exists in Cursor's contract; the stall row
-  covers it and `pane_list` says "cursor: needs-input not reported by this provider".
 - **Antigravity.** Binary is `agy`. The installer adds `SessionStart` and
   `PreToolUse`/`PostToolUse`, which fire **only in the matcher-wrapped dialect**
   (`{"matcher": ".*", "hooks": [...]}`); the plain entry the installer writes for the other
@@ -1470,13 +1430,11 @@ What changes per provider, beyond the shared inbox:
 
 `ProviderCapabilities` has one consumer beyond the tests: `capability_note` turns a missing
 axis into one sentence per provider, joined with `"; "`, and `pane_list` carries it per
-child — "grok reports no last message; the exit or the submit is what the parent gets",
-"cursor: needs-input not reported by this provider", "opencode has no turn-end continuation;
-results wait for its next idle". A `ProcessOnly` CLI gets exactly its own sentence — "this
+child — "opencode has no turn-end continuation; results wait for its next idle". A `ProcessOnly` CLI gets exactly its own sentence — "this
 pane reports no turn end; only a submit or its exit reaches its parent" — because the other
 three axes are moot when there is no turn end to hang them off. The renderer's delegation
-card shows the same sentence. A door-2 mechanism that is unconfirmed for a provider (Grok,
-OpenCode, Cursor) is not enabled for it; that provider's parents use door 3 until a live
+card shows the same sentence. A door-2 mechanism that is unconfirmed for a provider (OpenCode)
+is not enabled for it; that provider's parents use door 3 until a live
 probe verifies its continue shape.
 
 ### Measured
@@ -1504,9 +1462,6 @@ The live probes that settled these rows, in a real PTY with every hook event log
   `{"decision":"continue","reason":"…"}` on exit 0 continued the turn; the re-fired `Stop`
   carried `executionNum: 1`. Registered and never fired: `SessionEnd`, `UserPromptSubmit`,
   `Notification`, `PermissionRequest`, `SubagentStart`, `SubagentStop`, `StopFailure`.
-- **Grok and Cursor** rely on documented contracts; authenticated live probes remain
-  pending. Verify Grok's field casing and whether Cursor's `stop` →
-  `followup_message` really continues a turn.
 
 The role regression measures serialized `tools/list` responses with every in-core
 provider registered and verifies that a leaf keeps a bounded dialogue tool set.
@@ -1656,9 +1611,8 @@ paint above the renderer DOM. Tooltips never suppress: they sit over chrome rows
 global hide on every hover blanks the page.
 
 Worktree spawning passes Codex a session-local inline `projects` trust table for the
-child checkout and the repository's main checkout,
-passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
-block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
+child checkout and the repository's main checkout. Existing unmanaged trust decisions
+are preserved.
 Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects the warning and asks the operator to handle folder trust; permission approval belongs only to the operator. When no lifecycle report arrives within the startup window, the child becomes
 Unavailable and a deduplicated `startup_unconfirmed` note reaches its parent. This
 notice names hook and folder trust as possible causes without inferring a human wait. Claude's parent-folder trust

@@ -25,7 +25,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -276,7 +276,7 @@ async fn pane_spawn_with_a_worktree_starts_the_child_inside_a_recorded_tree() {
     let result = r
         .spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await;
     let child = spawned_session(&result);
@@ -317,7 +317,7 @@ async fn handoff_with_a_worktree_starts_an_independent_pane_in_a_recorded_checko
     ));
     for (slug, branch) in [("default", None), ("explicit", Some("feat/handoff"))] {
         let mut ask = serde_json::json!({
-            "kind": "grok", "prompt": "continue editing this branch",
+            "kind": "codex", "prompt": "continue editing this branch",
             "handoff": true, "worktree": slug,
             "state_doc": {"text": "HANDOFF-BRANCH-STATE"},
         });
@@ -413,7 +413,7 @@ async fn pane_spawn_uses_the_branch_it_was_given() {
         .spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "go",
                 "worktree": "demo",
                 "branch": "feat/demo-branch",
@@ -442,7 +442,7 @@ async fn the_worktrees_dir_gets_a_gitignore_once() {
     spawned_session(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "one"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "one"}),
         )
         .await,
     );
@@ -452,7 +452,7 @@ async fn the_worktrees_dir_gets_a_gitignore_once() {
     spawned_session(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "two"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "two"}),
         )
         .await,
     );
@@ -480,7 +480,7 @@ async fn a_worktree_spawn_outside_git_is_refused_and_creates_nothing() {
     let text = refusal_text(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await,
     );
@@ -506,7 +506,7 @@ async fn a_taken_slug_or_branch_is_refused_by_name() {
     let text = refusal_text(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await,
     );
@@ -517,7 +517,7 @@ async fn a_taken_slug_or_branch_is_refused_by_name() {
     let text = refusal_text(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "other"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "other"}),
         )
         .await,
     );
@@ -538,7 +538,7 @@ async fn worktree_and_cwd_together_are_refused() {
         &r.spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "go",
                 "worktree": "demo",
                 "cwd": r.ws_dir.display().to_string(),
@@ -572,7 +572,7 @@ async fn k6_invalid_slug_is_refused_naming_the_rule() {
         let text = refusal_text(
             &r.spawn(
                 &token,
-                serde_json::json!({"kind": "grok", "prompt": "go", "worktree": slug}),
+                serde_json::json!({"kind": "codex", "prompt": "go", "worktree": slug}),
             )
             .await,
         );
@@ -601,7 +601,7 @@ async fn a_spawn_that_fails_after_the_tree_was_made_removes_it() {
     let result = r
         .spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await;
     let conn = rusqlite::Connection::open(r.db_path()).unwrap();
@@ -669,7 +669,7 @@ async fn the_hs_pane_door_creates_the_worktree_and_reports_refusals() {
         "/orchestrate/spawn",
         &token,
         Some(serde_json::json!({
-            "kind": "grok",
+            "kind": "codex",
             "prompt": "go",
             "worktree": "demo",
             "branch": "feat/door",
@@ -696,7 +696,7 @@ async fn the_hs_pane_door_creates_the_worktree_and_reports_refusals() {
         "POST",
         "/orchestrate/spawn",
         &token,
-        Some(serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "a/b"})),
+        Some(serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "a/b"})),
     )
     .await;
     assert_eq!(status, 409, "{body}");
@@ -735,7 +735,7 @@ async fn removing_a_worktree_from_the_changes_pane_frees_its_slug() {
     spawned_session(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await,
     );
@@ -761,7 +761,7 @@ async fn removing_a_worktree_from_the_changes_pane_frees_its_slug() {
     spawned_session(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await,
     );
@@ -779,7 +779,7 @@ async fn a_worktree_deleted_by_hand_does_not_block_its_slug() {
     spawned_session(
         &r.spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await,
     );
@@ -790,7 +790,7 @@ async fn a_worktree_deleted_by_hand_does_not_block_its_slug() {
         .spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "go",
                 "worktree": "demo",
                 "branch": "feat/second",
@@ -824,7 +824,7 @@ async fn an_invalid_branch_is_refused_before_anything_is_created() {
             &r.spawn(
                 &token,
                 serde_json::json!({
-                    "kind": "grok",
+                    "kind": "codex",
                     "prompt": "go",
                     "worktree": "demo",
                     "branch": branch,
@@ -869,7 +869,7 @@ async fn a_rollback_that_cannot_remove_the_tree_keeps_its_row() {
     let result = r
         .spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "worktree": "demo"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "worktree": "demo"}),
         )
         .await;
     let conn = rusqlite::Connection::open(r.db_path()).unwrap();
@@ -902,7 +902,7 @@ async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survive
         &r.spawn(
             &token,
             serde_json::json!({
-                "kind": "grok", "prompt": "go", "worktree": "metadata", "branch": "feat/metadata"
+                "kind": "codex", "prompt": "go", "worktree": "metadata", "branch": "feat/metadata"
             }),
         )
         .await,
@@ -934,7 +934,7 @@ async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survive
         &r.spawn(
             &token,
             serde_json::json!({
-                "kind": "grok", "prompt": "read", "cwd": nested
+                "kind": "codex", "prompt": "read", "cwd": nested
             }),
         )
         .await,
@@ -1016,14 +1016,14 @@ async fn k6_colliding_slug_refusal_names_both_slugs() {
     let first = r
         .spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"go","worktree":"Upper"}),
+            serde_json::json!({"kind":"codex","prompt":"go","worktree":"Upper"}),
         )
         .await;
     assert!(!first["isError"].as_bool().unwrap_or(false), "{first}");
     let error = refusal_text(
         &r.spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"go","worktree":"upper"}),
+            serde_json::json!({"kind":"codex","prompt":"go","worktree":"upper"}),
         )
         .await,
     );
@@ -1122,17 +1122,6 @@ async fn provider_worktree_trust(kind: &str, automatic_trust: bool, flag: &str) 
         r.daemon.close(handoff).unwrap();
     } else {
         let id = spawned_session(&response);
-        if kind == "grok" {
-            let store = shim_dir().join("home/.grok/trusted_folders.toml");
-            let text = std::fs::read_to_string(store).unwrap();
-            assert!(text.contains("# >>> houston managed worktree trust >>>"));
-            let parsed: toml::Value = text.parse().unwrap();
-            assert_eq!(
-                parsed["folders"][r.worktrees_dir().join("trust").display().to_string()]["trusted"]
-                    .as_bool(),
-                Some(true)
-            );
-        }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
             let replay = r.daemon.scrollback(id, None).unwrap();
@@ -1181,14 +1170,6 @@ async fn antigravity_worktree_spawn_warns_and_stays_visible_until_cli_progress()
 async fn opencode_worktree_spawn_warns_and_stays_visible_until_cli_progress() {
     provider_worktree_trust("opencode", false, "").await;
 }
-#[tokio::test]
-async fn k6_cursor_worktree_trust() {
-    provider_worktree_trust("cursor", true, "--trust").await;
-}
-#[tokio::test]
-async fn k6_grok_worktree_trust() {
-    provider_worktree_trust("grok", true, "FIXTURE-READY").await;
-}
 
 #[tokio::test]
 async fn k6_worktree_reservation_protects_caps_and_rolls_back() {
@@ -1213,7 +1194,7 @@ async fn k6_worktree_reservation_protects_caps_and_rolls_back() {
             let error = daemon
                 .orchestrate_spawn(
                     parent.id,
-                    proto::AgentKind::Grok,
+                    proto::AgentKind::Codex,
                     None,
                     None,
                     "second".to_string().into(),
@@ -1233,7 +1214,7 @@ async fn k6_worktree_reservation_protects_caps_and_rolls_back() {
     let error = refusal_text(
         &r.spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"go","worktree":"failure"}),
+            serde_json::json!({"kind":"codex","prompt":"go","worktree":"failure"}),
         )
         .await,
     );
@@ -1241,7 +1222,7 @@ async fn k6_worktree_reservation_protects_caps_and_rolls_back() {
     let response = r
         .spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"after failure"}),
+            serde_json::json!({"kind":"codex","prompt":"after failure"}),
         )
         .await;
     let child = spawned_session(&response);
@@ -1283,7 +1264,7 @@ async fn k6_inflight_colliding_slugs_are_refused_by_both_names() {
             let error = daemon
                 .orchestrate_spawn_with_options(
                     parent.id,
-                    proto::AgentKind::Grok,
+                    proto::AgentKind::Codex,
                     None,
                     None,
                     "second".to_string().into(),
@@ -1308,7 +1289,7 @@ async fn k6_inflight_colliding_slugs_are_refused_by_both_names() {
     let response = r
         .spawn(
             &r.token_for(parent.id),
-            serde_json::json!({"kind":"grok","prompt":"go","worktree":"Upper"}),
+            serde_json::json!({"kind":"codex","prompt":"go","worktree":"Upper"}),
         )
         .await;
     let child = spawned_session(&response);
@@ -1354,7 +1335,7 @@ async fn worktree_preparation_cannot_publish_into_a_reserved_close_subtree() {
             spawned_session(
                 &r.spawn(
                     &r.token_for(root.id),
-                    serde_json::json!({"kind":"grok","prompt":"coordinate","reusable":true}),
+                    serde_json::json!({"kind":"codex","prompt":"coordinate","reusable":true}),
                 )
                 .await,
             )
@@ -1380,7 +1361,7 @@ async fn worktree_preparation_cannot_publish_into_a_reserved_close_subtree() {
                 addr,
                 &token,
                 "pane_spawn",
-                serde_json::json!({"kind":"grok","prompt":"prepare","worktree":"closing"}),
+                serde_json::json!({"kind":"codex","prompt":"prepare","worktree":"closing"}),
             )
             .await
         });
@@ -1427,7 +1408,7 @@ async fn worktree_preparation_cannot_publish_into_a_reserved_close_subtree() {
             .daemon
             .orchestrate_spawn(
                 caller,
-                proto::AgentKind::Grok,
+                proto::AgentKind::Codex,
                 None,
                 None,
                 "new child".to_string().into(),

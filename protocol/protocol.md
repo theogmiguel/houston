@@ -1,4 +1,4 @@
-# Wire protocol v143
+# Wire protocol v144
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -356,7 +356,7 @@ every refusal names the setting.
 
 | Message | Fields | Reply |
 |---|---|---|
-| `agent_hooks` | — | `agent_hooks` (direct) — what is installed per provider, and the exact file each writes |
+| `agent_hooks` | — | `agent_hooks` then `agent_accounts` (direct) — what is installed per provider, the exact file each writes, and the identity each CLI is signed in to |
 | `agent_hooks_set` | `provider: AgentKind`, `enabled` | `agent_hooks` (bcast). A failed install does not flip the setting; the refusal rides that provider's row |
 
 ### Voice
@@ -385,6 +385,7 @@ every refusal names the setting.
 | `remote_pair_start` | — | `remote_pairing` (direct). Replaces any earlier code |
 | `remote_ca_regenerate` | — | `remote_state` (bcast) with the new `ca_fingerprint`. Replaces the listener's certificate authority; the next handshakes use a certificate from the new one, so every device must trust it again. A keychain failure is an `error` with `context: "remote"` |
 | `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
+| `remote_device_set_tier` | `id`, `tier: RemoteTier` | `remote_state` (bcast) with the device's new `tier`; an unknown id is an `error` with `context: "remote"`. Applies from the device's next HTTP request |
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
 
 ### Host and usage
@@ -499,6 +500,7 @@ every refusal names the setting.
 | `skill_sync` | `tools: SkillToolState[]`, `pushes: SkillPushRecord[]`, `auto_push_enabled` | direct reply to `skill_sync`; bcast after a push, undo or auto-push toggle |
 | `mcp_state` | `source: McpServer[]`, `source_path`, `tools: McpToolState[]`, `results: McpSyncResult[]`, `checks: [string, McpConnectionCheck][]` | direct reply to `mcp_state`; bcast after sync/import/enable/upsert/remove/test |
 | `agent_hooks` | `providers: AgentHookState[]` | direct reply to `agent_hooks`; bcast after `agent_hooks_set` |
+| `agent_accounts` | `accounts: AgentAccountIdentity[]` | direct reply to `agent_hooks`, after it. One row per CLI account directory: the default account (`profile_id` absent) and each Claude and Codex profile. Each row has `sign_in` (`signed_in`\|`signed_out`\|`unknown`), `identity?` (email or `API key`), `detail?` (organization or plan), `providers` (OpenCode provider names), `reason?` and `verified` (false when the CLI's storage location is unconfirmed). Only identifiers are read from CLI files, never tokens |
 | `agent_profile_state` | `profiles: AgentProfile[]`, `active: AgentProfileActive[]` | direct reply to `agent_profile_list`; bcast after any profile change |
 | `routines` | `routines: Routine[]`, `running: u32[]` (routine ids whose run is in flight), `engine_refusals: RoutineEngineRefusal[]` | direct reply to `routine_list`; bcast after any routine mutation and on every run start/end |
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
@@ -876,7 +878,9 @@ WorktreeKeep       stale{idle_days} | branch_changed{current?} | dirty{files} | 
                    probably_integrated | remove_failed{message}
 
 RemoteNotifyDetail generic | pane_name
-RemoteDevice       id, name, created_at (epoch ms), last_seen_at? (epoch ms)
+RemoteTier         observe | drive | manage (each includes the one before: observe reads, drive also answers
+                   panes, manage also opens, renames, restarts, sleeps and closes panes and commits or pushes)
+RemoteDevice       id, name, tier: RemoteTier, created_at (epoch ms), last_seen_at? (epoch ms)
 RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http(s)://<bind>), listening,
                    error? (the last bind or serve failure), ntfy_server? (origin only; the topic URL is in the
                    OS keychain and never on the wire), notify_delay_secs, notify_detail: RemoteNotifyDetail,
@@ -1255,19 +1259,37 @@ A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers
 | `GET /houston-ca.crt`, `/houston-ca.mobileconfig` | none | — | the listener's certificate authority, as DER (`application/x-x509-ca-cert`) for Android and as an iOS configuration profile (`application/x-apple-aspen-config`); 404 while `RemoteInfo.tls` is false |
 | `GET /api/ca` | none | — | `{name, fingerprint}` of the certificate authority, to compare with Settings before trusting it; 404 while `RemoteInfo.tls` is false |
 | `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
-| `GET /api/activity` | device | `?after=` a global sequence number, default 0 | `{epoch, entries: [{seq, at (epoch ms), session, kind: finished | needs_you | answered, title, excerpt?}], truncated}`. A 500-entry memory ring; paging and epoch semantics match `/feed`. Titles are masked and capped at 300 characters, excerpts at 160. `answered` excerpts identify `from this phone` or `in the terminal` |
-| `GET /api/me` | device | — | `{device_id, name, dictation, host: {name, version}, connection: {url, https}}`. `dictation` is `RemoteInfo.dictation`. Host name is masked and capped at 128 characters; version is the daemon package version; URL is the configured public origin or HTTP bind origin, with `https` indicating its scheme |
+| `GET /api/activity` | device | `?after=` a global sequence number, default 0 | `{epoch, entries: [{seq, at (epoch ms), session, kind: finished | needs_you | answered, title, excerpt?, action?: open | rename | respawn | sleep | wake | close | commit | push, device?}], truncated}`. A 500-entry memory ring; paging and epoch semantics match `/feed`. Titles are masked and capped at 300 characters, excerpts at 160. `answered` excerpts identify `from this phone` or `in the terminal` |
+| `GET /api/me` | device | — | `{device_id, name, tier: RemoteTier, dictation, host: {name, version}, connection: {url, https}}`. `dictation` is `RemoteInfo.dictation`. Host name is masked and capped at 128 characters; version is the daemon package version; URL is the configured public origin or HTTP bind origin, with `https` indicating its scheme |
 | `GET /api/sessions` | device | — | `{grids: [{workspace, id, name, sessions: number[]}], sessions: [{id, title, parent: number | null, role: string | null, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input. `parent` and masked `role` come from daemon orchestration state. `grids` is the desktop's last published grids restricted to the listed panes, in published order; a pane two grids list stays in the first, and a grid left empty is omitted. It is empty until a desktop client has published |
 | `GET /api/sessions/{id}/feed` | device | `?after=` a sequence number, default 0 | `{id, epoch, entries: FeedEntry[], first_seq, last_seq, truncated, pending?: Pending}`: the entries after `after` still held. `truncated` means some entries after `after` were already evicted. Sequence numbers start at 1 per pane and restart with each `epoch` (a 16-digit hex string that changes when the daemon starts or remote access is turned back on) |
 | `POST /api/sessions/{id}/decide` | device | `{epoch, entry_seq, choice, text?}`; `choice` is `approve`, `always` or `deny` for a permission, an option number (`"1"`…) or `other` with `text` for a question (`other` is refused, 400, when the question has `previews`) | `{ok: true}` once the provider's keys for that choice were written to the PTY. 409 when `epoch` is not the current one, `entry_seq` is not the pane's pending card, the card was already answered from a device or in the terminal, the permission's target is `truncated` and the choice approves it, or Houston has no key mapping for the provider or the card's shape (the message names which); 400 for a choice the card does not offer |
-| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, `grids` `{}` when the published grids change, and `resync` when this reader fell behind; a comment every 15 s. Before closing on revocation or disabling, the stream sends `ended` `{"reason":"revoked"}` or `{"reason":"disabled"}`. Address changes close it without an `ended` reason. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
+| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, `grids` `{}` when the published grids change, `sessions` `{}` when a manage-tier device opens, renames, restarts, sleeps, wakes or closes a pane, and `resync` when this reader fell behind; a comment every 15 s. Before closing on revocation or disabling, the stream sends `ended` `{"reason":"revoked"}` or `{"reason":"disabled"}`. Address changes close it without an `ended` reason. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
 | `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
 | `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
 | `POST /api/sessions/{id}/dictate` | device | the recording as the raw body (`application/octet-stream`): 16 kHz mono PCM16, little-endian, at most `DICTATE_BODY_LIMIT` (3 840 000 bytes, 120 s) | `{text, engine, translated}`: the transcript from the configured voice engine, assembled as `voice_transcript.insert` is. Nothing is written to the pane, broadcast or stored. 403 while `RemoteInfo.dictation` is off; 409 for a pane that is not running, no installed model, no Groq key, the local engine on a build without it (Windows), or while another transcription runs (the desktop's or another device's); 413 over the limit (refused from `Content-Length` before the body is read); 422 too short, too quiet or no speech; 500 an engine failure. Its body limit and its 180 s request time replace the general ones |
+| `GET /api/sessions/{id}/changes` | observe | — | `{branch, files: [{path, status, added, removed, staged, sensitive}], total, limit}` for the pane's checkout, cut to `CHANGES_FILES_MAX` (200) files (`total` is the real count). Paths are masked; `sensitive` marks credential-looking files, which are listed but never diffed or committed from a device. 409 naming the directory when the pane is not in a git repository |
+| `GET /api/sessions/{id}/diff` | observe | `?path=` a path listed by `/changes` | `{path, diff, truncated}`, masked and cut to `DIFF_MAX_BYTES` (64 KiB) and `DIFF_MAX_LINES` (1500). 404 for a path `/changes` does not list; 403 for a sensitive file |
+| `GET /api/sessions/{id}/pr` | observe | — | `{pr: {number, title, state, url, draft, checks: {passed, failed, pending, items: [{name, state}], summary}} \| null, hint?}` for the pane's branch |
+| `GET /api/workspaces` | observe | — | `[{name, path, branch, dirty}]` |
+| `GET /api/workspaces/prs` | observe | `?workspace=` a registered path | Open pull requests, at most `PR_LIST_MAX` (30). Items carry `checks: {passed: null, failed: null, pending: null, summary}` because the list has only the summary |
+| `GET /api/tasks` | observe | — | Open tasks, at most `TASKS_MAX` (100): `{id, key, title, status, state, pane?}`; `state` is `running` while an open run has a pane |
+| `GET /api/usage` | observe | — | Cost and token totals by provider from the daemon's usage cache (`stale: true` when a refresh took longer than `USAGE_WAIT`, 8 s; refreshed after `USAGE_FRESH`, 60 s). `limits` is always `[]`: Houston reads no plan-limit windows |
+| `GET /api/spawn-options` | observe | — | The spawnable kinds (`SPAWNABLE_KINDS`: claude, codex, antigravity, opencode, zcode) with installed version, models and profiles, and the registered workspaces |
+| `POST /api/sessions` | manage | `{kind, workspace, model?, effort?, profile?, worktree?, prompt?}` | `{id}`. `worktree` creates a git worktree of that name and starts the pane in it. Unknown fields are refused with 400. Shell panes and `auto_approve` are refused with 403 naming them; a kind outside `SPAWNABLE_KINDS` is refused naming it |
+| `POST /api/sessions/{id}/rename` | manage | `{title}`; empty resets to the automatic name | `{ok: true}` |
+| `POST /api/sessions/{id}/respawn` | manage | — | `{ok: true}`; resumes the provider's conversation |
+| `POST /api/sessions/{id}/sleep` | manage | — | `{ok: true}`; refused 409 with the daemon's reason |
+| `POST /api/sessions/{id}/wake` | manage | — | `{ok: true}`; refused 409 with the daemon's reason |
+| `POST /api/sessions/{id}/close` | manage | `{confirm}`, the pane id as a string | `{ok: true}`. 409 when `confirm` differs, or while the pane has live children |
+| `POST /api/sessions/{id}/commit` | manage | `{message (1–4096 characters), paths?: string[] \| null}`; `null` commits tracked changes | `{sha, summary}`. Refuses paths `/changes` does not list, sensitive files, staged files outside the selection and an empty selection |
+| `POST /api/sessions/{id}/push` | manage | — | `{ok: true, summary}`; the error names a missing remote |
+
+List routes that were cut answer with `x-houston-truncated: <cap>`. Every manage action is recorded in `/api/activity` with its `action` and the `device` name.
 
 `FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
-[{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
+[{label, description}], multi_select, previews, free_text}], answers?}` (`free_text: false` when the dialog has no typed-answer row), `answer {answers}`,
 `permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target, failed?: boolean}` and
 `status {status: finished | exited}`, and
 `turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,
@@ -1276,10 +1298,10 @@ Claude `PostToolUseFailure` produces a step with `failed: true`; successful step
 `failed: false` (older daemons may omit it). Failed `AskUserQuestion` calls produce no step
 or answer. Counts include successful and failed steps and survive feed eviction; files contain at most 32 distinct
 masked edited paths, each at most 300 characters, including paths from failed edit calls.
-These paths describe attempted edits, not confirmation that a file changed. Codex, Cursor,
-Grok, OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
-steps; `PostToolUseFailure` is ignored for these providers. Grok `StopFailure` and OpenCode
-`session.error` report turn failures rather than tool steps. Supported failure/interruption hooks select
+These paths describe attempted edits, not confirmation that a file changed. Codex,
+OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
+steps; `PostToolUseFailure` is ignored for these providers. OpenCode
+`session.error` reports turn failures rather than tool steps. Supported failure/interruption hooks select
 `failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.
@@ -1303,7 +1325,7 @@ Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
 `::`) is refused unless a public URL is set.
 
 Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 403
-dictation off, 404 unknown pane, 408 a request ran past 20 s (180 s for
+dictation off or the device's tier is below what the route needs (`this device is paired as <tier>: <route> needs <tier>`), 404 unknown pane, 408 a request ran past 20 s (180 s for
 dictation), 409 pane not running, input already in flight, multi-line text the
 program cannot take as a paste, a decision that no longer applies or a dictation
 the engine cannot take now, 413 body too large, 422 a recording without usable speech, 429 locked out (with `Retry-After`), 503
@@ -1337,13 +1359,13 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 144 | **Cursor and Grok are recognised only.** `AgentKind` keeps `cursor` and `grok` so stored rows and detected processes still deserialize, but no request launches them: `session_create`, `session_respawn`, restore, `pane_spawn`, `task_start`, routine engines and task providers refuse them by name (`grok is no longer a supported provider: Houston recognises it but cannot launch it; close this pane or choose claude, codex, antigravity, opencode or zcode`). The spawnable set is `claude`, `codex`, `antigravity`, `opencode` and `zcode`; `agent_hook` accepts no Cursor or Grok slug; this part changes no type shape. `agent_hooks` is also answered with `agent_accounts`, the identity each CLI is signed in to (`AgentAccountIdentity`, `AgentSignIn`), read from the CLI's local config files on demand. **Paired devices have a tier.** `RemoteDevice` gains `tier: RemoteTier` (`observe` < `drive` < `manage`) and `remote_device_set_tier{id, tier}` changes it. Devices paired before this version are `drive`, as are new pairings. The remote HTTP API refuses a request above the device's tier with 403 naming the tier and the route. |
 | 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
 | 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
 | 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
 | 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |
-| 137 | Browser relay explicitly registers its authenticated connection; replies are scoped to the connection owning each pending call. |
 | 136 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `task_start`, task start and review settings, routine engines, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once ZCode's composer reports focus (bracketed paste enabled, then the cursor shown; pasted regardless after 60 s), confirmed by ZCode's UserPromptSubmit hook, and refuse a non-empty `model` naming the limit. Its hooks live in ZCode's settings file, which also lists the orchestration plugin kept in the channel's state dir. Routines refuse ZCode in accept-edits access by name, and `routines` and `harness_state` gain `engine_refusals: RoutineEngineRefusal[]`, the engine and access pairs routines refuse (OpenCode and ZCode with accept edits) with the reason, so pickers show them disabled. `task_plan_start` refuses ZCode, which has no read-only launch mode, and `task_domain_state` gains `planning_refusals: PlanningRefusal[]` so the planning control shows it disabled. `HarnessProviderCoverage` counts ZCode sessions. Outside `/ws`, the task tools' `id` and `pane_pr_watch`'s `pr` are advertised as strings (an integer is still accepted). |
 | 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`). The remote listener serves HTTPS itself with a local certificate authority when devices reach it directly on a private address: `RemoteInfo.tls`, `RemoteInfo.ca_fingerprint` and `remote_ca_regenerate`; `url` and allowed origins use `https://` then, and `public_url` must be an https origin the authority can certify. A loopback bind (the Tailscale route) is unchanged |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |

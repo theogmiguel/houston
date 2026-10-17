@@ -41,7 +41,7 @@ describe('settled children', () => {
     expect(parentMenu).not.toHaveBeenCalled()
     expect(delegationResultsList).toHaveBeenCalledWith(1)
   })
-  it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'] as const)('tints %s provider glyphs in children and orchestrator rows', (agent) => {
+  it.each(['claude', 'codex', 'antigravity', 'opencode', 'zcode'] as const)('tints %s provider glyphs in children and orchestrator rows', (agent) => {
     children = [{ ...child(2), agent }]
     act(() => root.render(<ChildrenRoster {...props()} parent={{ ...child(1), agent }} />))
     for (const row of host.querySelectorAll('.children-row')) {
@@ -168,8 +168,8 @@ describe('roster carry-overs', () => {
 
 describe('glyph labels', () => {
   it('name a provider capability gap next to the role and group', () => {
-    const cursor = { ...child(5), agent: 'cursor', delegation: { state: 'working', role: 'scout', capability_note: 'cursor: needs-input not reported by this provider' } as SessionInfo['delegation'] } as SessionInfo
-    expect(glyphLabel(cursor)).toBe('scout · Working · cursor: needs-input not reported by this provider')
+    const cursor = { ...child(5), agent: 'opencode', delegation: { state: 'working', role: 'scout', capability_note: 'opencode: needs-input not reported by this provider' } as SessionInfo['delegation'] } as SessionInfo
+    expect(glyphLabel(cursor)).toBe('scout · Working · opencode: needs-input not reported by this provider')
     expect(glyphLabel(child(4))).toBe('worker 4 · Working')
   })
   it('name a missing status signal and where to fix it', () => {

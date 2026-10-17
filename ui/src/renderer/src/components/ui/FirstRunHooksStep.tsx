@@ -122,9 +122,8 @@ export function FirstRunHooksStepSpecimen(): React.JSX.Element {
     { provider: 'claude', name: 'Claude Code', version: '2.3.1', status: 'reporting', error: null },
     { provider: 'codex', name: 'Codex', version: '0.98.0', status: 'silent', error: null },
     { provider: 'opencode', name: 'OpenCode', version: '1.4.2', status: 'silent', error: null },
-    { provider: 'grok', name: 'Grok', version: '0.6.0', status: 'silent', error: null },
-    { provider: 'cursor', name: 'Cursor', version: null, status: 'not-found', error: null },
-    { provider: 'antigravity', name: 'Antigravity', version: null, status: 'not-found', error: null }
+    { provider: 'antigravity', name: 'Antigravity', version: null, status: 'not-found', error: null },
+    { provider: 'zcode', name: 'ZCode', version: '3.14.4', status: 'silent', error: null }
   ]
   return <FirstRunHooksStep steps={[{ label: 'Workspace', state: 'done' }, { label: 'Orchestration', state: 'done' }, { label: 'Hooks', state: 'current' }]} rows={rows} installCount={3} disabledReason={null} onSet={() => {}} onInstallAll={() => {}} onSkip={() => {}} />
 }

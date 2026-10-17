@@ -40,7 +40,7 @@ const EXTRA_SKILLS: Skill[] = ['code-review', 'debug-systematically', 'frontend-
   description: ['Review changes for correctness and maintainability.', 'Find the root cause before changing code.', 'Build interfaces with shared design tokens and reusable controls.'][index % 3]
 }))
 export const LIBRARY_SKILLS: Skill[] = [...SKILLS.filter(skill => skill.name !== 'lint-sweep'), { agent: 'claude', source: 'user', name: 'typescript-patterns', invoke: '/typescript-patterns', path: '/home/dev/.claude/skills/typescript-patterns/SKILL.md', description: 'Model application state with precise types.' }, ...EXTRA_SKILLS]
-export const LIBRARY_TOOLS: SkillToolState[] = (['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const).map(tool => ({
+export const LIBRARY_TOOLS: SkillToolState[] = (['claude', 'codex', 'antigravity', 'opencode'] as const).map(tool => ({
   tool, detected: true, inherits_claude: false, path: `/home/dev/.${tool}/skills`, error: null,
   skills: LIBRARY_SKILLS.filter((_skill, index) => tool === 'claude' || tool === 'codex' || tool === 'opencode' || index < 4).map(skill => ({ name: skill.name, path: `/home/dev/.${tool}/skills/${skill.name}/SKILL.md`, digest: tool === 'codex' && skill.name === 'ui-tokens' ? 'different' : 'same' }))
 }))

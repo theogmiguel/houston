@@ -164,7 +164,7 @@ export function CheckLog({
             </div>
           )}
           {onCreateAgent &&
-            ['Claude', 'Codex', 'Antigravity', 'OpenCode', 'Cursor', 'Grok', 'ZCode'].map((provider) => (
+            ['Claude', 'Codex', 'Antigravity', 'OpenCode', 'ZCode'].map((provider) => (
               <button
                 key={provider}
                 type="button"

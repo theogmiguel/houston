@@ -46,11 +46,10 @@ fn strip_jsonc_comments(text: &str) -> String {
     out
 }
 
-pub const MCP_TOOLS: [proto::AgentKind; 4] = [
+pub const MCP_TOOLS: [proto::AgentKind; 3] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
-    proto::AgentKind::Cursor,
 ];
 
 pub fn source_path(state_dir: &Path) -> PathBuf {
@@ -61,6 +60,7 @@ pub fn tool_config_path(tool: proto::AgentKind, home: &ConfigHome) -> Option<Pat
     match tool {
         proto::AgentKind::Claude => Some(home.home.join(".claude.json")),
         proto::AgentKind::Codex => Some(home.home.join(".codex").join("config.toml")),
+        // Not in `MCP_TOOLS`: only the retired-provider cleanup reads this file.
         proto::AgentKind::Cursor => Some(home.home.join(".cursor").join("mcp.json")),
         proto::AgentKind::Opencode => Some(opencode_config_path(home)),
         _ => None,
@@ -667,10 +667,6 @@ mod tests {
             "model = \"gpt-5\"\n\n[mcp_servers.context7]\ncommand = \"npx\"\nargs = [\"-y\", \"@upstash/context7-mcp\"]\n",
         );
         write(
-            &tool_config_path(proto::AgentKind::Cursor, &h).expect("cursor path"),
-            "{\"mcpServers\":{\"context7\":{\"command\":\"npx\",\"args\":[\"-y\",\"@upstash/context7-mcp\"]}}}",
-        );
-        write(
             &tool_config_path(proto::AgentKind::Opencode, &h).expect("opencode path"),
             "{\"mcp\":{\"context7\":{\"type\":\"local\",\"command\":[\"npx\",\"-y\",\"@upstash/context7-mcp\"]}}}",
         );
@@ -687,15 +683,10 @@ mod tests {
             col.servers[0].fingerprint.clone()
         };
         let codex = print_for(proto::AgentKind::Codex);
-        let cursor = print_for(proto::AgentKind::Cursor);
         let opencode = print_for(proto::AgentKind::Opencode);
         assert_eq!(
-            codex, cursor,
-            "Codex's TOML and Cursor's JSON describe the same server"
-        );
-        assert_eq!(
-            cursor, opencode,
-            "OpenCode's single-array command is the same server too"
+            codex, opencode,
+            "Codex's TOML and OpenCode's single-array command describe the same server"
         );
     }
 
@@ -722,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn the_claude_column_reads_that_file_and_the_matrix_has_four_columns() {
+    fn the_claude_column_reads_that_file_and_the_matrix_has_three_columns() {
         let dir = tempfile::tempdir().expect("tempdir");
         let h = home(&dir);
         write(
@@ -730,7 +721,7 @@ mod tests {
             "{\"mcpServers\":{\"context7\":{\"command\":\"npx\",\"args\":[\"-y\",\"@upstash/context7-mcp\"]}}}",
         );
         let cols = read_tools(&h);
-        assert_eq!(cols.len(), 4, "Houston's four tools, Claude first");
+        assert_eq!(cols.len(), 3, "Houston's three tools, Claude first");
         assert_eq!(cols[0].tool, proto::AgentKind::Claude);
         assert!(cols[0].detected);
         assert_eq!(cols[0].servers.len(), 1);

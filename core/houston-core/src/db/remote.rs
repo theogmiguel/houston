@@ -1,6 +1,7 @@
 //! Devices paired for remote access. Only the SHA-256 of each bearer token is
 //! stored; revoking a device deletes its row.
 use anyhow::Result;
+use houston_protocol::RemoteTier;
 use rusqlite::{Connection, OptionalExtension};
 
 use super::Db;
@@ -15,6 +16,18 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             last_seen_at INTEGER
         );",
     )?;
+    let has_tier: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('remote_devices') WHERE name = 'tier'",
+        [],
+        |r| r.get::<_, i64>(0).map(|c| c > 0),
+    )?;
+    if !has_tier {
+        // Devices paired before tiers existed could already answer panes: `drive`.
+        conn.execute(
+            "ALTER TABLE remote_devices ADD COLUMN tier TEXT NOT NULL DEFAULT 'drive'",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -22,9 +35,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
 pub struct RemoteDeviceRow {
     pub id: i64,
     pub name: String,
+    pub tier: RemoteTier,
     pub created_at: u64,
     pub last_seen_at: Option<u64>,
 }
+
+const COLUMNS: &str = "id, name, created_at, last_seen_at, tier";
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RemoteDeviceRow> {
     Ok(RemoteDeviceRow {
@@ -32,6 +48,7 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RemoteDeviceRow> {
         name: r.get(1)?,
         created_at: r.get::<_, i64>(2)? as u64,
         last_seen_at: r.get::<_, Option<i64>>(3)?.map(|v| v as u64),
+        tier: RemoteTier::parse(&r.get::<_, String>(4)?).unwrap_or(RemoteTier::Observe),
     })
 }
 
@@ -65,8 +82,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn
             .query_row(
-                "SELECT id, name, created_at, last_seen_at FROM remote_devices
-                 WHERE token_hash = ?1",
+                &format!("SELECT {COLUMNS} FROM remote_devices WHERE token_hash = ?1"),
                 rusqlite::params![token_hash],
                 row,
             )
@@ -75,8 +91,8 @@ impl Db {
 
     pub fn remote_devices(&self) -> Result<Vec<RemoteDeviceRow>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn
-            .prepare("SELECT id, name, created_at, last_seen_at FROM remote_devices ORDER BY id")?;
+        let mut stmt =
+            conn.prepare(&format!("SELECT {COLUMNS} FROM remote_devices ORDER BY id"))?;
         let rows = stmt
             .query_map([], row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -90,6 +106,15 @@ impl Db {
             rusqlite::params![id, now_ms as i64],
         )?;
         Ok(())
+    }
+
+    /// Returns whether a row was updated.
+    pub fn remote_device_set_tier(&self, id: i64, tier: RemoteTier) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute(
+            "UPDATE remote_devices SET tier = ?2 WHERE id = ?1",
+            rusqlite::params![id, tier.as_str()],
+        )? > 0)
     }
 
     pub fn remote_device_hash(&self, id: i64) -> Result<Option<String>> {

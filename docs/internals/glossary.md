@@ -36,7 +36,7 @@ named.
 
 | Term | Meaning | Code |
 |---|---|---|
-| **agent** | A coding agent Houston hosts in a pane (Claude Code, Codex, Antigravity, OpenCode, Cursor, Grok, ZCode). | `proto::AgentKind` |
+| **agent** | A coding agent Houston hosts in a pane (Claude Code, Codex, Antigravity, OpenCode, ZCode). Cursor, Grok, Droid, Copilot and Aider are **recognised only**: detected by banner or stored row, never launched. | `proto::AgentKind` |
 | **Program Status Protocol** | Explicit program state reports over OSC 7501, consumed as a fallback when hooks and ACP do not own status. Never inferred from rendered terminal text. | `vt.rs`, `daemon.rs` |
 | **provider / CLI** | The agent runtime Houston launches and talks to. Each has a launch shape (`launch.rs`) and, for seven of them, a hook installer. | `launch.rs`, `agent_events.rs` |
 | **session** | One PTY (or SSH channel) running an agent CLI or a shell in a project directory. Has a process `state` and, orthogonally, an agent `status`. | `daemon.rs::Session` |
@@ -48,7 +48,8 @@ named.
 | **tag** | A named colour from `TAG_PALETTE`, in the daemon's tag registry. A **pane tag** is on the session (`SessionInfo.tags`, daemon state); a **grid tag** is on `GridMeta.tags` (renderer state). Neither is derived from the other. Tag ids are never reused; the renderer removes ids missing from an authoritative registry snapshot from every saved grid. | `db.rs::tags`, `layout/tree.ts::GridMeta` |
 | **stack** | A tabbed group of panes in one grid slot, capped at 4. | `StackTabs.tsx` |
 | **remote access** | The opt-in second listener that serves a web client and `/api/*` to paired devices, plus optional ntfy notifications. Separate from the loopback control endpoint. | `remote/`, `daemon/remote.rs` |
-| **paired device** | A browser that redeemed a pairing code and holds a remote-access token. It reads and types into panes; it cannot pair, configure, spawn or kill. Revoking deletes its `remote_devices` row. | `db/remote.rs` |
+| **paired device** | A browser that redeemed a pairing code and holds a remote-access token. What it may do is its device tier; at every tier it cannot pair, configure or revoke. Revoking deletes its `remote_devices` row. | `db/remote.rs` |
+| **device tier** | A paired device's authority: `observe` (reads), `drive` (also answers panes) or `manage` (also pane lifecycle and git actions). Stored in `remote_devices.tier`, defaulting to `drive`; checked on every request against the route's required tier. | `proto::RemoteTier`, `remote/http.rs::Route` |
 | **remote feed** | A pane's conversation for paired devices: prompts, replies, questions, permission requests, tool steps and turn ends, built from hook payloads into a bounded in-memory ring while remote access is on. Never persisted. | `remote/feed.rs` |
 | **decision card** | The request a pane waits on, as a device shows it: a permission, a question, or `input` when the CLI reported none. A device answers it with `decide`, which types the provider's keys into the PTY; once answered, from a device or the terminal, it takes no further tap until the pane moves on. | `remote::feed::Pending` |
 | **feed epoch** | A random identifier of one generation of the remote feed. It changes when the daemon starts or remote access is turned back on, when sequence numbers restart; a decision must name the current one. | `remote::feed::Store::epoch` |

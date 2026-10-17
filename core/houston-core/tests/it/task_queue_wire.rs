@@ -16,7 +16,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -185,7 +185,7 @@ async fn queue_starts_the_top_ready_tasks_in_priority_order() {
 
     let msg = r
         .daemon
-        .task_queue_run(parent, 2, Some(proto::AgentKind::Grok))
+        .task_queue_run(parent, 2, Some(proto::AgentKind::Codex))
         .unwrap();
     let proto::ServerMsg::TaskQueueResult {
         started,
@@ -205,7 +205,7 @@ async fn queue_starts_the_top_ready_tasks_in_priority_order() {
 
     let msg = r
         .daemon
-        .task_queue_run(parent, 1, Some(proto::AgentKind::Grok))
+        .task_queue_run(parent, 1, Some(proto::AgentKind::Codex))
         .unwrap();
     let proto::ServerMsg::TaskRefused {
         kind,

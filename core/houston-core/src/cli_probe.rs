@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use houston_protocol as proto;
 
-// Measured warm on this machine: claude 0.01s, codex 0.10s, grok 0.08s, agy
-// 0.33s, opencode 0.68s, cursor-agent 0.85s. 4s covers a cold disk spin-up
+// Measured warm on this machine: claude 0.01s, codex 0.10s, agy 0.33s,
+// opencode 0.68s. 4s covers a cold disk spin-up
 // while still bounding the provider sweep to a few seconds worst case.
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -21,12 +21,12 @@ pub fn binary_name(kind: proto::AgentKind) -> Option<&'static str> {
         proto::AgentKind::Codex => Some("codex"),
         proto::AgentKind::Antigravity => Some("agy"),
         proto::AgentKind::Opencode => Some("opencode"),
-        proto::AgentKind::Cursor => Some("cursor-agent"),
-        proto::AgentKind::Grok => Some("grok"),
         proto::AgentKind::Zcode => Some("zcode"),
         proto::AgentKind::Shell
         | proto::AgentKind::Ssh
         | proto::AgentKind::Custom
+        | proto::AgentKind::Cursor
+        | proto::AgentKind::Grok
         | proto::AgentKind::Droid
         | proto::AgentKind::Copilot
         | proto::AgentKind::Aider => None,
@@ -295,6 +295,8 @@ mod tests {
             proto::AgentKind::Shell,
             proto::AgentKind::Ssh,
             proto::AgentKind::Custom,
+            proto::AgentKind::Cursor,
+            proto::AgentKind::Grok,
             proto::AgentKind::Droid,
             proto::AgentKind::Copilot,
             proto::AgentKind::Aider,
@@ -311,7 +313,7 @@ mod tests {
             ("1.1.26", "1.1.26"),
             ("1.18.27", "1.18.27"),
             ("2026.08.11-e8db854", "2026.08.11"),
-            ("grok 1.0.13 (5e9a58528b76) [stable]", "1.0.13"),
+            ("3.14.4", "3.14.4"),
         ] {
             assert_eq!(parse_version(output).as_deref(), Some(want), "{output:?}");
         }

@@ -224,7 +224,7 @@ describe('run state mapping', () => {
   it('names the task providers as the Start menu shows them', () => {
     expect(taskAgentLabel('claude')).toBe('Claude')
     expect(taskAgentLabel('opencode')).toBe('OpenCode')
-    expect(taskAgentLabel('grok')).toBe('Grok')
+    expect(taskAgentLabel('zcode')).toBe('ZCode')
   })
 
   it('shows the task status while the run is open and Needs you when the pane waits', () => {

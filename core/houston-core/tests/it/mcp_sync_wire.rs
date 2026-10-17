@@ -116,28 +116,28 @@ async fn remove_takes_the_row_out_of_your_list_but_a_tool_keeps_its_own_copy_unt
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
 
     daemon.mcp_server_upsert(None, stdio_server("docs", "npx", &["-y", "docs-mcp"]));
-    daemon.mcp_sync(Some(proto::AgentKind::Cursor));
+    daemon.mcp_sync(Some(proto::AgentKind::Codex));
     assert!(
-        home.path().join(".cursor/mcp.json").exists(),
-        "sync must have written Cursor's file"
+        home.path().join(".codex/config.toml").exists(),
+        "sync must have written Codex's file"
     );
 
     let (source, _) = mcp_state(daemon.mcp_server_remove("docs"));
     assert!(source.is_empty(), "gone from Houston's own list");
-    let cursor_config =
-        std::fs::read_to_string(home.path().join(".cursor/mcp.json")).expect("read");
+    let codex_config =
+        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("read");
     assert!(
-        cursor_config.contains("docs"),
+        codex_config.contains("docs"),
         "removing from the list alone must not retract it from a tool that already has it: \
-         {cursor_config}"
+         {codex_config}"
     );
 
-    daemon.mcp_sync(Some(proto::AgentKind::Cursor));
-    let cursor_config =
-        std::fs::read_to_string(home.path().join(".cursor/mcp.json")).expect("read");
+    daemon.mcp_sync(Some(proto::AgentKind::Codex));
+    let codex_config =
+        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("read");
     assert!(
-        !cursor_config.contains("docs"),
-        "an explicit sync after the remove must retract it: {cursor_config}"
+        !codex_config.contains("docs"),
+        "an explicit sync after the remove must retract it: {codex_config}"
     );
 }
 
@@ -148,13 +148,13 @@ async fn sync_honors_per_server_destinations_and_narrowing_retracts_it() {
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
 
     let scoped = proto::McpServer {
-        destinations: vec![proto::AgentKind::Cursor],
+        destinations: vec![proto::AgentKind::Codex],
         ..stdio_server("scoped", "npx", &["-y", "docs-mcp"])
     };
     daemon.mcp_server_upsert(None, scoped);
-    daemon.mcp_sync(Some(proto::AgentKind::Cursor));
+    daemon.mcp_sync(Some(proto::AgentKind::Codex));
     assert!(
-        std::fs::read_to_string(home.path().join(".cursor/mcp.json"))
+        std::fs::read_to_string(home.path().join(".codex/config.toml"))
             .unwrap()
             .contains("scoped"),
         "the destination it names must get the server"
@@ -180,9 +180,9 @@ async fn sync_honors_per_server_destinations_and_narrowing_retracts_it() {
         ..stdio_server("scoped", "npx", &["-y", "docs-mcp"])
     };
     daemon.mcp_server_upsert(Some("scoped"), narrowed);
-    daemon.mcp_sync(Some(proto::AgentKind::Cursor));
+    daemon.mcp_sync(Some(proto::AgentKind::Codex));
     assert!(
-        !std::fs::read_to_string(home.path().join(".cursor/mcp.json"))
+        !std::fs::read_to_string(home.path().join(".codex/config.toml"))
             .unwrap()
             .contains("scoped"),
         "narrowing destinations must retract it from a tool it no longer names"

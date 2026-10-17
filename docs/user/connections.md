@@ -1,14 +1,14 @@
 # MCP servers
 
 Settings ▸ Agents ▸ MCP servers lists the MCP servers Houston writes into the configuration for each managed CLI.
-Use it to manage the server configuration applied to Claude Code, Codex, OpenCode and Cursor.
+Use it to manage the server configuration applied to Claude Code, Codex and OpenCode.
 
 Each cell shows whether that CLI's copy is in sync, off or differs from Houston's list. Select a
 cell to turn that server on or off for the matching CLI; Houston then applies the change. A
 failed connection test includes its reason in the cell. Use **Edit** to change a server or
 **Show diff** to compare a CLI copy with Houston's list.
 
-Grok, Antigravity and ZCode can use MCP servers, but Houston does not manage their
+Antigravity and ZCode can use MCP servers, but Houston does not manage their
 third-party server configuration here. Houston's own pane tools are configured separately;
 see [Installing Houston](install.md#providers).
 

@@ -45,12 +45,10 @@ Houston can start and manage these CLIs when their executable is available on `P
 | Codex | `codex` |
 | Antigravity | `agy` |
 | OpenCode | `opencode` |
-| Cursor | `cursor-agent` |
-| Grok | `grok` |
 | ZCode | `zcode` |
 
-Droid, Copilot and Aider are recognised when launched manually in a shell pane, but Houston
-does not start or configure them. Provider installation and authentication remain the
+Cursor, Grok, Droid, Copilot and Aider are recognised when launched manually in a shell
+pane, but Houston does not start or configure them. Provider installation and authentication remain the
 provider's responsibility; see the [installation guide](docs/user/install.md).
 
 ## Install

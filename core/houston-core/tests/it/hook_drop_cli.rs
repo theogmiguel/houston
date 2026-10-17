@@ -383,6 +383,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
             diff: None,
         }),
         interrupted: true,
+        model: Some("gpt-5-codex".into()),
     };
     let text = serde_json::to_string(&full).expect("serialize");
     let back: HookDrop = serde_json::from_str(&text).expect("parse");

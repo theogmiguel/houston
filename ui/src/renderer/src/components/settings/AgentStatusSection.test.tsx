@@ -2,11 +2,26 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AgentAccountIdentity } from '../../houston/generated/AgentAccountIdentity'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { AgentStatusSection, HOOK_COPY } from './AgentStatusSection'
 
 function noop(): void {}
+
+function account(overrides: Partial<AgentAccountIdentity> = {}): AgentAccountIdentity {
+  return {
+    agent: 'claude',
+    profile_id: null,
+    sign_in: 'signed_in',
+    identity: 'theo@example.com',
+    detail: null,
+    providers: [],
+    reason: null,
+    verified: true,
+    ...overrides
+  }
+}
 
 function state(overrides: Partial<AgentHookState> = {}): AgentHookState {
   return {
@@ -87,7 +102,7 @@ describe('AgentStatusSection', () => {
       providers: [
         state({ provider: 'claude', enabled: true, installed: true, version: '2.1.263' }),
         state({ provider: 'codex', scope: 'global', version: '0.153.4' }),
-        state({ provider: 'grok', scope: 'global', present: false, version: null })
+        state({ provider: 'opencode', scope: 'global', present: false, version: null })
       ]
     })
     expect(rows()).toHaveLength(3)
@@ -100,10 +115,10 @@ describe('AgentStatusSection', () => {
     const codex = rowFor('codex')
     expect(codex.getAttribute('data-status')).toBe('off')
 
-    const grok = rowFor('grok')
-    expect(grok.getAttribute('data-status')).toBe('absent')
-    expect(grok.textContent).toContain('Grok')
-    expect(grok.className).toContain('text-[var(--text-secondary)]')
+    const opencode = rowFor('opencode')
+    expect(opencode.getAttribute('data-status')).toBe('absent')
+    expect(opencode.textContent).toContain('OpenCode')
+    expect(opencode.className).toContain('text-[var(--text-secondary)]')
   })
 
   it("says each row's state in words, not only through the mark", () => {
@@ -111,20 +126,73 @@ describe('AgentStatusSection', () => {
       providers: [
         state({ provider: 'claude', enabled: true, installed: true }),
         state({ provider: 'codex', scope: 'global' }),
-        state({ provider: 'cursor', scope: 'global', present: false, version: null }),
-        state({ provider: 'grok', scope: 'global', enabled: true, installed: false })
+        state({ provider: 'zcode', scope: 'global', present: false, version: null }),
+        state({ provider: 'opencode', scope: 'global', enabled: true, installed: false })
       ]
     })
     const sub = (provider: AgentKind): string =>
       rowFor(provider).textContent ?? ''
     expect(sub('claude')).toContain('Reporting status')
     expect(sub('codex')).toContain('Hooks off')
-    expect(sub('cursor')).toContain('cursor-agent is not on PATH')
-    expect(sub('grok')).toContain('Hooks need repair')
+    expect(sub('zcode')).toContain('zcode is not on PATH')
+    expect(sub('opencode')).toContain('Hooks need repair')
+  })
+
+  it('shows the signed-in identity per CLI instead of a profile count', () => {
+    render({
+      providers: [
+        state({ provider: 'claude', enabled: true, installed: true }),
+        state({ provider: 'codex', enabled: true, installed: true }),
+        state({ provider: 'opencode', enabled: true, installed: true }),
+        state({ provider: 'antigravity', enabled: true, installed: true })
+      ],
+      agentProfiles: { profiles: [], active: [] },
+      agentAccounts: [
+        account(),
+        account({ agent: 'codex', sign_in: 'signed_out', identity: null }),
+        account({ agent: 'opencode', identity: null, providers: ['anthropic', 'openai'] }),
+        account({ agent: 'antigravity', identity: null, verified: false })
+      ]
+    })
+    const text = (provider: AgentKind): string => rowFor(provider).textContent ?? ''
+    expect(text('claude')).toContain('theo@example.com')
+    expect(text('claude')).not.toContain('0 accounts')
+    expect(text('codex')).toContain('Not signed in')
+    expect(text('opencode')).toContain('Signed in: anthropic, openai')
+    expect(text('antigravity')).toContain('Signed in (unverified)')
+  })
+
+  it('names the identity new panes use when a CLI has several accounts', () => {
+    render({
+      providers: [state({ provider: 'claude', enabled: true, installed: true })],
+      agentProfiles: {
+        profiles: [{ id: 4, agent: 'claude', name: 'work', config_dir: '/w' }],
+        active: [{ agent: 'claude', id: 4 }]
+      },
+      agentAccounts: [account(), account({ profile_id: 4, identity: 'work@example.com' })]
+    })
+    expect(rowFor('claude').textContent).toContain('2 accounts · work@example.com is used for new panes')
+  })
+
+  it('shows the identity on each account card', () => {
+    render({
+      providers: [state({ provider: 'claude', enabled: true, installed: true })],
+      agentProfiles: {
+        profiles: [{ id: 4, agent: 'claude', name: 'work', config_dir: '/w' }],
+        active: []
+      },
+      agentAccounts: [
+        account(),
+        account({ profile_id: 4, identity: 'work@example.com', detail: 'Acme' })
+      ]
+    })
+    const text = container.textContent ?? ''
+    expect(text).toContain('work@example.com · Acme')
+    expect(text).toContain('theo@example.com')
   })
 
   it('carries a severity dot per row matching the reported state', () => {
-    render({ providers: [state({ provider: 'cursor', present: false, version: null })] })
+    render({ providers: [state({ provider: 'zcode', present: false, version: null })] })
     const mark = container.querySelector('[data-tone]')!
     expect(mark.getAttribute('data-tone')).toBe('muted')
   })
@@ -146,8 +214,8 @@ describe('AgentStatusSection', () => {
   })
 
   it('refuses the switch for a CLI that is not on the machine, rather than hiding it', () => {
-    render({ providers: [state({ provider: 'grok', present: false, version: null })] })
-    select('grok')
+    render({ providers: [state({ provider: 'opencode', present: false, version: null })] })
+    select('opencode')
     const sw = container.querySelector<HTMLButtonElement>(
       '[data-testid="agent-status-switch"]'
     )!
@@ -179,12 +247,12 @@ describe('AgentStatusSection', () => {
   })
 
   it('opens a detail with the consent copy in full, the config path, and both groups', () => {
-    render({ providers: [state({ provider: 'grok', scope: 'global', path: '~/.grok/hooks/h.json' })] })
-    select('grok')
+    render({ providers: [state({ provider: 'opencode', scope: 'global', path: '~/.config/opencode/plugins/h.js' })] })
+    select('opencode')
     const detail = container.querySelector<HTMLElement>('[data-testid="agent-status-detail"]')!
-    expect(detail.textContent).toContain(HOOK_COPY.grok.writes)
+    expect(detail.textContent).toContain(HOOK_COPY.opencode.writes)
     expect(detail.textContent).toContain('This machine')
-    expect(detail.textContent).toContain('~/.grok/hooks/h.json')
+    expect(detail.textContent).toContain('~/.config/opencode/plugins/h.js')
     const headings = [...detail.querySelectorAll('[data-testid="settings-subhead"]')].map(
       (h) => h.textContent
     )
@@ -195,7 +263,7 @@ describe('AgentStatusSection', () => {
     render({
       providers: [
         state({ provider: 'codex', scope: 'global', present: true, version: '0.153.4' }),
-        state({ provider: 'cursor', scope: 'global', present: false, version: null })
+        state({ provider: 'zcode', scope: 'global', present: false, version: null })
       ]
     })
     select('codex')
@@ -203,7 +271,7 @@ describe('AgentStatusSection', () => {
     expect(detail.textContent).toContain('Found on PATH')
     expect(detail.textContent).toContain('0.153.4')
 
-    select('cursor')
+    select('zcode')
     detail = container.querySelector<HTMLElement>('[data-testid="agent-status-detail"]')!
     expect(detail.textContent).toContain('Not found')
     expect(detail.textContent).toContain('Unknown')
@@ -255,27 +323,27 @@ describe('AgentStatusSection', () => {
   it('holds the switch pending until the next providers update confirms or refuses it', () => {
     const calls: [AgentKind, boolean][] = []
     render({
-      providers: [state({ provider: 'grok', scope: 'global' })],
+      providers: [state({ provider: 'opencode', scope: 'global' })],
       onSet: (p, on) => calls.push([p, on])
     })
-    select('grok')
+    select('opencode')
     const sw = (): HTMLButtonElement =>
       container.querySelector<HTMLButtonElement>('[data-testid="agent-status-switch"]')!
     act(() => sw().dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(calls).toEqual([['grok', true]])
+    expect(calls).toEqual([['opencode', true]])
     expect(sw().disabled).toBe(true)
 
     render({
-      providers: [state({ provider: 'grok', scope: 'global', enabled: true, installed: true })],
+      providers: [state({ provider: 'opencode', scope: 'global', enabled: true, installed: true })],
       onSet: (p, on) => calls.push([p, on])
     })
     expect(sw().disabled).toBe(false)
-    expect(rowFor('grok').getAttribute('data-status')).toBe('ok')
+    expect(rowFor('opencode').getAttribute('data-status')).toBe('ok')
   })
 
   it('clears a pending flip when the retry fails, without claiming success', () => {
-    render({ providers: [state({ provider: 'cursor', scope: 'global', enabled: true, installed: false })] })
-    select('cursor')
+    render({ providers: [state({ provider: 'zcode', scope: 'global', enabled: true, installed: false })] })
+    select('zcode')
     const sw = (): HTMLButtonElement =>
       container.querySelector<HTMLButtonElement>('[data-testid="agent-status-switch"]')!
     act(() => sw().dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -284,7 +352,7 @@ describe('AgentStatusSection', () => {
     render({
       providers: [
         state({
-          provider: 'cursor',
+          provider: 'zcode',
           scope: 'global',
           enabled: true,
           installed: false,
@@ -293,7 +361,7 @@ describe('AgentStatusSection', () => {
       ]
     })
     expect(sw().disabled).toBe(false)
-    expect(rowFor('cursor').getAttribute('data-status')).toBe('differs')
+    expect(rowFor('zcode').getAttribute('data-status')).toBe('differs')
   })
 
   it('wires Check again to onRefresh and disables it until the next providers update lands', () => {
