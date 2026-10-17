@@ -25,7 +25,7 @@ A run is an ordinary agent pane in the workspace, which you can open and watch. 
 
 The agent reads those files, which sends their content to the review's provider through that
 provider's own CLI, as any turn of that agent does. The view shows this before the first run.
-OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read. Review shows their Houston-hosted
+OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read (Cursor and Grok rows from earlier versions still count as uncovered). Review shows their Houston-hosted
 session counts for the latest review window as provider coverage. A review routine starts in
 accept-edits access, which OpenCode and ZCode do not offer, so they are unavailable for the
 first review. To review with either, switch the routine to isolated full access afterwards

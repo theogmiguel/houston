@@ -21,8 +21,8 @@ proof that no sessions ran elsewhere.
 
 The workspace filter uses the transcript's recorded working directory. Sessions inside
 a registered workspace or one of its worktrees belong to that workspace; other sessions
-remain in **All workspaces**. Unsupported agents, including OpenCode, Cursor, Grok,
-Antigravity and ZCode, are named as not counted rather than reported as zero usage.
+remain in **All workspaces**. Unsupported agents, including OpenCode, Antigravity,
+ZCode and the recognised-only Cursor and Grok, are named as not counted rather than reported as zero usage.
 
 Transcript formats can change. Unsupported or malformed records may be omitted even
 when the file is readable. Source diagnostics describe scan failures; they cannot prove

@@ -229,7 +229,7 @@ reviewing the full request, or deny from the phone.
 
 Cards you can answer with a tap are available for Claude Code permission requests and
 single questions with one answer. Questions with several parts or several answers, and
-requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a waiting card with
+requests from Codex, OpenCode and Antigravity, show a waiting card with
 **View screen** and the key row; replies and status still appear in their conversation.
 
 Each pane shows user messages, agent replies and a work log. Claude tool calls that fail

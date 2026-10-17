@@ -143,11 +143,6 @@ it off removes exactly what Houston added:
   Settings ▸ Agents ▸ CLIs ▸ Codex and reopen the pane.
 - **OpenCode** — drops a small plugin file Houston owns; if one is already there and
   Houston did not write it, install refuses rather than overwriting it.
-- **Cursor** — adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and
-  `stop` hooks, leaving your other entries alone.
-- **Grok** — writes its own hooks file under `~/.grok/hooks/`, one entry per lifecycle
-  event; your own entries in that file stay, and turning Houston's off deletes only what
-  it added, removing the file once nothing is left in it.
 - **ZCode** — adds one entry per lifecycle event to ZCode's settings file
   (`~/.zcode/cli/setting.json` for the `zcode-app-cli` package, `~/.zcode/cli/config.json`
   for the upstream command; see [install](install.md#zcode)), turns on `hooks.enabled`

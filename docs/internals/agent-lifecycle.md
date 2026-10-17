@@ -110,14 +110,12 @@ Per-provider event names:
 | Claude | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `PermissionRequest`, `PermissionDenied`, `Elicitation`, `ElicitationResult`, and typed blocking `Notification`; `AskUserQuestion`/`ExitPlanMode` are detected through matched `PreToolUse`, then cleared by the matching tool result |
 | Codex | `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, `Interrupt`; matched `PreToolUse(request_user_input)` reports a question and its `PostToolUse` resumes the turn; `Interrupt` settles to `Idle` without completion attention |
 | OpenCode | `session.created`, root `message.updated`, `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
-| Cursor | `sessionStart`, `beforeSubmitPrompt`, `stop` — **no `NeedsInput`** — plus `subagentStart`/`subagentStop` and `afterAgentResponse` (last message only, documented not live-verified) |
-| Grok | reuses Claude's PascalCase names verbatim, plus `SubagentStart`/`SubagentStop` (documented, not live-verified) |
 | ZCode | `SessionStart` (once per process, inside the first turn or on resume), `UserPromptSubmit`, `Stop` (successful turns only), `PermissionRequest`; matched `PreToolUse(AskUserQuestion)` reports a question and the `PostToolUse` with its `tool_use_id` resumes the turn; an interrupt cancels ZCode's hooks, so it reports no turn end |
 | Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below); the matching `PostToolUse` resumes `Working` once no permission episode remains (`PostInvocation` maps to nothing: it fires per step, not per turn) |
-| Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
+| Cursor, Grok, Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
 
 `has_event_mapping` is false for that last row and `events_for` returns an empty slice, so
-those CLIs are first-class `AgentKind`s and valid spawn targets but never carry a status.
+those CLIs are `AgentKind`s Houston recognises but never spawns, and they never carry a status.
 An installer whose provider has no taxonomy row errors out rather than delivering events
 nothing can read.
 
@@ -127,9 +125,7 @@ The correlation events — installed so the daemon has *evidence*, never uncondi
 transitions — are Claude's `SubagentStart`/`SubagentStop` and matched
 `PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Codex's
 `SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; ZCode's
-`PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Grok's and Cursor's
-`subagentStart`/`subagentStop`; Cursor's `afterAgentResponse` (last-message
-only); Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
+`PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
 block); and the OpenCode plugin's synthesized
 `SubagentStop`, a name Houston invented so a task-tool child session's own idle
 is told apart from the pane's. `events_for` returns nothing for them, so they
@@ -149,7 +145,7 @@ and a payload missing a field still delivers its transition:
 
 | Field | Carries | Decides |
 |---|---|---|
-| `last_message` | Claude/Codex `Stop.last_assistant_message`, Cursor `afterAgentResponse.text`, OpenCode's plugin read of `client.session.messages`, Antigravity's read of its own `transcriptPath` | the `no_handback` body's first preference; capped at `SUBMIT_BODY_MAX_CHARS` |
+| `last_message` | Claude/Codex `Stop.last_assistant_message`, OpenCode's plugin read of `client.session.messages`, Antigravity's read of its own `transcriptPath` | the `no_handback` body's first preference; capped at `SUBMIT_BODY_MAX_CHARS` |
 | `background_tasks` | Claude `Stop.background_tasks.len()` | non-zero means the pane is parked on its own children, not finished |
 | `pending_task_ids` / `task_id` | Claude: ids of running `background_tasks` entries of type `subagent`; the `<task-id>` an internal prompt names | the sub-agent round's owed set and its settlement |
 | `internal_prompt` | a `UserPromptSubmit` whose prompt the CLI wrote itself (a `<task-notification>`) | NOT a new request: it must not rename the pane, rearm a no-handback round, or count as the parent prompting |
@@ -164,8 +160,7 @@ and a payload missing a field still delivers its transition:
 | `fully_idle` | Antigravity `Stop.fullyIdle` | `false` means parked on `invoke_subagent` and decides nothing; `true` closes the round |
 | `tool_name` | Claude/Codex's top-level field or Antigravity's `toolCall.name` | identifies interactive tools and matches their completion to the open episode |
 
-The field spelling is per provider: Grok gets a snake_case-then-camelCase fallback for
-every field that has one; Cursor gets a `text` fallback for `last_message`; Antigravity's
+The field spelling is per provider: Antigravity's
 `conversationId` lifts into `session_id`. What is NOT lifted is trusted: `Stop` running
 synchronously (below) is what lets a payload field decide whether a turn really ended.
 
@@ -202,16 +197,14 @@ last open episode closes.
 
 ## Hook installation
 
-All six providers install **per-user global** configs. Claude uses `claude_hooks.rs`;
+All five providers install **per-user global** configs. Claude uses `claude_hooks.rs`;
 the other providers use `agent_hooks.rs`:
 
 | Provider | Config |
 |---|---|
 | Claude | `~/.claude/settings.json`, overridden by `CLAUDE_CONFIG_DIR`; registered Houston account profiles also receive `settings.json` entries |
 | Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks legacy `notify` and manages scoped hook trust) |
-| Cursor | `~/.cursor/hooks.json` |
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
-| Grok | `~/.grok/hooks/houston.json` |
 | Antigravity | `~/.gemini/config/hooks.json` |
 | ZCode | `~/.zcode/cli/setting.json` and/or `~/.zcode/cli/config.json`, each one present (also `hooks.enabled` and Houston's plugin directory in `plugins.dirs`) |
 
@@ -280,8 +273,7 @@ into a pipe nobody reads. Codex's `hooks.json` and Antigravity's hooks file writ
 key at all, which both CLIs treat as synchronous by default, so they need no matching change.
 `install()` is idempotent, refreshing Houston's own entry per event.
 
-Codex's `hooks.json` is the same per-event array shape Cursor and Grok's files use, so
-both channels' entries coexist there the same way. `config.toml`'s old `notify` key
+Codex's `hooks.json` holds per-event arrays, so both channels' entries coexist there. `config.toml`'s old `notify` key
 cannot multiplex, but Houston no longer writes one: install parks an active `notify` line
 (or, if it carries Houston's own sentinel from before `hooks.json` existed, removes it
 outright) and uninstall restores it only when no active replacement exists. A replacement
@@ -342,31 +334,10 @@ child requests independent; reply/reject events resume the same turn only after 
 pending request closes, without manufacturing a new prompt. A later `busy` pulse cannot
 hide an open request.
 
-Grok's `~/.grok/hooks/houston.json` installs the four lifecycle hooks plus
-`SubagentStart`/`SubagentStop`, correlation-only like Codex's pair. These follow the
-documented contract (`docs.x.ai/build/features/hooks`); live verification remains pending.
-`PermissionRequest` is not installed: the same docs page
-lists `PermissionDenied` instead, the moment a permission has already been resolved, not
-the "blocked asking" moment `NeedsInput` means. Grok's own field casing is unconfirmed —
-the documented camelCase fields differ from the Claude-compatible snake_case schema, so
-`claude_hooks::parse_hook_payload` tries snake_case first, then Grok's camelCase twin,
-for every field that has one; every other provider keeps its one spelling. Grok also
-reads a workspace's own
-`.claude/settings.json` hooks, so a Grok pane fires the same moment twice — once through
-Grok's own `--agent grok` path, once through the plain Claude path with no `--agent` at
-all. `run_hook_client` exits without writing a drop when `--agent` is absent and
-`GROK_SESSION_ID` is set (a real env var Grok injects into every hook process), so the
-Grok-side drop is the only one that lands.
-
-Cursor's `~/.cursor/hooks.json` installs `subagentStart`/`subagentStop` beside its
-three lifecycle hooks, correlation-only (`cursor.com/docs/hooks`; live verification
-remains pending), and `afterAgentResponse`, which is
-different in kind: it is the ONLY place Cursor's own last-said text lives (`{"text":
-"..."}`), since `stop` itself carries no such field, so it is installed and its payload
-lifted into `last_message` — but it is still never a status, since it fires after every
-assistant message, not only the turn's last one. `claude_hooks::parse_hook_payload`
-carries a Cursor-only fallback to `"text"` for exactly this reason, the same shape as
-Grok's own camelCase fallback one section up.
+A Grok run by hand in a shell pane reads the user's Claude hooks too. `run_hook_client`
+exits without writing a drop when `--agent` is absent and `GROK_SESSION_ID` is set (an env
+var Grok injects into every hook process), so the Claude path never attributes Grok's
+events to the pane.
 
 Antigravity's `~/.gemini/config/hooks.json` installs `SessionStart` and
 `PreToolUse`/`PostToolUse`, live-verified to fire **only

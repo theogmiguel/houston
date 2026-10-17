@@ -80,9 +80,8 @@ Completion also reaches the parent's inbox through its next supported delivery p
 Routine status checks and terminal reads are unnecessary; reserve them for a reported
 blocker, a timeout, or an explicit request to inspect the child.
 
-Waits are capped by the parent provider: Claude uses 90 seconds; Cursor and Antigravity
-use 30 seconds; Codex, Houston-configured OpenCode and ZCode use ten minutes. Grok uses up to
-ten minutes, shortened by its effective per-tool timeout. Requests above the cap are
+Waits are capped by the parent provider: Claude uses 90 seconds; Antigravity
+uses 30 seconds; Codex, Houston-configured OpenCode and ZCode use ten minutes. Requests above the cap are
 clamped and the response names the requested value and cap. A timeout asks the parent
 to wait again. Starting another wait replaces the previous one;
 interrupted waits leave results available for delivery. An active child can wait for a
@@ -137,7 +136,7 @@ The parent denies with `pane_deny{child,episode_id}` or `hs-pane deny CHILD
 --episode-id ID`. Houston sends only a verified provider denial and leaves the request
 pending until provider evidence confirms resolution. Unsupported paths refuse with a
 reason; the parent can then escalate. Denial currently requires Linux and verified
-default bindings; other platforms explicitly refuse. Codex and Grok denial can also
+default bindings; other platforms explicitly refuse. Codex denial can also
 interrupt the turn. While any permission episode is pending,
 `pane_send_keys` refuses every key, including Escape and n. Input episode ids identify
 one prompt and are separate from worker request numbers.
@@ -165,9 +164,6 @@ terminal. Its receipt identifies the instruction and names the hold. The bounded
 retains instructions across daemon restarts. After recovery, untouched instructions
 remain held until explicitly resumed after checking the child and conversation.
 An uncertain delivery is shown for inspection and is never replayed automatically.
-
-Cursor does not report needs-input. Its capability note and spawn warning say
-“needs-input not reported by this provider”; an absent badge cannot prove it is working.
 
 Codex Auto review can show `stalled?` after an observed approval episode remains unresolved
 for five minutes. This is a diagnostic heuristic, not a request for human input. It clears
@@ -265,10 +261,10 @@ A live daemon handoff preserves parent links, delegation roles and scoped creden
 An open wait returns a retryable timeout marked `restarting`; call `pane_wait` again
 on the new generation. Pending results remain available for that wait.
 
-Claude and Grok children receive launch-only permission rules for exactly Houston's
+Claude children receive launch-only permission rules for exactly Houston's
 `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
 automatic approval is disabled. Other tools keep the selected approval mode.
-Codex, Antigravity, OpenCode, Cursor and ZCode have no equivalent launch rule; their
+Codex, Antigravity, OpenCode and ZCode have no equivalent launch rule; their
 selected approval mode still applies to these tools. Outside yolo mode ZCode asks for
 approval before every Houston tool call, so a ZCode parent also asks before each
 `pane_spawn` and `pane_wait`.
@@ -297,7 +293,7 @@ only when you explicitly ask to continue in a new pane, passing context via `sta
 checkout; the new pane reports the checkout where it works.
 
 Each compaction of an agent's context lowers what it remembers of earlier decisions.
-Houston counts the compactions that Claude, Codex, Grok, Cursor and OpenCode report
+Houston counts the compactions that Claude, Codex and OpenCode report
 through their hooks, and the orchestrator overview shows the current count. Antigravity
 reports no compaction event, so the overview says that no count is available. After every
 third compaction, a top-level pane that has children and has not already handed off
@@ -330,7 +326,7 @@ parent transcript; temporary review panes clean up after their final handback.
 Steer writes into the PTY immediately, including during a working turn; the CLI
 controls how it uses that input. Restart interrupts a working turn and delivers
 the prompt after the child reports idle. It supports Codex with its default Escape
-binding and Grok with Ctrl+C. Claude, OpenCode, Cursor, Antigravity and ZCode are refused
+binding. Claude, OpenCode, Antigravity and ZCode are refused
 by name because a reliable interrupt-to-idle path is not verified. Keep the
 supported provider's default interrupt binding.
 
@@ -441,7 +437,7 @@ the authoritative turn-end or parent-unavailable safety net. Settings ▸ Notifi
 requests, as it does for top-level input. Snapshot replay does not repeat old alerts.
 Spawn warnings return to the orchestrator. Addressed to you is hidden when empty.
 
-Provider usage limits and API failures reported by Claude, Grok or OpenCode leave
+Provider usage limits and API failures reported by Claude or OpenCode leave
 the child available for inspection with a failed delegation and send its parent
 the reported reason. Send a follow-up when the provider allows another turn;
 Houston cannot infer a limit reset time from these hooks. A provider may also

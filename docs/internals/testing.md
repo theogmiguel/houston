@@ -152,8 +152,7 @@ On Unix, `orchestration_chaos_wire` substitutes `fake_agent` for all six spawnab
 executables. Scripts replay hook fixtures through `tr-helper` and call the local MCP
 endpoint with the pane credential. The fixture refuses remote endpoints and records
 monotonic JSONL receipts for ordering and delivery checks. It never launches provider
-CLIs. Cursor needs-input is excluded because there is no supported event fixture;
-documentation-derived payloads retain their original evidence limitations.
+CLIs. Documentation-derived payloads retain their original evidence limitations.
 
 The default matrix uses seeds `1`, `42` and `24301`. Run the ignored
 `soak_500_delegations` test explicitly for 500 delegations; `HOUSTON_CHAOS_SEED` selects
