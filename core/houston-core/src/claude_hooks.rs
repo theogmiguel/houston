@@ -571,6 +571,7 @@ pub fn run_hook_client(args: &[String]) {
         fully_idle: payload.fully_idle,
         subagent_type: payload.subagent_type,
         tool_name: payload.tool_name,
+        model: payload.model,
         feed,
     };
     let root = crate::paths::config_dir();
@@ -776,7 +777,11 @@ pub(crate) struct HookPayload {
     pub permission_block_reason: Option<String>,
     pub transcript_path: Option<String>,
     pub interrupted: bool,
+    pub model: Option<String>,
 }
+
+/// A model id is a short slug; the cap keeps a hostile payload out of the pane row.
+const MODEL_MAX_CHARS: usize = 80;
 
 const TASK_NOTIFICATION_TAG: &str = "<task-notification>";
 
@@ -965,6 +970,14 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         },
         interrupted: provider == proto::AgentKind::Zcode
             && field_bool("is_interrupt").unwrap_or(false),
+        // Claude's model is read from its transcript, not from the hook.
+        model: match provider {
+            proto::AgentKind::Codex | proto::AgentKind::Opencode => field("model"),
+            proto::AgentKind::Antigravity => field("modelName"),
+            _ => None,
+        }
+        .map(|m| m.chars().take(MODEL_MAX_CHARS).collect::<String>())
+        .filter(|m| !m.trim().is_empty()),
         prompt: clean(prompt),
     }
 }
@@ -2133,6 +2146,43 @@ mod tests {
         assert_eq!(
             p.reason.as_deref(),
             Some("Delete the file?; Also the backup?")
+        );
+    }
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    #[test]
+    fn the_model_comes_from_codex_opencode_and_antigravity_payloads_only() {
+        let model = |payload: &str, provider| parse_hook_payload(payload, provider).model;
+        assert_eq!(
+            model(r#"{"model":"gpt-5-codex"}"#, proto::AgentKind::Codex).as_deref(),
+            Some("gpt-5-codex")
+        );
+        assert_eq!(
+            model(
+                r#"{"model":"claude-sonnet-5-5"}"#,
+                proto::AgentKind::Opencode
+            )
+            .as_deref(),
+            Some("claude-sonnet-5-5")
+        );
+        assert_eq!(
+            model(
+                r#"{"modelName":"gemini-3.6-flash-medium"}"#,
+                proto::AgentKind::Antigravity
+            )
+            .as_deref(),
+            Some("gemini-3.6-flash-medium")
+        );
+        assert_eq!(model(r#"{"model":"x"}"#, proto::AgentKind::Claude), None);
+        assert_eq!(model(r#"{"model":"  "}"#, proto::AgentKind::Codex), None);
+        let long = format!(r#"{{"model":"{}"}}"#, "m".repeat(500));
+        assert_eq!(
+            model(&long, proto::AgentKind::Codex).map(|m| m.chars().count()),
+            Some(MODEL_MAX_CHARS)
         );
     }
 }

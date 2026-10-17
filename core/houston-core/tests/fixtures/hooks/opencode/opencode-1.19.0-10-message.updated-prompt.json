@@ -1,0 +1,7 @@
+{
+  "_note": "the plugin's constructed payload from the chat.message hook (input.sessionID, output.message.id, joined non-synthetic text parts, input.model.modelID); shape from the anomalyco/opencode v1.19.0 plugin API, not captured live",
+  "session_id": "ses_root01",
+  "prompt_id": "msg_user01",
+  "prompt": "Add a retry to the sync job",
+  "model": "claude-sonnet-5-5"
+}

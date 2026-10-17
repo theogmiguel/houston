@@ -78,11 +78,22 @@ pub struct TurnCounts {
 
 fn step_category(tool: &str) -> &'static str {
     match tool {
-        "Read" | "read_file" | "read" => "read",
-        "Grep" | "Glob" | "WebSearch" | "search" | "grep" | "glob" => "search",
-        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit" | "write" | "edit_file"
-        | "write_file" | "apply_patch" => "edit",
-        "Bash" | "Shell" | "shell" | "run_command" | "exec_command" => "run",
+        "Read" | "read_file" | "read" | "view_file" | "read_url_content" => "read",
+        "Grep" | "Glob" | "WebSearch" | "search" | "grep" | "glob" | "grep_search"
+        | "find_by_name" | "list_dir" | "search_web" => "search",
+        "Edit"
+        | "MultiEdit"
+        | "Write"
+        | "NotebookEdit"
+        | "edit"
+        | "write"
+        | "edit_file"
+        | "write_file"
+        | "apply_patch"
+        | "write_to_file"
+        | "replace_file_content"
+        | "multi_replace_file_content" => "edit",
+        "Bash" | "Shell" | "shell" | "run_command" | "exec_command" | "bash" => "run",
         _ => "other",
     }
 }
@@ -183,6 +194,14 @@ pub struct Question {
     /// and selects on Enter.
     #[serde(default)]
     pub previews: bool,
+    /// The CLI's dialog has a row that takes typed text. OpenCode's `custom: false`
+    /// removes it; a device must not be offered an answer the dialog lacks.
+    #[serde(default = "free_text_default")]
+    pub free_text: bool,
+}
+
+fn free_text_default() -> bool {
+    true
 }
 
 /// What the hook client lifts from one payload into the drop file.
@@ -219,8 +238,8 @@ pub enum HookFeed {
         target: String,
         #[serde(default)]
         failed: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        edited_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        edited_paths: Vec<String>,
     },
 }
 
@@ -297,6 +316,49 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(|v| v.as_str())
 }
 
+/// Masks, flattens and cuts one target value; the flag reports that the result
+/// is not exactly the input (see `HookFeed::Permission`).
+fn plain_target(raw: &str, max: usize, keep_newlines: bool) -> (String, bool) {
+    let (text, hidden) = plain(&mask(raw), keep_newlines);
+    let cut = text.chars().count() > max;
+    (cut_chars(&text, max), cut || hidden)
+}
+
+/// Argument names that carry a command: Claude and Codex use `command`/`cmd`,
+/// Antigravity `CommandLine`.
+const COMMAND_KEYS: [&str; 3] = ["command", "cmd", "CommandLine"];
+
+/// Argument names that carry a path, URL or pattern, first hit wins: Claude's
+/// `file_path`, OpenCode's `filePath`, and Antigravity's PascalCase names.
+const TARGET_KEYS: [&str; 17] = [
+    "file_path",
+    "filePath",
+    "TargetFile",
+    "AbsolutePath",
+    "notebook_path",
+    "path",
+    "DirectoryPath",
+    "SearchPath",
+    "url",
+    "Url",
+    "pattern",
+    "Pattern",
+    "query",
+    "Query",
+    "description",
+    "skill",
+    "SearchDirectory",
+];
+
+/// Argument names that carry the file an edit tool writes.
+const EDIT_PATH_KEYS: [&str; 5] = [
+    "file_path",
+    "filePath",
+    "TargetFile",
+    "path",
+    "notebook_path",
+];
+
 /// The one value that says what a tool acts on: a command, a path, a URL or a
 /// pattern. Edit previews are lifted separately for permission cards. The flag
 /// reports that the result is not exactly the tool's input (see `HookFeed::Permission`).
@@ -308,7 +370,7 @@ fn tool_target(
     let Some(input) = input else {
         return (String::new(), false);
     };
-    let command = match input.get("command").or_else(|| input.get("cmd")) {
+    let command = COMMAND_KEYS.iter().find_map(|k| match input.get(*k) {
         Some(serde_json::Value::String(s)) => Some(s.clone()),
         Some(serde_json::Value::Array(parts)) => Some(
             parts
@@ -318,27 +380,87 @@ fn tool_target(
                 .join(" "),
         ),
         _ => None,
-    };
-    let raw = command.or_else(|| {
-        [
-            "file_path",
-            "notebook_path",
-            "path",
-            "url",
-            "pattern",
-            "query",
-            "description",
-            "skill",
-        ]
-        .iter()
-        .find_map(|k| str_at(input, k).map(str::to_string))
     });
-    let Some(raw) = raw else {
-        return (String::new(), false);
+    let raw = command.or_else(|| {
+        TARGET_KEYS
+            .iter()
+            .find_map(|k| str_at(input, k).map(str::to_string))
+    });
+    match raw {
+        Some(raw) => plain_target(&raw, max, keep_newlines),
+        None => (String::new(), false),
+    }
+}
+
+/// Codex's `apply_patch` carries the whole patch in `command`, OpenCode's in
+/// `patchText`.
+fn is_patch_tool(tool: Option<&str>) -> bool {
+    tool == Some("apply_patch")
+}
+
+/// Paths named by the `*** Add|Update|Delete File:` and `*** Move to:` headers
+/// of an `apply_patch` body, in order and without repeats. The patch text itself
+/// never leaves this function.
+fn patch_paths(input: Option<&serde_json::Value>) -> Vec<String> {
+    const HEADERS: [&str; 4] = [
+        "*** Add File: ",
+        "*** Update File: ",
+        "*** Delete File: ",
+        "*** Move to: ",
+    ];
+    let Some(body) = input.and_then(|i| str_at(i, "patchText").or_else(|| str_at(i, "command")))
+    else {
+        return Vec::new();
     };
-    let (text, hidden) = plain(&mask(&raw), keep_newlines);
-    let cut = text.chars().count() > max;
-    (cut_chars(&text, max), cut || hidden)
+    let mut paths: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let Some(path) = HEADERS.iter().find_map(|h| line.strip_prefix(h)) else {
+            continue;
+        };
+        let path = cut_chars(&mask_text(path.trim()), TURN_PATH_MAX_CHARS);
+        if !path.is_empty() && !paths.contains(&path) {
+            paths.push(path);
+            if paths.len() >= TURN_FILES_MAX {
+                break;
+            }
+        }
+    }
+    paths
+}
+
+/// A step or permission target for `tool`: an `apply_patch` shows the files it
+/// edits instead of its patch text.
+fn target_of(
+    tool: Option<&str>,
+    input: Option<&serde_json::Value>,
+    max: usize,
+    keep_newlines: bool,
+) -> (String, bool) {
+    if !is_patch_tool(tool) {
+        return tool_target(input, max, keep_newlines);
+    }
+    let paths = patch_paths(input);
+    let summary = match paths.as_slice() {
+        [] => return (String::new(), false),
+        [only] => only.clone(),
+        [first, rest @ ..] => format!("{first} (+{} more)", rest.len()),
+    };
+    let (text, cut) = plain_target(&summary, max, keep_newlines);
+    (text, cut)
+}
+
+/// The files an edit tool writes, for the turn summary.
+fn edited_paths_of(tool: &str, input: Option<&serde_json::Value>) -> Vec<String> {
+    if step_category(tool) != "edit" {
+        return Vec::new();
+    }
+    if is_patch_tool(Some(tool)) {
+        return patch_paths(input);
+    }
+    input
+        .and_then(|input| EDIT_PATH_KEYS.iter().find_map(|k| str_at(input, k)))
+        .map(|path| vec![cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS)])
+        .unwrap_or_default()
 }
 
 fn tool_name(v: &serde_json::Value) -> Option<String> {
@@ -353,6 +475,18 @@ fn tool_input(v: &serde_json::Value) -> Option<&serde_json::Value> {
     v.get("tool_input")
         .or_else(|| v.get("toolInput"))
         .or_else(|| v.get("toolCall").and_then(|t| t.get("args")))
+}
+
+/// An option is `{label, description}` or, for some providers, a bare string.
+fn option_of(o: &serde_json::Value) -> QuestionOption {
+    let label = str_at(o, "label").or_else(|| o.as_str()).unwrap_or("");
+    QuestionOption {
+        label: cut_chars(&mask_text(label), 120),
+        description: cut_chars(
+            &mask_text(str_at(o, "description").unwrap_or("")),
+            SUMMARY_MAX_CHARS,
+        ),
+    }
 }
 
 fn questions_from(input: Option<&serde_json::Value>) -> Vec<Question> {
@@ -375,60 +509,83 @@ fn questions_from(input: Option<&serde_json::Value>) -> Vec<Question> {
                 header: cut_chars(&mask_text(str_at(q, "header").unwrap_or("")), 40),
                 question: cut_chars(&mask_text(question), SUMMARY_MAX_CHARS),
                 previews: options.iter().any(|o| o.get("preview").is_some()),
-                options: options
+                options: options.iter().map(|o| option_of(o)).collect(),
+                // Claude: multiSelect; Antigravity: is_multi_select; OpenCode: multiple.
+                multi_select: ["multiSelect", "multi_select", "is_multi_select", "multiple"]
                     .iter()
-                    .map(|o| QuestionOption {
-                        label: cut_chars(&mask_text(str_at(o, "label").unwrap_or("")), 120),
-                        description: cut_chars(
-                            &mask_text(str_at(o, "description").unwrap_or("")),
-                            SUMMARY_MAX_CHARS,
-                        ),
-                    })
-                    .collect(),
-                multi_select: q
-                    .get("multiSelect")
-                    .or_else(|| q.get("multi_select"))
-                    .and_then(|m| m.as_bool())
+                    .find_map(|k| q.get(*k).and_then(|m| m.as_bool()))
                     .unwrap_or(false),
+                free_text: q.get("custom").and_then(|c| c.as_bool()).unwrap_or(true),
             })
         })
         .collect()
 }
 
-/// The feed summary for one hook payload, or `None` when it carries nothing a
-/// device shows. `prompt` is the payload's prompt when the event submits one.
-pub fn from_hook(
-    provider: proto::AgentKind,
-    event: &str,
-    payload: &str,
-    prompt: Option<&str>,
-) -> Option<HookFeed> {
-    if let Some(text) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
-        return Some(HookFeed::Prompt {
-            text: cut_bytes(&mask_text(text), PROMPT_MAX_BYTES),
-        });
-    }
-    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
-    let name = tool_name(&v);
-    let tool_use_id = str_at(&v, "tool_use_id")
-        .or_else(|| str_at(&v, "toolUseId"))
-        .map(str::to_string);
-    let is_question = name.as_deref() == Some("AskUserQuestion");
-    match event {
-        "PreToolUse" if is_question && provider == proto::AgentKind::Claude => {
-            let questions = questions_from(tool_input(&v));
-            (!questions.is_empty()).then_some(HookFeed::Question {
-                tool_use_id,
-                questions,
-            })
+/// The tool a provider asks a structured question with. ZCode's is read for
+/// its answer and to keep a permission card from covering it; it has no card.
+fn question_tool(provider: proto::AgentKind, name: Option<&str>) -> bool {
+    matches!(
+        (provider, name),
+        (
+            proto::AgentKind::Claude | proto::AgentKind::Zcode,
+            Some("AskUserQuestion")
+        ) | (proto::AgentKind::Codex, Some("request_user_input"))
+            | (proto::AgentKind::Antigravity, Some("ask_question"))
+    )
+}
+
+/// One answer row from a provider's list of selected labels: Codex notes read
+/// `user_note: <text>`, shown as the text.
+fn join_answers<'a>(labels: impl Iterator<Item = &'a str>) -> String {
+    labels
+        .map(|l| l.strip_prefix("user_note: ").unwrap_or(l))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The answers a question tool's completion reports, in question order. Claude
+/// keys them by question text; Codex's `tool_response` is a JSON string keyed
+/// by question id; Antigravity reports no result.
+fn answers_from(provider: proto::AgentKind, v: &serde_json::Value) -> Vec<String> {
+    let raw: Vec<String> = match provider {
+        proto::AgentKind::Antigravity => Vec::new(),
+        proto::AgentKind::Codex => {
+            let body = match v.get("tool_response") {
+                Some(serde_json::Value::String(s)) => serde_json::from_str(s).ok(),
+                other => other.cloned(),
+            };
+            let map = body
+                .as_ref()
+                .and_then(|b| b.get("answers"))
+                .and_then(|a| a.as_object());
+            let ids = tool_input(v)
+                .and_then(|i| i.get("questions"))
+                .and_then(|q| q.as_array())
+                .map(|qs| qs.iter().map(|q| str_at(q, "id")).collect::<Vec<_>>())
+                .unwrap_or_default();
+            match map {
+                Some(map) => ids
+                    .iter()
+                    .filter_map(|id| id.and_then(|id| map.get(id)))
+                    .map(|a| {
+                        join_answers(
+                            a.get("answers")
+                                .and_then(|x| x.as_array())
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|x| x.as_str()),
+                        )
+                    })
+                    .collect(),
+                None => Vec::new(),
+            }
         }
-        "PostToolUse" if is_question => {
-            let order: Vec<String> = questions_from(tool_input(&v))
+        _ => {
+            let order: Vec<String> = questions_from(tool_input(v))
                 .into_iter()
                 .map(|q| q.question)
                 .collect();
-            let answers = v
-                .get("tool_response")
+            v.get("tool_response")
                 .and_then(|r| r.get("answers"))
                 .and_then(|a| a.as_object())
                 .map(|map| {
@@ -447,20 +604,130 @@ pub fn from_hook(
                     out
                 })
                 .unwrap_or_default()
-                .into_iter()
+        }
+    };
+    raw.into_iter()
+        .take(QUESTIONS_MAX)
+        .map(|a| cut_chars(&mask_text(&a), SUMMARY_MAX_CHARS))
+        .collect()
+}
+
+/// OpenCode's `question.replied`: one list of selected labels per question.
+fn opencode_answers(v: &serde_json::Value) -> Vec<String> {
+    v.get("answers")
+        .and_then(|a| a.as_array())
+        .map(|rows| {
+            rows.iter()
                 .take(QUESTIONS_MAX)
-                .map(|a| cut_chars(&mask_text(&a), SUMMARY_MAX_CHARS))
-                .collect();
+                .map(|row| {
+                    let text = join_answers(
+                        row.as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|x| x.as_str()),
+                    );
+                    cut_chars(&mask_text(&text), SUMMARY_MAX_CHARS)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The feed summary for one hook payload, or `None` when it carries nothing a
+/// device shows. `prompt` is the payload's prompt when the event submits one.
+pub fn from_hook(
+    provider: proto::AgentKind,
+    event: &str,
+    payload: &str,
+    prompt: Option<&str>,
+) -> Option<HookFeed> {
+    if let Some(text) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        return Some(HookFeed::Prompt {
+            text: cut_bytes(&mask_text(text), PROMPT_MAX_BYTES),
+        });
+    }
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let name = tool_name(&v);
+    // Claude and Codex name the call, OpenCode its request, Antigravity its step.
+    let tool_use_id = str_at(&v, "tool_use_id")
+        .or_else(|| str_at(&v, "toolUseId"))
+        .or_else(|| str_at(&v, "request_id"))
+        .map(str::to_string)
+        .or_else(|| {
+            v.get("stepIdx")
+                .and_then(|n| n.as_i64())
+                .map(|n| n.to_string())
+        });
+    let is_question =
+        name.as_deref() == Some("AskUserQuestion") || question_tool(provider, name.as_deref());
+    match event {
+        "PreToolUse"
+            if is_question
+                && matches!(
+                    provider,
+                    proto::AgentKind::Claude
+                        | proto::AgentKind::Codex
+                        | proto::AgentKind::Antigravity
+                ) =>
+        {
+            let questions = questions_from(tool_input(&v));
+            // Without options there is nothing to tap, so the pane keeps its input card.
+            let tappable = provider != proto::AgentKind::Antigravity
+                || questions.iter().any(|q| !q.options.is_empty());
+            (!questions.is_empty() && tappable).then_some(HookFeed::Question {
+                tool_use_id,
+                questions,
+            })
+        }
+        "PostToolUse" if is_question => Some(HookFeed::Answered {
+            tool_use_id,
+            answers: answers_from(provider, &v),
+        }),
+        "question.asked" | "question.v2.asked" if provider == proto::AgentKind::Opencode => {
+            let questions = questions_from(Some(&v));
+            (!questions.is_empty()).then_some(HookFeed::Question {
+                tool_use_id,
+                questions,
+            })
+        }
+        "question.replied" | "question.v2.replied" if provider == proto::AgentKind::Opencode => {
             Some(HookFeed::Answered {
                 tool_use_id,
-                answers,
+                answers: opencode_answers(&v),
+            })
+        }
+        "permission.asked" | "permission.updated" if provider == proto::AgentKind::Opencode => {
+            // A child session's dialog has an extra reject-message stage that a key
+            // plan cannot answer safely, so the pane keeps its input card.
+            if v.get("child").and_then(|c| c.as_bool()).unwrap_or(false) {
+                return None;
+            }
+            let tool = str_at(&v, "permission")?;
+            let patterns: Vec<&str> = v
+                .get("patterns")
+                .and_then(|p| p.as_array())
+                .map(|p| p.iter().filter_map(|x| x.as_str()).collect())
+                .unwrap_or_default();
+            let (target, cut) = plain_target(
+                patterns.first().copied().unwrap_or(""),
+                SUMMARY_MAX_CHARS,
+                true,
+            );
+            Some(HookFeed::Permission {
+                tool: cut_chars(&one_line(tool), 80),
+                target,
+                // The dialog always offers "Allow always".
+                always: true,
+                truncated: cut || patterns.len() > 1,
+                diff: None,
             })
         }
         // Its own question card answers it; a permission card would map Approve
         // to the digit 1, which picks the first option.
         "PermissionRequest" if is_question => None,
         "PermissionRequest" => {
-            let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
+            let (target, truncated) =
+                target_of(name.as_deref(), tool_input(&v), SUMMARY_MAX_CHARS, true);
             Some(HookFeed::Permission {
                 diff: if provider == proto::AgentKind::Claude {
                     name.as_deref()
@@ -470,30 +737,46 @@ pub fn from_hook(
                 },
                 tool: name.unwrap_or_else(|| "tool".to_string()),
                 target,
-                always: v
-                    .get("permission_suggestions")
-                    .and_then(|s| s.as_array())
-                    .is_some_and(|s| !s.is_empty()),
+                always: match provider {
+                    // Its hook carries no suggestions; the dialog offers a session-wide
+                    // "don't ask again" row for a command, and `a` is a no-op without it.
+                    proto::AgentKind::Codex => true,
+                    _ => v
+                        .get("permission_suggestions")
+                        .and_then(|s| s.as_array())
+                        .is_some_and(|s| !s.is_empty()),
+                },
                 truncated,
             })
         }
         "PostToolUseFailure" if is_question => None,
-        "PostToolUseFailure" if provider != proto::AgentKind::Claude => None,
-        "PostToolUse" | "PostToolUseFailure" => Some(HookFeed::Step {
-            failed: event == "PostToolUseFailure",
-            target: tool_target(tool_input(&v), STEP_MAX_CHARS, false).0,
-            edited_path: name
-                .as_deref()
-                .filter(|tool| step_category(tool) == "edit")
-                .and_then(|_| tool_input(&v))
-                .and_then(|input| {
-                    str_at(input, "file_path")
-                        .or_else(|| str_at(input, "path"))
-                        .or_else(|| str_at(input, "notebook_path"))
-                })
-                .map(|path| cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS)),
-            tool: name?,
-        }),
+        "PostToolUseFailure"
+            if !matches!(
+                provider,
+                proto::AgentKind::Claude | proto::AgentKind::Opencode
+            ) =>
+        {
+            None
+        }
+        "PostToolUse" | "PostToolUseFailure" => {
+            let input = tool_input(&v);
+            // Antigravity reports a failed tool as a PostToolUse with an `error`.
+            let reported_error = provider == proto::AgentKind::Antigravity
+                && match v.get("error") {
+                    None | Some(serde_json::Value::Null) => false,
+                    Some(serde_json::Value::String(e)) => !e.trim().is_empty(),
+                    Some(_) => true,
+                };
+            Some(HookFeed::Step {
+                failed: event == "PostToolUseFailure" || reported_error,
+                target: target_of(name.as_deref(), input, STEP_MAX_CHARS, false).0,
+                edited_paths: name
+                    .as_deref()
+                    .map(|tool| edited_paths_of(tool, input))
+                    .unwrap_or_default(),
+                tool: name?,
+            })
+        }
         _ => None,
     }
 }
@@ -990,6 +1273,29 @@ impl Store {
         })
     }
 
+    /// Whether the feed already ends in this turn's end: a reply (if any), its
+    /// turn summary and the finished status, with nothing since. A provider that
+    /// reports one turn end twice (OpenCode publishes both a status and an idle
+    /// event) then shows it once. `reply` is the new end's reply text.
+    pub fn repeats_turn_end(&self, session: u32, reply: Option<&str>) -> bool {
+        self.with(|inner| {
+            let Some(feed) = inner.sessions.get(&session) else {
+                return false;
+            };
+            let mut tail = feed.entries.iter().rev().map(|e| &e.item);
+            if !matches!(tail.next(), Some(FeedItem::Status { status: "finished" }))
+                || !matches!(tail.next(), Some(FeedItem::TurnEnd { .. }))
+            {
+                return false;
+            }
+            let previous = match tail.next() {
+                Some(FeedItem::Reply { text }) => Some(text.as_str()),
+                _ => None,
+            };
+            reply.is_none() || reply == previous
+        })
+    }
+
     pub fn end_turn(&self, session: u32, outcome: &'static str, now_ms: u64) -> Option<FeedItem> {
         self.with(|inner| {
             if !inner.collecting {
@@ -1326,52 +1632,89 @@ pub struct KeyPlan {
 /// Whether Houston can answer `card` for `provider` from a device; the error
 /// names why not.
 pub fn decision_support(provider: proto::AgentKind, card: &Card) -> Result<(), String> {
+    use proto::AgentKind::{Antigravity, Claude, Codex, Opencode};
     let name = crate::agent_hooks::provider_slug(provider);
     match (provider, card) {
         (_, Card::Input) => Err(format!(
             "pane is waiting without a structured request from {name}: answer it in the terminal"
         )),
-        (proto::AgentKind::Claude, Card::Permission { .. }) => Ok(()),
-        (proto::AgentKind::Claude, Card::Question { questions, .. }) => {
+        (Claude | Codex | Opencode, Card::Permission { .. }) => Ok(()),
+        (Claude | Codex | Opencode, Card::Question { questions, .. }) => {
             match questions.as_slice() {
                 [q] if !q.multi_select => Ok(()),
                 [q] => Err(format!(
-                    "question {:?} allows several answers: choose them in the terminal",
+                    "{name}: question {:?} allows several answers: choose them in the terminal",
                     q.question
                 )),
                 qs => Err(format!(
-                    "this request asks {} questions at once: answer them in the terminal",
+                    "{name}: this request asks {} questions at once: answer them in the terminal",
                     qs.len()
                 )),
             }
         }
+        (Antigravity, _) => Err(
+            "antigravity reports no permission request, and no key mapping for its question \
+             dialog is verified: answer it in the terminal"
+                .to_string(),
+        ),
         _ => Err(format!(
             "Houston has no key mapping for {name}'s prompts: answer it in the terminal"
         )),
     }
 }
 
-/// The keys `choice` takes on `card`. Claude's dialogs are select lists that act
-/// on a digit alone and deny on Esc; "don't ask again" is the second row, offered
-/// only with permission suggestions.
+const DOWN: &[u8] = b"\x1b[B";
+const RIGHT: &[u8] = b"\x1b[C";
+const ENTER: &[u8] = b"\r";
+const ESC: &[u8] = b"\x1b";
+
+/// `n` Down-arrow presses, one write each: a list moves one row per key.
+fn downs(n: usize) -> Vec<Vec<u8>> {
+    (0..n).map(|_| DOWN.to_vec()).collect()
+}
+
+/// The keys `choice` takes on `card`.
+///
+/// - Claude's dialogs are select lists that act on a digit alone and deny on Esc;
+///   "don't ask again" is the second row, offered only with permission suggestions.
+/// - Codex's approval overlay acts on a letter: `y` approves, `a` approves for the
+///   session, `d` declines and lets the turn continue (Esc and `n` cancel instead).
+///   Its question overlay submits on a digit; free text is the "None of the
+///   above" row after the options, then a notes field.
+/// - OpenCode's permission dialog is a button row, cursor on "Allow once"; its
+///   question list moves with arrows and Enter, free text being the row after the options.
 pub fn decision_keys(
     provider: proto::AgentKind,
     card: &Card,
     choice: &Choice,
 ) -> Result<KeyPlan, String> {
+    use proto::AgentKind::{Claude, Codex, Opencode};
     decision_support(provider, card)?;
+    let name = crate::agent_hooks::provider_slug(provider);
     let plan = |writes: Vec<Vec<u8>>| KeyPlan {
         writes,
         settle_ms: SETTLE_MS,
     };
     match (card, choice) {
-        (Card::Permission { .. }, Choice::Approve) => Ok(plan(vec![b"1".to_vec()])),
-        (Card::Permission { always: true }, Choice::Always) => Ok(plan(vec![b"2".to_vec()])),
-        (Card::Permission { always: false }, Choice::Always) => Err(
-            "this permission request offers no \"don't ask again\" option: choose approve or deny"
-                .to_string(),
-        ),
-        (Card::Permission { .. }, Choice::Deny) => Ok(plan(vec![b"\x1b".to_vec()])),
+        (Card::Permission { .. }, Choice::Approve) => Ok(plan(match provider {
+            Codex => vec![b"y".to_vec()],
+            Opencode => vec![ENTER.to_vec()],
+            _ => vec![b"1".to_vec()],
+        })),
+        (Card::Permission { always: true }, Choice::Always) => Ok(plan(match provider {
+            Codex => vec![b"a".to_vec()],
+            // Stage two, "Always allow", opens on its Confirm button.
+            Opencode => vec![RIGHT.to_vec(), ENTER.to_vec(), ENTER.to_vec()],
+            _ => vec![b"2".to_vec()],
+        })),
+        (Card::Permission { always: false }, Choice::Always) => Err(format!(
+            "{name}: this permission request offers no \"don't ask again\" option: choose \
+             approve or deny"
+        )),
+        (Card::Permission { .. }, Choice::Deny) => Ok(plan(match provider {
+            Codex => vec![b"d".to_vec()],
+            _ => vec![ESC.to_vec()],
+        })),
         (Card::Question { questions, .. }, Choice::Option(n)) => {
             let q = &questions[0];
             if *n > q.options.len() {
@@ -1380,12 +1723,29 @@ pub fn decision_keys(
                     q.options.len()
                 ));
             }
-            let digit = n.to_string().into_bytes();
-            Ok(plan(if q.previews {
-                vec![digit, b"\r".to_vec()]
-            } else {
-                vec![digit]
+            Ok(plan(match provider {
+                Codex => vec![n.to_string().into_bytes()],
+                Opencode => {
+                    let mut writes = downs(n - 1);
+                    writes.push(ENTER.to_vec());
+                    writes
+                }
+                _ => {
+                    let digit = n.to_string().into_bytes();
+                    if q.previews {
+                        vec![digit, ENTER.to_vec()]
+                    } else {
+                        vec![digit]
+                    }
+                }
             }))
+        }
+        (Card::Question { questions, .. }, Choice::Other(_)) if !questions[0].free_text => {
+            Err(format!(
+                "{name}: question {:?} takes no typed answer: choose one of its {} options",
+                questions[0].question,
+                questions[0].options.len()
+            ))
         }
         (Card::Question { questions, .. }, Choice::Other(_)) if questions[0].previews => Err(
             "with option previews, a digit only moves the focus and the free-text field was not \
@@ -1395,7 +1755,7 @@ pub fn decision_keys(
         (Card::Question { questions, .. }, Choice::Other(text)) => {
             let q = &questions[0];
             let other = q.options.len() + 1;
-            if other > OPTIONS_MAX {
+            if provider == Claude && other > OPTIONS_MAX {
                 return Err(format!(
                     "the free-text option is number {other}, beyond the single digit a key can \
                      select: answer it in the terminal"
@@ -1405,11 +1765,16 @@ pub fn decision_keys(
             if text.contains('\n') {
                 return Err("a free-text answer is one line: remove the line breaks".to_string());
             }
-            Ok(plan(vec![
-                other.to_string().into_bytes(),
-                text.into_bytes(),
-                b"\r".to_vec(),
-            ]))
+            Ok(plan(match provider {
+                // Both lists reach their free-text row by arrows; Enter opens the
+                // field (Codex: its notes), a second Enter submits the text.
+                Codex | Opencode => {
+                    let mut writes = downs(q.options.len());
+                    writes.extend([ENTER.to_vec(), text.into_bytes(), ENTER.to_vec()]);
+                    writes
+                }
+                _ => vec![other.to_string().into_bytes(), text.into_bytes(), ENTER.to_vec()],
+            }))
         }
         (Card::Permission { .. }, other) => Err(format!(
             "choice {other:?} does not answer a permission request: expected approve, always or deny"
@@ -1451,6 +1816,7 @@ mod tests {
                 .collect(),
             multi_select: multi,
             previews,
+            free_text: true,
         }
     }
 
@@ -1601,12 +1967,462 @@ mod tests {
     #[test]
     fn providers_without_a_mapping_are_refused_by_name() {
         let err = decision_keys(
-            proto::AgentKind::Codex,
+            proto::AgentKind::Zcode,
             &Card::Permission { always: false },
             &Choice::Approve,
         )
         .unwrap_err();
-        assert!(err.contains("codex"), "{err}");
+        assert!(err.contains("zcode"), "{err}");
+    }
+
+    const CODEX: proto::AgentKind = proto::AgentKind::Codex;
+    const OPENCODE: proto::AgentKind = proto::AgentKind::Opencode;
+    const ANTIGRAVITY: proto::AgentKind = proto::AgentKind::Antigravity;
+
+    fn fixture(provider: &str, name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hooks")
+            .join(provider)
+            .join(name);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+    }
+
+    fn question_card(provider: proto::AgentKind, event: &str, payload: &str) -> Card {
+        let Some(HookFeed::Question {
+            tool_use_id,
+            questions,
+        }) = from_hook(provider, event, payload, None)
+        else {
+            panic!("a question entry from {event}");
+        };
+        Card::Question {
+            tool_use_id,
+            questions,
+        }
+    }
+
+    fn keys(provider: proto::AgentKind, card: &Card, choice: Choice) -> Vec<Vec<u8>> {
+        decision_keys(provider, card, &choice).unwrap().writes
+    }
+
+    const D: &[u8] = b"\x1b[B";
+
+    #[test]
+    fn codex_request_user_input_becomes_a_question_card() {
+        let pre = fixture("codex", "codex-docs-07-PreToolUse-request_user_input.json");
+        let Some(HookFeed::Question {
+            tool_use_id,
+            questions,
+        }) = from_hook(CODEX, "PreToolUse", &pre, None)
+        else {
+            panic!("a question entry");
+        };
+        assert_eq!(tool_use_id.as_deref(), Some("call_question_1"));
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].question, "Which option should be used?");
+        assert_eq!(questions[0].options[1].label, "Second");
+        assert_eq!(questions[0].options[1].description, "The wider change.");
+        assert!(!questions[0].multi_select && questions[0].free_text);
+    }
+
+    #[test]
+    fn a_codex_question_is_never_a_permission_card_or_a_step() {
+        let pre = fixture("codex", "codex-docs-07-PreToolUse-request_user_input.json");
+        assert_eq!(from_hook(CODEX, "PermissionRequest", &pre, None), None);
+        let post = fixture("codex", "codex-docs-08-PostToolUse-request_user_input.json");
+        assert!(matches!(
+            from_hook(CODEX, "PostToolUse", &post, None),
+            Some(HookFeed::Answered { .. })
+        ));
+    }
+
+    #[test]
+    fn codex_question_answer_is_read_from_the_json_string_by_question_id() {
+        let post = fixture("codex", "codex-docs-08-PostToolUse-request_user_input.json");
+        assert_eq!(
+            from_hook(CODEX, "PostToolUse", &post, None),
+            Some(HookFeed::Answered {
+                tool_use_id: Some("call_question_1".into()),
+                answers: vec!["First".into()],
+            })
+        );
+        let mut noted: serde_json::Value = serde_json::from_str(&post).unwrap();
+        noted["tool_response"] = serde_json::json!(
+            "{\"answers\":{\"scope\":{\"answers\":[\"None of the above\",\"user_note: the third way\"]}}}"
+        );
+        let Some(HookFeed::Answered { answers, .. }) =
+            from_hook(CODEX, "PostToolUse", &noted.to_string(), None)
+        else {
+            panic!("an answer");
+        };
+        assert_eq!(answers, ["None of the above, the third way"]);
+    }
+
+    #[test]
+    fn codex_apply_patch_target_is_a_path_never_the_patch_body() {
+        let post = fixture("codex", "codex-0.163.0-13-PostToolUse-apply_patch.json");
+        let Some(HookFeed::Step {
+            tool,
+            target,
+            failed,
+            edited_paths,
+        }) = from_hook(CODEX, "PostToolUse", &post, None)
+        else {
+            panic!("a step");
+        };
+        assert_eq!(tool, "apply_patch");
+        assert_eq!(target, "src/a.rs (+1 more)");
+        assert!(!target.contains("*** Begin Patch") && !target.contains("hunter2"));
+        assert!(!failed);
+        assert_eq!(edited_paths, ["src/a.rs", "src/b.rs"]);
+    }
+
+    #[test]
+    fn codex_bash_permission_offers_always_and_maps_to_letters() {
+        let request = fixture("codex", "codex-0.163.0-10-PermissionRequest-Bash.json");
+        let Some(HookFeed::Permission {
+            tool,
+            target,
+            always,
+            ..
+        }) = from_hook(CODEX, "PermissionRequest", &request, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert_eq!(tool, "Bash");
+        assert_eq!(target, "cargo test --workspace");
+        assert!(always);
+        let card = Card::Permission { always: true };
+        assert_eq!(keys(CODEX, &card, Choice::Approve), [b"y".to_vec()]);
+        assert_eq!(keys(CODEX, &card, Choice::Always), [b"a".to_vec()]);
+        assert_eq!(keys(CODEX, &card, Choice::Deny), [b"d".to_vec()]);
+    }
+
+    #[test]
+    fn codex_question_keys_pick_by_digit_and_type_through_the_last_row() {
+        let pre = fixture("codex", "codex-docs-07-PreToolUse-request_user_input.json");
+        let card = question_card(CODEX, "PreToolUse", &pre);
+        assert_eq!(keys(CODEX, &card, Choice::Option(2)), [b"2".to_vec()]);
+        assert_eq!(
+            keys(CODEX, &card, Choice::Other("blue".into())),
+            [
+                D.to_vec(),
+                D.to_vec(),
+                b"\r".to_vec(),
+                b"blue".to_vec(),
+                b"\r".to_vec()
+            ]
+        );
+        let err = decision_keys(CODEX, &card, &Choice::Option(3)).unwrap_err();
+        assert!(err.contains('3') && err.contains("2 options"), "{err}");
+    }
+
+    #[test]
+    fn a_codex_request_with_several_questions_is_refused_by_name() {
+        let card = Card::Question {
+            tool_use_id: None,
+            questions: vec![question(2, false, false), question(2, false, false)],
+        };
+        let err = decision_support(CODEX, &card).unwrap_err();
+        assert!(
+            err.contains("codex") && err.contains("2 questions"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn opencode_permission_asked_becomes_a_permission_card_with_always() {
+        let asked = fixture(
+            "opencode",
+            "opencode-1.19.0-13-permission.asked-structured.json",
+        );
+        let Some(HookFeed::Permission {
+            tool,
+            target,
+            always,
+            truncated,
+            diff,
+        }) = from_hook(OPENCODE, "permission.asked", &asked, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert_eq!(tool, "bash");
+        assert_eq!(target, "cargo test --workspace");
+        assert!(always && !truncated && diff.is_none());
+        let mut child: serde_json::Value = serde_json::from_str(&asked).unwrap();
+        child["child"] = serde_json::json!(true);
+        assert_eq!(
+            from_hook(OPENCODE, "permission.asked", &child.to_string(), None),
+            None,
+            "a child session's dialog has an extra stage and stays in the terminal"
+        );
+        let mut many: serde_json::Value = serde_json::from_str(&asked).unwrap();
+        many["patterns"] = serde_json::json!(["cargo test", "cargo build"]);
+        let Some(HookFeed::Permission { truncated, .. }) =
+            from_hook(OPENCODE, "permission.updated", &many.to_string(), None)
+        else {
+            panic!("a permission entry");
+        };
+        assert!(truncated, "only the first of several patterns is shown");
+    }
+
+    #[test]
+    fn opencode_permission_keys_are_enter_right_enter_enter_and_escape() {
+        let card = Card::Permission { always: true };
+        assert_eq!(keys(OPENCODE, &card, Choice::Approve), [b"\r".to_vec()]);
+        assert_eq!(
+            keys(OPENCODE, &card, Choice::Always),
+            [b"\x1b[C".to_vec(), b"\r".to_vec(), b"\r".to_vec()]
+        );
+        assert_eq!(keys(OPENCODE, &card, Choice::Deny), [b"\x1b".to_vec()]);
+    }
+
+    #[test]
+    fn opencode_question_asked_keeps_options_multi_and_custom() {
+        let asked = fixture(
+            "opencode",
+            "opencode-1.19.0-14-question.asked-structured.json",
+        );
+        let card = question_card(OPENCODE, "question.asked", &asked);
+        let Card::Question {
+            tool_use_id,
+            questions,
+        } = &card
+        else {
+            unreachable!()
+        };
+        assert_eq!(tool_use_id.as_deref(), Some("que_01"));
+        assert_eq!(questions[0].options.len(), 2);
+        assert!(!questions[0].multi_select && questions[0].free_text);
+
+        let mut closed: serde_json::Value = serde_json::from_str(&asked).unwrap();
+        closed["questions"][0]["custom"] = serde_json::json!(false);
+        let closed = question_card(OPENCODE, "question.asked", &closed.to_string());
+        let err = decision_keys(OPENCODE, &closed, &Choice::Other("x".into())).unwrap_err();
+        assert!(
+            err.contains("opencode") && err.contains("Do you prefer"),
+            "{err}"
+        );
+        assert_eq!(keys(OPENCODE, &closed, Choice::Option(1)), [b"\r".to_vec()]);
+
+        let mut multi: serde_json::Value = serde_json::from_str(&asked).unwrap();
+        multi["questions"][0]["multiple"] = serde_json::json!(true);
+        let multi = question_card(OPENCODE, "question.v2.asked", &multi.to_string());
+        let err = decision_support(OPENCODE, &multi).unwrap_err();
+        assert!(
+            err.contains("opencode") && err.contains("several answers"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn opencode_question_keys_move_with_arrows_and_type_in_the_last_row() {
+        let asked = fixture(
+            "opencode",
+            "opencode-1.19.0-14-question.asked-structured.json",
+        );
+        let card = question_card(OPENCODE, "question.asked", &asked);
+        assert_eq!(keys(OPENCODE, &card, Choice::Option(1)), [b"\r".to_vec()]);
+        assert_eq!(
+            keys(OPENCODE, &card, Choice::Option(2)),
+            [D.to_vec(), b"\r".to_vec()],
+            "the sequence a live OpenCode 1.19.0 pane accepted"
+        );
+        assert_eq!(
+            keys(OPENCODE, &card, Choice::Other("blue".into())),
+            [
+                D.to_vec(),
+                D.to_vec(),
+                b"\r".to_vec(),
+                b"blue".to_vec(),
+                b"\r".to_vec()
+            ]
+        );
+    }
+
+    #[test]
+    fn opencode_question_answers_come_from_the_replied_event() {
+        let replied = fixture(
+            "opencode",
+            "opencode-1.19.0-15-question.replied-answers.json",
+        );
+        assert_eq!(
+            from_hook(OPENCODE, "question.replied", &replied, None),
+            Some(HookFeed::Answered {
+                tool_use_id: Some("que_01".into()),
+                answers: vec!["Option B".into()],
+            })
+        );
+        assert_eq!(
+            from_hook(OPENCODE, "question.rejected", &replied, None),
+            None
+        );
+    }
+
+    #[test]
+    fn opencode_prompt_text_tool_steps_and_failures_reach_the_feed() {
+        let prompt = fixture("opencode", "opencode-1.19.0-10-message.updated-prompt.json");
+        let text = serde_json::from_str::<serde_json::Value>(&prompt).unwrap()["prompt"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            from_hook(OPENCODE, "message.updated", &prompt, Some(&text)),
+            Some(HookFeed::Prompt {
+                text: "Add a retry to the sync job".into()
+            })
+        );
+        let edit = fixture("opencode", "opencode-1.19.0-11-PostToolUse-edit.json");
+        assert_eq!(
+            from_hook(OPENCODE, "PostToolUse", &edit, None),
+            Some(HookFeed::Step {
+                tool: "edit".into(),
+                target: "/work/src/sync.rs".into(),
+                failed: false,
+                edited_paths: vec!["/work/src/sync.rs".into()],
+            })
+        );
+        let failure = fixture(
+            "opencode",
+            "opencode-1.19.0-12-PostToolUseFailure-bash.json",
+        );
+        assert_eq!(
+            from_hook(OPENCODE, "PostToolUseFailure", &failure, None),
+            Some(HookFeed::Step {
+                tool: "bash".into(),
+                target: "cargo test --workspace".into(),
+                failed: true,
+                edited_paths: Vec::new(),
+            })
+        );
+        assert_eq!(step_category("bash"), "run");
+    }
+
+    #[test]
+    fn opencode_patch_headers_name_the_edited_files() {
+        let payload = serde_json::json!({
+            "tool_name": "apply_patch",
+            "tool_input": {"patchText": "*** Begin Patch\n*** Update File: a.rs\n*** Move to: b.rs\n*** End Patch"}
+        })
+        .to_string();
+        let Some(HookFeed::Step {
+            target,
+            edited_paths,
+            ..
+        }) = from_hook(OPENCODE, "PostToolUse", &payload, None)
+        else {
+            panic!("a step");
+        };
+        assert_eq!(target, "a.rs (+1 more)");
+        assert_eq!(edited_paths, ["a.rs", "b.rs"]);
+    }
+
+    #[test]
+    fn antigravity_run_command_target_is_the_command_line_and_an_error_fails_the_step() {
+        let post = fixture(
+            "antigravity",
+            "antigravity-1.4.0-10-PostToolUse-run_command-error.json",
+        );
+        assert_eq!(
+            from_hook(ANTIGRAVITY, "PostToolUse", &post, None),
+            Some(HookFeed::Step {
+                tool: "run_command".into(),
+                target: "cargo test --workspace".into(),
+                failed: true,
+                edited_paths: Vec::new(),
+            })
+        );
+        let mut ok: serde_json::Value = serde_json::from_str(&post).unwrap();
+        ok.as_object_mut().unwrap().remove("error");
+        let Some(HookFeed::Step { failed, .. }) =
+            from_hook(ANTIGRAVITY, "PostToolUse", &ok.to_string(), None)
+        else {
+            panic!("a step");
+        };
+        assert!(!failed);
+    }
+
+    #[test]
+    fn antigravity_write_to_file_edits_its_target_file() {
+        let post = fixture(
+            "antigravity",
+            "antigravity-1.4.0-12-PostToolUse-write_to_file.json",
+        );
+        assert_eq!(
+            from_hook(ANTIGRAVITY, "PostToolUse", &post, None),
+            Some(HookFeed::Step {
+                tool: "write_to_file".into(),
+                target: "/home/user/code/myproj/src/lib.rs".into(),
+                failed: false,
+                edited_paths: vec!["/home/user/code/myproj/src/lib.rs".into()],
+            })
+        );
+    }
+
+    #[test]
+    fn antigravity_ask_question_is_a_question_card_that_the_phone_cannot_answer() {
+        let pre = fixture(
+            "antigravity",
+            "antigravity-1.4.0-11-PreToolUse-ask_question-options.json",
+        );
+        let card = question_card(ANTIGRAVITY, "PreToolUse", &pre);
+        let Card::Question {
+            tool_use_id,
+            questions,
+        } = &card
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            tool_use_id.as_deref(),
+            Some("5"),
+            "the step index names the call"
+        );
+        assert_eq!(questions[0].options[1].label, "release");
+        let err = decision_support(ANTIGRAVITY, &card).unwrap_err();
+        assert!(err.contains("antigravity"), "{err}");
+
+        let mut multi: serde_json::Value = serde_json::from_str(&pre).unwrap();
+        multi["toolCall"]["args"]["questions"][0]["is_multi_select"] = serde_json::json!(true);
+        let Card::Question { questions, .. } =
+            question_card(ANTIGRAVITY, "PreToolUse", &multi.to_string())
+        else {
+            unreachable!()
+        };
+        assert!(questions[0].multi_select);
+    }
+
+    #[test]
+    fn antigravity_ask_question_without_options_keeps_the_input_card_and_is_no_step() {
+        let legacy = fixture(
+            "antigravity",
+            "antigravity-1.1.26-04-PreToolUse-ask_question.json",
+        );
+        assert_eq!(from_hook(ANTIGRAVITY, "PreToolUse", &legacy, None), None);
+        let post = fixture(
+            "antigravity",
+            "antigravity-1.4.0-13-PostToolUse-ask_question-options.json",
+        );
+        assert_eq!(
+            from_hook(ANTIGRAVITY, "PostToolUse", &post, None),
+            Some(HookFeed::Answered {
+                tool_use_id: Some("5".into()),
+                answers: Vec::new(),
+            }),
+            "completing ask_question closes its card and lists no step"
+        );
+    }
+
+    #[test]
+    fn target_keys_cover_every_provider_spelling() {
+        let target = |input: serde_json::Value| tool_target(Some(&input), STEP_MAX_CHARS, false).0;
+        assert_eq!(target(serde_json::json!({"filePath": "/a"})), "/a");
+        assert_eq!(target(serde_json::json!({"AbsolutePath": "/b"})), "/b");
+        assert_eq!(target(serde_json::json!({"DirectoryPath": "/c"})), "/c");
+        assert_eq!(target(serde_json::json!({"Url": "https://x"})), "https://x");
+        assert_eq!(target(serde_json::json!({"Query": "needle"})), "needle");
+        assert_eq!(target(serde_json::json!({"Pattern": "*.rs"})), "*.rs");
+        assert_eq!(target(serde_json::json!({"CommandLine": "ls"})), "ls");
     }
 
     fn collecting() -> Store {

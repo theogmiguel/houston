@@ -8721,6 +8721,7 @@ impl Daemon {
                 drop.last_message.as_deref(),
                 drop.tool_name.as_deref(),
                 drop.reason.as_deref(),
+                drop.model.as_deref(),
                 now,
             );
             (dispatch, tracker.activity())

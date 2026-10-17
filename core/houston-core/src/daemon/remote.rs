@@ -994,13 +994,17 @@ impl Daemon {
                     .feed
                     .answer_question(id, tool_use_id.as_deref(), answers.clone())
                 {
-                    self.remote_push(
-                        id,
-                        FeedItem::Answer {
-                            answers: answers.clone(),
-                        },
-                        now,
-                    );
+                    // Antigravity's completion carries no result: the card closes, and
+                    // there is no answer to show.
+                    if !answers.is_empty() {
+                        self.remote_push(
+                            id,
+                            FeedItem::Answer {
+                                answers: answers.clone(),
+                            },
+                            now,
+                        );
+                    }
                     self.remote_emit(id, Change::Session(id));
                 }
             }
@@ -1044,10 +1048,10 @@ impl Daemon {
             Some(HookFeed::Step {
                 tool,
                 target,
-                edited_path,
+                edited_paths,
                 failed,
             }) => {
-                if let Some(path) = edited_path {
+                for path in edited_paths {
                     self.remote.feed.note_edited_path(id, path);
                 }
                 self.remote_push(
@@ -1070,18 +1074,18 @@ impl Daemon {
         ) && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
-        let speaks = turn_ended;
-        if speaks {
-            if let Some(text) = d
-                .last_message
-                .as_deref()
-                .map(feed::reply_text)
-                .filter(|t| !t.is_empty())
-            {
+        let reply = d
+            .last_message
+            .as_deref()
+            .map(feed::reply_text)
+            .filter(|t| !t.is_empty());
+        let repeated = turn_ended && self.remote.feed.repeats_turn_end(id, reply.as_deref());
+        if turn_ended && !repeated {
+            if let Some(text) = reply {
                 self.remote_push(id, FeedItem::Reply { text }, now);
             }
         }
-        if turn_ended {
+        if turn_ended && !repeated {
             let outcome = match event {
                 Some(AgentEvent::TurnFailed) => "failed",
                 Some(AgentEvent::TurnInterrupted) => "stopped",

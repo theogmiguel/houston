@@ -143,21 +143,35 @@ fn pane(daemon: &Arc<Daemon>, cmd: &[&str]) -> (proto::SessionInfo, tempfile::Te
 fn hook(agent: Option<&str>, event: &str, session: u32, payload: &serde_json::Value) -> HookDrop {
     let provider = match agent {
         Some("codex") => proto::AgentKind::Codex,
+        Some("opencode") => proto::AgentKind::Opencode,
+        Some("antigravity") => proto::AgentKind::Antigravity,
+        Some("zcode") => proto::AgentKind::Zcode,
         _ => proto::AgentKind::Claude,
     };
     let text = payload.to_string();
     let prompt = payload["prompt"].as_str();
+    let str_field = |key: &str| payload[key].as_str().map(str::to_string);
     HookDrop {
         v: hook_drop::DROP_V,
         event: event.into(),
         session,
         agent: agent.map(str::to_string),
-        tool_name: payload["tool_name"].as_str().map(str::to_string),
-        tool_use_id: payload["tool_use_id"].as_str().map(str::to_string),
+        tool_name: str_field("tool_name")
+            .or_else(|| payload["toolCall"]["name"].as_str().map(str::to_string)),
+        tool_use_id: str_field("tool_use_id").or_else(|| {
+            payload["stepIdx"]
+                .as_i64()
+                .filter(|_| provider == proto::AgentKind::Antigravity)
+                .map(|n| n.to_string())
+        }),
+        request_id: str_field("request_id"),
         prompt: prompt.map(str::to_string),
-        last_message: payload["last_assistant_message"]
-            .as_str()
-            .map(str::to_string),
+        last_message: str_field("last_assistant_message"),
+        model: match provider {
+            proto::AgentKind::Antigravity => str_field("modelName"),
+            proto::AgentKind::Claude => None,
+            _ => str_field("model"),
+        },
         feed: from_hook(provider, event, &text, prompt),
         ..Default::default()
     }
@@ -442,30 +456,30 @@ async fn decide_types_the_option_key_and_refuses_stale_or_unmapped_requests() {
     assert_eq!(page["entries"][0]["type"], "answer", "{page}");
     assert_eq!(page["entries"][0]["answers"][0], "Store 2");
 
-    let (codex, _dir2) = pane(&daemon, &["sleep", "30"]);
+    let (zcode, _dir2) = pane(&daemon, &["sleep", "30"]);
     let request_payload = serde_json::json!({
-        "hook_event_name": "PermissionRequest", "tool_name": "shell",
+        "hook_event_name": "PermissionRequest", "tool_name": "Bash",
         "tool_input": {"command": ["cargo", "test"]}
     });
     apply(
         state.path(),
         &hook(
-            Some("codex"),
+            Some("zcode"),
             "PermissionRequest",
-            codex.id,
+            zcode.id,
             &request_payload,
         ),
     )
     .await;
-    let row = session_row(addr, &token, codex.id).await;
+    let row = session_row(addr, &token, zcode.id).await;
     assert_eq!(row["pending"]["detail"], "cargo test");
     assert_eq!(row["pending"]["decidable"], false);
     let seq = row["pending"]["seq"].as_u64().unwrap();
-    let refused = decide(addr, &token, codex.id, seq, "approve").await;
+    let refused = decide(addr, &token, zcode.id, seq, "approve").await;
     assert_eq!(refused.status, 409, "{}", refused.body);
-    assert!(refused.body.contains("codex"), "{}", refused.body);
+    assert!(refused.body.contains("zcode"), "{}", refused.body);
     daemon.kill(id).ok();
-    daemon.kill(codex.id).ok();
+    daemon.kill(zcode.id).ok();
 }
 
 /// Reads an open event stream until `needle` arrives.
@@ -988,13 +1002,12 @@ async fn failed_tool_hook_drops_produce_steps_and_turn_counts() {
 }
 
 #[test]
-fn tool_failure_steps_are_claude_only_and_old_hook_drops_default_to_success() {
+fn tool_failure_steps_are_claude_and_opencode_only_and_old_hook_drops_default_to_success() {
     let payload =
         serde_json::json!({"tool_name":"Bash","tool_input":{"command":"exit 1"}}).to_string();
     for provider in [
         proto::AgentKind::Codex,
         proto::AgentKind::Grok,
-        proto::AgentKind::Opencode,
         proto::AgentKind::Cursor,
         proto::AgentKind::Antigravity,
     ] {
@@ -1003,6 +1016,16 @@ fn tool_failure_steps_are_claude_only_and_old_hook_drops_default_to_success() {
             "{provider:?} does not install a PostToolUseFailure hook"
         );
     }
+    // OpenCode's plugin synthesizes one from an errored tool part.
+    assert!(matches!(
+        from_hook(
+            proto::AgentKind::Opencode,
+            "PostToolUseFailure",
+            &payload,
+            None
+        ),
+        Some(houston_core::remote::feed::HookFeed::Step { failed: true, .. })
+    ));
     let step: houston_core::remote::feed::HookFeed = serde_json::from_value(
         serde_json::json!({"kind":"step","tool":"Read","target":"/work/main.rs"}),
     )
@@ -1311,4 +1334,342 @@ async fn repeated_respawns_release_old_feeds_and_pending_notifications() {
     daemon.close(info.id).unwrap();
     assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
     assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+}
+
+fn provider_fixture(provider: &str, name: &str) -> serde_json::Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/hooks")
+        .join(provider)
+        .join(name);
+    serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+}
+
+/// A pane that echoes every key it receives in `cat -v` notation, one raw byte
+/// stream per decision: `\r` reads `^M`, a Down arrow `^[[B`.
+async fn keys_pane(
+    daemon: &Arc<Daemon>,
+    addr: SocketAddr,
+    token: &str,
+) -> (u32, tempfile::TempDir) {
+    let (info, dir) = pane(
+        daemon,
+        &[
+            "sh",
+            "-c",
+            "stty raw -echo; printf 'KEYS-READY\\r\\n'; exec cat -v",
+        ],
+    );
+    screen_until(addr, token, info.id, "KEYS-READY").await;
+    (info.id, dir)
+}
+
+async fn decide_text(
+    addr: SocketAddr,
+    token: &str,
+    id: u32,
+    seq: u64,
+    choice: &str,
+    text: &str,
+) -> Reply {
+    let epoch = feed(addr, token, id, u64::MAX).await["epoch"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let body = serde_json::json!({
+        "epoch": epoch, "entry_seq": seq, "choice": choice, "text": text
+    })
+    .to_string();
+    request(
+        addr,
+        "POST",
+        &format!("/api/sessions/{id}/decide"),
+        Some(token),
+        Some(&body),
+    )
+    .await
+}
+
+async fn pending_seq(addr: SocketAddr, token: &str, id: u32, kind: &str) -> u64 {
+    let row = session_row(addr, token, id).await;
+    assert_eq!(row["pending"]["type"], kind, "{row}");
+    assert_eq!(row["pending"]["decidable"], true, "{row}");
+    row["pending"]["seq"].as_u64().unwrap()
+}
+
+fn entry_types(page: &serde_json::Value) -> Vec<String> {
+    page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["type"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn codex_steps_questions_and_permissions_reach_the_phone_and_its_keys_reach_the_pane() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (id, _dir) = keys_pane(&daemon, addr, &token).await;
+    let codex = |event: &str, payload: &serde_json::Value| hook(Some("codex"), event, id, payload);
+
+    apply(
+        state.path(),
+        &codex(
+            "SessionStart",
+            &provider_fixture("codex", "codex-0.153.4-01-SessionStart.json"),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &codex(
+            "UserPromptSubmit",
+            &provider_fixture("codex", "codex-0.153.4-02-UserPromptSubmit.json"),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &codex(
+            "PostToolUse",
+            &provider_fixture("codex", "codex-0.163.0-13-PostToolUse-apply_patch.json"),
+        ),
+    )
+    .await;
+    let row = session_row(addr, &token, id).await;
+    assert_eq!(row["model"], "gpt-5-codex", "{row}");
+    assert_eq!(row["last_step"], "apply_patch src/a.rs (+1 more)", "{row}");
+    let page = feed(addr, &token, id, 0).await;
+    assert_eq!(entry_types(&page), ["prompt", "step"], "{page}");
+    assert!(
+        !page.to_string().contains("hunter2"),
+        "the patch body never reaches the feed: {page}"
+    );
+
+    apply(
+        state.path(),
+        &codex(
+            "PermissionRequest",
+            &provider_fixture("codex", "codex-0.163.0-10-PermissionRequest-Bash.json"),
+        ),
+    )
+    .await;
+    let seq = pending_seq(addr, &token, id, "permission").await;
+    assert_eq!(decide(addr, &token, id, seq, "approve").await.status, 200);
+    screen_until(addr, &token, id, "KEYS-READY\ny").await;
+
+    let ask = provider_fixture("codex", "codex-docs-07-PreToolUse-request_user_input.json");
+    apply(state.path(), &codex("PreToolUse", &ask)).await;
+    let seq = pending_seq(addr, &token, id, "question").await;
+    assert_eq!(decide(addr, &token, id, seq, "2").await.status, 200);
+    screen_until(addr, &token, id, "KEYS-READY\ny2").await;
+    apply(
+        state.path(),
+        &codex(
+            "PostToolUse",
+            &provider_fixture("codex", "codex-docs-08-PostToolUse-request_user_input.json"),
+        ),
+    )
+    .await;
+    let page = feed(addr, &token, id, seq).await;
+    assert_eq!(page["entries"][0]["type"], "answer", "{page}");
+    assert_eq!(page["entries"][0]["answers"][0], "First");
+
+    apply(state.path(), &codex("PreToolUse", &ask)).await;
+    let seq = pending_seq(addr, &token, id, "question").await;
+    let typed = decide_text(addr, &token, id, seq, "other", "blue").await;
+    assert_eq!(typed.status, 200, "{}", typed.body);
+    screen_until(addr, &token, id, "y2^[[B^[[B^Mblue^M").await;
+    daemon.kill(id).ok();
+}
+
+#[tokio::test]
+async fn an_opencode_pane_shows_prompt_steps_questions_and_one_reply_and_answers_by_key() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (id, _dir) = keys_pane(&daemon, addr, &token).await;
+    let oc = |event: &str, payload: &serde_json::Value| hook(Some("opencode"), event, id, payload);
+    let fixture = |name: &str| provider_fixture("opencode", name);
+
+    apply(
+        state.path(),
+        &oc(
+            "message.updated",
+            &fixture("opencode-1.19.0-10-message.updated-prompt.json"),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &oc(
+            "PostToolUse",
+            &fixture("opencode-1.19.0-11-PostToolUse-edit.json"),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &oc(
+            "PostToolUseFailure",
+            &fixture("opencode-1.19.0-12-PostToolUseFailure-bash.json"),
+        ),
+    )
+    .await;
+    let row = session_row(addr, &token, id).await;
+    assert_eq!(row["model"], "claude-sonnet-5-5", "{row}");
+    let page = feed(addr, &token, id, 0).await;
+    assert_eq!(entry_types(&page), ["prompt", "step", "step"], "{page}");
+    assert_eq!(page["entries"][0]["text"], "Add a retry to the sync job");
+    assert_eq!(page["entries"][1]["target"], "/work/src/sync.rs");
+    assert_eq!(page["entries"][2]["failed"], true);
+
+    apply(
+        state.path(),
+        &oc(
+            "permission.asked",
+            &fixture("opencode-1.19.0-13-permission.asked-structured.json"),
+        ),
+    )
+    .await;
+    let seq = pending_seq(addr, &token, id, "permission").await;
+    assert_eq!(
+        session_row(addr, &token, id).await["pending"]["detail"],
+        "cargo test --workspace"
+    );
+    assert_eq!(decide(addr, &token, id, seq, "always").await.status, 200);
+    screen_until(addr, &token, id, "KEYS-READY\n^[[C^M^M").await;
+    apply(
+        state.path(),
+        &oc(
+            "permission.replied",
+            &fixture("opencode-1.19.0-13-permission.asked-structured.json"),
+        ),
+    )
+    .await;
+
+    apply(
+        state.path(),
+        &oc(
+            "question.asked",
+            &fixture("opencode-1.19.0-14-question.asked-structured.json"),
+        ),
+    )
+    .await;
+    let seq = pending_seq(addr, &token, id, "question").await;
+    assert_eq!(decide(addr, &token, id, seq, "2").await.status, 200);
+    screen_until(addr, &token, id, "^[[B^M").await;
+    apply(
+        state.path(),
+        &oc(
+            "question.replied",
+            &fixture("opencode-1.19.0-15-question.replied-answers.json"),
+        ),
+    )
+    .await;
+    let page = feed(addr, &token, id, seq).await;
+    assert_eq!(page["entries"][0]["type"], "answer", "{page}");
+    assert_eq!(page["entries"][0]["answers"][0], "Option B");
+
+    let idle = serde_json::json!({
+        "session_id": "ses_root01", "last_assistant_message": "Retry added."
+    });
+    let before = feed(addr, &token, id, u64::MAX).await["last_seq"]
+        .as_u64()
+        .unwrap();
+    apply(state.path(), &oc("session.idle", &idle)).await;
+    apply(state.path(), &oc("session.idle", &idle)).await;
+    let page = feed(addr, &token, id, before).await;
+    assert_eq!(
+        entry_types(&page),
+        ["reply", "turn_end", "status"],
+        "a turn end reported twice is shown once: {page}"
+    );
+    assert_eq!(page["entries"][0]["text"], "Retry added.");
+    assert_eq!(page["entries"][1]["counts"]["edit"], 1, "{page}");
+    assert_eq!(page["entries"][1]["counts"]["run"], 1, "{page}");
+    assert_eq!(
+        page["entries"][1]["files"][0], "/work/src/sync.rs",
+        "{page}"
+    );
+    daemon.kill(id).ok();
+}
+
+#[tokio::test]
+async fn an_antigravity_pane_shows_steps_and_a_question_but_leaves_its_answer_to_the_terminal() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (id, _dir) = keys_pane(&daemon, addr, &token).await;
+    let ag =
+        |event: &str, payload: &serde_json::Value| hook(Some("antigravity"), event, id, payload);
+    let fixture = |name: &str| provider_fixture("antigravity", name);
+
+    apply(
+        state.path(),
+        &ag(
+            "PostToolUse",
+            &fixture("antigravity-1.4.0-10-PostToolUse-run_command-error.json"),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &ag(
+            "PostToolUse",
+            &fixture("antigravity-1.4.0-12-PostToolUse-write_to_file.json"),
+        ),
+    )
+    .await;
+    let page = feed(addr, &token, id, 0).await;
+    assert_eq!(entry_types(&page), ["step", "step"], "{page}");
+    assert_eq!(page["entries"][0]["target"], "cargo test --workspace");
+    assert_eq!(page["entries"][0]["failed"], true);
+    assert_eq!(
+        page["entries"][1]["target"],
+        "/home/user/code/myproj/src/lib.rs"
+    );
+    assert_eq!(page["entries"][1]["failed"], false);
+    assert_eq!(
+        session_row(addr, &token, id).await["model"],
+        "gemini-3.6-flash-medium"
+    );
+
+    apply(
+        state.path(),
+        &ag(
+            "PreToolUse",
+            &fixture("antigravity-1.4.0-11-PreToolUse-ask_question-options.json"),
+        ),
+    )
+    .await;
+    let row = session_row(addr, &token, id).await;
+    assert_eq!(row["pending"]["type"], "question", "{row}");
+    assert_eq!(row["pending"]["decidable"], false, "{row}");
+    let seq = row["pending"]["seq"].as_u64().unwrap();
+    let refused = decide(addr, &token, id, seq, "1").await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert!(refused.body.contains("antigravity"), "{}", refused.body);
+
+    apply(
+        state.path(),
+        &ag(
+            "PostToolUse",
+            &fixture("antigravity-1.4.0-13-PostToolUse-ask_question-options.json"),
+        ),
+    )
+    .await;
+    let page = feed(addr, &token, id, seq).await;
+    assert!(page["pending"].is_null(), "{page}");
+    assert!(
+        entry_types(&page)
+            .iter()
+            .all(|t| t != "step" && t != "answer"),
+        "ask_question is neither a step nor an empty answer: {page}"
+    );
+    daemon.kill(id).ok();
 }

@@ -1,0 +1,9 @@
+{
+  "_note": "the plugin's constructed payload for permission.asked: permission, patterns and the child-session flag are lifted from the bus event (schema/src/v1/permission.ts at v1.19.0); not captured live",
+  "session_id": "ses_root01",
+  "request_id": "per_01",
+  "message": "bash cargo test --workspace",
+  "permission": "bash",
+  "patterns": ["cargo test --workspace"],
+  "child": false
+}

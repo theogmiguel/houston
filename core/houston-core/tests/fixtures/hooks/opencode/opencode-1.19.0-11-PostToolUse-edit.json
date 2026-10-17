@@ -1,0 +1,7 @@
+{
+  "_note": "the plugin's constructed payload for a completed tool part (message.part.updated, state.status completed); edit/write use filePath (anomalyco/opencode v1.19.0), not captured live",
+  "session_id": "ses_root01",
+  "tool_name": "edit",
+  "tool_use_id": "call_edit_1",
+  "tool_input": { "filePath": "/work/src/sync.rs" }
+}

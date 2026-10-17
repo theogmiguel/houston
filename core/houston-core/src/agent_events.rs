@@ -117,7 +117,10 @@ const OPENCODE_EVENTS: [(&str, AgentEvent); 14] = [
     ("session.error", AgentEvent::TurnFailed),
 ];
 
-pub const OPENCODE_CORRELATION_EVENTS: [&str; 1] = ["SubagentStop"];
+// PostToolUse and PostToolUseFailure are synthesized by the plugin from completed
+// and errored tool parts; they feed the remote activity feed and map to no status.
+pub const OPENCODE_CORRELATION_EVENTS: [&str; 3] =
+    ["SubagentStop", "PostToolUse", "PostToolUseFailure"];
 
 // PreToolUse maps to NeedsInput here, but the table alone can't tell
 // `ask_question` from an ordinary tool call — the daemon gates on the tool

@@ -378,7 +378,8 @@ mod codex {
         );
 
         let unrelated = f("codex-docs-08-PostToolUse-request_user_input.json")
-            .replace("request_user_input", "update_plan");
+            .replace("request_user_input", "update_plan")
+            .replace("call_question_1", "call_plan_1");
         drive(state.path(), "PostToolUse", SLUG, info.id, unrelated).await;
         assert_eq!(
             daemon.session_status(info.id).unwrap(),

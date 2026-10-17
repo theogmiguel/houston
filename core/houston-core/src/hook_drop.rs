@@ -113,6 +113,10 @@ pub struct HookDrop {
     // ZCode's PostToolUseFailure.is_interrupt: the operator aborted the turn mid-tool.
     #[serde(default)]
     pub interrupted: bool,
+    // The model a Codex, OpenCode or Antigravity payload reports, shown on the
+    // pane's remote session row.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 impl HookDrop {
@@ -160,6 +164,7 @@ impl Default for HookDrop {
             resume_evidence: None,
             feed: None,
             interrupted: false,
+            model: None,
         }
     }
 }

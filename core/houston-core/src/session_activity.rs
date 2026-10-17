@@ -32,7 +32,7 @@ impl Tracker {
         tool: Option<&str>,
         now: Instant,
     ) -> Dispatch {
-        self.update_with_question(provider, event, prompt, last_message, tool, None, now)
+        self.update_with_question(provider, event, prompt, last_message, tool, None, None, now)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -44,6 +44,7 @@ impl Tracker {
         last_message: Option<&str>,
         tool: Option<&str>,
         question: Option<&str>,
+        model: Option<&str>,
         now: Instant,
     ) -> Dispatch {
         let mut activity = self.activity.clone().unwrap_or(proto::SessionActivity {
@@ -82,6 +83,9 @@ impl Tracker {
             if let Some(message) = last_message.and_then(first_line) {
                 activity.last_message = Some(message);
             }
+        }
+        if let Some(model) = model.and_then(first_line) {
+            activity.model = Some(model);
         }
         if is_tool_end(provider, event) {
             activity.tool = None;
@@ -157,5 +161,9 @@ fn is_tool_end(provider: proto::AgentKind, event: &str) -> bool {
             "PostToolUse" | "PostToolUseFailure"
         ) | (proto::AgentKind::Codex, "PostToolUse")
             | (proto::AgentKind::Antigravity, "PostToolUse")
+            | (
+                proto::AgentKind::Opencode,
+                "PostToolUse" | "PostToolUseFailure"
+            )
     )
 }

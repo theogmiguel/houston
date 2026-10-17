@@ -884,6 +884,16 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          {cmd_entries}\n\
          \x20 }}\n\
          \x20 const parents = new Map()\n\
+         \x20 // Bounded sets: a tool state can be published again, and idle is published twice per turn.\n\
+         \x20 const seen = new Set()\n\
+         \x20 const idled = new Set()\n\
+         \x20 const once = (set, key) => {{\n\
+         \x20   if (set.has(key)) return false\n\
+         \x20   if (set.size >= 500) set.clear()\n\
+         \x20   set.add(key)\n\
+         \x20   return true\n\
+         \x20 }}\n\
+         \x20 const clip = (v, n) => (typeof v === \"string\" ? v.slice(0, n) : undefined)\n\
          \x20 const run = async (name, payload) => {{\n\
          \x20   const cmd = CMDS[name]\n\
          \x20   if (!cmd) return\n\
@@ -913,7 +923,37 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20   }} catch {{}}\n\
          \x20   return \"\"\n\
          \x20 }}\n\
+         \x20 // One target per tool leaves this process: a whole input (file contents) would\n\
+         \x20 // overflow the argument list. A patch keeps only its file headers.\n\
+         \x20 const trimInput = (input) => {{\n\
+         \x20   const out = {{}}\n\
+         \x20   for (const k of [\"command\", \"filePath\", \"path\", \"pattern\", \"url\", \"description\"]) {{\n\
+         \x20     const s = clip(input?.[k], 1000)\n\
+         \x20     if (s) out[k] = s\n\
+         \x20   }}\n\
+         \x20   if (typeof input?.patchText === \"string\") {{\n\
+         \x20     out.patchText = input.patchText.split(\"\\n\").filter((l) => l.startsWith(\"*** \")).join(\"\\n\").slice(0, 4000)\n\
+         \x20   }}\n\
+         \x20   return out\n\
+         \x20 }}\n\
          \x20 return {{\n\
+         \x20   \"chat.message\": async (input, output) => {{\n\
+         \x20     try {{\n\
+         \x20       const id = input?.sessionID ?? \"\"\n\
+         \x20       if (!id || await parentOf(id)) return\n\
+         \x20       idled.delete(id)\n\
+         \x20       const text = (output?.parts ?? [])\n\
+         \x20         .filter((p) => p?.type === \"text\" && !p?.synthetic && !p?.ignored)\n\
+         \x20         .map((p) => p?.text ?? \"\")\n\
+         \x20         .join(\"\\n\")\n\
+         \x20       await run(\"message.updated\", {{\n\
+         \x20         session_id: id,\n\
+         \x20         prompt_id: output?.message?.id ?? input?.messageID ?? \"\",\n\
+         \x20         prompt: text,\n\
+         \x20         model: clip(input?.model?.modelID, 80) ?? \"\",\n\
+         \x20       }})\n\
+         \x20     }} catch {{}}\n\
+         \x20   }},\n\
          \x20   event: async ({{ event }}) => {{\n\
          \x20     try {{\n\
          \x20       const t = event?.type ?? \"\"\n\
@@ -926,11 +966,19 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         await run(t, {{ session_id: id ?? \"\" }})\n\
          \x20         return\n\
          \x20       }}\n\
-         \x20       if (t === \"message.updated\") {{\n\
-         \x20         if ((p?.info?.role ?? \"\") !== \"user\") return\n\
-         \x20         const msgId = p?.info?.sessionID ?? \"\"\n\
-         \x20         if (await parentOf(msgId)) return\n\
-         \x20         await run(t, {{ session_id: msgId, prompt_id: p?.info?.id ?? \"\" }})\n\
+         \x20       if (t === \"message.part.updated\") {{\n\
+         \x20         const part = p?.part\n\
+         \x20         if (part?.type !== \"tool\") return\n\
+         \x20         const status = part?.state?.status\n\
+         \x20         if (status !== \"completed\" && status !== \"error\") return\n\
+         \x20         const id = p?.sessionID ?? part?.sessionID ?? \"\"\n\
+         \x20         if (!id || !once(seen, `${{part.callID}}:${{status}}`) || await parentOf(id)) return\n\
+         \x20         await run(status === \"error\" ? \"PostToolUseFailure\" : \"PostToolUse\", {{\n\
+         \x20           session_id: id,\n\
+         \x20           tool_name: part.tool,\n\
+         \x20           tool_use_id: part.callID,\n\
+         \x20           tool_input: trimInput(part.state?.input),\n\
+         \x20         }})\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"session.status\") {{\n\
@@ -938,22 +986,50 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         if (await parentOf(id)) return\n\
          \x20         const status = p?.status?.type ?? \"\"\n\
          \x20         if (status === \"busy\" || status === \"retry\") {{\n\
+         \x20           idled.delete(id)\n\
          \x20           await run(t, {{ session_id: id }})\n\
          \x20         }} else if (status === \"idle\") {{\n\
+         \x20           if (!once(idled, id)) return\n\
          \x20           const last = await lastAssistantText(id)\n\
          \x20           await run(\"session.idle\", {{ session_id: id, last_assistant_message: last }})\n\
          \x20         }}\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"permission.asked\" || t === \"permission.updated\" || t === \"permission.replied\") {{\n\
-         \x20         const bits = [p?.permission].concat(Array.isArray(p?.patterns) ? p.patterns : [])\n\
-         \x20         const message = bits.filter(Boolean).join(\" \")\n\
-         \x20         await run(t, {{ session_id: p?.sessionID ?? \"\", request_id: p?.id ?? p?.requestID ?? \"\", message }})\n\
+         \x20         const patterns = Array.isArray(p?.patterns) ? p.patterns : []\n\
+         \x20         const message = [p?.permission].concat(patterns).filter(Boolean).join(\" \")\n\
+         \x20         const sid = p?.sessionID ?? \"\"\n\
+         \x20         await run(t, {{\n\
+         \x20           session_id: sid,\n\
+         \x20           request_id: p?.id ?? p?.requestID ?? \"\",\n\
+         \x20           message,\n\
+         \x20           permission: clip(p?.permission, 80),\n\
+         \x20           patterns: patterns.slice(0, 5).map((x) => clip(String(x), 500)),\n\
+         \x20           child: Boolean(sid && await parentOf(sid)),\n\
+         \x20         }})\n\
          \x20         return\n\
          \x20       }}\n\
-         \x20       if (t === \"question.asked\" || t === \"question.replied\" || t === \"question.rejected\" || t === \"question.v2.asked\" || t === \"question.v2.replied\" || t === \"question.v2.rejected\") {{\n\
-         \x20         const message = (p?.questions ?? []).map((q) => q?.question ?? \"\").filter(Boolean).join(\"; \")\n\
-         \x20         await run(t, {{ session_id: p?.sessionID ?? \"\", request_id: p?.id ?? p?.requestID ?? \"\", message }})\n\
+         \x20       if (/^question(\\.v2)?\\.(asked|replied|rejected)$/.test(t)) {{\n\
+         \x20         const questions = (p?.questions ?? []).slice(0, 4).map((q) => ({{\n\
+         \x20           header: clip(q?.header, 40) ?? \"\",\n\
+         \x20           question: clip(q?.question, 500) ?? \"\",\n\
+         \x20           multiple: q?.multiple === true,\n\
+         \x20           custom: q?.custom !== false,\n\
+         \x20           options: (q?.options ?? []).slice(0, 9).map((o) => ({{\n\
+         \x20             label: clip(o?.label, 120) ?? \"\",\n\
+         \x20             description: clip(o?.description, 200) ?? \"\",\n\
+         \x20           }})),\n\
+         \x20         }}))\n\
+         \x20         const answers = Array.isArray(p?.answers)\n\
+         \x20           ? p.answers.slice(0, 4).map((a) => (Array.isArray(a) ? a.map((x) => clip(String(x), 300)) : []))\n\
+         \x20           : undefined\n\
+         \x20         await run(t, {{\n\
+         \x20           session_id: p?.sessionID ?? \"\",\n\
+         \x20           request_id: p?.id ?? p?.requestID ?? \"\",\n\
+         \x20           message: questions.map((q) => q.question).filter(Boolean).join(\"; \"),\n\
+         \x20           questions,\n\
+         \x20           answers,\n\
+         \x20         }})\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"session.error\") {{\n\
@@ -973,6 +1049,7 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         const id = p?.sessionID ?? \"\"\n\
          \x20         const parentID = await parentOf(id)\n\
          \x20         if (parentID) {{ await run(\"SubagentStop\", {{ session_id: id }}); return }}\n\
+         \x20         if (!once(idled, id)) return\n\
          \x20         const last = await lastAssistantText(id)\n\
          \x20         await run(t, {{ session_id: id, last_assistant_message: last }})\n\
          \x20         return\n\
@@ -1634,8 +1711,6 @@ mod tests {
         for (event, _) in crate::agent_events::events_for(proto::AgentKind::Opencode) {
             assert!(src.contains(event), "missing arm for {event}:\n{src}");
         }
-        assert!(src.contains("\"user\""), "{src}");
-        assert!(src.contains("role"), "{src}");
         assert!(is_installed(proto::AgentKind::Opencode, &h, DEV));
         let run_lines: Vec<&str> = src
             .lines()
@@ -1663,22 +1738,210 @@ mod tests {
             assert!(src.contains(needle), "missing {needle}:\n{src}");
         }
 
-        let message_updated_branch = src
-            .split("message.updated\") {")
+        let prompt_hook = src
+            .split("\"chat.message\": async")
             .nth(1)
-            .and_then(|rest| rest.split_once("}\n"))
-            .map(|(branch, _)| branch)
+            .and_then(|rest| rest.split_once("\n    },\n"))
+            .map(|(hook, _)| hook)
             .unwrap_or_default();
         assert!(
-            message_updated_branch.contains("parentOf"),
-            "message.updated must be gated to the root session, the same as \
+            prompt_hook.contains("parentOf"),
+            "the prompt hook must be gated to the root session, the same as \
              session.idle, or a child's own prompt reopens the parent pane \
              mid-turn:\n{src}"
+        );
+        assert!(
+            !src.contains("t === \"message.updated\""),
+            "the prompt is forwarded once, from chat.message, with its text:\n{src}"
         );
 
         assert!(uninstall(proto::AgentKind::Opencode, &h, DEV).expect("uninstall"));
         assert!(!path.exists(), "Houston's own plugin file is removed");
         assert!(!uninstall(proto::AgentKind::Opencode, &h, DEV).expect("second uninstall"));
+    }
+
+    #[test]
+    fn a_plugin_written_by_an_older_houston_is_replaced_in_place() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let path = config_path(proto::AgentKind::Opencode, &h).expect("path");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        let old = format!(
+            "// Installed by Houston ({DEV}). Houston rewrites this file on install and\n\
+             export const HoustonNotify = async () => {{\n\
+             \x20 const CMDS = {{\n\
+             \x20   \"message.updated\": \"/old/houston hook message.updated --agent opencode {DEV}\",\n\
+             \x20 }}\n\
+             \x20 return {{ event: async () => {{}} }}\n\
+             }}\n"
+        );
+        std::fs::write(&path, &old).expect("write");
+
+        install(proto::AgentKind::Opencode, &h, &launcher(), DEV).expect("reinstall");
+        let src = read(&path);
+        assert!(
+            has_sentinel(&src, DEV) && src.contains("chat.message"),
+            "{src}"
+        );
+        assert_ne!(src, old);
+        assert!(uninstall(proto::AgentKind::Opencode, &h, DEV).expect("uninstall"));
+    }
+
+    /// Runs the generated plugin under Node with a fake OpenCode client and
+    /// returns what it handed to the hook helper, in order. `None` without Node.
+    fn drive_plugin(events: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+        let node = crate::spawn::command("node").arg("--version").output();
+        if !node.is_ok_and(|o| o.status.success()) {
+            eprintln!("node is not installed: the plugin behaviour test is skipped");
+            return None;
+        }
+        let commands: Vec<(&str, String)> =
+            crate::agent_events::events_for(proto::AgentKind::Opencode)
+                .iter()
+                .map(|(e, _)| *e)
+                .chain(crate::agent_events::OPENCODE_CORRELATION_EVENTS)
+                .map(|e| (e, e.to_string()))
+                .collect();
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("plugin.mjs"),
+            opencode_plugin_source(&commands, DEV),
+        )
+        .expect("write plugin");
+        let driver = r#"
+import { HoustonNotify } from "./plugin.mjs"
+import { readFileSync } from "node:fs"
+const calls = []
+const $ = (strings, ...values) => ({ quiet: async () => { calls.push({ cmd: values[1], payload: JSON.parse(values[0]) }) } })
+const client = { session: {
+  get: async ({ path }) => ({ data: { parentID: path.id.startsWith("child") ? "ses_root" : null } }),
+  messages: async () => ({ data: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "all done" }] }] }),
+} }
+const hooks = await HoustonNotify({ $, client })
+const events = JSON.parse(readFileSync("events.json", "utf8"))
+for (const e of events) {
+  if (e.hook === "chat.message") await hooks["chat.message"](e.input, e.output)
+  else await hooks.event({ event: e })
+}
+console.log(JSON.stringify(calls))
+"#;
+        std::fs::write(dir.path().join("driver.mjs"), driver).expect("write driver");
+        std::fs::write(dir.path().join("events.json"), events.to_string()).expect("write events");
+        let out = crate::spawn::command("node")
+            .arg("driver.mjs")
+            .current_dir(dir.path())
+            .output()
+            .expect("run node");
+        assert!(
+            out.status.success(),
+            "the generated plugin failed under node: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        Some(serde_json::from_slice(&out.stdout).expect("driver output is JSON"))
+    }
+
+    #[test]
+    fn the_opencode_plugin_forwards_prompt_text_steps_questions_and_one_idle() {
+        let tool = |call: &str, name: &str, status: &str, input: serde_json::Value| {
+            serde_json::json!({"type": "message.part.updated", "properties": {
+                "sessionID": "ses_root",
+                "part": {"type": "tool", "callID": call, "tool": name,
+                         "state": {"status": status, "input": input}}}})
+        };
+        let events = serde_json::json!([
+            {"hook": "chat.message",
+             "input": {"sessionID": "ses_root", "model": {"modelID": "claude-sonnet"}},
+             "output": {"message": {"id": "msg_1"}, "parts": [
+                {"type": "text", "text": "fix the"},
+                {"type": "text", "text": "hidden", "synthetic": true},
+                {"type": "text", "text": "bug"}]}},
+            {"hook": "chat.message", "input": {"sessionID": "child_1"}, "output": {"parts": []}},
+            {"type": "session.status", "properties": {"sessionID": "ses_root", "status": {"type": "busy"}}},
+            tool("c1", "edit", "completed", serde_json::json!({"filePath": "/w/a.rs", "oldString": "x", "newString": "y"})),
+            tool("c1", "edit", "completed", serde_json::json!({"filePath": "/w/a.rs"})),
+            tool("c2", "bash", "error", serde_json::json!({"command": "false"})),
+            tool("c3", "apply_patch", "completed", serde_json::json!({"patchText":
+                "*** Begin Patch\n*** Update File: src/a.rs\n@@\n-secret body\n+x\n*** End Patch"})),
+            {"type": "question.asked", "properties": {"id": "q1", "sessionID": "ses_root", "questions": [
+                {"question": "A or B?", "header": "Pick", "custom": false,
+                 "options": [{"label": "A", "description": "first"}, {"label": "B"}]}]}},
+            {"type": "question.replied", "properties": {"requestID": "q1", "sessionID": "ses_root", "answers": [["B"]]}},
+            {"type": "permission.asked", "properties": {"id": "p1", "sessionID": "child_1", "permission": "bash", "patterns": ["make clean"]}},
+            {"type": "session.status", "properties": {"sessionID": "ses_root", "status": {"type": "idle"}}},
+            {"type": "session.idle", "properties": {"sessionID": "ses_root"}}
+        ]);
+        let Some(calls) = drive_plugin(&events) else {
+            return;
+        };
+        let names: Vec<&str> = calls.iter().map(|c| c["cmd"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "message.updated",
+                "session.status",
+                "PostToolUse",
+                "PostToolUseFailure",
+                "PostToolUse",
+                "question.asked",
+                "question.replied",
+                "permission.asked",
+                "session.idle",
+            ],
+            "a repeated tool state, a child's prompt and the second idle are not forwarded: {calls:?}"
+        );
+        assert_eq!(calls[0]["payload"]["prompt"], "fix the\nbug");
+        assert_eq!(calls[0]["payload"]["model"], "claude-sonnet");
+        assert_eq!(calls[2]["payload"]["tool_input"]["filePath"], "/w/a.rs");
+        assert!(calls[2]["payload"]["tool_input"].get("oldString").is_none());
+        let patch = calls[4]["payload"]["tool_input"]["patchText"]
+            .as_str()
+            .unwrap();
+        assert!(
+            patch.contains("Update File: src/a.rs") && !patch.contains("secret body"),
+            "{patch}"
+        );
+        assert_eq!(calls[5]["payload"]["questions"][0]["custom"], false);
+        assert_eq!(
+            calls[5]["payload"]["questions"][0]["options"][1]["label"],
+            "B"
+        );
+        assert_eq!(calls[6]["payload"]["answers"][0][0], "B");
+        assert_eq!(calls[7]["payload"]["child"], true);
+        assert_eq!(calls[8]["payload"]["last_assistant_message"], "all done");
+    }
+
+    #[test]
+    fn the_opencode_plugin_reports_the_idle_of_each_turn_once() {
+        let prompt = |id: &str, text: &str| {
+            serde_json::json!({"hook": "chat.message", "input": {"sessionID": "ses_root"},
+                "output": {"message": {"id": id}, "parts": [{"type": "text", "text": text}]}})
+        };
+        let status_idle = serde_json::json!({"type": "session.status",
+            "properties": {"sessionID": "ses_root", "status": {"type": "idle"}}});
+        let idle =
+            serde_json::json!({"type": "session.idle", "properties": {"sessionID": "ses_root"}});
+        let events = serde_json::json!([
+            prompt("m1", "one"),
+            idle,
+            status_idle,
+            prompt("m2", "two"),
+            status_idle,
+            idle
+        ]);
+        let Some(calls) = drive_plugin(&events) else {
+            return;
+        };
+        let names: Vec<&str> = calls.iter().map(|c| c["cmd"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "message.updated",
+                "session.idle",
+                "message.updated",
+                "session.idle"
+            ],
+            "{calls:?}"
+        );
     }
 
     #[test]

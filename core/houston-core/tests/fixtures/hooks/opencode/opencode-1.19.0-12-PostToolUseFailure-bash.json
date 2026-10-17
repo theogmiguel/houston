@@ -1,0 +1,7 @@
+{
+  "_note": "the plugin's constructed payload for an errored tool part (state.status error); not captured live",
+  "session_id": "ses_root01",
+  "tool_name": "bash",
+  "tool_use_id": "call_bash_1",
+  "tool_input": { "command": "cargo test --workspace" }
+}

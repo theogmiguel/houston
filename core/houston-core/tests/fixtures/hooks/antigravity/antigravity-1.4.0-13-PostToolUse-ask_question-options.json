@@ -1,0 +1,19 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "modelName": "gemini-3.6-flash-medium",
+  "stepIdx": 5,
+  "toolCall": {
+    "name": "ask_question",
+    "args": {
+      "questions": [
+        {
+          "question": "Which branch should this land on?",
+          "options": ["main", "release"],
+          "is_multi_select": false
+        }
+      ]
+    }
+  },
+  "_note": "PostToolUse carries no tool result in the documentation, so an answer is not available; same stepIdx as the PreToolUse"
+}
