@@ -2523,6 +2523,8 @@ workaround for the other.
 | resume a recovery hold | `pane_instruction_resume` | `hs-pane instruction-resume` |
 | watch a pull request | `pane_pr_watch` | `hs-pane pr-watch` |
 | stop pull request watches | `pane_pr_unwatch` | `hs-pane pr-unwatch` |
+| add a pull request to the merge queue | `pane_pr_enqueue` | `hs-pane pr-enqueue` |
+| remove a pull request from the merge queue | `pane_pr_dequeue` | `hs-pane pr-dequeue` |
 
 Everything below is written with the CLI's spelling; read the table across
 for the tool call.
@@ -2535,7 +2537,7 @@ changes, so the binary is the authority.
 
 The verbs: `whoami`, `spawn`, `list`, `get`, `prompt`, `keys`, `wait`,
 `read`, `kill`, `submit`, `report`, `reply`, `deny`, `escalate`, `instruction-list`,
-`instruction-get`, `instruction-cancel`, `instruction-resume`, `pr-watch`, `pr-unwatch`. Output is JSON (`read` prints plain lines).
+`instruction-get`, `instruction-cancel`, `instruction-resume`, `pr-watch`, `pr-unwatch`, `pr-enqueue`, `pr-dequeue`. Output is JSON (`read` prints plain lines).
 
 ## Reading a pane
 
@@ -3026,7 +3028,11 @@ hs-pane — a Houston pane controlling sibling agent panes
                                           parent. --artifacts is a comma-separated
                                           list of files inside this workspace)
   hs-pane pr-watch <PR URL|number>      (watch this GitHub PR, then end your turn)
-  hs-pane pr-unwatch                    (stop every PR watch for this pane)";
+  hs-pane pr-unwatch                    (stop every PR watch for this pane)
+  hs-pane pr-enqueue <PR URL|number> [--depends-on N]
+                                         (add it to this workspace's merge queue;
+                                          the user merges the queue head)
+  hs-pane pr-dequeue <PR URL|number>    (remove it from the merge queue)";
 
 pub fn run_pane_cli(args: &[String]) -> i32 {
     run_pane_cli_in(&crate::host_env::HostEnv::capture(), args)
@@ -3184,6 +3190,27 @@ fn pane_cli_inner(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Re
         }
         "pr-unwatch" => {
             let v = call("POST", "/orchestrate/pr-unwatch", Some(json!({})))?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        "pr-enqueue" => {
+            let target = join_rest(&positional, "PR URL or number")?;
+            let mut body = json!({"pr": target});
+            if let Some(dependency) = flags.get("depends-on") {
+                let dependency: u32 = dependency.parse().map_err(|_| {
+                    anyhow::anyhow!("--depends-on {dependency:?} must be a pull request number")
+                })?;
+                body["depends_on"] = json!(dependency);
+            }
+            let v = call("POST", "/orchestrate/pr-enqueue", Some(body))?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        "pr-dequeue" => {
+            let target = join_rest(&positional, "PR URL or number")?;
+            let v = call(
+                "POST",
+                "/orchestrate/pr-dequeue",
+                Some(json!({"pr": target})),
+            )?;
             println!("{}", serde_json::to_string_pretty(&v)?);
         }
         "whoami" => {

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 143;
+pub const PROTOCOL_VERSION: u32 = 144;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2361,6 +2361,110 @@ pub struct PrWatchInfo {
     pub last_checked_at_ms: Option<i64>,
 }
 
+/// Whether a merge queue entry may be merged from the queue once it is first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueStatus {
+    Ready,
+    Blocked,
+}
+
+/// One gate a merge queue entry must pass. Gates fail closed: an input that has
+/// not been read, or failed to read, is `failed` with the reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueGateKind {
+    /// GitHub's own merge gate, `merge_disabled_reason`.
+    Mergeable,
+    /// No unresolved review threads.
+    ReviewThreads,
+    /// A task Slice's newest reviewer verdict is pass.
+    Reviewer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueGateState {
+    Passed,
+    Failed,
+    /// The gate does not apply, such as the reviewer gate for a PR that is not a task Slice.
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueGate {
+    pub kind: MergeQueueGateKind,
+    pub state: MergeQueueGateState,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub reason: Option<String>,
+}
+
+/// One pull request in a workspace's merge queue, in queue order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueEntry {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    /// `owner/name`.
+    pub repository: String,
+    pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub title: Option<String>,
+    pub head_ref: String,
+    pub head_sha: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub base_ref: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub depends_on: Option<u32>,
+    /// The pane that enqueued it; absent when the user did.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub session: Option<u32>,
+    /// 1-based rank in queue order; 1 is the head.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub position: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub enqueued_at_ms: i64,
+    /// When GitHub was last read for this entry; absent before the first read.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub read_at_ms: Option<i64>,
+    pub status: MergeQueueStatus,
+    /// The single blocking reason; absent exactly when `status` is `ready`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub reason: Option<String>,
+    pub gates: Vec<MergeQueueGate>,
+}
+
+/// One merge made from the queue, for the page's history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueMerge {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub repository: String,
+    pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub title: Option<String>,
+    pub head_sha: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub base_ref: Option<String>,
+    pub method: PrMergeMethod,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub merged_at_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionPrWatches {
@@ -3838,6 +3942,34 @@ pub enum ClientMsg {
         session: u32,
         number: u32,
     },
+    /// The workspace's merge queue; `dir` may be the workspace or a checkout inside it.
+    MergeQueueGet {
+        dir: String,
+    },
+    MergeQueueEnqueue {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        depends_on: Option<u32>,
+        request: u32,
+    },
+    MergeQueueDequeue {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        request: u32,
+    },
+    /// Merges the queue head, pinned to the head commit the user saw.
+    MergeQueueMergeHead {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        expected_head_sha: String,
+        method: PrMergeMethod,
+        request: u32,
+    },
     GitReviewDiffs {
         dir: String,
     },
@@ -4750,6 +4882,31 @@ pub enum ServerMsg {
     PrWatchChanged {
         session: u32,
         watches: Vec<PrWatchInfo>,
+    },
+    /// A workspace's whole merge queue: entries in queue order, and recent queue
+    /// merges. The direct reply to `merge_queue_get` echoes `dir`; a directory
+    /// with no queue gets `message` and an empty `workspace`.
+    MergeQueue {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        dir: Option<String>,
+        entries: Vec<MergeQueueEntry>,
+        merged: Vec<MergeQueueMerge>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        message: Option<String>,
+    },
+    /// The reply to an enqueue, dequeue or merge-head request.
+    MergeQueueReply {
+        dir: String,
+        request: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        ok: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        message: Option<String>,
     },
     TagList {
         tags: Vec<TagInfo>,
@@ -5783,6 +5940,11 @@ pub const WORKTREE_CLEANUP_GRACE_HOURS_MAX: u32 = 720;
 pub const WORKTREE_IDLE_REMOVAL_DAYS_DEFAULT: u32 = 30;
 pub const WORKTREE_IDLE_REMOVAL_DAYS_MIN: u32 = 1;
 pub const WORKTREE_IDLE_REMOVAL_DAYS_MAX: u32 = 365;
+
+/// A queue longer than this does not merge in one night at one verification at a time.
+pub const MERGE_QUEUE_MAX_ENTRIES: u32 = 32;
+/// The page shows the day's queue merges; fifty covers a busy day without growing the snapshot.
+pub const MERGE_QUEUE_HISTORY_MAX: u32 = 50;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 

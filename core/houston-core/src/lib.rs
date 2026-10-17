@@ -55,6 +55,7 @@ pub mod mcp_register_cursor;
 pub mod mcp_register_grok;
 pub mod mcp_server;
 pub mod mcp_tasks;
+pub mod merge_queue;
 pub mod model_catalog;
 pub mod orchestrate;
 pub mod osc52;

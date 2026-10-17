@@ -1522,6 +1522,7 @@ impl DelegationSettleSample {
 mod child_inputs;
 mod conflict_pass;
 mod harness_review;
+mod merge_queue;
 mod provider_deny;
 mod remote;
 mod slack;

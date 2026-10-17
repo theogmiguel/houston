@@ -1217,6 +1217,7 @@ async fn claude_enabled_advertisement_stays_under_byte_budget() {
         vec!["sh".into(), "-c".into(), "exec cat".into()],
     );
     let advertisement = rig.rpc(parent, "tools/list", json!({})).await;
-    // Bound per-turn schema tokens while retaining all role-appropriate controls.
-    bytes("claude/enabled", &advertisement, Some(28_000));
+    // Bound per-turn schema tokens while retaining all role-appropriate controls. Raised
+    // for two merge queue verbs (#124); measured 28,573 bytes after adding them.
+    bytes("claude/enabled", &advertisement, Some(29_000));
 }

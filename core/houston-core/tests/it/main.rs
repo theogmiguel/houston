@@ -57,6 +57,7 @@ mod mcp_server_wire;
 mod mcp_shutdown_wire;
 mod mcp_sync_wire;
 mod mcp_wire;
+mod merge_queue_wire;
 mod metadata_wire;
 mod mvp;
 mod nextest_guard;

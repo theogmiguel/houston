@@ -1,4 +1,4 @@
-# Wire protocol v143
+# Wire protocol v144
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -226,6 +226,10 @@ failure not given a typed refusal comes back as `error`.
 | `pr_diff` | `dir`, `number`, `request` | `pr_diff` (direct) — `gh pr diff --color never`, capped with `truncated` |
 | `pr_stack` | `dir`, `number`, `request` | `pr_stack` (direct) — the host's own stack, `stack: null` where the preview answers 404 |
 | `pr_stack_merge` | `dir`, `number`, `stack_number`, `heads: PrStackHead[]`, `merge_method?`, `request` | `pr_mutation {kind: action}` then a fresh `pr_detail`. Every open layer up to `number` must match `heads` and be open and non-draft; GitHub's async job is polled for up to two minutes |
+| `merge_queue_get` | `dir` (a workspace, or a checkout inside or of one) | `merge_queue` (direct) echoing `dir`; a directory with no queue (no registered workspace, no GitHub remote) gets an empty `workspace` and `message` naming why, never an `error` |
+| `merge_queue_enqueue` | `dir`, `number`, `depends_on?`, `request` | `merge_queue_reply`, then a `merge_queue` bcast. Reads the pull request through the shared reader and refuses, by name, a workspace with no GitHub remote, a pull request that is not open or comes from another repository or a fork, a `depends_on` that is not queued or forms a cycle, and a full queue (the refusal names `MERGE_QUEUE_MAX_ENTRIES`, the count and the pull request). Re-enqueueing a queued pull request replaces its `depends_on` and keeps its place |
+| `merge_queue_dequeue` | `dir`, `number`, `request` | `merge_queue_reply`, then a `merge_queue` bcast; a pull request that is not queued is refused by name |
+| `merge_queue_merge_head` | `dir`, `number`, `expected_head_sha`, `method: PrMergeMethod`, `request` | `merge_queue_reply`, then a `merge_queue` bcast. Only the head merges: anything else is refused naming the head. The daemon re-reads the head on a fresh shared-reader tick, refuses a moved head or a failed gate, then merges that commit with `gh pr merge --match-head-commit`, or the stack endpoint for a native stack. GitHub's refusal is returned unchanged, naming the method |
 
 ### History
 
@@ -477,6 +481,8 @@ every refusal names the setting.
 | `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
 | `pr_watch_list` | `watches: SessionPrWatches[]` | direct reply; contains the watches currently owned by each session |
 | `pr_watch_changed` | `session`, `watches: PrWatchInfo[]` | bcast after a session starts or stops a watch, a watch ends, or a read completes; `PrWatchInfo.last_checked_at_ms?` is the time of the last completed read, including failed reads |
+| `merge_queue` | `workspace`, `dir?`, `entries: MergeQueueEntry[]`, `merged: MergeQueueMerge[]`, `message?` | direct reply to `merge_queue_get`, which alone carries `dir` and `message`; bcast after every enqueue, dequeue and queue merge, after a read changes an entry's answer, when an entry leaves because its pull request merged or closed outside the queue, and when a task run of the workspace changes. `entries` are in queue order; `merged` holds the last day's queue merges, newest first, at most `MERGE_QUEUE_HISTORY_MAX` |
+| `merge_queue_reply` | `dir`, `request`, `number`, `ok`, `message?` | direct reply to the three queue verbs; `message` is the outcome or the refusal |
 | `pr_linked` | `dir`, `request`, `ok`, `message?` | direct reply to `pr_link`; success is followed by a fresh `pr_detail` with the same `request` |
 | `pr_unlinked` | `dir`, `request`, `number?`, `ok`, `message?` | direct reply to `pr_unlink`; `number` names what was removed |
 | `pr_merged` | `dir`, `request`, `number`, `ok`, `message?` | direct reply to `pr_merge`; `message` carries the refusal (moved head, merge gate, or gh's own stderr line). Success is followed by a fresh `pr_detail` |
@@ -703,6 +709,14 @@ PrReview           author, state, body, submitted_at
 PrWatchInfo        number, url
 SessionPrWatches   session, watches: PrWatchInfo[]
 PrMergeMethod      merge | squash | rebase
+MergeQueueEntry    number, repository, url, title?, head_ref, head_sha, base_ref?, depends_on?,
+                   session? (the enqueuing pane), position (1 is the head), enqueued_at_ms,
+                   read_at_ms?, status (ready | blocked), reason? (the one blocking reason,
+                   absent exactly when ready), gates: MergeQueueGate[]
+MergeQueueGate     kind (mergeable | review_threads | reviewer), state (passed | failed |
+                   not_applicable), reason?
+MergeQueueMerge    number, repository, url, title?, head_sha, base_ref?, method: PrMergeMethod,
+                   merged_at_ms
 
 SshAuth            tag "kind": agent | identity_file{path, passphrase_profile?} | password{profile} | ssh_config
                    — no variant ever carries a secret; `profile` names a keychain entry
@@ -1337,6 +1351,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 144 | **Pull requests queue for merging in a per-workspace merge queue.** New `merge_queue_get`, `merge_queue_enqueue`, `merge_queue_dequeue` and `merge_queue_merge_head`, answered by `merge_queue` (also bcast) and `merge_queue_reply`, with `MergeQueueEntry`, `MergeQueueGate` and `MergeQueueMerge`. Agents reach enqueue and dequeue through `pane_pr_enqueue` and `pane_pr_dequeue`; there is no agent merge verb |
 | 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
