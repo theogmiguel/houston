@@ -264,7 +264,7 @@ function SectionDispatch({
   onMailboxRetentionSet,
   hostInfo,
   agentHooks,
-  agentAccounts = null,
+  agentAccounts,
   agentHooksCheckedAt = null,
   onAgentHooksSet,
   onAgentHooksRefresh,
