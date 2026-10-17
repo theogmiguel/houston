@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 pub mod feed;
 pub mod http;
+mod http_phone;
 pub mod ntfy;
 pub mod qr;
 pub mod tls;
@@ -57,6 +58,29 @@ pub const DICTATE_BODY_LIMIT: usize =
 pub const DICTATE_TIMEOUT: Duration = Duration::from_secs(180);
 // A phone and a desktop browser or two; each stream holds a connection slot.
 pub const EVENT_STREAMS_MAX: usize = 8;
+/// Providers a device may open: the spawnable agent CLIs. Shells are never opened remotely.
+pub const SPAWNABLE_KINDS: [proto::AgentKind; 5] = [
+    proto::AgentKind::Claude,
+    proto::AgentKind::Codex,
+    proto::AgentKind::Antigravity,
+    proto::AgentKind::Opencode,
+    proto::AgentKind::Zcode,
+];
+// A phone screen shows a short list; a larger change set is truncated and says so.
+pub const CHANGES_FILES_MAX: usize = 200;
+// About 1500 diff lines fill a long phone scroll; 64 KiB bounds one reply's bytes.
+pub const DIFF_MAX_LINES: usize = 1500;
+pub const DIFF_MAX_BYTES: usize = 64 * 1024;
+pub const TASKS_MAX: usize = 100;
+// The newest pull requests are what a phone triages; gh lists more only on the computer.
+pub const PR_LIST_MAX: u32 = 30;
+// A commit subject and body; well under `BODY_LIMIT`.
+pub const COMMIT_MESSAGE_MAX_CHARS: usize = 4096;
+pub const SPAWN_MODEL_MAX_CHARS: usize = 100;
+// A device polls usage every few seconds at most; recomputing scans transcripts.
+pub const USAGE_FRESH: Duration = Duration::from_secs(60);
+// Under `REQUEST_TIMEOUT`, so a cold scan answers with what is cached before the deadline.
+pub const USAGE_WAIT: Duration = Duration::from_secs(8);
 // Under `CONNECTION_IDLE`, so an idle stream is never cut by the idle timeout.
 pub const EVENT_HEARTBEAT: Duration = Duration::from_secs(15);
 // Events are a few per turn per pane; a reader this far behind resynchronises.
@@ -761,6 +785,22 @@ pub struct Runtime {
     pub(crate) authority: Mutex<Option<Arc<tls::Authority>>>,
     /// Bumped when the authority is regenerated, so the listener restarts with it.
     pub(crate) authority_generation: std::sync::atomic::AtomicU64,
+    usage: Mutex<UsageCache>,
+}
+
+#[derive(Default)]
+struct UsageCache {
+    value: Option<(Instant, serde_json::Value)>,
+    refreshing: bool,
+}
+
+/// Held while one usage recompute runs; dropping it allows the next.
+pub struct UsageRefresh<'a>(&'a Runtime);
+
+impl Drop for UsageRefresh<'_> {
+    fn drop(&mut self) {
+        self.0.usage.lock().expect("remote usage lock").refreshing = false;
+    }
 }
 
 impl Default for Runtime {
@@ -797,7 +837,31 @@ impl Runtime {
             grids: Mutex::new(Vec::new()),
             authority: Mutex::new(None),
             authority_generation: std::sync::atomic::AtomicU64::new(0),
+            usage: Mutex::new(UsageCache::default()),
         }
+    }
+
+    /// `None` while another recompute is already running.
+    pub(crate) fn usage_begin(&self) -> Option<UsageRefresh<'_>> {
+        let mut cache = self.usage.lock().expect("remote usage lock");
+        if cache.refreshing {
+            return None;
+        }
+        cache.refreshing = true;
+        Some(UsageRefresh(self))
+    }
+
+    pub(crate) fn usage_store(&self, value: serde_json::Value) {
+        self.usage.lock().expect("remote usage lock").value = Some((Instant::now(), value));
+    }
+
+    /// The cached usage with `stale` set; `None` before the first recompute finished.
+    pub(crate) fn usage_read(&self) -> Option<serde_json::Value> {
+        let cache = self.usage.lock().expect("remote usage lock");
+        let (at, value) = cache.value.as_ref()?;
+        let mut value = value.clone();
+        value["stale"] = serde_json::Value::Bool(at.elapsed() >= USAGE_FRESH);
+        Some(value)
     }
 
     pub fn listen_state(&self) -> ListenState {

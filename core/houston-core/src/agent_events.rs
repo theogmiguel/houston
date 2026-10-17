@@ -117,31 +117,10 @@ const OPENCODE_EVENTS: [(&str, AgentEvent); 14] = [
     ("session.error", AgentEvent::TurnFailed),
 ];
 
-pub const OPENCODE_CORRELATION_EVENTS: [&str; 1] = ["SubagentStop"];
-
-const CURSOR_EVENTS: [(&str, AgentEvent); 3] = [
-    ("sessionStart", AgentEvent::SessionStarted),
-    ("beforeSubmitPrompt", AgentEvent::PromptSubmitted),
-    ("stop", AgentEvent::TurnEnded),
-];
-
-// afterAgentResponse is the only place Cursor's own last-said text lives
-// (`stop` carries none), so it's lifted into last_message — but still never
-// a status: it fires after every assistant message, not just the last one.
-pub const CURSOR_CORRELATION_EVENTS: [&str; 3] =
-    ["subagentStart", "subagentStop", "afterAgentResponse"];
-
-const GROK_EVENTS: [(&str, AgentEvent); 7] = [
-    ("SessionStart", AgentEvent::SessionStarted),
-    ("UserPromptSubmit", AgentEvent::PromptSubmitted),
-    ("Stop", AgentEvent::TurnEnded),
-    ("StopFailure", AgentEvent::TurnFailed),
-    ("StopCancelled", AgentEvent::TurnInterrupted),
-    ("SessionEnd", AgentEvent::SessionEnded),
-    ("Notification", AgentEvent::NeedsInput),
-];
-
-pub const GROK_CORRELATION_EVENTS: [&str; 2] = ["SubagentStart", "SubagentStop"];
+// PostToolUse and PostToolUseFailure are synthesized by the plugin from completed
+// and errored tool parts; they feed the remote activity feed and map to no status.
+pub const OPENCODE_CORRELATION_EVENTS: [&str; 3] =
+    ["SubagentStop", "PostToolUse", "PostToolUseFailure"];
 
 // PreToolUse maps to NeedsInput here, but the table alone can't tell
 // `ask_question` from an ordinary tool call — the daemon gates on the tool
@@ -172,8 +151,6 @@ pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentE
         proto::AgentKind::Claude => &CLAUDE_EVENTS,
         proto::AgentKind::Codex => &CODEX_EVENTS,
         proto::AgentKind::Opencode => &OPENCODE_EVENTS,
-        proto::AgentKind::Cursor => &CURSOR_EVENTS,
-        proto::AgentKind::Grok => &GROK_EVENTS,
         proto::AgentKind::Antigravity => &ANTIGRAVITY_EVENTS,
         proto::AgentKind::Zcode => &ZCODE_EVENTS,
         _ => &[],
@@ -197,10 +174,7 @@ pub fn names_root_conversation(provider: proto::AgentKind, event: &str) -> bool 
 /// a status. Antigravity reports no compaction event.
 pub fn compaction_event(provider: proto::AgentKind) -> Option<&'static str> {
     match provider {
-        proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Grok => {
-            Some("PreCompact")
-        }
-        proto::AgentKind::Cursor => Some("preCompact"),
+        proto::AgentKind::Claude | proto::AgentKind::Codex => Some("PreCompact"),
         proto::AgentKind::Opencode => Some("session.compacted"),
         _ => None,
     }
@@ -248,23 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn grok_terminal_events_keep_distinct_outcomes() {
-        use proto::AgentKind::Grok;
-        assert_eq!(
-            AgentEvent::from_provider(Grok, "StopFailure"),
-            Some(AgentEvent::TurnFailed)
-        );
-        assert_eq!(
-            AgentEvent::from_provider(Grok, "StopCancelled"),
-            Some(AgentEvent::TurnInterrupted)
-        );
-        assert_eq!(
-            AgentEvent::from_provider(Grok, "SessionEnd"),
-            Some(AgentEvent::SessionEnded)
-        );
-    }
-
-    #[test]
     fn opencode_status_is_activity_not_a_new_prompt() {
         assert_eq!(
             AgentEvent::from_provider(proto::AgentKind::Opencode, "session.status"),
@@ -278,7 +235,7 @@ mod tests {
 
     #[test]
     fn every_provider_maps_only_its_own_spellings() {
-        let expected: [(proto::AgentKind, &[(&str, AgentEvent)]); 6] = [
+        let expected: [(proto::AgentKind, &[(&str, AgentEvent)]); 4] = [
             (
                 proto::AgentKind::Claude,
                 &[
@@ -327,26 +284,6 @@ mod tests {
                 ],
             ),
             (
-                proto::AgentKind::Cursor,
-                &[
-                    ("sessionStart", AgentEvent::SessionStarted),
-                    ("beforeSubmitPrompt", AgentEvent::PromptSubmitted),
-                    ("stop", AgentEvent::TurnEnded),
-                ],
-            ),
-            (
-                proto::AgentKind::Grok,
-                &[
-                    ("SessionStart", AgentEvent::SessionStarted),
-                    ("UserPromptSubmit", AgentEvent::PromptSubmitted),
-                    ("Stop", AgentEvent::TurnEnded),
-                    ("StopFailure", AgentEvent::TurnFailed),
-                    ("StopCancelled", AgentEvent::TurnInterrupted),
-                    ("SessionEnd", AgentEvent::SessionEnded),
-                    ("Notification", AgentEvent::NeedsInput),
-                ],
-            ),
-            (
                 proto::AgentKind::Antigravity,
                 &[
                     ("SessionStart", AgentEvent::SessionStarted),
@@ -367,10 +304,12 @@ mod tests {
                 );
             }
         }
-        assert_eq!(
-            AgentEvent::from_provider(proto::AgentKind::Cursor, "Notification"),
-            None
-        );
+        for retired in [proto::AgentKind::Cursor, proto::AgentKind::Grok] {
+            assert!(
+                !has_event_mapping(retired),
+                "{retired:?} is recognised only and maps no events"
+            );
+        }
     }
 
     const EVERY_KIND: [proto::AgentKind; 12] = [
@@ -442,42 +381,6 @@ mod tests {
     }
 
     #[test]
-    fn grok_subagent_events_are_not_turn_ends() {
-        for name in GROK_CORRELATION_EVENTS {
-            assert_eq!(
-                AgentEvent::from_provider(proto::AgentKind::Grok, name),
-                None,
-                "{name} is correlation evidence, never a pane status"
-            );
-        }
-        assert!(
-            !GROK_EVENTS
-                .iter()
-                .any(|(name, _)| GROK_CORRELATION_EVENTS.contains(name)),
-            "the two lists must not overlap — the status table is the one \
-             `from_provider` reads"
-        );
-    }
-
-    #[test]
-    fn cursor_correlation_events_are_not_turn_ends() {
-        for name in CURSOR_CORRELATION_EVENTS {
-            assert_eq!(
-                AgentEvent::from_provider(proto::AgentKind::Cursor, name),
-                None,
-                "{name} is correlation evidence, never a pane status"
-            );
-        }
-        assert!(
-            !CURSOR_EVENTS
-                .iter()
-                .any(|(name, _)| CURSOR_CORRELATION_EVENTS.contains(name)),
-            "the two lists must not overlap — the status table is the one \
-             `from_provider` reads"
-        );
-    }
-
-    #[test]
     fn opencode_subagent_stop_is_not_a_turn_end() {
         for name in OPENCODE_CORRELATION_EVENTS {
             assert_eq!(
@@ -543,7 +446,7 @@ mod tests {
 
     #[test]
     fn a_subagent_finishing_is_never_read_as_a_turn_end() {
-        for kind in [proto::AgentKind::Claude, proto::AgentKind::Grok] {
+        for kind in [proto::AgentKind::Claude, proto::AgentKind::Codex] {
             assert_eq!(
                 AgentEvent::from_provider(kind, "SubagentStop"),
                 None,
@@ -558,8 +461,6 @@ mod tests {
         for (kind, event) in [
             (K::Claude, "SubagentStop"),
             (K::Codex, "SubagentStart"),
-            (K::Cursor, "subagentStop"),
-            (K::Grok, "SubagentStop"),
             (K::Opencode, "SubagentStop"),
             (K::Opencode, "permission.asked"),
             (K::Opencode, "question.v2.asked"),

@@ -571,6 +571,7 @@ pub fn run_hook_client(args: &[String]) {
         fully_idle: payload.fully_idle,
         subagent_type: payload.subagent_type,
         tool_name: payload.tool_name,
+        model: payload.model,
         feed,
     };
     let root = crate::paths::config_dir();
@@ -776,7 +777,11 @@ pub(crate) struct HookPayload {
     pub permission_block_reason: Option<String>,
     pub transcript_path: Option<String>,
     pub interrupted: bool,
+    pub model: Option<String>,
 }
+
+/// A model id is a short slug; the cap keeps a hostile payload out of the pane row.
+const MODEL_MAX_CHARS: usize = 80;
 
 const TASK_NOTIFICATION_TAG: &str = "<task-notification>";
 
@@ -824,25 +829,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .and_then(|v| v.as_str())
             .map(String::from)
     };
-    let grok_field = |snake: &str, camel: &str| {
-        field(snake).or_else(|| {
-            (provider == proto::AgentKind::Grok)
-                .then(|| field(camel))
-                .flatten()
-        })
-    };
     let field_bool = |key: &str| {
         parsed
             .as_ref()
             .and_then(|v| v.get(key))
             .and_then(|v| v.as_bool())
-    };
-    let grok_bool = |snake: &str, camel: &str| {
-        field_bool(snake).or_else(|| {
-            (provider == proto::AgentKind::Grok)
-                .then(|| field_bool(camel))
-                .flatten()
-        })
     };
     let input_message = parsed
         .as_ref()
@@ -861,7 +852,7 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         .as_deref()
         .is_some_and(|p| p.trim_start().starts_with(TASK_NOTIFICATION_TAG));
     let tool_call = parsed.as_ref().and_then(|v| v.get("toolCall"));
-    let tool_name = grok_field("tool_name", "toolName").or_else(|| {
+    let tool_name = field("tool_name").or_else(|| {
         tool_call
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
@@ -922,18 +913,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         source: field("source"),
         cwd: field("cwd"),
         last_message: clean(
-            grok_field("last_assistant_message", "lastAssistantMessage")
-                .or_else(|| {
-                    (provider == proto::AgentKind::Cursor)
-                        .then(|| field("text"))
-                        .flatten()
-                })
-                .map(|m| crate::orchestrate::cap_submit_body(&m)),
+            field("last_assistant_message").map(|m| crate::orchestrate::cap_submit_body(&m)),
         ),
         error: clean(field("error").map(|v| crate::orchestrate::cap_submit_body(&v))),
         error_details: clean(
-            grok_field("error_details", "errorDetails")
-                .map(|v| crate::orchestrate::cap_submit_body(&v)),
+            field("error_details").map(|v| crate::orchestrate::cap_submit_body(&v)),
         ),
         background_tasks: background.map(|a| a.len() as u32),
         pending_task_ids: background
@@ -956,11 +940,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             tool_name.clone().or_else(|| field("message"))
         })
         .map(|reason| reason.chars().take(2000).collect()),
-        notification_type: grok_field("notification_type", "notificationType"),
-        stop_hook_active: grok_bool("stop_hook_active", "stopHookActive").unwrap_or(false),
-        prompt_id: grok_field("prompt_id", "promptId").or_else(|| field("turn_id")),
-        agent_id: grok_field("agent_id", "agentId"),
-        tool_use_id: grok_field("tool_use_id", "toolUseId").or_else(|| {
+        notification_type: field("notification_type"),
+        stop_hook_active: field_bool("stop_hook_active").unwrap_or(false),
+        prompt_id: field("prompt_id").or_else(|| field("turn_id")),
+        agent_id: field("agent_id"),
+        tool_use_id: field("tool_use_id").or_else(|| {
             (provider == proto::AgentKind::Antigravity)
                 .then(|| step_idx.map(|n| n.to_string()))
                 .flatten()
@@ -973,9 +957,7 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .or_else(|| field("requestID").filter(|id| !id.is_empty()))
             .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
-        subagent_type: (provider == proto::AgentKind::Grok)
-            .then(|| field("subagentType"))
-            .flatten(),
+        subagent_type: None,
         tool_name,
         tool_input_fingerprint,
         permission_command,
@@ -988,6 +970,14 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         },
         interrupted: provider == proto::AgentKind::Zcode
             && field_bool("is_interrupt").unwrap_or(false),
+        // Claude's model is read from its transcript, not from the hook.
+        model: match provider {
+            proto::AgentKind::Codex | proto::AgentKind::Opencode => field("model"),
+            proto::AgentKind::Antigravity => field("modelName"),
+            _ => None,
+        }
+        .map(|m| m.chars().take(MODEL_MAX_CHARS).collect::<String>())
+        .filter(|m| !m.trim().is_empty()),
         prompt: clean(prompt),
     }
 }
@@ -2030,24 +2020,7 @@ mod tests {
     }
 
     #[test]
-    fn grok_lifts_the_camel_case_twin_when_snake_case_is_absent() {
-        let p = parse_hook_payload(
-            r#"{"lastAssistantMessage":"PONG","stopHookActive":true,
-                 "notificationType":"permission_prompt","toolName":"Bash",
-                 "promptId":"req-1","agentId":"sub-1","toolUseId":"tu-1"}"#,
-            proto::AgentKind::Grok,
-        );
-        assert_eq!(p.last_message.as_deref(), Some("PONG"));
-        assert!(p.stop_hook_active);
-        assert_eq!(p.notification_type.as_deref(), Some("permission_prompt"));
-        assert_eq!(p.reason.as_deref(), Some("Bash"));
-        assert_eq!(p.prompt_id.as_deref(), Some("req-1"));
-        assert_eq!(p.agent_id.as_deref(), Some("sub-1"));
-        assert_eq!(p.tool_use_id.as_deref(), Some("tu-1"));
-    }
-
-    #[test]
-    fn a_non_grok_provider_never_gets_the_camel_case_fallback() {
+    fn camel_case_twins_are_never_read() {
         let p = parse_hook_payload(
             r#"{"lastAssistantMessage":"PONG","stopHookActive":true}"#,
             proto::AgentKind::Claude,
@@ -2109,13 +2082,7 @@ mod tests {
     }
 
     #[test]
-    fn cursor_lifts_last_message_from_its_own_text_field() {
-        let p = parse_hook_payload(r#"{"text":"PONG"}"#, proto::AgentKind::Cursor);
-        assert_eq!(p.last_message.as_deref(), Some("PONG"));
-    }
-
-    #[test]
-    fn a_non_cursor_provider_never_gets_the_text_fallback() {
+    fn a_text_field_is_never_the_last_message() {
         let p = parse_hook_payload(r#"{"text":"PONG"}"#, proto::AgentKind::Claude);
         assert_eq!(p.last_message, None);
     }
@@ -2184,6 +2151,43 @@ mod tests {
 }
 
 #[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    #[test]
+    fn the_model_comes_from_codex_opencode_and_antigravity_payloads_only() {
+        let model = |payload: &str, provider| parse_hook_payload(payload, provider).model;
+        assert_eq!(
+            model(r#"{"model":"gpt-5-codex"}"#, proto::AgentKind::Codex).as_deref(),
+            Some("gpt-5-codex")
+        );
+        assert_eq!(
+            model(
+                r#"{"model":"claude-sonnet-5-5"}"#,
+                proto::AgentKind::Opencode
+            )
+            .as_deref(),
+            Some("claude-sonnet-5-5")
+        );
+        assert_eq!(
+            model(
+                r#"{"modelName":"gemini-3.6-flash-medium"}"#,
+                proto::AgentKind::Antigravity
+            )
+            .as_deref(),
+            Some("gemini-3.6-flash-medium")
+        );
+        assert_eq!(model(r#"{"model":"x"}"#, proto::AgentKind::Claude), None);
+        assert_eq!(model(r#"{"model":"  "}"#, proto::AgentKind::Codex), None);
+        let long = format!(r#"{{"model":"{}"}}"#, "m".repeat(500));
+        assert_eq!(
+            model(&long, proto::AgentKind::Codex).map(|m| m.chars().count()),
+            Some(MODEL_MAX_CHARS)
+        );
+    }
+}
+
+#[cfg(test)]
 mod permission_metadata_tests {
     use super::*;
 
@@ -2206,7 +2210,7 @@ mod permission_metadata_tests {
             reported.permission_block_reason.as_deref(),
             Some("Provider requires consent")
         );
-        let unsupported = parse_hook_payload(&payload.to_string(), proto::AgentKind::Cursor);
+        let unsupported = parse_hook_payload(&payload.to_string(), proto::AgentKind::Antigravity);
         assert_eq!(unsupported.permission_command, None);
     }
 }

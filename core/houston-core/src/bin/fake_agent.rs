@@ -168,16 +168,6 @@ impl Agent {
                 "question.replied",
                 "opencode-1.18.31-07-question.replied.json",
             ),
-            ("cursor", "start") => ("sessionStart", "cursor-docs-01-sessionStart.json"),
-            ("cursor", "prompt") => (
-                "beforeSubmitPrompt",
-                "cursor-docs-02-beforeSubmitPrompt.json",
-            ),
-            ("cursor", "stop") => ("stop", "cursor-docs-03-stop.json"),
-            ("grok", "start") => ("SessionStart", "grok-docs-01-SessionStart.json"),
-            ("grok", "prompt") => ("UserPromptSubmit", "grok-docs-02-UserPromptSubmit.json"),
-            ("grok", "stop") => ("Stop", "grok-docs-03-Stop.json"),
-            ("grok", "ask") => ("Notification", "grok-docs-04-Notification.json"),
             (provider, stage) => bail!("no fixture for provider {provider:?}, lifecycle {stage:?}"),
         };
         self.hook(event, file)
@@ -247,7 +237,6 @@ impl Agent {
                     let args: Vec<String> = std::env::args().collect();
                     let expected = match self.script.provider.as_str() {
                         "claude" => "--allowedTools",
-                        "grok" => "--allow",
                         other => bail!("no handback-only launch rule for {other}"),
                     };
                     let mut allowed = Vec::new();

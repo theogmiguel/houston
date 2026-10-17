@@ -9,7 +9,7 @@ paste remains one transaction, including its bracketed-paste markers.
 ## The model
 
 A **session** is one PTY running an agent CLI — Claude Code, Codex, Antigravity,
-OpenCode, Cursor, Grok or ZCode — or a plain shell, in a project directory. A
+OpenCode or ZCode — or a plain shell, in a project directory. A
 **pane** is its cell in the grid: the place you see and type into that session. A
 **workspace** is a project directory Houston knows about; every session belongs to one.
 A **grid** is a named layout of panes under a workspace, so a workspace can hold several
@@ -121,7 +121,7 @@ is sent through the pane's own CLI and provider account. Houston reads no transc
 scrollback for this feature. Claude uses Haiku with tools, MCP, slash commands and session
 persistence disabled, in a temporary directory. Its safe mode excludes customization files,
 including global CLAUDE.md instructions and automatic memory, while preserving account
-authentication. Codex, OpenCode, Cursor, Grok, Antigravity
+authentication. Codex, OpenCode, Antigravity
 and ZCode are refused by name until equivalent controls are verified. Authentication and
 billing use the CLI's existing account. A pane without both hook excerpts cannot generate
 a title; excerpt availability is lost after a daemon restart. A restored account profile

@@ -133,14 +133,9 @@
     "Re-cut against 946,074 bytes (one boot chunk) with the 126 bytes of headroom",
     "the previous cut left: input typed while a pane's attach snapshot is pending",
     "is held and released in order inside every mounted pane, so it is boot-path",
-    "code like the write-queue overflow resync.",
-    "",
-    "Re-cut against 947,771 bytes (one boot chunk) with the same headroom: the",
-    "merge queue's client verbs, their environment routes and the palette's Open",
-    "and Add to merge queue commands are boot-path code; the queue view and its",
-    "hook load with the Pull requests page."
+    "code like the write-queue overflow resync."
   ],
-  "maxBootBytes": 947900,
+  "maxBootBytes": 946200,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

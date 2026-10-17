@@ -25,8 +25,6 @@ function checkAgentTargetsForTree(tree: LayoutNode | null, sessions: Sessions): 
     codex: "Codex",
     antigravity: "Antigravity",
     opencode: "OpenCode",
-    cursor: "Cursor",
-    grok: "Grok",
     zcode: "ZCode",
   };
   return preorderSessions(tree).flatMap((id) => {

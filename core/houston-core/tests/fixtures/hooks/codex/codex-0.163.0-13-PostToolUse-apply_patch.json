@@ -1,0 +1,16 @@
+{
+  "_note": "derived from the openai/codex rust-v0.163.0 sources (apply_patch.rs: tool_input.command holds the whole patch text), not captured live",
+  "hook_event_name": "PostToolUse",
+  "session_id": "codex-session-1",
+  "turn_id": "turn-patch-1",
+  "cwd": "/home/user/code/myproj",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "transcript_path": null,
+  "tool_name": "apply_patch",
+  "tool_use_id": "call_patch_1",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: src/a.rs\n@@\n-let secret = \"hunter2-body\";\n+let secret = load();\n*** Add File: src/b.rs\n+pub fn b() {}\n*** End Patch"
+  },
+  "tool_response": "Success. Updated the following files:\nM src/a.rs\nA src/b.rs\n"
+}

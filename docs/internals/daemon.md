@@ -641,8 +641,8 @@ for idempotency do not expand its retry poll. Future retries retain their schedu
 
 `boot::spawn_startup_refresh` is the sibling for one-shot work that must not block the
 window appearing: a legacy-hook sweep, then workspace and consented-agent hook installs, all
-on `spawn_blocking`, plus Claude MCP entry maintenance and registration with Codex, Grok,
-Cursor and Antigravity.
+on `spawn_blocking`, plus Claude MCP entry maintenance and registration with Codex and Antigravity, plus the retired-provider cleanup that removes
+Houston's own Cursor and Grok configuration.
 
 ## Routine runs
 

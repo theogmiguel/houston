@@ -1370,7 +1370,7 @@ impl OrchestrationHandoff {
         drop(db);
         let command = common::hermetic_command(supervisor_bin(), home.path());
         drop(command);
-        for name in ["claude", "codex", "grok", "opencode"] {
+        for name in ["claude", "codex", "opencode"] {
             let shim = home.path().join("provider-shims").join(name);
             std::fs::remove_file(&shim).unwrap();
             std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), shim).unwrap();
@@ -1801,13 +1801,6 @@ async fn l1_codex_cursor_query_before_handoff() {
             .find(|row| row["event"] == "terminal_reply")
     });
     assert_eq!(reply["data"]["reply"], "\x1b[3;7R");
-}
-
-#[tokio::test]
-async fn l1_manual_grok_child_gets_only_the_local_dialogue_and_input_permissions() {
-    let rig=OrchestrationHandoff::new("grok",serde_json::json!([{"op":"require_handback_allow"},{"op":"submit","summary":"GROK_RESULT"}]),None).await;
-    rig.release_result();
-    rig.assert_result_once(2);
 }
 
 #[tokio::test]

@@ -366,11 +366,11 @@ describe('commandRegistry — buildCommands', () => {
     expect(embed?.enabled).toBe(true)
   })
 
-  it('seven known agent CLIs get a spawn command, each dispatching its own kind', () => {
+  it('five known agent CLIs get a spawn command, each dispatching its own kind', () => {
     const spawnAgent = vi.fn()
     const commands = buildCommands({ actions: makeActions({ spawnAgent }), hasWorkspace: true, workspaces: [] })
     const agentCommands = commands.filter((c) => c.group === 'Agents')
-    expect(agentCommands.length).toBe(7)
+    expect(agentCommands.length).toBe(5)
     agentCommands.find((c) => c.id === 'agents.spawn.codex')?.run()
     expect(spawnAgent).toHaveBeenCalledWith('codex')
   })

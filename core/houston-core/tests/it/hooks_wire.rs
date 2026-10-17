@@ -624,19 +624,27 @@ async fn a_providers_own_event_name_drives_status_and_a_foreign_one_does_not() {
     let (info, _dir) = a_pane(&daemon);
     let mut rx = daemon.observe();
 
-    drop_and_await_apply(state.path(), &drop_from("cursor", "stop", info.id)).await;
+    drop_and_await_apply(
+        state.path(),
+        &drop_from("opencode", "session.idle", info.id),
+    )
+    .await;
     assert_eq!(
         expect_status(&mut rx, info.id).await,
         proto::AgentStatus::Idle
     );
 
-    drop_and_await_apply(state.path(), &drop_from("cursor", "Notification", info.id)).await;
+    drop_and_await_apply(
+        state.path(),
+        &drop_from("opencode", "Notification", info.id),
+    )
+    .await;
     drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
     assert_eq!(
         expect_status(&mut rx, info.id).await,
         proto::AgentStatus::Working,
         "the next status must be the Claude prompt's Working — a NeedsInput here would mean \
-         Cursor borrowed Claude's event names"
+         OpenCode borrowed Claude's event names"
     );
 
     daemon.kill(info.id).ok();

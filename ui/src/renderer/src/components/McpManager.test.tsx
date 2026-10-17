@@ -17,7 +17,7 @@ function tool(tool: McpToolState['tool'], servers: McpServer[] = [server()]): Mc
 function props(overrides: Partial<McpManagerProps> = {}): McpManagerProps {
   return {
     source: [server()],
-    tools: [tool('claude'), tool('codex'), tool('opencode'), tool('cursor')],
+    tools: [tool('claude'), tool('codex'), tool('opencode')],
     results: [],
     checks: [],
     loaded: true,
@@ -42,7 +42,7 @@ describe('Connections matrix', () => {
     expect(screen.getByRole('columnheader', { name: 'Claude Code' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Codex' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'OpenCode' })).toBeTruthy()
-    expect(screen.getByRole('columnheader', { name: 'Cursor' })).toBeTruthy()
+    expect(screen.queryByRole('columnheader', { name: 'Cursor' })).toBeNull()
     expect(screen.getByText(/Not managed here:/)).toBeTruthy()
   })
 
@@ -50,7 +50,7 @@ describe('Connections matrix', () => {
     const onUpsertServer = vi.fn()
     const onSync = vi.fn()
     render(<McpManager {...props({
-      tools: [{ ...tool('claude'), error: 'npx was not found on PATH' }, tool('codex'), tool('opencode'), tool('cursor')],
+      tools: [{ ...tool('claude'), error: 'npx was not found on PATH' }, tool('codex'), tool('opencode')],
       onUpsertServer,
       onSync
     })} />)
@@ -58,13 +58,13 @@ describe('Connections matrix', () => {
     expect(screen.getByText('npx').tagName).toBe('CODE')
     expect(screen.getAllByText(/was not found on PATH/)).toHaveLength(1)
     fireEvent.click(screen.getByTestId('mcp-cell-claude-github'))
-    expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
+    expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode'] }))
     expect(onSync).toHaveBeenCalledWith('claude')
   })
 
   it('shows absent agent destinations as off while keeping server check failures scoped', () => {
     render(<McpManager {...props({
-      tools: [tool('claude'), tool('codex', []), tool('opencode', []), tool('cursor', [])],
+      tools: [tool('claude'), tool('codex', []), tool('opencode', [])],
       checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
     })} />)
     expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('In sync')
@@ -92,9 +92,9 @@ describe('Connections matrix', () => {
   it('keeps the server and agent columns when empty, without a hint about cells that are not there', () => {
     render(<McpManager {...props({ source: [], tools: [], loaded: true })} />)
     const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent)
-    expect(headers).toEqual(expect.arrayContaining(['Server', 'Claude Code', 'Codex', 'OpenCode', 'Cursor']))
+    expect(headers).toEqual(expect.arrayContaining(['Server', 'Claude Code', 'Codex', 'OpenCode']))
     expect(screen.getByRole('heading', { name: 'No MCP servers' })).toBeTruthy()
-    expect(document.body.textContent).toContain('Not managed here: ZCode, Grok, Antigravity.')
+    expect(document.body.textContent).toContain('Not managed here: ZCode, Antigravity.')
     expect(document.body.textContent).not.toContain('Click a cell')
   })
 })
@@ -118,7 +118,7 @@ it('expands a Settings server and toggles only its owning agent destination', ()
   fireEvent.click(summary)
   expect(summary.parentElement?.querySelector('input')).toBeNull()
   fireEvent.click(screen.getByRole('switch', { name: 'github in Claude Code' }))
-  expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
+  expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode'] }))
   expect(onSync).toHaveBeenCalledWith('claude')
   fireEvent.click(screen.getByRole('button', { name: 'Edit command' }))
   expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()

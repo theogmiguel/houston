@@ -230,7 +230,7 @@ describe('RoutineEditor', () => {
       root.render(<RoutineEditor mode="create" workspaces={[]} onSubmit={noop} onCancel={noop} />)
     })
     const values = openSelect(container, 'routine-engine').map((r) => r.dataset.value)
-    expect(values).toEqual(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'])
+    expect(values).toEqual(['claude', 'codex', 'antigravity', 'opencode', 'zcode'])
   })
 
   it('with isolated full access, ZCode is selectable, and accept edits and turning isolation off are not', () => {

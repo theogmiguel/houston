@@ -24,7 +24,7 @@ async fn the_state_message_carries_tr_s_list_and_one_column_per_tool() {
     );
     assert!(results.is_empty(), "a read reports no sync results");
     assert!(checks.is_empty(), "nothing has been tested yet");
-    assert_eq!(tools.len(), 4, "Houston's four tools");
+    assert_eq!(tools.len(), 3, "Houston's three tools");
     assert_eq!(
         tools[0].tool,
         proto::AgentKind::Claude,

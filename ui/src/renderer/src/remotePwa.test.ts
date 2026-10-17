@@ -113,7 +113,7 @@ describe('remote pane hierarchy', () => {
     expect(document.querySelector('#children .row-end .spinner')).not.toBeNull()
     click('#children .row')
     expect(document.querySelector('#heading')?.textContent).toBe('worker')
-    expect(document.querySelector('#subheading')?.textContent).toBe('Orchestrator / Houston')
+    expect(document.querySelector('#subheading')?.textContent).toBe('Working · Orchestrator / Houston')
     expect(titles(document, '#children .row-title')).toEqual(['nested-worker'])
   })
 

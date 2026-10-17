@@ -148,13 +148,13 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 | 3 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Settings → Usage streams them for token counts. Read-only and only while a client asked (no timer, watcher or boot scan); counts only — a line becomes a tally and is dropped; fail-soft; **no semantics** — drives no status or behaviour. Terms: `core/houston-core/src/usage/mod.rs` |
 | 4 | `<the CLI's own transcriptPath>, Antigravity only` | The path comes from the provider's own hook payload and is never constructed by Houston; the last assistant entry only; read once, at a turn end, in the helper process; fail-soft (any error is no last message, never an error to the CLI); capped at the submit cap. Terms: `core/houston-core/src/antigravity_transcript.rs` |
 | 5 | `<the CLI's own transcript_path>, Claude and Codex only` | Read only on turn completion, from the hook-reported path; at most the last 8 MiB. Claude's latest main-agent usage and Codex's latest `token_count` provide context occupancy. Retain only token counts, model id and compaction state; never drive agent status, retain content, scan directories or watch transcripts. Missing data hides the indicator. Terms: `core/houston-core/src/context_window.rs` |
-| 6 | `~/.claude/projects/<workspace slug>*/*.jsonl` (and `$CLAUDE_CONFIG_DIR/projects`), `~/.codex/sessions/**/*.jsonl` (or `$CODEX_HOME/sessions`), Claude and Codex only | Read by `hs-harness digest`, never by the daemon or the app: the agent of a harness review run calls it inside its own visible pane, and it refuses unless `HOUSTON_ROUTINE_RUN` is set, which only a routine run's pane has. Only transcripts whose cwd is the workspace or below it; OpenCode, Cursor, Grok and Antigravity are refused by name. Output only under `<workspace>/.houston/harness/<run>/`, capped at 64 KiB per session line and 2 MiB per digest; the digest never enters the database and nothing drives status. What enters it is what the run's agent publishes through `harness_publish`: the bounded fields of `findings.json`, including its short quotes. No timer, watcher or boot scan: a run happens because the user created the review routine and pressed Run review or enabled its cadence. Terms: `core/houston-core/src/harness/` |
+| 6 | `~/.claude/projects/<workspace slug>*/*.jsonl` (and `$CLAUDE_CONFIG_DIR/projects`), `~/.codex/sessions/**/*.jsonl` (or `$CODEX_HOME/sessions`), Claude and Codex only | Read by `hs-harness digest`, never by the daemon or the app: the agent of a harness review run calls it inside its own visible pane, and it refuses unless `HOUSTON_ROUTINE_RUN` is set, which only a routine run's pane has. Only transcripts whose cwd is the workspace or below it; OpenCode, Cursor, Grok and Antigravity are refused by name (Cursor and Grok are recognised only). Output only under `<workspace>/.houston/harness/<run>/`, capped at 64 KiB per session line and 2 MiB per digest; the digest never enters the database and nothing drives status. What enters it is what the run's agent publishes through `harness_publish`: the bounded fields of `findings.json`, including its short quotes. No timer, watcher or boot scan: a run happens because the user created the review routine and pressed Run review or enabled its cadence. Terms: `core/houston-core/src/harness/` |
 | 7 | `<the CLI's own transcript_path>`, Claude and Codex only | Metadata only: before a respawn passes its exact-ID resume arguments, `fs::metadata` on the path the hook reported with that id says whether the transcript exists and is non-empty. The file is never opened, the path is never constructed, and nothing drives status. Terms: `daemon.rs::resume_check` |
 
 ### App-initiated config writes use reversible managed markers
 
-Hook entries in `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`,
-`~/.grok/hooks/…`, ZCode's settings file and the OpenCode plugin carry
+Hook entries in `~/.claude/settings.json`, `~/.codex/hooks.json`,
+ZCode's settings file and the OpenCode plugin carry
 `--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook
 commands, including user commands within a managed group. Its former `workspace_hooks`
@@ -315,10 +315,19 @@ serves as an orchestration address. Native CLI titles and user overrides retain 
 ### The remote feed comes from hook payloads and lives in memory
 
 The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from
-hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
-answers, and a permission request's or finished tool call's name and one target (a command,
-path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
-status transitions; it never sets one. Claude's `PostToolUseFailure` marks a failed tool
+hook payload fields: the prompt, the turn's last message, a structured question's options and
+answers (Claude's `AskUserQuestion`, Codex's `request_user_input`, Antigravity's `ask_question`,
+OpenCode's `question.asked`), and a permission request's or finished tool call's name and one
+target (a command, path, URL or pattern; for `apply_patch`, the files named by the patch
+headers, never the patch text). `feed.rs` reads no transcript and no screen. The one
+transcript-derived value, Antigravity's final message, is read by the hook helper under
+carve-out 4 and arrives as `last_message`; Antigravity's prompt is not in any hook payload,
+so its feed shows no prompt. Houston's OpenCode plugin forwards the prompt text, completed and
+errored tool parts, and the structured payloads of `permission.asked` and `question.asked`.
+Its decision card follows status transitions; it never sets one. Codex's approval hook fires
+only for commands, and Antigravity has no permission hook, so Antigravity's permission dialogs
+stay generic input cards rather than being inferred from the screen. Claude's `PostToolUseFailure`, the OpenCode plugin's equivalent for an errored tool part
+and an Antigravity `PostToolUse` carrying an `error` mark a failed tool
 step using the same masked target and bounds as a successful call; failed
 `AskUserQuestion` calls produce neither steps nor answers. Turn counts include failed
 steps, and edited paths record attempts rather than confirmed filesystem changes.
@@ -341,6 +350,10 @@ a cut preview also cannot be approved remotely. The daemon keeps it in a per-ses
 ring when it is turned off, serves it only to paired devices, and never writes it to SQLite
 or the log; it is gone when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
 keys, through the same stdin path as typed input, never through a hook reply.
+
+A device's diff and commit reach only paths the `/changes` listing shows, masked and
+bounded, and never a file whose name looks like a credential. A device cannot start a shell
+or `auto_approve` pane at any tier.
 
 ### The daemon owns a terminal emulator; screen cells never determine status
 

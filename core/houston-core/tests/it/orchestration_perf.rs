@@ -91,7 +91,7 @@ fn shim_dir() -> &'static Path {
             }
         }
         let shims = home.join("provider-shims");
-        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for name in ["claude", "codex", "agy", "opencode"] {
             let shim = shims.join(name);
             std::fs::remove_file(&shim).unwrap();
             std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), shim).unwrap();
@@ -1218,6 +1218,6 @@ async fn claude_enabled_advertisement_stays_under_byte_budget() {
     );
     let advertisement = rig.rpc(parent, "tools/list", json!({})).await;
     // Bound per-turn schema tokens while retaining all role-appropriate controls. Raised
-    // for two merge queue verbs (#124); measured 28,573 bytes after adding them.
+    // for two merge queue verbs (#124); measured 28,509 bytes after adding them.
     bytes("claude/enabled", &advertisement, Some(29_000));
 }

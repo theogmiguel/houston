@@ -25,7 +25,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy"] {
+        for name in ["opencode", "codex", "claude", "agy"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -136,7 +136,7 @@ impl Rig {
         let addr = self.addr;
         let (status, body): (u16, serde_json::Value) =
             tokio::task::spawn_blocking(move || {
-                let payload = serde_json::json!({"kind": "grok", "prompt": prompt}).to_string();
+                let payload = serde_json::json!({"kind": "opencode", "prompt": prompt}).to_string();
                 let req = format!(
                     "POST /orchestrate/spawn HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {parent_token}\r\n\
                      Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -211,7 +211,7 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     let leaf_bytes = response_bytes(&tools);
     let parent_tools = r.tools_list(&parent_token).await;
     let orchestrator_bytes = response_bytes(&parent_tools);
-    // Two merge queue verbs (#124); measured 28,573 bytes after adding them.
+    // Two merge queue verbs (#124); measured 28,509 bytes after adding them.
     assert!(
         orchestrator_bytes < 29_000,
         "root tools/list catalog exceeds 29000 bytes: {orchestrator_bytes}"

@@ -31,7 +31,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for (name, body) in [("grok", REPAINTING), ("codex", LINE_PRINTING)] {
+        for (name, body) in [("opencode", REPAINTING), ("codex", LINE_PRINTING)] {
             let path = dir.join(name);
             std::fs::write(&path, body).unwrap();
             #[cfg(unix)]
@@ -190,7 +190,7 @@ async fn screen_and_tail_disagree_on_a_pane_that_repaints() {
     let r = rig("read-source-repaint").await;
     let parent = r.parent();
     let token = r.token_for(parent.id);
-    let child = r.spawn_child(&token, "grok").await;
+    let child = r.spawn_child(&token, "opencode").await;
 
     let screen = r.read(&token, child, "screen", "SCREEN-OMEGA").await;
     assert!(
@@ -255,7 +255,7 @@ async fn a_read_that_names_no_source_gets_the_screen() {
     let r = rig("read-source-default").await;
     let parent = r.parent();
     let token = r.token_for(parent.id);
-    let child = r.spawn_child(&token, "grok").await;
+    let child = r.spawn_child(&token, "opencode").await;
     r.read(&token, child, "screen", "SCREEN-OMEGA").await;
 
     let (status, body) = http_json(

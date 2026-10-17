@@ -41,6 +41,7 @@ import type {
   Workspace,
   PullRequestLink,
 } from "./houston/client";
+import type { AgentAccountIdentity } from "./houston/generated/AgentAccountIdentity";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
@@ -844,6 +845,7 @@ export function App(): React.JSX.Element {
     state: UpdateState;
   } | null>(null);
   const [agentHooks, setAgentHooks] = useState<AgentHookState[] | null>(null);
+  const [agentAccounts, setAgentAccounts] = useState<AgentAccountIdentity[] | null>(null);
   const [agentHooksCheckedAt, setAgentHooksCheckedAt] = useState<number | null>(null);
   const [skillsCheckedAt, setSkillsCheckedAt] = useState<number | null>(null);
   const [mcpCheckedAt, setMcpCheckedAt] = useState<number | null>(null);
@@ -1580,6 +1582,9 @@ export function App(): React.JSX.Element {
           case "agent_hooks":
             setAgentHooks(msg.providers);
             setAgentHooksCheckedAt(Date.now());
+            break;
+          case "agent_accounts":
+            setAgentAccounts(msg.accounts);
             break;
           case "host_info":
             setHostInfo(msg);
@@ -4335,6 +4340,7 @@ export function App(): React.JSX.Element {
                         setSettings(true);
                       }}
                       agentHooks={agentHooks}
+                      agentAccounts={agentAccounts}
                       agentHooksCheckedAt={agentHooksCheckedAt}
                       onAgentHooksSet={(provider, enabled) => {
                         if (conn.kind === "ready") conn.client.agentHooksSet(provider, enabled);

@@ -8,11 +8,10 @@ import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
 import type { ChatPermissionMode } from '../../houston/generated/ChatPermissionMode'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
-import { IconPlay } from '../icons'
+import { IconHistory, IconPlay } from '../icons'
 import { ReviewSummary } from '../ui/ReviewSummary'
-import { SettingsDisclosure } from '../ui/SettingsDisclosure'
 import { Select } from '../ui/Select'
-import { BarSparkline, Button, Caption, Card, Field, NavSurfaceFrame, Notice, PageHeader, Segmented, TextInput } from '../ui'
+import { BarSparkline, Button, Caption, Card, EmptyState, Field, NavSurfaceFrame, Notice, PageHeader, Segmented, StatusLabel, Text, TextInput } from '../ui'
 import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { routineEngineOptions } from './routineEngines'
@@ -90,8 +89,7 @@ function HarnessHeader({
   onSeen,
   error,
   onDismissError,
-  embedded,
-  onOpenRoutines
+  embedded
 }: HarnessSurfaceProps & { routine: Routine | null }): React.JSX.Element {
   const firstRun = workspace !== null && state !== null && state.routine === null
   const noticeReviewId = attention?.latest_published_review_id ?? null
@@ -104,7 +102,7 @@ function HarnessHeader({
       <PageHeader
         heading={embedded ? 'Review' : 'Harness'}
         description={embedded ? "A weekly read of your sessions that looks for mistakes agents repeat. The schedule lives in Routines." : "Reads your agents' sessions and turns repeated mistakes into tasks. The next review checks whether each fix worked."}
-        actions={<HarnessHeaderAction routine={routine} running={running} firstRun={firstRun} embedded={embedded} onRunNow={onRunNow} onOpenRoutines={onOpenRoutines} />}
+        actions={<HarnessHeaderAction routine={routine} running={running} firstRun={firstRun} embedded={embedded} onRunNow={onRunNow} />}
       />
       {noticeVisible && workspace && state && (
         <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: () => onSeen(workspace, noticeReviewId) }}>
@@ -116,11 +114,10 @@ function HarnessHeader({
   )
 }
 
-function HarnessHeaderAction({ routine, running, firstRun, embedded, onRunNow, onOpenRoutines }: { routine: Routine | null; running: boolean; firstRun: boolean; embedded?: boolean; onRunNow: (id: number) => void; onOpenRoutines?: () => void }): React.JSX.Element | null {
+function HarnessHeaderAction({ routine, running, firstRun, embedded, onRunNow }: { routine: Routine | null; running: boolean; firstRun: boolean; embedded?: boolean; onRunNow: (id: number) => void }): React.JSX.Element | null {
   if (routine && embedded) return null
   if (routine) return <Button data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Run review now'}</Button>
-  if (!firstRun) return null
-  if (embedded) return <Button variant="secondary" onClick={onOpenRoutines}>Set up in Routines</Button>
+  if (!firstRun || embedded) return null
   return <Button type="submit" form={FIRST_RUN_FORM_ID} variant="primary">Run first review</Button>
 }
 
@@ -134,15 +131,18 @@ function HarnessWorkspaceContent({
   const { workspace, state, workspaces } = props
   if (!workspace) {
     return (
-      <div className="grid gap-[var(--space-2)]">
-        <p>{workspaces.length ? 'Choose a workspace to see its Harness reviews.' : 'Add a workspace to review its agent sessions.'}</p>
-        {workspaces.length > 0 && <Select aria-label="Workspace" data-testid="harness-workspace" value="" options={[{ value: '', label: 'Choose a workspace', disabled: true }, ...workspaces.map((item) => ({ value: item.id, label: item.name }))]} onChange={props.onWorkspace} />}
-      </div>
+      <Card shape="card" padding="md" className="grid gap-[var(--space-3)]">
+        <div className="grid gap-[var(--space-1)]">
+          <SectionTitle>{workspaces.length ? 'Choose a workspace' : 'No workspaces yet'}</SectionTitle>
+          <Caption>{workspaces.length ? 'Choose a workspace to see its Harness reviews.' : 'Add a workspace to review its agent sessions.'}</Caption>
+        </div>
+        {workspaces.length > 0 && <Field label="Workspace"><Select aria-label="Workspace" data-testid="harness-workspace" width="full" value="" options={[{ value: '', label: 'Choose a workspace', disabled: true }, ...workspaces.map((item) => ({ value: item.id, label: item.name }))]} onChange={props.onWorkspace} /></Field>}
+      </Card>
     )
   }
-  if (!state) return <p role="status" aria-busy="true">Reading this workspace&apos;s reviews…</p>
+  if (!state) return <Text as="p" role="status" aria-busy="true" tone="muted" flush>Reading this workspace&apos;s reviews…</Text>
   if (!state.routine) {
-    if (props.embedded) return <Notice tone="info" action={{ label: 'Open Routines', onClick: props.onOpenRoutines ?? (() => {}) }}>No reviews yet. Create a weekly review in Routines.</Notice>
+    if (props.embedded) return <Card shape="card" padding="page"><EmptyState icon={IconHistory} heading="No review set up" description="Create a weekly review for this workspace in Routines. It reads recent sessions and lists what to change." action={{ label: 'Open Routines', onClick: props.onOpenRoutines ?? (() => {}) }} /></Card>
     return <FirstRun models={state.models} engineRefusals={state.engineRefusals} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
   }
   const published = state.reviews.filter((review) => review.status === 'published')
@@ -290,7 +290,6 @@ function HarnessBody(
         </Caption>
       </div>}
       <HarnessFindings
-        settings={props.embedded}
         workspace={state.workspace}
         findings={state.findings}
         defaultEngine={routine.engine}
@@ -300,7 +299,7 @@ function HarnessBody(
         onCreateTask={props.onCreateTask}
         onVerifyNow={() => props.onRunNow(routine.id)}
       />
-      {props.embedded ? <SettingsDisclosure heading="Review history"><HarnessReviewHistory
+      <HarnessReviewHistory
         state={state}
         report={props.report}
         reportError={props.reportError ?? null}
@@ -308,15 +307,7 @@ function HarnessBody(
         onOpenFile={props.onOpenFile}
         onReveal={props.onReveal}
         deltaOverrides={props.historyDeltaOverrides}
-      /></SettingsDisclosure> : <HarnessReviewHistory
-        state={state}
-        report={props.report}
-        reportError={props.reportError ?? null}
-        onLoadReport={props.onLoadReport}
-        onOpenFile={props.onOpenFile}
-        onReveal={props.onReveal}
-        deltaOverrides={props.historyDeltaOverrides}
-      />}
+      />
       <Caption tone="faint">
         {props.embedded && <>Reviews read session excerpts through the agent you pick and suggest changes. They never edit your instructions, skills or settings. </>}
         Read: Claude Code, Codex. {coverage ? `Not read: ${unscanned} in this window.` : 'All sessions in this window were read.'}
@@ -332,8 +323,10 @@ function reviewTrendHeading(latest: HarnessState['reviews'][number] | null, tren
   if (first === last) return `Repeated mistakes stayed at ${last} per 100 sessions`
   return `Repeated mistakes ${last < first ? 'fell' : 'rose'} from ${first} to ${last} per 100 sessions`
 }
-function HarnessReviewSummary({ latestReview, trend, routine, running, onRunNow, onOpenRoutines }: HarnessSurfaceProps & { routine: Routine; latestReview: HarnessState['reviews'][number] | null; trend: number[] }): React.JSX.Element {
-  const detail = <>{latestReview ? <>Last review {formatHarnessDate(latestReview.started_at_ms, true)} · {latestReview.sessions == null ? 'Session total not reported' : `${latestReview.sessions} sessions`}</> : 'Run the first review to read this workspace’s sessions.'}{routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>} · <Button variant="body-link" onClick={onOpenRoutines}>Edit schedule in Routines</Button></>
+function HarnessReviewSummary({ state, latestReview, trend, routine, running, onRunNow, onOpenRoutines }: HarnessSurfaceProps & { state: HarnessState; routine: Routine; latestReview: HarnessState['reviews'][number] | null; trend: number[] }): React.JSX.Element {
+  const current = running ? state.reviews.find((review) => review.status === 'running') ?? null : null
+  const last = latestReview ? `Last review ${formatHarnessDate(latestReview.started_at_ms, true)} · ${latestReview.sessions == null ? 'Session total not reported' : `${latestReview.sessions} sessions`}` : 'Run the first review to read this workspace’s sessions'
+  const detail = <>{current ? <StatusLabel status="Running" size="small">{`Review #${current.id} is reading sessions, started ${formatHarnessDate(current.started_at_ms, true)}`}</StatusLabel> : last}{!current && routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>} · <Button variant="body-link" onClick={onOpenRoutines}>Edit schedule in Routines</Button></>
   return <ReviewSummary heading={reviewTrendHeading(latestReview, trend)} detail={detail} chart={trend.length > 1 ? <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${trend.join(', ')}`} /> : undefined} action={<Button icon={IconPlay} data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Review now'}</Button>} />
 }
 

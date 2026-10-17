@@ -25,7 +25,7 @@ A run is an ordinary agent pane in the workspace, which you can open and watch. 
 
 The agent reads those files, which sends their content to the review's provider through that
 provider's own CLI, as any turn of that agent does. The view shows this before the first run.
-OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read. Review shows their Houston-hosted
+OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read (Cursor and Grok rows from earlier versions still count as uncovered). Review shows their Houston-hosted
 session counts for the latest review window as provider coverage. A review routine starts in
 accept-edits access, which OpenCode and ZCode do not offer, so they are unavailable for the
 first review. To review with either, switch the routine to isolated full access afterwards
@@ -61,6 +61,9 @@ and your decisions are kept per workspace and remain after Houston restarts.
   **Resolved**, and **Reopen** it to undo that. A later review does not raise a dismissed or
   resolved finding again unless it finds new evidence; when it does, the finding reopens and says
   so.
+- **Active** groups findings under **Needs a decision** (new and not seen) and **In progress**
+  (fixing or awaiting verification), highest confidence first. Expand a finding to read its
+  evidence and recommendation.
 - **Active**, **Resolved** and **Dismissed** filter findings by their current phase. An open
   finding can become a linked task; a fixing finding opens that task; a landed task can be
   checked with **Verify now**. Use **Resolve** or **Keep open** when a finding is **Not seen**.

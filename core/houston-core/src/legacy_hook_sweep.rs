@@ -29,17 +29,11 @@ fn sweep_with(db: &crate::db::Db, cfg: &crate::agent_hooks::ConfigHome) {
             continue;
         };
         match provider {
-            proto::AgentKind::Cursor => prune_hook_json(&path, "hooks", DeleteWhenEmpty::No),
             proto::AgentKind::Antigravity => prune_hook_json(&path, "houston", DeleteWhenEmpty::No),
             proto::AgentKind::Codex => {
                 prune_hook_json(&path, "hooks", DeleteWhenEmpty::No);
                 if let Some(dir) = path.parent() {
                     prune_codex_notify(&dir.join("config.toml"));
-                }
-            }
-            proto::AgentKind::Grok => {
-                for p in siblings_of(&path, "json") {
-                    prune_hook_json(&p, "hooks", DeleteWhenEmpty::Yes);
                 }
             }
             proto::AgentKind::Opencode => {
@@ -54,6 +48,18 @@ fn sweep_with(db: &crate::db::Db, cfg: &crate::agent_hooks::ConfigHome) {
                  residue from a superseded name would outlive every boot there"
             ),
         }
+    }
+    // Recognised-only providers have no installer, but their old residue is still ours.
+    prune_hook_json(
+        &cfg.home.join(".cursor").join("hooks.json"),
+        "hooks",
+        DeleteWhenEmpty::No,
+    );
+    for p in siblings_of(
+        &cfg.home.join(".grok").join("hooks").join("houston.json"),
+        "json",
+    ) {
+        prune_hook_json(&p, "hooks", DeleteWhenEmpty::Yes);
     }
 }
 

@@ -72,11 +72,11 @@ Provider-specific hook and restore limits are described below and in
 
 ## Providers
 
-Houston hosts ten agent CLIs. Seven are spawnable — you can open a pane running them
-directly from Houston: **Claude Code**, **Codex**, **Antigravity**, **OpenCode**,
-**Cursor**, **Grok** and **ZCode**. Three more are identity-only — Houston recognizes them from
-their own startup banner if you run them yourself in a shell pane, but cannot spawn or
-drive them: **Droid**, **Copilot**, **Aider**.
+Houston hosts ten agent CLIs. Five are spawnable — you can open a pane running them
+directly from Houston: **Claude Code**, **Codex**, **Antigravity**, **OpenCode** and
+**ZCode**. Five more are identity-only — Houston recognizes them from their own startup
+banner if you run them yourself in a shell pane, but cannot spawn or drive them:
+**Cursor**, **Grok**, **Droid**, **Copilot**, **Aider**.
 
 Houston never manages your login to any of these CLIs — sign in with each CLI the way
 you normally would, before or after adding it as a pane.
@@ -138,23 +138,21 @@ deletes it on uninstall.
 
 Houston does not register an MCP server with OpenCode.
 
-### Cursor
+### Cursor and Grok
 
-Houston writes managed hooks into `~/.cursor/hooks.json`. Turning the hook toggle off
-removes only Houston's marked entries.
+Houston no longer starts, configures or reports status for Cursor or Grok. On startup it
+removes what earlier versions wrote, and only that:
 
-Houston also writes an MCP server entry directly into `~/.cursor/mcp.json` (Cursor's CLI
-has no command to add one), under a different server name than any third-party servers
-Houston syncs into the same file, and carrying the same `"_houston": "managed"` marker
-Antigravity's entry uses. There is no automatic removal for this entry yet.
+- Houston's marked entries in `~/.cursor/hooks.json` and `~/.grok/hooks/houston.json`
+  (the latter is deleted once nothing else is left in it).
+- The `houston` entry marked `"_houston": "managed"` in `~/.cursor/mcp.json`, and any
+  servers the MCP manager synced into that file.
+- `[mcp_servers.houston]` in `~/.grok/config.toml`, only when its `url` and `Authorization`
+  header are the placeholders Houston wrote; an edited entry stays, and the log names it.
+- Houston's managed worktree-trust blocks in `~/.grok/trusted_folders.toml`.
 
-### Grok
-
-Houston writes managed hooks into `~/.grok/hooks/houston.json`. Turning the hook toggle
-off removes Houston's marked entries and deletes the file if nothing is left in it.
-
-Houston also registers an MCP server under `[mcp_servers.houston]` in
-`~/.grok/config.toml`. There is no automatic removal for this entry yet.
+Existing Cursor and Grok panes are kept as history. They cannot be restarted from Houston:
+close them, or run the CLI yourself in a shell pane, where Houston still recognizes it.
 
 ### ZCode
 

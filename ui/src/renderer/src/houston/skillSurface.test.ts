@@ -50,8 +50,6 @@ describe('skill surface helpers', () => {
       tool('claude', { skills: [{ name: skill.name, path: skill.path, digest: 'same' }] }),
       tool('codex', { skills: [{ name: skill.name, path: '/codex/ui-tokens', digest: 'same' }] }),
       tool('opencode', { inherits_claude: true }),
-      tool('cursor', { inherits_claude: true }),
-      tool('grok', { inherits_claude: true }),
       tool('zcode', { skills: [{ name: skill.name, path: '/zcode/ui-tokens', digest: 'old' }] })
     ])
 
@@ -59,8 +57,6 @@ describe('skill surface helpers', () => {
       ['Claude Code', 'source · user'],
       ['Codex', 'copy in sync'],
       ['OpenCode', 'reads Claude Code’s copy'],
-      ['Cursor', 'reads Claude Code’s copy'],
-      ['Grok', 'reads Claude Code’s copy'],
       ['ZCode', 'copy differs'],
       ['Antigravity', 'not managed here']
     ])
@@ -88,13 +84,12 @@ describe('skillRelationLines', () => {
       { tool: 'claude', label: 'Claude Code', relation: 'source · user' },
       { tool: 'codex', label: 'Codex', relation: 'copy in sync' },
       { tool: 'opencode', label: 'OpenCode', relation: 'reads Claude Code’s copy' },
-      { tool: 'cursor', label: 'Cursor', relation: 'reads Claude Code’s copy' },
-      { tool: 'grok', label: 'Grok', relation: 'reads Claude Code’s copy' },
+      { tool: 'zcode', label: 'ZCode', relation: 'reads Claude Code’s copy' },
       { tool: 'antigravity', label: 'Antigravity', relation: 'not managed here' }
     ])).toEqual([
       'Claude Code · source · user',
       'Codex · copy in sync',
-      'OpenCode, Cursor, Grok · reads Claude Code’s copy',
+      'OpenCode, ZCode · reads Claude Code’s copy',
       'Antigravity · not managed here'
     ])
   })

@@ -65,7 +65,7 @@ async fn issue67_shell_hooks_select_the_provider_for_waits_and_result_delivery()
     );
     assert_eq!(
         r.daemon.orchestration_wait_cap(parent.id).1,
-        houston_core::orchestrate::provider_wait_cap(proto::AgentKind::Claude, None)
+        houston_core::orchestrate::provider_wait_cap(proto::AgentKind::Claude)
     );
     r.daemon.orchestration_set(true).unwrap();
     let token = r.token_for(parent.id);
@@ -262,7 +262,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "cursor-agent", "opencode"] {
+        for name in ["codex", "claude", "agy", "opencode"] {
             #[cfg(windows)]
             {
                 let ps1 = "$ErrorActionPreference = 'Stop'\nif (-not $env:FIXTURE_SILENT) { Write-Output ('ARGV:' + ($args -join ' ')); Write-Output 'FIXTURE-READY' }\n# Echo-style fixture: whatever the daemon pastes comes straight back\n# into scrollback (the sh fixture's `exec cat`). [Console]::In reads the\n# ConPTY-delivered lines; EOF parks forever so the pane never exits.\nwhile ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { Start-Sleep -Seconds 86400 } else { Write-Output $l } }\n";
@@ -488,7 +488,7 @@ async fn spawn_is_refused_by_name_until_orchestration_is_on() {
     let token = r.token_for(pane.id);
 
     let (status, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "hi"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "hi"}))
         .await;
     assert_eq!(status, 409, "body: {body}");
     let err = body["error"].as_str().unwrap();
@@ -505,7 +505,7 @@ async fn spawn_is_refused_by_name_until_orchestration_is_on() {
     }
 
     let (status, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "hi"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "hi"}))
         .await;
     assert_eq!(status, 200, "body: {body}");
     assert_eq!(
@@ -534,7 +534,7 @@ async fn spawn_rolls_back_when_delegation_persistence_fails() {
         r.daemon
             .orchestrate_spawn_with_options(
                 parent.id,
-                proto::AgentKind::Grok,
+                proto::AgentKind::Codex,
                 None,
                 None,
                 houston_core::orchestrate::Brief {
@@ -601,7 +601,7 @@ async fn spawn_registration_waits_for_temporary_cleanup_serialization() {
         .post_spawn(
             &root_token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "complete before nested spawn",
                 "reusable": true,
                 "role": "completed-parent",
@@ -643,7 +643,7 @@ async fn spawn_registration_waits_for_temporary_cleanup_serialization() {
             started_tx.send(()).unwrap();
             let result = daemon.orchestrate_spawn_with_options(
                 completed_parent,
-                proto::AgentKind::Grok,
+                proto::AgentKind::Codex,
                 None,
                 None,
                 houston_core::orchestrate::Brief {
@@ -719,14 +719,7 @@ async fn custom_kind_is_refused_by_name_on_both_doors() {
     let err = body["error"].as_str().unwrap();
     assert!(err.contains("`custom`"), "refused by name: {err}");
     assert!(err.contains("no hooks"), "{err}");
-    for expected in [
-        "claude",
-        "codex",
-        "opencode",
-        "cursor",
-        "grok",
-        "antigravity",
-    ] {
+    for expected in ["claude", "codex", "opencode", "antigravity"] {
         assert!(err.contains(expected), "{expected} missing from: {err}");
     }
 
@@ -760,7 +753,7 @@ async fn spawn_prompt_read_kill_round_trip_over_http() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "first brief"}),
+            serde_json::json!({"kind": "codex", "prompt": "first brief"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -777,7 +770,7 @@ async fn spawn_prompt_read_kill_round_trip_over_http() {
     assert!(text.contains("HOUSTON_SESSION"), "the pane gate");
 
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "SessionStart", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "SessionStart", None);
     let (status, body) = http_json(
         r.addr,
         "POST",
@@ -787,7 +780,10 @@ async fn spawn_prompt_read_kill_round_trip_over_http() {
     )
     .await;
     assert_eq!(status, 200, "body: {body}");
-    assert_eq!(body["status_source"], "hooks-full", "grok maps four events");
+    assert_eq!(
+        body["status_source"], "hooks-full",
+        "codex maps its lifecycle events"
+    );
 
     let mut seen = String::new();
     for _ in 0..100 {
@@ -880,7 +876,7 @@ async fn agents_act_only_inside_their_own_subtree() {
     r.daemon.orchestration_set(true).unwrap();
 
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "a"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "a"}))
         .await;
     let child_a: u32 = body["session_id"].as_u64().unwrap() as u32;
     let (_, body) = r
@@ -954,7 +950,7 @@ async fn spawning_outside_the_workspace_is_refused() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "x",
                 "cwd": elsewhere.path().display().to_string(),
             }),
@@ -996,7 +992,7 @@ async fn a_parent_can_spawn_and_control_a_child_in_a_registered_workspace() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "cross workspace",
                 "target_workspace": target.path().display().to_string(),
                 "cwd": nested.display().to_string(),
@@ -1099,7 +1095,7 @@ async fn an_unregistered_target_workspace_is_refused_even_when_the_path_exists()
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "do not run",
                 "target_workspace": target.path().display().to_string(),
             }),
@@ -1580,68 +1576,6 @@ async fn a_root_at_its_child_cap_can_still_handoff_through_mcp() {
 }
 
 #[tokio::test]
-async fn the_status_source_follows_the_detected_cli_not_the_spawn_kind() {
-    let _guard = serial().await;
-    let r = rig("detected-source").await;
-    let pane = r.pane();
-    let token = r.token_for(pane.id);
-    r.daemon.orchestration_set(true).unwrap();
-    let (status, body) = r
-        .post_spawn(
-            &token,
-            serde_json::json!({"kind": "cursor", "prompt": "brief"}),
-        )
-        .await;
-    assert_eq!(status, 200, "body: {body}");
-    let child: u32 = body["session_id"].as_u64().unwrap() as u32;
-
-    let prompt = |text: &'static str| {
-        http_json(
-            r.addr,
-            "POST",
-            "/orchestrate/prompt",
-            &token,
-            Some(serde_json::json!({"session": child, "text": text})),
-        )
-    };
-    let (status, body) = prompt("before").await;
-    assert_eq!(status, 200, "body: {body}");
-    assert_eq!(
-        body["status_source"], "hooks-partial",
-        "cursor maps partial hook events"
-    );
-
-    let drop = houston_core::hook_drop::HookDrop {
-        v: houston_core::hook_drop::DROP_V,
-        event: "Stop".into(),
-        session: child,
-        cwd: None,
-        agent: Some("claude".into()),
-        prompt: None,
-        ..Default::default()
-    };
-    let drop_path = houston_core::hook_drop::write_drop(
-        &houston_core::hook_drop::drop_dir(r._state.path()),
-        &drop,
-        houston_core::daemon::now_ms(),
-    )
-    .unwrap();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while drop_path.exists() {
-        assert!(tokio::time::Instant::now() < deadline, "drop never applied");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-
-    let (status, body) = prompt("after").await;
-    assert_eq!(status, 200, "body: {body}");
-    assert_eq!(
-        body["status_source"], "hooks-full",
-        "Claude's own hook drops are what the wait would ride"
-    );
-    r.daemon.kill(child).unwrap();
-}
-
-#[tokio::test]
 async fn prompting_a_blocked_pane_is_refused() {
     let _guard = serial().await;
     let r = rig("needs-input").await;
@@ -1649,16 +1583,19 @@ async fn prompting_a_blocked_pane_is_refused() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "w"}))
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "opencode", "prompt": "w"}),
+        )
         .await;
     let child: u32 = body["session_id"].as_u64().unwrap() as u32;
 
     let drop = houston_core::hook_drop::HookDrop {
         v: houston_core::hook_drop::DROP_V,
-        event: "Notification".into(),
+        event: "permission.asked".into(),
         session: child,
         cwd: None,
-        agent: Some("grok".into()),
+        agent: Some("opencode".into()),
         prompt: None,
         ..Default::default()
     };
@@ -2063,12 +2000,7 @@ async fn compact(state_dir: &std::path::Path, session: u32, agent: Option<&str>,
         apply_drop(
             state_dir,
             houston_core::hook_drop::HookDrop {
-                event: if agent == Some("cursor") {
-                    "preCompact"
-                } else {
-                    "PreCompact"
-                }
-                .into(),
+                event: "PreCompact".into(),
                 session,
                 agent: agent.map(str::to_string),
                 ..Default::default()
@@ -2448,7 +2380,7 @@ async fn the_mcp_door_shares_the_cli_gates_and_reports_refusals_as_tool_errors()
         r.addr,
         &token,
         "pane_spawn",
-        serde_json::json!({"kind": "grok", "prompt": "hi"}),
+        serde_json::json!({"kind": "codex", "prompt": "hi"}),
     )
     .await;
     assert_eq!(result["isError"], true, "{result}");
@@ -2465,7 +2397,7 @@ async fn the_mcp_door_shares_the_cli_gates_and_reports_refusals_as_tool_errors()
         r.addr,
         &token,
         "pane_spawn",
-        serde_json::json!({"kind": "grok", "prompt": "first brief"}),
+        serde_json::json!({"kind": "codex", "prompt": "first brief"}),
     )
     .await;
     assert_eq!(result["isError"], false, "{result}");
@@ -2482,7 +2414,7 @@ async fn the_mcp_door_shares_the_cli_gates_and_reports_refusals_as_tool_errors()
     assert_eq!(panes[0]["id"], child);
 
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "SessionStart", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "SessionStart", None);
     let prompted = mcp_call(
         r.addr,
         &token,
@@ -2493,7 +2425,7 @@ async fn the_mcp_door_shares_the_cli_gates_and_reports_refusals_as_tool_errors()
     assert_eq!(prompted["isError"], false, "{prompted}");
     assert_eq!(
         prompted["structuredContent"]["status_source"], "hooks-full",
-        "grok maps four events: {prompted}"
+        "codex maps its lifecycle events: {prompted}"
     );
 
     let mut saw_prompt = false;
@@ -2613,7 +2545,7 @@ async fn a_child_pane_keeps_its_reporting_tools_consent_or_not() {
         r.addr,
         &token,
         "pane_spawn",
-        serde_json::json!({"kind": "grok", "prompt": "child brief"}),
+        serde_json::json!({"kind": "opencode", "prompt": "child brief"}),
     )
     .await;
     assert_eq!(spawned["isError"], false, "{spawned}");
@@ -2855,7 +2787,7 @@ async fn a_spawned_pane_is_told_by_the_daemon_that_submit_is_its_end_of_turn() {
     let (_, body) = r
         .post_spawn(
             &parent_token,
-            serde_json::json!({"kind": "grok", "prompt": "work"}),
+            serde_json::json!({"kind": "codex", "prompt": "work"}),
         )
         .await;
     let child = body["session_id"].as_u64().unwrap() as u32;
@@ -3048,7 +2980,7 @@ async fn respawning_a_missionless_orchestration_child_is_refused_not_silently_or
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "the original mission"}),
+            serde_json::json!({"kind": "codex", "prompt": "the original mission"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -3133,7 +3065,7 @@ async fn a_parents_live_children_count_tracks_spawn_kill_and_respawn() {
     assert_eq!(count_of(pane.id), 0);
 
     let (status, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "a"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "a"}))
         .await;
     assert_eq!(status, 200, "body: {body}");
     let child_a: u32 = body["session_id"].as_u64().unwrap() as u32;
@@ -3159,7 +3091,7 @@ async fn a_parents_live_children_count_tracks_spawn_kill_and_respawn() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "b again"}),
+            serde_json::json!({"kind": "codex", "prompt": "b again"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -3216,7 +3148,7 @@ async fn pane_kill_takes_the_child_out_of_the_roster() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "work"}),
+            serde_json::json!({"kind": "codex", "prompt": "work"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -3260,7 +3192,7 @@ async fn the_switch_is_off_until_set_and_gates_every_spawn() {
     let pane = r.pane();
     let token = r.token_for(pane.id);
     let (status, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "hi"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "hi"}))
         .await;
     assert_eq!(status, 409, "body: {body}");
 
@@ -3280,14 +3212,14 @@ async fn two_prompts_in_a_row_reach_the_pane_as_two_prompts_not_one_merged_paste
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "b"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "b"}))
         .await;
     let child: u32 = body["session_id"].as_u64().unwrap() as u32;
 
     await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
 
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "SessionStart", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "SessionStart", None);
     for text in ["ALPHA-ONE", "BRAVO-TWO"] {
         let (status, body) = http_json(
             r.addr,
@@ -3302,9 +3234,9 @@ async fn two_prompts_in_a_row_reach_the_pane_as_two_prompts_not_one_merged_paste
 
     await_child_echo(&r.daemon, child, "ALPHA-ONE").await;
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "UserPromptSubmit", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "Stop", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "Stop", None);
     let mut lines: Vec<String>;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
@@ -3354,7 +3286,7 @@ async fn until_is_refused_by_name_on_every_door() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "b"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "b"}))
         .await;
     let child: u32 = body["session_id"].as_u64().unwrap() as u32;
 
@@ -3440,7 +3372,7 @@ async fn wait_returns_rows_in_turn() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "b"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "b"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
@@ -3608,7 +3540,7 @@ async fn a_row_a_wait_reserved_is_not_pasted() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "b"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "b"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
@@ -3665,12 +3597,15 @@ async fn hs_pane_wait_matches_the_tool() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "http"}),
+            serde_json::json!({"kind": "codex", "prompt": "http"}),
         )
         .await;
     let kid_http = body["session_id"].as_u64().unwrap() as u32;
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "mcp"}))
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "mcp"}),
+        )
         .await;
     let kid_mcp = body["session_id"].as_u64().unwrap() as u32;
 
@@ -3756,7 +3691,7 @@ async fn a_wait_timeout_on_a_working_child_is_not_an_error_and_names_the_next_ac
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "slow"}),
+            serde_json::json!({"kind": "codex", "prompt": "slow"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -3812,7 +3747,7 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "finish once",
                 "role": "temporary-review",
             }),
@@ -3971,7 +3906,7 @@ async fn reusable_children_survive_completed_handback_for_follow_up() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "stay open",
                 "reusable": true,
                 "role": "follow-up",
@@ -4011,7 +3946,7 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
         .post_spawn(
             &parent_token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "parent child",
                 "role": "parent-child",
             }),
@@ -4024,7 +3959,7 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
         .post_spawn(
             &child_token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "nested child",
                 "role": "nested-child",
             }),
@@ -4098,7 +4033,7 @@ async fn archived_inbox_rows_keep_codename_first_sender_labels() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "label me",
                 "role": "archived-review",
             }),
@@ -4159,7 +4094,7 @@ async fn partial_submits_collapse_into_one_wake_and_the_last_one_wins() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "fan out"}),
+            serde_json::json!({"kind": "codex", "prompt": "fan out"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -4224,7 +4159,7 @@ async fn a_turn_that_ends_without_a_submit_hands_the_parent_the_child_tail() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "one trivial question",
                 "role": "answerer",
             }),
@@ -4284,7 +4219,7 @@ async fn a_child_that_submits_still_delivers_exactly_one_result() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "one trivial question"}),
+            serde_json::json!({"kind": "codex", "prompt": "one trivial question"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -4327,7 +4262,7 @@ async fn a_turn_end_during_a_childs_startup_wakes_nobody() {
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "one trivial question",
                 "role": "answerer",
             }),
@@ -4375,7 +4310,7 @@ async fn child_showing(r: &Rig, token: &str, line: &str) -> u32 {
     let (status, body) = r
         .post_spawn(
             token,
-            serde_json::json!({"kind": "grok", "prompt": "draw it", "role": "answerer"}),
+            serde_json::json!({"kind": "codex", "prompt": "draw it", "role": "answerer"}),
         )
         .await;
     assert_eq!(status, 200, "spawn body: {body}");
@@ -4501,7 +4436,7 @@ async fn a_no_handback_body_falls_back_to_the_screen_tail_without_a_last_message
     let pane = r.pane();
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
-    let kid = child_showing(&r, &token, "GROK-SCREEN-TAIL-MARKER").await;
+    let kid = child_showing(&r, &token, "CODEX-SCREEN-TAIL-MARKER").await;
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
 
     apply_hook_event(r._state.path(), kid, "Stop").await;
@@ -4510,7 +4445,7 @@ async fn a_no_handback_body_falls_back_to_the_screen_tail_without_a_last_message
 
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert!(
-        acc.contains("GROK-SCREEN-TAIL-MARKER"),
+        acc.contains("CODEX-SCREEN-TAIL-MARKER"),
         "the screen tail lands in the body: {acc:?}"
     );
     assert!(
@@ -4527,7 +4462,7 @@ async fn killing_a_child_closes_its_delegation_as_cancelled_not_failed() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
@@ -4603,7 +4538,7 @@ async fn parent_with_one_child(r: &Rig) -> (u32, u32) {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "role": "worker"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "role": "worker"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -4751,7 +4686,7 @@ async fn a_daemon_restart_closes_the_delegations_it_was_watching() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
     assert_eq!(
@@ -4973,7 +4908,7 @@ async fn a_hook_bearing_child_that_hands_nothing_back_is_reported_exactly_once()
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "role": "answerer"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "role": "answerer"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -5016,7 +4951,7 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "go", "role": "answerer"}),
+            serde_json::json!({"kind": "codex", "prompt": "go", "role": "answerer"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -5083,7 +5018,7 @@ async fn a_silent_child_is_flagged_stalled_once_and_the_flag_clears_itself() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
     await_child_echo(&r.daemon, kid, "FIXTURE-READY").await;
@@ -5259,7 +5194,7 @@ async fn a_delegations_state_and_its_parents_waiting_count_reach_the_renderer() 
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "SECRET-BRIEF sweep the docs", "role": "docs-sweep"}),
+            serde_json::json!({"kind": "codex", "prompt": "SECRET-BRIEF sweep the docs", "role": "docs-sweep"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -5333,7 +5268,7 @@ async fn a_codename_survives_the_first_prompt() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "sweep the docs"}),
+            serde_json::json!({"kind": "codex", "prompt": "sweep the docs"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -5372,90 +5307,6 @@ async fn a_codename_survives_the_first_prompt() {
 }
 
 #[tokio::test]
-async fn delegation_info_carries_owed_provisional_and_hold_reason() {
-    let _guard = serial().await;
-    let r = rig("delegation-owed").await;
-    let pane = r.pane();
-    let token = r.token_for(pane.id);
-    r.daemon.orchestration_set(true).unwrap();
-
-    let (status, body) = r
-        .post_spawn(
-            &token,
-            serde_json::json!({"kind": "cursor", "prompt": "sweep the tree", "role": "sweeper"}),
-        )
-        .await;
-    assert_eq!(status, 200, "body: {body}");
-    let kid = body["session_id"].as_u64().unwrap() as u32;
-
-    let carried = info_of(&r.daemon, kid)
-        .delegation
-        .expect("a spawned child carries its delegation");
-    assert_eq!(carried.inbox_owed, 0);
-    assert_eq!(carried.inbox_provisional, 0);
-    assert_eq!(carried.last_result_corrected_by, None);
-    assert_eq!(
-        carried.capability_note.as_deref(),
-        Some(
-            "cursor: needs-input not reported by this provider; cursor has no turn-end \
-             continuation; results wait for its next idle; cursor has no handback-only launch \
-             rule configured; pane_submit follows its approval mode"
-        )
-    );
-    assert_eq!(
-        carried.hold_reason, None,
-        "with nothing owed there is no hold to name"
-    );
-
-    let outcome = r
-        .daemon
-        .orchestrate_submit(
-            kid,
-            houston_core::orchestrate::Submission {
-                body: "swept 12 files, all clean".to_string(),
-                summary: Some("sweep done".to_string()),
-                artifacts: Vec::new(),
-                request_id: None,
-            },
-        )
-        .unwrap();
-    assert_eq!(outcome.reason, None);
-    let owed = info_of(&r.daemon, kid)
-        .delegation
-        .expect("a spawned child carries its delegation");
-    assert_eq!(
-        owed.inbox_owed, 1,
-        "the stored result is owed until a door carries it"
-    );
-    assert_eq!(owed.inbox_provisional, 0);
-    assert_eq!(owed.last_result_corrected_by, None);
-    assert_eq!(
-        owed.hold_reason.as_deref(),
-        Some(
-            "result staged: waiting for quiet settle (15000 ms of a still screen with no running \
-             descendants); no lifecycle event received from cursor hooks since spawn"
-        ),
-        "a child whose hooks never reported settles on a quiet screen, and the card says so in the daemon's words"
-    );
-
-    let (status, body) = r
-        .post_spawn(
-            &token,
-            serde_json::json!({"kind": "claude", "prompt": "watch the logs"}),
-        )
-        .await;
-    assert_eq!(status, 200, "body: {body}");
-    let hooks = body["session_id"].as_u64().unwrap() as u32;
-    assert_eq!(
-        info_of(&r.daemon, hooks)
-            .delegation
-            .expect("a spawned child carries its delegation")
-            .capability_note,
-        None
-    );
-}
-
-#[tokio::test]
 async fn a_role_is_unique_among_live_children_and_freed_when_one_dies() {
     let _guard = serial().await;
     let r = rig("delegation-roles").await;
@@ -5466,7 +5317,7 @@ async fn a_role_is_unique_among_live_children_and_freed_when_one_dies() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "review it", "role": "Reviewer"}),
+            serde_json::json!({"kind": "codex", "prompt": "review it", "role": "Reviewer"}),
         )
         .await;
     assert_eq!(status, 200, "body: {body}");
@@ -5481,7 +5332,7 @@ async fn a_role_is_unique_among_live_children_and_freed_when_one_dies() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "x", "role": "code review"}),
+            serde_json::json!({"kind": "codex", "prompt": "x", "role": "code review"}),
         )
         .await;
     assert_eq!(status, 409, "body: {body}");
@@ -5498,7 +5349,7 @@ async fn a_role_is_unique_among_live_children_and_freed_when_one_dies() {
     let (status, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "x", "role": "REVIEWER"}),
+            serde_json::json!({"kind": "codex", "prompt": "x", "role": "REVIEWER"}),
         )
         .await;
     assert_eq!(status, 409, "body: {body}");
@@ -5511,7 +5362,7 @@ async fn a_role_is_unique_among_live_children_and_freed_when_one_dies() {
         let (status, body) = r
             .post_spawn(
                 &token,
-                serde_json::json!({"kind": "grok", "prompt": "x", "role": "reviewer"}),
+                serde_json::json!({"kind": "codex", "prompt": "x", "role": "reviewer"}),
             )
             .await;
         if status == 200 {
@@ -5772,7 +5623,7 @@ async fn a_cross_workspace_handback_carries_artifacts_and_refuses_one_outside_th
         .post_spawn(
             &token,
             serde_json::json!({
-                "kind": "grok",
+                "kind": "codex",
                 "prompt": "write the report",
                 "target_workspace": target.path().display().to_string(),
             }),
@@ -5858,7 +5709,7 @@ async fn send_keys_reaches_a_blocked_pane_that_prompt_refuses() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
@@ -5960,7 +5811,10 @@ async fn pane_spawn_is_advertised_only_while_it_could_be_used() {
     assert!(listing_says(&tools).contains("1 of 1 child slots free"));
 
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "opencode", "prompt": "go"}),
+        )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
@@ -6013,7 +5867,7 @@ async fn a_re_prompted_done_child_reads_working_again_and_hands_back_twice() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "first task", "role": "reused", "reusable": true}),
+            serde_json::json!({"kind": "codex", "prompt": "first task", "role": "reused", "reusable": true}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -6101,7 +5955,7 @@ async fn prompting_a_cancelled_child_is_refused_by_state() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     let (_, body) = r
-        .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
     r.daemon.orchestrate_kill(pane.id, kid, false).unwrap();
@@ -6161,7 +6015,7 @@ async fn a_child_that_runs_a_background_subagent_costs_its_parent_one_row() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "delegate it", "role": "answerer"}),
+            serde_json::json!({"kind": "codex", "prompt": "delegate it", "role": "answerer"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -6505,7 +6359,7 @@ async fn an_internal_prompt_does_not_rename_the_pane_or_bump_the_round() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "delegate it", "role": "answerer"}),
+            serde_json::json!({"kind": "codex", "prompt": "delegate it", "role": "answerer"}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -8813,60 +8667,6 @@ async fn a_continued_stop_moves_nothing_downstream_with_a_grandparent() {
 }
 
 #[tokio::test]
-async fn door2_is_off_for_providers_without_a_verified_shape() {
-    let _guard = serial().await;
-    let r = rig("door2-unverified-provider").await;
-    let pane = r.pane();
-    let token = r.token_for(pane.id);
-    r.daemon.orchestration_set(true).unwrap();
-    let (_, body) = r
-        .post_spawn(
-            &token,
-            serde_json::json!({"kind": "claude", "prompt": "brief"}),
-        )
-        .await;
-    let kid = body["session_id"].as_u64().unwrap() as u32;
-    r.daemon
-        .orchestrate_submit(kid, "OFF-DOOR2 the task is done".to_string().into())
-        .unwrap();
-    apply_hook_event(r._state.path(), kid, "Stop").await;
-
-    let home = tempfile::tempdir().unwrap();
-    let mcp_url = format!("http://127.0.0.1:{}/mcp", r.addr.port());
-    let run = run_stop_hook(
-        home.path(),
-        pane.id,
-        Some("grok"),
-        &mcp_url,
-        &token,
-        r#"{"stop_hook_active":false}"#,
-    )
-    .await;
-    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
-    assert_eq!(
-        run.stdout, "",
-        "no verified shape, no block: {:?}",
-        run.stdout
-    );
-    assert!(
-        run.stderr.contains("Grok") && run.stderr.contains("door 3"),
-        "the reason names the provider and where the rows go: {:?}",
-        run.stderr
-    );
-    let drop = helper_drop(home.path());
-    assert!(
-        !drop.stop_continued,
-        "an unverified provider never continues a stop: {drop:?}"
-    );
-    let rows = r.daemon.inbox_rows_for_test(pane.id);
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(
-        rows[0].delivered_at.is_none(),
-        "the row stays eligible for another door: {rows:?}"
-    );
-}
-
-#[tokio::test]
 async fn stop_hook_latency_under_load() {
     let _guard = serial().await;
     let r = rig("door2-latency").await;
@@ -9674,7 +9474,7 @@ async fn k1_hook_transition_latency_behind_four_concurrent_spawns() {
             daemon
                 .orchestrate_spawn_with_options(
                     parent.id,
-                    proto::AgentKind::Grok,
+                    proto::AgentKind::Codex,
                     None,
                     None,
                     format!("measure spawn {index}").into(),
@@ -10361,7 +10161,7 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     let (_, second) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"work","role":"unsupported","reusable":true}),
+            serde_json::json!({"kind":"opencode","prompt":"work","role":"unsupported","reusable":true}),
         )
         .await;
     let unsupported = second["session_id"].as_u64().unwrap() as u32;
@@ -10473,7 +10273,7 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     let resumed = entries.iter().find(|e| e["role"] == "resumable").unwrap();
     let ended = entries.iter().find(|e| e["role"] == "unsupported").unwrap();
     assert_eq!(resumed["resumed"], true);
-    assert_eq!(ended["provider"], "grok");
+    assert_eq!(ended["provider"], "opencode");
     assert_eq!(ended["resumed"], false);
     assert_eq!(ended["reason"], "provider without resume");
     assert_eq!(resumed["reason"], "resumed");
@@ -10697,7 +10497,6 @@ async fn k3_tool_boundary_writes_drop_before_query_and_skips_leaf_query() {
             .env("HOME", home.path())
             .env("HOUSTON_CHANNEL", "k3hook")
             .env("TR_SESSION", "99")
-            .env_remove("GROK_SESSION_ID")
             .env("HOUSTON_TOOL_BOUNDARY_CONTEXT", &signal)
             .env("HOUSTON_MCP_URL", format!("http://{addr}/mcp"))
             .env("HOUSTON_MCP_TOKEN", "fixture")
@@ -10882,14 +10681,14 @@ async fn result_archive_retains_full_body_artifacts_and_scope_after_child_close(
         .post_spawn(
             &r.token_for(parent.id),
             serde_json::json!({
-                "kind":"grok", "prompt":"review", "role":"reviewer", "reusable":true,
+                "kind":"codex", "prompt":"review", "role":"reviewer", "reusable":true,
             }),
         )
         .await;
     assert_eq!(status, 200, "{spawned}");
     let child = spawned["session_id"].as_u64().unwrap() as u32;
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "UserPromptSubmit", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
     let artifact = r.ws_dir.join("review.txt");
     std::fs::write(&artifact, "review evidence").unwrap();
     let body = "Complete result: ".to_string() + &"界".repeat(700);
@@ -10919,7 +10718,7 @@ async fn result_archive_retains_full_body_artifacts_and_scope_after_child_close(
     assert_eq!(staged.body, body);
     assert!(staged.ready_at.is_none() && staged.delivered_at.is_none());
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "Stop", None);
+        .handle_hook_from(child, proto::AgentKind::Codex, "Stop", None);
     r.daemon.orchestrate_kill(parent.id, child, false).unwrap();
     assert!(!r.daemon.list().iter().any(|info| info.id == child));
     let (archived, _) = k4_results_over_ws(r.addr, parent.id).await;
@@ -10968,7 +10767,7 @@ async fn k4_latest_results_are_parent_scoped_bounded_read_only_and_durable() {
         .post_spawn(
             &r.token_for(parent.id),
             serde_json::json!({
-                "kind": "grok", "prompt": "review", "role": "reviewer", "reusable": true
+                "kind": "codex", "prompt": "review", "role": "reviewer", "reusable": true
             }),
         )
         .await;
@@ -11286,7 +11085,7 @@ async fn k8_spawn_returns_warning_without_operator_row() {
     let (_, first) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"one","reusable":true}),
+            serde_json::json!({"kind":"codex","prompt":"one","reusable":true}),
         )
         .await;
     assert_eq!(first["effort"], "CLI default");
@@ -11294,7 +11093,7 @@ async fn k8_spawn_returns_warning_without_operator_row() {
     let (_, second) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind":"grok","prompt":"two","reusable":true,"effort":"medium"}),
+            serde_json::json!({"kind":"codex","prompt":"two","reusable":true,"effort":"medium"}),
         )
         .await;
     assert_eq!(second["effort"], "medium");
@@ -11358,7 +11157,7 @@ async fn k6_mcp_spawn_warning_and_submit_default_are_visible() {
         r.addr,
         &token,
         "pane_spawn",
-        serde_json::json!({"kind":"grok","prompt":"one","reusable":true}),
+        serde_json::json!({"kind":"codex","prompt":"one","reusable":true}),
     )
     .await;
     let child = first["structuredContent"]["session"].as_u64().unwrap() as u32;
@@ -11366,7 +11165,7 @@ async fn k6_mcp_spawn_warning_and_submit_default_are_visible() {
         r.addr,
         &token,
         "pane_spawn",
-        serde_json::json!({"kind":"grok","prompt":"two","reusable":true}),
+        serde_json::json!({"kind":"codex","prompt":"two","reusable":true}),
     )
     .await;
     assert_eq!(
@@ -11509,11 +11308,7 @@ async fn provider_failure_retains_temporary_child_and_notifies_once() {
     r.daemon.orchestration_set(true).unwrap();
     let token = r.token_for(parent.id);
     r.daemon.set_orchestration_caps(4, 1).unwrap();
-    for (provider, event) in [
-        ("claude", "StopFailure"),
-        ("grok", "StopFailure"),
-        ("opencode", "session.error"),
-    ] {
+    for (provider, event) in [("claude", "StopFailure"), ("opencode", "session.error")] {
         let (status, spawned) = r
             .post_spawn(&token, serde_json::json!({"kind":provider,"prompt":"work"}))
             .await;
@@ -11646,7 +11441,7 @@ async fn workspace_info_reports_bounded_local_provider_catalog() {
     assert_eq!(info["isError"], false, "{info}");
     let info = &info["structuredContent"];
     let providers = info["providers"].as_array().unwrap();
-    assert_eq!(providers.len(), 7);
+    assert_eq!(providers.len(), 5);
     assert!(info.get("routing").is_some());
     for provider in providers {
         assert!(provider["installed"].is_boolean());
@@ -11782,7 +11577,8 @@ async fn concurrent_spawn_retries_act_once_and_keys_are_scoped_to_the_caller() {
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
     let token = r.token_for(parent.id);
-    let request = serde_json::json!({"kind":"grok","prompt":"work","client_request_id":"same-key"});
+    let request =
+        serde_json::json!({"kind":"codex","prompt":"work","client_request_id":"same-key"});
     let (first, second) = tokio::join!(
         http_json(
             r.addr,
@@ -11811,7 +11607,7 @@ async fn concurrent_spawn_retries_act_once_and_keys_are_scoped_to_the_caller() {
             r.addr,
             &token,
             "pane_spawn",
-            serde_json::json!({"kind":"grok","prompt":"work","client_request_id":key}),
+            serde_json::json!({"kind":"codex","prompt":"work","client_request_id":key}),
         )
         .await;
         assert_eq!(refusal["isError"], true, "{refusal}");
@@ -11848,13 +11644,6 @@ async fn prompt_modes_deliver_steer_now_and_queue_at_turn_end() {
             "message.updated",
             "session.idle",
         ),
-        (
-            "cursor",
-            proto::AgentKind::Cursor,
-            "beforeSubmitPrompt",
-            "stop",
-        ),
-        ("grok", proto::AgentKind::Grok, "UserPromptSubmit", "Stop"),
     ] {
         let (status, spawned) = r
             .post_spawn(
@@ -11974,7 +11763,7 @@ async fn immediate_prompt_modes_preserve_operator_drafts_and_name_refusals() {
     assert_eq!(refusal["isError"], true);
     assert!(refusal.to_string().contains("invalid"));
     assert!(refusal.to_string().contains("queue, steer or restart"));
-    for provider in ["claude", "opencode", "cursor", "antigravity"] {
+    for provider in ["claude", "opencode", "antigravity"] {
         let (status, spawned) = r
             .post_spawn(
                 &token,
@@ -12006,10 +11795,8 @@ async fn restart_interrupts_before_delivery_and_waits_for_authoritative_idle() {
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
     let token = r.token_for(parent.id);
-    for (provider, kind, end, interrupt) in [
-        ("codex", proto::AgentKind::Codex, "Interrupt", 0x1b),
-        ("grok", proto::AgentKind::Grok, "StopCancelled", 0x03),
-    ] {
+    for (provider, kind, end, interrupt) in [("codex", proto::AgentKind::Codex, "Interrupt", 0x1b)]
+    {
         r.daemon
             .set_env_var_for_test("HOUSTON_TEST_RAW_PTY", Some("1"));
         let (status, spawned) = r
@@ -12773,14 +12560,7 @@ async fn completed_children_remain_manageable_when_spawning_is_disabled() {
 async fn worker_dialogue_reports_and_replies_cross_cli_mcp_without_completing_the_round() {
     let _guard = serial().await;
     // Real PTYs, simulated CLIs and authoritative lifecycle drops for every spawnable provider.
-    for provider in [
-        "claude",
-        "codex",
-        "antigravity",
-        "opencode",
-        "cursor",
-        "grok",
-    ] {
+    for provider in ["claude", "codex", "antigravity", "opencode"] {
         let r = rig("worker-dialogue").await;
         let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
         let parent = r.pane();
@@ -12796,7 +12576,6 @@ async fn worker_dialogue_reports_and_replies_cross_cli_mcp_without_completing_th
         let start = match kind {
             proto::AgentKind::Antigravity => "PreInvocation",
             proto::AgentKind::Opencode => "message.updated",
-            proto::AgentKind::Cursor => "beforeSubmitPrompt",
             _ => "UserPromptSubmit",
         };
         r.daemon.handle_hook_from(child, kind, start, None);
@@ -13521,7 +13300,6 @@ async fn input_policy_child(r: &Rig, parent: u32, provider: &str, mode: Option<b
     let start = match provider {
         "antigravity" => "PreInvocation",
         "opencode" => "message.updated",
-        "cursor" => "beforeSubmitPrompt",
         _ => "UserPromptSubmit",
     };
     r.daemon.handle_hook_from(
@@ -13583,42 +13361,21 @@ async fn input_policy_question(r: &Rig, child: u32, provider: &str, key: &str) {
 #[tokio::test]
 async fn input_policy_native_questions_and_unknown_blocks_stay_parent_owned() {
     let _guard = serial().await;
-    for provider in ["claude", "codex", "opencode", "antigravity", "grok"] {
+    for provider in ["claude", "codex", "opencode", "antigravity"] {
         let r = rig("input-native-parent-first").await;
         let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
         let parent = r.pane();
         r.daemon.orchestration_set(true).unwrap();
         apply_hook_event(r._state.path(), parent.id, "UserPromptSubmit").await;
         let child = input_policy_child(&r, parent.id, provider, None).await;
-        if provider == "grok" {
-            apply_drop(
-                r._state.path(),
-                houston_core::hook_drop::HookDrop {
-                    session: child,
-                    agent: Some(provider.into()),
-                    event: "Notification".into(),
-                    notification_type: Some("agent_needs_input".into()),
-                    ..Default::default()
-                },
-            )
-            .await;
-        } else {
-            input_policy_question(&r, child, provider, "native-q").await;
-        }
+        input_policy_question(&r, child, provider, "native-q").await;
         let input = input_policy_request(&r, child);
         assert_eq!(
             input.owner,
             proto::ChildInputOwner::Orchestrator,
             "{provider}"
         );
-        assert_eq!(
-            input.kind,
-            if provider == "grok" {
-                proto::ChildInputKind::Unclassified
-            } else {
-                proto::ChildInputKind::Question
-            }
-        );
+        assert_eq!(input.kind, proto::ChildInputKind::Question);
         assert!(input.id.starts_with(&format!("provider:{child}:")));
         assert_eq!(
             r.daemon.session_status(child).unwrap(),
@@ -14483,7 +14240,6 @@ async fn input_policy_acp_parent_turn_end_escalates_through_the_actual_stream() 
 
 async fn input_policy_permission(r: &Rig, child: u32, provider: &str, key: &str) {
     let (event, tool, notification) = match provider {
-        "grok" => ("Notification", None, Some("permission_prompt")),
         "antigravity" => ("PreToolUse", Some("ask_permission"), None),
         "opencode" => ("permission.asked", None, None),
         _ => ("PermissionRequest", Some("Bash"), None),
@@ -14515,7 +14271,6 @@ async fn input_policy_verified_denials_send_exact_bytes_once_and_wait_for_provid
     for (provider, expected) in [
         ("claude", b"\x1b".as_slice()),
         ("codex", b"\x1b".as_slice()),
-        ("grok", b"\x03".as_slice()),
         ("antigravity", b"n".as_slice()),
     ] {
         let r = rig("input-verified-deny").await;
@@ -14580,7 +14335,6 @@ async fn input_policy_verified_denials_send_exact_bytes_once_and_wait_for_provid
             .orchestrate_send_keys(parent.id, child, &["enter".into()])
             .is_err());
         let proof = match provider {
-            "grok" => "StopCancelled",
             "antigravity" => "PostToolUse",
             "codex" => "Interrupt",
             _ => "PermissionDenied",
@@ -15258,10 +15012,10 @@ async fn input_policy_generated_permission_identity_can_recur_after_provider_res
     let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
-    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let child = input_policy_child(&r, parent.id, "claude", None).await;
     let permission = || houston_core::hook_drop::HookDrop {
         session: child,
-        agent: Some("grok".into()),
+        agent: Some("claude".into()),
         event: "Notification".into(),
         notification_type: Some("permission_prompt".into()),
         ..Default::default()
@@ -15269,14 +15023,14 @@ async fn input_policy_generated_permission_identity_can_recur_after_provider_res
     apply_drop(r._state.path(), permission()).await;
     let first = input_policy_request(&r, child);
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "StopCancelled", None);
+        .handle_hook_from(child, proto::AgentKind::Claude, "Stop", None);
     assert!(info_of(&r.daemon, child)
         .delegation
         .unwrap()
         .input_request
         .is_none());
     r.daemon
-        .handle_hook_from(child, proto::AgentKind::Grok, "UserPromptSubmit", None);
+        .handle_hook_from(child, proto::AgentKind::Claude, "UserPromptSubmit", None);
     apply_drop(r._state.path(), permission()).await;
     let second = input_policy_request(&r, child);
     assert_ne!(
@@ -15945,7 +15699,7 @@ async fn provider_session_end_during_receipts_cannot_deliver_or_requeue_an_inten
         let _cleanup = SessionCleanup(r.daemon.clone());
         let parent = r.pane();
         r.daemon.orchestration_set(true).unwrap();
-        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        let child = input_policy_child(&r, parent.id, "codex", None).await;
         let barrier = InstructionReceiptBarrier::new(point);
         if let Some(cap) = partial {
             r.daemon.fail_next_stdin_write_after_for_test(child, cap);
@@ -15966,7 +15720,7 @@ async fn provider_session_end_during_receipts_cannot_deliver_or_requeue_an_inten
             r._state.path(),
             houston_core::hook_drop::HookDrop {
                 session: child,
-                agent: Some("grok".into()),
+                agent: Some("codex".into()),
                 event: "SessionEnd".into(),
                 ..Default::default()
             },
@@ -16013,7 +15767,7 @@ async fn a_matching_named_request_before_enter_preserves_exact_intent_adoption()
     let _cleanup = SessionCleanup(r.daemon.clone());
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
-    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let child = input_policy_child(&r, parent.id, "codex", None).await;
     let request = r.daemon.delegation_round_of(child).unwrap() + 1;
     let barrier = InstructionReceiptBarrier::new("instruction-before-enter");
     let writing = r.daemon.clone();
@@ -16046,7 +15800,7 @@ async fn a_matching_named_request_before_enter_preserves_exact_intent_adoption()
         r._state.path(),
         houston_core::hook_drop::HookDrop {
             session: child,
-            agent: Some("grok".into()),
+            agent: Some("codex".into()),
             event: "Stop".into(),
             ..Default::default()
         },
@@ -16075,7 +15829,7 @@ async fn explicit_close_cancels_before_reap_and_retains_retryable_ownership() {
         let _cleanup = SessionCleanup(r.daemon.clone());
         let parent = r.pane();
         r.daemon.orchestration_set(true).unwrap();
-        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        let child = input_policy_child(&r, parent.id, "codex", None).await;
         if staged {
             r.daemon
                 .orchestrate_submit(child, "retained handback".to_string().into())
@@ -16393,7 +16147,7 @@ async fn explicit_kill_cancels_before_signalling_the_live_child() {
     let _cleanup = SessionCleanup(r.daemon.clone());
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
-    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let child = input_policy_child(&r, parent.id, "codex", None).await;
     let barrier = InstructionReceiptBarrier::new("kill-admitted");
     let mut events = r.daemon.observe();
     let killing = r.daemon.clone();

@@ -53,15 +53,7 @@ exec cat
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in [
-            "claude",
-            "codex",
-            "agy",
-            "opencode",
-            "cursor-agent",
-            "grok",
-            "zcode",
-        ] {
+        for name in ["claude", "codex", "agy", "opencode", "zcode"] {
             let path = dir.join(name);
             std::fs::write(&path, FAKE_CLI).unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -2111,17 +2103,12 @@ async fn fresh_restore_preserves_typed_launch_choices_for_every_provider() {
         proto::AgentKind::Codex,
         proto::AgentKind::Antigravity,
         proto::AgentKind::Opencode,
-        proto::AgentKind::Cursor,
-        proto::AgentKind::Grok,
         proto::AgentKind::Zcode,
     ] {
         let model = (agent != proto::AgentKind::Zcode).then(|| "fixture-model".to_string());
         let effort = matches!(
             agent,
-            proto::AgentKind::Claude
-                | proto::AgentKind::Codex
-                | proto::AgentKind::Antigravity
-                | proto::AgentKind::Grok
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Antigravity
         )
         .then_some(proto::ChatEffort::High);
         let pane = daemon

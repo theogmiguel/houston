@@ -1,0 +1,11 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "modelName": "gemini-3.6-flash-medium",
+  "stepIdx": 6,
+  "toolCall": {
+    "name": "write_to_file",
+    "args": { "TargetFile": "/home/user/code/myproj/src/lib.rs" }
+  },
+  "_note": "field names from the Antigravity hooks documentation (write_to_file takes TargetFile and CodeContent; the content is omitted here); values are synthetic"
+}
