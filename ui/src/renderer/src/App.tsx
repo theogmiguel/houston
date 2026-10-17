@@ -205,11 +205,8 @@ import {
 } from "./keymap";
 import { prefixLayer } from "./prefixLayer";
 import { PrefixHint } from "./components/PrefixHint";
-import {
-  paletteNavActions,
-  type GridTarget,
-  type PaletteActions,
-} from "./components/commandRegistry";
+import type { GridTarget, PaletteActions } from "./components/commandRegistry";
+import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
