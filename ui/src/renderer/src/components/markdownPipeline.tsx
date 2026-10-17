@@ -142,7 +142,7 @@ export const MARKDOWN_CHAT_COMPONENTS: Components = {
   img: MarkdownChatImage
 }
 
-export type MarkdownVariant = 'editor' | 'chat' | 'panel'
+export type MarkdownVariant = 'editor' | 'chat' | 'panel' | 'report'
 
 export const MarkdownDocument = memo(function MarkdownDocument({
   source,
@@ -151,11 +151,11 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   source: string
   variant?: MarkdownVariant
 }): React.JSX.Element {
-  const chat = variant === 'chat'
+  const chat = variant === 'chat' || variant === 'report'
   return (
     <Prose
       variant={variant}
-      data-testid={variant === 'panel' ? 'panel-markdown-body' : chat ? 'chat-markdown-body' : 'editor-markdown-body'}
+      data-testid={variant === 'panel' || variant === 'report' ? `${variant}-markdown-body` : chat ? 'chat-markdown-body' : 'editor-markdown-body'}
     >
       <Markdown
         remarkPlugins={MARKDOWN_REMARK_PLUGINS}

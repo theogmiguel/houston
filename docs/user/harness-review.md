@@ -61,6 +61,9 @@ and your decisions are kept per workspace and remain after Houston restarts.
   **Resolved**, and **Reopen** it to undo that. A later review does not raise a dismissed or
   resolved finding again unless it finds new evidence; when it does, the finding reopens and says
   so.
+- **Active** groups findings under **Needs a decision** (new and not seen) and **In progress**
+  (fixing or awaiting verification), highest confidence first. Expand a finding to read its
+  evidence and recommendation.
 - **Active**, **Resolved** and **Dismissed** filter findings by their current phase. An open
   finding can become a linked task; a fixing finding opens that task; a landed task can be
   checked with **Verify now**. Use **Resolve** or **Keep open** when a finding is **Not seen**.

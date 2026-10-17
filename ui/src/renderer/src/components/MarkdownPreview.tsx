@@ -69,7 +69,7 @@ export function MarkdownPreview({
   variant = 'editor'
 }: {
   source: string
-  variant?: 'editor' | 'chat'
+  variant?: 'editor' | 'chat' | 'report'
 }): React.JSX.Element {
   const [mod, setMod] = useState<PipelineModule | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -97,11 +97,11 @@ export function MarkdownPreview({
     )
   }, [attempt, mod])
 
-  const chat = variant === 'chat'
+  const chat = variant !== 'editor'
   return (
     <MarkdownPreviewViewport
       enabled={!chat}
-      data-testid={chat ? 'chat-preview-markdown' : 'editor-preview-markdown'}
+      data-testid={`${variant}-preview-markdown`}
     >
       {error ? (
         <PreviewStatus

@@ -59,7 +59,7 @@ describe('Harness report and history layout', () => {
     })
 
     const card = container.querySelector('[data-testid="harness-report"]')
-    const preview = card?.querySelector('[data-testid="chat-preview-markdown"]')
+    const preview = card?.querySelector('[data-testid="report-preview-markdown"]')
     expect(preview).not.toBeNull()
     expect(preview?.querySelector('h1')?.textContent).toBe('Review report')
     expect(container.querySelector('[data-testid="editor-preview-markdown"]')).toBeNull()

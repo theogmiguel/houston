@@ -3,9 +3,9 @@ import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessReport, HarnessReportError } from '../../houston/useHarness'
 import { MarkdownPreview } from '../MarkdownPreview'
 import { Select } from '../ui/Select'
-import { DetailState, FeedbackBanner } from '../ui/navPrimitives'
-import { InlineCluster, ReportFrame, CenteredEmptyNote } from '../ui/navText'
-import { FieldActionButton } from '../ui/formPrimitives'
+import { ReportFrame, CenteredEmptyNote } from '../ui/navText'
+import { SettingsToolbar } from '../ui/SettingsToolbar'
+import { Button, Notice, Text } from '../ui'
 import { formatDay, formatWindow } from './harnessFormat'
 
 export function HarnessReportView({
@@ -42,49 +42,35 @@ export function HarnessReportView({
   const shown = report?.reviewId === current.id ? report : null
   const dir = current.run_dir
   return (
-    <div className="grid gap-[var(--space-2-5)]">
-      <InlineCluster>
+    <div className="grid gap-[var(--space-3)]">
+      <SettingsToolbar actions={<>
+        <Button variant="secondary" onClick={() => onOpenFile(`${dir}/report.md`)}>Open report.md</Button>
+        <Button variant="ghost" onClick={() => onOpenFile(`${dir}/findings.json`)}>Open findings.json</Button>
+        <Button variant="ghost" onClick={() => onReveal(`${dir}/report.md`)}>Show in folder</Button>
+      </>}>
         <Select
           aria-label="Review"
           value={String(current.id)}
           options={published.map((r) => ({
             value: String(r.id),
-            label: `${formatDay(r.started_at_ms)} · ${formatWindow(r.window)}`
+            label: `Review #${r.id} · ${formatDay(r.started_at_ms)} · ${formatWindow(r.window)}`
           }))}
           onChange={(v) => setSelected(Number(v))}
         />
-        <FieldActionButton onClick={() => onOpenFile(`${dir}/report.md`)}>
-          Open report.md
-        </FieldActionButton>
-        <FieldActionButton onClick={() => onOpenFile(`${dir}/findings.json`)}>
-          Open findings.json
-        </FieldActionButton>
-        <FieldActionButton onClick={() => onReveal(`${dir}/report.md`)}>
-          Show in folder
-        </FieldActionButton>
-      </InlineCluster>
+      </SettingsToolbar>
       {shown?.truncated && (
-        <FeedbackBanner tone="warning">
-          This report is longer than Houston shows here; open report.md to read all of it.
-        </FeedbackBanner>
+        <Notice tone="warn">This report is longer than Houston shows here; open report.md to read all of it.</Notice>
       )}
       {shown ? (
         <ReportFrame data-testid="harness-report">
-          <MarkdownPreview source={shown.markdown} variant="chat" />
+          <MarkdownPreview source={shown.markdown} variant="report" />
         </ReportFrame>
       ) : reportError?.reviewId === current.id ? (
-        <DetailState
-          heading="Could not load the report"
-          detail={reportError.message}
-          tone="error"
-          action={
-            <FieldActionButton onClick={() => onLoadReport(current.id)}>
-              Retry
-            </FieldActionButton>
-          }
-        />
+        <Notice tone="danger" detail={reportError.message} action={{ label: 'Retry', onClick: () => onLoadReport(current.id) }}>
+          Could not load the report.
+        </Notice>
       ) : (
-        <DetailState heading="Loading the report" detail={`Reading ${dir}/report.md`} />
+        <Text as="p" role="status" aria-busy="true" tone="muted" flush>Loading the report…</Text>
       )}
     </div>
   )
