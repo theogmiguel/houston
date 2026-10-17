@@ -434,6 +434,7 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   mcp_state: 'drop',
   agent_hooks: 'drop',
   agent_profile_state: 'drop',
+  agent_accounts: 'drop',
   routines: 'drop',
   routine_refused: 'drop',
   routine_runs: 'drop',

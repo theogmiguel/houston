@@ -356,7 +356,7 @@ every refusal names the setting.
 
 | Message | Fields | Reply |
 |---|---|---|
-| `agent_hooks` | — | `agent_hooks` (direct) — what is installed per provider, and the exact file each writes |
+| `agent_hooks` | — | `agent_hooks` then `agent_accounts` (direct) — what is installed per provider, the exact file each writes, and the identity each CLI is signed in to |
 | `agent_hooks_set` | `provider: AgentKind`, `enabled` | `agent_hooks` (bcast). A failed install does not flip the setting; the refusal rides that provider's row |
 
 ### Voice
@@ -499,6 +499,7 @@ every refusal names the setting.
 | `skill_sync` | `tools: SkillToolState[]`, `pushes: SkillPushRecord[]`, `auto_push_enabled` | direct reply to `skill_sync`; bcast after a push, undo or auto-push toggle |
 | `mcp_state` | `source: McpServer[]`, `source_path`, `tools: McpToolState[]`, `results: McpSyncResult[]`, `checks: [string, McpConnectionCheck][]` | direct reply to `mcp_state`; bcast after sync/import/enable/upsert/remove/test |
 | `agent_hooks` | `providers: AgentHookState[]` | direct reply to `agent_hooks`; bcast after `agent_hooks_set` |
+| `agent_accounts` | `accounts: AgentAccountIdentity[]` | direct reply to `agent_hooks`, after it. One row per CLI account directory: the default account (`profile_id` absent) and each Claude and Codex profile. Each row has `sign_in` (`signed_in`\|`signed_out`\|`unknown`), `identity?` (email or `API key`), `detail?` (organization or plan), `providers` (OpenCode provider names), `reason?` and `verified` (false when the CLI's storage location is unconfirmed). Only identifiers are read from CLI files, never tokens |
 | `agent_profile_state` | `profiles: AgentProfile[]`, `active: AgentProfileActive[]` | direct reply to `agent_profile_list`; bcast after any profile change |
 | `routines` | `routines: Routine[]`, `running: u32[]` (routine ids whose run is in flight), `engine_refusals: RoutineEngineRefusal[]` | direct reply to `routine_list`; bcast after any routine mutation and on every run start/end |
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
@@ -1337,7 +1338,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 144 | **Cursor and Grok are recognised only.** `AgentKind` keeps `cursor` and `grok` so stored rows and detected processes still deserialize, but no request launches them: `session_create`, `session_respawn`, restore, `pane_spawn`, `task_start`, routine engines and task providers refuse them by name (`grok is no longer a supported provider: Houston recognises it but cannot launch it; close this pane or choose claude, codex, antigravity, opencode or zcode`). The spawnable set is `claude`, `codex`, `antigravity`, `opencode` and `zcode`; `agent_hook` accepts no Cursor or Grok slug. No type shape changes. |
+| 144 | **Cursor and Grok are recognised only.** `AgentKind` keeps `cursor` and `grok` so stored rows and detected processes still deserialize, but no request launches them: `session_create`, `session_respawn`, restore, `pane_spawn`, `task_start`, routine engines and task providers refuse them by name (`grok is no longer a supported provider: Houston recognises it but cannot launch it; close this pane or choose claude, codex, antigravity, opencode or zcode`). The spawnable set is `claude`, `codex`, `antigravity`, `opencode` and `zcode`; `agent_hook` accepts no Cursor or Grok slug. No type shape changes. `agent_hooks` is also answered with `agent_accounts`, the identity each CLI is signed in to (`AgentAccountIdentity`, `AgentSignIn`), read from the CLI's local config files on demand. |
 | 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |

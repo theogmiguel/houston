@@ -174,6 +174,46 @@ pub struct AgentProfileActive {
     pub id: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSignIn {
+    SignedIn,
+    SignedOut,
+    /// The CLI's sign-in storage cannot be read, or its absence proves nothing.
+    Unknown,
+}
+
+/// The identity one CLI is signed in to for one account directory. Carries only an
+/// identifier (email, plan, provider names), never a credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct AgentAccountIdentity {
+    pub agent: AgentKind,
+    /// `None` is the default account; otherwise the `AgentProfile` id.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub profile_id: Option<u32>,
+    pub sign_in: AgentSignIn,
+    /// Email address, or "API key" when the CLI authenticates with a key.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub identity: Option<String>,
+    /// Organization or plan next to the identity.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub detail: Option<String>,
+    /// Provider names the CLI holds credentials for (OpenCode).
+    #[serde(default)]
+    pub providers: Vec<String>,
+    /// Why the state is not `signed_in`: the file read, or what went wrong reading it.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub reason: Option<String>,
+    /// False when the storage location was not confirmed against the CLI's own source or docs.
+    pub verified: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -5234,6 +5274,10 @@ pub enum ServerMsg {
     AgentProfileState {
         profiles: Vec<AgentProfile>,
         active: Vec<AgentProfileActive>,
+    },
+    /// Sent after `AgentHooks` on every Settings check.
+    AgentAccounts {
+        accounts: Vec<AgentAccountIdentity>,
     },
 
     Routines {

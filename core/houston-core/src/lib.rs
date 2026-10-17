@@ -14,6 +14,7 @@ pub mod checkout_watch;
 pub mod checkpoints;
 pub mod claude_hooks;
 pub mod claude_turns;
+pub mod cli_accounts;
 pub mod cli_probe;
 pub mod codex_pane;
 pub mod composer_ready;
