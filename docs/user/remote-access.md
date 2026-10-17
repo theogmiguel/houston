@@ -4,23 +4,41 @@ Remote access lets you follow and answer your panes from a phone or another comp
 paired device lists root agents and ordinary terminals with their reported status and
 shows each pane as a conversation: your prompts, the agent's replies, its tool steps, and
 the questions and permission requests it is waiting on, which you answer with a tap. The
-pane menu offers **View screen**, and you can type a message or press keys such as
-Enter, Esc, the arrow keys, Tab and Ctrl+C. Optionally, Houston sends a push notification
+pane's **View as terminal** switch shows its screen instead, and you can type a message or
+press keys such as Enter, Esc, the arrow keys, Tab and Ctrl+C. Optionally, Houston sends a push notification
 through [ntfy](https://ntfy.sh) when an agent has been waiting for input for a while.
 
 Remote access is off by default. While it is off, nothing listens and nothing is sent.
 
 ## What a paired device can do
 
-A paired device can read the screen of any pane and type into any pane, including shell
-panes. That is as much access as a shell on this computer as your user: treat a paired
-device, and the link it was paired with, like an unlocked terminal. A device cannot pair
-other devices, change settings, open or close panes. Revoke a device you lose straight away.
+Every paired device has an access tier. **Drive** is the default and what devices had before
+tiers existed. Change a device's tier in **Settings ▸ Phone & remote access ▸ Paired devices**;
+it takes effect on the device's next request, and the phone shows its tier under
+**Computer ▸ Access**.
 
-**View screen**, in a pane's **⋯** menu, is a read-only text snapshot of the last 40 lines that refreshes while the
-sheet is open. Its key row sends input to the pane; the snapshot never resizes or takes
-over the pane on your desktop. **Computer ▸ Screen text size** changes its text size on
-this device.
+| Tier | The device can |
+| --- | --- |
+| Observe | Read panes, changes, pull requests, tasks and usage. |
+| Drive | Observe, plus type into panes, press keys, answer requests and dictate. |
+| Manage | Drive, plus start, rename, respawn, sleep, wake and close panes. |
+
+At **Drive** a device can type into any pane, including shell panes. That is as much access
+as a shell on this computer as your user: treat a paired device, and the link it was paired
+with, like an unlocked terminal. A device cannot pair other devices, change settings or turn
+on auto-approve at any tier. Revoke a device you lose straight away.
+
+The phone shows only what its tier allows. Below **Manage**, the pane menu leaves out the
+manage actions and says which tier the phone has and where to change it. The computer
+enforces the tier on every request, so an older page cannot exceed it.
+
+**View as terminal**, in the pane bar and the pane's **⋯** menu, replaces the conversation with a
+read-only text snapshot of the last 40 lines. It refreshes only while it is visible, and its
+key row sends input to the pane; the snapshot never resizes or takes over the pane on your
+desktop. **Computer ▸ Screen text size** and the **A−** and **A+** buttons above the screen change
+its text size on this device. A pane opens on its screen when its conversation is empty: a
+shell, an agent whose CLI reported nothing, or one waiting on a request it did not describe.
+Switch back with the same button.
 
 The conversation comes only from what each agent CLI reports through its hooks while remote
 access is on: prompts, final replies, questions and their options, and for each permission
@@ -28,7 +46,7 @@ request or tool step the tool's name and one target (a command, file path, URL o
 Secrets that match Houston's credential patterns are masked, long text is shortened, and
 nothing of it is saved: it is kept in memory and is gone when the daemon stops. Turning remote
 access off clears it, and nothing is collected while it is off, so activity from before
-remote access was last turned on is only in **View screen**.
+remote access was last turned on is only in **View as terminal**.
 Closing or respawning a pane clears its old conversation and pending notifications.
 An exited pane keeps its conversation until it is closed or respawned.
 
@@ -177,20 +195,28 @@ site data) asks to be paired again. An expired or used code explains how to get 
 
 ## Answer an agent
 
-The phone has four tabs:
+The phone has five tabs:
 
 - **Inbox** shows one request at a time. Swipe or use the arrows to move between requests.
   When nothing needs you, it shows working panes and recent replies.
 - **Panes** groups tiles by the grids of the desktop application, in each workspace, with
   waiting panes first, followed by working and idle panes. Each tile shows the agent's
-  provider and its latest step or reply. Tap a grid's name to collapse it; panes that are in
+  provider, its latest step or reply, and chips for its model, effort, context use (amber from
+  80%), branch or worktree, account and children waiting, when the computer reports them. Tap a grid's name to collapse it; panes that are in
   no grid are listed under **Not in a grid**. Workspace chips show counts and an amber dot
   when a pane there needs you. The workspace choice and collapsed grids are remembered on
   this device. Grids appear once the desktop application has connected to the daemon.
+  **New pane** appears on a **Manage** device: choose an agent that is installed here, a
+  workspace, and optionally a model, effort, account, worktree name and first prompt. The
+  new pane always asks before acting; auto-approve is set on the computer only.
+- **Workspace** shows one workspace at a time, chosen with the chip at the top: its branch,
+  open pull requests with their review and checks summary, open tasks, today's usage and the
+  5-hour and 7-day limit meters (amber from 80%). Each section is hidden when the computer
+  does not offer it.
 - **Activity** shows recent finishes, requests and answers across panes. Tap an entry to
   open its conversation near that event. Older entries may have left the conversation's
   bounded history. Computers without activity support show an availability message.
-- **Computer** shows the host, connection route and device name. Vibration, quick replies
+- **Computer** shows the host, connection route, device name and access tier. Vibration, quick replies
   and screen text size are device-local preferences, as are collapsed grids; notifications and remote access
   settings are configured on the computer.
 
@@ -204,7 +230,7 @@ computer is asleep. Live updates use a stream, with polling when the stream is u
 A permission request in **Inbox** shows the tool and its whole target with **Approve**
 and **Deny**, so you can answer without opening the pane. When Houston can show only part of
 the command, because it is very long or contains invisible formatting characters, the
-request offers **Open terminal** instead. This opens **View screen**; read the full
+request offers **View as terminal** instead. Read the full
 request on the computer if it is not all visible in the snapshot. Inside a pane, the
 request waiting on you is a card above the message box:
 
@@ -219,7 +245,7 @@ After a tap the card shows **Sent** and takes no further tap until the agent mov
 for an approved command can be when the command finishes. Houston answers by typing the same
 keys you would press in the terminal; when a key reaches the pane from the desktop or the key
 row after the request arrived, the card shows **Already answered in the terminal** and offers only
-**View screen**. If the request changed before your tap arrived, or remote access was
+**View as terminal**. If the request changed before your tap arrived, or remote access was
 turned off and on since the page loaded, Houston refuses the tap instead of answering the
 wrong request.
 
@@ -229,8 +255,9 @@ reviewing the full request, or deny from the phone.
 
 Cards you can answer with a tap are available for Claude Code permission requests and
 single questions with one answer. Questions with several parts or several answers, and
-requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a waiting card with
-**View screen** and the key row; replies and status still appear in their conversation.
+requests from Codex, OpenCode, Antigravity and ZCode, show a waiting card with
+the bottom of the screen, where the program's dialog sits, the key row and **View as terminal**; replies
+and status still appear in their conversation. A request the agent did not describe opens the terminal view.
 
 Each pane shows user messages, agent replies and a work log. Claude tool calls that fail
 remain in the log with a **failed** label and count toward the turn summary;
@@ -254,8 +281,25 @@ the send button becomes **Stop**: tap twice to send Esc. The conversation record
 this phone requested a stop; the agent's reported status determines whether it stopped.
 Messages typed while working go directly to the pane. The phone does not queue or steer
 messages. For a permission request, choose **Deny** first and then send your explanation;
-the computer cannot attach a typed reason to a denial. Pane renaming and focusing on the
-computer are available from the desktop application.
+the computer cannot attach a typed reason to a denial.
+
+Each pane has two tabs. **Conversation** is the feed above. **Changes** lists the files changed
+in the pane's checkout with their added and removed line counts; tap a file for its diff, with
+secrets masked and long lines scrolling sideways. It also shows the branch, how far it is ahead
+of or behind its upstream, and the pull request with its checks. The pane bar shows the
+provider version, model, effort and context use. Large lists and diffs are shortened and say so.
+
+The pane's **⋯** menu offers, by tier:
+
+- **Interrupt** sends Esc; **Force interrupt** sends Ctrl+C after a second tap (Drive).
+- **Commands** lists a short fixed set of slash commands for the pane's agent. A tap puts
+  the command in the message box without sending it (Drive).
+- **View as terminal**, **Show keys** and **Copy pane id**.
+- **Rename** (an empty name restores the default), **Respawn** or **Resume session**, **Sleep** and
+  **Wake**, and **Close pane…**, which asks for a second confirmation in the sheet (Manage).
+
+Features a computer's Houston is too old to offer, such as Changes or Workspace, are hidden
+rather than shown as errors.
 
 ## Dictate instead of typing
 
