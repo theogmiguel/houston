@@ -111,7 +111,7 @@ jobs:
           path: |
             core/target/ghostty-vt
             src-tauri/target/ghostty-vt
-          key: ghostty-vt-${{ matrix.arch }}-ubuntu-22.04-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+          key: ghostty-vt-${{ matrix.arch }}-ubuntu-22.04-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache

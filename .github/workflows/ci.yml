@@ -211,12 +211,13 @@ jobs:
         with:
           workspaces: core
       # Same pinned tarball + Zig build.rs step the release-linux bundle job
-      # caches, scoped to core/ only — src-tauri isn't built here.
+      # caches, scoped to core/ only — src-tauri isn't built here. build.rs keeps
+      # Zig's fetched packages in this directory too, so its hash is in the key.
       - name: Cache the pinned libghostty-vt source and Zig
         uses: actions/cache@v5
         with:
           path: core/target/ghostty-vt
-          key: ghostty-vt-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+          key: ghostty-vt-core-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
       - name: cargo fmt
         run: cargo fmt --all --check --manifest-path core/Cargo.toml
       - name: cargo clippy
@@ -284,11 +285,13 @@ jobs:
             core
             src-tauri
           key: linux-native-checks
+      # houston-core's build.rs resolves its cache next to the cargo target dir of
+      # the crate being built, which here is src-tauri/target.
       - name: Cache the pinned libghostty-vt source and Zig
         uses: actions/cache@v5
         with:
-          path: core/target/ghostty-vt
-          key: ghostty-vt-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+          path: src-tauri/target/ghostty-vt
+          key: ghostty-vt-src-tauri-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
       - uses: oven-sh/setup-bun@v2
       - name: Build renderer assets for native compilation
         working-directory: ui
