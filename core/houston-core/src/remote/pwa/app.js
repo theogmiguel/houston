@@ -25,6 +25,16 @@
   var STATES = { sleeping: "Sleeping", exited: "Exited", killed: "Killed", interrupted: "Interrupted" };
   var KINDS = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "OpenCode", zcode: "ZCode", custom: "Shell", ssh: "SSH" };
   var GLYPHS = { claude: 1, codex: 1, antigravity: 1, opencode: 1 };
+  // The context bar turns amber from here: the window is close enough to full that compacting is worth doing now.
+  var CONTEXT_WARN = 80;
+  // Slash commands each provider's TUI accepts, as a short fixed list; a tap fills the message box.
+  var COMMANDS = {
+    claude: ["/model", "/compact", "/clear", "/cost", "/context"],
+    codex: ["/model", "/compact", "/status", "/new"],
+    opencode: ["/models", "/compact", "/new"],
+    antigravity: ["/help", "/clear"],
+    zcode: ["/help", "/clear"]
+  };
   var KEYS = [
     ["Esc", ["esc"]], ["↑", ["up"]], ["↓", ["down"]], ["←", ["left"]], ["→", ["right"]], ["Tab", ["tab"]], ["⏎", ["enter"]], ["^C", ["ctrl+c"], true]
   ];
@@ -47,6 +57,9 @@
     square: ["r:5,5,14,14,1"], x: ["p:M18 6 6 18M6 6l12 12"], plus: ["p:M5 12h14M12 5v14"], term: ["r:3,3,18,18,2", "p:m7 9 3 3-3 3M13 15h4"],
     branch: ["p:M6 3v12", "c:18,6,3", "c:6,18,3", "p:M18 9a9 9 0 0 1-9 9"], unlink: ["p:M18.84 12.25 20.25 10.84a4 4 0 0 0-5.66-5.66l-1.41 1.41M5.16 11.75 3.75 13.16a4 4 0 0 0 5.66 5.66l1.41-1.41M8 2v3M2 8h3M16 22v-3M22 16h-3"],
     phone: ["r:6,2,12,20,2.5", "p:M11 18h2"], bell: ["p:M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"],
+    list: ["p:M4 7h16M4 12h10M4 17h7"], user: ["c:12,8,4", "p:M4 21a8 8 0 0 1 16 0"], copy: ["r:8,8,12,12,2", "p:M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"],
+    refresh: ["p:M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5", "p:M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"], moon: ["p:M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"],
+    sun: ["c:12,12,4", "p:M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"],
     download: ["p:M12 3v12M7 10l5 5 5-5M5 21h14"], shield: ["p:M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"]
   };
 
@@ -58,7 +71,8 @@
     live: false, stream: null, retry: 1000, timers: {}, busy: false, other: null,
     sent: {}, seenPending: {}, selection: {}, activityFilter: "all", activityAt: null, feedBusy: false, activityBusy: false,
     swapIn: null, inboxDir: null,
-    authGeneration: 0, paneGeneration: 0, requests: {}, httpRequests: new Set()
+    authGeneration: 0, paneGeneration: 0, requests: {}, httpRequests: new Set(),
+    features: {}, back: "conv", termChosen: false, autoTerm: false, changes: null, changesError: "", pr: null, diffPath: null, diff: null, diffError: ""
   };
 
   // Storage can be blocked (private mode); the page works without it.
@@ -132,7 +146,8 @@
     return Math.floor(m / 60) + "h " + (m % 60) + "m";
   }
 
-  function kindName(kind) { return KINDS[kind] || kind || "Agent"; }
+  // A provider Houston recognises but this page has no mark for still gets its name.
+  function kindName(kind) { return KINDS[kind] || (kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : "Agent"); }
 
   function statusOf(s) {
     if (!s) return { cls: "", label: "" };
@@ -165,7 +180,7 @@
   // ---- Provider marks and status ----
 
   function providerMark(kind, size) {
-    var wrap = el("span", "pv " + (kind || "custom") + (size ? " " + size : ""));
+    var wrap = el("span", "pv " + String(kind || "custom").replace(/[^a-z0-9-]/gi, "") + (size ? " " + size : ""));
     wrap.setAttribute("aria-hidden", "true");
     if (GLYPHS[kind]) {
       var ns = "http://www.w3.org/2000/svg", g = document.createElementNS(ns, "svg"), use = document.createElementNS(ns, "use");
@@ -244,6 +259,8 @@
 
   // Allow the server's ten-second input deadline plus network overhead.
   var REQUEST_MS = 15000;
+  // Enough lines to hold a TUI dialog with a few options and its hint line.
+  var CARD_SCREEN_LINES = 16;
   // Allow the server's 180-second transcription deadline plus upload/response overhead.
   var DICTATE_REQUEST_MS = 190000;
 
@@ -261,7 +278,7 @@
 
   function resetPaneRequests() {
     S.paneGeneration++;
-    ["feed", "input", "screen", "dictate"].forEach(function (name) { if (S.requests[name]) S.requests[name].ctrl.abort(); delete S.requests[name]; });
+    ["feed", "input", "screen", "dictate", "changes", "diff", "pr"].forEach(function (name) { if (S.requests[name]) S.requests[name].ctrl.abort(); delete S.requests[name]; });
     S.feedBusy = false; S.busy = false;
   }
 
@@ -407,7 +424,7 @@
   function refreshAll() {
     loadSessions();
     if (S.home === "activity") loadActivity();
-    if (S.pane != null) { loadFeed(); if (S.tab === "term") loadScreen(); }
+    if (S.pane != null) { loadFeed(); if (S.tab === "term") loadScreen(); else if (S.tab === "changes" && S.diffPath == null) loadChanges(); }
   }
 
   function schedulePoll() {
@@ -430,6 +447,7 @@
     $("pane-status").classList.toggle("hidden", view !== "pane");
     $("subheading").classList.toggle("hidden", view !== "pane");
     $("pane-menu").classList.toggle("hidden", view !== "pane");
+    $("term-toggle").classList.toggle("hidden", view !== "pane");
     $("provider-avatar").classList.toggle("hidden", view !== "pane");
     $("tabbar").classList.toggle("hidden", view !== "list");
     $("bar-meta").classList.add("hidden");
@@ -540,11 +558,11 @@
   function unpair(ending) {
     resetAuthRequests();
     S.token = null;
-    S.sessions = []; S.grids = []; S.entries = []; S.pending = null; S.inboxFeed = {}; S.activity = []; S.activityLast = 0; S.activityEpoch = null; S.activityLoaded = false; S.me = {}; S.sent = {}; S.seenPending = {}; S.pendingPair = null; S.deepLink = false; S.reachable = false; S.loaded = false; S.selection = {}; S.busy = false; S.feedBusy = false; S.activityBusy = false; S.stopArmed = false; S.activityAt = null;
+    S.sessions = []; S.grids = []; S.entries = []; S.pending = null; S.inboxFeed = {}; S.activity = []; S.activityLast = 0; S.activityEpoch = null; S.activityLoaded = false; S.me = {}; S.sent = {}; S.seenPending = {}; S.pendingPair = null; S.deepLink = false; S.reachable = false; S.loaded = false; S.selection = {}; S.busy = false; S.feedBusy = false; S.activityBusy = false; S.stopArmed = false; S.activityAt = null; S.features = {}; S.changes = null; S.pr = null; S.diffPath = null; S.diff = null;
     $("text").value = ""; setOther(null); toggleKeys(false);
-    $("quick-replies").replaceChildren(); $("children").replaceChildren(); $("child-band").replaceChildren(); $("screen-keys").replaceChildren();
+    $("quick-replies").replaceChildren(); $("children").replaceChildren(); $("child-band").replaceChildren(); $("changes-view").replaceChildren();
     $("feed").replaceChildren(); $("list").replaceChildren(); $("card").replaceChildren(); $("screen").textContent = "";
-    ["screen-sheet", "menu-sheet", "replies-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
+    ["commands-sheet", "menu-sheet", "replies-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
     document.body.classList.remove("offline");
     document.title = "Houston";
     store(TOKEN_KEY, null);
@@ -736,9 +754,50 @@
     else if (s.last_step) sub = el("small", null, lastStepText(s.last_step));
     else sub = el("small", "quote", kindName(s.kind) + (s.state === "running" ? "" : " · " + statusOf(s).label));
     t.appendChild(sub);
+    var chips = paneChips(s);
+    if (chips.length) t.appendChild(chipRow(chips));
     t.appendChild(statusLine(s, true));
     t.setAttribute("aria-label", paneTitle(s) + ", " + kindName(s.kind) + ", " + statusOf(s).label);
     return t;
+  }
+
+  function shortModel(model) { return String(model || "").replace(/^claude-/, ""); }
+
+  function contextPercent(s) {
+    var c = s && s.context;
+    return c && typeof c.percent === "number" ? Math.round(c.percent) : null;
+  }
+
+  // Metadata chips for a pane tile: model, effort, context, checkout, account, waiting children.
+  function paneChips(s) {
+    var out = [], pct = contextPercent(s), where = s.worktree || s.branch;
+    if (s.model) out.push({ text: shortModel(s.model) });
+    if (s.effort) out.push({ text: s.effort });
+    if (pct != null) out.push({ text: "ctx " + pct + "%", warn: pct >= CONTEXT_WARN });
+    if (where) out.push({ text: where, icon: "branch" });
+    if (s.account) out.push({ text: s.account, icon: "user" });
+    if (s.children_waiting > 0) out.push({ text: s.children_waiting + " waiting", warn: true });
+    return out;
+  }
+
+  function chipRow(chips) {
+    var row = el("span", "mchips");
+    chips.forEach(function (c) {
+      var chip = el("span", "mchip" + (c.warn ? " warn" : ""));
+      if (c.icon) chip.appendChild(icon(c.icon));
+      chip.appendChild(el("span", null, c.text));
+      row.appendChild(chip);
+    });
+    return row;
+  }
+
+  // Provider version, model, effort and context, the way the pane bar shows them.
+  function paneSubtitle(s) {
+    var pct = contextPercent(s), parts = [kindName(s.kind) + (s.provider_version ? " " + s.provider_version : "")];
+    if (s.model) parts.push(shortModel(s.model));
+    if (s.effort) parts.push(s.effort);
+    if (pct != null) parts.push("ctx " + pct + "%");
+    return parts.join(" · ");
   }
 
   function pendingWhat(p) {
@@ -1029,6 +1088,7 @@
 
     var device = el("div", "card prefs");
     pref(device, "This device", S.me.name || "This browser");
+    pref(device, "Access", tier().charAt(0).toUpperCase() + tier().slice(1));
     pref(device, "Houston", host.version ? "Version " + host.version : "Version not reported");
     pref(device, "Connection", https ? "Encrypted" : "Not encrypted");
     root.appendChild(device);
@@ -1074,6 +1134,7 @@
       if (window.confirm("Forget this phone's pairing? To revoke its token, use Settings ▸ Remote access ▸ Devices on the computer.")) unpair("forgot");
     }, "danger");
     root.appendChild(danger);
+    if (tierNote()) root.appendChild(el("p", "foot-note", tierNote()));
     root.appendChild(el("p", "foot-note", "Remote access settings live on the computer. Preferences on this page stay on this phone."));
   }
 
@@ -1139,7 +1200,7 @@
   function renderQuickReplies() {
     var root = $("quick-replies"), s = session(S.pane), list = replies();
     var finished = S.entries.some(function (e) { return e.type === "turn_end" || e.type === "reply" || e.type === "status" && e.status === "finished"; });
-    var showIt = !!s && s.state === "running" && s.status === "idle" && (finished || !!s.last_reply_excerpt) && !S.pending && !S.other && !$("text").value.trim();
+    var showIt = S.tab !== "term" && !!s && s.state === "running" && s.status === "idle" && (finished || !!s.last_reply_excerpt) && !S.pending && !S.other && !$("text").value.trim();
     var was = !root.classList.contains("hidden");
     root.classList.toggle("hidden", !showIt);
     if (!showIt) return;
@@ -1194,7 +1255,8 @@
     if (!s) return;
     $("heading").textContent = paneTitle(s);
     var parent = s.parent != null ? session(s.parent) : null;
-    $("subheading").textContent = parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind);
+    var rich = paneSubtitle(s);
+    $("subheading").textContent = rich !== kindName(s.kind) ? rich : parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind);
     // The status pill beside the title already says what a dot would.
     $("provider-avatar").replaceChildren(providerMark(s.kind, "lg"));
     var st = statusOf(s), chip = $("pane-status");
@@ -1205,7 +1267,7 @@
     if (!S.other) $("text").placeholder = s.state === "running" ? "Message " + kindName(s.kind) + "…" : kindName(s.kind) + " is not running";
     $("menu-title").textContent = paneTitle(s);
     $("menu-sub").textContent = s.workspace.name + " · " + kindName(s.kind);
-    $("menu-id").textContent = "#" + s.id;
+    renderTermToggle();
     updateSend();
   }
 
@@ -1215,6 +1277,7 @@
       cancelDictation(); resetPaneRequests();
       S.stopArmed = false; S.selection = {}; S.feedBusy = false; resetKeys(); toggleKeys(false); clearTimeout(S.timers["stop-arm"]);
       S.entries = []; S.last = 0; S.epoch = null; S.pending = null; S.expanded = {}; S.turns = {}; S.other = null;
+      resetPaneView();
       renderFeed(true);
       $("screen").textContent = "";
       setDockStatus("");
@@ -1228,7 +1291,7 @@
     $("feed-empty").classList.add("hidden");
     if (!S.entries.length) { var sk = el("div", "skel line"); sk.style.width = "70%"; $("feed").replaceChildren(sk); }
     selectTab("conv");
-    if (tab === "term") selectTab("term");
+    if (tab === "term") setTerminal(true);
     renderBar();
     renderChildren();
     renderQuickReplies();
@@ -1241,10 +1304,74 @@
     schedulePoll();
   }
 
+  // Forgets the previous pane's changes, PR and terminal choice.
+  function resetPaneView() {
+    S.termChosen = false; S.autoTerm = false; S.back = "conv";
+    S.changes = null; S.changesError = ""; S.pr = null; S.diffPath = null; S.diff = null; S.diffError = "";
+    $("changes-view").replaceChildren();
+  }
+
+  // The pane body is one of three views: the conversation, the Changes tab, or the terminal screen.
   function selectTab(tab) {
+    if (tab === "changes" && S.features.changes === false) tab = "conv";
+    var from = S.tab;
+    if (tab === "term" && from !== "term") S.back = from === "changes" ? "changes" : "conv";
     S.tab = tab;
-    if (tab === "term") { $("screen-keys").replaceChildren(); buildKeys($("screen-keys")); openSheet($("screen-sheet")); loadScreen(); }
-    else { if ($("screen-sheet").open) closeSheet($("screen-sheet")); clearTimeout(S.timers.screen); }
+    $("conv").classList.toggle("hidden", tab !== "conv");
+    $("changes-view").classList.toggle("hidden", tab !== "changes");
+    $("term-view").classList.toggle("hidden", tab !== "term");
+    $("jump").classList.add("hidden");
+    clearTimeout(S.timers.screen);
+    if (tab === "term") { toggleKeys(true); fitScreen(); loadScreen(); }
+    else if (from === "term") toggleKeys(false);
+    if (tab === "changes") { renderChanges(); loadChanges(); }
+    if (tab === "conv" && from !== "conv" && S.view === "pane") toBottom();
+    renderPaneTabs();
+    renderTermToggle();
+    if (S.view === "pane") renderCard();
+  }
+
+  // `auto` is the page's own choice; a manual switch is kept until the pane changes.
+  function setTerminal(on, auto) {
+    if (!auto) { S.termChosen = true; S.autoTerm = false; }
+    selectTab(on ? "term" : S.back || "conv");
+  }
+
+  // A pane with nothing to read in its conversation opens on its screen.
+  function wantsTerminal(s, entries, pending) {
+    if (!s) return false;
+    if (s.kind === "custom" || s.kind === "ssh") return true;
+    if (pending && pending.type === "input") return true;
+    return !hasConversation(entries);
+  }
+
+  function syncTerminal() {
+    var s = session(S.pane);
+    if (S.termChosen || !s || S.epoch == null) return;
+    var want = wantsTerminal(s, S.entries, S.pending);
+    if (want && S.tab !== "term") { S.autoTerm = true; setTerminal(true, true); }
+    else if (!want && S.autoTerm && S.tab === "term") { S.autoTerm = false; setTerminal(false, true); }
+  }
+
+  function renderPaneTabs() {
+    var root = $("pane-tabs"), tabs = [["conv", "Conversation"]];
+    if (S.features.changes !== false) tabs.push(["changes", "Changes"]);
+    root.classList.toggle("hidden", tabs.length < 2);
+    root.replaceChildren();
+    tabs.forEach(function (t) {
+      var b = button("seg-btn", t[1], function () { selectTab(t[0]); });
+      b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(S.tab === t[0]));
+      var n = t[0] === "changes" && S.changes && S.changes.files ? S.changes.files.length : 0;
+      if (n) b.appendChild(el("span", "n", String(n)));
+      root.appendChild(b);
+    });
+  }
+
+  function renderTermToggle() {
+    var b = $("term-toggle"), on = S.tab === "term";
+    b.setAttribute("aria-pressed", String(on));
+    b.setAttribute("aria-label", on ? "View conversation" : "View as terminal");
+    b.classList.toggle("active", on);
   }
 
   // While typing on a touch screen the conversation scrolls inside a frame
@@ -1292,6 +1419,7 @@
       renderCard();
       renderQuickReplies();
       renderFeed(false);
+      syncTerminal();
       renderLateLink();
       if (S.activityAt != null) {
         var nearest = S.entries.reduce(function (best, e) { return !best || Math.abs(e.at - S.activityAt) < Math.abs(best.at - S.activityAt) ? e : best; }, null);
@@ -1567,8 +1695,11 @@
     var state = cardState(id, p), sent = !!state, src = entries.find(function (e) { return e.seq === p.seq; });
     if (docked && S.epoch !== p.epoch) src = null;
     var since = s && (s.waiting_since || s.status_since);
-    var screenLabel = docked ? "View screen" : "Open terminal";
-    var toScreen = function () { if (S.pane !== id) openPane(id, "term"); else selectTab("term"); };
+    var screenLabel = "View as terminal";
+    var toScreen = function () { if (S.pane !== id) openPane(id, "term"); else setTerminal(true); };
+    // Beside the terminal view the card's own copy of the screen and keys would only repeat it.
+    var inTerm = docked && S.tab === "term";
+    var showsScreen = !inTerm && (p.type === "input" || !!s && s.kind !== "claude" && s.status === "needs-input");
     if (p.type === "permission") {
       var words = permissionWords(p.title);
       kicker(root, words.icon, words.ask, docked ? since : null);
@@ -1647,7 +1778,7 @@
     if (!p.decidable) {
       root.appendChild(el("div", "decision-note", undecidableNote(p, s)));
       var go = el("div", "decision-actions");
-      go.appendChild(button("btn", "Show keys", function () { if (S.pane !== id) openPane(id); toggleKeys(true); }));
+      if (!showsScreen && !inTerm) go.appendChild(button("btn", "Show keys", function () { if (S.pane !== id) openPane(id); toggleKeys(true); }));
       go.appendChild(button("btn primary", screenLabel, toScreen));
       root.appendChild(go);
     }
@@ -1661,10 +1792,20 @@
       if (b.textContent === screenLabel || b.textContent === "Show keys") return;
       b.dataset.decision = "true"; b.dataset.locked = String(b.disabled || sent || !p.decidable); b.disabled = S.busy || !S.reachable || !s || s.state !== "running" || b.dataset.locked === "true";
     });
-    if (s && s.kind !== "claude" && s.status === "needs-input") {
-      var pre = el("pre", "tscreen", "Loading screen…"); root.appendChild(pre);
-      if (S.view === "pane") toggleKeys(true);
-      api("GET", "/api/sessions/" + id + "/screen?lines=12").then(function (d) { pre.textContent = (d.lines || []).join("\n"); }).catch(function (e) { if (!e.stale) pre.textContent = e.message; });
+    if (inTerm) root.querySelectorAll("button").forEach(function (b) { if (b.textContent === screenLabel) b.remove(); });
+    if (showsScreen && s) {
+      // The dialog a TUI is waiting on sits at the bottom of the screen, so the box stays scrolled there.
+      var pre = el("pre", "tscreen", S.cardScreen && S.cardScreen.id === id ? S.cardScreen.text : "Loading screen…");
+      root.appendChild(pre);
+      var keys = el("div", "keys"); keys.id = "card-keys"; keys.setAttribute("role", "toolbar"); keys.setAttribute("aria-label", "Send keys to the pane");
+      buildKeys(keys, id);
+      root.appendChild(keys);
+      requestAnimationFrame(function () { pre.scrollTop = pre.scrollHeight; });
+      api("GET", "/api/sessions/" + id + "/screen?lines=" + CARD_SCREEN_LINES).then(function (d) {
+        var text = (d.lines || []).join("\n");
+        S.cardScreen = { id: id, text: text };
+        pre.textContent = text; pre.scrollTop = pre.scrollHeight;
+      }).catch(function (e) { if (!e.stale) pre.textContent = e.message; });
     }
   }
 
@@ -1763,20 +1904,20 @@
     else b.appendChild(icon("up"));
   }
 
-  function input(body, what) {
-    var id = S.pane;
+  function input(body, what, paneId) {
+    var id = paneId != null ? paneId : S.pane;
     if (S.busy || id == null || !S.reachable) return Promise.resolve(false);
     var request = beginRequest("input");
     S.busy = true;
     updateSend();
-    setDockStatus("Sending…");
+    notice("Sending…");
     return api("POST", "/api/sessions/" + id + "/input", body, request).then(function () {
       if (!request.current()) return false;
-      setDockStatus(what ? "Sent " + what : "");
-      later("clear-status", function () { if (request.current()) setDockStatus(""); }, 2500);
+      notice(what ? "Sent " + what : "");
+      later("clear-status", function () { if (request.current()) notice(""); }, 2500);
       if (S.tab === "term") later("screen", loadScreen, 250);
       return true;
-    }).catch(function (e) { if (request.current() && !e.stale) setDockStatus(e.message, true); return false; })
+    }).catch(function (e) { if (request.current() && !e.stale) notice(e.message, true); return false; })
       .then(function (ok) { if (request.current()) { S.busy = false; updateSend(); } return ok; });
   }
 
@@ -1804,16 +1945,14 @@
     root.classList.toggle("hidden", !open);
     if (open) root.scrollLeft = 0;
     $("more").setAttribute("aria-expanded", String(open));
-    $("menu-keys").querySelector("span").textContent = open ? "Hide keys" : "Show keys";
   }
 
   function resetKeys() {
-    clearTimeout(S.timers["key-arm-keys"]); clearTimeout(S.timers["key-arm-screen-keys"]);
+    clearTimeout(S.timers["key-arm-keys"]); clearTimeout(S.timers["key-arm-card-keys"]);
     $("keys").replaceChildren(); buildKeys();
-    $("screen-keys").replaceChildren(); if ($("screen-sheet").open) buildKeys($("screen-keys"));
   }
 
-  function buildKeys(root) {
+  function buildKeys(root, paneId) {
     root = root || $("keys");
     KEYS.forEach(function (k) {
       var armed = null;
@@ -1825,11 +1964,328 @@
           return;
         }
         if (armed) { clearTimeout(armed); armed = null; b.classList.remove("armed"); b.textContent = k[0]; }
-        input({ keys: k[1] }, k[0]);
+        input({ keys: k[1] }, k[0], paneId);
       });
       b.setAttribute("aria-label", "Send " + k[1][0]); b.disabled = !S.reachable;
       root.appendChild(b);
     });
+  }
+
+  // ---- Device tier and pane menu ----
+
+  var TIERS = { observe: 0, drive: 1, manage: 2 };
+  var TIER_WHERE = "Settings ▸ Phone & remote access ▸ Paired devices on the computer";
+
+  // A computer that predates tiers reports none and lets a paired device do what drive does.
+  function tier() { return TIERS[S.me.tier] != null ? S.me.tier : "drive"; }
+
+  function atLeast(level) { return TIERS[tier()] >= TIERS[level]; }
+
+  function tierNote() {
+    var t = tier();
+    if (t === "manage") return "";
+    return "This phone is paired as " + t + (t === "observe" ? ": it can read panes but not type into them or change them" : ": it can type into panes but not rename, respawn, sleep or close them") + ". Change it in " + TIER_WHERE + ".";
+  }
+
+  // A route the computer does not have answers 404; the feature is then hidden, not reported as an error.
+  function missing(e) { return !!e && e.status === 404; }
+
+  // Pane-menu rows and the tier each needs. A row this device may not use is left out, not greyed.
+  function menuActions(s, level, terminal) {
+    var rank = TIERS[level] != null ? TIERS[level] : TIERS.drive, out = [];
+    var add = function (id, need, label, hint) { if (rank >= TIERS[need]) out.push({ id: id, need: need, label: label, hint: hint || "" }); };
+    var live = !!s && s.state === "running";
+    if (live) { add("interrupt", "drive", "Interrupt", "Esc"); add("ctrl-c", "drive", "Force interrupt", "Ctrl+C"); }
+    if (live && COMMANDS[s.kind]) add("commands", "drive", "Commands", COMMANDS[s.kind].slice(0, 3).join(" "));
+    add("terminal", "observe", terminal ? "View conversation" : "View as terminal");
+    if (live) add("keys", "drive", "Show keys");
+    if (s) {
+      add("rename", "manage", "Rename");
+      add("respawn", "manage", s.resumable ? "Resume session" : "Respawn");
+      if (live) add("sleep", "manage", "Sleep");
+      if (s.state === "sleeping") add("wake", "manage", "Wake");
+      add("close", "manage", "Close pane…");
+      add("copy", "observe", "Copy pane id", "#" + s.id);
+    }
+    return out;
+  }
+
+  function menuIcon(id) {
+    return { interrupt: "square", "ctrl-c": "alert", commands: "list", terminal: "term", keys: "prompt", rename: "pencil", respawn: "refresh", sleep: "moon", wake: "sun", close: "x", copy: "copy" }[id] || "zap";
+  }
+
+  // Failures show inside the open menu, where a toast would sit behind the modal sheet.
+  function menuNote(text, isError) {
+    var note = $("menu-note");
+    note.textContent = text; note.classList.toggle("hidden", !text); note.classList.toggle("error", !!isError);
+  }
+
+  function menuNotice(text, isError) {
+    if ($("menu-sheet").open) menuNote(text, isError); else notice(text, isError);
+  }
+
+  // Lifecycle routes need the manage tier; the check keeps a stale menu from sending what the daemon refuses.
+  function lifecycle(id, action, body) {
+    if (!atLeast("manage")) { menuNotice("This phone is paired as " + tier() + ": " + action + " needs manage. Change it in " + TIER_WHERE + ".", true); return Promise.resolve(false); }
+    return api("POST", "/api/sessions/" + id + "/" + action, body || {}).then(function () {
+      later("sessions", loadSessions, 150);
+      return true;
+    }).catch(function (e) {
+      if (!e.stale) menuNotice(missing(e) ? "This computer's Houston can't " + action + " a pane from a phone yet. Update Houston on the computer." : e.message, true);
+      return false;
+    });
+  }
+
+  // The daemon refuses a close whose `confirm` is not the pane id as a string.
+  function closePane(id) { return lifecycle(id, "close", { confirm: String(id) }); }
+
+  function openMenu() { renderMenu(); openSheet($("menu-sheet")); }
+
+  function renderMenu() {
+    var s = session(S.pane), list = $("menu-list");
+    list.replaceChildren(); list.classList.remove("hidden");
+    $("menu-panel").replaceChildren(); $("menu-panel").classList.add("hidden");
+    $("menu-close").textContent = "Cancel";
+    if (!s) return;
+    menuActions(s, tier(), S.tab === "term").forEach(function (a) {
+      var label = a.id === "keys" && !$("keys").classList.contains("hidden") ? "Hide keys" : a.label;
+      var b = button("sheet-row" + (a.id === "close" ? " danger" : ""), null, function () { runMenuAction(a.id, s, b); });
+      b.appendChild(icon(menuIcon(a.id)));
+      b.appendChild(el("span", null, label));
+      if (a.hint) b.appendChild(el("small", null, a.hint));
+      list.appendChild(b);
+    });
+    menuNote(tierNote(), false);
+  }
+
+  function menuPanel(build) {
+    var panel = $("menu-panel");
+    $("menu-list").classList.add("hidden");
+    panel.replaceChildren(); panel.classList.remove("hidden");
+    build(panel);
+    var first = panel.querySelector("input, button");
+    if (first) first.focus();
+  }
+
+  // The second step of a destructive action, in the sheet itself.
+  function confirmPanel(text, label, danger, run) {
+    menuPanel(function (panel) {
+      panel.appendChild(el("p", "menu-ask", text));
+      var row = el("div", "decision-actions");
+      row.appendChild(button("btn", "Cancel", renderMenu));
+      row.appendChild(button("btn " + (danger ? "danger-fill" : "primary"), label, run));
+      panel.appendChild(row);
+    });
+  }
+
+  function lifecycleThen(id, action, body, done) {
+    return lifecycle(id, action, body).then(function (ok) {
+      if (!ok) return;
+      closeSheet($("menu-sheet"));
+      toast(done);
+      if (action === "close" && S.pane === id) openList();
+    });
+  }
+
+  function runMenuAction(id, s, row) {
+    var pane = s.id, sheet = $("menu-sheet");
+    if (id === "ctrl-c") {
+      var label = row.querySelector("span");
+      if (!row.dataset.armed) {
+        row.dataset.armed = "1"; label.textContent = "Tap again to send Ctrl+C";
+        later("menu-arm", function () { delete row.dataset.armed; label.textContent = "Force interrupt"; }, 2500);
+        return;
+      }
+      clearTimeout(S.timers["menu-arm"]);
+      closeSheet(sheet); input({ keys: ["ctrl+c"] }, "Ctrl+C", pane);
+    } else if (id === "interrupt") { closeSheet(sheet); input({ keys: ["esc"] }, "Esc", pane); }
+    else if (id === "commands") { closeSheet(sheet); openCommands(); }
+    else if (id === "terminal") { closeSheet(sheet); setTerminal(S.tab !== "term"); }
+    else if (id === "keys") { closeSheet(sheet); toggleKeys(); }
+    else if (id === "copy") {
+      closeSheet(sheet);
+      if (navigator.clipboard) navigator.clipboard.writeText(String(pane)).then(function () { toast("Pane id " + pane + " copied"); }).catch(function () { toast("Pane id: " + pane); });
+      else toast("Pane id: " + pane);
+    } else if (id === "rename") {
+      menuPanel(function (panel) {
+        var form = el("form", "menu-form"), field = el("input", "input");
+        field.value = s.title || ""; field.placeholder = "Pane name; empty restores the default"; field.setAttribute("aria-label", "Pane name");
+        form.appendChild(field);
+        var row2 = el("div", "decision-actions");
+        row2.appendChild(button("btn", "Cancel", renderMenu));
+        var save = button("btn primary", "Save"); save.type = "submit";
+        row2.appendChild(save); form.appendChild(row2);
+        form.addEventListener("submit", function (ev) { ev.preventDefault(); lifecycleThen(pane, "rename", { title: field.value.trim() }, "Renamed"); });
+        panel.appendChild(form);
+      });
+    } else if (id === "respawn") {
+      var go = function () { lifecycleThen(pane, "respawn", null, "Restarting"); };
+      if (s.state === "running") confirmPanel("Restart " + paneTitle(s) + "? Its running session ends first" + (s.resumable ? " and the conversation is resumed." : "."), s.resumable ? "Resume" : "Restart", true, go);
+      else go();
+    } else if (id === "sleep" || id === "wake") lifecycleThen(pane, id, null, id === "sleep" ? "Sleeping" : "Awake");
+    else if (id === "close") confirmPanel("Close " + paneTitle(s) + "? Its terminal session ends and the pane leaves its grid.", "Close pane", true, function () {
+      closePane(pane).then(function (ok) { if (!ok) return; closeSheet(sheet); toast("Pane closed"); if (S.pane === pane) openList(); });
+    });
+  }
+
+  function openCommands() {
+    var s = session(S.pane), list = $("commands-list");
+    list.replaceChildren();
+    $("commands-sub").textContent = s ? kindName(s.kind) : "";
+    (s && COMMANDS[s.kind] || []).forEach(function (cmd) {
+      list.appendChild(button("sheet-row", null, function () {
+        closeSheet($("commands-sheet"));
+        var t = $("text"); t.value = cmd + " "; grow(); renderQuickReplies(); t.focus();
+      })).appendChild(el("span", "mono", cmd));
+    });
+    openSheet($("commands-sheet"));
+  }
+
+  // ---- Changes tab: git status, per-file diff, pull request ----
+
+  function loadChanges() {
+    var id = S.pane;
+    if (id == null || !S.token || S.features.changes === false) return Promise.resolve();
+    loadPr();
+    var request = beginRequest("changes");
+    return api("GET", "/api/sessions/" + id + "/changes", null, request).then(function (d) {
+      if (!request.current()) return;
+      S.changes = d; S.changesError = "";
+      renderPaneTabs();
+      if (S.tab === "changes") renderChanges();
+    }).catch(function (e) {
+      if (!request.current() || e.stale) return;
+      if (missing(e)) { S.features.changes = false; if (S.tab === "changes") selectTab("conv"); else renderPaneTabs(); return; }
+      S.changesError = e.message;
+      if (S.tab === "changes") renderChanges();
+    });
+  }
+
+  function loadPr() {
+    var id = S.pane;
+    if (id == null || !S.token || S.features.pr === false) return Promise.resolve();
+    var request = beginRequest("pr");
+    return api("GET", "/api/sessions/" + id + "/pr", null, request).then(function (d) {
+      if (!request.current()) return;
+      S.pr = d && d.number != null ? d : null;
+      if (S.tab === "changes" && S.diffPath == null) renderChanges();
+    }).catch(function (e) {
+      if (!request.current() || e.stale) return;
+      if (missing(e)) S.features.pr = false;
+      S.pr = null;
+    });
+  }
+
+  function openDiff(path) {
+    var id = S.pane;
+    S.diffPath = path; S.diff = null; S.diffError = "";
+    renderChanges();
+    var request = beginRequest("diff");
+    return api("GET", "/api/sessions/" + id + "/diff?path=" + encodeURIComponent(path), null, request).then(function (d) {
+      if (!request.current() || S.diffPath !== path) return;
+      S.diff = d;
+      renderChanges();
+    }).catch(function (e) {
+      if (!request.current() || e.stale || S.diffPath !== path) return;
+      S.diffError = missing(e) ? "This computer's Houston can't show diffs yet." : e.message;
+      renderChanges();
+    });
+  }
+
+  function counts(added, removed) {
+    var c = el("span", "counts");
+    c.appendChild(el("span", "add", "+" + (added || 0)));
+    c.appendChild(el("span", "del", "−" + (removed || 0)));
+    return c;
+  }
+
+  function renderChanges() {
+    var root = $("changes-view");
+    root.replaceChildren();
+    if (S.diffPath != null) { renderDiff(root); return; }
+    var d = S.changes;
+    if (S.changesError) root.appendChild(el("p", "callout danger", S.changesError));
+    if (!d) { if (!S.changesError) skeleton(root, "card", 2); return; }
+    var head = el("div", "changes-head"), branch = el("span", "branch-line");
+    branch.appendChild(icon("branch"));
+    branch.appendChild(el("b", "mono", d.branch || "detached HEAD"));
+    head.appendChild(branch);
+    var sync = [];
+    if (d.ahead) sync.push(d.ahead + " ahead");
+    if (d.behind) sync.push(d.behind + " behind");
+    head.appendChild(el("small", null, (d.upstream || "no upstream") + (sync.length ? " · " + sync.join(", ") : "")));
+    head.appendChild(button("link-btn", "Refresh", function () { loadChanges(); }));
+    root.appendChild(head);
+    if (S.pr) root.appendChild(prCard(S.pr));
+    var files = d.files || [];
+    if (!files.length) { emptyState(root, "check", "No uncommitted changes", "Edits in this pane's checkout appear here."); return; }
+    var added = 0, removed = 0;
+    files.forEach(function (f) { added += f.added || 0; removed += f.removed || 0; });
+    var total = el("p", "changes-total");
+    total.appendChild(document.createTextNode(plural(files.length, "changed file", "changed files") + " · "));
+    total.appendChild(counts(added, removed));
+    root.appendChild(total);
+    var card = el("div", "card file-list");
+    files.forEach(function (f) {
+      var b = button("file-btn", null, function () { openDiff(f.path); }), at = f.path.lastIndexOf("/");
+      b.setAttribute("aria-label", f.path + ", " + (f.added || 0) + " added, " + (f.removed || 0) + " removed");
+      b.appendChild(el("span", "fstat s-" + String(f.status || "M").charAt(0).replace("?", "q"), String(f.status || "M")));
+      var name = el("span", "fname");
+      if (at >= 0) name.appendChild(el("span", "dir", f.path.slice(0, at + 1)));
+      name.appendChild(el("b", null, f.path.slice(at + 1)));
+      b.appendChild(name);
+      b.appendChild(counts(f.added, f.removed));
+      card.appendChild(b);
+    });
+    root.appendChild(card);
+    if (d.truncated) root.appendChild(el("p", "decision-note", "Showing the first " + files.length + " changed files; the computer limits this list. The rest is in Houston on the computer."));
+  }
+
+  function renderDiff(root) {
+    var bar = el("div", "diff-bar");
+    var back = button("link-btn", null, function () { S.diffPath = null; S.diff = null; S.diffError = ""; renderChanges(); });
+    back.appendChild(icon("back")); back.appendChild(document.createTextNode("Changes"));
+    bar.appendChild(back);
+    bar.appendChild(el("b", "mono diff-path", S.diffPath));
+    root.appendChild(bar);
+    if (S.diffError) { root.appendChild(el("p", "callout danger", S.diffError)); return; }
+    if (!S.diff) { skeleton(root, "card", 1); return; }
+    var lines = String(S.diff.diff || "").split("\n");
+    if (lines[lines.length - 1] === "") lines.pop();
+    if (!lines.length) { emptyState(root, "file", "No text changes", "This file changed in a way a text diff cannot show, such as a binary file or a mode change."); return; }
+    var scroll = el("div", "diff-scroll"), pre = el("pre", "diffview");
+    scroll.tabIndex = 0; scroll.setAttribute("role", "region"); scroll.setAttribute("aria-label", "Diff of " + S.diffPath);
+    lines.forEach(function (line) {
+      var cls = /^@@/.test(line) ? "thunk" : /^\+(?!\+\+)/.test(line) ? "tadd" : /^-(?!--)/.test(line) ? "tdel" : "";
+      pre.appendChild(el("span", cls, line || " "));
+    });
+    scroll.appendChild(pre); root.appendChild(scroll);
+    if (S.diff.truncated) root.appendChild(el("p", "decision-note", "The computer shortened this diff (" + lines.length + " lines shown). Read the rest in Houston on the computer."));
+  }
+
+  function prCard(pr) {
+    var card = el("div", "card pr-card"), head = el("div", "pr-head");
+    head.appendChild(el("span", "pr-n mono", "#" + pr.number));
+    head.appendChild(el("b", null, pr.title || ""));
+    card.appendChild(head);
+    var meta = el("div", "pr-meta");
+    if (pr.state) meta.appendChild(el("span", "tag " + pr.state, pr.state));
+    if (pr.review) meta.appendChild(el("span", "tag", String(pr.review).replace(/_/g, " ")));
+    card.appendChild(meta);
+    var c = pr.checks;
+    if (c) {
+      var line = el("p", "pr-checks");
+      line.appendChild(el("span", "ok", (c.passed || 0) + " passed"));
+      if (c.pending) line.appendChild(el("span", "pend", c.pending + " pending"));
+      if (c.failed) line.appendChild(el("span", "bad", c.failed + " failed"));
+      card.appendChild(line);
+      (c.items || []).filter(function (i) { return i.state !== "passed" && i.state !== "success"; }).slice(0, 6).forEach(function (i) {
+        card.appendChild(el("div", "pr-item " + i.state, i.name + " · " + i.state));
+      });
+    }
+    var href = safeUrl(pr.url);
+    if (href) { var a = el("a", "link-btn", "Open pull request"); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer"; card.appendChild(a); }
+    return card;
   }
 
   // ---- Dictation ----
@@ -2041,6 +2497,11 @@
   // ---- Terminal ----
 
   function screenSize() { return Math.max(9, Math.min(18, Number(stored("houston.remote.screenSize")) || 11)); }
+
+  function bumpScreenSize(step) {
+    store("houston.remote.screenSize", String(Math.max(9, Math.min(18, screenSize() + step))));
+    fitScreen();
+  }
 
   function fitScreen() { $("screen").style.fontSize = screenSize() + "px"; }
 
@@ -2277,17 +2738,12 @@
   $("back").addEventListener("click", openList);
   $("pair-again").addEventListener("click", function () { S.pendingPair = null; showPair(); });
   $("pair-continue").addEventListener("click", function () { openList(); });
-  $("pane-menu").addEventListener("click", function () { openSheet($("menu-sheet")); });
+  $("pane-menu").addEventListener("click", openMenu);
   $("menu-close").addEventListener("click", function () { closeSheet($("menu-sheet")); });
-  $("view-screen").addEventListener("click", function () { closeSheet($("menu-sheet")); selectTab("term"); });
-  $("menu-keys").addEventListener("click", function () { closeSheet($("menu-sheet")); toggleKeys(); });
-  $("copy-id").addEventListener("click", function () {
-    var id = String(S.pane);
-    closeSheet($("menu-sheet"));
-    if (navigator.clipboard) navigator.clipboard.writeText(id).then(function () { toast("Pane id " + id + " copied"); }).catch(function () { toast("Pane id: " + id); });
-    else toast("Pane id: " + id);
-  });
-  $("screen-close").addEventListener("click", function () { selectTab("conv"); });
+  $("term-toggle").addEventListener("click", function () { setTerminal(S.tab !== "term"); });
+  $("term-smaller").addEventListener("click", function () { bumpScreenSize(-1); });
+  $("term-larger").addEventListener("click", function () { bumpScreenSize(1); });
+  $("commands-close").addEventListener("click", function () { closeSheet($("commands-sheet")); });
   $("replies-close").addEventListener("click", function () { closeSheet($("replies-sheet")); });
   $("replies-form").addEventListener("submit", function (ev) {
     ev.preventDefault();
@@ -2303,7 +2759,7 @@
   });
   sheetGestures($("menu-sheet"));
   sheetGestures($("replies-sheet"), function () { if (S.view === "list" && S.home === "computer") renderList(); });
-  sheetGestures($("screen-sheet"), function () { S.tab = "conv"; clearTimeout(S.timers.screen); });
+  sheetGestures($("commands-sheet"));
   $("send").addEventListener("click", send);
   $("mic").addEventListener("click", function () {
     if (D.state === "idle") startDictation();
@@ -2315,7 +2771,7 @@
   $("more").addEventListener("click", function () { toggleKeys(); });
   $("other-cancel").addEventListener("click", function () { setOther(null); });
   $("jump").addEventListener("click", function () { toBottom(true); });
-  $("empty-term").addEventListener("click", function () { selectTab("term"); });
+  $("empty-term").addEventListener("click", function () { setTerminal(true); });
   $("text").addEventListener("input", function () { grow(); renderQuickReplies(); });
   $("text").addEventListener("keydown", function (ev) {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }

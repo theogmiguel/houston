@@ -39,6 +39,9 @@
   <span id="bar-meta" class="bar-meta hidden"></span>
   <span id="pane-status" class="pill hidden"></span>
   <span id="conn" class="host-pill hidden" role="status"><span class="dot"></span><span id="conn-label">Connecting</span></span>
+  <button id="term-toggle" class="icon-btn hidden" type="button" aria-label="View as terminal" aria-pressed="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>
+  </button>
   <button id="pane-menu" class="icon-btn hidden" type="button" aria-label="Pane menu" aria-haspopup="dialog">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
   </button>
@@ -87,6 +90,7 @@
 </main>
 
 <main id="view-pane" class="view pane hidden">
+  <div id="pane-tabs" class="seg" role="tablist" aria-label="Pane sections"></div>
   <section id="conv" class="conv" aria-live="polite">
     <div id="feed" class="feed"></div>
     <div id="working-row" class="working hidden" role="status"><span class="spinner" aria-hidden="true"></span><span class="v">Working</span><span id="working-elapsed" class="r"></span></div>
@@ -97,6 +101,14 @@
       <p class="empty-body">This pane has not reported a prompt or reply. Its terminal still shows everything it printed.</p>
       <button id="empty-term" class="btn" type="button">View as terminal</button>
     </div>
+  </section>
+  <section id="changes-view" class="changes hidden" aria-label="Changes"></section>
+  <section id="term-view" class="term-view hidden" aria-label="Terminal screen">
+    <div class="term-bar"><span>Screen · read-only · last 40 lines</span>
+      <span class="stepper"><button id="term-smaller" type="button" aria-label="Smaller screen text">A−</button><button id="term-larger" type="button" aria-label="Larger screen text">A+</button></span>
+    </div>
+    <pre id="screen" class="screen" tabindex="0" aria-label="Terminal screen"></pre>
+    <p id="screen-note" class="sheet-note hidden"></p>
   </section>
   <button id="jump" class="jump hidden" type="button" aria-label="Jump to latest">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg><span>Latest</span>
@@ -136,22 +148,17 @@
 <dialog id="menu-sheet" class="sheet" tabindex="-1" aria-labelledby="menu-title">
   <div class="grabber" aria-hidden="true"></div>
   <div class="sheet-title"><b id="menu-title">Pane</b><span id="menu-sub"></span></div>
-  <div class="sheet-list">
-    <button id="view-screen" class="sheet-row" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg><span>View screen</span></button>
-    <button id="menu-keys" class="sheet-row" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span>Show keys</span></button>
-    <button id="copy-id" class="sheet-row" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg><span>Copy pane id</span><small id="menu-id"></small></button>
-  </div>
-  <p class="sheet-note">Rename, close and focus panes from Houston on the computer.</p>
+  <div id="menu-list" class="sheet-list"></div>
+  <div id="menu-panel" class="menu-panel hidden"></div>
+  <p id="menu-note" class="sheet-note hidden"></p>
   <button id="menu-close" class="btn block" type="button">Cancel</button>
 </dialog>
 
-<dialog id="screen-sheet" class="sheet tall" tabindex="-1" aria-labelledby="screen-title">
+<dialog id="commands-sheet" class="sheet" tabindex="-1" aria-labelledby="commands-title">
   <div class="grabber" aria-hidden="true"></div>
-  <div class="sheet-head"><b id="screen-title">Screen</b><span>read-only · last 40 lines</span><button id="screen-close" class="link-btn" type="button">Done</button></div>
-  <pre id="screen" class="screen" tabindex="0" aria-label="Terminal screen"></pre>
-  <p id="screen-note" class="sheet-note hidden"></p>
-  <div id="screen-keys" class="keys" role="toolbar" aria-label="Send keys to the pane"></div>
-  <p class="sheet-note">Output from before remote access was turned on is only here.</p>
+  <div class="sheet-head"><b id="commands-title">Commands</b><span id="commands-sub"></span><button id="commands-close" class="link-btn" type="button">Done</button></div>
+  <div id="commands-list" class="sheet-list"></div>
+  <p class="sheet-note">A tap puts the command in the message box; nothing is sent until you press send.</p>
 </dialog>
 
 <dialog id="replies-sheet" class="sheet" tabindex="-1" aria-labelledby="replies-title">

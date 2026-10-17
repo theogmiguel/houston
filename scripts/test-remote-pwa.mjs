@@ -28,7 +28,7 @@ function harness() {
     fetch: (path, options) => new Promise(resolve => requests.push({ path, options, resolve })),
     setTimeout: (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, ms }); return id; }, clearTimeout: id => timers.delete(id),
     renderFeed: noop, renderCard: noop, renderQuickReplies: noop, renderLateLink: noop, renderChildren: noop, renderBar: noop, renderList: noop, renderTabs: noop, renderMic: noop, cancelDictation: noop, loadMe: () => Promise.resolve(),
-    resetKeys: noop, toggleKeys: noop, grow: noop, show: noop, selectTab: noop, connect: noop, schedulePoll: noop, toBottom: noop, pinned: () => false,
+    resetPaneView: noop, syncTerminal: noop, loadChanges: noop, setTerminal: noop, renderPaneTabs: noop, renderTermToggle: noop, resetKeys: noop, toggleKeys: noop, grow: noop, show: noop, selectTab: noop, connect: noop, schedulePoll: noop, toBottom: noop, pinned: () => false,
     setReachable: value => { S.reachable = value; }, setDockStatus: value => status.push(value), updateSend: noop, later: noop, fitScreen: noop,
     session: () => ({ status: 'working' }), notice: value => status.push(value), toast: value => status.push(value), pendingFor: () => null,
     location: { hash: '' }, history: { replaceState: noop }, window: { scrollTo: noop }, el: () => node('element'), icon: noop,
@@ -491,4 +491,71 @@ test('a feed with a reply hides the empty state and keeps the turn row', () => {
   ctx.renderFeed(true);
   assert.equal($('feed-empty').hiddenFlag, true);
   assert.match($('feed').textContent, /Turn finished/);
+});
+
+function tierHarness(tier) {
+  const h = harness(), { ctx, S } = h;
+  S.me = tier ? { tier } : {}; S.features = {}; S.tab = 'conv'; S.pane = 7;
+  for (const pattern of [/  var TIERS =[^\n]+/, /  var TIER_WHERE =[^\n]+/, /  var COMMANDS = \{[\s\S]*?\n  \};/]) vm.runInContext(source.match(pattern)[0], ctx);
+  vm.runInContext(['tier', 'atLeast', 'tierNote', 'missing', 'menuActions', 'menuNote', 'menuNotice', 'lifecycle', 'closePane', 'loadChanges', 'loadPr', 'wantsTerminal', 'hasConversation'].map(production).join('\n'), ctx);
+  vm.runInContext(source.match(/  var CONVERSATION =[^\n]+/)[0], ctx);
+  Object.assign(ctx, { renderChanges: () => {}, loadSessions: () => {} });
+  return h;
+}
+const ids = actions => actions.map(a => a.id);
+const livePane = { id: 7, state: 'running', kind: 'claude', resumable: true };
+
+test('manage-only menu rows exist only for a manage device, and lower tiers get a tier note', () => {
+  const manage = ['rename', 'respawn', 'sleep', 'close'];
+  for (const [tier, drive, manageRows] of [['observe', false, false], ['drive', true, false], ['manage', true, true], [undefined, true, false]]) {
+    const { ctx } = tierHarness(tier), got = ids(ctx.menuActions(livePane, ctx.tier(), false));
+    for (const id of manage) assert.equal(got.includes(id), manageRows, `${tier}: ${id}`);
+    for (const id of ['interrupt', 'ctrl-c', 'commands', 'keys']) assert.equal(got.includes(id), drive, `${tier}: ${id}`);
+    assert.ok(got.includes('terminal') && got.includes('copy'), `${tier}: read-only rows stay`);
+    if (tier === 'manage') assert.equal(ctx.tierNote(), '');
+    else assert.match(ctx.tierNote(), /paired as (drive|observe).*Settings ▸ Phone & remote access ▸ Paired devices on the computer/);
+  }
+  const { ctx } = tierHarness('manage');
+  assert.ok(ids(ctx.menuActions({ ...livePane, state: 'sleeping' }, 'manage', false)).includes('wake'));
+  assert.ok(!ids(ctx.menuActions({ ...livePane, kind: 'custom' }, 'manage', false)).includes('commands'), 'a shell has no slash commands');
+});
+
+test('a lifecycle call below the manage tier sends nothing and names the tier and where to change it', async () => {
+  const { ctx, status } = tierHarness('drive'), calls = [];
+  ctx.api = (...args) => { calls.push(args); return Promise.resolve({}); };
+  assert.equal(await ctx.closePane(7), false);
+  assert.equal(calls.length, 0);
+  assert.match(status.at(-1), /paired as drive: close needs manage.*Paired devices/);
+});
+
+test('close sends the pane id as a string in confirm', async () => {
+  const { ctx } = tierHarness('manage'), calls = [];
+  ctx.api = (method, path, body) => { calls.push({ method, path, body }); return Promise.resolve({}); };
+  assert.equal(await ctx.closePane(7), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ method: 'POST', path: '/api/sessions/7/close', body: { confirm: '7' } }]);
+});
+
+test('a computer without the changes and PR routes hides them instead of failing', async () => {
+  const { ctx, S, status } = tierHarness('drive');
+  ctx.api = () => Promise.reject(Object.assign(new Error('Request failed with status 404'), { status: 404 }));
+  await ctx.loadChanges(); await flush();
+  assert.equal(S.features.changes, false); assert.equal(S.features.pr, false); assert.equal(S.pr, null);
+  assert.ok(!S.changesError);
+  assert.equal(status.length, 0);
+  assert.equal(await ctx.loadChanges(), undefined, 'later loads skip the missing route');
+  ctx.api = () => Promise.reject(Object.assign(new Error('boom'), { status: 500 }));
+  const next = tierHarness('drive'); next.ctx.api = ctx.api;
+  await next.ctx.loadChanges(); await flush();
+  assert.equal(next.S.features.changes, undefined); assert.equal(next.S.changesError, 'boom');
+});
+
+test('a pane opens on its screen when it has nothing to read or waits on a generic input card', () => {
+  const { ctx } = tierHarness('drive');
+  const reply = [{ type: 'reply' }], turnOnly = [{ type: 'turn_end' }, { type: 'status' }];
+  assert.equal(ctx.wantsTerminal({ kind: 'custom' }, reply, null), true, 'shell');
+  assert.equal(ctx.wantsTerminal({ kind: 'opencode' }, turnOnly, null), true, 'only markers');
+  assert.equal(ctx.wantsTerminal({ kind: 'claude' }, [], null), true, 'failed before any hook');
+  assert.equal(ctx.wantsTerminal({ kind: 'claude' }, reply, { type: 'input' }), true, 'generic input card');
+  assert.equal(ctx.wantsTerminal({ kind: 'claude' }, reply, { type: 'permission' }), false);
+  assert.equal(ctx.wantsTerminal({ kind: 'claude' }, reply, null), false);
 });
