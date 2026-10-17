@@ -564,3 +564,22 @@ it('offers Connect phone without a workspace and dispatches the shared entry poi
   command.run()
   expect(openConnectPhone).toHaveBeenCalledOnce()
 })
+
+describe('request commands', () => {
+  it('names the waiting count and offers Back only after a jump', () => {
+    const next = vi.fn()
+    const commands = buildCommands({ actions: makeActions({ nextRequest: { count: 3, next, back: vi.fn(), canGoBack: false } }), hasWorkspace: true, workspaces: [] })
+    const entry = commands.find((command) => command.id === 'go-to.next-request')!
+    expect(entry.title).toBe('Next request (3)')
+    entry.run()
+    expect(next).toHaveBeenCalledTimes(1)
+    const backEntry = commands.find((command) => command.id === 'go-to.request-back')!
+    expect(backEntry.enabled).toBe(false)
+    expect(backEntry.disabledReason).toBe('No request jump to return from')
+    const back = vi.fn()
+    const after = buildCommands({ actions: makeActions({ nextRequest: { count: 0, next, back, canGoBack: true } }), hasWorkspace: true, workspaces: [] })
+    expect(after.find((command) => command.id === 'go-to.next-request')!.title).toBe('Next request (0)')
+    after.find((command) => command.id === 'go-to.request-back')!.run()
+    expect(back).toHaveBeenCalledTimes(1)
+  })
+})

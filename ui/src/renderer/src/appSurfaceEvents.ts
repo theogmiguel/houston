@@ -9,7 +9,9 @@ import {
   openLinkedPullRequestsSurface,
   openPullRequestSurface,
   openPullRequestsScreen,
+  nextRequestShortcut,
   reorderCardNext,
+  requestBackShortcut,
   reorderCardPrev,
   resolveGlobalMatch,
 } from "./keymap";
@@ -22,8 +24,16 @@ export function handleSurfaceShortcut(
   layerArmed: boolean,
   openPanelSurface: (surface: PanelSurface) => void,
   openPullRequests: () => void,
+  requests: { next: () => void; back: () => void },
 ): boolean {
   if (layerArmed) {
+    const step = resolveGlobalMatch(nextRequestShortcut, keymapOverrides)(event) ? requests.next
+      : resolveGlobalMatch(requestBackShortcut, keymapOverrides)(event) ? requests.back : null;
+    if (step) {
+      event.preventDefault();
+      step();
+      return true;
+    }
     const surfaces = [
       [openBrowserSurface, "browser"],
       [openFilesSurface, "files"],

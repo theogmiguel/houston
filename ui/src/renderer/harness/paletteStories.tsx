@@ -4,6 +4,7 @@ import type { SessionInfo } from '../src/houston/generated/SessionInfo'
 import { KeymapOverridesContext } from '../src/layout/keymapOverridesContext'
 import { THEMES } from '../src/theme'
 import { PALETTE_RECENTS_KEY } from '../src/components/ui/paletteHelpers'
+import { useEffect } from 'react'
 
 const noop = (): void => {}
 localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(['panes.toggle-git']))
@@ -11,7 +12,8 @@ const actions: PaletteActions = {
   newTerminal: noop, newGrid: noop, toggleGitPane: noop, spawnAgent: noop,
   openTasks: noop, toggleSidebarRail: noop, toggleChromeTheme: noop, openAddPanePopover: noop,
   setGridLayout: noop, openShortcutSheet: noop, selectNavRow: noop, switchWorkspace: noop,
-  switchGrid: noop, focusPane: noop, restartPane: noop, openConnectPhone: noop
+  switchGrid: noop, focusPane: noop, restartPane: noop, openConnectPhone: noop,
+  nextRequest: { count: 3, next: noop, back: noop, canGoBack: true }
 }
 
 const sessions = [
@@ -42,4 +44,14 @@ export function PaletteGraphiteStory(): React.JSX.Element {
 
 export function PalettePaperStory(): React.JSX.Element {
   return <div data-theme="paper" className="h-full"><PaletteStory /></div>
+}
+
+export function PaletteRequestsStory(): React.JSX.Element {
+  useEffect(() => {
+    const search = document.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')
+    if (!search) return
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'request')
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+  }, [])
+  return <div data-theme="graphite" className="h-full"><PaletteStory /></div>
 }

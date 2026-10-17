@@ -47,6 +47,15 @@ own: `Tab` (last workspace) and `Space` (command palette). The workspace and gri
 are also in the command palette, as Previous / Next / Last workspace and Previous / Next
 grid.
 
+**Next request** (`!` after the prefix) goes to the oldest request waiting on you in any
+workspace: a pane in Needs input, a child escalated to you, or a message under **Addressed
+to you**. It switches workspace and grid as needed and opens an escalated child in its
+orchestrator's roster, as **Answer** does. Each further press moves to the next request,
+oldest first, and wraps after the newest; answered requests drop out. With nothing
+waiting, Houston shows "Nothing is waiting on you". **Back** (`Backspace` after the
+prefix) returns to the pane and grid you were on before the first jump. The command
+palette lists both, with the number of waiting requests in **Next request (N)**.
+
 The prefix works while a terminal pane, or no pane, has focus. It does not work while a
 browser pane has focus, because that pane is a native webview whose keys never reach
 Houston's window, nor while an editor pane has focus, where the keys go to the editor;
@@ -85,6 +94,8 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Open the command palette (after the prefix) | Space |
 | New browser tab / Open Files / Changes / Pull request / Linked pull requests (after the prefix) | B / F / D / P / L |
 | Open the Pull Requests screen (after the prefix) | R |
+| Go to the next request waiting on you (after the prefix) | ! |
+| Back to the pane you were on before Next request (after the prefix) | Backspace |
 | Move the selected rail card up / down (Manual sort) | Mod+Shift+↑ / Mod+Shift+↓ |
 | Open Files Quick Open outside a terminal | Mod+P |
 | Select pane (visual order) | 1–9 |

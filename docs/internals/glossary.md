@@ -59,6 +59,7 @@ named.
 | **Tidy** | The topbar action that rebuilds the grid into even splits: a balanced grid, one row or one column. | `App.tsx` |
 | **prefix key** | The one chord Houston keeps from a focused terminal (`Ctrl+Space` by default): it arms the prefix layer. Rebindable, never unbound; a second press sends the chord itself. | `keymap.ts::prefixShortcut` |
 | **prefix layer** | The one-shot state the prefix key arms: the next key resolves as a Houston shortcut, then the layer is down. `Esc` or an unbound key cancels it; an 8 s safety timeout forgets a stray prefix. The terminal pane recognises it before ghostty encodes the key. | `prefixLayer.ts`, `PrefixHint.tsx` |
+| **Next request** | The prefix-layer command that cycles, oldest first, through requests owned by the operator: top-level Needs input panes, escalated children and unresolved operator queue rows. Back returns to the pane focused before the first jump. | `nextRequest.ts` |
 | **rail** | The resizable sidebar containing work destinations and the workspace tree, or Settings navigation while Settings is open. It can be hidden and its saved width restored. | `Sidebar.tsx` |
 | **Custom** | The background mode (Settings ▸ Appearance ▸ Background): one image behind the whole window instead of the theme's flat ground. Solid is the default. | `backgroundMode.ts` |
 | **the field** | The dithered image Custom paints as a single surface behind everything — rail, topbar, gutters and panes. | `backdrop/`, `CustomBackdrop.tsx` |
