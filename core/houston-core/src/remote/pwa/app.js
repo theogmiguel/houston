@@ -23,8 +23,8 @@
   var SWIPE_PX = 64;
   var STATUS = { "needs-input": "Needs you", working: "Working", idle: "Idle", spawning: "Starting", unavailable: "No status" };
   var STATES = { sleeping: "Sleeping", exited: "Exited", killed: "Killed", interrupted: "Interrupted" };
-  var KINDS = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "OpenCode", cursor: "Cursor", grok: "Grok", custom: "Shell", ssh: "SSH" };
-  var GLYPHS = { claude: 1, codex: 1, antigravity: 1, opencode: 1, cursor: 1, grok: 1 };
+  var KINDS = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "OpenCode", zcode: "ZCode", custom: "Shell", ssh: "SSH" };
+  var GLYPHS = { claude: 1, codex: 1, antigravity: 1, opencode: 1 };
   var KEYS = [
     ["Esc", ["esc"]], ["↑", ["up"]], ["↓", ["down"]], ["←", ["left"]], ["→", ["right"]], ["Tab", ["tab"]], ["⏎", ["enter"]], ["^C", ["ctrl+c"], true]
   ];
