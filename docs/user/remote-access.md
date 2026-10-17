@@ -46,6 +46,14 @@ The phone shows only what its tier allows. Below **Manage**, the pane menu leave
 manage actions and says which tier the phone has and where to change it. The computer
 enforces the tier on every request, so an older page cannot exceed it.
 
+At **Manage**, a pane's **Changes** tab has **Commit…** and **Push**. **Commit…** takes a message and a
+file selection: tracked files start selected, untracked files start unselected, and credential-looking files
+cannot be selected. **Push** asks for a second tap before it sends. The computer's own error text is shown
+when a commit or push fails. The pane bar shows the pane name with one subtitle line: status, then version,
+model, effort and context use, dropping effort, version and model in that order when the line is too long.
+The **Commands** list holds only slash commands verified for Claude, Codex and OpenCode; other providers
+have none. Usage shows today's cost by provider, plus plan windows only when the computer reports them.
+
 **View as terminal**, in the pane bar and the pane's **⋯** menu, replaces the conversation with a
 read-only text snapshot of the last 40 lines. It refreshes only while it is visible, and its
 key row sends input to the pane; the snapshot never resizes or takes over the pane on your

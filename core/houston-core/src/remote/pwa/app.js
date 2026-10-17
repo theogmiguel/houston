@@ -29,12 +29,12 @@
   // The context bar turns amber from here: the window is close enough to full that compacting is worth doing now.
   var CONTEXT_WARN = 80;
   // Slash commands each provider's TUI accepts, as a short fixed list; a tap fills the message box.
+  // Only commands confirmed in the CLI's own command table or documentation for the supported versions are listed;
+  // a provider without a verified list has no Commands row.
   var COMMANDS = {
-    claude: ["/model", "/compact", "/clear", "/cost", "/context"],
+    claude: ["/model", "/compact", "/clear", "/context"],
     codex: ["/model", "/compact", "/status", "/new"],
-    opencode: ["/models", "/compact", "/new"],
-    antigravity: ["/help", "/clear"],
-    zcode: ["/help", "/clear"]
+    opencode: ["/models", "/compact", "/new"]
   };
   // Provider kinds a phone may start; the daemon refuses the rest by name.
   var SPAWNABLE = { claude: 1, codex: 1, antigravity: 1, opencode: 1, zcode: 1 };
@@ -319,6 +319,9 @@
             err.status = r.status; err.reason = data.reason; err.retry = Number(r.headers.get("Retry-After")) || 0;
             throw err;
           }
+          // A capped list answers a bare array; the cap travels in a header, so it is attached to the array.
+          var cap = Number(r.headers.get("x-houston-truncated"));
+          if (Array.isArray(data) && cap > 0) data.truncated = cap;
           return data;
         });
       });
@@ -418,6 +421,8 @@
     } else if (name === "feed") {
       if (d.id === S.pane) later("feed", loadFeed, 100);
       later("sessions", loadSessions, 400);
+    } else if (name === "sessions") {
+      later("sessions", loadSessions, 150);
     } else if (name === "grids") {
       later("sessions", loadSessions, 150);
     } else if (name === "resync") {
@@ -449,7 +454,6 @@
     S.view = view;
     ["pair", "list", "pane"].forEach(function (v) { $("view-" + v).classList.toggle("hidden", v !== view); });
     $("back").classList.toggle("hidden", view !== "pane");
-    $("pane-status").classList.toggle("hidden", view !== "pane");
     $("subheading").classList.toggle("hidden", view !== "pane");
     $("pane-menu").classList.toggle("hidden", view !== "pane");
     $("term-toggle").classList.toggle("hidden", view !== "pane");
@@ -568,7 +572,7 @@
     $("text").value = ""; setOther(null); toggleKeys(false);
     $("quick-replies").replaceChildren(); $("children").replaceChildren(); $("child-band").replaceChildren(); $("changes-view").replaceChildren();
     $("feed").replaceChildren(); $("list").replaceChildren(); $("card").replaceChildren(); $("screen").textContent = "";
-    ["commands-sheet", "menu-sheet", "replies-sheet", "ws-sheet", "spawn-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
+    ["commit-sheet", "commands-sheet", "menu-sheet", "replies-sheet", "ws-sheet", "spawn-sheet"].forEach(function (id) { if ($(id).open) $(id).close(); });
     document.body.classList.remove("offline");
     document.title = "Houston";
     store(TOKEN_KEY, null);
@@ -801,12 +805,15 @@
   }
 
   // Provider version, model, effort and context, the way the pane bar shows them.
-  function paneSubtitle(s) {
-    var pct = contextPercent(s), parts = [kindName(s.kind) + (s.provider_version ? " " + s.provider_version : "")];
-    if (s.model) parts.push(shortModel(s.model));
-    if (s.effort) parts.push(s.effort);
-    if (pct != null) parts.push("ctx " + pct + "%");
-    return parts.join(" · ");
+  // Present parts only: a null model, effort, version or context adds nothing, not an empty slot.
+  function subtitleParts(s) {
+    var pct = contextPercent(s), parts = [];
+    if (s.provider_version) parts.push({ key: "version", text: kindName(s.kind) + " " + s.provider_version });
+    else parts.push({ key: "kind", text: kindName(s.kind) });
+    if (s.model) parts.push({ key: "model", text: shortModel(s.model) });
+    if (s.effort) parts.push({ key: "effort", text: String(s.effort) });
+    if (pct != null) parts.push({ key: "ctx", text: "ctx " + pct + "%" });
+    return parts;
   }
 
   function pendingWhat(p) {
@@ -1259,20 +1266,37 @@
 
   // ---- Pane ----
 
+  // The subtitle is one line: status, then provider version, model, effort and context. When it does not fit the
+  // bar, the least useful part goes first (effort, version, model) so the pane name keeps its width.
+  function fitSubtitle(node, s, parent) {
+    var st = statusOf(s), parts = subtitleParts(s);
+    if (parts.length < 2 && !s.model) {
+      parts = [parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind)];
+    }
+    var draw = function () {
+      node.replaceChildren();
+      var status = el("span", "bar-status " + st.cls);
+      status.appendChild(el("span", "sdot " + st.cls));
+      status.appendChild(document.createTextNode(st.label));
+      node.appendChild(status);
+      parts.forEach(function (p) { node.appendChild(document.createTextNode(" · " + p.text)); });
+    };
+    draw();
+    var drop = ["effort", "version", "model", "ctx"];
+    while (node.scrollWidth > node.clientWidth && node.clientWidth > 0 && drop.length) {
+      var gone = drop.shift(), before = parts.length;
+      parts = parts.filter(function (p) { return p.key !== gone; });
+      if (parts.length !== before) draw();
+    }
+  }
+
   function renderBar() {
     var s = session(S.pane);
     if (!s) return;
     $("heading").textContent = paneTitle(s);
     var parent = s.parent != null ? session(s.parent) : null;
-    var rich = paneSubtitle(s);
-    $("subheading").textContent = rich !== kindName(s.kind) ? rich : parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind);
-    // The status pill beside the title already says what a dot would.
     $("provider-avatar").replaceChildren(providerMark(s.kind, "lg"));
-    var st = statusOf(s), chip = $("pane-status");
-    chip.className = "pill " + st.cls;
-    chip.replaceChildren();
-    if (st.cls === "working") chip.appendChild(el("span", "spinner"));
-    chip.appendChild(document.createTextNode(st.label));
+    fitSubtitle($("subheading"), s, parent);
     if (!S.other) $("text").placeholder = s.state === "running" ? "Message " + kindName(s.kind) + "…" : kindName(s.kind) + " is not running";
     $("menu-title").textContent = paneTitle(s);
     $("menu-sub").textContent = s.workspace.name + " · " + kindName(s.kind);
@@ -1316,7 +1340,7 @@
   // Forgets the previous pane's changes, PR and terminal choice.
   function resetPaneView() {
     S.termChosen = false; S.autoTerm = false; S.back = "conv";
-    S.changes = null; S.changesError = ""; S.pr = null; S.diffPath = null; S.diff = null; S.diffError = "";
+    S.changes = null; S.changesError = ""; S.pr = null; S.diffPath = null; S.diff = null; S.diffError = ""; S.pushArmed = false;
     $("changes-view").replaceChildren();
   }
 
@@ -1708,7 +1732,7 @@
     var toScreen = function () { if (S.pane !== id) openPane(id, "term"); else setTerminal(true); };
     // Beside the terminal view the card's own copy of the screen and keys would only repeat it.
     var inTerm = docked && S.tab === "term";
-    var showsScreen = !inTerm && (p.type === "input" || !!s && s.kind !== "claude" && s.status === "needs-input");
+    var showsScreen = !inTerm && (p.type === "input" || !p.decidable && !!s && s.status === "needs-input");
     if (p.type === "permission") {
       var words = permissionWords(p.title);
       kicker(root, words.icon, words.ask, docked ? since : null);
@@ -1819,8 +1843,7 @@
   }
 
   function undecidableNote(p, s) {
-    var kind = s && s.kind;
-    if (kind !== "claude") return "Houston can't answer " + kindName(kind) + " requests with a tap yet. Read the screen and answer with keys or a message.";
+    if (p.type === "permission") return "Houston can't answer this " + kindName(s && s.kind) + " request with a tap. Read the screen and answer with keys or a message.";
     if (p.type === "input") return "It did not report what it is asking. Read the terminal and answer with the keys or a message.";
     if (p.type === "question") return "This request has several questions or allows several answers. Answer it in the terminal.";
     return "Answer it in the terminal.";
@@ -2227,6 +2250,7 @@
     root.appendChild(head);
     if (S.pr) root.appendChild(prCard(S.pr));
     var files = d.files || [];
+    renderChangeActions(root, d, files);
     if (!files.length) { emptyState(root, "check", "No uncommitted changes", "Edits in this pane's checkout appear here."); return; }
     var added = 0, removed = 0;
     files.forEach(function (f) { added += f.added || 0; removed += f.removed || 0; });
@@ -2248,6 +2272,98 @@
     });
     root.appendChild(card);
     if (d.truncated) root.appendChild(el("p", "decision-note", "Showing the first " + files.length + " changed files; the computer limits this list. The rest is in Houston on the computer."));
+  }
+
+  // Commit and push change the repository, so they appear only for a manage device on a computer that has the routes.
+  function renderChangeActions(root, d, files) {
+    if (!atLeast("manage")) return;
+    var canCommit = S.features.commit !== false && files.length > 0;
+    var canPush = S.features.push !== false && (d.ahead > 0 || !d.upstream);
+    if (!canCommit && !canPush) return;
+    var row = el("div", "decision-actions change-actions");
+    if (canCommit) row.appendChild(button("btn primary", "Commit…", function () { openCommit(files); }));
+    if (canPush && !S.pushArmed) row.appendChild(button("btn", d.ahead > 0 ? "Push · " + d.ahead + " ahead" : "Push", function () { S.pushArmed = true; renderChanges(); }));
+    root.appendChild(row);
+    if (canPush && S.pushArmed) {
+      var ask = el("div", "card push-confirm");
+      ask.appendChild(el("p", "menu-ask", "Push " + (d.branch || "this branch") + " to " + (d.upstream || "its remote") + "?"));
+      var go = el("div", "decision-actions");
+      go.appendChild(button("btn", "Cancel", function () { S.pushArmed = false; renderChanges(); }));
+      go.appendChild(button("btn primary", "Push now", function () { pushChanges(); }));
+      ask.appendChild(go);
+      root.appendChild(ask);
+    }
+  }
+
+  function changeRoute(action, body) {
+    var id = S.pane;
+    return api("POST", "/api/sessions/" + id + "/" + action, body).catch(function (e) {
+      if (e.stale) throw e;
+      if (missing(e)) { S.features[action] = false; e.message = "This computer's Houston can't " + action + " from a phone yet. Update Houston on the computer."; }
+      throw e;
+    });
+  }
+
+  function pushChanges() {
+    S.pushArmed = false;
+    renderChanges();
+    return changeRoute("push").then(function (d) {
+      toast(d && d.summary ? String(d.summary) : "Pushed");
+      loadChanges();
+      return true;
+    }).catch(function (e) {
+      if (!e.stale) toast(e.message, true);
+      renderChanges();
+      return false;
+    });
+  }
+
+  // `paths` null commits every tracked change; a list commits exactly those files.
+  function commitChanges(message, paths) {
+    return changeRoute("commit", { message: message, paths: paths }).then(function (d) {
+      toast("Committed" + (d && d.sha ? " " + String(d.sha).slice(0, 7) : ""));
+      loadChanges();
+      return true;
+    }).catch(function (e) {
+      if (!e.stale) toast(e.message, true);
+      return Promise.reject(e);
+    });
+  }
+
+  function openCommit(files) {
+    var sheet = $("commit-sheet"), list = $("commit-files"), note = $("commit-note"), msg = $("commit-message");
+    var picked = {}, touched = false, defaults = [];
+    note.textContent = ""; note.classList.add("hidden"); msg.value = "";
+    list.replaceChildren();
+    files.forEach(function (f) {
+      var tracked = f.status !== "?" && f.status !== "??" && !f.sensitive;
+      if (tracked) { picked[f.path] = true; defaults.push(f.path); }
+      var row = el("label", "sheet-row commit-file"), box = el("input"), at = f.path.lastIndexOf("/");
+      box.type = "checkbox"; box.checked = !!picked[f.path]; box.disabled = !!f.sensitive;
+      box.addEventListener("change", function () { touched = true; if (box.checked) picked[f.path] = true; else delete picked[f.path]; });
+      row.appendChild(box);
+      var name = el("span", "fname mono");
+      if (at >= 0) name.appendChild(el("span", "dir", f.path.slice(0, at + 1)));
+      name.appendChild(el("b", null, f.path.slice(at + 1)));
+      row.appendChild(name);
+      if (f.sensitive) row.appendChild(el("small", null, "never committed"));
+      list.appendChild(row);
+    });
+    $("commit-go").onclick = function () {
+      var message = msg.value.trim();
+      var fail = function (text) { note.textContent = text; note.classList.remove("hidden"); };
+      if (!message) { fail("Write a commit message first."); return; }
+      var chosen = Object.keys(picked);
+      if (!chosen.length) { fail("Select at least one file to commit."); return; }
+      $("commit-go").disabled = true;
+      commitChanges(message, touched ? chosen : null).then(function () { closeSheet(sheet); }, function (e) {
+        if (e.stale) return;
+        if (S.features.commit === false) { closeSheet(sheet); renderChanges(); return; }
+        fail(e.message);
+      }).then(function () { $("commit-go").disabled = false; });
+    };
+    openSheet(sheet);
+    msg.focus();
   }
 
   function renderDiff(root) {
@@ -2282,11 +2398,12 @@
     if (pr.review) meta.appendChild(el("span", "tag", String(pr.review).replace(/_/g, " ")));
     card.appendChild(meta);
     var c = pr.checks;
-    if (c) {
+    if (c && checksText(c)) {
       var line = el("p", "pr-checks");
-      line.appendChild(el("span", "ok", (c.passed || 0) + " passed"));
+      if (typeof c.passed === "number") line.appendChild(el("span", "ok", c.passed + " passed"));
       if (c.pending) line.appendChild(el("span", "pend", c.pending + " pending"));
       if (c.failed) line.appendChild(el("span", "bad", c.failed + " failed"));
+      if (!line.children.length) line.appendChild(el("span", /fail/i.test(c.summary || "") ? "bad" : "", checksText(c)));
       card.appendChild(line);
       (c.items || []).filter(function (i) { return i.state !== "passed" && i.state !== "success"; }).slice(0, 6).forEach(function (i) {
         card.appendChild(el("div", "pr-item " + i.state, i.name + " · " + i.state));
@@ -2347,9 +2464,12 @@
 
   function checksText(c) {
     if (!c) return "";
-    var parts = [(c.passed || 0) + " passed"];
+    var parts = [];
+    if (typeof c.passed === "number") parts.push(c.passed + " passed");
     if (c.pending) parts.push(c.pending + " pending");
     if (c.failed) parts.push(c.failed + " failed");
+    // The pull-request list reports only a summary; the counts are null there and are not shown as zeros.
+    if (!parts.length && c.summary) parts.push(String(c.summary).replace(/_/g, " "));
     return parts.join(" · ");
   }
 
@@ -2373,13 +2493,14 @@
       root.appendChild(sectionHead("Pull requests", ws.prs ? String(ws.prs.length) : ""));
       if (ws.errors.prs) root.appendChild(el("p", "callout danger", ws.errors.prs));
       else if (!ws.prs || !ws.prs.length) root.appendChild(el("p", "ws-empty", "No open pull requests."));
-      else ws.prs.forEach(function (pr) {
+      else (ws.prs.truncated ? [1] : []).concat(ws.prs).forEach(function (pr) {
+        if (pr === 1) { root.appendChild(el("p", "decision-note", "Showing the first " + ws.prs.length + " pull requests; the computer limits this list (" + ws.prs.truncated + ").")); return; }
         var card = el(safeUrl(pr.url) ? "a" : "div", "card ws-card");
         if (safeUrl(pr.url)) { card.href = safeUrl(pr.url); card.target = "_blank"; card.rel = "noopener noreferrer"; }
         var head = el("div", "pr-head"); head.appendChild(el("span", "pr-n mono", "#" + pr.number)); head.appendChild(el("b", null, pr.title || "")); card.appendChild(head);
         var meta = el("div", "pr-meta");
         if (pr.review) meta.appendChild(el("span", "tag", String(pr.review).replace(/_/g, " ")));
-        if (pr.checks) meta.appendChild(el("span", "tag plain" + (pr.checks.failed ? " bad" : ""), checksText(pr.checks)));
+        if (checksText(pr.checks)) meta.appendChild(el("span", "tag plain" + (pr.checks.failed || /fail/i.test(pr.checks.summary || "") ? " bad" : ""), checksText(pr.checks)));
         if (meta.children.length) card.appendChild(meta);
         root.appendChild(card);
       });
@@ -2388,7 +2509,8 @@
       root.appendChild(sectionHead("Open tasks", ws.tasks ? String(ws.tasks.length) : ""));
       if (ws.errors.tasks) root.appendChild(el("p", "callout danger", ws.errors.tasks));
       else if (!ws.tasks || !ws.tasks.length) root.appendChild(el("p", "ws-empty", "No open tasks."));
-      else ws.tasks.forEach(function (t) {
+      else (ws.tasks.truncated ? [1] : []).concat(ws.tasks).forEach(function (t) {
+        if (t === 1) { root.appendChild(el("p", "decision-note", "Showing the first " + ws.tasks.length + " tasks; the computer limits this list (" + ws.tasks.truncated + ").")); return; }
         var card = el("div", "card ws-card ws-task"), main = el("span", "ws-task-main");
         main.appendChild(el("b", null, t.title || "Task " + t.id));
         main.appendChild(el("small", null, (t.state || "") + (t.pane != null ? " · pane " + t.pane : "")));
@@ -2407,11 +2529,13 @@
         ((u.today && u.today.by_provider) || []).forEach(function (r) {
           var row2 = el("div", "usage-row"); row2.appendChild(el("span", null, kindName(r.kind))); row2.appendChild(el("span", "mono", money(r.cost_usd))); card2.appendChild(row2);
         });
-        (u.limits || []).forEach(function (l) {
+        // A computer that reads no plan windows reports none: only today's cost is shown, with no empty meters.
+        (u.limits || []).filter(function (l) { return l && typeof l.percent === "number"; }).forEach(function (l) {
           var row3 = el("div", "usage-row"); row3.appendChild(el("span", null, kindName(l.kind) + " " + l.window)); row3.appendChild(el("span", "mono", Math.round(l.percent) + "%")); card2.appendChild(row3); card2.appendChild(meter(l.percent));
         });
         if (u.stale) card2.appendChild(el("p", "decision-note", "Cached figures; the computer could not refresh them in time."));
-        root.appendChild(card2);
+        if (!card2.children.length) root.appendChild(el("p", "ws-empty", "No usage today."));
+        else root.appendChild(card2);
       }
     }
   }
@@ -3019,6 +3143,7 @@
   $("spawn-close").addEventListener("click", function () { closeSheet($("spawn-sheet")); });
   $("spawn-submit").addEventListener("click", function () { if (S.spawn) submitSpawn(S.spawn.form); });
   $("ws-close").addEventListener("click", function () { closeSheet($("ws-sheet")); });
+  $("commit-close").addEventListener("click", function () { closeSheet($("commit-sheet")); });
   $("commands-close").addEventListener("click", function () { closeSheet($("commands-sheet")); });
   $("replies-close").addEventListener("click", function () { closeSheet($("replies-sheet")); });
   $("replies-form").addEventListener("submit", function (ev) {
@@ -3036,6 +3161,7 @@
   sheetGestures($("menu-sheet"));
   sheetGestures($("replies-sheet"), function () { if (S.view === "list" && S.home === "computer") renderList(); });
   sheetGestures($("commands-sheet"));
+  sheetGestures($("commit-sheet"));
   sheetGestures($("ws-sheet"));
   sheetGestures($("spawn-sheet"));
   $("send").addEventListener("click", send);

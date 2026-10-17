@@ -594,3 +594,127 @@ test('a computer without the workspace routes hides each section and still shows
   assert.equal(S.ws.loaded, true); assert.equal(S.ws.tasks.length, 1); assert.equal(S.ws.usage.today.cost_usd, 1);
   assert.equal(S.ws.path, '/w', 'the workspace list falls back to the panes already known');
 });
+
+// A recording stand-in for the DOM helpers: every element keeps its class, text and children.
+function fakeDom() {
+  const make = (tag, cls, text) => ({ tag, cls: cls || '', text: text == null ? '' : String(text), children: [], dataset: {}, style: {}, classList: { add() {}, remove() {}, toggle() {} },
+    appendChild(c) { this.children.push(c); return c; }, replaceChildren() { this.children = []; }, setAttribute() {} });
+  const texts = n => [n.text, ...n.children.map(texts)].filter(Boolean).join(' ');
+  const find = (n, label) => [n, ...n.children.flatMap(c => find(c, label))].filter(x => x.text === label);
+  return { make, texts, find, el: make, button: (cls, text, onClick) => Object.assign(make('button', cls, text), { onClick }) };
+}
+function changesHarness(tier, features = {}) {
+  const h = tierHarness(tier), dom = fakeDom();
+  vm.runInContext(['renderChangeActions', 'changeRoute', 'pushChanges', 'commitChanges', 'checksText', 'subtitleParts', 'contextPercent', 'shortModel', 'kindName'].map(production).join('\n'), h.ctx);
+  Object.assign(h.ctx, { el: dom.el, button: dom.button, renderChanges: () => {}, loadChanges: () => {}, kindName: k => k, toast: v => h.status.push(v) });
+  Object.assign(h.S, { features, pushArmed: false });
+  return { ...h, dom };
+}
+const dirty = { branch: 'b', upstream: 'origin/b', ahead: 2, behind: 0, files: [{ path: 'a.rs', status: 'M' }] };
+
+test('Commit and Push appear only for a manage device, and only when the routes exist', () => {
+  for (const [tier, shown] of [['observe', false], ['drive', false], [undefined, false], ['manage', true]]) {
+    const { ctx, dom } = changesHarness(tier), root = dom.make('div');
+    ctx.renderChangeActions(root, dirty, dirty.files);
+    assert.equal(root.children.length > 0, shown, `${tier}`);
+    if (shown) assert.match(dom.texts(root), /Commit….*Push · 2 ahead/);
+  }
+  const hidden = changesHarness('manage', { commit: false, push: false }), root = hidden.dom.make('div');
+  hidden.ctx.renderChangeActions(root, dirty, dirty.files);
+  assert.equal(root.children.length, 0, 'both routes 404 → no empty action row');
+  const clean = changesHarness('manage'), root2 = clean.dom.make('div');
+  clean.ctx.renderChangeActions(root2, { ...dirty, ahead: 0, files: [] }, []);
+  assert.equal(root2.children.length, 0, 'nothing to commit and nothing ahead');
+});
+
+test('Push asks for an in-page confirmation before sending anything', async () => {
+  const { ctx, S, dom } = changesHarness('manage'), calls = [];
+  ctx.api = (method, path, body) => { calls.push({ method, path, body }); return Promise.resolve({ ok: true, summary: 'pushed 2 commits' }); };
+  const root = dom.make('div');
+  ctx.renderChangeActions(root, dirty, dirty.files);
+  dom.find(root, 'Push · 2 ahead')[0].onClick();
+  assert.equal(S.pushArmed, true); assert.equal(calls.length, 0, 'the first tap only arms');
+  const armed = dom.make('div'); ctx.renderChangeActions(armed, dirty, dirty.files);
+  assert.match(dom.texts(armed), /Push b to origin\/b\?.*Cancel.*Push now/);
+  await ctx.pushChanges(); await flush();
+  assert.equal(calls.length, 1); assert.equal(calls[0].method, 'POST'); assert.equal(calls[0].path, '/api/sessions/7/push');
+  assert.equal(S.pushArmed, false);
+});
+
+test('commit sends the message with null paths by default and the exact list when chosen', async () => {
+  const { ctx, status } = changesHarness('manage'), calls = [];
+  ctx.api = (method, path, body) => { calls.push({ method, path, body }); return Promise.resolve({ sha: 'abcdef1234567', summary: 's' }); };
+  assert.equal(await ctx.commitChanges('fix it', null), true);
+  assert.equal(await ctx.commitChanges('fix it', ['a.rs', 'b.rs']), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    { method: 'POST', path: '/api/sessions/7/commit', body: { message: 'fix it', paths: null } },
+    { method: 'POST', path: '/api/sessions/7/commit', body: { message: 'fix it', paths: ['a.rs', 'b.rs'] } },
+  ]);
+  assert.equal(status.at(-1), 'Committed abcdef1');
+});
+
+test('commit and push failures show the daemon text, and a 404 hides the feature', async () => {
+  const { ctx, S, status } = changesHarness('manage');
+  ctx.api = () => Promise.reject(Object.assign(new Error('commit message is 0 characters: expected 1 to 500'), { status: 400 }));
+  await assert.rejects(ctx.commitChanges('', null), /expected 1 to 500/);
+  assert.equal(status.at(-1), 'commit message is 0 characters: expected 1 to 500');
+  ctx.api = () => Promise.reject(Object.assign(new Error('push rejected: non-fast-forward'), { status: 409 }));
+  assert.equal(await ctx.pushChanges(), false);
+  assert.equal(status.at(-1), 'push rejected: non-fast-forward');
+  assert.equal(S.features.push, undefined);
+  ctx.api = () => Promise.reject(Object.assign(new Error('Request failed with status 404'), { status: 404 }));
+  assert.equal(await ctx.pushChanges(), false);
+  assert.equal(S.features.push, false);
+  await assert.rejects(ctx.commitChanges('x', null), /can't commit from a phone/);
+  assert.equal(S.features.commit, false);
+});
+
+test('absent fields render nothing: null effort, version, model, context and null PR check counts', () => {
+  const { ctx } = changesHarness('manage');
+  const bare = ctx.subtitleParts({ kind: 'claude', effort: null, started_at: null, provider_version: null, model: null, context: null });
+  assert.deepEqual([...bare.map(p => p.text)], ['claude']);
+  const full = ctx.subtitleParts({ kind: 'claude', provider_version: '2.1.302', model: 'claude-opus-5-5', effort: 'high', context: { percent: 41.6 } });
+  assert.deepEqual([...full.map(p => p.text)], ['claude 2.1.302', 'opus-5-5', 'high', 'ctx 42%']);
+  assert.equal(ctx.checksText({ passed: null, failed: null, pending: null, summary: 'passing' }), 'passing');
+  assert.equal(ctx.checksText({ passed: null, failed: null, pending: null }), '');
+  assert.equal(ctx.checksText({ passed: 5, failed: 0, pending: 2 }), '5 passed · 2 pending');
+  for (const text of [ctx.checksText({ passed: null, failed: null, pending: null, summary: 'x' }), ...full.map(p => p.text)]) assert.ok(!/null|undefined/.test(text));
+});
+
+test('usage with no plan windows shows only today’s cost by provider, with no meters', () => {
+  const { ctx, S } = changesHarness('manage'), dom = fakeDom();
+  vm.runInContext(['renderWorkspace', 'sectionHead', 'meter', 'money'].map(production).join('\n'), ctx);
+  vm.runInContext(source.match(/  var USAGE_WARN =[^\n]+/)[0], ctx);
+  Object.assign(ctx, { el: dom.el, icon: () => dom.make('svg'), kindName: k => k, safeUrl: () => '', session: () => null, openPane() {}, openWorkspacePicker() {} });
+  S.features = { workspaces: false, prs: false, tasks: false };
+  const render = usage => { S.ws = { loaded: true, list: [], path: null, errors: {}, usage }; const root = dom.make('div'); ctx.renderWorkspace(root); return root; };
+  const root = render({ today: { cost_usd: 7.4, by_provider: [{ kind: 'claude', cost_usd: 5.1 }] }, limits: [] });
+  assert.match(dom.texts(root), /Usage today \$7\.40 claude \$5\.10/);
+  const meters = n => n.cls.includes('meter') ? 1 : n.children.reduce((a, c) => a + meters(c), 0);
+  assert.equal(meters(root), 0);
+  const empty = render({ today: { cost_usd: 0, by_provider: [] }, limits: [] });
+  assert.match(dom.texts(empty), /No usage today/);
+  assert.equal(meters(render({ today: { cost_usd: 1, by_provider: [] }, limits: [{ kind: 'claude', window: '5h', percent: 57 }] })), 1, 'a real window still gets its meter');
+});
+
+test('the capped-list header travels with the array', async () => {
+  const { ctx, S } = harness();
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200, headers: { get: name => name === 'x-houston-truncated' ? '100' : null }, json: () => Promise.resolve([{ id: 1 }]) });
+  const list = await ctx.api('GET', '/api/tasks?workspace=/w');
+  assert.equal(list.truncated, 100); assert.equal(list.length, 1);
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, json: () => Promise.resolve([{ id: 1 }]) });
+  assert.equal((await ctx.api('GET', '/api/tasks?workspace=/w')).truncated, undefined);
+  assert.ok(S);
+});
+
+test('decision cards follow the daemon’s decidable flag, never the provider', () => {
+  assert.ok(!/kind\s*[!=]==?\s*["']claude["']|provider\s*[!=]==?\s*["']claude["']/.test(source), 'no provider == claude gate in app.js');
+  const { ctx } = changesHarness('manage');
+  vm.runInContext(['undecidableNote'].map(production).join('\n'), ctx);
+  for (const kind of ['claude', 'codex', 'opencode']) {
+    assert.equal(ctx.undecidableNote({ type: 'permission' }, { kind }).includes('tap'), true);
+    assert.equal(ctx.undecidableNote({ type: 'input' }, { kind }), 'It did not report what it is asking. Read the terminal and answer with the keys or a message.');
+  }
+  const lists = vm.runInContext(source.match(/  var COMMANDS = \{[\s\S]*?\n  \};/)[0] + ';COMMANDS', ctx);
+  assert.deepEqual(Object.keys(lists).sort(), ['claude', 'codex', 'opencode'], 'only providers with verified commands list any');
+});

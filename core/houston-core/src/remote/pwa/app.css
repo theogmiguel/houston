@@ -879,3 +879,18 @@ body.composing .changes, body.composing .term-view { flex: 1; min-height: 0; ove
 .sheet-row svg.on { margin-left: auto; color: var(--accent); }
 .tag.plain { text-transform: none; }
 #spawn-submit { position: sticky; bottom: 0; }
+
+/* Pane bar subtitle: status first, then version, model and context on one line. */
+.bar-status { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-secondary); }
+.bar-status.needs-input { color: var(--warn-text); }
+.bar-status.working { color: var(--info); }
+
+/* Changes tab: commit and push. */
+.change-actions { margin-bottom: var(--s3); }
+.push-confirm { padding: 12px; margin-bottom: var(--s3); display: flex; flex-direction: column; gap: 10px; }
+.commit-files-label { margin-top: 12px; }
+.commit-file { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; }
+.commit-file input { flex: none; width: 20px; height: 20px; }
+.commit-file .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-file small { flex: none; color: var(--text-muted); font-size: 11.5px; }
+.sheet-note.error { color: var(--stop-text); }
