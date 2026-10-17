@@ -274,6 +274,10 @@ The helper's own work takes milliseconds; the timeout covers starting Git Bash a
 On a loaded Windows machine the first run of a newly written helper waits for the antivirus
 scan, which exceeded the earlier 5 s budget, and Claude discards a hook that outlives its
 timeout, losing the event. A fast hook still returns as soon as it exits.
+After placing new or changed launcher bytes, the daemon runs the Windows `.exe` launcher once
+in the background (`hs-mail`, its print-only refusal), so that scan happens before an agent's
+first hook needs the binary; identical rewrites are skipped, and Linux and macOS, whose
+launcher is a symlink with no equivalent first-run scan, place nothing extra.
 `Stop`/`StopFailure` run synchronously because the orchestration inbox's door 2 needs the
 CLI to wait for the helper's stdout and splice it into the same turn — an async hook prints
 into a pipe nobody reads. Codex's `hooks.json` and Antigravity's hooks file write no `async`

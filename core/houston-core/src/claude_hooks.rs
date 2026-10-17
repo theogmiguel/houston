@@ -128,10 +128,134 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
     }
     sweep_stale_tmp(&dir);
     place_launcher(&dir, &exe, &path)?;
-    if cfg!(windows) {
-        place_launcher(&dir, &exe, &executable_launcher(&path))?;
-    }
+    place_exe_launcher(&dir, &exe, &path)?;
     Ok(path)
+}
+
+/// Windows places the `.exe` copy a hook starts (see `executable_launcher`)
+/// and pre-warms it when its bytes are new or changed: the antivirus tax on a
+/// first execution then falls on a background run, not an agent's first hook.
+#[cfg(windows)]
+fn place_exe_launcher(dir: &Path, exe: &Path, plain: &Path) -> Result<()> {
+    let exe_launcher = executable_launcher(plain);
+    let changed = launcher_bytes_change(&exe_launcher, exe);
+    place_launcher(dir, exe, &exe_launcher)?;
+    if changed {
+        prewarm_launcher(&exe_launcher);
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn place_exe_launcher(_dir: &Path, _exe: &Path, _plain: &Path) -> Result<()> {
+    // Unix starts the plain launcher, a symlink, and no supported filesystem
+    // there scans an executable on first run, so there is nothing to pre-warm.
+    Ok(())
+}
+
+/// Whether placing `exe` at `path` writes new or changed bytes. A missing or
+/// unreadable `path` counts as changed: the pre-warm errs on running once too
+/// often, never on skipping the scan.
+#[cfg(windows)]
+fn launcher_bytes_change(path: &Path, exe: &Path) -> bool {
+    if same_file(path, exe) {
+        return false;
+    }
+    match (std::fs::metadata(path), std::fs::metadata(exe)) {
+        (Ok(placed), Ok(source)) if placed.len() == source.len() => {
+            file_digest(path) != file_digest(exe)
+        }
+        _ => true,
+    }
+}
+
+/// Same-file identity short-circuits the steady state: after a place on one
+/// volume the launcher is a hard link of the binary, so an unchanged boot
+/// answers without reading either file.
+#[cfg(windows)]
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (file_identity(a), file_identity(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+#[cfg(windows)]
+fn file_identity(path: &Path) -> Option<(u32, u64)> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: `wide` is NUL-terminated and outlives the call.
+    let raw = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    // SAFETY: `raw` is a live handle from CreateFileW; `OwnedHandle` closes it.
+    let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
+    // SAFETY: an all-zero struct is a valid empty state for this Win32 type.
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle and out pointer are exactly what this API takes.
+    if unsafe { GetFileInformationByHandle(handle.as_raw_handle(), &mut info) } == 0 {
+        return None;
+    }
+    Some((
+        info.dwVolumeSerialNumber,
+        u64::from(info.nFileIndexHigh) << 32 | u64::from(info.nFileIndexLow),
+    ))
+}
+
+#[cfg(windows)]
+fn file_digest(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        match file.read(&mut chunk) {
+            Ok(0) => return Some(format!("{:x}", hasher.finalize())),
+            Ok(n) => hasher.update(&chunk[..n]),
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Covers the measured worst-case first-run scan (about 10 s on a debug
+/// helper) with margin, while still reaping a child that wedges.
+#[cfg(windows)]
+const PREWARM_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// One bounded background run of a newly placed launcher: the antivirus scan
+/// of its first execution then happens here, off the boot path. Any failure is
+/// a debug log — the scan only moves, it never blocks anything.
+#[cfg(windows)]
+fn prewarm_launcher(launcher: &Path) {
+    let program = launcher.to_path_buf();
+    let thread = std::thread::Builder::new()
+        .name("launcher-prewarm".to_string())
+        .spawn(move || {
+            let mut cmd = crate::spawn::command(&program);
+            // `hs-mail` is the helper's print-only refusal: no state, no stdin.
+            cmd.arg("hs-mail");
+            let run = crate::spawn::output_within(cmd, PREWARM_DEADLINE);
+            tracing::debug!("pre-warm run of {}: {run:?}", program.display());
+        });
+    if let Err(e) = thread {
+        tracing::debug!("spawning the launcher pre-warm thread: {e}");
+    }
 }
 
 fn place_launcher(dir: &Path, exe: &Path, path: &Path) -> Result<()> {
@@ -1685,6 +1809,45 @@ mod tests {
             .output()
             .unwrap_or_else(|e| panic!("starting {}: {e}", program.display()));
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "launched");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_prewarm_runs_only_when_the_placed_bytes_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("helper.exe");
+        std::fs::write(&exe, b"helper-v1").unwrap();
+        let placed = dir.path().join("claude-hook.exe");
+
+        assert!(
+            launcher_bytes_change(&placed, &exe),
+            "a missing launcher is new, so its first run pays the scan"
+        );
+
+        std::fs::write(&placed, b"helper-v1").unwrap();
+        assert!(
+            !launcher_bytes_change(&placed, &exe),
+            "identical bytes in distinct files must not re-trigger the pre-warm"
+        );
+
+        std::fs::write(&placed, b"helper-v2").unwrap();
+        assert!(
+            launcher_bytes_change(&placed, &exe),
+            "changed bytes of equal length are found by content, not size"
+        );
+
+        std::fs::write(&placed, b"v2").unwrap();
+        assert!(
+            launcher_bytes_change(&placed, &exe),
+            "a length change is a changed binary"
+        );
+
+        let linked = dir.path().join("linked.exe");
+        std::fs::hard_link(&exe, &linked).unwrap();
+        assert!(
+            !launcher_bytes_change(&linked, &exe),
+            "the hard-linked steady state answers unchanged without reading"
+        );
     }
 
     #[cfg(unix)]
