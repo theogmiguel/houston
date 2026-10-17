@@ -1,5 +1,6 @@
 import { PhonePairingCard, PairingStep, PairingSteps } from '../src/components/ui/PhonePairingCard'
 import { ReviewSummary } from '../src/components/ui/ReviewSummary'
+import { ReviewFindingSpecimen } from '../src/components/ui/ReviewFinding'
 import { SettingsDisclosure } from '../src/components/ui/SettingsDisclosure'
 import { AgentConnectionGrid, AgentConnectionTile } from '../src/components/ui/AgentConnectionTile'
 import { SettingsToolbar } from '../src/components/ui/SettingsToolbar'
@@ -1061,6 +1062,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Card.Row compact rail="new" heading="Compact history row" meta="One line for recent history" />
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
+          <ReviewFindingSpecimen />
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
           <Card shape="inset" borderStyle="dashed"><SectionHead variant="sentence" density="row" icon={IconSparkles} title="Suggested" count={2} action={<Text size="small" tone="muted">from Review</Text>} /><Card.Row layout="meta-actions" heading="Codex retries the same failing migration" meta="5 of 38 sessions" action={<Inline gap="small"><Button variant="muted-link">Dismiss</Button><Button variant="muted-link">Add to queue</Button></Inline>} /></Card>
           <Card><Card.Row layout="source" heading="Weekly review" meta="Findings wait for your decision." status={<StatusLabel status="On" />} action={<Button variant="muted-link">Routines</Button>} /></Card>

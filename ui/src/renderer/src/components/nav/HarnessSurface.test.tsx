@@ -289,8 +289,8 @@ describe('HarnessSurface', () => {
     const heading = container.querySelector('h1')!
     const banner = Array.from(container.querySelectorAll('[role="note"]')).find((node) => node.textContent?.includes('Review #3 found'))!
     expect(heading.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const status = container.querySelector('section[aria-label="Harness findings"] [class*="--w-finding-status"]')!
-    expect(status.nextElementSibling?.className).toContain('--w-finding-actions')
+    const row = container.querySelector('section[aria-label="Harness findings"] [data-review-finding]')!
+    expect(row.firstElementChild?.className).toContain('var(--w-finding-status)_var(--w-finding-action)_var(--w-finding-action)')
   })
   it('puts the reported Settings review summary and its actions in one card', () => {
     render({ embedded: true, onOpenRoutines: vi.fn(), state: harnessState({ routine: routine({ enabled: true }), reviews: [review({ sessions: 38, finding_count: 7 }), review({ id: 2, sessions: 41, finding_count: 17 })] }) })
@@ -302,9 +302,52 @@ describe('HarnessSurface', () => {
     expect(props.onRunNow).toHaveBeenCalledWith(7)
     click(button('Edit schedule in Routines'))
     expect(props.onOpenRoutines).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('Open findings')
+    expect(container.textContent).toContain('Findings')
     expect(container.textContent).toContain('New')
     expect(container.querySelector('form')).toBeNull()
+  })
+  it('groups active findings by what they need next, highest confidence first', () => {
+    render({ embedded: true, state: harnessState({ findings: [
+      finding({ key: 'low', title: 'Low confidence finding', confidence: 'low', count: 9 }),
+      finding({ key: 'high', title: 'High confidence finding', confidence: 'high', count: 2 }),
+      finding({ key: 'fixing', title: 'Finding being fixed', phase: 'fixing', task: { task_id: 4, key: 'HOU-4', status: 'in_progress', landed_at_ms: null } }),
+      finding({ key: 'gone', title: 'Resolved finding', phase: 'resolved', state: 'resolved' })
+    ] }) })
+    const groups = Array.from(container.querySelectorAll('section[aria-label="Harness findings"] [role="list"]'))
+    expect(groups.map((group) => group.getAttribute('aria-label'))).toEqual(['Needs a decision', 'In progress'])
+    expect(Array.from(groups[0].querySelectorAll('[role="listitem"]')).map((row) => row.textContent)).toEqual([
+      expect.stringContaining('High confidence finding'),
+      expect.stringContaining('Low confidence finding')
+    ])
+    expect(groups[1].textContent).toContain('Finding being fixed')
+    expect(groups.map((group) => group.textContent).join('')).not.toContain('Resolved finding')
+  })
+  it('expands a finding to show its recommendation, target and quoted evidence', () => {
+    render({ embedded: true })
+    const toggle = container.querySelector<HTMLButtonElement>('[role="listitem"] button[aria-expanded]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Allow git push to the fork remote.')
+    act(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Allow git push to the fork remote.')
+    expect(container.textContent).toContain('why was the push denied again')
+    expect(container.textContent).toContain('abc123, def456')
+  })
+  it('marks each finding in a review with the same status words the findings use', () => {
+    render({ embedded: true, state: harnessState({ findings: [
+      finding({ key: 'raised', title: 'Raised here' }),
+      finding({ key: 'fixed', title: 'Fixed since', phase: 'resolved', state: 'resolved', review_id: 2, verification: { review_id: 3, verdict: 'gone', sessions_after: 5, quotes: [] } })
+    ] }) })
+    const outcomes = container.querySelector('ul[aria-label="Review #3 findings"]')!
+    expect(Array.from(outcomes.querySelectorAll('li')).map((row) => row.textContent)).toEqual([
+      expect.stringMatching(/^NewRaised here/),
+      expect.stringMatching(/^GoneFixed since5 sessions since it merged/)
+    ])
+  })
+  it('states each older review session total once in its history row', () => {
+    render({ state: harnessState({ reviews: [review({ id: 13, sessions: 38 }), review({ id: 12, sessions: 41 })] }) })
+    expect(container.textContent).toContain('41 sessions · 0 new · 0 gone')
+    expect(container.textContent).not.toContain('41 sessions · 41 sessions')
   })
   it('does not turn an unreported review session total into a zero trend', () => {
     render({ embedded: true, state: harnessState({ reviews: [review({ sessions: null })] }) })

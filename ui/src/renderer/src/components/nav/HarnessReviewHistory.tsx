@@ -3,8 +3,10 @@ import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessState } from '../../houston/useHarness'
 import { openSideTasks } from '../../sidePanel'
-import { IconChevronDown, IconChevronRight } from '../icons'
-import { Button, Caption, Card, SectionHead, StatusLabel } from '../ui'
+import { IconChevronLeft } from '../icons'
+import { Button, Caption, Card, Count, StatusLabel, type StatusLabelValue } from '../ui'
+import { SectionTitle } from '../ui/navText'
+import { ReviewFinding, ReviewFindingList, ReviewOutcome, ReviewOutcomeList } from '../ui/ReviewFinding'
 import { HarnessReportView } from './HarnessReportView'
 import { formatHarnessDate } from './harnessFormat'
 
@@ -26,14 +28,13 @@ export function HarnessReviewHistory({
   deltaOverrides?: Record<number, { new: number; gone: number }>
 }): React.JSX.Element {
   const [reportId, setReportId] = useState<number | null>(null)
-  const [expanded, setExpanded] = useState<number | null>(null)
   const published = state.reviews.filter((review) => review.status === 'published')
   const latest = published[0] ?? null
 
   if (reportId !== null) {
     return (
       <section className="grid gap-[var(--space-2)]">
-        <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setReportId(null)}>Back to reviews</Button>
+        <Button variant="ghost" size="sm" icon={IconChevronLeft} className="justify-self-start" onClick={() => setReportId(null)}>Back to reviews</Button>
         <HarnessReportView
           reviews={published}
           initialReviewId={reportId}
@@ -48,96 +49,72 @@ export function HarnessReviewHistory({
   }
 
   return (
-    <section className="grid gap-[var(--space-2)]" aria-label="Reviews">
-      <SectionHead title="Reviews" count={published.length} />
+    <section className="grid gap-[var(--space-3)]" aria-label="Reviews">
+      <SectionTitle>Review history{published.length > 0 && <Count value={published.length} />}</SectionTitle>
       {latest ? (
-        <Card>
-          <Card.Row
-          heading={`Review #${latest.id}`}
-          meta={`${formatHarnessDate(latest.started_at_ms, true)} · ${latest.sessions ?? 0} sessions · Claude Code, Codex`}
-          compact
-            action={<Button size="sm" variant="ghost" onClick={() => setReportId(latest.id)}>Full report</Button>}
-          />
-          <ReviewGroups review={latest} findings={state.findings} />
-        </Card>
-      ) : (
-        <Card padding="md"><Caption>No published reviews yet. Each review lists what it found new, what is still there and what is gone.</Caption></Card>
-      )}
-      {published.slice(1).map((review) => (
-        <Card key={review.id}>
-          <Card.Row
+        <ReviewFindingList label="Published reviews">
+          {published.map((review) => (
+            <ReviewFinding
+              key={review.id}
               heading={`Review #${review.id}`}
-              meta={`${formatHarnessDate(review.started_at_ms)} · ${review.sessions ?? 0} sessions · ${reviewDelta(review, state.findings, deltaOverrides?.[review.id])}`}
-              compact
-              action={
-                <Button
-                  variant="icon"
-                  icon={expanded === review.id ? IconChevronDown : IconChevronRight}
-                  aria-label={`${expanded === review.id ? 'Collapse' : 'Expand'} review #${review.id}`}
-                  aria-expanded={expanded === review.id}
-                  onClick={() => setExpanded((current) => current === review.id ? null : review.id)}
-                />
-              }
-          />
-          {expanded === review.id && <ReviewGroups review={review} findings={state.findings} />}
-        </Card>
-      ))}
+              meta={`${formatHarnessDate(review.started_at_ms, review === latest)} · ${review.sessions == null ? 'Session total not reported' : `${review.sessions} sessions`} · ${reviewDelta(review, state.findings, deltaOverrides?.[review.id])}`}
+              secondaryAction={review === latest ? <Button variant="ghost" onClick={() => setReportId(review.id)}>Full report</Button> : undefined}
+              defaultOpen={review === latest}
+              detail={<ReviewOutcomes review={review} findings={state.findings} />}
+            />
+          ))}
+        </ReviewFindingList>
+      ) : (
+        <Card shape="card" padding="md"><Caption>No published reviews yet. Each review lists what it found new, what is still there and what is gone.</Caption></Card>
+      )}
     </section>
   )
 }
 
-function ReviewGroups({ review, findings }: { review: HarnessReview; findings: HarnessFinding[] }): React.JSX.Element {
-  const related = findings.filter((finding) => finding.review_id === review.id || finding.verification?.review_id === review.id)
-  const gone = related.filter((finding) => finding.verification?.review_id === review.id && finding.verification.verdict === 'gone')
-  const fresh = related.filter((finding) => !gone.includes(finding) && !finding.recurred && !finding.task)
-  const still = related.filter((finding) => !gone.includes(finding) && !fresh.includes(finding))
+type Outcome = 'new' | 'still' | 'gone'
 
+const OUTCOME: Record<Outcome, { status: StatusLabelValue; label: string }> = {
+  new: { status: 'Open', label: 'New' },
+  still: { status: 'Fixing', label: 'Still there' },
+  gone: { status: 'Verified', label: 'Gone' }
+}
+
+/** Sorts a review's findings into what it raised, what it saw again and what a fix removed. */
+export function reviewOutcomes(review: HarnessReview, findings: HarnessFinding[]): { finding: HarnessFinding; outcome: Outcome }[] {
+  const related = findings.filter((finding) => finding.review_id === review.id || finding.verification?.review_id === review.id)
+  const outcomeOf = (finding: HarnessFinding): Outcome => {
+    if (finding.verification?.review_id === review.id && finding.verification.verdict === 'gone') return 'gone'
+    return !finding.recurred && !finding.task ? 'new' : 'still'
+  }
+  const order: Outcome[] = ['new', 'still', 'gone']
+  return related.map((finding) => ({ finding, outcome: outcomeOf(finding) })).sort((a, b) => order.indexOf(a.outcome) - order.indexOf(b.outcome))
+}
+
+function ReviewOutcomes({ review, findings }: { review: HarnessReview; findings: HarnessFinding[] }): React.JSX.Element {
+  const outcomes = reviewOutcomes(review, findings)
+  if (outcomes.length === 0) return <Caption>No finding details are available for this review.</Caption>
   return (
-    <Card.Content>
-      <ReviewGroup label="New" rail="new" findings={fresh} />
-      <ReviewGroup label="Still there" rail="still" findings={still} />
-      <ReviewGroup label="Gone" rail="gone" findings={gone} />
-      {related.length === 0 && <p>No finding details are available for this review.</p>}
-    </Card.Content>
+    <ReviewOutcomeList label={`Review #${review.id} findings`}>
+      {outcomes.map(({ finding, outcome }) => {
+        const task = finding.task
+        return (
+          <ReviewOutcome
+            key={finding.key}
+            status={<StatusLabel status={OUTCOME[outcome].status} size="small">{OUTCOME[outcome].label}</StatusLabel>}
+            heading={finding.title}
+            meta={<>
+              {task && <><Button variant="body-link" onClick={() => openSideTasks(false, task.task_id)}>{task.key}</Button>{' · '}</>}
+              {outcome === 'gone' ? `${finding.verification?.sessions_after ?? 0} sessions since it merged` : task && outcome === 'still' ? 'not merged yet' : `${finding.count} sessions`}
+            </>}
+          />
+        )
+      })}
+    </ReviewOutcomeList>
   )
 }
 
 function reviewDelta(review: HarnessReview, findings: HarnessFinding[], override?: { new: number; gone: number }): string {
   if (override) return `${override.new} new · ${override.gone} gone`
-  const related = findings.filter((finding) => finding.review_id === review.id || finding.verification?.review_id === review.id)
-  const gone = related.filter((finding) => finding.verification?.review_id === review.id && finding.verification.verdict === 'gone')
-  const fresh = related.filter((finding) => !gone.includes(finding) && !finding.recurred && !finding.task)
-  return `${review.sessions ?? 0} sessions · ${fresh.length} new · ${gone.length} gone`
-}
-
-function ReviewGroup({
-  label,
-  rail,
-  findings
-}: {
-  label: string
-  rail: 'new' | 'still' | 'gone'
-  findings: HarnessFinding[]
-}): React.JSX.Element | null {
-  if (findings.length === 0) return null
-  return (
-    <Card.Group rail={rail}>
-      <section aria-label={label}>
-        <SectionHead title={label} count={findings.length} inset />
-      </section>
-      {findings.map((finding) => {
-        const task = finding.task
-        return (
-          <Card.Row
-            key={finding.key}
-            compact
-            heading={<>{finding.title}{task && <> <Button size="sm" variant="link" onClick={() => openSideTasks(false, task.task_id)}>{task.key}</Button></>}</>}
-            meta={rail === 'gone'
-              ? <><StatusLabel status="Verified" /> {finding.verification?.sessions_after ?? 0} sessions since it merged</>
-              : <>{task ? 'not merged yet' : `${finding.count} sessions`}</>}
-          />
-        )
-      })}
-    </Card.Group>
-  )
+  const outcomes = reviewOutcomes(review, findings)
+  return `${outcomes.filter((item) => item.outcome === 'new').length} new · ${outcomes.filter((item) => item.outcome === 'gone').length} gone`
 }

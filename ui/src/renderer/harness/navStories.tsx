@@ -102,7 +102,7 @@ export function NavRoutines({ selectedRoutineId = 1, setup = false, report = fal
           { id: 7, workspace, routine_id: 1, run_id: 7, status: 'published', started_at_ms: new Date(2026, 8, 28, 9).getTime(), sessions: 38, finding_count: 3, run_dir: `${workspace}/.houston/harness/r7`, summary: 'Repeated mistakes to address' },
           { id: 6, workspace, routine_id: 1, run_id: 6, status: 'published', started_at_ms: new Date(2026, 8, 21, 9).getTime(), sessions: 41, finding_count: 2, run_dir: `${workspace}/.houston/harness/r6` }] : [],
         findings: [], models: [], provider_coverage: [], engine_refusals: ENGINE_REFUSALS }),
-      harnessReport: (reviewId: number) => emit({ type: 'harness_report', review_id: reviewId, markdown: '# Weekly review\n\n38 sessions reviewed. Three repeated mistakes are ready for triage in Tasks.', truncated: false }),
+      harnessReport: (reviewId: number) => emit({ type: 'harness_report', review_id: reviewId, markdown: REVIEW_REPORT_MD, truncated: false }),
       harnessRoutineCreate: noop
     } as unknown as HoustonClient
   }, [])
@@ -406,6 +406,35 @@ export function NavHooks(): React.JSX.Element {
   )
 }
 
+const REVIEW_REPORT_MD = [
+  '# Weekly review',
+  '',
+  'Window 2026-09-22 to 2026-10-05 · 38 sessions · 304 prompts · $1.20 recorded cost. Transcripts are complete for the window.',
+  '',
+  '## Agents re-read the styleguide on every UI change',
+  '',
+  '**The problem.** 12 of 38 sessions open the full style guide before a one-line change, which costs about four minutes and 9k tokens each time.',
+  '',
+  '**How to see it.** Sessions `a41f`, `c09e` and `d7b2`:',
+  '',
+  '> Let me re-read docs/internals/styleguide.md before editing.',
+  '',
+  '**Recommendation.** Link the token table from `AGENTS.md` so agents read one section. Still missing from the current file.',
+  '',
+  '## Agents run bun test instead of bun run test',
+  '',
+  '- 11 sessions ran the wrong runner and read jsdom failures as real.',
+  '- `HOU-42` adds the command to the runbook; checked again after it merges.',
+  '',
+  '## Already handled: re-count next run',
+  '',
+  '- Permission prompts for `git status` (3 sessions), now allowed in settings.',
+  '',
+  '## Considered and rejected',
+  '',
+  '- Long pane titles truncating: one session, not repeated.'
+].join('\n')
+
 const HARNESS_WS = '/home/dev/code/auth-refactor'
 
 function harnessReview(id: number, sessions: number, findingCount: number, startedAt?: number): HarnessReview {
@@ -454,10 +483,36 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
   }
 }
 
-export function HarnessPageStory({ firstRun = false, noReviews = false, inSettings = false }: { firstRun?: boolean; noReviews?: boolean; inSettings?: boolean }): React.JSX.Element {
+const LONG_TARGET = '.claude/rules/renderer/components/navigation/settings-and-review-surfaces-are-composed-from-ui-primitives.md'
+
+function manyHarnessFindings(): HarnessFinding[] {
+  const confidences = ['high', 'medium', 'low']
+  const open = [
+    'Agents re-read the styleguide on every UI change',
+    'Agents rebuild the whole renderer to check a one-line copy change, then wait for the bundle check before they report back to the parent pane',
+    'Agents ask for permission to run git status in every worktree',
+    'Codex sessions retry a failed hook install instead of reading the error'
+  ].map((title, index) => harnessFinding({ key: `open-${index}`, title, count: 12 - index * 3, confidence: confidences[index % 3], target: index === 1 ? LONG_TARGET : 'AGENTS.md', quotes: index === 0 ? ['Let me re-read docs/internals/styleguide.md before editing.', 'Reading the style guide again to confirm the token names.'] : [], recommendation: 'Link the token table from AGENTS.md so agents read one section instead of the whole guide.' }))
+  return [
+    ...open,
+    harnessFinding({ key: 'fixing-1', title: 'Agents run bun test instead of bun run test', count: 11, confidence: 'high', task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
+    harnessFinding({ key: 'fixing-2', title: 'Agents start a dev daemon against the installed channel', count: 3, confidence: 'medium', task: { task_id: 43, key: 'HOU-43', status: 'todo', landed_at_ms: null }, phase: 'fixing' }),
+    harnessFinding({ key: 'verify-1', title: 'Codex skips hooks until the first approval', count: 6, confidence: 'low', review_id: 12, task: { task_id: 44, key: 'HOU-44', status: 'done', landed_at_ms: Date.UTC(2026, 9, 2) }, phase: 'awaiting_verification', verification: { review_id: 12, verdict: 'inconclusive', sessions_after: 6, quotes: [] } }),
+    harnessFinding({ key: 'not-seen-1', title: 'Agents open the browser pane to read local docs', review_id: 12, count: 4, confidence: 'medium', phase: 'not_seen', state: 'open', last_seen_review_id: 12 }),
+    harnessFinding({ key: 'resolved-1', title: 'Pane titles get truncated', review_id: 12, phase: 'resolved', state: 'resolved', task: { task_id: 41, key: 'HOU-41', status: 'done', landed_at_ms: Date.UTC(2026, 8, 24) }, verification: { review_id: 13, verdict: 'gone', sessions_after: 9, quotes: [] } }),
+    harnessFinding({ key: 'dismissed-1', title: 'Agents prefer grep over the search tool', review_id: 11, phase: 'dismissed', state: 'dismissed' })
+  ]
+}
+
+type HarnessPageVariant = 'page' | 'first-run' | 'no-reviews' | 'running' | 'many' | 'loading' | 'no-workspace' | 'error'
+
+export function HarnessPageStory({ firstRun = false, noReviews = false, inSettings = false, variant = firstRun ? 'first-run' : noReviews ? 'no-reviews' : 'page' }: { firstRun?: boolean; noReviews?: boolean; inSettings?: boolean; variant?: HarnessPageVariant }): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
-  const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
-  const findings = [
+  const many = variant === 'many'
+  const reviews = many
+    ? [latest, ...Array.from({ length: 11 }, (_, index) => harnessReview(12 - index, 30 + ((index * 7) % 15), 2 + (index % 5)))]
+    : [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
+  const findings = many ? manyHarnessFindings() : [
     harnessFinding({ key: 'HOU-47', title: 'Agents re-read the styleguide on every UI change', count: 9, target: 'AGENTS.md', review_id: 13 }),
     harnessFinding({ key: 'HOU-42', count: 11, task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
     harnessFinding({
@@ -480,6 +535,8 @@ export function HarnessPageStory({ firstRun = false, noReviews = false, inSettin
       verification: { review_id: 13, verdict: 'gone', sessions_after: 0, quotes: [] }
     }),
   ]
+  const running = variant === 'running'
+  const runningReview: HarnessReview = { ...harnessReview(14, 0, 0), status: 'running', sessions: null, summary: null, window: null, ended_at_ms: null }
   const state: HarnessState = {
     workspace: HARNESS_WS,
     routine: {
@@ -497,46 +554,48 @@ export function HarnessPageStory({ firstRun = false, noReviews = false, inSettin
       isolate: false,
       revision: 'review-3'
     },
-    reviews,
+    reviews: running ? [runningReview, ...reviews] : reviews,
     findings,
     models: [],
     providerCoverage: [{ agent: 'opencode', sessions: 4 }],
     engineRefusals: ENGINE_REFUSALS
   }
-  const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
+  const empty = variant === 'first-run' || variant === 'no-reviews'
+  const shown: HarnessState | null = variant === 'loading' ? null : empty ? { ...state, routine: variant === 'first-run' ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
+  const surfaceProps: Omit<React.ComponentProps<typeof HarnessSurface>, 'embedded'> = {
+    workspaces: [{ id: HARNESS_WS, name: 'auth-refactor' }, { id: '/home/dev/code/migrate-db', name: 'migrate-db' }],
+    workspace: variant === 'no-workspace' ? null : HARNESS_WS,
+    onWorkspace: noop,
+    state: shown,
+    report: { reviewId: 13, markdown: REVIEW_REPORT_MD, truncated: false },
+    running,
+    error: variant === 'error' ? 'Routine 3 is already running; one run at a time per routine.' : null,
+    onCreateRoutine: noop,
+    onRunNow: noop,
+    onDecide: noop,
+    attention: empty || !shown ? null : {
+      workspace: HARNESS_WS,
+      open: 1,
+      fixing: 2,
+      awaiting_verification: 1,
+      not_seen: 1,
+      resolved: 1,
+      dismissed: 1,
+      latest_published_review_id: 13,
+      seen_review_id: 12,
+      attention: 4
+    },
+    onSeen: noop,
+    onCreateTask: noop,
+    onLoadReport: noop,
+    onOpenFile: noop,
+    onReveal: noop,
+    trendValues: [41, 33, 25, 18],
+    trendReviewCount: 4,
+    historyDeltaOverrides: { 12: { new: 2, gone: 1 } }
+  }
 
-  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentAttention: firstRun || noReviews ? undefined : settingsAgentAttentionFixture, agentPages: { 'agents-review': (<HarnessSurface embedded onOpenRoutines={noop}
-        workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
-        workspace={HARNESS_WS}
-        onWorkspace={noop}
-        state={shown}
-        report={null}
-        running={false}
-        error={null}
-        onCreateRoutine={noop}
-        onRunNow={noop}
-        onDecide={noop}
-        attention={firstRun || noReviews ? null : {
-          workspace: HARNESS_WS,
-          open: 1,
-          fixing: 2,
-          awaiting_verification: 1,
-          not_seen: 1,
-          resolved: 1,
-          dismissed: 1,
-          latest_published_review_id: 13,
-          seen_review_id: 12,
-          attention: 4
-        }}
-        onSeen={noop}
-        onCreateTask={noop}
-        onLoadReport={noop}
-        onOpenFile={noop}
-        onReveal={noop}
-        trendValues={[41, 33, 25, 18]}
-        trendReviewCount={4}
-        historyDeltaOverrides={{ 12: { new: 2, gone: 1 } }}
-        />) } }} />
+  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentAttention: empty ? undefined : settingsAgentAttentionFixture, agentPages: { 'agents-review': <HarnessSurface embedded onOpenRoutines={noop} {...surfaceProps} /> } }} />
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px', border: '1px solid var(--divider)', borderRadius: 10, overflow: 'hidden' }}>
@@ -554,38 +613,7 @@ export function HarnessPageStory({ firstRun = false, noReviews = false, inSettin
             ))}
           </div>
         </aside>
-        <HarnessSurface
-        workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
-        workspace={HARNESS_WS}
-        onWorkspace={noop}
-        state={shown}
-        report={null}
-        running={false}
-        error={null}
-        onCreateRoutine={noop}
-        onRunNow={noop}
-        onDecide={noop}
-        attention={firstRun || noReviews ? null : {
-          workspace: HARNESS_WS,
-          open: 1,
-          fixing: 2,
-          awaiting_verification: 1,
-          not_seen: 1,
-          resolved: 1,
-          dismissed: 1,
-          latest_published_review_id: 13,
-          seen_review_id: 12,
-          attention: 4
-        }}
-        onSeen={noop}
-        onCreateTask={noop}
-        onLoadReport={noop}
-        onOpenFile={noop}
-        onReveal={noop}
-        trendValues={[41, 33, 25, 18]}
-        trendReviewCount={4}
-        historyDeltaOverrides={{ 12: { new: 2, gone: 1 } }}
-        />
+        <HarnessSurface {...surfaceProps} />
       </div>
     </div>
   )
@@ -732,7 +760,7 @@ export function HarnessReportStates(): React.JSX.Element {
   return (
     <Frame active="Routines">
       <div style={{ flex: 1, padding: 24, display: 'grid', gap: 24, alignContent: 'start', overflow: 'auto' }}>
-        <HarnessReportView {...base} initialReviewId={13} report={{ reviewId: 13, markdown: '# Review 13\n\nTwo findings.\n\n- one\n- two', truncated: true }} reportError={null} />
+        <HarnessReportView {...base} initialReviewId={13} report={{ reviewId: 13, markdown: REVIEW_REPORT_MD, truncated: true }} reportError={null} />
         <HarnessReportView {...base} initialReviewId={12} report={null} reportError={{ workspace: HARNESS_WS, reviewId: 12, message: 'report.md is not readable' }} />
         <HarnessReportView {...base} reviews={[]} report={null} reportError={null} />
       </div>

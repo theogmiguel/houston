@@ -15,7 +15,7 @@ import { formatRunTime, nextUpTimeLabel } from './routineFormat'
 import { Toggle } from '../ui/settingsPrimitives'
 import { RoutineDetail } from '../ui/RoutineDetail'
 import { HarnessReviewConsent, HarnessSetupFields, type HarnessSetupValue } from './HarnessSurface'
-import { scheduleFields, scheduleLabel, scheduleOf, type HarnessSchedule } from './harnessFormat'
+import { formatWindow, scheduleFields, scheduleLabel, scheduleOf, type HarnessSchedule } from './harnessFormat'
 
 export function WeeklyReviewSetup({ client, workspace, onCancel, onCreate }: {
   client: HoustonClient | null
@@ -54,7 +54,7 @@ export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateRevie
       history={<WeeklyReviewRuns workspace={workspace} connected={!!client} state={state}
         onOpenReport={(id) => { setReportId(id); loadReport(id) }} />}
     />
-    <WeeklyReviewReport reportId={reportId} report={report} error={reportError} onClose={() => setReportId(null)} onRetry={loadReport} />
+    <WeeklyReviewReport review={state?.reviews.find((review) => review.id === reportId) ?? null} reportId={reportId} report={report} error={reportError} onClose={() => setReportId(null)} onRetry={loadReport} />
   </>
 }
 
@@ -68,7 +68,7 @@ function WeeklyReviewRuns({ workspace, connected, state, onOpenReport }: {
     <section className="grid gap-[var(--space-2)]" aria-label="Recent runs">
       <SectionHead title="Recent runs" variant="sentence" tone="muted" />
       {!connected || !workspace ? <Text tone="muted">Connect to the daemon with a workspace to read review history.</Text> : !state ? <Text role="status" tone="muted">Loading reviews…</Text> : !state.reviews.length ? <Text tone="muted">No reviews yet.</Text> : <Card>
-        {state.reviews.map((review) => <Card.Row key={review.id} heading={`${reviewRunDate(review.started_at_ms)} · ${review.sessions == null ? 'sessions not reported' : `${review.sessions} sessions`}`}
+        {state.reviews.map((review) => <Card.Row key={review.id} heading={reviewRunDate(review.started_at_ms)}
           meta={reviewRunMeta(review)}
           status={review.status === 'running' ? <StatusLabel status="Running" size="small" /> : review.status === 'failed' ? <StatusLabel status="Failed" size="small" /> : null}
           action={review.status === 'published' ? <Button variant="muted-link" size="sm" data-testid={`review-open-report-${review.id}`} onClick={() => onOpenReport(review.id)}>Open report</Button> : null} />)}
@@ -77,7 +77,8 @@ function WeeklyReviewRuns({ workspace, connected, state, onOpenReport }: {
   )
 }
 
-function WeeklyReviewReport({ reportId, report, error, onClose, onRetry }: {
+function WeeklyReviewReport({ review, reportId, report, error, onClose, onRetry }: {
+  review: HarnessReview | null
   reportId: number | null
   report: HarnessReport | null
   error: HarnessReportError | null
@@ -87,7 +88,10 @@ function WeeklyReviewReport({ reportId, report, error, onClose, onRetry }: {
   const shownReport = report?.reviewId === reportId ? report : null
   return (
     <Drawer open={reportId !== null} heading="Weekly review report" onClose={onClose}>
-      {shownReport ? <>{shownReport.truncated && <Notice tone="warn">This report is truncated. The complete report is in the workspace’s review directory.</Notice>}<MarkdownPreview source={shownReport.markdown} variant="chat" /></> : error?.reviewId === reportId ? <Notice tone="danger" action={{ label: 'Retry', onClick: () => { if (reportId !== null) onRetry(reportId) } }}>{error.message}</Notice> : <Text role="status" tone="muted">Loading report…</Text>}
+      <div className="grid min-w-0 gap-[var(--space-3)]">
+      {review && <Text as="p" size="small" tone="muted" flush>{reviewReportCaption(review)}</Text>}
+      {shownReport ? <>{shownReport.truncated && <Notice tone="warn">This report is truncated. The complete report is in the workspace’s review directory.</Notice>}<MarkdownPreview source={shownReport.markdown} variant="report" /></> : error?.reviewId === reportId ? <Notice tone="danger" action={{ label: 'Retry', onClick: () => { if (reportId !== null) onRetry(reportId) } }}>{error.message}</Notice> : <Text role="status" tone="muted">Loading report…</Text>}
+      </div>
     </Drawer>
   )
 }
@@ -143,8 +147,16 @@ function reviewRunDate(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '')
 }
 
+function reviewSessions(review: HarnessReview): string {
+  return review.sessions == null ? 'Session total not reported' : `${review.sessions} session${review.sessions === 1 ? '' : 's'}`
+}
+
 function reviewRunMeta(review: HarnessReview): string {
   if (review.status === 'running') return 'Reading sessions'
   if (review.status === 'failed') return review.error ?? 'Review failed'
-  return `${review.finding_count} findings${review.summary ? ` · ${review.summary}` : ''}`
+  return `${reviewSessions(review)} · ${review.finding_count} finding${review.finding_count === 1 ? '' : 's'}${review.summary ? ` · ${review.summary}` : ''}`
+}
+
+function reviewReportCaption(review: HarnessReview): string {
+  return [`Review #${review.id}`, reviewRunDate(review.started_at_ms), review.window ? formatWindow(review.window) : null, reviewSessions(review)].filter(Boolean).join(' · ')
 }

@@ -757,6 +757,14 @@ rows with a New, Still there or Gone warn, stop or ok rule. Keep the rule to thi
 primitive; feature files supply the group content. Use `Card.Content` for a
 padded, vertically grouped set of section rows.
 
+`ReviewFinding` rows sit in a `ReviewFindingList`, which queries its own width: from
+600px the status, the affirmative action and the quiet action hold fixed columns so rows
+align; below it they move under the title. The title stays on one line and expands the
+row's detail. Review history uses the same rows, and `ReviewOutcome` marks each finding
+in a review with the status dot and word the findings use. Generated reports render
+through the `report` markdown variant: the first heading is the title, the paragraph
+under it the summary, and each section is divided.
+
 `BarSparkline` shows a short sequence of comparable values with an accessible text
 summary. `Caption` carries supporting information in the small, secondary text step.
 Use the `accent` Count source for attention totals in navigation. Use the `link` Button

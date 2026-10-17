@@ -1666,9 +1666,13 @@
   --w-panel-columns: 520px;
   --w-block-row-icon: 34px;
   --w-card-rail: 2px;
-  /* Review finding columns: widest status word ("Checking fix") and widest action pair ("Resolve" + "Keep open"). */
+  /* Review finding columns: widest status word ("Checking fix") and widest single action ("Create task"). */
   --w-finding-status: 6.5rem;
-  --w-finding-actions: 11.5rem;
+  --w-finding-action: 6.5rem;
+  /* A long target path truncates here so the session and confidence facts stay on its line. */
+  --w-finding-path: 20rem;
+  /* Below this the review summary's copy wraps under its chart and action instead of squeezing beside them. */
+  --w-review-summary-copy: 18rem;
   --h-block-row-icon: 34px;
   --h-block-row-meta: 24px;
   --space-block-inset: 14px;
