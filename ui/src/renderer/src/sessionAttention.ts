@@ -1,5 +1,6 @@
 import type { AgentStatus, SessionInfo } from './houston/client'
 import { isLive } from './houston/client'
+import type { InboxRow } from './houston/generated/InboxRow'
 
 export function ownUserInput(session: SessionInfo): boolean {
   if (!isLive(session.state)) return false
@@ -34,4 +35,9 @@ export function attentionStatus(session: SessionInfo): AgentStatus | null | unde
 export function attentionLabel(session: SessionInfo): string {
   if (askedOrchestrator(session)) return session.delegation?.input_request?.kind === 'permission' ? 'Blocked · asked orchestrator' : 'Asked orchestrator'
   return needsUserInput(session) ? 'Needs you' : session.status ?? 'unavailable'
+}
+
+export function addressedToOperator(row: InboxRow, sessions: ReadonlyMap<number, SessionInfo>): boolean {
+  return row.to_session === 0 && row.resolved_at == null &&
+    (row.reason === 'parent_dead' || (row.from_session != null && sessions.get(row.from_session)?.spawned_by === null))
 }

@@ -28,6 +28,8 @@ import {
   wsLast,
   gridPrev,
   gridNext,
+  nextRequestShortcut,
+  requestBackShortcut,
   type ShortcutEntry
 } from '../keymap'
 
@@ -99,6 +101,8 @@ export interface PaletteActions {
 
   switchGrid: (path: string, gridId: string) => void
   focusPane?: (id: number) => void
+  /// Requests waiting on the operator; Back is offered only after a jump.
+  nextRequest?: { count: number; next: () => void; back: () => void; canGoBack: boolean }
   restartPane?: (id: number) => void
 
   stepWorkspace?: (offset: 1 | -1) => void
@@ -555,6 +559,32 @@ function buildWorkspaceCommands(actions: PaletteActions, workspaces: readonly Wo
   return commands
 }
 
+function buildRequestCommands(actions: PaletteActions): Command[] {
+  const requests = actions.nextRequest
+  if (!requests) return []
+  return [
+    {
+      id: 'go-to.next-request',
+      title: `Next request (${requests.count})`,
+      group: 'Go to',
+      keywords: ['needs input', 'waiting', 'escalated', 'answer', 'attention'],
+      chord: nextRequestShortcut,
+      enabled: true,
+      run: requests.next
+    },
+    {
+      id: 'go-to.request-back',
+      title: 'Back from request',
+      group: 'Go to',
+      keywords: ['return', 'previous pane', 'request'],
+      chord: requestBackShortcut,
+      enabled: requests.canGoBack,
+      disabledReason: requests.canGoBack ? undefined : 'No request jump to return from',
+      run: requests.back
+    }
+  ]
+}
+
 function buildAppearanceCommand(): Command {
   return {
     id: APPEARANCE_PICKER_COMMAND_ID,
@@ -617,6 +647,7 @@ export function buildCommands(input: BuildCommandsInput): Command[] {
     ...buildGridCommands(actions),
     ...buildViewCommands(actions),
     ...buildRailNavCommands(actions),
+    ...buildRequestCommands(actions),
     {
       id: 'go-to.settings',
       title: 'Settings',
