@@ -215,6 +215,7 @@ import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
+import { mergeQueuePaletteActions } from "./components/prs/prsView";
 import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
@@ -3542,6 +3543,7 @@ export function App(): React.JSX.Element {
       );
     },
     selectNavRow,
+    ...mergeQueuePaletteActions(railPrByDir, sessions, activeId, selectNavRow),
     switchWorkspace: (path) => {
       setSelectedWs(path);
       setShowLauncher(false);

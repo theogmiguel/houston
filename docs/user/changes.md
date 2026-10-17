@@ -82,6 +82,36 @@ pane** removes the local association without closing the request on GitHub. Clos
 requests can be reopened when permitted. If no PR exists, create one for the branch or
 link an existing request by number.
 
+## Merge queue
+
+The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull
+requests waiting to merge in the selected workspace, in the order they merge. Agents add their
+pull requests with `pane_pr_enqueue`; you can add one with **Add to merge queue** in its merge
+box or from the command palette (**Add to merge queue** acts on the focused pane's pull
+request, and **Open merge queue** opens the view). The queue needs a GitHub remote; a
+workspace without one, or a pull request from a fork or another repository, is refused.
+
+Entries merge first in, first out. An entry enqueued with `depends_on` waits behind the pull
+request it depends on. Each row shows its place, one status and one reason: **Ready**, or
+**Blocked** with the first thing that blocks it. Select a row to see its gates:
+
+- **Mergeable**: GitHub's merge requirements, checks and conflicts allow the merge.
+- **No unresolved review threads**.
+- **Reviewer passed**: for a task Slice, the newest reviewer verdict is pass. Other pull
+  requests skip this gate.
+
+Houston re-reads queued pull requests once a minute, sharing the read with pull request
+watches. Until a pull request has been read, or when a read fails, it is Blocked. A pull
+request merged or closed outside the queue leaves it.
+
+Only the first entry can be merged from the queue. Its **Merge** merges the exact commit
+shown, by squash on this page and by the merge box's selected method; if the head moved or a
+gate fails, the merge is refused and nothing merges. If GitHub refuses the method, its
+message is shown unchanged. To merge any other queued pull request, **Dequeue** it first,
+then merge it from its merge box. After a merge the next entry moves up, the merge appears
+under **Today**, and the worktree cleanup check runs if it is turned on. A queue holds at
+most 32 entries.
+
 To open Changes automatically after the focused agent stops, enable **Open diff when an agent
 stops** in Settings ▸ Appearance ▸ Panels. Houston opens it when the workspace has changes
 and you have not interacted with the panel after the agent's turn.

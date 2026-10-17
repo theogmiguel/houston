@@ -33,6 +33,33 @@ export class InspectorClient {
     for (const listener of this.subscribers.get(String(message.type)) ?? []) listener(message as never)
   }
 
+  mergeQueueGet(dir: string): void {
+    const sha = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'
+    const gates = (threads: string | null) => [
+      { kind: 'mergeable', state: 'passed', reason: null },
+      { kind: 'review_threads', state: threads ? 'failed' : 'passed', reason: threads },
+      { kind: 'reviewer', state: 'not_applicable', reason: null }
+    ]
+    const entry = (number: number, title: string, position: number, reason: string | null, extra: Record<string, unknown> = {}) => ({
+      number, repository: 'owner/houston', url: `https://github.com/owner/houston/pull/${number}`, title, head_ref: `houston/change-${number}`, head_sha: sha,
+      base_ref: 'main', depends_on: null, session: null, position, enqueued_at_ms: Date.now() - position * 600_000, read_at_ms: Date.now() - 20_000,
+      status: reason ? 'blocked' : 'ready', reason, gates: gates(reason && reason.includes('thread') ? reason : null), ...extra
+    })
+    queueMicrotask(() => this.emit({
+      type: 'merge_queue', workspace: '/workspace/houston', dir, message: null,
+      entries: [
+        entry(95, 'fix(panes): terminals keep their content while the inspector opens', 1, null),
+        entry(79, 'feat(agents): ZCode runs in a pane with reported status', 2, null, { depends_on: 95 }),
+        entry(90, 'refactor(ui): every screen composes components/ui roles', 3, 'PR #90 has 1 unresolved review thread')
+      ],
+      merged: [{ number: 88, repository: 'owner/houston', url: 'https://github.com/owner/houston/pull/88', title: 'fix(rail): background git refresh stays within the handler limit', head_sha: sha, base_ref: 'main', method: 'squash', merged_at_ms: Date.now() - 45 * 60_000 }]
+    }))
+  }
+
+  mergeQueueEnqueue(): number { return ++this.request }
+  mergeQueueDequeue(): number { return ++this.request }
+  mergeQueueMergeHead(): number { return ++this.request }
+
   gitStatus(dir: string, base: string | null = null): void {
     setTimeout(() => this.emit({
       type: 'git_status', dir, base, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',

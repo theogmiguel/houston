@@ -5526,6 +5526,7 @@ impl Daemon {
                 self.broadcast_control(&proto::ServerMsg::TaskRunChanged {
                     run: Self::task_run_ref_to_wire(&run),
                 });
+                self.merge_queue_task_changed(run.task_id);
             }
             Ok(None) => {}
             Err(e) => tracing::warn!("tasks: re-reading run {run_id} to broadcast it: {e}"),
@@ -5778,6 +5779,7 @@ impl Daemon {
             }
             self.broadcast_pr_watches(row.session_id);
         }
+        self.merge_queue_read_pass(&mut tick);
     }
 
     pub async fn pr_watch_loop(self: Arc<Self>) {
@@ -5792,7 +5794,7 @@ impl Daemon {
     }
 }
 
-fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
+pub(super) fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
     if target.trim().contains("://") {
         return pr_watch_url_identity(target)?
             .map(|(_, _, number)| number)
@@ -5817,7 +5819,7 @@ fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
     Ok(number)
 }
 
-fn pr_watch_url_identity(target: &str) -> anyhow::Result<Option<(String, String, u32)>> {
+pub(super) fn pr_watch_url_identity(target: &str) -> anyhow::Result<Option<(String, String, u32)>> {
     if !target.trim().contains("://") {
         return Ok(None);
     }

@@ -54,6 +54,7 @@ pub mod mcp_register_antigravity;
 pub mod mcp_register_codex;
 pub mod mcp_server;
 pub mod mcp_tasks;
+pub mod merge_queue;
 pub mod model_catalog;
 pub mod orchestrate;
 pub mod osc52;

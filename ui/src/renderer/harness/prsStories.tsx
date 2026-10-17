@@ -4,6 +4,7 @@ import { Icon } from '../src/components/ui/Icon'
 import { IconChevronLeft, IconGrid, IconSearch } from '../src/components/icons'
 import { PullRequestsScreen } from '../src/components/prs/PullRequestsScreen'
 import { PullRequestTab } from '../src/components/git/PullRequestTab'
+import { requestPrsView } from '../src/components/prs/prsView'
 import { PanelTab } from '../src/components/ui/PanelTab'
 import { IconGitPullRequest } from '../src/components/icons'
 import { InspectorClient } from './inspectorStories'
@@ -143,10 +144,11 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
+  useState(() => { if (mode === 'merge-queue') requestPrsView({ view: 'queue' }) })
   const baseItems = mode === 'empty' || mode === 'loading' ? [] : mode === 'draft' || mode === 'closed'
     ? pullRequests.map((item) => item.number === 95 ? { ...item, state: mode === 'closed' ? 'closed' as const : 'open' as const, is_draft: mode === 'draft' } : item)
     : pullRequests

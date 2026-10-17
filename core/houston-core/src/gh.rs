@@ -295,7 +295,7 @@ pub fn pr_create(dir: &Path, title: Option<&str>, body: Option<&str>) -> PrCreat
 // Everything the pull-request tab shows, in the one `gh pr view` call: identity,
 // branches, the body, every check (with its timestamps where gh has them),
 // reviews and comments. `gh pr checks --json` does not exist on the pinned gh.
-const PR_DETAIL_FIELDS: &str = "number,url,state,title,body,author,isDraft,reviewDecision,statusCheckRollup,additions,deletions,changedFiles,mergedAt,closedAt,createdAt,updatedAt,mergeable,mergeStateStatus,baseRefName,headRefName,headRefOid,commits,comments,reviews";
+const PR_DETAIL_FIELDS: &str = "number,url,state,title,body,author,isDraft,reviewDecision,statusCheckRollup,additions,deletions,changedFiles,mergedAt,closedAt,createdAt,updatedAt,mergeable,mergeStateStatus,baseRefName,headRefName,headRefOid,commits,comments,reviews,isCrossRepository,headRepositoryOwner";
 
 /// What a `gh pr view` read produced. `NoPr` is reserved for the branch read
 /// whose own stderr says there is nothing to show; every other failure keeps
@@ -1741,6 +1741,17 @@ fn capture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_detail_read_asks_for_the_fields_its_fork_checks_parse() {
+        let fields: Vec<&str> = PR_DETAIL_FIELDS.split(',').collect();
+        for field in ["isCrossRepository", "headRepositoryOwner"] {
+            assert!(
+                fields.contains(&field),
+                "{field} missing from {PR_DETAIL_FIELDS}"
+            );
+        }
+    }
 
     #[test]
     fn parses_a_running_rollup() {

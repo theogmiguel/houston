@@ -150,6 +150,30 @@ impl SharedReads {
         )
     }
 
+    /// A read by repository and number, for a reader with no stored link (the
+    /// merge queue): keyed like a watch of the same pull request, so one tick
+    /// reads it once for both.
+    pub fn tick_read_repository(
+        &self,
+        tick: &mut Tick,
+        dir: &Path,
+        repository: &str,
+        number: u32,
+        now_ms: i64,
+    ) -> Read {
+        self.tick_read_with(
+            tick,
+            key(repository, dir, number),
+            dir,
+            now_ms,
+            || {
+                super::read(dir, Some(number), PullRequestLinkSource::Manual, None)
+                    .map_err(|e| format!("{e:#}"))
+            },
+            || crate::gh::rate_limit_reset(dir, now_ms),
+        )
+    }
+
     fn tick_read_with(
         &self,
         tick: &mut Tick,

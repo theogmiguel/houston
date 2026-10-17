@@ -513,6 +513,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
+| merge queue | `merge_queue_entries` (one row per queued pull request, keyed by workspace and number, with its last GitHub read as `facts_json`), `merge_queue_merges` (queue merges for the page's history, pruned after seven days) |
 | bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove), `predicted_conflicts` (worktree pairs whose predicted conflict was already noted) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
@@ -576,7 +577,15 @@ exhausted GraphQL or core budget from one `gh api rate_limit` (gh prints no resp
 headers), or for a bounded fallback when none is exhausted, as after a secondary limit. A pause
 counts no read failure. Pane watches have no state text on the wire, so their pause shows only
 in the `pane_pr_watch` refusal and the daemon log; the task run reason carries it to the
-renderer. While `worktree_cleanup_enabled` is on, the worktree cleanup
+renderer. The pane watch tick also re-reads every merge queue entry through the same `Tick`,
+so a watch and a queue entry of one pull request cost one read; the queue polls `gh` nowhere
+else. A paused read leaves an entry's last answer in place. The gates are computed when a
+snapshot is built, from the stored read and the task backlog, so a task run change
+rebroadcasts the queue of its workspace without calling `gh`. An entry with no read, or whose
+read failed, is Blocked: the gates fail closed. Merging the head re-reads it on a fresh tick,
+refuses a moved head or a failed gate, then calls the SHA-pinned `pr_merge`, or
+`pr_stack_merge` when the stacks preview reports a native stack; that preview read is the one
+merge-time call outside the shared reader. While `worktree_cleanup_enabled` is on, the worktree cleanup
 loop runs one pass at
 boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
 each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
