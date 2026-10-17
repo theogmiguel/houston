@@ -1273,10 +1273,9 @@ impl Store {
         })
     }
 
-    /// Whether the feed already ends in this turn's end: a reply (if any), its
-    /// turn summary and the finished status, with nothing since. A provider that
-    /// reports one turn end twice (OpenCode publishes both a status and an idle
-    /// event) then shows it once. `reply` is the new end's reply text.
+    /// Whether the feed already ends in this turn's end (reply, summary, finished)
+    /// with nothing since, so a turn end reported twice (OpenCode's status and idle
+    /// events) shows once. `reply` is the new end's reply text.
     pub fn repeats_turn_end(&self, session: u32, reply: Option<&str>) -> bool {
         self.with(|inner| {
             let Some(feed) = inner.sessions.get(&session) else {
@@ -1673,16 +1672,9 @@ fn downs(n: usize) -> Vec<Vec<u8>> {
     (0..n).map(|_| DOWN.to_vec()).collect()
 }
 
-/// The keys `choice` takes on `card`.
-///
-/// - Claude's dialogs are select lists that act on a digit alone and deny on Esc;
-///   "don't ask again" is the second row, offered only with permission suggestions.
-/// - Codex's approval overlay acts on a letter: `y` approves, `a` approves for the
-///   session, `d` declines and lets the turn continue (Esc and `n` cancel instead).
-///   Its question overlay submits on a digit; free text is the "None of the
-///   above" row after the options, then a notes field.
-/// - OpenCode's permission dialog is a button row, cursor on "Allow once"; its
-///   question list moves with arrows and Enter, free text being the row after the options.
+/// The keys `choice` takes on `card`: Claude acts on a digit and denies on Esc,
+/// Codex approvals on `y`/`a`/`d` (Esc cancels the turn) and questions on a digit,
+/// OpenCode on a button row and an arrow-driven list. Free text is the row after the options.
 pub fn decision_keys(
     provider: proto::AgentKind,
     card: &Card,
