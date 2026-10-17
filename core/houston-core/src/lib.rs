@@ -64,6 +64,7 @@ pub mod power_throttling;
 pub mod pull_requests;
 pub mod recovery_process;
 pub mod remote;
+pub mod retired_providers;
 pub mod routines;
 pub mod sanitize;
 pub mod scope;

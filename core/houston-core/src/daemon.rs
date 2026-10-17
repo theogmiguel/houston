@@ -8043,6 +8043,7 @@ impl Daemon {
 
     pub fn sweep_legacy_hooks(&self) {
         crate::legacy_hook_sweep::sweep(&self.db, &self.env());
+        crate::retired_providers::sweep(&self.db, &self.env(), &self.hook_sentinel());
     }
 
     pub fn install_all_workspace_hooks(&self) {
