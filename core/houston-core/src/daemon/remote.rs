@@ -1,6 +1,7 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,6 +62,37 @@ pub struct RemoteSession {
     pub waiting_since: Option<u64>,
     pub last_reply_excerpt: Option<String>,
     pub last_step: Option<String>,
+    pub model: Option<String>,
+    /// Launch effort is not recorded per pane, so this is always null.
+    pub effort: Option<String>,
+    pub provider_version: Option<String>,
+    pub account: Option<String>,
+    pub context: Option<RemoteContext>,
+    pub compactions: Option<u32>,
+    pub cwd: Option<String>,
+    pub branch: Option<String>,
+    pub worktree: Option<String>,
+    pub live_children: u32,
+    pub children_waiting: u32,
+    pub task: Option<RemoteTask>,
+    pub resumable: bool,
+    pub sleep_notice: Option<String>,
+    pub resume_notice: Option<String>,
+    /// Panes record no start time, so this is always null.
+    pub started_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteContext {
+    pub used_tokens: u64,
+    pub window: Option<u64>,
+    pub percent: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteTask {
+    pub id: i64,
+    pub title: String,
 }
 
 /// A device's recording, transcribed and assembled as the desktop would insert it.
@@ -435,13 +467,25 @@ impl Daemon {
         Ok((token, id))
     }
 
+    /// A provider's version if a probe already ran: a poll never starts a subprocess.
+    fn cli_version_cached(&self, kind: proto::AgentKind) -> Option<String> {
+        let binary = crate::cli_probe::binary_name(kind)?;
+        self.cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .cached_presence(&self.env(), binary)
+            .version
+    }
+
     pub fn remote_sessions(&self) -> Vec<RemoteSession> {
         let workspaces = self.db.list_workspaces().unwrap_or_default();
+        let mut versions: Vec<(proto::AgentKind, Option<String>)> = Vec::new();
         let mut out: Vec<RemoteSession> = self
             .list()
             .into_iter()
             .filter(|info| !info.hidden)
             .map(|info| {
+                let kind = info.detected_agent.unwrap_or(info.agent);
                 let workspace = workspaces
                     .iter()
                     .find(|w| w.path == info.project_dir)
@@ -472,7 +516,7 @@ impl Daemon {
                         .and_then(|d| d.role)
                         .map(|role| feed::mask(&role)),
                     workspace,
-                    kind: info.detected_agent.unwrap_or(info.agent),
+                    kind,
                     state: info.state,
                     status: info.status,
                     reason: None,
@@ -481,6 +525,55 @@ impl Daemon {
                     waiting_since: seen.filter(|_| waiting).map(|s| s.since_ms),
                     last_reply_excerpt: summary.last_reply_excerpt,
                     last_step: summary.last_step,
+                    model: info
+                        .activity
+                        .as_ref()
+                        .and_then(|a| a.model.as_deref())
+                        .map(feed::mask),
+                    effort: None,
+                    provider_version: match versions.iter().find(|(k, _)| *k == kind) {
+                        Some((_, version)) => version.clone(),
+                        None => {
+                            let version = self.cli_version_cached(kind);
+                            versions.push((kind, version.clone()));
+                            version
+                        }
+                    },
+                    account: info.profile_label.as_deref().map(feed::mask),
+                    context: info
+                        .context
+                        .as_ref()
+                        .filter(|c| c.state != proto::ContextState::Unknown)
+                        .map(|c| RemoteContext {
+                            used_tokens: c.used_tokens,
+                            window: c.window_tokens,
+                            percent: c.used_percent,
+                        }),
+                    compactions: info.compactions,
+                    cwd: Some(feed::mask(&info.cwd)),
+                    branch: info
+                        .checkout
+                        .as_ref()
+                        .and_then(|c| c.branch.as_deref())
+                        .map(feed::mask),
+                    worktree: match info.checkout.as_ref().map(|c| &c.kind) {
+                        Some(proto::CheckoutKind::Worktree { slug }) => Some(feed::mask(slug)),
+                        _ => info.worktree.as_ref().and_then(|w| {
+                            Path::new(&w.path)
+                                .file_name()
+                                .map(|n| feed::mask(&n.to_string_lossy()))
+                        }),
+                    },
+                    live_children: info.live_children,
+                    children_waiting: info.children_waiting,
+                    task: info.task.as_ref().map(|t| RemoteTask {
+                        id: t.task_id,
+                        title: feed::mask(&t.title),
+                    }),
+                    resumable: info.resumable,
+                    sleep_notice: info.sleep_notice.as_deref().map(feed::mask),
+                    resume_notice: info.resume_notice.as_deref().map(feed::mask),
+                    started_at: None,
                 }
             })
             .collect();
@@ -559,7 +652,7 @@ impl Daemon {
             .collect()
     }
 
-    fn remote_target(&self, id: u32) -> Result<Arc<super::Session>, ApiError> {
+    pub(super) fn remote_target(&self, id: u32) -> Result<Arc<super::Session>, ApiError> {
         match self.get(id) {
             Ok(s) if !s.info.hidden => Ok(s),
             _ => Err(ApiError::NotFound(format!(

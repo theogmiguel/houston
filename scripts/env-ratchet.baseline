@@ -54,6 +54,7 @@
 4 core/houston-core/tests/it/pty_liveness_wire.rs
 18 core/houston-core/tests/it/pty_reader_ownership.rs
 2 core/houston-core/tests/it/recovery_ownership.rs
+1 core/houston-core/tests/it/remote_phone_wire.rs
 4 core/houston-core/tests/it/reopen_wire.rs
 5 core/houston-core/tests/it/resume_profile_wire.rs
 25 core/houston-core/tests/it/resume_wire.rs

@@ -53,6 +53,11 @@ pub struct ActivityEntry {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<String>,
+    /// For `kind: "action"`: what a device did, and the device's name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -715,6 +720,8 @@ impl SessionFeed {
 pub enum Change {
     Session(u32),
     Feed(u32, u64),
+    /// The pane list changed: a pane was opened, closed or renamed from a device.
+    Sessions,
     /// The desktop published another set of grids.
     Grids,
 }
@@ -897,6 +904,42 @@ impl Store {
         excerpt: Option<&str>,
         now_ms: u64,
     ) {
+        self.activity_entry(session, kind, title, excerpt, None, now_ms);
+    }
+
+    /// A device's mutation of a pane, so the computer and other devices see who did it.
+    pub fn activity_action(
+        &self,
+        session: u32,
+        action: &'static str,
+        device: &str,
+        title: &str,
+        now_ms: u64,
+    ) {
+        let device = Some(cut_chars(&mask_text(device), ACTIVITY_TITLE_MAX_CHARS));
+        self.activity_entry(
+            session,
+            "action",
+            title,
+            None,
+            Some((action, device)),
+            now_ms,
+        );
+    }
+
+    fn activity_entry(
+        &self,
+        session: u32,
+        kind: &'static str,
+        title: &str,
+        excerpt: Option<&str>,
+        by: Option<(&'static str, Option<String>)>,
+        now_ms: u64,
+    ) {
+        let (action, device) = match by {
+            Some((action, device)) => (Some(action), device),
+            None => (None, None),
+        };
         self.with(|inner| {
             if !inner.collecting {
                 return;
@@ -909,6 +952,8 @@ impl Store {
                 kind,
                 title: cut_chars(&mask_text(title), ACTIVITY_TITLE_MAX_CHARS),
                 excerpt: excerpt.map(|s| cut_chars(&mask_text(s), EXCERPT_MAX_CHARS)),
+                action,
+                device,
             });
             while inner.activity.len() > ACTIVITY_MAX_ENTRIES {
                 inner.activity.pop_front();

@@ -372,13 +372,14 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/sessions/{id}/decide", post(decide))
         .route("/api/sessions/{id}/dictate", post(dictate))
         .route("/api/events", get(events))
+        .merge(super::http_phone::routes())
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(daemon.clone(), guard))
         .with_state(daemon)
 }
 
-fn error(status: StatusCode, message: impl Into<String>) -> Response {
+pub(super) fn error(status: StatusCode, message: impl Into<String>) -> Response {
     (status, Json(json!({ "error": message.into() }))).into_response()
 }
 
@@ -634,7 +635,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 /// Every authenticated route and the tier a device needs to call it. The only
 /// place a route is bound to a tier, so a handler cannot forget the check.
 #[derive(Clone, Copy)]
-enum Route {
+pub(super) enum Route {
     Read(&'static str),
     Drive(&'static str),
     Manage(&'static str),
@@ -670,7 +671,7 @@ fn tier_refusal(device: &RemoteDeviceRow, route: Route) -> Refused {
 }
 
 /// `authenticate`, then the device's tier against what `route` needs.
-fn authorize(
+pub(super) fn authorize(
     daemon: &Daemon,
     headers: &HeaderMap,
     source: IpAddr,
@@ -721,7 +722,7 @@ fn authenticate(
 }
 
 /// A refusal on its way out; boxed so `Result`s that carry it stay small.
-struct Refused(Box<Response>);
+pub(super) struct Refused(Box<Response>);
 
 impl From<Response> for Refused {
     fn from(resp: Response) -> Self {
@@ -741,7 +742,7 @@ impl IntoResponse for Refused {
     }
 }
 
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Refused> + Send + 'static,
 ) -> Result<T, Refused> {
     tokio::task::spawn_blocking(f).await.unwrap_or_else(|e| {
@@ -1184,6 +1185,7 @@ async fn events(
                 Ok(Change::Feed(id, seq)) => Event::default()
                     .event("feed")
                     .data(json!({ "id": id, "seq": seq }).to_string()),
+                Ok(Change::Sessions) => Event::default().event("sessions").data("{}"),
                 Ok(Change::Grids) => Event::default().event("grids").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Event::default().event("resync").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,

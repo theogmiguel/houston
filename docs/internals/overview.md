@@ -206,7 +206,11 @@ Trust model:
   writes input through the desktop's stdin path, either as typed text and keys or as a
   decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
   Writing to any pane, shell panes included, makes a device equivalent to a shell as the
-  user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time.
+  user. Each device has a tier (`observe` < `drive` < `manage`), checked against the device
+  row on every request: drive adds input, decisions and dictation; manage adds pane
+  lifecycle (provider kinds only, no shell, no `auto_approve`) and commit or push of files the
+  device was shown. Pairing, configuration and revocation stay desktop-only at every tier.
+  One input request per pane runs at a time.
   With the separate dictation setting on, a device may also post a recording (16 kHz mono
   PCM16) that the voice engine transcribes; the text returns to that device only.
   A decision names the feed epoch and entry it answers, so a stale tap is refused, and it

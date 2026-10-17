@@ -342,6 +342,10 @@ ring when it is turned off, serves it only to paired devices, and never writes i
 or the log; it is gone when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
 keys, through the same stdin path as typed input, never through a hook reply.
 
+A device's diff and commit reach only paths the `/changes` listing shows, masked and
+bounded, and never a file whose name looks like a credential. A device cannot start a shell
+or `auto_approve` pane at any tier.
+
 ### The daemon owns a terminal emulator; screen cells never determine status
 
 Each session has one libghostty-vt terminal (`vt.rs`), built from the same pinned

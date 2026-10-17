@@ -29,6 +29,14 @@ access ▸ Paired devices**. Each tier includes the one before it:
 | **Drive** | Also type and press keys, answer permission requests and questions, and dictate. |
 | **Manage** | Also open, rename, restart, sleep, wake and close panes, and commit or push a pane's changes. |
 
+At **Observe** and above a device also sees each pane's model, context use, branch, changed
+files and diffs (credential-looking files are listed but never shown), pull requests, open
+tasks, usage and the providers it could open. At **Manage**, opening a pane offers only
+Claude, Codex, Antigravity, OpenCode and ZCode, never a shell or auto-approve. Closing a pane
+needs a confirmation that repeats its id and is refused while the pane has live children. A
+commit stages only the files the device was shown, and each manage action appears in
+Activity with the device's name.
+
 Devices paired before tiers existed, and every new pairing, are **Drive**. Choose another
 tier from the device's selector; choosing the previous one reverses it. A change applies on
 the device's next request, and a request above the device's tier is refused with a message

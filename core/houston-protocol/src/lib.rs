@@ -3292,9 +3292,8 @@ pub enum RemoteNotifyDetail {
 }
 
 /// What a paired device may do, each tier including the one before it:
-/// `Observe` reads, `Drive` also answers panes (input, decisions, dictation),
-/// `Manage` also opens, renames, restarts, sleeps and closes panes and commits
-/// or pushes. Pairing, configuration and revocation stay on the computer.
+/// `Observe` reads, `Drive` also answers panes, `Manage` also changes panes
+/// and commits or pushes. Pairing and configuration stay on the computer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
