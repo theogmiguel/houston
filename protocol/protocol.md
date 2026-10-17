@@ -1,4 +1,4 @@
-# Wire protocol v143
+# Wire protocol v144
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -452,6 +452,7 @@ every refusal names the setting.
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_running` | `session`, `agent?: AgentKind` | v130: bcast, only on change. The agent CLI a shell pane is running now (`SessionInfo.running_agent`); set by that CLI's hook drop or banner while the shell has a command in flight, cleared when the shell reports the command finished (authenticated OSC 133 `D`) or the CLI's own session-end hook (Codex, Grok) arrives. Absent means the shell has its prompt. Without shell integration only the session-end hook clears it |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
+| `session_limit` | `session`, `limit?: SessionLimit` | v144: bcast, only on change. A provider-reported limit for the pane's last turn; absent clears it. Set by Claude's root `StopFailure` with `error: rate_limit`, cleared by its next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification. Runtime-only |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
 | `session_checkout` | `id`, `checkout?: SessionCheckout`, `checkout_root?`, `worktree?: SessionWorktree` | bcast when a session's checkout identity changes or is first resolved; carries the same three fields as `SessionInfo`, which replace the client's copy. Primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
 | `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
@@ -555,6 +556,8 @@ ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
 SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
                    state: ContextState, source: ContextSource, as_of_ms
+SessionLimit       error (the provider's error class, e.g. `rate_limit`), details? (bounded,
+                   secret-redacted provider text), since_ms; no reset time is reported
 RestoreReason      kebab: invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
 
 SessionWorktree    path (checkout root), branch (Houston-recorded branch), repo_common_dir.
@@ -611,6 +614,7 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    hook-fed cues and a sleep timestamp; transcript expiry remains unknown),
                    compactions? (v122: context compactions the agent's hooks reported for this pane;
                    absent when its provider reports none),
+                   limit?: SessionLimit (v144: runtime-only provider-reported limit; see `session_limit`),
                    task? (v124: the SessionTask this pane is bound to — the newest run recorded
                    with its id, at a claimed or Started task — so a header chip needs no Tasks tab)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
@@ -1337,6 +1341,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 144 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |
 | 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |

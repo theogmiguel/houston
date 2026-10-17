@@ -400,6 +400,7 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   agent_running: SESSION_FIELD,
   agent_status: SESSION_FIELD,
   session_context: SESSION_FIELD,
+  session_limit: SESSION_FIELD,
   session_checkout: retagFields('id'),
   session_activity: retagFields('id'),
   generated_titles: 'drop',

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 143;
+pub const PROTOCOL_VERSION: u32 = 144;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1602,6 +1602,20 @@ impl SessionContext {
     }
 }
 
+/// A plan or rate limit the provider reported for the pane's last turn.
+/// Runtime-only; the provider's next turn start clears it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionLimit {
+    /// The provider's own error class, e.g. Claude's `rate_limit`.
+    pub error: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub details: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub since_ms: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RoleRoute {
@@ -2306,6 +2320,9 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub slept_at_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub limit: Option<SessionLimit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -5078,6 +5095,11 @@ pub enum ServerMsg {
         session: u32,
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         context: Option<SessionContext>,
+    },
+    SessionLimit {
+        session: u32,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        limit: Option<SessionLimit>,
     },
     SessionCheckout {
         id: u32,

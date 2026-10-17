@@ -118,6 +118,23 @@ pub const HANDOFF_BATCH_MS: u64 = 2_000;
 // twice, which is when a long orchestration starts to lose them.
 pub const HANDOFF_OFFER_AFTER_COMPACTIONS: u32 = 3;
 
+/// How a parent reads a child's reported limit; no hook reports when it resets.
+pub fn limit_word(provider: &str, limit: &proto::SessionLimit) -> String {
+    format!(
+        "limited: {provider} reported {} and no reset time; the limit clears on its next \
+         turn start",
+        limit.error
+    )
+}
+
+pub fn limit_note_body(reason: &str, provider: &str, profile: Option<&str>) -> String {
+    format!(
+        "{reason}. {provider} reported a plan or rate limit (profile {}) with no reset \
+         time; the pane shows Limited until its next turn starts.",
+        profile.unwrap_or("default")
+    )
+}
+
 pub fn handoff_offer_body(pane: u32, compactions: u32) -> String {
     format!(
         "pane {pane} has compacted its context {compactions} times; what it remembers of \

@@ -1692,8 +1692,12 @@ Parent rollups do not produce a second alert for that same request. Settings ›
 still controls desktop and in-app notices. Taskbar counts use user-owned input where the
 platform supports them and clear the opened pane's count.
 
-No supported API-failure hook carries a verified machine-readable reset time,
-so Houston does not schedule automatic resume.
+Claude's `StopFailure` classifies a limit (`error: rate_limit`) but carries no reset time;
+no supported API-failure hook carries a verified machine-readable one. Houston therefore
+shows Limited without a time and does not schedule automatic resume. The limit episode
+lasts from that report to the next root turn start or `quota_auto_resume_fired`; the
+parent receives one note per episode, either the round-closing failure note or, when the
+round already failed, a separate note.
 
 The workspace-info provider catalog checks executable presence and reuses cached versions
 and derives capabilities from the event map and launch rules. It reads Codex's

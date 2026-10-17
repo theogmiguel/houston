@@ -544,6 +544,8 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
 const SLEEP_CUE_MAX_CHARS: usize = 2000;
+/// Claude's `StopFailure` error class for a plan or rate limit.
+const CLAUDE_LIMIT_ERROR: &str = "rate_limit";
 
 pub(crate) fn bounded_hook_text(value: &str) -> String {
     crate::sanitize::redact_secrets(value)
@@ -621,6 +623,7 @@ pub struct Session {
     sleep_notice: Mutex<Option<String>>,
     recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
+    limit: Mutex<Option<proto::SessionLimit>>,
     geometry: AtomicU32,
     backend: Backend,
     supervisor_wait: Mutex<SupervisorWaitState>,
@@ -1361,6 +1364,7 @@ impl Session {
             info.resume_notice = Some(notice);
         }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
+        info.limit = self.limit.lock().expect("limit lock").clone();
         info
     }
 
@@ -5374,6 +5378,7 @@ impl Daemon {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -5447,6 +5452,7 @@ impl Daemon {
             sleep_notice: Mutex::new(None),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
+            limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
             backend,
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
@@ -11709,6 +11715,7 @@ impl Daemon {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         };
 
         if let Some(cues) = replacement
@@ -11797,6 +11804,7 @@ impl Daemon {
             sleep_notice: Mutex::new(None),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
+            limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
             backend: Backend::Pty {
                 #[cfg(unix)]
@@ -12354,6 +12362,7 @@ impl Daemon {
                 latest_prompt: None,
                 last_agent_message: None,
                 slept_at_ms: None,
+                limit: None,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -12415,6 +12424,7 @@ impl Daemon {
                 sleep_notice: Mutex::new(None),
                 recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
+                limit: Mutex::new(None),
                 geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
                 backend: Backend::Ssh(handle),
                 supervisor_wait: Mutex::new(SupervisorWaitState::default()),
@@ -15179,6 +15189,68 @@ impl Daemon {
         matches!(kind, "permission_prompt" | "agent_needs_input") || kind.starts_with("elicitation")
     }
 
+    /// Claude's root `StopFailure` with `error: rate_limit` is the only limit a hook reports;
+    /// it carries no reset time.
+    fn reported_limit(
+        provider: proto::AgentKind,
+        d: &crate::hook_drop::HookDrop,
+    ) -> Option<proto::SessionLimit> {
+        (provider == proto::AgentKind::Claude
+            && d.event == "StopFailure"
+            && d.agent_id.is_none()
+            && d.error.as_deref() == Some(CLAUDE_LIMIT_ERROR))
+        .then(|| proto::SessionLimit {
+            error: CLAUDE_LIMIT_ERROR.to_string(),
+            details: d
+                .error_details
+                .as_deref()
+                .map(bounded_hook_text)
+                .filter(|details| !details.is_empty()),
+            since_ms: now_ms(),
+        })
+    }
+
+    fn ends_limit(provider: proto::AgentKind, d: &crate::hook_drop::HookDrop) -> bool {
+        provider == proto::AgentKind::Claude
+            && d.agent_id.is_none()
+            && d.subagent_type.is_none()
+            && (crate::agent_events::AgentEvent::from_provider(provider, &d.event)
+                == Some(crate::agent_events::AgentEvent::PromptSubmitted)
+                || (d.event == "Notification"
+                    && d.notification_type.as_deref() == Some("quota_auto_resume_fired")))
+    }
+
+    /// Records a reported limit; true only when it starts a new limit episode.
+    fn mark_limited(&self, id: u32, session: &Session, limit: proto::SessionLimit) -> bool {
+        let mut current = session.limit.lock().expect("limit lock");
+        if current.is_some() {
+            return false;
+        }
+        *current = Some(limit.clone());
+        drop(current);
+        self.broadcast_control(&proto::ServerMsg::SessionLimit {
+            session: id,
+            limit: Some(limit),
+        });
+        true
+    }
+
+    fn clear_limit(&self, id: u32) {
+        let Ok(session) = self.get(id) else {
+            return;
+        };
+        if session.limit.lock().expect("limit lock").take().is_some() {
+            self.broadcast_control(&proto::ServerMsg::SessionLimit {
+                session: id,
+                limit: None,
+            });
+        }
+    }
+
+    pub fn session_limit(&self, id: u32) -> Option<proto::SessionLimit> {
+        self.get(id).ok()?.limit.lock().expect("limit lock").clone()
+    }
+
     fn apply_hook_drop(
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
@@ -15298,6 +15370,10 @@ impl Daemon {
             if !session.state.lock().expect("state lock").is_live() {
                 return crate::hook_drop::DropVerdict::Applied;
             }
+            let limit = Self::reported_limit(provider, d);
+            let limit_started = limit
+                .clone()
+                .is_some_and(|limit| self.mark_limited(d.session, &session, limit));
             if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
                 let name = crate::agent_hooks::provider_slug(provider);
                 let reason = format!(
@@ -15312,6 +15388,19 @@ impl Daemon {
                         .map(|details| format!("; {details}"))
                         .unwrap_or_default()
                 );
+                let profile = self
+                    .db
+                    .session_profile_label(d.session)
+                    .ok()
+                    .flatten()
+                    .or_else(|| session.info.profile_label.clone());
+                let (title, body) = match limit.as_ref() {
+                    Some(_) => (
+                        format!("{name} limited"),
+                        orchestrate::limit_note_body(&reason, name, profile.as_deref()),
+                    ),
+                    None => (format!("{name} turn_failed"), reason.clone()),
+                };
                 if row.state != "failed" {
                     let note = orchestrate::inbox_row_new(
                         row.parent_session,
@@ -15319,8 +15408,8 @@ impl Daemon {
                         Some(d.session),
                         Some(row.round),
                         orchestrate::InboxKind::OperatorNote,
-                        &format!("{name} turn_failed"),
-                        &reason,
+                        &title,
+                        &body,
                         Vec::new(),
                         false,
                         None,
@@ -15351,6 +15440,23 @@ impl Daemon {
                         }
                     }
                     self.broadcast_delegation(d.session);
+                } else if limit_started {
+                    if let Err(e) = self.inbox_write(
+                        row.parent_session,
+                        &self.current_workspace(d.session).unwrap_or_default(),
+                        Some(d.session),
+                        Some(row.round),
+                        orchestrate::InboxKind::OperatorNote,
+                        &title,
+                        &body,
+                        Vec::new(),
+                        Some("turn_failed"),
+                        None,
+                        false,
+                        true,
+                    ) {
+                        tracing::warn!("recording limit for child {}: {e}", d.session);
+                    }
                 }
             }
         }
@@ -15510,6 +15616,9 @@ impl Daemon {
                     .lock()
                     .expect("input answer lock") = d.prompt.as_deref().map(bounded_hook_text);
             }
+        }
+        if Self::ends_limit(provider, d) {
+            self.clear_limit(d.session);
         }
         if let Ok(session) = self.get(d.session) {
             *session.hook_input_reason.lock().expect("input reason lock") =
@@ -23112,9 +23221,17 @@ impl Daemon {
         });
         let holds: Vec<_> = children
             .into_iter()
-            .filter_map(|id| {
-                self.staged_result_hold_reason(id)
-                    .map(|reason| format!("pane {id}: {reason}"))
+            .flat_map(|id| {
+                let limit = self.session_limit(id).map(|limit| {
+                    let provider = self
+                        .agent_kind_of(id)
+                        .map_or("the provider", crate::agent_hooks::provider_slug);
+                    format!("pane {id}: {}", orchestrate::limit_word(provider, &limit))
+                });
+                let hold = self
+                    .staged_result_hold_reason(id)
+                    .map(|reason| format!("pane {id}: {reason}"));
+                limit.into_iter().chain(hold)
             })
             .collect();
         if holds.is_empty() {
