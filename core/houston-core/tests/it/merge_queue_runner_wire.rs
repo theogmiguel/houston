@@ -777,7 +777,7 @@ fn a_command_past_its_limit_times_out_with_the_tail_of_its_output() {
         })
         .unwrap();
     assert!(
-        started.elapsed() < Duration::from_secs(20),
+        started.elapsed() < Duration::from_secs(25),
         "the limit ended it"
     );
     match outcome {

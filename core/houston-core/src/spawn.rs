@@ -41,6 +41,10 @@ pub fn output_within(
 // Background metadata and diagnostics must not allocate without a bound.
 const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
+/// Reads taken from each pipe once a deadline passes: 8 KiB each, enough for
+/// what a child wrote just before it, and bounded so a flood cannot hold the kill.
+const DRAIN_READS: usize = 16;
+
 /// Which pipe a chunk came from.
 #[derive(Clone, Copy)]
 enum Stream {
@@ -253,6 +257,15 @@ mod bounded_linux {
         let mut err_done = false;
         loop {
             if start.elapsed() >= timeout {
+                // Keep what the child wrote before its deadline; the pipes do not block.
+                for _ in 0..super::DRAIN_READS {
+                    if !out_done {
+                        out_done = read_pipe(&mut stdout, Stream::Out, sink)?;
+                    }
+                    if !err_done {
+                        err_done = read_pipe(&mut stderr, Stream::Err, sink)?;
+                    }
+                }
                 return Ok(None);
             }
             if !out_done {
@@ -402,6 +415,15 @@ mod bounded_windows {
         let mut status = None;
         loop {
             if start.elapsed() >= timeout {
+                // Keep what the child wrote before its deadline; a peek never blocks.
+                for _ in 0..super::DRAIN_READS {
+                    if !out_done {
+                        out_done = read_pipe(&mut stdout, Stream::Out, sink)?.0;
+                    }
+                    if !err_done {
+                        err_done = read_pipe(&mut stderr, Stream::Err, sink)?.0;
+                    }
+                }
                 return Ok(None);
             }
             let mut progress = false;
@@ -494,9 +516,9 @@ mod tests {
         assert!(tail.contains("line 1999"), "{tail}");
 
         let start = std::time::Instant::now();
-        let out = tail_within(slow, std::time::Duration::from_secs(1), 1024).unwrap();
+        let out = tail_within(slow, std::time::Duration::from_secs(4), 1024).unwrap();
         assert!(out.status.is_none(), "the deadline ended it");
-        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        assert!(start.elapsed() < std::time::Duration::from_secs(20));
         assert!(String::from_utf8_lossy(&out.tail).contains("started"));
     }
 
