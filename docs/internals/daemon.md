@@ -513,7 +513,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| merge queue | `merge_queue_entries` (one row per queued pull request, keyed by workspace and number, with its last GitHub read as `facts_json`, its last passed verification and its last failure), `merge_queue_settings` (per workspace: the policy, the verification command, the time limit, the pause and when the user last acknowledged unattended work), `merge_queue_log` (every daemon push and merge with old and new commits, and every park; pruned after thirty days; the first queue's `merge_queue_merges` rows migrate into it) |
+| merge queue | `merge_queue_entries` (one row per queued pull request, keyed by workspace and number, with its last GitHub read as `facts_json`, its last passed verification, its last failure, the merged dependency it may restack from and what GitHub holds for it), `merge_queue_settings` (per workspace: the policy, the verification command, the time limit, the pause, when the user last acknowledged unattended work and the cached hand-off path), `merge_queue_log` (every daemon push, merge, restack, retarget and hand-off with old and new commits, and every park; pruned after thirty days; the first queue's `merge_queue_merges` rows migrate into it, and a log from before restacks is copied into the wider table) |
 | bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove), `predicted_conflicts` (worktree pairs whose predicted conflict was already noted) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
@@ -632,6 +632,42 @@ The constraints:
   the distro like any Linux daemon; the Windows daemon refuses, by name, a workspace on a
   `\\wsl.localhost\` or `\\wsl$\` share. A daemon on another operating system refuses to
   verify, because `spawn::tail_within` owns processes only on Linux and Windows.
+- **Restack.** When a dependency merges, its dependents keep what it was (`stacked_json`:
+  number, last read head, branch and base). A dependent's next verification looks for the
+  fork point: the newest recorded head of the dependency that its own head contains, from
+  the last read head and the dependency's log rows (a push row's old head is the commit a
+  stacked branch was built on, so a chain restacks one level per landing). Found, the
+  verification runs `git rebase --onto <base> <fork point>`, which replays only the
+  dependent's own commits; a squash-merged dependency would otherwise conflict or be
+  replayed. A head that shares commits only the dependency had, yet contains none of its
+  recorded heads, is refused by name: a guessed fork point would replay or drop someone's
+  commits. A head that shares only base history depends in order only and is rebased
+  plainly. A layer merged through `pr_stack_merge` keeps no record, because GitHub
+  restacks native stacks itself. A restack conflict takes the failure path like any other.
+- **Retarget.** A dependent whose pull request still targets the merged dependency's
+  branch lands where the dependency merged: its verification runs against that base, and
+  before the queue pushes or merges it `gh pr edit --base` moves the pull request there and
+  a retarget row is logged. The restacked head is then pushed with the same guard and lease,
+  logged as a push row and a restack row with its fork point.
+- **Hand-off to GitHub.** The access query the shared reader already makes also asks for
+  `isMergeQueueEnabled`, `autoMergeAllowed`, the base's `refUpdateRule` required checks,
+  the merge queue entry, the armed auto-merge and the last merge queue removal or
+  auto-merge disable; it costs one GraphQL point, as before. Each read refreshes the
+  workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
+  policy line shows with no read of its own. A field GitHub hides from the viewer counts as
+  "Houston merges", never as a hand-off; when GitHub then refuses Houston's merge naming
+  its merge queue, the refusal takes the failure path unchanged and the cache learns the
+  merge queue, which a read that cannot see the rule does not undo. After every gate and
+  the verification pass, a merge queue base gets the head enqueued with
+  `enqueuePullRequest` pinned to it (GitHub's merge group tests the real merge, so only a
+  restack is pushed first), and an auto-merge repository gets the verified commit
+  lease-pushed and `gh pr merge --auto --match-head-commit`. One fresh read must then show
+  the request against that commit, or the hand-off is taken back and the entry fails. While
+  GitHub holds the head (`github_json`) the entry is Watching and stays first in line.
+  GitHub merging it runs the after-merge steps above; GitHub removing it, turning its
+  auto-merge off or failing a check on it takes the failure path with GitHub's reason, and
+  a new head takes the hand-off back so GitHub never merges an unverified commit. Dequeue
+  and every pause take it back too, which loses the place in GitHub's merge queue.
 
 The merge method is the repository's allowed method, squash first, read from
 `squashMergeAllowed`, `mergeCommitAllowed` and `rebaseMergeAllowed` in the access query the

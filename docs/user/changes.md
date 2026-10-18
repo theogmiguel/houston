@@ -144,7 +144,8 @@ What happens next depends on the policy:
 `houston/*` branch that Houston itself created for a worktree. It pushes the rebased commit
 with a lease on the commit it verified, so it never overwrites a commit someone pushed
 meanwhile; it never pushes to the base or the default branch. Fetches and pushes use your git
-remote and credentials; merges, reads and reverts use `gh`. Nothing else leaves the machine.
+remote and credentials; merges, reads, reverts, retargets and the hand-off to GitHub's merge
+queue or auto-merge (see below) use `gh`. Nothing else leaves the machine.
 
 **When verification fails.** A rebase conflict names the conflicting files; a failing or
 timed-out command shows the last lines of its output. If the pane that enqueued the pull
@@ -152,9 +153,48 @@ request, or an agent pane in its worktree, is still open, it gets one message wi
 detail and the entry shows **Fixing**. Otherwise the entry is **Parked** under its own group
 with the reason, and the rail's **Pull requests** item counts it. Either way the queue moves
 on. Pushing a new commit to the branch puts it back in line; **Retry** does so for the same
-commit. **Hand to a new pane** opens an agent in the pull request's worktree with the failure
-as its prompt. Houston never opens a pane on its own. If GitHub's checks fail on a commit
-Houston pushed, the entry leaves the line the same way.
+commit. **Hand to a new pane** asks which agent to open, with the workspace's default agent
+from Settings ▸ Tasks preselected, then opens it in the pull request's worktree with the
+failure as its prompt. Houston never opens a pane on its own. If GitHub's checks fail on a
+commit Houston pushed, the entry leaves the line the same way.
+
+### Stacked pull requests
+
+A pull request built on another one's branch, enqueued with `depends_on` naming it, waits
+behind it. Once the first merges, usually by squash, the second's branch still carries the
+first one's original commits. Houston restacks it at its next verification: it finds the
+newest head of the first pull request that the second one contains, replays only the second
+one's own commits onto the base, and verifies that. When it lands, the restacked commit is
+pushed with the same lease, and a pull request that still targets the first one's branch is
+moved to the base on GitHub first. **Today** lists the restack and the retarget. A chain of
+three or more restacks one pull request at a time, as each lands.
+
+If the branch carries the first pull request's commits but none of the heads Houston saw for
+it, for example because that branch was rewritten before Houston read it, Houston does not
+guess: the entry fails with that reason, and you rebase the branch yourself. A conflict while
+restacking is handled like any other conflict. A `depends_on` that only orders two
+independent branches needs no restack, and GitHub's native stacks are left to GitHub.
+
+### Repositories with GitHub's merge queue or auto-merge
+
+Houston's gates and verification always run first. Then:
+
+- **GitHub's merge queue** on the base branch: Houston adds the verified pull request to
+  GitHub's merge queue instead of merging it. Nothing is pushed for it, because GitHub's merge
+  group tests the real merge; only a restacked branch is pushed first.
+- **Auto-merge** allowed with required checks on the base: Houston pushes the verified commit
+  and turns auto-merge on for exactly that commit, with the repository's merge method.
+
+The queue view's policy line names the path, such as **Hands off to GitHub's merge queue**.
+While GitHub holds the pull request it shows **Watching**, stays first in line, and its detail
+names the commit GitHub has. When GitHub merges it, Houston fetches, tells the other panes the
+base moved and logs the merge, as for its own merges. When GitHub removes it from its merge
+queue, turns auto-merge off or a check fails, the entry fails with GitHub's reason. **Dequeue**
+and **Pause** take the pull request back from GitHub first; a paused entry loses its place in
+GitHub's merge queue and is added again when you resume. Houston learns which path applies
+from the pull request reads it already makes. If GitHub hides that from your account, Houston
+merges itself; if GitHub then refuses because the branch requires its merge queue, the entry
+fails with GitHub's message and later landings use the merge queue.
 
 **Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
 the command palette, stops pushes and merges at once; entries keep their place and any
