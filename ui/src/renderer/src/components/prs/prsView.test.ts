@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PrInfo } from '../../houston/client'
-import { clearPrsViewRequest, mergeQueuePaletteActions, usePrsViewRequest } from './prsView'
+import { clearPrsViewRequest, mergeQueuePaletteActions, mergeQueuePauseAction, usePrsViewRequest } from './prsView'
 import { act, renderHook } from '@testing-library/react'
 
 function pr(state: string): PrInfo {
@@ -25,5 +25,14 @@ describe('mergeQueuePaletteActions', () => {
   it('offers no add without a focused pane or an open pull request', () => {
     expect(mergeQueuePaletteActions(new Map([['/repo/.houston/worktrees/a', { pr: pr('MERGED') }]]), sessions, 7, vi.fn()).addToMergeQueue).toBeUndefined()
     expect(mergeQueuePaletteActions(new Map(), sessions, null, vi.fn()).addToMergeQueue).toBeUndefined()
+  })
+})
+
+describe('the palette pause', () => {
+  it('pauses the selected workspace’s queue, and is absent with every workspace shown', () => {
+    const mergeQueuePause = vi.fn(() => 1)
+    mergeQueuePauseAction({ mergeQueuePause }, '/repo').pauseMergeQueue?.()
+    expect(mergeQueuePause).toHaveBeenCalledWith('/repo', true)
+    expect(mergeQueuePauseAction({ mergeQueuePause }, 'all').pauseMergeQueue).toBeUndefined()
   })
 })

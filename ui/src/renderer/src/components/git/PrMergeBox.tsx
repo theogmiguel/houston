@@ -58,9 +58,6 @@ function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, wait
   return <SplitButton label={labels[method]} testId="pr-merge" disabled={busy || mergeReason !== null} disabledReason={mergeReason ?? undefined} onClick={() => pr.merge(link.number, method, detail.head_sha)} items={(['squash', 'merge', 'rebase'] as const).map((value) => ({ label: `Use ${methods[value]}`, onClick: () => setMethod(value) }))} />
 }
 
-/** The merge queue's footer: the pull request's place, with Dequeue or "Add to merge queue".
- *  With "merge when verified" on, the queue merges and the overflow keeps a skip-the-queue
- *  merge; with it off, the head's Merge pushes and merges the verified commit. */
 /** What the footer says will happen to a queued pull request: its one reason, else how it merges. */
 function queueLine(entry: MergeQueueEntry, queue: MergeQueueController, policy: boolean, headSha: string, method: PrMergeMethod): string {
   if (entry.reason) return entry.reason
@@ -71,6 +68,9 @@ function queueLine(entry: MergeQueueEntry, queue: MergeQueueController, policy: 
   return `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`
 }
 
+/** The merge queue's footer: the pull request's place, with Dequeue or "Add to merge queue".
+ *  With "merge when verified" on, the queue merges and the overflow keeps a skip-the-queue
+ *  merge; with it off, the head's Merge pushes and merges the verified commit. */
 function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController; pr: PrDetailController }): React.JSX.Element | null {
   if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
   const entry = queueEntryFor(queue.entries, link.repository, link.number)
