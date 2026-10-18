@@ -75,6 +75,12 @@ export function MergeQueueSettingsSection({ client, workspace }: { client: Houst
           <Button variant="secondary" size="sm" disabled={disabled} data-testid="merge-queue-settings-pause" onClick={() => queue.setPaused(!paused)}>{paused ? 'Resume' : 'Pause'}</Button>
         </span>
       </Row>
+      <Row title="Every workspace" desc={<><span>Pauses the merge queue of every workspace on this machine, beside each workspace's own pause.</span><SettingsScope workspace={null} scope="global" /></>}>
+        <span className="flex items-center gap-[var(--space-2)]">
+          <StatusLabel status={queue.globalPaused ? 'Paused' : 'In sync'} size="small" />
+          <Button variant="secondary" size="sm" disabled={client === null} data-testid="merge-queue-pause-all" onClick={() => client?.mergeQueuePauseAll(!queue.globalPaused)}>{queue.globalPaused ? 'Resume all' : 'Pause all'}</Button>
+        </span>
+      </Row>
       <Row title="Pushes" desc="Only to houston/* branches Houston created, with a lease on the recorded commit. Never to the base.">
         <Text size="small" tone="muted">Read only</Text>
       </Row>

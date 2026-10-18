@@ -20,7 +20,8 @@ function fakeClient(): { client: HoustonClient; emit: (message: Record<string, u
     },
     mergeQueueGet: vi.fn(),
     mergeQueueSettingsSet: set,
-    mergeQueuePause: pause
+    mergeQueuePause: pause,
+    mergeQueuePauseAll: pause
   } as unknown as HoustonClient
   const emit = (message: Record<string, unknown>): void => {
     for (const handler of handlers.get(message.type as string) ?? []) handler(message)
@@ -58,6 +59,8 @@ describe('Settings ▸ Workspaces ▸ Merge queue', () => {
     expect(screen.getByText('Paused')).toBeTruthy()
     fireEvent.click(screen.getByTestId('merge-queue-settings-pause'))
     expect(pause).toHaveBeenCalledWith('/repo', false)
+    fireEvent.click(screen.getByTestId('merge-queue-pause-all'))
+    expect(pause).toHaveBeenLastCalledWith(true)
   })
 
   it('shows the daemon’s refusal by name', () => {

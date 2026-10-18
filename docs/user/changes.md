@@ -158,7 +158,8 @@ Houston pushed, the entry leaves the line the same way.
 
 **Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
 the command palette, stops pushes and merges at once; entries keep their place and any
-verification they hold. Every push and merge the queue makes is logged with the old and new
+verification they hold. **Pause all** in Settings pauses every workspace's queue on this
+machine. Every push and merge the queue makes is logged with the old and new
 commits under **Merge history** in Settings. **Revert** on a merge under **Today** opens a
 revert pull request on GitHub; Houston never pushes to the base to undo a merge.
 
