@@ -90,7 +90,7 @@ struct Rig {
     root: PathBuf,
     origin: PathBuf,
     bin: PathBuf,
-    previous_path: Option<std::ffi::OsString>,
+    _path: common::PathPrepend,
 }
 
 impl Rig {
@@ -124,12 +124,7 @@ impl Rig {
         let gh = bin.join(format!("gh{}", std::env::consts::EXE_SUFFIX));
         std::fs::copy(env!("CARGO_BIN_EXE_fake_gh"), &gh).unwrap();
         std::fs::write(bin.join("origin"), origin.display().to_string()).unwrap();
-        let previous_path = std::env::var_os("PATH");
-        let mut paths = vec![bin.clone()];
-        paths.extend(std::env::split_paths(
-            previous_path.as_deref().unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        let path = common::prepend_path(&bin);
         Rig {
             daemon,
             state,
@@ -137,7 +132,7 @@ impl Rig {
             root,
             origin,
             bin,
-            previous_path,
+            _path: path,
         }
     }
 
@@ -257,14 +252,6 @@ impl Rig {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap()
-    }
-}
-
-impl Drop for Rig {
-    fn drop(&mut self) {
-        if let Some(path) = self.previous_path.take() {
-            std::env::set_var("PATH", path);
-        }
     }
 }
 
