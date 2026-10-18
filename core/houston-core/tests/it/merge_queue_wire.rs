@@ -125,7 +125,7 @@ struct Rig {
     state: tempfile::TempDir,
     workspace: String,
     bin: PathBuf,
-    previous_path: Option<std::ffi::OsString>,
+    _path: common::PathPrepend,
 }
 
 impl Rig {
@@ -137,24 +137,13 @@ impl Rig {
         daemon.workspace_add(&workspace).unwrap();
         let bin = state.path().join("bin");
         write_fake_gh(&bin);
-        let previous_path = std::env::var_os("PATH");
-        std::env::set_var(
-            "PATH",
-            format!(
-                "{}:{}",
-                bin.display(),
-                previous_path
-                    .as_deref()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-            ),
-        );
+        let path = common::prepend_path(&bin);
         Rig {
             daemon,
             state,
             workspace,
             bin,
-            previous_path,
+            _path: path,
         }
     }
 
@@ -214,14 +203,6 @@ impl Rig {
             })
             .unwrap()
             .id
-    }
-}
-
-impl Drop for Rig {
-    fn drop(&mut self) {
-        if let Some(path) = self.previous_path.take() {
-            std::env::set_var("PATH", path);
-        }
     }
 }
 
