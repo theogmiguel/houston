@@ -50,7 +50,7 @@ export function entryLine(entry: MergeQueueEntry, previous: MergeQueueEntry | un
     const base = entry.base_ref ?? 'its base'
     const running = entry.verifying_since_ms != null ? elapsed(now - entry.verifying_since_ms) : '0s'
     const limit = settings ? ` of ${settings.time_limit_minutes}m` : ''
-    return `${entry.head_ref} · rebased on ${base} · ${running}${limit}`
+    return `${running}${limit} · rebased on ${base}`
   }
   if (entry.status === 'waiting_for_slot') return 'Verifies once the slot on this machine is free'
   if (entry.status === 'fixing') return `Handed to its pane: ${entry.reason ?? 'verification failed'}`

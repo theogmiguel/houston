@@ -134,7 +134,7 @@ describe('MergeQueueView', () => {
     render(<MergeQueueView now={NOW} queue={controller({ settings: POLICY_ON, entries: [verifying] })} />)
     expect(screen.getByTestId('merge-queue-policy').textContent).toContain('Merges when verified · cargo nextest run · one at a time on this machine')
     const row = screen.getAllByTestId('list-detail-row')[0]
-    expect(row.textContent).toContain('houston/change-212 · rebased on main · 4m 12s of 30m')
+    expect(row.textContent).toContain('4m 12s of 30m · rebased on main')
     expect(row.textContent).toContain('Verifying')
     fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
     expect(screen.queryByTestId('merge-queue-merge')).toBeNull()
