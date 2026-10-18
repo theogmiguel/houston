@@ -53,6 +53,7 @@ function controller(o: Partial<MergeQueueController> = {}): MergeQueueController
     settings: { merge_when_verified: false, verification_command: '', time_limit_minutes: 30, paused: false },
     globalPaused: false,
     away: { merged: 0, parked: 0, last_merge_at_ms: null },
+    handOff: null,
     loaded: true,
     unavailable: null,
     busy: null,
@@ -167,6 +168,54 @@ describe('MergeQueueView', () => {
     fireEvent.click(screen.getByTestId('merge-queue-hand-off'))
     expect(onHandOff).toHaveBeenCalledWith('/repo/.houston/worktrees/settings-prefs', expect.stringContaining('- src/settings/Preferences.tsx'))
     expect(onHandOff.mock.calls[0][1]).toContain('Rebase houston/settings-prefs onto main')
+  })
+
+  it('names GitHub’s merge queue on the policy line and shows the entry GitHub holds as Watching', () => {
+    const watching = entry(212, {
+      status: 'watching',
+      reason: 'In GitHub’s merge queue (position 2)',
+      verification: { base_ref: 'main', base_sha: 'a91c2e'.padEnd(40, '0'), head_sha: SHA, verified_sha: SHA, at_ms: 1, fork_sha: null, stacked_on: null },
+      github: { mode: 'merge_queue', head_sha: SHA, base_ref: 'main', base_sha: 'a91c2e'.padEnd(40, '0'), method: null, unattended: true, at_ms: 1 }
+    })
+    const queue = controller({ entries: [watching], settings: POLICY_ON, handOff: { mode: 'merge_queue', base_ref: 'main', read_at_ms: 1, from_refusal: false } })
+    render(<MergeQueueView now={NOW} queue={queue} />)
+    expect(screen.getByTestId('merge-queue-policy').textContent).toContain('Merges when verified · cargo nextest run · one at a time on this machine · Hands off to GitHub\'s merge queue on main')
+    const row = screen.getAllByTestId('list-detail-row')[0]
+    expect(row.textContent).toContain('Watching')
+    expect(row.textContent).toContain('In GitHub’s merge queue (position 2)')
+    fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
+    expect(screen.getByTestId('merge-queue-github').textContent).toContain('GitHub owns 0123456 now')
+    expect(screen.queryByTestId('merge-queue-merge')).toBeNull()
+    fireEvent.click(screen.getByTestId('merge-queue-dequeue'))
+    expect(queue.dequeue).toHaveBeenCalledWith(212)
+  })
+
+  it('says auto-merge on the policy line when GitHub’s auto-merge takes the verified commit', () => {
+    const queue = controller({ settings: POLICY_ON, handOff: { mode: 'auto_merge', base_ref: 'main', read_at_ms: 1, from_refusal: false } })
+    render(<MergeQueueView now={NOW} queue={queue} />)
+    expect(screen.getByTestId('merge-queue-policy').textContent).toContain('Hands off to GitHub\'s auto-merge on main')
+  })
+
+  it('lists a restack, a retarget and a hand-off in today’s history, and the restacked head says so', () => {
+    const fork = 'f0f0f0f'.padEnd(40, '1')
+    const restacked = entry(213, {
+      verification: { base_ref: 'main', base_sha: 'a91c2e'.padEnd(40, '0'), head_sha: SHA, verified_sha: 'b'.repeat(40), at_ms: 1, fork_sha: fork, stacked_on: 212 }
+    })
+    const queue = controller({
+      entries: [restacked],
+      log: [
+        logged(213, NOW - 60_000, { kind: 'restack', ref_name: 'houston/csv', old_sha: 'c'.repeat(40), new_sha: 'd'.repeat(40), fork_sha: fork, head_sha: null, method: null, detail: 'Restacked after #212' }),
+        logged(213, NOW - 120_000, { kind: 'retarget', ref_name: 'main', old_sha: null, new_sha: null, head_sha: null, method: null, detail: 'Retargeted from houston/prefs' }),
+        logged(214, NOW - 180_000, { kind: 'hand_off', head_sha: SHA, new_sha: null, old_sha: null, detail: 'Added to GitHub\'s merge queue' })
+      ]
+    })
+    render(<MergeQueueView now={NOW} queue={queue} />)
+    const rows = screen.getAllByTestId('list-detail-row').map((row) => row.textContent ?? '')
+    expect(rows[0]).toContain('Restacked after #212 · verified on main@a91c2e0')
+    expect(rows[1]).toContain('Restacked houston/csv onto the base after f0f0f0f: ccccccc → ddddddd')
+    expect(rows[2]).toContain('Retargeted from houston/prefs to main')
+    expect(rows[3]).toContain('Added to GitHub\'s merge queue at 0123456')
+    expect(rows[3]).toContain('Watching')
   })
 
   it('shows a failed command’s output tail, never a count parsed from it', () => {

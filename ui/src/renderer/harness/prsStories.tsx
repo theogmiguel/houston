@@ -144,11 +144,11 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked' | 'merge-queue-restacked' | 'merge-queue-watching'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
-  const queueMode = mode === 'merge-queue' || mode === 'merge-queue-policy' || mode === 'merge-queue-parked'
+  const queueMode = mode.startsWith('merge-queue')
   useState(() => { if (queueMode) requestPrsView({ view: 'queue' }) })
   const baseItems = mode === 'empty' || mode === 'loading' ? [] : mode === 'draft' || mode === 'closed'
     ? pullRequests.map((item) => item.number === 95 ? { ...item, state: mode === 'closed' ? 'closed' as const : 'open' as const, is_draft: mode === 'draft' } : item)
@@ -158,14 +158,18 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
   const client = useMemo(() => {
     const inspector = new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' })
     inspector.mergeQueuePolicy = mode === 'merge-queue-policy' || mode === 'merge-queue-parked'
+    inspector.mergeQueueGitHub = mode === 'merge-queue-restacked' ? 'restacked' : mode === 'merge-queue-watching' ? 'watching' : 'houston'
     return inspector as unknown as HoustonClient
   }, [mode, selectedNumber])
   useEffect(() => {
     const screen = rootRef.current?.querySelector('[data-testid="pull-requests-screen"]')
-    if (mode === 'merge-queue-parked') {
+    if (mode === 'merge-queue-parked' || mode === 'merge-queue-restacked' || mode === 'merge-queue-watching') {
+      const pick = mode === 'merge-queue-parked' ? '#87' : '#79'
       const timer = window.setInterval(() => {
-        const parked = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes('#87'))
-        if (parked) { parked.click(); window.clearInterval(timer) }
+        const row = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes(pick))
+        if (!row) return
+        row.click()
+        window.clearInterval(timer)
       }, 50)
       return () => window.clearInterval(timer)
     }

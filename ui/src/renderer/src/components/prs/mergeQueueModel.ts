@@ -1,4 +1,4 @@
-import type { MergeQueueEntry, MergeQueueGate, MergeQueueGateKind, MergeQueueLogEntry, MergeQueueSettings, MergeQueueStatus } from '../../houston/client'
+import type { MergeQueueEntry, MergeQueueGate, MergeQueueGateKind, MergeQueueHandOffInfo, MergeQueueLogEntry, MergeQueueLogKind, MergeQueueSettings, MergeQueueStatus } from '../../houston/client'
 import type { MergeQueueGateItem } from '../ui/MergeQueue'
 import type { StatusLabelValue } from '../ui/StatusLabel'
 
@@ -16,7 +16,21 @@ const STATUS_WORD: Record<MergeQueueStatus, StatusLabelValue> = {
   waiting_for_slot: 'Waiting for a slot',
   fixing: 'Fixing',
   parked: 'Parked',
-  paused: 'Paused'
+  paused: 'Paused',
+  watching: 'Watching'
+}
+
+const LOG_WORD: Record<MergeQueueLogKind, StatusLabelValue> = {
+  push: 'Done',
+  merge: 'Merged',
+  park: 'Parked',
+  restack: 'Done',
+  retarget: 'Done',
+  hand_off: 'Watching'
+}
+
+export function logStatus(row: MergeQueueLogEntry): StatusLabelValue {
+  return LOG_WORD[row.kind]
 }
 
 export function entryStatus(entry: MergeQueueEntry): StatusLabelValue {
@@ -56,7 +70,9 @@ export function entryLine(entry: MergeQueueEntry, previous: MergeQueueEntry | un
   if (entry.status === 'fixing') return `Handed to its pane: ${entry.reason ?? 'verification failed'}`
   if (entry.reason) return entry.reason
   if (entry.position === 1) {
-    if (entry.verification) return `Verified on ${entry.verification.base_ref}@${shortSha(entry.verification.base_sha)}`
+    const v = entry.verification
+    if (v?.fork_sha) return `Restacked after #${v.stacked_on ?? '?'} · verified on ${v.base_ref}@${shortSha(v.base_sha)}`
+    if (v) return `Verified on ${v.base_ref}@${shortSha(v.base_sha)}`
     return 'First in line, ready to merge'
   }
   if (entry.depends_on != null) return `Merges after #${entry.depends_on}, which it depends on`
@@ -82,20 +98,33 @@ export function loggedToday(log: readonly MergeQueueLogEntry[], now: number): Me
   return log.filter((row) => row.at_ms >= start.getTime() && row.kind !== 'push')
 }
 
-/** One history line: what happened to the base, or why the entry parked. */
+/** One history line: what happened to the base or the branch, or why the entry parked. */
 export function logLine(row: MergeQueueLogEntry): string {
   if (row.kind === 'park') return `Parked. ${row.detail ?? 'Verification failed'}`
   if (row.kind === 'push') return `Pushed ${shortSha(row.new_sha ?? '')} to ${row.ref_name ?? 'its branch'} over ${shortSha(row.old_sha ?? '')}`
+  if (row.kind === 'restack') return `Restacked ${row.ref_name ?? 'its branch'} onto the base after ${shortSha(row.fork_sha ?? '')}: ${shortSha(row.old_sha ?? '')} → ${shortSha(row.new_sha ?? '')}`
+  if (row.kind === 'retarget') return `${row.detail ?? 'Retargeted'} to ${row.ref_name ?? 'the base'}`
+  if (row.kind === 'hand_off') return `${row.detail ?? 'Handed to GitHub'} at ${shortSha(row.head_sha ?? '')}`
   const into = row.ref_name ?? 'its base'
-  return row.new_sha ? `Merged into ${into}@${shortSha(row.new_sha)}` : `Merged into ${into}`
+  const merged = row.new_sha ? `Merged into ${into}@${shortSha(row.new_sha)}` : `Merged into ${into}`
+  return row.detail?.startsWith('Merged by ') ? `${merged} ${row.detail.slice('Merged '.length)}` : merged
 }
 
-/** The policy line above the queue: what the queue does on its own, and with which command. */
-export function policyLine(settings: MergeQueueSettings | null): string {
+const HAND_OFF_LINE: Record<MergeQueueHandOffInfo['mode'], string | null> = {
+  houston: null,
+  merge_queue: "Hands off to GitHub's merge queue",
+  auto_merge: "Hands off to GitHub's auto-merge"
+}
+
+/** The policy line above the queue: what the queue does on its own, with which
+ *  command, and whether GitHub's merge queue or auto-merge merges in the end. */
+export function policyLine(settings: MergeQueueSettings | null, handOff: MergeQueueHandOffInfo | null = null): string {
   const command = settings?.verification_command.trim() ?? ''
-  if (!settings || command === '') return 'You merge the head · no verification command is set'
+  const github = handOff ? HAND_OFF_LINE[handOff.mode] : null
+  const tail = github ? ` · ${github}${handOff?.base_ref ? ` on ${handOff.base_ref}` : ''}` : ''
+  if (!settings || command === '') return `You merge the head · no verification command is set${tail}`
   const mode = settings.merge_when_verified ? 'Merges when verified' : 'Verifies; you merge the head'
-  return `${mode} · ${command} · one at a time on this machine`
+  return `${mode} · ${command} · one at a time on this machine${tail}`
 }
 
 export function clockTime(ms: number): string {

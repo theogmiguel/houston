@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { HoustonClient, MergeQueueAway, MergeQueueEntry, MergeQueueLogEntry, MergeQueueSettings, PrMergeMethod } from '../../houston/client'
+import type { HoustonClient, MergeQueueAway, MergeQueueEntry, MergeQueueHandOffInfo, MergeQueueLogEntry, MergeQueueSettings, PrMergeMethod } from '../../houston/client'
 
 export interface MergeQueueReply {
   ok: boolean
@@ -17,6 +17,8 @@ export interface MergeQueueController {
   /** Every queue of the daemon is paused. */
   globalPaused: boolean
   away: MergeQueueAway
+  /** Who merges here, as the daemon's reads last said; null before the first. */
+  handOff: MergeQueueHandOffInfo | null
   loaded: boolean
   /** Why `dir` has no merge queue, such as a missing GitHub remote. */
   unavailable: string | null
@@ -45,6 +47,7 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
   const [settings, setSettingsState] = useState<MergeQueueSettings | null>(null)
   const [globalPaused, setGlobalPaused] = useState(false)
   const [away, setAway] = useState<MergeQueueAway>(NO_AWAY)
+  const [handOff, setHandOff] = useState<MergeQueueHandOffInfo | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
@@ -61,6 +64,7 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
     setSettingsState(null)
     setGlobalPaused(false)
     setAway(NO_AWAY)
+    setHandOff(null)
     setLoaded(false)
     setUnavailable(null)
     setBusy(null)
@@ -79,6 +83,7 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
       setSettingsState(message.settings ?? null)
       setGlobalPaused(message.global_paused ?? false)
       setAway(message.away ?? NO_AWAY)
+      setHandOff(message.hand_off ?? null)
       setLoaded(true)
     })
     const offSummary = client.subscribe('merge_queue_summary', (message) => setGlobalPaused(message.global_paused))
@@ -109,5 +114,5 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
   const acknowledge = useCallback(() => { if (client && dir) client.mergeQueueAcknowledge(dir) }, [client, dir])
   const clearReply = useCallback(() => setReply(null), [])
 
-  return { workspace, entries, log, settings, globalPaused, away, loaded, unavailable, busy, reply, enqueue, dequeue, mergeHead, retry, revert, setPaused, setSettings, acknowledge, clearReply }
+  return { workspace, entries, log, settings, globalPaused, away, handOff, loaded, unavailable, busy, reply, enqueue, dequeue, mergeHead, retry, revert, setPaused, setSettings, acknowledge, clearReply }
 }

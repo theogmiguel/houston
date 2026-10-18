@@ -36,8 +36,12 @@ export class InspectorClient {
   /** The merge queue fixture: PR 1's human-merged queue, or the "merge when verified" policy
    *  with the head verifying and one entry parked on a conflict. */
   mergeQueuePolicy = false
+  /** GitHub's own merge path: its merge queue holds the restacked head of a stack
+   *  whose dependency merged, or nothing hands off (`houston`). */
+  mergeQueueGitHub: 'houston' | 'restacked' | 'watching' = 'houston'
 
   mergeQueueGet(dir: string): void {
+    if (this.mergeQueueGitHub !== 'houston') return this.mergeQueueGitHubGet(dir)
     const sha = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'
     const policy = this.mergeQueuePolicy
     const verification = (state: string, reason: string) => ({ kind: 'verification', state, reason })
@@ -74,6 +78,44 @@ export class InspectorClient {
       settings: { merge_when_verified: policy, verification_command: policy ? 'cargo nextest run --workspace' : '', time_limit_minutes: 30, paused: false },
       global_paused: false,
       away: policy ? { merged: 1, parked: 1, last_merge_at_ms: merged.at_ms } : { merged: 0, parked: 0, last_merge_at_ms: null }
+    }))
+  }
+
+  private mergeQueueGitHubGet(dir: string): void {
+    const watching = this.mergeQueueGitHub === 'watching'
+    const old = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'
+    const restacked = '4c2e8a1b9d7f6e5c3a2b1d0f9e8c7b6a5d4c3b2a'
+    const fork = '1b3d5f7a9c2e4b6d8f0a1c3e5b7d9f2a4c6e8b0d'
+    const base = 'a91c2e4b7d0f13c58e62a90b1d4f7c3e8a5b6d21'
+    const at = (minutes: number) => Date.now() - minutes * 60_000
+    const verification = { base_ref: 'main', base_sha: base, head_sha: old, verified_sha: restacked, at_ms: at(6), fork_sha: fork, stacked_on: 94 }
+    const head = {
+      number: 79, repository: 'owner/houston', url: 'https://github.com/owner/houston/pull/79', title: 'feat(export): CSV export reads preferences', head_ref: 'houston/csv-export', head_sha: watching ? restacked : old,
+      base_ref: 'main', depends_on: null, session: null, position: 1, enqueued_at_ms: at(90), read_at_ms: at(1),
+      status: watching ? 'watching' : 'ready', reason: watching ? 'In GitHub’s merge queue (position 2)' : null,
+      gates: [
+        { kind: 'mergeable', state: 'passed', reason: null },
+        { kind: 'review_threads', state: 'passed', reason: null },
+        { kind: 'reviewer', state: 'not_applicable', reason: null },
+        { kind: 'verification', state: 'passed', reason: 'Verified on main@a91c2e4' }
+      ],
+      verification, failure: null, worktree: '/repo/.houston/worktrees/csv-export', verifying_since_ms: null,
+      github: watching ? { mode: 'merge_queue', head_sha: restacked, base_ref: 'main', base_sha: base, method: null, unattended: true, at_ms: at(3) } : null
+    }
+    const next = { ...head, number: 90, title: 'refactor(ui): every screen composes components/ui roles', url: 'https://github.com/owner/houston/pull/90', head_ref: 'houston/ui-roles', head_sha: old, position: 2, status: 'ready', reason: null, verification: null, github: null, worktree: null, gates: head.gates.map((g) => g.kind === 'verification' ? { ...g, state: 'pending', reason: 'Runs when it is first in line' } : g) }
+    const row = (kind: string, minutes: number, extra: Record<string, unknown>) => ({ kind, number: 79, repository: 'owner/houston', url: head.url, title: head.title, ref_name: null, old_sha: null, new_sha: null, head_sha: null, method: null, detail: null, unattended: true, at_ms: at(minutes), fork_sha: null, ...extra })
+    const log = [
+      ...(watching ? [row('hand_off', 3, { ref_name: 'main', head_sha: restacked, detail: 'Added to GitHub’s merge queue' })] : []),
+      row('restack', 4, { ref_name: 'houston/csv-export', old_sha: old, new_sha: restacked, fork_sha: fork, detail: 'Restacked after #94' }),
+      row('retarget', 5, { ref_name: 'main', detail: 'Retargeted from houston/prefs' }),
+      { ...row('merge', 9, { ref_name: 'main', old_sha: '5c1d0e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d', new_sha: base, head_sha: fork, method: 'squash', detail: 'Merged by GitHub’s merge queue' }), number: 94, title: 'feat(prefs): add a preferences table and service', url: 'https://github.com/owner/houston/pull/94' }
+    ]
+    queueMicrotask(() => this.emit({
+      type: 'merge_queue', workspace: '/workspace/houston', dir, message: null, entries: [head, next], log,
+      settings: { merge_when_verified: true, verification_command: 'cargo nextest run --workspace', time_limit_minutes: 30, paused: false },
+      global_paused: false,
+      away: { merged: 0, parked: 0, last_merge_at_ms: null },
+      hand_off: { mode: 'merge_queue', base_ref: 'main', read_at_ms: at(1), from_refusal: false }
     }))
   }
 

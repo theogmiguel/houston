@@ -8,7 +8,7 @@ import { MergeQueueDetail, MergeQueueFailure, MergeQueueGates, MergeQueuePolicy,
 import { Notice } from '../ui/Notice'
 import { StatusLabel } from '../ui/StatusLabel'
 import { Tooltip } from '../ui/Tooltip'
-import { clockTime, entryLine, entryStatus, gateItems, handOffPrompt, inLine, loggedToday, logLine, ordinal, parked, policyLine, shortSha } from './mergeQueueModel'
+import { clockTime, entryLine, entryStatus, gateItems, handOffPrompt, inLine, loggedToday, logLine, logStatus, ordinal, parked, policyLine, shortSha } from './mergeQueueModel'
 import type { MergeQueueController } from './useMergeQueue'
 
 interface QueueItem extends ListDetailItem {
@@ -34,7 +34,7 @@ function queueItems(entries: readonly MergeQueueEntry[], log: readonly MergeQueu
     section: 'Today',
     title: <MergeQueueRowTitle rank={null} number={logged.number} heading={logged.title ?? `#${logged.number}`} />,
     sub: `${clockTime(logged.at_ms)} · ${logLine(logged)}`,
-    right: <StatusLabel status={logged.kind === 'merge' ? 'Merged' : 'Parked'} size="small" />,
+    right: <StatusLabel status={logStatus(logged)} size="small" />,
     logged
   }))
   return [...line.map(row('In line')), ...parked(entries).map(row('Parked')), ...today]
@@ -47,7 +47,7 @@ interface ViewActions {
 
 function EntryActions({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & ViewActions): React.JSX.Element {
   const busy = queue.busy !== null
-  const dequeue = <Button variant={entry.position === 1 ? 'ghost' : 'secondary'} size="sm" disabled={busy} onClick={() => queue.dequeue(entry.number)}>Dequeue</Button>
+  const dequeue = <Button variant={entry.position === 1 ? 'ghost' : 'secondary'} size="sm" disabled={busy} data-testid="merge-queue-dequeue" onClick={() => queue.dequeue(entry.number)}>Dequeue</Button>
   if (entry.status === 'parked' || entry.status === 'fixing') {
     return <>
       {onHandOff && entry.worktree && <Button variant="secondary" size="sm" disabled={busy} data-testid="merge-queue-hand-off" onClick={() => onHandOff(entry.worktree as string, handOffPrompt(entry))}>Hand to a new pane</Button>}
@@ -55,6 +55,7 @@ function EntryActions({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & 
       {dequeue}
     </>
   }
+  if (entry.status === 'watching') return <Tooltip label="Takes it back from GitHub, then out of the queue">{dequeue}</Tooltip>
   if (entry.position !== 1 || queue.settings?.merge_when_verified) return dequeue
   const verified = entry.verification ? `Merges ${shortSha(entry.verification.verified_sha)}, the verified commit, exactly` : undefined
   return <>
@@ -68,25 +69,33 @@ function entryMeta(entry: MergeQueueEntry): string {
   return `${entry.head_ref} · ${shortSha(entry.head_sha)} · ${place}`
 }
 
+function entryNotice(entry: MergeQueueEntry): React.JSX.Element | undefined {
+  const failure = entry.failure
+  if (failure) return <MergeQueueFailure reason={failure.handed_to != null ? `${failure.message}. Its pane was told; the queue moved on.` : `${failure.message}. No pane owns it, so it is parked and the queue moved on.`} files={failure.files} output={failure.output_tail} />
+  if (entry.github) return <Notice tone="info" data-testid="merge-queue-github">{`GitHub owns ${shortSha(entry.github.head_sha)} now. ${entry.reason ?? 'Houston watches it there'}; Houston finishes the landing once GitHub merges it.`}</Notice>
+  return undefined
+}
+
+function EntryDetail({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & ViewActions): React.JSX.Element {
+  const actions = <EntryActions entry={entry} queue={queue} onHandOff={onHandOff} />
+  return <MergeQueueDetail
+    heading={`#${entry.number} ${entry.title ?? entry.head_ref}`}
+    meta={entryMeta(entry)}
+    status={entryStatus(entry)}
+    notice={entryNotice(entry)}
+    gates={<MergeQueueGates gates={gateItems(entry.gates)} />}
+    actions={actions}
+  />
+}
+
 function QueueDetail({ item, queue, onHandOff }: { item: QueueItem | null } & ViewActions): React.JSX.Element | null {
-  if (item?.entry) {
-    const entry = item.entry
-    const failure = entry.failure
-    return <MergeQueueDetail
-      heading={`#${entry.number} ${entry.title ?? entry.head_ref}`}
-      meta={entryMeta(entry)}
-      status={entryStatus(entry)}
-      notice={failure ? <MergeQueueFailure reason={failure.handed_to != null ? `${failure.message}. Its pane was told; the queue moved on.` : `${failure.message}. No pane owns it, so it is parked and the queue moved on.`} files={failure.files} output={failure.output_tail} /> : undefined}
-      gates={<MergeQueueGates gates={gateItems(entry.gates)} />}
-      actions={<EntryActions entry={entry} queue={queue} onHandOff={onHandOff} />}
-    />
-  }
+  if (item?.entry) return <EntryDetail key={item.id} entry={item.entry} queue={queue} onHandOff={onHandOff} />
   if (item?.logged) {
     const logged = item.logged
     return <MergeQueueDetail
       heading={`#${logged.number} ${logged.title ?? ''}`}
       meta={`${clockTime(logged.at_ms)} · ${logLine(logged)}${logged.method ? ` with ${logged.method}` : ''}${logged.head_sha ? ` at ${shortSha(logged.head_sha)}` : ''}`}
-      status={logged.kind === 'merge' ? 'Merged' : 'Parked'}
+      status={logStatus(logged)}
       actions={logged.kind === 'merge' ? <Tooltip label="Opens a revert pull request; nothing is pushed to the base"><Button variant="secondary" size="sm" disabled={queue.busy !== null} data-testid="merge-queue-revert" onClick={() => queue.revert(logged.number)}>Revert</Button></Tooltip> : undefined}
     />
   }
@@ -115,7 +124,7 @@ export function MergeQueueView({ queue, now, onHandOff, onOpenSettings }: { queu
     <MergeQueuePolicy actions={<>
       <Button variant="secondary" size="sm" data-testid="merge-queue-pause" disabled={queue.busy !== null || !queue.loaded} onClick={() => queue.setPaused(!paused)}>{paused ? 'Resume' : 'Pause'}</Button>
       {onOpenSettings && <Button variant="ghost" size="sm" onClick={onOpenSettings}>Settings</Button>}
-    </>}>{queue.globalPaused ? 'Every merge queue on this machine is paused' : paused ? 'Paused: nothing is pushed or merged until you resume' : policyLine(queue.settings)}</MergeQueuePolicy>
+    </>}>{queue.globalPaused ? 'Every merge queue on this machine is paused' : paused ? 'Paused: nothing is pushed or merged until you resume' : policyLine(queue.settings, queue.handOff)}</MergeQueuePolicy>
     {queue.reply && <Notice tone={queue.reply.ok ? 'info' : 'danger'} action={{ label: 'Dismiss', onClick: queue.clearReply }}>{queue.reply.text}</Notice>}
     <ListDetail
       items={items}
