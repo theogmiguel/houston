@@ -38,6 +38,19 @@ pub fn output_within(
     output_within_with_stdin(cmd, timeout, std::process::Stdio::null())
 }
 
+// Background metadata and diagnostics must not allocate without a bound.
+const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+
+/// Which pipe a chunk came from.
+#[derive(Clone, Copy)]
+enum Stream {
+    Out,
+    Err,
+}
+
+/// Where a capture's bytes go, chunk by chunk, in the order they were read.
+type Sink<'a> = &'a mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>;
+
 /// Capture with caller-owned stdin and an 8 MiB combined output limit.
 /// Linux owns a process group; Windows owns a job. Other platforms refuse.
 /// See docs/internals/daemon.md for cancellation boundaries.
@@ -47,17 +60,88 @@ pub fn output_within_with_stdin(
     stdin: std::process::Stdio,
 ) -> std::io::Result<Option<std::process::Output>> {
     cmd.stdin(stdin);
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let mut total = 0;
+    let mut sink = |stream: Stream, bytes: &[u8]| {
+        total += bytes.len();
+        if total > OUTPUT_LIMIT {
+            return Err(std::io::Error::other(format!(
+                "subprocess capture requested {total} bytes; combined output limit is {OUTPUT_LIMIT} bytes"
+            )));
+        }
+        match stream {
+            Stream::Out => out.extend_from_slice(bytes),
+            Stream::Err => err.extend_from_slice(bytes),
+        }
+        Ok(())
+    };
+    let status = capture(cmd, timeout, Priority::Normal, &mut sink)?;
+    Ok(status.map(|status| std::process::Output {
+        status,
+        stdout: out,
+        stderr: err,
+    }))
+}
+
+/// What a long command left: its exit status, or `None` when the deadline
+/// ended it, and the last bytes of its stdout and stderr together.
+pub struct Tail {
+    pub status: Option<std::process::ExitStatus>,
+    pub tail: Vec<u8>,
+    /// Every byte it wrote, of which `tail` is the end.
+    pub total: u64,
+}
+
+/// Runs `cmd` with closed stdin at lowered priority (nice 10 on Linux,
+/// below normal on Windows) until it exits or `timeout` passes, keeping only
+/// the last `keep` bytes of its combined output. Past the deadline its whole
+/// process group (job) is killed, with no output limit to hit first.
+pub fn tail_within(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+    keep: usize,
+) -> std::io::Result<Tail> {
+    cmd.stdin(std::process::Stdio::null());
+    let mut tail = std::collections::VecDeque::with_capacity(keep);
+    let mut total = 0u64;
+    let mut sink = |_: Stream, bytes: &[u8]| {
+        total += bytes.len() as u64;
+        tail.extend(bytes.iter().copied());
+        let excess = tail.len().saturating_sub(keep);
+        tail.drain(..excess);
+        Ok(())
+    };
+    let status = capture(cmd, timeout, Priority::Low, &mut sink)?;
+    Ok(Tail {
+        status,
+        tail: tail.into(),
+        total,
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Priority {
+    Normal,
+    Low,
+}
+
+fn capture(
+    cmd: std::process::Command,
+    timeout: std::time::Duration,
+    priority: Priority,
+    sink: Sink<'_>,
+) -> std::io::Result<Option<std::process::ExitStatus>> {
     #[cfg(target_os = "linux")]
     {
-        bounded_linux::capture(cmd, timeout)
+        bounded_linux::capture(cmd, timeout, priority, sink)
     }
     #[cfg(windows)]
     {
-        bounded_windows::capture(cmd, timeout)
+        bounded_windows::capture(cmd, timeout, priority, sink)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     {
-        let _ = (cmd, timeout);
+        let _ = (cmd, timeout, priority, sink);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             format!("bounded subprocess capture is unsupported on {}; expected Linux or Windows process ownership", std::env::consts::OS),
@@ -67,14 +151,16 @@ pub fn output_within_with_stdin(
 
 #[cfg(target_os = "linux")]
 mod bounded_linux {
+    use super::{Priority, Sink, Stream};
     use std::io::{self, Read};
     use std::os::fd::{AsRawFd, RawFd};
     use std::os::unix::process::CommandExt;
-    use std::process::{Child, Command, Output, Stdio};
+    use std::process::{Child, Command, ExitStatus, Stdio};
     use std::time::{Duration, Instant};
 
-    // Background metadata/diagnostics must not allocate without a bound.
-    const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+    /// The niceness a low-priority capture runs at: below interactive work,
+    /// and still above `nice -n 19` background jobs.
+    const LOW_NICENESS: libc::c_int = 10;
 
     struct OwnedChild {
         child: Child,
@@ -113,19 +199,13 @@ mod bounded_linux {
         Ok(())
     }
 
-    fn read_pipe(pipe: &mut impl Read, bytes: &mut Vec<u8>, total: &mut usize) -> io::Result<bool> {
+    fn read_pipe(pipe: &mut impl Read, stream: Stream, sink: Sink<'_>) -> io::Result<bool> {
         let mut buf = [0; 8192];
         // One chunk per pass keeps a busy stdout from starving stderr/deadline.
         match pipe.read(&mut buf) {
             Ok(0) => Ok(true),
             Ok(n) => {
-                *total += n;
-                if *total > OUTPUT_LIMIT {
-                    return Err(io::Error::other(format!(
-                        "subprocess capture requested {total} bytes; combined output limit is {OUTPUT_LIMIT} bytes"
-                    )));
-                }
-                bytes.extend_from_slice(&buf[..n]);
+                sink(stream, &buf[..n])?;
                 Ok(false)
             }
             Err(err)
@@ -140,11 +220,27 @@ mod bounded_linux {
         }
     }
 
-    pub(super) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Option<Output>> {
+    pub(super) fn capture(
+        mut cmd: Command,
+        timeout: Duration,
+        priority: Priority,
+        sink: Sink<'_>,
+    ) -> io::Result<Option<ExitStatus>> {
         let start = Instant::now();
         cmd.process_group(0)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if priority == Priority::Low {
+            // SAFETY: setpriority is async-signal-safe and touches only the child.
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setpriority(libc::PRIO_PROCESS, 0, LOW_NICENESS) != 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
         let mut child = OwnedChild {
             child: cmd.spawn()?,
             reaped: false,
@@ -153,9 +249,6 @@ mod bounded_linux {
         let mut stderr = child.child.stderr.take().expect("stderr was piped");
         nonblocking(stdout.as_raw_fd())?;
         nonblocking(stderr.as_raw_fd())?;
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        let mut total = 0;
         let mut out_done = false;
         let mut err_done = false;
         loop {
@@ -163,21 +256,17 @@ mod bounded_linux {
                 return Ok(None);
             }
             if !out_done {
-                out_done = read_pipe(&mut stdout, &mut out, &mut total)?;
+                out_done = read_pipe(&mut stdout, Stream::Out, sink)?;
             }
             if !err_done {
-                err_done = read_pipe(&mut stderr, &mut err, &mut total)?;
+                err_done = read_pipe(&mut stderr, Stream::Err, sink)?;
             }
             if out_done && err_done && crate::pid::unreaped_child_exited(&child.child)? {
                 child.terminate()?;
                 let status = child.child.wait()?;
                 // Drop must never signal the now-reaped identity.
                 child.reaped = true;
-                return Ok(Some(Output {
-                    status,
-                    stdout: out,
-                    stderr: err,
-                }));
+                return Ok(Some(status));
             }
             let remaining = timeout.saturating_sub(start.elapsed());
             let mut pipes = [
@@ -206,17 +295,15 @@ mod bounded_linux {
 
 #[cfg(windows)]
 mod bounded_windows {
+    use super::{Priority, Sink, Stream};
     use std::io::{self, Read};
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
-    use std::process::{Child, Command, Output, Stdio};
+    use std::process::{Child, Command, ExitStatus, Stdio};
     use std::time::{Duration, Instant};
     use windows_sys::Win32::Foundation::ERROR_BROKEN_PIPE;
     use windows_sys::Win32::System::Pipes::PeekNamedPipe;
-    use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
-
-    // Match Linux's bound for background metadata and diagnostics.
-    const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+    use windows_sys::Win32::System::Threading::{BELOW_NORMAL_PRIORITY_CLASS, CREATE_SUSPENDED};
 
     struct OwnedChild {
         child: Child,
@@ -239,8 +326,8 @@ mod bounded_windows {
 
     fn read_pipe(
         pipe: &mut (impl Read + AsRawHandle),
-        bytes: &mut Vec<u8>,
-        total: &mut usize,
+        stream: Stream,
+        sink: Sink<'_>,
     ) -> io::Result<(bool, bool)> {
         let mut available = 0;
         // SAFETY: the retained pipe handle and writable availability count are valid.
@@ -270,21 +357,25 @@ mod bounded_windows {
         // Only this collector reads the pipe; available bytes cannot be consumed
         // by another reader between PeekNamedPipe and this bounded read.
         let n = pipe.read(&mut buf[..length])?;
-        *total += n;
-        if *total > OUTPUT_LIMIT {
-            return Err(io::Error::other(format!(
-                "subprocess capture requested {total} bytes; combined output limit is {OUTPUT_LIMIT} bytes"
-            )));
-        }
-        bytes.extend_from_slice(&buf[..n]);
+        sink(stream, &buf[..n])?;
         Ok((n == 0, n != 0))
     }
 
-    pub(super) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Option<Output>> {
+    pub(super) fn capture(
+        mut cmd: Command,
+        timeout: Duration,
+        priority: Priority,
+        sink: Sink<'_>,
+    ) -> io::Result<Option<ExitStatus>> {
         let start = Instant::now();
         let job = crate::pid::OwnedJob::new()?;
         // CommandExt replaces flags rather than adding them, so retain window policy.
-        cmd.creation_flags(super::CREATE_NO_WINDOW | CREATE_SUSPENDED)
+        // Children inherit a below-normal class, so the whole tree runs lowered.
+        let class = match priority {
+            Priority::Normal => 0,
+            Priority::Low => BELOW_NORMAL_PRIORITY_CLASS,
+        };
+        cmd.creation_flags(super::CREATE_NO_WINDOW | CREATE_SUSPENDED | class)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = OwnedChild {
@@ -307,9 +398,7 @@ mod bounded_windows {
         }
         let mut stdout = child.child.stdout.take().expect("stdout was piped");
         let mut stderr = child.child.stderr.take().expect("stderr was piped");
-        let (mut out, mut err) = (Vec::new(), Vec::new());
         let (mut out_done, mut err_done) = (false, false);
-        let mut total = 0;
         let mut status = None;
         loop {
             if start.elapsed() >= timeout {
@@ -317,12 +406,12 @@ mod bounded_windows {
             }
             let mut progress = false;
             if !out_done {
-                let read = read_pipe(&mut stdout, &mut out, &mut total)?;
+                let read = read_pipe(&mut stdout, Stream::Out, sink)?;
                 out_done = read.0;
                 progress |= read.1;
             }
             if !err_done {
-                let read = read_pipe(&mut stderr, &mut err, &mut total)?;
+                let read = read_pipe(&mut stderr, Stream::Err, sink)?;
                 err_done = read.0;
                 progress |= read.1;
             }
@@ -334,11 +423,7 @@ mod bounded_windows {
                     // Child retains its process handle after wait; the job owns descendants.
                     child.job.terminate()?;
                     child.finished = true;
-                    return Ok(Some(Output {
-                        status,
-                        stdout: out,
-                        stderr: err,
-                    }));
+                    return Ok(Some(status));
                 }
             }
             if !progress {
@@ -374,6 +459,45 @@ mod tests {
             .expect("a closed stdin ends the read at once");
         assert_eq!(String::from_utf8_lossy(&out.stdout), "out\n");
         assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n");
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn tail_within_keeps_the_end_of_long_output_and_ends_a_late_child() {
+        #[cfg(target_os = "linux")]
+        let (long, slow) = {
+            let mut long = command("sh");
+            long.args([
+                "-c",
+                "i=0; while [ $i -lt 2000 ]; do echo line $i; i=$((i+1)); done; echo err >&2",
+            ]);
+            let mut slow = command("sh");
+            slow.args(["-c", "echo started; sleep 30"]);
+            (long, slow)
+        };
+        #[cfg(windows)]
+        let (long, slow) = {
+            use std::os::windows::process::CommandExt as _;
+            let mut long = command("cmd");
+            long.args(["/d", "/s", "/c"])
+                .raw_arg("\"for /l %i in (0,1,1999) do @echo line %i\"");
+            let mut slow = command("cmd");
+            slow.args(["/d", "/s", "/c"])
+                .raw_arg("\"echo started&& ping -n 30 127.0.0.1 > nul\"");
+            (long, slow)
+        };
+        let out = tail_within(long, std::time::Duration::from_secs(60), 64).unwrap();
+        assert!(out.status.is_some_and(|s| s.success()));
+        assert!(out.tail.len() <= 64);
+        assert!(out.total > 10_000, "{}", out.total);
+        let tail = String::from_utf8_lossy(&out.tail);
+        assert!(tail.contains("line 1999"), "{tail}");
+
+        let start = std::time::Instant::now();
+        let out = tail_within(slow, std::time::Duration::from_secs(1), 1024).unwrap();
+        assert!(out.status.is_none(), "the deadline ended it");
+        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        assert!(String::from_utf8_lossy(&out.tail).contains("started"));
     }
 
     #[cfg(not(any(target_os = "linux", windows)))]
