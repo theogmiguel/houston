@@ -1,7 +1,6 @@
-//! The merge queue's runner against real repositories: a workspace whose
-//! `origin` is a local bare repository (its path names `github.com/owner/repo`,
-//! so the queue takes it for GitHub) and the `fake_gh` fixture as `gh`. Every
-//! Git path runs on Linux and Windows alike.
+//! The merge queue's runner against real repositories: `origin` is a local bare repository
+//! whose path names `github.com/owner/repo`, and `fake_gh` is `gh`, so every path runs on
+//! Linux and Windows alike.
 #![allow(clippy::disallowed_methods)]
 
 use crate::common;

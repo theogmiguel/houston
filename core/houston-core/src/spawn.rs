@@ -96,10 +96,9 @@ pub struct Tail {
     pub total: u64,
 }
 
-/// Runs `cmd` with closed stdin at lowered priority (nice 10 on Linux,
-/// below normal on Windows) until it exits or `timeout` passes, keeping only
-/// the last `keep` bytes of its combined output. Past the deadline its whole
-/// process group (job) is killed, with no output limit to hit first.
+/// Runs `cmd` with closed stdin at lowered priority (nice 10 on Linux, below normal on
+/// Windows) until it exits or `timeout` passes, keeping the last `keep` bytes of its
+/// combined output. Past the deadline its process group (job) is killed.
 pub fn tail_within(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,

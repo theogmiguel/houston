@@ -1,7 +1,6 @@
-//! The merge queue's Git work: fetching the base, rebasing the head in a
-//! scratch worktree, running the workspace's verification command there, and
-//! the lease push of the verified commit. Nothing here reads GitHub or the
-//! database; the daemon decides what runs (`daemon/merge_queue_runner.rs`).
+//! The merge queue's Git work: fetch, rebase in a scratch worktree, run the verification
+//! command there, and the lease push of the verified commit. Nothing here reads GitHub
+//! or the database; `daemon/merge_queue_runner.rs` decides what runs.
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};

@@ -81,6 +81,14 @@ export function MergeQueueFailure({ reason, files, output }: { reason: ReactNode
   </div>
 }
 
+/** The merge log under a disclosure: one line per push, merge or park. */
+export function MergeQueueHistory({ caption, children }: { caption: ReactNode; children: ReactNode }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-1)] px-[var(--space-4)] py-[var(--space-3)]" data-testid="merge-queue-history">
+    <Text size="small" tone="muted">{caption}</Text>
+    {children}
+  </div>
+}
+
 /** What the queue does on its own, above the list, with the queue's own actions. */
 export function MergeQueuePolicy({ children, actions }: { children: ReactNode; actions?: ReactNode }): React.JSX.Element {
   return <div className="flex min-w-0 flex-wrap items-center gap-[var(--space-2)]" data-testid="merge-queue-policy">
@@ -114,6 +122,6 @@ export function MergeQueueSpecimen(): React.JSX.Element {
       status="Parked"
       notice={<MergeQueueFailure reason="Rebasing onto main@7f03d1 stopped on a conflict in 2 files" files={['src/settings/Preferences.tsx', 'src/lib/loadPreferences.ts']} />}
     />
-    <MergeQueueFailure reason="`cargo test` failed (exit 101) on the head rebased onto main@a91c2e" output={'test export::csv_rows ... FAILED\nfailures:\n    export::csv_rows'} />
+    <MergeQueueFailure reason="`cargo test` failed (exit 101) on the head rebased onto main@a91c2e" output={'test export::csv_rows FAILED\nfailures:\n    export::csv_rows'} />
   </div>
 }

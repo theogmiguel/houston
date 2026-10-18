@@ -6,6 +6,7 @@ import { useMergeQueue } from '../prs/useMergeQueue'
 import { Button } from '../ui/Button'
 import { Caption } from '../ui/Caption'
 import { DetailsDisclosure } from '../ui/DetailsDisclosure'
+import { MergeQueueHistory } from '../ui/MergeQueue'
 import { Notice } from '../ui/Notice'
 import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { SettingsScope } from '../ui/SettingsScope'
@@ -87,12 +88,11 @@ export function MergeQueueSettingsSection({ client, workspace }: { client: Houst
     </SettingsList>
     {queue.reply && !queue.reply.ok && <Notice tone="danger" data-testid="merge-queue-settings-refusal" action={{ label: 'Dismiss', onClick: queue.clearReply }}>{queue.reply.text}</Notice>}
     <DetailsDisclosure summary="Merge history">
-      <div className="grid gap-[var(--space-1)] px-[var(--space-4)] py-[var(--space-3)]" data-testid="merge-queue-history">
-        <Caption>Every push and merge the queue made today, with the old and new commits.</Caption>
+      <MergeQueueHistory caption="Every push and merge the queue made today, with the old and new commits.">
         {queue.log.length === 0 ? <Text size="small" tone="muted">Nothing yet today.</Text> : queue.log.map((row) => (
           <Text key={`${row.kind}:${row.number}:${row.at_ms}`} size="small" tone="secondary">{clockTime(row.at_ms)} · #{row.number} · {logLine(row)}{row.kind === 'merge' && row.old_sha ? ` (was ${row.old_sha.slice(0, 7)})` : ''}</Text>
         ))}
-      </div>
+      </MergeQueueHistory>
     </DetailsDisclosure>
   </>
 }

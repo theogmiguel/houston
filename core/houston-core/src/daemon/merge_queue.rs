@@ -1,8 +1,6 @@
-//! The per-workspace merge queue: enqueue and dequeue verbs, the gates' reads
-//! (through the shared pull request reader, on the PR watch tick), the user's
-//! settings, pause, retry and revert, and the snapshots the page shows. The
-//! model is `crate::merge_queue`; verification and merging are
-//! `merge_queue_runner.rs`.
+//! The per-workspace merge queue: its verbs, the gates' reads on the PR watch tick, the
+//! user's settings, pause, retry and revert, and the snapshots the page shows. The model
+//! is `crate::merge_queue`; verification and merging are `merge_queue_runner.rs`.
 use std::path::Path;
 use std::sync::Arc;
 

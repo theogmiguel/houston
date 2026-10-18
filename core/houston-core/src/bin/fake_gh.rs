@@ -1,16 +1,6 @@
-//! Hermetic `gh` fixture. Only integration tests run it, after copying it to
-//! `<dir>/gh` (`gh.exe` on Windows) at the front of their own `PATH`; nothing
-//! in Houston names this binary. It answers from files in its own directory:
-//!
-//! - `pr-N.json`: the `gh pr view N` payload. With an `origin` file naming a
-//!   bare repository, `headRefOid` is that repository's tip of `headRefName`,
-//!   as GitHub would report after a push.
-//! - `threads-N.json`: the review-threads GraphQL answer (else no threads).
-//! - `methods`: the allowed merge methods, comma-separated (else all three).
-//! - `merge-refused`: `gh pr merge` fails with this text. Otherwise the merge
-//!   succeeds and, with `origin`, moves the base branch there to the merged commit.
-//!
-//! Every call is appended to `gh.log`, one line of arguments each.
+//! Hermetic `gh` fixture: integration tests copy it to `<dir>/gh` (`gh.exe` on Windows)
+//! at the front of their own `PATH`; nothing in Houston names it. It answers from files
+//! in its own directory and appends every call to `gh.log`.
 #![allow(clippy::disallowed_methods)] // a fixture runs git directly and reads its own environment
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -50,6 +40,8 @@ fn origin_tip(branch: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// `pr-N.json`, with `headRefOid` read from the bare repository the `origin` file
+/// names, as GitHub reports a branch after a push.
 fn pr(number: &str) -> Option<serde_json::Value> {
     let mut value: serde_json::Value =
         serde_json::from_str(&read(&format!("pr-{number}.json"))?).ok()?;
@@ -60,6 +52,8 @@ fn pr(number: &str) -> Option<serde_json::Value> {
     Some(value)
 }
 
+/// `threads-N.json` answers the review-threads read; `methods` lists the allowed
+/// merge methods, comma-separated (all three by default).
 fn graphql() {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
@@ -95,6 +89,8 @@ fn graphql() {
     );
 }
 
+/// `merge-refused` makes the merge fail with its text; otherwise the base branch in
+/// `origin` moves to the merged commit and the pull request reads as merged.
 fn merge(args: &[String]) {
     if let Some(refused) = read("merge-refused") {
         fail(refused.trim());

@@ -1,8 +1,6 @@
-//! The merge queue's runner: it verifies each workspace's head in the
-//! machine's one verification slot, hands a failure to the owning pane or
-//! parks it, and, under the "merge when verified" policy, pushes the verified
-//! commit with a lease and merges exactly that commit. The user's Merge of the
-//! head takes the same landing path. See docs/internals/daemon.md.
+//! The merge queue's runner: verification in the machine's one slot, failures handed to
+//! the owning pane or parked, and landing (lease push, then a pinned merge) for the policy
+//! and the user's Merge alike. See docs/internals/daemon.md.
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -541,10 +539,9 @@ impl Daemon {
         )))
     }
 
-    /// Lands the head: with a verification command, pushes the verified commit
-    /// with a lease when it is not the head yet and merges exactly that commit;
-    /// without one, merges the head after a fresh read. Every gate, the pause
-    /// and the base are checked again right before the merge.
+    /// Lands the head: pushes the verified commit with a lease when it is not the head yet
+    /// and merges exactly that commit (without a command, the head after a fresh read).
+    /// The gates, the pause and the base are checked again right before the merge.
     pub(super) fn merge_queue_land(
         self: &Arc<Self>,
         workspace: &str,

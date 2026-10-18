@@ -369,10 +369,9 @@ fn verification_gate(
     }
 }
 
-/// The workspace's entries as the wire carries them, from rows in queue order.
-/// Parked and fixing entries, and entries waiting behind one, are out of line
-/// with position 0; the rest are ranked from 1, the head. Each entry carries
-/// one status and at most one blocking reason.
+/// The workspace's entries as the wire carries them, from rows in queue order. Parked and
+/// fixing entries, and those waiting behind one, are out of line with position 0; the
+/// rest rank from 1, the head. Each carries one status and at most one blocking reason.
 pub fn line(
     rows: &[QueueRow],
     reviews: &[Review],
