@@ -188,7 +188,7 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 text-[12px] text-[var(--text-muted)]"><span className="h-4 w-4 rounded-[5px] bg-gradient-to-br from-[#9b63ff] to-[#4e74ff]" /><span className="font-semibold text-[var(--text-primary)]">Houston</span><span className="ml-[150px]">◫</span><span className="ml-auto">▦　◫　−</span></header>
       <div className="flex min-h-0 flex-1">
         <PrRail />
-        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'closed' ? 'closed' : 'open'} loading={mode === 'loading'} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={noop} onOpenUrlInPane={noop} onRefresh={noop} onOpenPullRequest={noop} />
+        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'closed' ? 'closed' : 'open'} loading={mode === 'loading'} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={noop} onOpenUrlInPane={noop} onRefresh={noop} onOpenPullRequest={noop} onHandOff={queueMode ? noop : undefined} onOpenMergeQueueSettings={queueMode ? noop : undefined} />
       </div>
       </div>
     </div>
