@@ -30,6 +30,28 @@ pub fn trace_git_processes(path: &std::path::Path) {
     std::env::set_var("GIT_TRACE2_EVENT", path);
 }
 
+/// Puts `dir` first on the test process's PATH, so a fake CLI there shadows the real one,
+/// until the guard drops. Process-wide: callers serialise the tests that use it.
+pub struct PathPrepend(Option<std::ffi::OsString>);
+
+pub fn prepend_path(dir: &std::path::Path) -> PathPrepend {
+    let previous = std::env::var_os("PATH");
+    let rest = previous.iter().flat_map(std::env::split_paths);
+    let joined = std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(rest))
+        .expect("PATH entries contain no separator");
+    std::env::set_var("PATH", joined);
+    PathPrepend(previous)
+}
+
+impl Drop for PathPrepend {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+}
+
 /// Git processes started since [`trace_git_processes`] named `path`.
 pub fn git_processes_started(path: &std::path::Path) -> usize {
     std::fs::read_to_string(path)
