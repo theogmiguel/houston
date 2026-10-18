@@ -203,8 +203,11 @@ An agent cannot merge. When its pull request is ready to land, it calls
 `pane_pr_enqueue{pr, depends_on?}` (`hs-pane pr-enqueue PR [--depends-on N]`) to add it to its
 workspace's merge queue, optionally behind another queued pull request. The reply names the
 entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
-removes it. You merge the queue head from the Pull requests page; see
-[Merge queue](changes.md#merge-queue).
+removes it. You merge the queue head from the Pull requests page, or Houston merges it once it
+is verified if the workspace's policy allows; see [Merge queue](changes.md#merge-queue). When
+the queue cannot verify or merge the pull request, the pane that enqueued it gets one message
+with the conflicting files or the failing output: fix the branch and push, and the new head
+goes back in line on its own.
 
 ## Workspaces and child lifetime
 

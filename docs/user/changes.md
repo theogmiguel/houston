@@ -92,25 +92,78 @@ request, and **Open merge queue** opens the view). The queue needs a GitHub remo
 workspace without one, or a pull request from a fork or another repository, is refused.
 
 Entries merge first in, first out. An entry enqueued with `depends_on` waits behind the pull
-request it depends on. Each row shows its place, one status and one reason: **Ready**, or
-**Blocked** with the first thing that blocks it. Select a row to see its gates:
+request it depends on. Each row shows its place, one status and one reason. Select a row to
+see its gates:
 
 - **Mergeable**: GitHub's merge requirements, checks and conflicts allow the merge.
 - **No unresolved review threads**.
 - **Reviewer passed**: for a task Slice, the newest reviewer verdict is pass. Other pull
   requests skip this gate.
+- **Verification**: when the workspace has a verification command, the head passed it on the
+  current base (see below). Without a command this gate does not apply.
 
 Houston re-reads queued pull requests once a minute, sharing the read with pull request
 watches. Until a pull request has been read, or when a read fails, it is Blocked. A pull
 request merged or closed outside the queue leaves it.
 
-Only the first entry can be merged from the queue. Its **Merge** merges the exact commit
-shown, by squash on this page and by the merge box's selected method; if the head moved or a
-gate fails, the merge is refused and nothing merges. If GitHub refuses the method, its
-message is shown unchanged. To merge any other queued pull request, **Dequeue** it first,
-then merge it from its merge box. After a merge the next entry moves up, the merge appears
-under **Today**, and the worktree cleanup check runs if it is turned on. A queue holds at
-most 32 entries.
+Only the first entry in line can be merged from the queue. Its **Merge** merges the exact
+commit shown, with the repository's allowed merge method (squash when allowed); if the head
+moved, the base moved or a gate fails, the merge is refused and nothing merges. If GitHub
+refuses the method, its message is shown unchanged. To merge any other queued pull request,
+**Dequeue** it first, then merge it from its merge box. After a merge the next entry moves up,
+the merge appears under **Today**, and the worktree cleanup check runs if it is turned on. A
+queue holds at most 32 entries.
+
+### Verification and merging on its own
+
+Set the queue up in **Settings ▸ Workspaces ▸ Merge queue**:
+
+- **Verification command**: the command that proves a pull request works, such as
+  `cargo nextest run`. It is stored in Houston, never read from the repository, so a pull
+  request cannot change its own test.
+- **Time limit**: a run past it counts as failed. 1 to 240 minutes; 30 by default.
+- **Merge when verified**: off by default. It cannot be turned on while the command is empty.
+- **Queue**: shows whether the queue is paused, with **Pause** and **Resume**.
+
+With a command set, Houston verifies the first entry whose gates pass. It fetches the base and
+the pull request's branch from the remote, rebases the branch onto the latest base in a
+temporary worktree under Houston's state directory, runs the command there at lowered priority,
+and removes the worktree. One verification runs at a time on this machine, across every
+workspace; other entries show **Waiting for a slot**. The head shows **Verifying** with the
+time it has run against the limit. A verification holds until the head or the base moves.
+
+What happens next depends on the policy:
+
+- **Off**: the head shows **Ready**, verified on the base it names. Its **Merge** pushes the
+  verified commit to the branch and merges exactly that commit.
+- **On**: Houston pushes and merges the verified head on its own, then verifies the next
+  entry. The merge box shows the queue state instead of **Merge**; **Merge now, skipping the
+  queue** stays in its overflow menu.
+
+**What Houston pushes, and when.** Only when it lands a verified head, and only to a
+`houston/*` branch that Houston itself created for a worktree. It pushes the rebased commit
+with a lease on the commit it verified, so it never overwrites a commit someone pushed
+meanwhile; it never pushes to the base or the default branch. Fetches and pushes use your git
+remote and credentials; merges, reads and reverts use `gh`. Nothing else leaves the machine.
+
+**When verification fails.** A rebase conflict names the conflicting files; a failing or
+timed-out command shows the last lines of its output. If the pane that enqueued the pull
+request, or an agent pane in its worktree, is still open, it gets one message with that
+detail and the entry shows **Fixing**. Otherwise the entry is **Parked** under its own group
+with the reason, and the rail's **Pull requests** item counts it. Either way the queue moves
+on. Pushing a new commit to the branch puts it back in line; **Retry** does so for the same
+commit. **Hand to a new pane** opens an agent in the pull request's worktree with the failure
+as its prompt. Houston never opens a pane on its own. If GitHub's checks fail on a commit
+Houston pushed, the entry leaves the line the same way.
+
+**Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
+the command palette, stops pushes and merges at once; entries keep their place and any
+verification they hold. Every push and merge the queue makes is logged with the old and new
+commits under **Merge history** in Settings. **Revert** on a merge under **Today** opens a
+revert pull request on GitHub; Houston never pushes to the base to undo a merge.
+
+When you come back after the queue merged or parked pull requests on its own, one notice at
+the top of the workspace says how many, with **Review** to open the queue.
 
 To open Changes automatically after the focused agent stops, enable **Open diff when an agent
 stops** in Settings ▸ Appearance ▸ Panels. Houston opens it when the workspace has changes

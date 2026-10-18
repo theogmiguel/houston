@@ -513,7 +513,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| merge queue | `merge_queue_entries` (one row per queued pull request, keyed by workspace and number, with its last GitHub read as `facts_json`), `merge_queue_merges` (queue merges for the page's history, pruned after seven days) |
+| merge queue | `merge_queue_entries` (one row per queued pull request, keyed by workspace and number, with its last GitHub read as `facts_json`, its last passed verification and its last failure), `merge_queue_settings` (per workspace: the policy, the verification command, the time limit, the pause and when the user last acknowledged unattended work), `merge_queue_log` (every daemon push and merge with old and new commits, and every park; pruned after thirty days; the first queue's `merge_queue_merges` rows migrate into it) |
 | bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove), `predicted_conflicts` (worktree pairs whose predicted conflict was already noted) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
@@ -533,11 +533,11 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns thirteen tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns fourteen tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
 `worktree_cleanup_loop`, `conflict_prediction_loop`, `task_pr_watch_loop`, `remote_loops`,
-`pr_watch_loop`, `checkout_watch_loop`, `slack_loops`, `task_tracker_loop` and
-`power_throttling::sweep_loop`.
+`pr_watch_loop`, `merge_queue_loop`, `checkout_watch_loop`, `slack_loops`, `task_tracker_loop`
+and `power_throttling::sweep_loop`.
 
 Windows throttles a windowless process 1–3 s after it starts working. A session is three
 such processes: its ConPTY console host (`conhost.exe`), its child and that child's
@@ -585,7 +585,57 @@ rebroadcasts the queue of its workspace without calling `gh`. An entry with no r
 read failed, is Blocked: the gates fail closed. Merging the head re-reads it on a fresh tick,
 refuses a moved head or a failed gate, then calls the SHA-pinned `pr_merge`, or
 `pr_stack_merge` when the stacks preview reports a native stack; that preview read is the one
-merge-time call outside the shared reader. While `worktree_cleanup_enabled` is on, the worktree cleanup
+merge-time call outside the shared reader.
+
+`merge_queue_loop` advances each queue, woken by every queue change and otherwise once a
+minute (`daemon/merge_queue_runner.rs`). Only the first entry in line moves: parked and fixing
+entries, and entries held behind one, are out of line, so a failure never stalls the queue.
+The constraints:
+
+- **One slot.** One verification runs at a time across every workspace of the daemon,
+  because a test suite run in parallel with another starves both. Passes take workspaces in
+  turn from the one served last; a head that needs a verification while the slot is taken
+  shows Waiting for a slot. The time limit bounds how long one entry holds it.
+- **Tested equals merged.** A verification records the base commit, the head and the
+  rebased commit. It holds only while the head is either of those commits and the base
+  branch is the same, so a pushed head keeps it and any other push discards it. The base is
+  fetched and compared again before every push and every merge; a moved base sends the entry
+  back to verify. The merge is `--match-head-commit` of the rebased commit, so GitHub merges
+  the tree that ran.
+- **The scratch worktree** is a `git worktree add --detach` of the workspace repository under
+  the state directory (`merge-queue/verify`), never `.houston/worktrees`, so worktree cleanup
+  and conflict prediction never see it. It is removed on every outcome, and a crash's
+  leftover is removed before the next run. The command runs through `sh -c` or `cmd /c` under
+  `spawn::tail_within`: the process group or job ends at the time limit, priority is lowered,
+  and only a 64 KiB tail of the output is kept; a failure reports its last 40 lines with
+  colour and secrets removed. The queue never parses that output for progress.
+- **The push guard** refuses, by name, a push to the pull request's base, to the
+  repository's default branch, to a branch outside `houston/*`, and to a `houston/*` branch
+  with no `managed_worktrees` row in the workspace's repository. A push is
+  `--force-with-lease=refs/heads/<branch>:<head the queue read>`, so a commit pushed since is
+  never overwritten; a lease that does not hold is refused and the next read re-enters the
+  new head.
+- **Failure ownership.** A conflict, a failing or timed-out command, GitHub's checks failing
+  on the pushed commit, or a refusal records a failure for the current head. The owner is
+  the enqueuing pane if it is a live agent, else a live agent pane in the branch's managed
+  worktree; it gets one `operator_note` inbox row and the entry is Fixing. Without an owner
+  the entry is parked and a park row is logged. Shell panes are never told: a pasted note
+  would run as a command. Nothing is spawned unattended.
+- **Pauses** (per workspace in `merge_queue_settings`, daemon-wide in `settings`) are read
+  before a verification starts and again before every push and every merge. A verification
+  already running finishes and keeps its result.
+- **After a merge** the daemon fetches the base, records the merge row with the base before
+  and after, gives each live agent pane in another of the workspace's managed worktrees one
+  note that the base moved, and runs `conflict_prediction_tick` against the moved
+  remote-tracking ref. No working tree or local branch is touched.
+- **Environments.** A WSL workspace belongs to its distro's own daemon, which verifies inside
+  the distro like any Linux daemon; the Windows daemon refuses, by name, a workspace on a
+  `\\wsl.localhost\` or `\\wsl$\` share. A daemon on another operating system refuses to
+  verify, because `spawn::tail_within` owns processes only on Linux and Windows.
+
+The merge method is the repository's allowed method, squash first, read from
+`squashMergeAllowed`, `mergeCommitAllowed` and `rebaseMergeAllowed` in the access query the
+shared reader already makes. While `worktree_cleanup_enabled` is on, the worktree cleanup
 loop runs one pass at
 boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
 each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
