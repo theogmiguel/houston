@@ -1523,6 +1523,7 @@ mod child_inputs;
 mod conflict_pass;
 mod harness_review;
 mod merge_queue;
+mod merge_queue_github;
 mod merge_queue_runner;
 mod provider_deny;
 mod remote;

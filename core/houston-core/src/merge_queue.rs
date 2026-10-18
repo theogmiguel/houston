@@ -26,6 +26,52 @@ pub struct QueueRow {
     pub verification: Option<proto::MergeQueueVerification>,
     /// The last failure; it keeps the entry out of line only for the head it names.
     pub failure: Option<proto::MergeQueueFailure>,
+    /// The dependency that merged ahead of this entry, as it last stood.
+    pub stacked: Option<Stacked>,
+    /// What was handed to GitHub; it holds only for the head it names.
+    pub github: Option<proto::MergeQueueGitHubHold>,
+}
+
+/// A merged dependency as the queue last saw it: the head its dependents may
+/// still carry, the branch they may target and the base it merged into.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Stacked {
+    pub number: u32,
+    pub head_sha: String,
+    pub head_ref: String,
+    #[serde(default)]
+    pub base_ref: Option<String>,
+}
+
+impl Stacked {
+    pub fn of(row: &QueueRow) -> Self {
+        Stacked {
+            number: row.number,
+            head_sha: row.head_sha.clone(),
+            head_ref: row.head_ref.clone(),
+            base_ref: base_of(row).map(str::to_string),
+        }
+    }
+}
+
+/// The branch an entry lands on. A dependent whose pull request still targets
+/// its merged dependency's branch lands where that dependency merged.
+pub fn base_of(row: &QueueRow) -> Option<&str> {
+    match &row.stacked {
+        Some(s) if row.base_ref.as_deref() == Some(s.head_ref.as_str()) => {
+            s.base_ref.as_deref().or(row.base_ref.as_deref())
+        }
+        _ => row.base_ref.as_deref(),
+    }
+}
+
+/// The pull request still targets its merged dependency's branch: it is
+/// retargeted to the base before the queue pushes or merges it.
+pub fn needs_retarget(row: &QueueRow) -> Option<&str> {
+    let s = row.stacked.as_ref()?;
+    (row.base_ref.as_deref() == Some(s.head_ref.as_str()))
+        .then_some(s.base_ref.as_deref())
+        .flatten()
 }
 
 /// What the latest GitHub read said about an entry: the inputs of the two
@@ -50,6 +96,15 @@ pub struct Facts {
     /// The repository's merge method the queue uses: squash when allowed.
     #[serde(default)]
     pub merge_method: Option<proto::PrMergeMethod>,
+    #[serde(default)]
+    pub github_merge: Option<proto::PrGitHubMerge>,
+    /// Whether GitHub reports auto-merge armed; `None` when the read could not say.
+    #[serde(default)]
+    pub auto_merge_on: Option<bool>,
+    /// GitHub reported the pull request merged while GitHub owned it; the runner
+    /// finishes the landing.
+    #[serde(default)]
+    pub merged: bool,
 }
 
 impl Facts {
@@ -72,6 +127,9 @@ impl Facts {
                 .map(|c| c.name.clone())
                 .collect(),
             merge_method: preferred_method(&detail.merge_methods),
+            github_merge: detail.github_merge.clone(),
+            auto_merge_on: detail.github_merge.as_ref().and(detail.auto_merge_enabled),
+            merged: false,
         }
     }
 
@@ -85,6 +143,9 @@ impl Facts {
             threads_truncated: false,
             failing_checks: Vec::new(),
             merge_method: None,
+            github_merge: None,
+            auto_merge_on: None,
+            merged: false,
         }
     }
 
@@ -98,6 +159,62 @@ impl Facts {
             read_at_ms: 0,
             ..other.clone()
         }
+    }
+}
+
+/// Who merges, by the read: GitHub's merge queue where the base requires it, auto-merge
+/// where it is allowed and the base requires checks, else Houston. `None` when GitHub hid
+/// whether a merge queue applies; the caller keeps what it knew, Houston by default.
+pub fn hand_off_from(facts: &Facts) -> Option<proto::MergeQueueHandOff> {
+    let gm = facts.github_merge.as_ref()?;
+    match gm.merge_queue_required? {
+        true => Some(proto::MergeQueueHandOff::MergeQueue),
+        false
+            if gm.auto_merge_allowed == Some(true)
+                && gm.required_checks.as_ref().is_some_and(|c| !c.is_empty()) =>
+        {
+            Some(proto::MergeQueueHandOff::AutoMerge)
+        }
+        false => Some(proto::MergeQueueHandOff::Houston),
+    }
+}
+
+/// The hand-off an entry lands through: its own read's answer, else the
+/// workspace's cached one for the same base, else Houston.
+pub fn hand_off_mode(
+    row: &QueueRow,
+    cached: Option<&proto::MergeQueueHandOffInfo>,
+) -> proto::MergeQueueHandOff {
+    let from_read = row.facts.as_ref().and_then(hand_off_from);
+    let cached = cached
+        .filter(|c| c.base_ref.as_deref() == base_of(row))
+        .map(|c| c.mode);
+    from_read
+        .or(cached)
+        .unwrap_or(proto::MergeQueueHandOff::Houston)
+}
+
+/// What GitHub holds for `row`: the hand-off of its current head.
+pub fn github_holds(row: &QueueRow) -> Option<&proto::MergeQueueGitHubHold> {
+    row.github.as_ref().filter(|g| g.head_sha == row.head_sha)
+}
+
+fn watching_reason(row: &QueueRow, hold: &proto::MergeQueueGitHubHold) -> String {
+    match hold.mode {
+        proto::MergeQueueHandOff::AutoMerge => format!(
+            "Auto-merge is on for {}; GitHub merges once required checks pass",
+            short_sha(&hold.head_sha)
+        ),
+        _ => match row
+            .facts
+            .as_ref()
+            .and_then(|f| f.github_merge.as_ref())
+            .and_then(|g| g.queue_entry.as_ref())
+            .and_then(|q| q.position)
+        {
+            Some(position) => format!("In GitHub's merge queue (position {position})"),
+            None => "In GitHub's merge queue".to_string(),
+        },
     }
 }
 
@@ -291,7 +408,7 @@ pub fn gates(row: &QueueRow, review: &Review) -> Vec<proto::MergeQueueGate> {
 pub fn verification_holds(row: &QueueRow) -> Option<&proto::MergeQueueVerification> {
     row.verification.as_ref().filter(|v| {
         (v.head_sha == row.head_sha || v.verified_sha == row.head_sha)
-            && row.base_ref.as_deref() == Some(v.base_ref.as_str())
+            && base_of(row) == Some(v.base_ref.as_str())
     })
 }
 
@@ -402,6 +519,13 @@ pub fn line(
                 Some(format!("waits for #{dependency}, which is {why}")),
                 0,
             )
+        } else if let Some(hold) = github_holds(row) {
+            rank += 1;
+            (
+                proto::MergeQueueStatus::Watching,
+                Some(watching_reason(row, hold)),
+                rank,
+            )
         } else {
             rank += 1;
             let dependency = row
@@ -454,6 +578,7 @@ pub fn line(
             verification: verification_holds(row).cloned(),
             failure,
             worktree: ctx.worktrees.get(&row.head_ref).cloned(),
+            github: github_holds(row).cloned(),
         });
     }
     entries
@@ -486,9 +611,14 @@ mod tests {
                 threads_truncated: false,
                 failing_checks: Vec::new(),
                 merge_method: None,
+                github_merge: None,
+                auto_merge_on: None,
+                merged: false,
             }),
             verification: None,
             failure: None,
+            stacked: None,
+            github: None,
         }
     }
 
@@ -639,6 +769,62 @@ mod tests {
             &LineContext::default(),
         );
         assert_eq!(waiting[1].reason, None);
+    }
+
+    #[test]
+    fn the_hand_off_follows_the_read_and_never_guesses_from_an_unknown() {
+        let mut r = row(12, 1, None);
+        let tools = |required, allowed, checks: Option<Vec<String>>| proto::PrGitHubMerge {
+            merge_queue_required: required,
+            auto_merge_allowed: allowed,
+            required_checks: checks,
+            ..Default::default()
+        };
+        let mode = |r: &QueueRow, cached| hand_off_mode(r, cached);
+        assert_eq!(mode(&r, None), proto::MergeQueueHandOff::Houston);
+        r.facts.as_mut().unwrap().github_merge = Some(tools(Some(true), None, None));
+        assert_eq!(mode(&r, None), proto::MergeQueueHandOff::MergeQueue);
+        let ci = Some(vec!["ci".to_string()]);
+        r.facts.as_mut().unwrap().github_merge = Some(tools(Some(false), Some(true), ci));
+        assert_eq!(mode(&r, None), proto::MergeQueueHandOff::AutoMerge);
+        r.facts.as_mut().unwrap().github_merge = Some(tools(Some(false), Some(true), None));
+        assert_eq!(
+            mode(&r, None),
+            proto::MergeQueueHandOff::Houston,
+            "auto-merge without required checks would merge at once"
+        );
+        let learned = proto::MergeQueueHandOffInfo {
+            mode: proto::MergeQueueHandOff::MergeQueue,
+            base_ref: Some("main".into()),
+            read_at_ms: 1,
+            from_refusal: true,
+        };
+        r.facts.as_mut().unwrap().github_merge = Some(tools(None, None, None));
+        assert_eq!(mode(&r, Some(&learned)), proto::MergeQueueHandOff::MergeQueue);
+        r.base_ref = Some("release".into());
+        assert_eq!(
+            mode(&r, Some(&learned)),
+            proto::MergeQueueHandOff::Houston,
+            "a lesson about another base does not apply"
+        );
+    }
+
+    #[test]
+    fn a_dependent_targeting_its_merged_dependency_lands_on_that_base() {
+        let mut r = row(13, 1, None);
+        r.base_ref = Some("houston/12".into());
+        assert_eq!(base_of(&r), Some("houston/12"));
+        r.stacked = Some(Stacked {
+            number: 12,
+            head_sha: "b".repeat(40),
+            head_ref: "houston/12".into(),
+            base_ref: Some("main".into()),
+        });
+        assert_eq!(base_of(&r), Some("main"));
+        assert_eq!(needs_retarget(&r), Some("main"));
+        r.base_ref = Some("main".into());
+        assert_eq!(base_of(&r), Some("main"));
+        assert_eq!(needs_retarget(&r), None);
     }
 
     #[test]

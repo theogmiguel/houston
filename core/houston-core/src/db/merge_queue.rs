@@ -7,6 +7,28 @@ use rusqlite::params;
 const MERGE_LOG_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// The settings key of the daemon-wide pause, beside each workspace's own.
 const GLOBAL_PAUSE_KEY: &str = "merge_queue_paused";
+/// The log's columns after its kinds widened for restacks, retargets and hand-offs.
+const LOG_TABLE: &str = "CREATE TABLE IF NOT EXISTS merge_queue_log (
+            id INTEGER PRIMARY KEY,
+            workspace TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN
+                ('push', 'merge', 'park', 'restack', 'retarget', 'hand_off')),
+            number INTEGER NOT NULL,
+            repository TEXT NOT NULL,
+            url TEXT NOT NULL,
+            title TEXT,
+            ref_name TEXT,
+            old_sha TEXT,
+            new_sha TEXT,
+            head_sha TEXT,
+            method TEXT,
+            detail TEXT,
+            unattended INTEGER NOT NULL DEFAULT 0,
+            at INTEGER NOT NULL,
+            fork_sha TEXT
+        );
+        CREATE INDEX IF NOT EXISTS merge_queue_log_workspace
+            ON merge_queue_log(workspace, at);";
 
 pub(crate) fn init(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -33,27 +55,10 @@ pub(crate) fn init(conn: &Connection) -> Result<()> {
             time_limit_minutes INTEGER NOT NULL,
             paused INTEGER NOT NULL DEFAULT 0,
             acknowledged_at INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS merge_queue_log (
-            id INTEGER PRIMARY KEY,
-            workspace TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('push', 'merge', 'park')),
-            number INTEGER NOT NULL,
-            repository TEXT NOT NULL,
-            url TEXT NOT NULL,
-            title TEXT,
-            ref_name TEXT,
-            old_sha TEXT,
-            new_sha TEXT,
-            head_sha TEXT,
-            method TEXT,
-            detail TEXT,
-            unattended INTEGER NOT NULL DEFAULT 0,
-            at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS merge_queue_log_workspace
-            ON merge_queue_log(workspace, at);",
+        );",
     )?;
+    widen_log_kinds(conn)?;
+    conn.execute_batch(LOG_TABLE)?;
     add_column_if_missing(
         conn,
         "merge_queue_entries",
@@ -66,7 +71,55 @@ pub(crate) fn init(conn: &Connection) -> Result<()> {
         "failure_json",
         "failure_json TEXT",
     )?;
+    add_column_if_missing(
+        conn,
+        "merge_queue_entries",
+        "stacked_json",
+        "stacked_json TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "merge_queue_entries",
+        "github_json",
+        "github_json TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "merge_queue_settings",
+        "hand_off_json",
+        "hand_off_json TEXT",
+    )?;
     migrate_merge_history(conn)
+}
+
+/// The log's `kind` check once allowed only pushes, merges and parks. SQLite
+/// cannot alter a check, so that table is copied into the wider one.
+fn widen_log_kinds(conn: &Connection) -> Result<()> {
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'merge_queue_log'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if sql.is_none_or(|sql| sql.contains("'restack'")) {
+        return Ok(());
+    }
+    conn.execute_batch(&format!(
+        "BEGIN;
+        DROP INDEX IF EXISTS merge_queue_log_workspace;
+        ALTER TABLE merge_queue_log RENAME TO merge_queue_log_narrow;
+        {LOG_TABLE}
+        INSERT INTO merge_queue_log (id, workspace, kind, number, repository, url, title,
+            ref_name, old_sha, new_sha, head_sha, method, detail, unattended, at)
+        SELECT id, workspace, kind, number, repository, url, title, ref_name, old_sha,
+            new_sha, head_sha, method, detail, unattended, at
+        FROM merge_queue_log_narrow;
+        DROP TABLE merge_queue_log_narrow;
+        COMMIT;"
+    ))
+    .context("widening merge_queue_log's kinds")?;
+    Ok(())
 }
 
 /// The first merge queue kept only its merges, in `merge_queue_merges`; the
@@ -97,9 +150,9 @@ fn migrate_merge_history(conn: &Connection) -> Result<()> {
 
 const SELECT: &str = "SELECT workspace, number, repository, url, title, head_ref, head_sha,
     base_ref, depends_on, session_id, position, enqueued_at, facts_json, verification_json,
-    failure_json FROM merge_queue_entries";
+    failure_json, stacked_json, github_json FROM merge_queue_entries";
 
-type Raw = (QueueRow, [Option<String>; 3]);
+type Raw = (QueueRow, [Option<String>; 5]);
 
 fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Raw> {
     Ok((
@@ -119,8 +172,16 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Raw> {
             facts: None,
             verification: None,
             failure: None,
+            stacked: None,
+            github: None,
         },
-        [row.get(12)?, row.get(13)?, row.get(14)?],
+        [
+            row.get(12)?,
+            row.get(13)?,
+            row.get(14)?,
+            row.get(15)?,
+            row.get(16)?,
+        ],
     ))
 }
 
@@ -139,10 +200,12 @@ fn json_column<T: serde::de::DeserializeOwned>(
         })
 }
 
-fn decode((mut row, [facts, verification, failure]): Raw) -> Result<QueueRow> {
+fn decode((mut row, [facts, verification, failure, stacked, github]): Raw) -> Result<QueueRow> {
     row.facts = json_column(facts, &row, "facts_json")?;
     row.verification = json_column(verification, &row, "verification_json")?;
     row.failure = json_column(failure, &row, "failure_json")?;
+    row.stacked = json_column(stacked, &row, "stacked_json")?;
+    row.github = json_column(github, &row, "github_json")?;
     Ok(row)
 }
 
@@ -285,12 +348,77 @@ impl Db {
         )? > 0)
     }
 
-    /// A merged dependency is satisfied: its dependents stop waiting on it.
-    pub fn merge_queue_clear_dependency(&self, workspace: &str, number: u32) -> Result<()> {
+    /// A merged dependency is satisfied: its dependents stop waiting on it and
+    /// keep `stacked`, what it was, for their restack. A native stack's layers
+    /// get `None`: GitHub restacks those itself.
+    pub fn merge_queue_clear_dependency(
+        &self,
+        workspace: &str,
+        number: u32,
+        stacked: Option<&crate::merge_queue::Stacked>,
+    ) -> Result<()> {
+        let json = to_json(stacked)?;
         self.conn.lock().expect("db lock").execute(
-            "UPDATE merge_queue_entries SET depends_on = NULL
+            "UPDATE merge_queue_entries SET depends_on = NULL, stacked_json = ?3
              WHERE workspace = ?1 AND depends_on = ?2",
-            params![workspace, number],
+            params![workspace, number, json],
+        )?;
+        Ok(())
+    }
+
+    /// Records what was handed to GitHub, or clears it with `None`.
+    pub fn merge_queue_set_github(
+        &self,
+        workspace: &str,
+        number: u32,
+        hold: Option<&proto::MergeQueueGitHubHold>,
+    ) -> Result<bool> {
+        let json = to_json(hold)?;
+        Ok(self.conn.lock().expect("db lock").execute(
+            "UPDATE merge_queue_entries SET github_json = ?3
+             WHERE workspace = ?1 AND number = ?2",
+            params![workspace, number, json],
+        )? > 0)
+    }
+
+    /// The hand-off path the workspace's reads last reported.
+    pub fn merge_queue_hand_off(
+        &self,
+        workspace: &str,
+    ) -> Result<Option<proto::MergeQueueHandOffInfo>> {
+        let json: Option<String> = self
+            .conn
+            .lock()
+            .expect("db lock")
+            .query_row(
+                "SELECT hand_off_json FROM merge_queue_settings WHERE workspace = ?1",
+                [workspace],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        json.map(|j| {
+            serde_json::from_str(&j).with_context(|| {
+                format!("the cached merge queue hand-off of {workspace} is unreadable: {j:?}")
+            })
+        })
+        .transpose()
+    }
+
+    pub fn merge_queue_set_hand_off(
+        &self,
+        workspace: &str,
+        info: &proto::MergeQueueHandOffInfo,
+    ) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "INSERT INTO merge_queue_settings (workspace, time_limit_minutes, hand_off_json)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(workspace) DO UPDATE SET hand_off_json = excluded.hand_off_json",
+            params![
+                workspace,
+                proto::MERGE_QUEUE_TIME_LIMIT_DEFAULT_MINUTES,
+                serde_json::to_string(info)?
+            ],
         )?;
         Ok(())
     }
@@ -421,8 +549,8 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO merge_queue_log (workspace, kind, number, repository, url, title,
-                 ref_name, old_sha, new_sha, head_sha, method, detail, unattended, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 ref_name, old_sha, new_sha, head_sha, method, detail, unattended, at, fork_sha)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 workspace,
                 kind,
@@ -438,6 +566,7 @@ impl Db {
                 entry.detail,
                 entry.unattended,
                 entry.at_ms,
+                entry.fork_sha,
             ],
         )?;
         conn.execute(
@@ -459,7 +588,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
             "SELECT kind, number, repository, url, title, ref_name, old_sha, new_sha, head_sha,
-                 method, detail, unattended, at
+                 method, detail, unattended, at, fork_sha
              FROM merge_queue_log
              WHERE workspace = ?1 AND at >= ?2 AND (?4 IS NULL OR number = ?4)
              ORDER BY at DESC, id DESC LIMIT ?3",
@@ -483,6 +612,7 @@ impl Db {
                         detail: r.get(10)?,
                         unattended: r.get(11)?,
                         at_ms: r.get(12)?,
+                        fork_sha: r.get(13)?,
                     },
                 ))
             })?
@@ -491,7 +621,7 @@ impl Db {
             .map(|(kind, method, mut entry)| {
                 entry.kind = from_wire(&kind).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "merge log row for #{} has kind {kind:?}; expected push, merge or park",
+                        "merge log row for #{} has kind {kind:?}; expected push, merge, park, restack, retarget or hand_off",
                         entry.number
                     )
                 })?;
@@ -620,6 +750,59 @@ mod tests {
     }
 
     #[test]
+    fn a_log_from_before_restacks_keeps_its_rows_and_takes_the_new_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("houston.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE merge_queue_log (
+                    id INTEGER PRIMARY KEY,
+                    workspace TEXT NOT NULL,
+                    kind TEXT NOT NULL CHECK (kind IN ('push', 'merge', 'park')),
+                    number INTEGER NOT NULL,
+                    repository TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    title TEXT,
+                    ref_name TEXT,
+                    old_sha TEXT,
+                    new_sha TEXT,
+                    head_sha TEXT,
+                    method TEXT,
+                    detail TEXT,
+                    unattended INTEGER NOT NULL DEFAULT 0,
+                    at INTEGER NOT NULL
+                );
+                CREATE INDEX merge_queue_log_workspace ON merge_queue_log(workspace, at);
+                INSERT INTO merge_queue_log (workspace, kind, number, repository, url,
+                    old_sha, new_sha, unattended, at)
+                VALUES ('/w', 'push', 4, 'owner/repo', 'u', 'old', 'new', 1, 5);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let mut restack = db.merge_queue_log("/w", 0, 10, None).unwrap().remove(0);
+        assert_eq!(restack.kind, proto::MergeQueueLogKind::Push);
+        assert_eq!(restack.old_sha.as_deref(), Some("old"));
+        restack.kind = proto::MergeQueueLogKind::Restack;
+        restack.fork_sha = Some("fork".into());
+        restack.at_ms = 6;
+        db.merge_queue_log_record("/w", &restack).unwrap();
+        let log = db.merge_queue_log("/w", 0, 10, None).unwrap();
+        assert_eq!(log[0].kind, proto::MergeQueueLogKind::Restack);
+        assert_eq!(log[0].fork_sha.as_deref(), Some("fork"));
+        let conn = db.conn.lock().unwrap();
+        let narrow: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'merge_queue_log_narrow'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(narrow, 0);
+    }
+
+    #[test]
     fn away_counts_only_unattended_rows_since_the_acknowledgement() {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&dir.path().join("houston.db")).unwrap();
@@ -637,6 +820,7 @@ mod tests {
             detail: None,
             unattended,
             at_ms: at,
+            fork_sha: None,
         };
         db.merge_queue_log_record("/w", &row(proto::MergeQueueLogKind::Merge, 10, true))
             .unwrap();

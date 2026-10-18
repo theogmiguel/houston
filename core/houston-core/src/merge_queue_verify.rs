@@ -25,10 +25,19 @@ pub enum Outcome {
     Passed {
         base_sha: String,
         verified_sha: String,
+        /// Set for a restack: the dependency head the replay started after.
+        fork_sha: Option<String>,
     },
     Conflict {
         base_sha: String,
         files: Vec<String>,
+        fork_sha: Option<String>,
+    },
+    /// The head carries commits only the merged dependency had, and none of the
+    /// dependency's recorded heads (`heads`, newest first) is in it.
+    NoForkPoint {
+        base_sha: String,
+        heads: Vec<String>,
     },
     Failed {
         base_sha: String,
@@ -56,6 +65,71 @@ pub struct Request<'a> {
     pub limit: Duration,
     /// Outside `.houston/worktrees`, so nothing else mistakes it for an agent's worktree.
     pub scratch: &'a Path,
+    /// The dependency that merged ahead of the head, when there is one.
+    pub stack: Option<Stack<'a>>,
+}
+
+/// A merged dependency's recorded heads, newest first, and its branch.
+pub struct Stack<'a> {
+    pub heads: &'a [String],
+    pub head_ref: &'a str,
+}
+
+/// How the head goes onto the base.
+#[derive(Debug, PartialEq, Eq)]
+enum Replay {
+    Plain,
+    /// Replays only the commits after the fork point.
+    Onto(String),
+    NoForkPoint,
+}
+
+fn ancestor(repo: &Path, ancestor: &str, of: &str) -> Result<bool> {
+    Ok(git(
+        repo,
+        &["merge-base", "--is-ancestor", ancestor, of],
+        GIT_LOCAL_TIMEOUT,
+    )?
+    .status
+    .success())
+}
+
+fn known_commit(repo: &Path, sha: &str) -> bool {
+    git(
+        repo,
+        &["cat-file", "-e", &format!("{sha}^{{commit}}")],
+        GIT_LOCAL_TIMEOUT,
+    )
+    .is_ok_and(|o| o.status.success())
+}
+
+/// The fork point rule: the newest recorded dependency head the head contains. With none,
+/// a head sharing commits no base has is refused, since a guess would replay or drop
+/// commits; one sharing only base history depends in order only and rebases plainly.
+fn replay(repo: &Path, head_sha: &str, base_sha: &str, stack: &Stack<'_>) -> Result<Replay> {
+    let known: Vec<&String> = stack
+        .heads
+        .iter()
+        .filter(|h| known_commit(repo, h))
+        .collect();
+    for head in &known {
+        if ancestor(repo, head, head_sha)? {
+            return Ok(if ancestor(repo, head, base_sha)? {
+                Replay::Plain
+            } else {
+                Replay::Onto(head.to_string())
+            });
+        }
+    }
+    for head in known {
+        let Ok(shared) = git_ok(repo, &["merge-base", head_sha, head], GIT_LOCAL_TIMEOUT) else {
+            continue;
+        };
+        if !shared.is_empty() && !ancestor(repo, &shared, base_sha)? {
+            return Ok(Replay::NoForkPoint);
+        }
+    }
+    Ok(Replay::Plain)
 }
 
 /// Why this daemon cannot verify the workspace at `path`, if it cannot. A WSL
@@ -221,19 +295,42 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
         return Ok(Outcome::HeadMoved { found });
     }
     let base_sha = remote_sha(repo, remote, base_ref)?;
+    let replay = match &request.stack {
+        Some(stack) => {
+            // The dependency's branch may be deleted on merge; its recorded heads
+            // are then known from earlier fetches, or not at all.
+            let _ = fetch(repo, remote, &[stack.head_ref]);
+            replay(repo, head_sha, &base_sha, stack)?
+        }
+        None => Replay::Plain,
+    };
+    let fork_sha = match replay {
+        Replay::NoForkPoint => {
+            return Ok(Outcome::NoForkPoint {
+                base_sha,
+                heads: request
+                    .stack
+                    .as_ref()
+                    .map_or_else(Vec::new, |s| s.heads.to_vec()),
+            })
+        }
+        Replay::Onto(fork) => Some(fork),
+        Replay::Plain => None,
+    };
     let scratch = Scratch::create(repo, request.scratch, head_sha)?;
-    let rebase = git(
-        &scratch.path,
-        &[
-            "-c",
-            "rebase.autoSquash=false",
-            "-c",
-            "rebase.autoStash=false",
-            "rebase",
-            &base_sha,
-        ],
-        GIT_LOCAL_TIMEOUT,
-    )?;
+    let mut args = vec![
+        "-c",
+        "rebase.autoSquash=false",
+        "-c",
+        "rebase.autoStash=false",
+        "rebase",
+    ];
+    if let Some(fork) = &fork_sha {
+        args.extend(["--onto", base_sha.as_str(), fork.as_str()]);
+    } else {
+        args.push(&base_sha);
+    }
+    let rebase = git(&scratch.path, &args, GIT_LOCAL_TIMEOUT)?;
     if !rebase.status.success() {
         let files = git_ok(
             &scratch.path,
@@ -253,7 +350,11 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
                 String::from_utf8_lossy(&rebase.stderr).trim()
             );
         }
-        return Ok(Outcome::Conflict { base_sha, files });
+        return Ok(Outcome::Conflict {
+            base_sha,
+            files,
+            fork_sha,
+        });
     }
     let verified_sha = git_ok(&scratch.path, &["rev-parse", "HEAD"], GIT_LOCAL_TIMEOUT)?;
     let run = crate::spawn::tail_within(
@@ -268,6 +369,7 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
         Some(status) if status.success() => Outcome::Passed {
             base_sha,
             verified_sha,
+            fork_sha,
         },
         Some(status) => Outcome::Failed {
             base_sha,

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 146;
+pub const PROTOCOL_VERSION: u32 = 147;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2419,6 +2419,9 @@ pub enum MergeQueueStatus {
     Parked,
     /// The head would verify, push or merge, but the queue is paused.
     Paused,
+    /// GitHub owns the verified head: it is in GitHub's merge queue, or auto-merge
+    /// is on for it. Houston watches it there.
+    Watching,
 }
 
 /// One gate a merge queue entry must pass. Gates fail closed: an input that has
@@ -2470,6 +2473,14 @@ pub struct MergeQueueVerification {
     pub verified_sha: String,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
+    /// A restack replayed only the commits after this one: the newest recorded
+    /// head of the merged dependency `stacked_on` that the head contains.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub fork_sha: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub stacked_on: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2486,6 +2497,9 @@ pub enum MergeQueueFailureKind {
     ChecksFailed,
     /// Houston could not verify, push or merge it, for the reason in `message`.
     Refused,
+    /// GitHub removed it from its merge queue, or turned its auto-merge off,
+    /// for the reason in `message`.
+    Ejected,
 }
 
 /// Why an entry left the line. It applies to `head_sha` only: a new head re-enters.
@@ -2569,6 +2583,55 @@ pub struct MergeQueueEntry {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub verifying_since_ms: Option<i64>,
+    /// While GitHub owns the entry (`watching`): what was handed to it.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub github: Option<MergeQueueGitHubHold>,
+}
+
+/// Who merges a workspace's verified head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueHandOff {
+    /// Houston merges the verified commit itself.
+    Houston,
+    /// The base branch requires GitHub's merge queue: Houston enqueues there.
+    MergeQueue,
+    /// The repository allows auto-merge and the base requires checks: Houston
+    /// pushes the verified commit and turns auto-merge on, pinned to it.
+    AutoMerge,
+}
+
+/// The hand-off path a workspace's queue uses, as the last pull request read said.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueHandOffInfo {
+    pub mode: MergeQueueHandOff,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub base_ref: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub read_at_ms: i64,
+    /// Learned from GitHub refusing Houston's own merge, not from a read.
+    #[serde(default)]
+    pub from_refusal: bool,
+}
+
+/// A verified head GitHub owns: what was handed to it, on which base, and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueGitHubHold {
+    pub mode: MergeQueueHandOff,
+    pub head_sha: String,
+    pub base_ref: String,
+    pub base_sha: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub method: Option<PrMergeMethod>,
+    pub unattended: bool,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 /// A workspace's merge queue settings. Only the user changes them; agents have no verb.
@@ -2594,6 +2657,14 @@ pub enum MergeQueueLogKind {
     Merge,
     /// An entry left the line, parked, with `detail` as its reason.
     Park,
+    /// A branch replayed onto the base after `fork_sha`; `old_sha` and `new_sha`
+    /// are its head before and after.
+    Restack,
+    /// A pull request's base moved to `ref_name` from the merged dependency's
+    /// branch, which `detail` names.
+    Retarget,
+    /// The verified `head_sha` went to GitHub's merge queue or auto-merge, as `detail` says.
+    HandOff,
 }
 
 /// One row of the merge log: every daemon push and merge, and every park.
@@ -2632,6 +2703,10 @@ pub struct MergeQueueLogEntry {
     pub unattended: bool,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
+    /// For a restack row, the commit the replay started after.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub fork_sha: Option<String>,
 }
 
 /// Unattended merges and parks the user has not reviewed yet.
@@ -3219,6 +3294,60 @@ pub struct PrDetail {
     /// workflow runs can be waiting on a maintainer's approval.
     #[serde(default)]
     pub cross_repository: bool,
+    /// What GitHub said about its merge queue and auto-merge for this pull
+    /// request; absent when the access read failed.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub github_merge: Option<PrGitHubMerge>,
+}
+
+/// GitHub's own merge tools as one access read saw them. A field GitHub did not
+/// show this viewer is `None`, which the merge queue reads as "Houston merges".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrGitHubMerge {
+    /// `isMergeQueueEnabled`: the base branch merges through GitHub's merge queue.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub merge_queue_required: Option<bool>,
+    /// The repository's `autoMergeAllowed`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub auto_merge_allowed: Option<bool>,
+    /// The status checks the base branch's update rule requires; `None` when
+    /// GitHub showed no rule.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub required_checks: Option<Vec<String>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub queue_entry: Option<PrMergeQueueEntry>,
+    /// The latest removal from the merge queue or auto-merge disable, with its reason.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub removal: Option<PrMergeRemoval>,
+}
+
+/// The pull request's place in GitHub's merge queue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrMergeQueueEntry {
+    /// GitHub's `MergeQueueEntryState` as it names it, such as `QUEUED` or `AWAITING_CHECKS`.
+    pub state: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub position: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub head_sha: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrMergeRemoval {
+    pub reason: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 /// One layer of a host-native stack, bottom to top order is the array's.
@@ -5172,6 +5301,10 @@ pub enum ServerMsg {
         global_paused: bool,
         #[serde(default)]
         away: MergeQueueAway,
+        /// Who merges here, cached from pull request reads; absent before the first.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        hand_off: Option<MergeQueueHandOffInfo>,
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         message: Option<String>,
@@ -6750,6 +6883,7 @@ mod tests {
             auto_merge_method: None,
             merge_methods: Vec::new(),
             cross_repository: false,
+            github_merge: None,
         };
         let msg = ServerMsg::PrDetail {
             dir: "/work/project".into(),

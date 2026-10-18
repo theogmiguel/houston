@@ -4,4 +4,4 @@
  * Where a merge queue entry stands. Parked and fixing entries are out of line:
  * the queue moves on without them until their head moves.
  */
-export type MergeQueueStatus = "ready" | "blocked" | "verifying" | "waiting_for_slot" | "fixing" | "parked" | "paused";
+export type MergeQueueStatus = "ready" | "blocked" | "verifying" | "waiting_for_slot" | "fixing" | "parked" | "paused" | "watching";

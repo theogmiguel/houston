@@ -447,6 +447,98 @@ pub fn pr_merge(
     }
 }
 
+/// Turns auto-merge on, pinned to `expected_head_sha`: GitHub merges that
+/// commit with `method` once the base's requirements pass, and gh merges at
+/// once when nothing is left to wait for.
+pub fn pr_merge_auto(
+    dir: &Path,
+    number: u32,
+    expected_head_sha: &str,
+    method: proto::PrMergeMethod,
+) -> PrMergeOutcome {
+    let flag = match method {
+        proto::PrMergeMethod::Merge => "--merge",
+        proto::PrMergeMethod::Squash => "--squash",
+        proto::PrMergeMethod::Rebase => "--rebase",
+    };
+    let n = number.to_string();
+    let args = [
+        "pr",
+        "merge",
+        n.as_str(),
+        "--auto",
+        "--match-head-commit",
+        expected_head_sha,
+        flag,
+    ];
+    match run(dir, &args) {
+        Ok(o) => {
+            let out = Outcome::done(&o, &format!("gh pr merge {n} --auto"));
+            PrMergeOutcome {
+                ok: out.ok,
+                message: out.message,
+            }
+        }
+        Err(e) => PrMergeOutcome {
+            ok: false,
+            message: Some(format!("running gh pr merge --auto failed: {e}")),
+        },
+    }
+}
+
+/// Turns a pull request's auto-merge off.
+pub fn pr_disable_auto(dir: &Path, number: u32) -> Result<()> {
+    let n = number.to_string();
+    let out = run(dir, &["pr", "merge", n.as_str(), "--disable-auto"])?;
+    let done = Outcome::done(&out, &format!("gh pr merge {n} --disable-auto"));
+    match done.message {
+        Some(m) if !done.ok => bail!("{m}"),
+        _ => Ok(()),
+    }
+}
+
+/// Moves a pull request's base branch, as `gh pr edit --base` does.
+pub fn pr_edit_base(dir: &Path, number: u32, base: &str) -> Result<()> {
+    let n = number.to_string();
+    let out = run(dir, &["pr", "edit", n.as_str(), "--base", base])?;
+    let done = Outcome::done(&out, &format!("gh pr edit {n} --base {base}"));
+    match done.message {
+        Some(m) if !done.ok => bail!("{m}"),
+        _ => Ok(()),
+    }
+}
+
+/// Adds a pull request to its base branch's merge queue, pinned to
+/// `expected_head_sha`: GitHub refuses the enqueue if the head moved.
+pub fn pr_enqueue(
+    dir: &Path,
+    repository: &str,
+    number: u32,
+    expected_head_sha: &str,
+) -> Result<()> {
+    const QUERY: &str = "mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) { \
+        enqueuePullRequest(input: { pullRequestId: $pullRequestId, expectedHeadOid: $expectedHeadOid }) \
+        { mergeQueueEntry { position } } }";
+    let id = pr_node_id(dir, repository, number)?;
+    graphql(
+        dir,
+        QUERY,
+        serde_json::json!({ "pullRequestId": id, "expectedHeadOid": expected_head_sha }),
+    )
+    .with_context(|| format!("GitHub refused to add PR #{number} to its merge queue"))?;
+    Ok(())
+}
+
+/// Takes a pull request out of its base branch's merge queue.
+pub fn pr_dequeue(dir: &Path, repository: &str, number: u32) -> Result<()> {
+    const QUERY: &str = "mutation($id: ID!) { \
+        dequeuePullRequest(input: { id: $id }) { mergeQueueEntry { id } } }";
+    let id = pr_node_id(dir, repository, number)?;
+    graphql(dir, QUERY, serde_json::json!({ "id": id }))
+        .with_context(|| format!("GitHub refused to take PR #{number} out of its merge queue"))?;
+    Ok(())
+}
+
 pub fn pr_create_branch(
     dir: &Path,
     title: &str,

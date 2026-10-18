@@ -1,6 +1,6 @@
-//! The merge queue's runner: verification in the machine's one slot, failures handed to
-//! the owning pane or parked, and landing (lease push, then a pinned merge) for the policy
-//! and the user's Merge alike. See docs/internals/daemon.md.
+//! The merge queue's runner: verification (and restack) in the machine's one slot, failures
+//! handed to the owning pane or parked, and landing (lease push, then a pinned merge or the
+//! hand-off to GitHub) for the policy and the user's Merge. See docs/internals/daemon.md.
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use houston_protocol as proto;
 
 use super::merge_queue::{method_name, queue_repository};
 use super::{now_unix_ms, Daemon};
-use crate::merge_queue::{self as mq, QueueRow};
+use crate::merge_queue::{self as mq, QueueRow, Stacked};
 use crate::merge_queue_verify::{self as verify, Outcome};
 use crate::orchestrate;
 use crate::pull_requests::shared::{pause_text, Read};
@@ -28,6 +28,9 @@ const AFTER_PUSH_READS: u32 = 6;
 const AFTER_PUSH_WAIT: Duration = Duration::from_secs(5);
 /// Bounds the failure note; the remainder is counted, not listed.
 const MAX_NOTED_FILES: usize = 20;
+/// The log rows a fork-point search reads for one dependency: far more than the
+/// pushes and merges one pull request collects in the log's month.
+const STACK_LOG_ROWS: u32 = 200;
 
 /// The verification holding the machine's slot.
 pub(super) struct Running {
@@ -55,12 +58,14 @@ pub(super) enum Landing {
     /// Nothing failed; the entry waits for GitHub, a rate-limit pause or a new
     /// verification, and a later pass continues.
     Waiting(String),
+    /// GitHub owns the verified head now; Houston watches it there.
+    HandedOff(String),
 }
 
 impl Landing {
     fn text(self) -> String {
         match self {
-            Landing::Merged(text) | Landing::Waiting(text) => text,
+            Landing::Merged(text) | Landing::Waiting(text) | Landing::HandedOff(text) => text,
         }
     }
 }
@@ -75,7 +80,7 @@ pub(super) struct Failed {
 }
 
 impl Failed {
-    fn refused(message: String) -> Self {
+    pub(super) fn refused(message: String) -> Self {
         Failed {
             kind: proto::MergeQueueFailureKind::Refused,
             message,
@@ -152,6 +157,10 @@ impl Daemon {
     /// Moves the workspace's head one step: verify it, fail it, or land it.
     /// Returns whether it moved, so the pass takes the next step.
     fn merge_queue_step(self: &Arc<Self>, workspace: &str) -> Result<bool> {
+        // GitHub can merge or eject what it owns during a pause, too.
+        if self.merge_queue_watch_github(workspace)? {
+            return Ok(true);
+        }
         if self.merge_queue_paused(workspace)?.is_some()
             || queue_repository(Path::new(workspace), workspace).is_err()
         {
@@ -171,7 +180,9 @@ impl Daemon {
             return Ok(false);
         };
         let row = &rows[index];
-        if let Some(failed) = checks_failed_on_pushed(row) {
+        if let Some(failed) =
+            checks_failed_on_pushed(row).filter(|_| mq::github_holds(row).is_none())
+        {
             self.merge_queue_fail(workspace, row, failed, true)?;
             return Ok(true);
         }
@@ -194,7 +205,7 @@ impl Daemon {
                         tracing::info!("merge queue: {text}");
                         Ok(true)
                     }
-                    Ok(Landing::Waiting(text)) => {
+                    Ok(Landing::Waiting(text) | Landing::HandedOff(text)) => {
                         tracing::info!("merge queue: {text}");
                         Ok(false)
                     }
@@ -223,14 +234,18 @@ impl Daemon {
         let root = Path::new(workspace);
         let command = settings.verification_command.trim();
         let limit_minutes = settings.time_limit_minutes;
+        let stacked = row.stacked.as_ref();
         let ran = (|| {
             let remote = crate::git::remote_name(root)
                 .ok_or_else(|| anyhow!("{workspace} has no git remote to fetch from"))?;
-            let base_ref = row
-                .base_ref
-                .clone()
+            let base_ref = mq::base_of(row)
+                .map(str::to_string)
                 .ok_or_else(|| anyhow!("GitHub reported no base branch for PR #{}", row.number))?;
             let scratch = self.merge_queue_scratch();
+            let heads = match stacked {
+                Some(s) => self.merge_queue_stack_heads(workspace, s)?,
+                None => Vec::new(),
+            };
             let outcome = verify::verify(&verify::Request {
                 repo: root,
                 remote: &remote,
@@ -240,22 +255,33 @@ impl Daemon {
                 command,
                 limit: Duration::from_secs(u64::from(limit_minutes) * 60),
                 scratch: &scratch,
+                stack: stacked.map(|s| verify::Stack {
+                    heads: &heads,
+                    head_ref: &s.head_ref,
+                }),
             })?;
-            Ok::<_, anyhow::Error>((outcome, base_ref))
+            Ok::<_, anyhow::Error>((outcome, base_ref, heads))
         })();
         let short = |sha: &str| mq::short_sha(sha).to_string();
+        let dependency = stacked.map_or(0, |s| s.number);
         let moved = match ran {
             Ok((
                 Outcome::Passed {
                     base_sha,
                     verified_sha,
+                    fork_sha,
                 },
                 base_ref,
+                _,
             )) => {
                 tracing::info!(
-                    "merge queue: PR #{} passed `{command}` as {verified_sha} on {base_ref}@{}",
+                    "merge queue: PR #{} passed `{command}` as {verified_sha} on {base_ref}@{}{}",
                     row.number,
-                    short(&base_sha)
+                    short(&base_sha),
+                    fork_sha.as_deref().map_or_else(String::new, |f| format!(
+                        ", restacked after #{dependency}'s {}",
+                        short(f)
+                    ))
                 );
                 self.db.merge_queue_set_verification(
                     workspace,
@@ -266,26 +292,63 @@ impl Daemon {
                         head_sha: row.head_sha.clone(),
                         verified_sha,
                         at_ms: now_unix_ms(),
+                        stacked_on: fork_sha.as_ref().map(|_| dependency),
+                        fork_sha,
                     }),
                 )?;
                 true
             }
-            Ok((Outcome::Conflict { base_sha, files }, base_ref)) => {
+            Ok((
+                Outcome::Conflict {
+                    base_sha,
+                    files,
+                    fork_sha,
+                },
+                base_ref,
+                _,
+            )) => {
                 let count = files.len();
                 drop(slot);
+                let what = match &fork_sha {
+                    Some(fork) => format!(
+                        "Restacking onto {base_ref}@{} after #{dependency}'s {}",
+                        short(&base_sha),
+                        short(fork)
+                    ),
+                    None => format!("Rebasing onto {base_ref}@{}", short(&base_sha)),
+                };
                 self.merge_queue_fail(
                     workspace,
                     row,
                     Failed {
                         kind: proto::MergeQueueFailureKind::Conflict,
                         message: format!(
-                            "Rebasing onto {base_ref}@{} stopped on a conflict in {count} file{}",
-                            short(&base_sha),
+                            "{what} stopped on a conflict in {count} file{}",
                             if count == 1 { "" } else { "s" }
                         ),
                         files,
                         output_tail: None,
                         base_sha: Some(base_sha),
+                    },
+                    true,
+                )?;
+                return Ok(true);
+            }
+            Ok((Outcome::NoForkPoint { base_sha, heads }, base_ref, _)) => {
+                drop(slot);
+                let heads: Vec<String> = heads.iter().map(|h| short(h)).collect();
+                self.merge_queue_fail(
+                    workspace,
+                    row,
+                    Failed {
+                        base_sha: Some(base_sha),
+                        ..Failed::refused(format!(
+                            "PR #{} carries commits only #{dependency}'s branch had, but none of #{dependency}'s recorded heads ({}) is in its head {}, so there is no fork point to restack from; Houston does not guess one. Rebase {} onto {base_ref} and push",
+                            row.number,
+                            heads.join(", "),
+                            short(&row.head_sha),
+                            row.head_ref
+                        ))
                     },
                     true,
                 )?;
@@ -298,6 +361,7 @@ impl Daemon {
                     tail,
                 },
                 base_ref,
+                _,
             )) => {
                 drop(slot);
                 let exit = code.map_or_else(|| "a signal".to_string(), |c| format!("exit {c}"));
@@ -318,7 +382,7 @@ impl Daemon {
                 )?;
                 return Ok(true);
             }
-            Ok((Outcome::TimedOut { base_sha, tail }, base_ref)) => {
+            Ok((Outcome::TimedOut { base_sha, tail }, base_ref, _)) => {
                 drop(slot);
                 self.merge_queue_fail(
                     workspace,
@@ -337,7 +401,7 @@ impl Daemon {
                 )?;
                 return Ok(true);
             }
-            Ok((Outcome::HeadMoved { found }, _)) => {
+            Ok((Outcome::HeadMoved { found }, _, _)) => {
                 tracing::info!(
                     "merge queue: PR #{} moved from {} to {found} before its verification; the next read puts the new head in line",
                     row.number,
@@ -367,6 +431,33 @@ impl Daemon {
     /// Outside `.houston/worktrees`: one directory serves the one slot.
     fn merge_queue_scratch(&self) -> PathBuf {
         self.state_dir.join("merge-queue").join("verify")
+    }
+
+    /// Every head the queue recorded for a merged dependency, newest first: the
+    /// last one it read, then its log rows' heads. A push row's old head is the
+    /// commit a branch stacked on the dependency was built on.
+    fn merge_queue_stack_heads(&self, workspace: &str, stacked: &Stacked) -> Result<Vec<String>> {
+        let mut heads = vec![stacked.head_sha.clone()];
+        for e in self
+            .db
+            .merge_queue_log(workspace, 0, STACK_LOG_ROWS, Some(stacked.number))?
+        {
+            let recorded = match e.kind {
+                proto::MergeQueueLogKind::Push | proto::MergeQueueLogKind::Restack => {
+                    vec![e.new_sha, e.old_sha]
+                }
+                proto::MergeQueueLogKind::Merge
+                | proto::MergeQueueLogKind::Park
+                | proto::MergeQueueLogKind::HandOff => vec![e.head_sha],
+                proto::MergeQueueLogKind::Retarget => Vec::new(),
+            };
+            for sha in recorded.into_iter().flatten() {
+                if mq::valid_head_sha(&sha) && !heads.contains(&sha) {
+                    heads.push(sha);
+                }
+            }
+        }
+        Ok(heads)
     }
 
     /// The pane that owns an entry: the one that enqueued it while it lives,
@@ -611,12 +702,22 @@ impl Daemon {
                 return Ok(Landing::Waiting(moved));
             }
         }
+        let mode = mq::hand_off_mode(&row, self.db.merge_queue_hand_off(workspace)?.as_ref());
+        let restacked = verification.as_ref().and_then(|v| v.fork_sha.clone());
+        // GitHub's merge queue tests the real merge itself, so only a restack,
+        // which drops the dependency's commits from the branch, is pushed for it.
         let target = match (&verification, expected_head_sha) {
+            (Some(_), _) if mode == proto::MergeQueueHandOff::MergeQueue && restacked.is_none() => {
+                row.head_sha.clone()
+            }
             (Some(v), _) => v.verified_sha.clone(),
             (None, Some(expected)) => expected.to_string(),
             (None, None) => row.head_sha.clone(),
         };
         let pushed = row.head_sha != target && verification.is_some();
+        if let Some(base) = mq::needs_retarget(&row) {
+            self.merge_queue_retarget(workspace, &row, base, unattended)?;
+        }
         if pushed {
             if let Err(e) =
                 self.merge_queue_push_guard(workspace, &row.head_ref, row.base_ref.as_deref())
@@ -643,10 +744,28 @@ impl Daemon {
                     e.new_sha = Some(target.clone());
                 }),
             )?;
+            if let Some(fork) = &restacked {
+                self.db.merge_queue_log_record(
+                    workspace,
+                    &log_row(&row, proto::MergeQueueLogKind::Restack, unattended, |e| {
+                        e.ref_name = Some(row.head_ref.clone());
+                        e.old_sha = Some(row.head_sha.clone());
+                        e.new_sha = Some(target.clone());
+                        e.fork_sha = Some(fork.clone());
+                        e.detail = row
+                            .stacked
+                            .as_ref()
+                            .map(|s| format!("Restacked after #{}", s.number));
+                    }),
+                )?;
+            }
             tracing::info!(
-                "merge queue: pushed {target} to {} over {} with a lease",
+                "merge queue: pushed {target} to {} over {} with a lease{}",
                 row.head_ref,
-                row.head_sha
+                row.head_sha,
+                restacked
+                    .as_deref()
+                    .map_or_else(String::new, |f| format!(", restacked after {f}"))
             );
         }
         let mut reads = 0;
@@ -709,7 +828,14 @@ impl Daemon {
                 "GitHub's checks failed on the verified commit of PR #{number}; it left the line"
             );
         }
-        if entry.status == proto::MergeQueueStatus::Blocked {
+        // Handed off, GitHub enforces its own merge gate on the pushed commit;
+        // Houston's other gates still hold the entry.
+        let github_gate_only = mode != proto::MergeQueueHandOff::Houston
+            && entry.gates.iter().all(|g| {
+                g.kind == proto::MergeQueueGateKind::Mergeable
+                    || g.state != proto::MergeQueueGateState::Failed
+            });
+        if entry.status == proto::MergeQueueStatus::Blocked && !github_gate_only {
             let reason = entry.reason.clone().unwrap_or_default();
             if pushed {
                 return Ok(Landing::Waiting(format!(
@@ -735,14 +861,35 @@ impl Daemon {
         let base_before = base_ref
             .as_deref()
             .and_then(|b| verify::remote_sha(root, &remote, b).ok());
-        if let Err(e) = merge_pinned(root, number, &target, method) {
-            if unattended {
-                self.merge_queue_fail(workspace, row, Failed::refused(format!("{e:#}")), true)?;
-            }
-            return Err(e);
+        if mode != proto::MergeQueueHandOff::Houston {
+            return self.merge_queue_hand_off(
+                workspace,
+                &repository,
+                row,
+                mode,
+                &target,
+                method,
+                base_ref.as_deref(),
+                base_before.as_deref(),
+                unattended,
+            );
         }
+        let native = match merge_pinned(root, number, &target, method) {
+            Ok(native) => native,
+            Err(e) => {
+                self.merge_queue_learn_refusal(workspace, row, &e);
+                if unattended {
+                    self.merge_queue_fail(workspace, row, Failed::refused(format!("{e:#}")), true)?;
+                }
+                return Err(e);
+            }
+        };
         self.db.merge_queue_remove(workspace, number)?;
-        self.db.merge_queue_clear_dependency(workspace, number)?;
+        self.db.merge_queue_clear_dependency(
+            workspace,
+            number,
+            (!native).then(|| Stacked::of(row)).as_ref(),
+        )?;
         let base_after = base_ref.as_deref().and_then(|b| {
             verify::fetch(root, &remote, &[b])
                 .and_then(|()| verify::remote_sha(root, &remote, b))
@@ -775,7 +922,7 @@ impl Daemon {
 
     /// Each live agent pane in another of the workspace's managed worktrees
     /// gets one note that the base moved; conflict prediction then runs on it.
-    fn merge_queue_after_merge(
+    pub(super) fn merge_queue_after_merge(
         self: &Arc<Self>,
         workspace: &str,
         row: &QueueRow,
@@ -868,7 +1015,8 @@ fn checks_failed_on_pushed(row: &QueueRow) -> Option<Failed> {
 
 /// Merges exactly `sha`: through the stack endpoint for a native stack, else
 /// the SHA-pinned `gh pr merge`. GitHub's refusal is returned as it said it.
-fn merge_pinned(root: &Path, number: u32, sha: &str, method: proto::PrMergeMethod) -> Result<()> {
+/// Returns whether it merged a native stack's layer.
+fn merge_pinned(root: &Path, number: u32, sha: &str, method: proto::PrMergeMethod) -> Result<bool> {
     let name = method_name(method);
     let refused = |message: Option<String>| {
         anyhow!(
@@ -908,21 +1056,22 @@ fn merge_pinned(root: &Path, number: u32, sha: &str, method: proto::PrMergeMetho
             if !out.ok {
                 return Err(refused(out.message));
             }
+            Ok(true)
         }
         Ok(None) => {
             let out = crate::gh::pr_merge(root, number, sha, method);
             if !out.ok {
                 return Err(refused(out.message));
             }
+            Ok(false)
         }
         Err(e) => {
             bail!("could not read whether PR #{number} is in a stack, so it was not merged: {e:#}")
         }
     }
-    Ok(())
 }
 
-fn log_row(
+pub(super) fn log_row(
     row: &QueueRow,
     kind: proto::MergeQueueLogKind,
     unattended: bool,
@@ -942,6 +1091,7 @@ fn log_row(
         detail: None,
         unattended,
         at_ms: now_unix_ms(),
+        fork_sha: None,
     };
     fill(&mut entry);
     entry
@@ -998,6 +1148,8 @@ mod tests {
             facts: None,
             verification: None,
             failure: None,
+            stacked: None,
+            github: None,
         };
         let failure = proto::MergeQueueFailure {
             kind: proto::MergeQueueFailureKind::Conflict,

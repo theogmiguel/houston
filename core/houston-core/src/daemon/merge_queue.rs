@@ -166,6 +166,7 @@ impl Daemon {
             settings: Some(self.db.merge_queue_settings(workspace)?),
             global_paused: self.db.merge_queue_global_paused()?,
             away: self.db.merge_queue_away(workspace)?,
+            hand_off: self.db.merge_queue_hand_off(workspace)?,
             message: None,
         })
     }
@@ -185,6 +186,7 @@ impl Daemon {
                 settings,
                 global_paused,
                 away,
+                hand_off,
                 ..
             }) => proto::ServerMsg::MergeQueue {
                 workspace,
@@ -194,6 +196,7 @@ impl Daemon {
                 settings,
                 global_paused,
                 away,
+                hand_off,
                 message: None,
             },
             Ok(other) => other,
@@ -205,6 +208,7 @@ impl Daemon {
                 settings: None,
                 global_paused: self.db.merge_queue_global_paused().unwrap_or(false),
                 away: proto::MergeQueueAway::default(),
+                hand_off: None,
                 message: Some(format!("{e:#}")),
             },
         }
@@ -355,8 +359,11 @@ impl Daemon {
             facts: Some(Facts::from_read(&detail, now)),
             verification: None,
             failure: None,
+            stacked: None,
+            github: None,
         };
         self.db.merge_queue_enqueue(&row, check)?;
+        self.merge_queue_note_hand_off(&row);
         self.broadcast_merge_queue(&workspace);
         self.merge_queue_wake.notify_one();
         self.merge_queue_entries(&workspace)?
@@ -367,9 +374,12 @@ impl Daemon {
             })
     }
 
+    /// Takes an entry out of the queue, and out of GitHub's merge queue or
+    /// auto-merge first when GitHub holds it.
     pub fn merge_queue_dequeue(&self, dir: &str, target: &str) -> Result<()> {
         let workspace = self.merge_queue_workspace(dir)?;
         let number = tasks::pr_watch_number(target)?;
+        self.merge_queue_release_github(&workspace, Some(number))?;
         if !self.db.merge_queue_remove(&workspace, number)? {
             bail!("PR #{number} is not in the merge queue of {workspace}");
         }
@@ -406,10 +416,21 @@ impl Daemon {
         let facts = match outcome {
             Ok((link, detail)) => {
                 match link.state {
+                    // GitHub merged what it was handed: the runner finishes the landing.
+                    proto::PullRequestState::Merged if row.github.is_some() => {
+                        let mut facts = Facts::from_read(&detail, now);
+                        facts.merged = true;
+                        row.facts = Some(facts);
+                        self.db.merge_queue_set_read(&row)?;
+                        return Ok(true);
+                    }
                     proto::PullRequestState::Merged => {
                         self.db.merge_queue_remove(&row.workspace, row.number)?;
-                        self.db
-                            .merge_queue_clear_dependency(&row.workspace, row.number)?;
+                        self.db.merge_queue_clear_dependency(
+                            &row.workspace,
+                            row.number,
+                            Some(&mq::Stacked::of(&row)),
+                        )?;
                         tracing::info!(
                             "merge queue: PR #{} merged outside the queue of {}; it left the queue",
                             row.number,
@@ -436,9 +457,13 @@ impl Daemon {
                 row.head_sha = detail.head_sha.clone();
                 row.base_ref = detail.base_ref.clone();
                 let facts = Facts::from_read(&detail, now);
-                let changed = moved || row.facts.as_ref().is_none_or(|f| !f.same_answer(&facts));
+                // A held entry's read always matters to the runner watching GitHub.
+                let changed = moved
+                    || row.github.is_some()
+                    || row.facts.as_ref().is_none_or(|f| !f.same_answer(&facts));
                 row.facts = Some(facts);
                 self.db.merge_queue_set_read(&row)?;
+                self.merge_queue_note_hand_off(&row);
                 return Ok(changed);
             }
             Err(e) => Facts::from_error(e, now),
@@ -579,18 +604,21 @@ impl Daemon {
             Some(dir) => {
                 let workspace = self.merge_queue_workspace(dir)?;
                 self.db.merge_queue_set_paused(&workspace, paused)?;
+                let released = self.merge_queue_pause_github(&workspace, paused);
                 self.broadcast_merge_queue(&workspace);
-                format!("the merge queue of {workspace} is {verb}")
+                format!("the merge queue of {workspace} is {verb}{released}")
             }
             None => {
                 self.db.merge_queue_set_global_paused(paused)?;
+                let mut released = String::new();
                 for workspace in self.db.merge_queue_workspaces()? {
+                    released.push_str(&self.merge_queue_pause_github(&workspace, paused));
                     self.broadcast_merge_queue(&workspace);
                 }
                 if let Ok(msg) = self.merge_queue_summary() {
                     self.broadcast_control(&msg);
                 }
-                format!("every merge queue on this machine is {verb}")
+                format!("every merge queue on this machine is {verb}{released}")
             }
         };
         tracing::info!("merge queue: {message}");
@@ -598,6 +626,29 @@ impl Daemon {
             self.merge_queue_wake.notify_one();
         }
         Ok(message)
+    }
+
+    /// A pause takes back what GitHub holds, so nothing merges while paused;
+    /// GitHub's queue position is lost. Returns what the pause message adds.
+    fn merge_queue_pause_github(&self, workspace: &str, paused: bool) -> String {
+        if !paused {
+            return String::new();
+        }
+        match self.merge_queue_release_github(workspace, None) {
+            Ok(released) if released.is_empty() => String::new(),
+            Ok(released) => format!(
+                "; took {} back from GitHub",
+                released
+                    .iter()
+                    .map(|n| format!("#{n}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Err(e) => {
+                tracing::warn!("merge queue: pausing {workspace}: {e:#}");
+                format!("; {e:#}")
+            }
+        }
     }
 
     /// Puts a parked or fixing entry back in line at its current head.

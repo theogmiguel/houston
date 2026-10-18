@@ -193,6 +193,9 @@ fn enrich(dir: &Path, link: &PullRequestLink, detail: &mut PrDetail, head_owner:
             detail.viewer = Some(access.permissions);
             detail.behind_by = access.behind_by;
             detail.merge_methods = access.merge_methods;
+            detail.github_merge = Some(access.github_merge);
+            detail.auto_merge_enabled = Some(access.auto_merge.0);
+            detail.auto_merge_method = access.auto_merge.1.or(detail.auto_merge_method);
         }
         Ok(Err(e)) => {
             detail.viewer = None;
@@ -654,6 +657,7 @@ mod tests {
             auto_merge_method: None,
             cross_repository: false,
             merge_methods: Vec::new(),
+            github_merge: None,
         }
     }
 

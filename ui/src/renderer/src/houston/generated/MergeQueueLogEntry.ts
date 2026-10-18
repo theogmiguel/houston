@@ -17,4 +17,8 @@ head_sha?: string | null, method?: PrMergeMethod | null, detail?: string | null,
 /**
  * The daemon acted on the policy, with nobody clicking.
  */
-unattended: boolean, at_ms: number, };
+unattended: boolean, at_ms: number,
+/**
+ * For a restack row, the commit the replay started after.
+ */
+fork_sha?: string | null, };

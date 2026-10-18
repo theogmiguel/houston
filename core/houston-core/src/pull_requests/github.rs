@@ -112,6 +112,7 @@ pub fn detail_from_json(
             .get("isCrossRepository")
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
+        github_merge: None,
     };
     Some((link, detail))
 }
@@ -392,27 +393,84 @@ fn clip(body: String) -> String {
 const REACTION_GROUPS: &str =
     "reactionGroups { content viewerHasReacted reactors(first: 1) { totalCount } }";
 
-/// What the viewer may do, and how far the head is behind its base. The
-/// comparison needs the head ref qualified `owner:branch`, so it is written in
-/// rather than passed as a nullable variable GraphQL refuses.
+/// What the viewer may do, how far the head is behind its base, and the merge tools the
+/// merge queue hands off to. The comparison's head ref is qualified `owner:branch`, so it
+/// is written in rather than passed as a nullable variable GraphQL refuses.
 const ACCESS_QUERY: &str = "query PrAccess($owner: String!, $name: String!, $number: Int!) { \
     repository(owner: $owner, name: $name) { \
-    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
-    pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch } } }";
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed autoMergeAllowed \
+    pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch \
+    isMergeQueueEnabled mergeQueueEntry { state position headCommit { oid } } \
+    autoMergeRequest { mergeMethod } \
+    timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_DISABLED_EVENT]) { \
+    nodes { ... on RemovedFromMergeQueueEvent { createdAt reason } \
+    ... on AutoMergeDisabledEvent { createdAt reason } } } \
+    baseRef { refUpdateRule { requiredStatusCheckContexts } } } } }";
 
 const ACCESS_COMPARE_QUERY: &str =
     "query PrAccess($owner: String!, $name: String!, $number: Int!, $headRef: String!) { \
     repository(owner: $owner, name: $name) { \
-    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed autoMergeAllowed \
     pullRequest(number: $number) { \
     viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch \
-    baseRef { compare(headRef: $headRef) { behindBy } } } } }";
+    isMergeQueueEnabled mergeQueueEntry { state position headCommit { oid } } \
+    autoMergeRequest { mergeMethod } \
+    timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_DISABLED_EVENT]) { \
+    nodes { ... on RemovedFromMergeQueueEvent { createdAt reason } \
+    ... on AutoMergeDisabledEvent { createdAt reason } } } \
+    baseRef { compare(headRef: $headRef) { behindBy } \
+    refUpdateRule { requiredStatusCheckContexts } } } } }";
 
 pub struct PrAccessData {
     pub permissions: proto::PrPermissions,
     pub behind_by: Option<u32>,
     /// The merge methods the repository allows, in squash, merge, rebase order.
     pub merge_methods: Vec<proto::PrMergeMethod>,
+    pub github_merge: proto::PrGitHubMerge,
+    /// Whether auto-merge is armed, and with which method.
+    pub auto_merge: (bool, Option<proto::PrMergeMethod>),
+}
+
+/// GitHub's merge tools from the access read. A null GitHub hides from this
+/// viewer stays `None`; the merge queue never hands off on an unknown.
+fn github_merge_from(repository: &Value, pull_request: &Value) -> proto::PrGitHubMerge {
+    let removal = pull_request
+        .pointer("/timelineItems/nodes")
+        .and_then(Value::as_array)
+        .and_then(|nodes| nodes.last())
+        .and_then(|node| {
+            Some(proto::PrMergeRemoval {
+                reason: text(node.get("reason")).unwrap_or_else(|| "GitHub gave no reason".into()),
+                at_ms: timestamp_ms(node.get("createdAt"))?,
+            })
+        });
+    proto::PrGitHubMerge {
+        merge_queue_required: pull_request
+            .get("isMergeQueueEnabled")
+            .and_then(Value::as_bool),
+        auto_merge_allowed: repository.get("autoMergeAllowed").and_then(Value::as_bool),
+        required_checks: pull_request
+            .pointer("/baseRef/refUpdateRule/requiredStatusCheckContexts")
+            .and_then(Value::as_array)
+            .map(|checks| {
+                checks
+                    .iter()
+                    .filter_map(|c| c.as_str().map(str::to_string))
+                    .collect()
+            }),
+        queue_entry: pull_request
+            .get("mergeQueueEntry")
+            .filter(|e| !e.is_null())
+            .map(|e| proto::PrMergeQueueEntry {
+                state: text(e.get("state")).unwrap_or_default(),
+                position: e
+                    .get("position")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u32::try_from(p).ok()),
+                head_sha: text(e.pointer("/headCommit/oid")),
+            }),
+        removal,
+    }
 }
 
 pub fn access(
@@ -466,7 +524,18 @@ pub fn access(
     .filter(|(field, _)| repository_node.get(*field).and_then(Value::as_bool) == Some(true))
     .map(|(_, method)| method)
     .collect();
+    let auto_merge = pull_request
+        .get("autoMergeRequest")
+        .filter(|a| !a.is_null());
     Ok(PrAccessData {
+        github_merge: github_merge_from(repository_node, pull_request),
+        auto_merge: (
+            auto_merge.is_some(),
+            auto_merge
+                .and_then(|a| a.get("mergeMethod"))
+                .and_then(Value::as_str)
+                .and_then(merge_method_from),
+        ),
         permissions: proto::PrPermissions {
             can_write: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE"),
             can_triage: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE"),
@@ -1472,6 +1541,35 @@ mod tests {
             "a null says none is armed"
         );
         assert_eq!(d.auto_merge_method, None);
+    }
+
+    #[test]
+    fn githubs_merge_tools_keep_what_the_viewer_cannot_see_unknown() {
+        let hidden = github_merge_from(
+            &json!({}),
+            &json!({ "mergeQueueEntry": null, "baseRef": { "refUpdateRule": null } }),
+        );
+        assert_eq!(hidden, proto::PrGitHubMerge::default());
+        let shown = github_merge_from(
+            &json!({ "autoMergeAllowed": true }),
+            &json!({
+                "isMergeQueueEnabled": true,
+                "mergeQueueEntry": { "state": "QUEUED", "position": 2, "headCommit": { "oid": "abc" } },
+                "timelineItems": { "nodes": [
+                    { "createdAt": "2026-10-18T06:40:00Z", "reason": "Checks failed" }
+                ] },
+                "baseRef": { "refUpdateRule": { "requiredStatusCheckContexts": ["ci"] } }
+            }),
+        );
+        assert_eq!(shown.merge_queue_required, Some(true));
+        assert_eq!(shown.auto_merge_allowed, Some(true));
+        assert_eq!(shown.required_checks, Some(vec!["ci".to_string()]));
+        let entry = shown.queue_entry.unwrap();
+        assert_eq!(
+            (entry.state.as_str(), entry.position, entry.head_sha.as_deref()),
+            ("QUEUED", Some(2), Some("abc"))
+        );
+        assert_eq!(shown.removal.unwrap().reason, "Checks failed");
     }
 
     #[test]
