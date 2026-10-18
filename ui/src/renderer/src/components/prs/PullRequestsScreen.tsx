@@ -10,6 +10,7 @@ import { PrPageContent, PrPageHeader, PrPageFilters, PrPageGroupHeading, PrListE
 import { Segmented } from '../ui/Segmented'
 import { MergeQueueView, type MergeQueueHandOff } from './MergeQueueView'
 import { useMergeQueue } from './useMergeQueue'
+import { useTaskStartSettings } from '../../houston/useTasks'
 import { clearPrsViewRequest, usePrsViewRequest, type PrsView } from './prsView'
 import { PrStatusWord } from '../ui/PrPresentation'
 import { ContextMenu, ContextMenuItem, ContextMenuItems } from '../ui/ContextMenu'
@@ -76,6 +77,7 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
   const [context, setContext] = useState<{ item: PrListItem; x: number; y: number } | null>(null)
   const [view, setView] = useState<PrsView>('requests')
   const queue = useMergeQueue(client, directory)
+  const { settings: startSettings } = useTaskStartSettings(client, view === 'queue' ? queue.workspace : null)
   const viewRequest = usePrsViewRequest()
   const scrollRef = useRef<HTMLDivElement>(null)
   const previousWorkspace = useRef(workspace)
@@ -115,7 +117,7 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
     <div ref={scrollRef} data-testid="pr-list-scroll" className={PRS_CLASSES.PRS_LIST_COLUMN} onScroll={persist}>
       <PrPageContent width={view === 'queue' ? 'wide' : 'default'}><PrPageHeader workspace={workspace} options={options} onWorkspaceChange={(value) => onWorkspaceChange?.(value)} />
         <div className="flex"><Segmented aria-label="Pull request view" value={view} onChange={setView} options={[{ value: 'requests', label: 'Requests' }, { value: 'queue', label: 'Merge queue', count: queue.entries.filter((entry) => entry.position > 0).length }]} /></div>
-        {view === 'queue' ? <MergeQueueView queue={queue} onHandOff={onHandOff} onOpenSettings={onOpenMergeQueueSettings} /> : <><PrPageFilters query={query} onQueryChange={setQuery} state={selectedState} openCount={state === 'merged' || state === 'closed' ? null : items.filter((item) => item.state === 'open').length} onStateChange={(value) => { setSelectedState(value); onStateChange?.(value) }} />
+        {view === 'queue' ? <MergeQueueView queue={queue} onHandOff={onHandOff} onOpenSettings={onOpenMergeQueueSettings} defaultAgent={startSettings?.agent} /> : <><PrPageFilters query={query} onQueryChange={setQuery} state={selectedState} openCount={state === 'merged' || state === 'closed' ? null : items.filter((item) => item.state === 'open').length} onStateChange={(value) => { setSelectedState(value); onStateChange?.(value) }} />
         <PrRequestsList loading={loading} visible={visible} searching={query !== ''} groups={groups} selected={selected} onOpen={openItem} onContextMenu={menu} /></>}
       </PrPageContent>
     </div>

@@ -144,7 +144,7 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked' | 'merge-queue-restacked' | 'merge-queue-watching'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked' | 'merge-queue-restacked' | 'merge-queue-watching' | 'merge-queue-hand-off-picker'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -157,19 +157,20 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
   const selectedNumber = ['selected', 'timeline', 'code'].includes(mode) ? 93 : ['draft', 'closed'].includes(mode) ? 95 : null
   const client = useMemo(() => {
     const inspector = new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' })
-    inspector.mergeQueuePolicy = mode === 'merge-queue-policy' || mode === 'merge-queue-parked'
+    inspector.mergeQueuePolicy = mode === 'merge-queue-policy' || mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker'
     inspector.mergeQueueGitHub = mode === 'merge-queue-restacked' ? 'restacked' : mode === 'merge-queue-watching' ? 'watching' : 'houston'
     return inspector as unknown as HoustonClient
   }, [mode, selectedNumber])
   useEffect(() => {
     const screen = rootRef.current?.querySelector('[data-testid="pull-requests-screen"]')
-    if (mode === 'merge-queue-parked' || mode === 'merge-queue-restacked' || mode === 'merge-queue-watching') {
-      const pick = mode === 'merge-queue-parked' ? '#87' : '#79'
+    if (mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker' || mode === 'merge-queue-restacked' || mode === 'merge-queue-watching') {
+      const pick = mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker' ? '#87' : '#79'
       const timer = window.setInterval(() => {
         const row = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes(pick))
         if (!row) return
         row.click()
         window.clearInterval(timer)
+        if (mode === 'merge-queue-hand-off-picker') window.setTimeout(() => screen?.querySelector<HTMLButtonElement>('[data-testid="merge-queue-hand-off"]')?.click(), 50)
       }, 50)
       return () => window.clearInterval(timer)
     }

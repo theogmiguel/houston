@@ -166,7 +166,8 @@ describe('MergeQueueView', () => {
     fireEvent.click(screen.getByTestId('merge-queue-retry'))
     expect(queue.retry).toHaveBeenCalledWith(209)
     fireEvent.click(screen.getByTestId('merge-queue-hand-off'))
-    expect(onHandOff).toHaveBeenCalledWith('/repo/.houston/worktrees/settings-prefs', expect.stringContaining('- src/settings/Preferences.tsx'))
+    fireEvent.click(screen.getByTestId('merge-queue-hand-off-open'))
+    expect(onHandOff).toHaveBeenCalledWith('/repo/.houston/worktrees/settings-prefs', expect.stringContaining('- src/settings/Preferences.tsx'), 'claude')
     expect(onHandOff.mock.calls[0][1]).toContain('Rebase houston/settings-prefs onto main')
   })
 

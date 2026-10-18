@@ -119,6 +119,11 @@ export class InspectorClient {
     }))
   }
 
+  /** The workspace's default agent, which a hand-off pane preselects. */
+  taskStartSettingsGet(workspace: string): void {
+    queueMicrotask(() => this.emit({ type: 'task_start_settings', workspace, agent: 'codex', delivery: 'send' }))
+  }
+
   mergeQueueEnqueue(): number { return ++this.request }
   mergeQueueDequeue(): number { return ++this.request }
   mergeQueueMergeHead(): number { return ++this.request }

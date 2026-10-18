@@ -371,6 +371,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'prs/screen-merge-queue-parked': () => <PullRequestsScreenStory mode="merge-queue-parked" />,
   'prs/screen-merge-queue-restacked': () => <PullRequestsScreenStory mode="merge-queue-restacked" />,
   'prs/screen-merge-queue-watching': () => <PullRequestsScreenStory mode="merge-queue-watching" />,
+  'prs/screen-merge-queue-hand-off-picker': () => <PullRequestsScreenStory mode="merge-queue-hand-off-picker" />,
   'prs/screen-timeline': () => <PullRequestsScreenStory mode="timeline" />,
   'prs/screen-code': () => <PullRequestsScreenStory mode="code" />,
   'prs/screen-draft': () => <PullRequestsScreenStory mode="draft" />,

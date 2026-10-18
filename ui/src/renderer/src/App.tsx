@@ -4100,12 +4100,12 @@ export function App(): React.JSX.Element {
                         setSettingsSection("workspaces");
                         setSettings(true);
                       }}
-                      onHandOff={(worktree: string, prompt: string) => {
+                      onHandOff={(worktree, prompt, agent) => {
                         if (conn.kind !== "ready") return;
                         setRailView(null);
                         conn.client.createSession({
                           ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
-                          agent: "claude",
+                          agent,
                           project_dir: worktree,
                           prompt,
                         });

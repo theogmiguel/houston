@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconGitPullRequest } from '../icons'
-import type { MergeQueueEntry, MergeQueueLogEntry, MergeQueueSettings } from '../../houston/client'
+import type { AgentKind, MergeQueueEntry, MergeQueueLogEntry, MergeQueueSettings } from '../../houston/client'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { ListDetail, type ListDetailItem } from '../ui/ListDetail'
@@ -9,6 +9,7 @@ import { Notice } from '../ui/Notice'
 import { StatusLabel } from '../ui/StatusLabel'
 import { Tooltip } from '../ui/Tooltip'
 import { clockTime, entryLine, entryStatus, gateItems, handOffPrompt, inLine, loggedToday, logLine, logStatus, ordinal, parked, policyLine, shortSha } from './mergeQueueModel'
+import { MergeQueueHandOffPicker } from './MergeQueueHandOffPicker'
 import type { MergeQueueController } from './useMergeQueue'
 
 interface QueueItem extends ListDetailItem {
@@ -16,8 +17,8 @@ interface QueueItem extends ListDetailItem {
   logged?: MergeQueueLogEntry
 }
 
-/** A user-initiated pane in the entry's worktree, prompted with its failure. */
-export type MergeQueueHandOff = (worktree: string, prompt: string) => void
+/** A user-initiated pane of `agent` in the entry's worktree, prompted with its failure. */
+export type MergeQueueHandOff = (worktree: string, prompt: string, agent: AgentKind) => void
 
 function queueItems(entries: readonly MergeQueueEntry[], log: readonly MergeQueueLogEntry[], settings: MergeQueueSettings | null, now: number): QueueItem[] {
   const line = inLine(entries)
@@ -43,14 +44,16 @@ function queueItems(entries: readonly MergeQueueEntry[], log: readonly MergeQueu
 interface ViewActions {
   queue: MergeQueueController
   onHandOff?: MergeQueueHandOff
+  /** The workspace's default agent, preselected for a hand-off pane. */
+  defaultAgent?: AgentKind | null
 }
 
-function EntryActions({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & ViewActions): React.JSX.Element {
+function EntryActions({ entry, queue, onHandOff, onPick }: { entry: MergeQueueEntry; onPick: () => void } & ViewActions): React.JSX.Element {
   const busy = queue.busy !== null
   const dequeue = <Button variant={entry.position === 1 ? 'ghost' : 'secondary'} size="sm" disabled={busy} data-testid="merge-queue-dequeue" onClick={() => queue.dequeue(entry.number)}>Dequeue</Button>
   if (entry.status === 'parked' || entry.status === 'fixing') {
     return <>
-      {onHandOff && entry.worktree && <Button variant="secondary" size="sm" disabled={busy} data-testid="merge-queue-hand-off" onClick={() => onHandOff(entry.worktree as string, handOffPrompt(entry))}>Hand to a new pane</Button>}
+      {onHandOff && entry.worktree && <Button variant="secondary" size="sm" disabled={busy} data-testid="merge-queue-hand-off" onClick={onPick}>Hand to a new pane</Button>}
       <Button variant="primary" size="sm" disabled={busy} data-testid="merge-queue-retry" onClick={() => queue.retry(entry.number)}>Retry</Button>
       {dequeue}
     </>
@@ -76,8 +79,12 @@ function entryNotice(entry: MergeQueueEntry): React.JSX.Element | undefined {
   return undefined
 }
 
-function EntryDetail({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & ViewActions): React.JSX.Element {
-  const actions = <EntryActions entry={entry} queue={queue} onHandOff={onHandOff} />
+function EntryDetail({ entry, queue, onHandOff, defaultAgent }: { entry: MergeQueueEntry } & ViewActions): React.JSX.Element {
+  const [picking, setPicking] = useState(false)
+  const worktree = entry.worktree
+  const actions = picking && onHandOff && worktree
+    ? <MergeQueueHandOffPicker defaultAgent={defaultAgent} busy={queue.busy !== null} onCancel={() => setPicking(false)} onOpen={(agent) => { setPicking(false); onHandOff(worktree, handOffPrompt(entry), agent) }} />
+    : <EntryActions entry={entry} queue={queue} onHandOff={onHandOff} onPick={() => setPicking(true)} />
   return <MergeQueueDetail
     heading={`#${entry.number} ${entry.title ?? entry.head_ref}`}
     meta={entryMeta(entry)}
@@ -88,8 +95,8 @@ function EntryDetail({ entry, queue, onHandOff }: { entry: MergeQueueEntry } & V
   />
 }
 
-function QueueDetail({ item, queue, onHandOff }: { item: QueueItem | null } & ViewActions): React.JSX.Element | null {
-  if (item?.entry) return <EntryDetail key={item.id} entry={item.entry} queue={queue} onHandOff={onHandOff} />
+function QueueDetail({ item, queue, onHandOff, defaultAgent }: { item: QueueItem | null } & ViewActions): React.JSX.Element | null {
+  if (item?.entry) return <EntryDetail key={item.id} entry={item.entry} queue={queue} onHandOff={onHandOff} defaultAgent={defaultAgent} />
   if (item?.logged) {
     const logged = item.logged
     return <MergeQueueDetail
@@ -115,7 +122,7 @@ function useClock(running: boolean, fixed: number | undefined): number {
   return fixed ?? now
 }
 
-export function MergeQueueView({ queue, now, onHandOff, onOpenSettings }: { queue: MergeQueueController; now?: number; onHandOff?: MergeQueueHandOff; onOpenSettings?: () => void }): React.JSX.Element {
+export function MergeQueueView({ queue, now, onHandOff, onOpenSettings, defaultAgent }: { queue: MergeQueueController; now?: number; onHandOff?: MergeQueueHandOff; onOpenSettings?: () => void; defaultAgent?: AgentKind | null }): React.JSX.Element {
   const clock = useClock(queue.entries.some((e) => e.status === 'verifying'), now)
   if (queue.unavailable) return <Notice tone="warn" data-testid="merge-queue-unavailable">{queue.unavailable}</Notice>
   const items = queueItems(queue.entries, queue.log, queue.settings, clock)
@@ -130,7 +137,7 @@ export function MergeQueueView({ queue, now, onHandOff, onOpenSettings }: { queu
       items={items}
       backLabel="Merge queue"
       listEmpty={<EmptyState icon={IconGitPullRequest} heading="The merge queue is empty" description="Pull requests added to the merge queue appear here in the order they merge." />}
-      renderDetail={(item) => <QueueDetail item={item} queue={queue} onHandOff={onHandOff} />}
+      renderDetail={(item) => <QueueDetail item={item} queue={queue} onHandOff={onHandOff} defaultAgent={defaultAgent} />}
     />
   </div>
 }
