@@ -57,7 +57,7 @@ const ALL_SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'terminal', label: 'Terminal', icon: 'terminal', group: 'app', keywords: ['font', 'cursor', 'scrollback', 'ligatures', 'copy', 'bell', 'stack', 'tabs', 'idle'] },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', group: 'app', keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs'] },
   { id: 'notifications', label: 'Notifications', icon: 'bell', group: 'app', keywords: ['desktop', 'desktop notifications', 'in-app', 'in-app notices', 'sound', 'taskbar', 'finished', 'needs input'] },
-  { id: 'workspaces', label: 'Workspaces', icon: 'folder', group: 'work', keywords: ['workspace defaults', 'restore budget', 'open links', 'browser pane', 'background sessions', 'close idle', 'reap'] },
+  { id: 'workspaces', label: 'Workspaces', icon: 'folder', group: 'work', keywords: ['workspace defaults', 'restore budget', 'open links', 'browser pane', 'background sessions', 'close idle', 'reap', 'merge queue', 'merge when verified', 'verification command'] },
   { id: 'tasks', label: 'Tasks', icon: 'tasks', group: 'work', keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix'] },
   { id: 'orchestration', label: 'Orchestration', icon: 'fork', group: 'work', keywords: ['spawn', 'children', 'child panes', 'depth', 'hs-pane', 'caps', 'mailbox'] },
   { id: 'dictation', label: 'Dictation', icon: 'mic', group: 'work', keywords: ['dictation', 'voice', 'speech', 'microphone', 'whisper', 'transcribe', 'stt', 'push to talk', 'language'] },

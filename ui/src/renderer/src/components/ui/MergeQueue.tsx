@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Icon } from './Icon'
 import { IconCheck, IconClose } from '../icons'
+import { MonoBlock } from './MonoBlock'
 import { StatusLabel, type StatusLabelValue } from './StatusLabel'
 import { Text } from './Text'
 
@@ -18,7 +19,7 @@ export function MergeQueueStanding({ status, children }: { status: StatusLabelVa
   return <span className="inline-flex min-w-0 flex-wrap items-center gap-[var(--space-1-5)]"><StatusLabel status={status} size="small" /><span>{children}</span></span>
 }
 
-export type MergeQueueGateTone = 'passed' | 'failed' | 'not_applicable'
+export type MergeQueueGateTone = 'passed' | 'failed' | 'not_applicable' | 'pending'
 
 export interface MergeQueueGateItem {
   label: string
@@ -29,10 +30,11 @@ export interface MergeQueueGateItem {
 function GateMark({ state }: { state: MergeQueueGateTone }): React.JSX.Element {
   if (state === 'passed') return <span aria-hidden="true" className="flex flex-none text-[var(--ok)]"><Icon glyph={IconCheck} role="small" /></span>
   if (state === 'failed') return <span aria-hidden="true" className="flex flex-none text-[var(--stop)]"><Icon glyph={IconClose} role="small" /></span>
+  if (state === 'pending') return <span aria-hidden="true" className="flex w-[var(--space-3)] flex-none justify-center text-[var(--text-faint)]">·</span>
   return <span aria-hidden="true" className="flex w-[var(--space-3)] flex-none justify-center text-[var(--text-faint)]">–</span>
 }
 
-const GATE_STATE_NAME: Record<MergeQueueGateTone, string> = { passed: 'passed', failed: 'failed', not_applicable: 'does not apply' }
+const GATE_STATE_NAME: Record<MergeQueueGateTone, string> = { passed: 'passed', failed: 'failed', not_applicable: 'does not apply', pending: 'not run yet' }
 
 /** The gates of one entry as a checklist: a mark, the gate, and why it failed. */
 export function MergeQueueGates({ gates }: { gates: readonly MergeQueueGateItem[] }): React.JSX.Element {
@@ -40,7 +42,7 @@ export function MergeQueueGates({ gates }: { gates: readonly MergeQueueGateItem[
     {gates.map((gate) => <li key={gate.label} aria-label={`${gate.label}: ${GATE_STATE_NAME[gate.state]}`} className="flex min-w-0 items-start gap-[var(--space-2)]">
       <GateMark state={gate.state} />
       <span className="grid min-w-0 gap-[var(--space-0-5)]">
-        <Text size="ui" tone={gate.state === 'not_applicable' ? 'muted' : 'primary'}>{gate.label}</Text>
+        <Text size="ui" tone={gate.state === 'not_applicable' || gate.state === 'pending' ? 'muted' : 'primary'}>{gate.label}</Text>
         {gate.reason && <Text size="small" tone="muted">{gate.reason}</Text>}
       </span>
     </li>)}
@@ -61,6 +63,32 @@ export function MergeQueueDetail({ heading, meta, status, notice, gates, actions
   </section>
 }
 
+/** Why an entry left the line: the reason, then the conflicting files or the
+ *  tail of the command's output, never a count parsed from it. */
+export function MergeQueueFailure({ reason, files, output }: { reason: ReactNode; files?: readonly string[]; output?: string | null }): React.JSX.Element {
+  return <div className="grid min-w-0 gap-[var(--space-3)]" data-testid="merge-queue-failure">
+    <Text size="ui" tone="secondary">{reason}</Text>
+    {files && files.length > 0 && <div className="grid gap-[var(--space-1)]">
+      <Text size="label" weight="label" tone="faint">Conflicting files</Text>
+      <ul aria-label="Conflicting files" className="m-0 grid list-none gap-[var(--space-1)] p-0">
+        {files.map((file) => <li key={file} className="min-w-0 truncate"><Text size="small" tone="primary" mono>{file}</Text></li>)}
+      </ul>
+    </div>}
+    {output && <div className="grid gap-[var(--space-1)]">
+      <Text size="label" weight="label" tone="faint">Last lines of the output</Text>
+      <MonoBlock variant="reason" aria-label="Last lines of the output">{output}</MonoBlock>
+    </div>}
+  </div>
+}
+
+/** What the queue does on its own, above the list, with the queue's own actions. */
+export function MergeQueuePolicy({ children, actions }: { children: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return <div className="flex min-w-0 flex-wrap items-center gap-[var(--space-2)]" data-testid="merge-queue-policy">
+    <Text size="small" tone="muted" className="min-w-0 flex-1 truncate">{children}</Text>
+    {actions && <span className="flex flex-none items-center gap-[var(--space-1)]">{actions}</span>}
+  </div>
+}
+
 export function MergeQueueSpecimen(): React.JSX.Element {
   return <div className="grid max-w-[520px] gap-[var(--space-4)]">
     <div className="grid gap-[var(--space-1)]">
@@ -75,8 +103,17 @@ export function MergeQueueSpecimen(): React.JSX.Element {
       gates={<MergeQueueGates gates={[
         { label: 'Mergeable', state: 'passed' },
         { label: 'No unresolved review threads', state: 'failed', reason: 'PR #215 has 1 unresolved review thread' },
-        { label: 'Reviewer passed', state: 'not_applicable', reason: 'Not a task Slice' }
+        { label: 'Reviewer passed', state: 'not_applicable', reason: 'Not a task Slice' },
+        { label: 'Verification', state: 'pending', reason: 'Runs when it is first in line' }
       ]} />}
     />
+    <MergeQueuePolicy>Merges when verified · cargo nextest run --workspace · one at a time on this machine</MergeQueuePolicy>
+    <MergeQueueDetail
+      heading="#209 Show preferences in Settings"
+      meta="houston/settings-prefs · out of line"
+      status="Parked"
+      notice={<MergeQueueFailure reason="Rebasing onto main@7f03d1 stopped on a conflict in 2 files" files={['src/settings/Preferences.tsx', 'src/lib/loadPreferences.ts']} />}
+    />
+    <MergeQueueFailure reason="`cargo test` failed (exit 101) on the head rebased onto main@a91c2e" output={'test export::csv_rows ... FAILED\nfailures:\n    export::csv_rows'} />
   </div>
 }

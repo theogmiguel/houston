@@ -123,6 +123,15 @@ describe('the rail nav block', () => {
     expect(rows().find((row) => row.getAttribute('data-view') === 'tasks')?.textContent).toBe('Tasks')
   })
 
+  it('counts parked merge queue entries on Pull requests in accent ink, and omits zero', () => {
+    render({ mergeQueueParked: 1 })
+    const count = rows().find((row) => row.getAttribute('data-view') === 'prs')?.querySelector('.tabular-nums')
+    expect(count?.textContent).toBe('1')
+    expect(count?.className).toContain('text-[var(--accent)]')
+    render({ mergeQueueParked: 0 })
+    expect(rows().find((row) => row.getAttribute('data-view') === 'prs')?.textContent).toBe('Pull requests')
+  })
+
   it('puts setup attention on the Settings footer action as a neutral count rather than a retired Harness row', () => {
     render({ agentAttention: agentAttentionFor({ agentHooks: null, skills: null, reviews: [], checks: [['github', { state: 'failed', message: 'missing npx' }]] }) })
     expect(q('[data-testid="rail-settings"]')?.getAttribute('aria-label')).toBe('Settings, 1 agent setting needs you')

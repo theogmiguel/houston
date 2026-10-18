@@ -8,7 +8,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { NavSurfaceFrame } from '../ui/NavSurfaceFrame'
 import { PrPageContent, PrPageHeader, PrPageFilters, PrPageGroupHeading, PrListEntry } from '../ui/PrPage'
 import { Segmented } from '../ui/Segmented'
-import { MergeQueueView } from './MergeQueueView'
+import { MergeQueueView, type MergeQueueHandOff } from './MergeQueueView'
 import { useMergeQueue } from './useMergeQueue'
 import { clearPrsViewRequest, usePrsViewRequest, type PrsView } from './prsView'
 import { PrStatusWord } from '../ui/PrPresentation'
@@ -19,7 +19,7 @@ import { PullRequestTab } from '../git/PullRequestTab'
 import type { SurfaceKind } from '../../scmPanel'
 
 export interface PullRequestsScreenProps {
-  repoName: string; workspace: string; currentUser: string; items: PrListItem[]; client?: HoustonClient | null; directory?: string | null; selectedNumber?: number | null; state?: PrListState; sort?: PrSort; loading?: boolean; workspaces?: readonly Workspace[]; onWorkspaceChange?: (workspace: string) => void; onStateChange?: (state: PrListState) => void; onSortChange?: (sort: PrSort) => void; onRefresh?: () => void; onOpenPullRequest?: (item: PrListItem) => void; onCheckoutInWorktree?: (item: PrListItem) => void; onOpenSurface?: (surface: SurfaceKind) => void; onOpenUrlInPane?: (url: string) => void
+  repoName: string; workspace: string; currentUser: string; items: PrListItem[]; client?: HoustonClient | null; directory?: string | null; selectedNumber?: number | null; state?: PrListState; sort?: PrSort; loading?: boolean; workspaces?: readonly Workspace[]; onWorkspaceChange?: (workspace: string) => void; onStateChange?: (state: PrListState) => void; onSortChange?: (sort: PrSort) => void; onRefresh?: () => void; onOpenPullRequest?: (item: PrListItem) => void; onCheckoutInWorktree?: (item: PrListItem) => void; onOpenSurface?: (surface: SurfaceKind) => void; onOpenUrlInPane?: (url: string) => void; onHandOff?: MergeQueueHandOff; onOpenMergeQueueSettings?: () => void
 }
 
 function PrRow({ item, selected, onOpen, onContextMenu }: { item: PrListItem; selected: boolean; onOpen: () => void; onContextMenu: (event: React.MouseEvent, item: PrListItem) => void }): React.JSX.Element {
@@ -66,7 +66,7 @@ function PrScreenDetail({ item, client, directory, requestNonce, onOpenUrlInPane
   return <aside className={PRS_CLASSES.PRS_DETAIL_COLUMN} data-testid="pr-screen-detail" aria-label={`Pull request #${item.number}`}><div className={PRS_CLASSES.PRS_DETAIL_CONTENT}><PullRequestTab key={`${directory}:${item.number}`} client={client} dir={directory} compact onOpenUrlInPane={onOpenUrlInPane} requestedPr={{ number: item.number, nonce: requestNonce }} /></div></aside>
 }
 
-export function PullRequestsScreen({ repoName, workspace, currentUser, items, client = null, directory = null, selectedNumber = null, state = 'open', sort = 'updated', loading = false, workspaces = [], onWorkspaceChange, onStateChange, onOpenPullRequest, onCheckoutInWorktree, onOpenUrlInPane }: PullRequestsScreenProps): React.JSX.Element {
+export function PullRequestsScreen({ repoName, workspace, currentUser, items, client = null, directory = null, selectedNumber = null, state = 'open', sort = 'updated', loading = false, workspaces = [], onWorkspaceChange, onStateChange, onOpenPullRequest, onCheckoutInWorktree, onOpenUrlInPane, onHandOff, onOpenMergeQueueSettings }: PullRequestsScreenProps): React.JSX.Element {
   const storageKey = `tr-pr-list:${workspace}`
   const [query, setQuery] = useState('')
   const [selectedState, setSelectedState] = useState(pageState(state))
@@ -114,8 +114,8 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
   return <NavSurfaceFrame row data-testid="pull-requests-screen">
     <div ref={scrollRef} data-testid="pr-list-scroll" className={PRS_CLASSES.PRS_LIST_COLUMN} onScroll={persist}>
       <PrPageContent width={view === 'queue' ? 'wide' : 'default'}><PrPageHeader workspace={workspace} options={options} onWorkspaceChange={(value) => onWorkspaceChange?.(value)} />
-        <div className="flex"><Segmented aria-label="Pull request view" value={view} onChange={setView} options={[{ value: 'requests', label: 'Requests' }, { value: 'queue', label: 'Merge queue', count: queue.entries.length }]} /></div>
-        {view === 'queue' ? <MergeQueueView queue={queue} /> : <><PrPageFilters query={query} onQueryChange={setQuery} state={selectedState} openCount={state === 'merged' || state === 'closed' ? null : items.filter((item) => item.state === 'open').length} onStateChange={(value) => { setSelectedState(value); onStateChange?.(value) }} />
+        <div className="flex"><Segmented aria-label="Pull request view" value={view} onChange={setView} options={[{ value: 'requests', label: 'Requests' }, { value: 'queue', label: 'Merge queue', count: queue.entries.filter((entry) => entry.position > 0).length }]} /></div>
+        {view === 'queue' ? <MergeQueueView queue={queue} onHandOff={onHandOff} onOpenSettings={onOpenMergeQueueSettings} /> : <><PrPageFilters query={query} onQueryChange={setQuery} state={selectedState} openCount={state === 'merged' || state === 'closed' ? null : items.filter((item) => item.state === 'open').length} onStateChange={(value) => { setSelectedState(value); onStateChange?.(value) }} />
         <PrRequestsList loading={loading} visible={visible} searching={query !== ''} groups={groups} selected={selected} onOpen={openItem} onContextMenu={menu} /></>}
       </PrPageContent>
     </div>

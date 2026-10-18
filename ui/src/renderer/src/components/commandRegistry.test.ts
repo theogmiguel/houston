@@ -219,6 +219,17 @@ describe('commandRegistry — buildCommands', () => {
     expect(without?.disabledReason).toMatch(/no open pull request/)
   })
 
+  it('pauses the selected workspace’s merge queue, and says why it cannot with every workspace shown', () => {
+    const pauseMergeQueue = vi.fn()
+    const pause = buildCommands({ actions: makeActions({ pauseMergeQueue }), hasWorkspace: true, workspaces: [] }).find((c) => c.id === 'pr.pause-merge-queue')
+    expect(pause?.title).toBe('Pause merge queue')
+    pause?.run()
+    expect(pauseMergeQueue).toHaveBeenCalled()
+    const without = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] }).find((c) => c.id === 'pr.pause-merge-queue')
+    expect(without?.enabled).toBe(false)
+    expect(without?.disabledReason).toMatch(/Select a workspace/)
+  })
+
   it('any pending Settings section is offered but disabled, with a reason', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
     for (const section of SETTINGS_SECTIONS.filter((x) => x.pending)) {

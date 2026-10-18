@@ -273,6 +273,7 @@ function detail(o: Partial<PrDetail> = {}): PrDetail {
     threads_message: null,
     auto_merge_enabled: null,
     auto_merge_method: null,
+    merge_methods: [],
     cross_repository: false,
     ...o
   }
@@ -1515,10 +1516,14 @@ describe('merge queue footer', () => {
     return { number: 61, repository: 'o/r', url: 'https://github.com/o/r/pull/61', title: 'a change', head_ref: 'feat/x', head_sha: HEAD_SHA, base_ref: 'main', depends_on: null, session: null, position: 1, enqueued_at_ms: 1, read_at_ms: 2, status: 'ready', reason: null, gates, ...o }
   }
   function queue(client: FakeClient, entries: Record<string, unknown>[]): void {
-    act(() => client.emit({ type: 'merge_queue', workspace: '/repo', dir: '/repo', entries, merged: [], message: null }))
+    act(() => client.emit({ type: 'merge_queue', workspace: '/repo', dir: '/repo', entries, log: [], settings: null, global_paused: false, away: { merged: 0, parked: 0, last_merge_at_ms: null }, message: null }))
   }
   function byTestId(id: string): HTMLButtonElement | null {
     return container!.querySelector(`[data-testid="${id}"]`)
+  }
+  function policy(client: FakeClient, entries: Record<string, unknown>[], mergeWhenVerified: boolean): void {
+    const settings = { merge_when_verified: mergeWhenVerified, verification_command: 'cargo test', time_limit_minutes: 30, paused: false }
+    act(() => client.emit({ type: 'merge_queue', workspace: '/repo', dir: '/repo', entries, log: [], settings, global_paused: false, away: { merged: 0, parked: 0, last_merge_at_ms: null }, message: null }))
   }
 
   it('offers "Add to merge queue" beside the usual merge control when the pull request is not queued', () => {
@@ -1560,10 +1565,34 @@ describe('merge queue footer', () => {
     expect(client.mergeQueueDequeueCalls.map((c) => c.number)).toEqual([61])
   })
 
+  it('with merge when verified on, shows the queue state in place of Merge and keeps a skip-the-queue merge in the overflow', () => {
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    policy(client, [entry({ status: 'verifying', verifying_since_ms: 1 })], true)
+    expect(container!.textContent).toContain('1st in merge queue · merges on its own when verification passes on main')
+    expect(container!.textContent).toContain('Verifying')
+    expect(byTestId('pr-queue-merge')).toBeNull()
+    expect(byTestId('pr-merge')).toBeNull()
+    act(() => (container!.querySelector('[aria-label="More merge queue actions"]') as HTMLButtonElement).click())
+    const skip = [...container!.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Merge now, skipping the queue') as HTMLButtonElement
+    act(() => skip.click())
+    expect(client.prMergeCalls).toEqual([expect.objectContaining({ number: 61, sha: HEAD_SHA })])
+  })
+
+  it('with the policy off, a verified head merges the verified commit it names', () => {
+    const verified = 'f'.repeat(40)
+    const client = mount()
+    act(() => client.emit(detailMsg({ detail: clean }) as never))
+    policy(client, [entry({ verification: { base_ref: 'main', base_sha: 'c40e1b0000000000000000000000000000000000', head_sha: HEAD_SHA, verified_sha: verified, at_ms: 1 } })], false)
+    expect(container!.textContent).toContain('verified on main@c40e1b0; merges fffffff exactly')
+    act(() => byTestId('pr-queue-merge')!.click())
+    expect(client.mergeQueueMergeHeadCalls).toEqual([expect.objectContaining({ number: 61, sha: HEAD_SHA })])
+  })
+
   it('shows no queue footer where the workspace has no merge queue', () => {
     const client = mount()
     act(() => client.emit(detailMsg({ detail: clean }) as never))
-    act(() => client.emit({ type: 'merge_queue', workspace: '', dir: '/repo', entries: [], merged: [], message: '/repo has no git remote, so it has no merge queue' }))
+    act(() => client.emit({ type: 'merge_queue', workspace: '', dir: '/repo', entries: [], log: [], settings: null, global_paused: false, away: { merged: 0, parked: 0, last_merge_at_ms: null }, message: '/repo has no git remote, so it has no merge queue' }))
     expect(byTestId('pr-queue-add')).toBeNull()
     expect(byTestId('pr-merge')).not.toBeNull()
   })

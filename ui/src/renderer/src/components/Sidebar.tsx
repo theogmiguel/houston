@@ -471,6 +471,8 @@ interface Props {
   harnessAttention?: number;
   agentAttention?: AgentAttention;
   taskTurnCount?: number;
+  /** Parked merge queue entries; the Pull requests row counts them in accent. */
+  mergeQueueParked?: number;
 
   className?: string;
   gridArea?: 'rail';
@@ -667,6 +669,7 @@ function RailNav({
   hidden,
   paletteChord,
   taskTurnCount,
+  mergeQueueParked,
   onOpenPalette,
   onSelect,
   onRowMenu,
@@ -675,6 +678,7 @@ function RailNav({
   hidden: ReadonlySet<RailView>;
   paletteChord: string | null | undefined;
   taskTurnCount: number;
+  mergeQueueParked: number;
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
@@ -698,7 +702,7 @@ function RailNav({
             onClick={() => onSelect(v)}
             onContextMenu={(e) => onRowMenu(e, v)}
             trailing={
-v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="warn" /> : null
+v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="warn" /> : v === "prs" && mergeQueueParked > 0 ? <Count value={mergeQueueParked} from="accent" /> : null
             }
           />
         );
@@ -1245,6 +1249,7 @@ export function Sidebar({
   updateVersion,
   agentAttention,
   taskTurnCount = 0,
+  mergeQueueParked = 0,
   className = "",
   gridArea,
   onHeadMouseDown,
@@ -1872,6 +1877,7 @@ export function Sidebar({
           hidden={hiddenRailViews}
           paletteChord={paletteChord}
           taskTurnCount={taskTurnCount}
+          mergeQueueParked={mergeQueueParked}
           onOpenPalette={onOpenPalette ?? (() => {})}
           onSelect={selectRailView}
           onRowMenu={openNavMenu}

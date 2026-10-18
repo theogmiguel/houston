@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { HoustonClient, MergeQueueEntry, MergeQueueMerge, PrMergeMethod } from '../../houston/client'
+import type { HoustonClient, MergeQueueAway, MergeQueueEntry, MergeQueueLogEntry, MergeQueueSettings, PrMergeMethod } from '../../houston/client'
 
 export interface MergeQueueReply {
   ok: boolean
@@ -11,25 +11,40 @@ export interface MergeQueueController {
   /** The workspace the daemon resolved `dir` to; null until the first reply. */
   workspace: string | null
   entries: MergeQueueEntry[]
-  merged: MergeQueueMerge[]
+  /** The last day's merge log, newest first. */
+  log: MergeQueueLogEntry[]
+  settings: MergeQueueSettings | null
+  /** Every queue of the daemon is paused. */
+  globalPaused: boolean
+  away: MergeQueueAway
   loaded: boolean
   /** Why `dir` has no merge queue, such as a missing GitHub remote. */
   unavailable: string | null
-  /** The pull request a request is in flight for. */
+  /** The pull request a request is in flight for; 0 for a workspace-wide one. */
   busy: number | null
   reply: MergeQueueReply | null
   enqueue: (number: number, dependsOn?: number | null) => void
   dequeue: (number: number) => void
   mergeHead: (number: number, expectedHeadSha: string, method: PrMergeMethod) => void
+  retry: (number: number) => void
+  revert: (number: number) => void
+  setPaused: (paused: boolean) => void
+  setSettings: (mergeWhenVerified: boolean, command: string, timeLimitMinutes: number) => void
+  acknowledge: () => void
   clearReply: () => void
 }
 
+const NO_AWAY: MergeQueueAway = { merged: 0, parked: 0, last_merge_at_ms: null }
+
 /** The merge queue of the workspace `dir` belongs to, kept current by the
- *  daemon's broadcasts, and the three verbs a person has on it. */
+ *  daemon's broadcasts, and the verbs a person has on it. */
 export function useMergeQueue(client: HoustonClient | null, dir: string | null | undefined, active = true): MergeQueueController {
   const [workspace, setWorkspace] = useState<string | null>(null)
   const [entries, setEntries] = useState<MergeQueueEntry[]>([])
-  const [merged, setMerged] = useState<MergeQueueMerge[]>([])
+  const [log, setLog] = useState<MergeQueueLogEntry[]>([])
+  const [settings, setSettingsState] = useState<MergeQueueSettings | null>(null)
+  const [globalPaused, setGlobalPaused] = useState(false)
+  const [away, setAway] = useState<MergeQueueAway>(NO_AWAY)
   const [loaded, setLoaded] = useState(false)
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
@@ -42,7 +57,10 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
     pending.current = null
     setWorkspace(null)
     setEntries([])
-    setMerged([])
+    setLog([])
+    setSettingsState(null)
+    setGlobalPaused(false)
+    setAway(NO_AWAY)
     setLoaded(false)
     setUnavailable(null)
     setBusy(null)
@@ -57,9 +75,13 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
         setUnavailable(message.message ?? null)
       }
       setEntries(message.entries)
-      setMerged(message.merged)
+      setLog(message.log)
+      setSettingsState(message.settings ?? null)
+      setGlobalPaused(message.global_paused ?? false)
+      setAway(message.away ?? NO_AWAY)
       setLoaded(true)
     })
+    const offSummary = client.subscribe('merge_queue_summary', (message) => setGlobalPaused(message.global_paused))
     const offReply = client.subscribe('merge_queue_reply', (message) => {
       if (message.dir !== dir || message.request !== pending.current) return
       pending.current = null
@@ -67,7 +89,7 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
       setReply({ ok: message.ok, number: message.number, text: message.message ?? (message.ok ? 'Done' : 'The merge queue refused the request') })
     })
     client.mergeQueueGet(dir)
-    return () => { offQueue(); offReply() }
+    return () => { offQueue(); offSummary(); offReply() }
   }, [client, dir, active])
 
   const begin = useCallback((number: number, send: (client: HoustonClient, dir: string) => number) => {
@@ -80,7 +102,42 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
   const enqueue = useCallback((number: number, dependsOn: number | null = null) => begin(number, (c, d) => c.mergeQueueEnqueue(d, number, dependsOn)), [begin])
   const dequeue = useCallback((number: number) => begin(number, (c, d) => c.mergeQueueDequeue(d, number)), [begin])
   const mergeHead = useCallback((number: number, expectedHeadSha: string, method: PrMergeMethod) => begin(number, (c, d) => c.mergeQueueMergeHead(d, number, expectedHeadSha, method)), [begin])
+  const retry = useCallback((number: number) => begin(number, (c, d) => c.mergeQueueRetry(d, number)), [begin])
+  const revert = useCallback((number: number) => begin(number, (c, d) => c.mergeQueueRevert(d, number)), [begin])
+  const setPaused = useCallback((paused: boolean) => begin(0, (c, d) => c.mergeQueuePause(d, paused)), [begin])
+  const setSettings = useCallback((mergeWhenVerified: boolean, command: string, timeLimitMinutes: number) => begin(0, (c, d) => c.mergeQueueSettingsSet(d, mergeWhenVerified, command, timeLimitMinutes)), [begin])
+  const acknowledge = useCallback(() => { if (client && dir) client.mergeQueueAcknowledge(dir) }, [client, dir])
   const clearReply = useCallback(() => setReply(null), [])
 
-  return { workspace, entries, merged, loaded, unavailable, busy, reply, enqueue, dequeue, mergeHead, clearReply }
+  return { workspace, entries, log, settings, globalPaused, away, loaded, unavailable, busy, reply, enqueue, dequeue, mergeHead, retry, revert, setPaused, setSettings, acknowledge, clearReply }
+}
+
+/** Parked entries across every workspace, for the rail's Pull requests count:
+ *  each daemon's summary seeds it and every queue broadcast keeps it current. */
+export function useMergeQueueParked(client: HoustonClient | null): number {
+  const [parked, setParked] = useState<ReadonlyMap<string, number>>(new Map())
+  useEffect(() => {
+    setParked(new Map())
+    if (!client) return
+    const offSummary = client.subscribe('merge_queue_summary', (message) => setParked((current) => {
+      const next = new Map(current)
+      for (const row of message.parked) next.set(row.workspace, row.parked)
+      return next
+    }))
+    const offQueue = client.subscribe('merge_queue', (message) => {
+      if (!message.workspace) return
+      const count = message.entries.filter((entry) => entry.status === 'parked').length
+      setParked((current) => {
+        if ((current.get(message.workspace) ?? 0) === count) return current
+        const next = new Map(current)
+        next.set(message.workspace, count)
+        return next
+      })
+    })
+    client.mergeQueueSummaryGet()
+    return () => { offSummary(); offQueue() }
+  }, [client])
+  let total = 0
+  for (const count of parked.values()) total += count
+  return total
 }

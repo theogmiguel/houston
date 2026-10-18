@@ -10,6 +10,8 @@ import { actionDisabledReason } from './prDetailUi'
 import { MergeQueueStanding } from '../ui/MergeQueue'
 import { entryStatus, ordinal, queueEntryFor, shortSha } from '../prs/mergeQueueModel'
 import type { MergeQueueController } from '../prs/useMergeQueue'
+import { requestPrsView } from '../prs/prsView'
+import { ActionMenu } from '../ui/ActionMenu'
 
 type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState; queue?: MergeQueueController }
 
@@ -57,21 +59,34 @@ function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, wait
 }
 
 /** The merge queue's footer: where this pull request stands in the queue, with
- *  Dequeue or "Add to merge queue". Only the head merges from the queue. */
-function PrQueueFooter({ link, detail, method, queue }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController }): React.JSX.Element | null {
+ *  Dequeue or "Add to merge queue". With "merge when verified" on, the queue
+ *  merges and the overflow keeps "Merge now, skipping the queue"; with it off,
+ *  the head's Merge pushes and merges the verified commit. */
+function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController; pr: PrDetailController }): React.JSX.Element | null {
   if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
   const entry = queueEntryFor(queue.entries, link.repository, link.number)
   const busy = queue.busy !== null
   if (!entry) {
-    const last = queue.entries.at(-1)
+    const last = queue.entries.filter((e) => e.position > 0).at(-1)
     return <PrMergeFooter consequence={last ? `Not queued; joins after #${last.number}` : 'Not queued'}><Button variant="secondary" size="sm" data-testid="pr-queue-add" disabled={busy} onClick={() => queue.enqueue(link.number)}>Add to merge queue</Button></PrMergeFooter>
   }
+  const policy = queue.settings?.merge_when_verified ?? false
   const head = entry.position === 1
-  const previous = queue.entries[entry.position - 2]
-  const line = entry.reason ?? (head ? `merges ${shortSha(detail.head_sha)} exactly, by ${method}` : `merges after #${previous?.number ?? entry.depends_on}`)
-  return <PrMergeFooter consequence={<MergeQueueStanding status={entryStatus(entry)}>{ordinal(entry.position)} in merge queue · {line}</MergeQueueStanding>}>
-    <Button variant={head ? 'ghost' : 'secondary'} size="sm" data-testid="pr-queue-dequeue" disabled={busy} onClick={() => queue.dequeue(link.number)}>Dequeue</Button>
-    {head && <Tooltip label={entry.reason ?? undefined}><Button variant="primary" size="sm" data-testid="pr-queue-merge" disabled={busy || entry.status !== 'ready'} onClick={() => queue.mergeHead(link.number, detail.head_sha, method)}>Merge</Button></Tooltip>}
+  const place = entry.position > 0 ? `${ordinal(entry.position)} in merge queue` : 'out of line'
+  const verified = entry.verification
+  const base = entry.base_ref ?? 'its base'
+  const line = entry.reason
+    ?? (policy ? `merges on its own when verification passes on ${base}`
+      : verified ? `verified on ${verified.base_ref}@${shortSha(verified.base_sha)}; merges ${shortSha(verified.verified_sha)} exactly`
+        : head ? `merges ${shortSha(detail.head_sha)} exactly, by ${method}` : `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`)
+  const overflow = [
+    ...(policy ? [{ label: 'Merge now, skipping the queue', onSelect: () => pr.merge(link.number, method, detail.head_sha) }] : []),
+    { label: 'Open merge queue', onSelect: () => requestPrsView({ view: 'queue' }) }
+  ]
+  return <PrMergeFooter consequence={<MergeQueueStanding status={entryStatus(entry)}>{place} · {line}</MergeQueueStanding>}>
+    <Button variant={head && !policy ? 'ghost' : 'secondary'} size="sm" data-testid="pr-queue-dequeue" disabled={busy} onClick={() => queue.dequeue(link.number)}>Dequeue</Button>
+    {head && !policy && <Tooltip label={entry.reason ?? undefined}><Button variant="primary" size="sm" data-testid="pr-queue-merge" disabled={busy || entry.status !== 'ready'} onClick={() => queue.mergeHead(link.number, detail.head_sha, method)}>Merge</Button></Tooltip>}
+    <ActionMenu label="More merge queue actions" iconOnly items={overflow} />
   </PrMergeFooter>
 }
 
@@ -86,6 +101,6 @@ export function PrMergeBox(props: MergeBoxProps): React.JSX.Element {
     {rest.length > 0 && <PrChecksList state={{ ...checks, listProps: { ...checks.listProps, checks: rest } }} />}
     {queue?.reply && !queue.reply.ok && queue.reply.number === link.number && <PrReadinessRow tone="stop" heading="The merge queue refused" detail={queue.reply.text} />}
     {!queued && <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>}
-    {queue && <PrQueueFooter link={link} detail={detail} method={method} queue={queue} />}
+    {queue && <PrQueueFooter link={link} detail={detail} method={method} queue={queue} pr={props.pr} />}
   </PrMergeFrame>
 }

@@ -23,6 +23,8 @@ interface PullRequestsRailScreenProps {
   onRefresh: () => void
   onOpenSurface?: (surface: SurfaceKind) => void
   onOpenUrlInPane?: (url: string) => void
+  onHandOff?: (worktree: string, prompt: string) => void
+  onOpenMergeQueueSettings?: () => void
 }
 
 export function PullRequestsRailScreen(props: PullRequestsRailScreenProps): React.JSX.Element {
