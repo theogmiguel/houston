@@ -427,8 +427,9 @@ pub struct PrAccessData {
     /// The merge methods the repository allows, in squash, merge, rebase order.
     pub merge_methods: Vec<proto::PrMergeMethod>,
     pub github_merge: proto::PrGitHubMerge,
-    /// Whether auto-merge is armed, and with which method.
-    pub auto_merge: (bool, Option<proto::PrMergeMethod>),
+    /// Whether auto-merge is armed, and with which method; `None` when the answer
+    /// carried no `autoMergeRequest` at all.
+    pub auto_merge: Option<(bool, Option<proto::PrMergeMethod>)>,
 }
 
 /// GitHub's merge tools from the access read. A null GitHub hides from this
@@ -524,18 +525,17 @@ pub fn access(
     .filter(|(field, _)| repository_node.get(*field).and_then(Value::as_bool) == Some(true))
     .map(|(_, method)| method)
     .collect();
-    let auto_merge = pull_request
-        .get("autoMergeRequest")
-        .filter(|a| !a.is_null());
-    Ok(PrAccessData {
-        github_merge: github_merge_from(repository_node, pull_request),
-        auto_merge: (
-            auto_merge.is_some(),
-            auto_merge
-                .and_then(|a| a.get("mergeMethod"))
+    let auto_merge = pull_request.get("autoMergeRequest").map(|a| {
+        (
+            !a.is_null(),
+            a.get("mergeMethod")
                 .and_then(Value::as_str)
                 .and_then(merge_method_from),
-        ),
+        )
+    });
+    Ok(PrAccessData {
+        github_merge: github_merge_from(repository_node, pull_request),
+        auto_merge,
         permissions: proto::PrPermissions {
             can_write: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE"),
             can_triage: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE"),
