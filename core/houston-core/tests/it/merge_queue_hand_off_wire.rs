@@ -271,3 +271,57 @@ async fn a_merge_refused_for_githubs_merge_queue_fails_with_githubs_words_and_te
     assert!(rig.has_flag("queued-1"), "the next landing hands off");
     assert_eq!(rig.entry(1).status, proto::MergeQueueStatus::Watching);
 }
+
+#[tokio::test]
+async fn a_host_whose_schema_lacks_the_hand_off_fields_keeps_its_reads_and_houston_merges() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    // The base would hand off, but this host's GraphQL schema has no such fields.
+    rig.flag("merge-queue", "");
+    rig.flag("hand-off-unsupported", "");
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.enqueue(1, None);
+    let access = || -> Vec<String> {
+        std::fs::read_to_string(rig.bin.join("access.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    };
+    assert_eq!(
+        access(),
+        ["enlarged", "base"],
+        "one retry without the fields"
+    );
+    let cached = hand_off(&rig).expect("the read still answers");
+    assert_eq!(cached.mode, proto::MergeQueueHandOff::Houston);
+
+    let (_, detail) = houston_core::pull_requests::read(
+        std::path::Path::new(&rig.workspace),
+        Some(1),
+        proto::PullRequestLinkSource::Manual,
+        None,
+    )
+    .unwrap();
+    let viewer = detail.viewer.expect("permissions read as before");
+    assert!(viewer.can_write && viewer.can_update);
+    assert_eq!(
+        detail.merge_methods,
+        [
+            proto::PrMergeMethod::Squash,
+            proto::PrMergeMethod::Merge,
+            proto::PrMergeMethod::Rebase
+        ]
+    );
+    assert_eq!(
+        access(),
+        ["enlarged", "base", "base"],
+        "the host is remembered: the next read skips the enlarged query"
+    );
+
+    rig.settings(true, "git --version");
+    rig.tick().await;
+    assert!(rig.entries().is_empty(), "{:?}", rig.entries());
+    assert_eq!(rig.calls("pr merge 1").len(), 1, "Houston merged it");
+    assert!(!rig.has_flag("queued-1"), "nothing went to GitHub's queue");
+}

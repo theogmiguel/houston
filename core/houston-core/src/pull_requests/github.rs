@@ -421,6 +421,65 @@ const ACCESS_COMPARE_QUERY: &str =
     baseRef { compare(headRef: $headRef) { behindBy } \
     refUpdateRule { requiredStatusCheckContexts } } } } }";
 
+/// The access read without the hand-off fields, for a host whose schema lacks them.
+const ACCESS_BASE_QUERY: &str = "query PrAccess($owner: String!, $name: String!, $number: Int!) { \
+    repository(owner: $owner, name: $name) { \
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
+    pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch } } }";
+
+const ACCESS_BASE_COMPARE_QUERY: &str =
+    "query PrAccess($owner: String!, $name: String!, $number: Int!, $headRef: String!) { \
+    repository(owner: $owner, name: $name) { \
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
+    pullRequest(number: $number) { \
+    viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch \
+    baseRef { compare(headRef: $headRef) { behindBy } } } } }";
+
+/// Names only the enlarged access query asks for; a schema error naming one means
+/// the host predates them, as an older GitHub Enterprise Server does.
+const HAND_OFF_FIELDS: &[&str] = &[
+    "isMergeQueueEnabled",
+    "mergeQueueEntry",
+    "autoMergeRequest",
+    "autoMergeAllowed",
+    "refUpdateRule",
+    "requiredStatusCheckContexts",
+    "REMOVED_FROM_MERGE_QUEUE_EVENT",
+    "AUTO_MERGE_DISABLED_EVENT",
+    "RemovedFromMergeQueueEvent",
+    "AutoMergeDisabledEvent",
+];
+
+/// Hosts whose schema lacks the hand-off fields, for the daemon's lifetime: their
+/// access reads go straight to the base query and the merge queue merges itself there.
+static NO_HAND_OFF_HOSTS: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// The host the workspace's remote names, or the remote itself for a local path.
+fn api_host(dir: &Path) -> String {
+    let Some(url) = crate::git::remote_url(dir) else {
+        return dir.display().to_string();
+    };
+    if let Some((_, rest)) = url.split_once("://") {
+        let authority = rest.split('/').next().unwrap_or(rest);
+        return authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host)
+            .to_ascii_lowercase();
+    }
+    match url.split_once('@') {
+        Some((_, rest)) => rest.split(':').next().unwrap_or(rest).to_ascii_lowercase(),
+        None => url,
+    }
+}
+
+fn hand_off_unsupported(host: &str) -> bool {
+    NO_HAND_OFF_HOSTS
+        .lock()
+        .map(|hosts| hosts.contains(host))
+        .unwrap_or(false)
+}
+
 pub struct PrAccessData {
     pub permissions: proto::PrPermissions,
     pub behind_by: Option<u32>,
@@ -481,17 +540,42 @@ pub fn access(
     head_ref: Option<&str>,
 ) -> Result<PrAccessData> {
     let (owner, name) = repository_parts(repository, number)?;
-    let (query, variables) = match head_ref {
-        Some(head_ref) => (
-            ACCESS_COMPARE_QUERY,
-            serde_json::json!({ "owner": owner, "name": name, "number": number, "headRef": head_ref }),
-        ),
-        None => (
-            ACCESS_QUERY,
-            serde_json::json!({ "owner": owner, "name": name, "number": number }),
-        ),
+    let run = |hand_off: bool| {
+        let (query, variables) = match head_ref {
+            Some(head_ref) => (
+                if hand_off {
+                    ACCESS_COMPARE_QUERY
+                } else {
+                    ACCESS_BASE_COMPARE_QUERY
+                },
+                serde_json::json!({ "owner": owner, "name": name, "number": number, "headRef": head_ref }),
+            ),
+            None => (
+                if hand_off {
+                    ACCESS_QUERY
+                } else {
+                    ACCESS_BASE_QUERY
+                },
+                serde_json::json!({ "owner": owner, "name": name, "number": number }),
+            ),
+        };
+        crate::gh::graphql(dir, query, variables)
     };
-    let value = crate::gh::graphql(dir, query, variables)?;
+    let host = api_host(dir);
+    let mut hand_off = !hand_off_unsupported(&host);
+    let value = match run(hand_off) {
+        Err(e) if hand_off && HAND_OFF_FIELDS.iter().any(|f| format!("{e:#}").contains(f)) => {
+            tracing::info!(
+                "{host}'s GraphQL schema lacks the merge queue hand-off fields ({e:#}); its pull request reads skip them and the merge queue merges itself there"
+            );
+            if let Ok(mut hosts) = NO_HAND_OFF_HOSTS.lock() {
+                hosts.insert(host);
+            }
+            hand_off = false;
+            run(false)?
+        }
+        other => other?,
+    };
     let repository_node = value
         .pointer("/data/repository")
         .filter(|r| !r.is_null())
@@ -525,16 +609,28 @@ pub fn access(
     .filter(|(field, _)| repository_node.get(*field).and_then(Value::as_bool) == Some(true))
     .map(|(_, method)| method)
     .collect();
-    let auto_merge = pull_request.get("autoMergeRequest").map(|a| {
-        (
-            !a.is_null(),
-            a.get("mergeMethod")
-                .and_then(Value::as_str)
-                .and_then(merge_method_from),
-        )
-    });
+    let auto_merge = pull_request
+        .get("autoMergeRequest")
+        .filter(|_| hand_off)
+        .map(|a| {
+            (
+                !a.is_null(),
+                a.get("mergeMethod")
+                    .and_then(Value::as_str)
+                    .and_then(merge_method_from),
+            )
+        });
+    // A host without the fields has neither tool to hand off to: Houston merges.
+    let github_merge = match hand_off {
+        true => github_merge_from(repository_node, pull_request),
+        false => proto::PrGitHubMerge {
+            merge_queue_required: Some(false),
+            auto_merge_allowed: Some(false),
+            ..Default::default()
+        },
+    };
     Ok(PrAccessData {
-        github_merge: github_merge_from(repository_node, pull_request),
+        github_merge,
         auto_merge,
         permissions: proto::PrPermissions {
             can_write: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE"),

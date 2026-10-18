@@ -85,9 +85,9 @@ fn pr(number: &str) -> Option<serde_json::Value> {
     Some(value)
 }
 
-/// `threads-N.json` answers the review-threads read; `methods` lists the allowed merge
-/// methods (all three by default). `merge-queue`, `merge-queue-hidden`, `auto-merge-allowed`
-/// and `required-checks` set GitHub's merge tools; `queued-N`, `auto-N` and `removed-N` hold one PR's.
+/// `threads-N.json`, `methods`, `merge-queue`, `merge-queue-hidden`, `auto-merge-allowed` and
+/// `required-checks` shape the answers; `queued-N`, `auto-N` and `removed-N` hold one PR's state;
+/// `hand-off-unsupported` refuses the hand-off fields as an older schema does (see `access.log`).
 fn graphql() {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
@@ -135,6 +135,18 @@ fn graphql() {
             r#"{{"data":{{"revertPullRequest":{{"revertPullRequest":{{"number":900,"url":"https://github.com/owner/repo/pull/900"}}}}}}}}"#
         );
         return;
+    }
+    let enlarged = input.contains("isMergeQueueEnabled");
+    if let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir().join("access.log"))
+    {
+        let _ = log.lock();
+        let _ = log.write_all(if enlarged { b"enlarged\n" } else { b"base\n" });
+    }
+    if enlarged && read("hand-off-unsupported").is_some() {
+        fail("GraphQL: Field 'isMergeQueueEnabled' doesn't exist on type 'PullRequest' (repository.pullRequest.isMergeQueueEnabled)");
     }
     let methods = read("methods").unwrap_or_else(|| "squash,merge,rebase".into());
     let allowed = |m: &str| methods.split(',').any(|x| x.trim() == m);
