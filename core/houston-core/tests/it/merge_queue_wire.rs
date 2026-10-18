@@ -395,10 +395,14 @@ async fn gates_fail_closed_and_each_entry_names_one_blocking_reason() {
             .contains("could not read PR #12"),
         "{entry:?}"
     );
+    // Without a verification command the verification gate does not apply.
     assert!(entry
         .gates
         .iter()
-        .filter(|g| g.kind != proto::MergeQueueGateKind::Reviewer)
+        .filter(|g| matches!(
+            g.kind,
+            proto::MergeQueueGateKind::Mergeable | proto::MergeQueueGateKind::ReviewThreads
+        ))
         .all(|g| g.state == proto::MergeQueueGateState::Failed));
 
     // A task Slice also needs its newest reviewer verdict to be pass.

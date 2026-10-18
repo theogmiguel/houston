@@ -234,10 +234,14 @@ mod bounded_linux {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if priority == Priority::Low {
-            // SAFETY: setpriority is async-signal-safe and touches only the child.
+            // SAFETY: getpriority and setpriority are async-signal-safe and touch only the
+            // child. A daemon already nicer than this keeps its niceness: lowering it needs
+            // privilege, and lower priority is all that is asked.
             unsafe {
                 cmd.pre_exec(|| {
-                    if libc::setpriority(libc::PRIO_PROCESS, 0, LOW_NICENESS) != 0 {
+                    if libc::getpriority(libc::PRIO_PROCESS, 0) < LOW_NICENESS
+                        && libc::setpriority(libc::PRIO_PROCESS, 0, LOW_NICENESS) != 0
+                    {
                         return Err(io::Error::last_os_error());
                     }
                     Ok(())
