@@ -830,6 +830,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::PrDetail { .. }
             | proto::ClientMsg::PrWatchList
             | proto::ClientMsg::MergeQueueGet { .. }
+            | proto::ClientMsg::MergeQueueSummaryGet
             | proto::ClientMsg::GitReviewDiffs { .. }
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
@@ -1239,6 +1240,90 @@ async fn dispatch(
             .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue merge panicked: {e}")));
             send_merge_queue_reply(sink, dir, request, number, result).await;
             Ok(())
+        }
+        proto::ClientMsg::MergeQueueSettingsSet {
+            dir,
+            merge_when_verified,
+            verification_command,
+            time_limit_minutes,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                d.merge_queue_settings_set(
+                    &at,
+                    merge_when_verified,
+                    &verification_command,
+                    time_limit_minutes,
+                )
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue settings panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, 0, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueuePause {
+            dir,
+            paused,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result =
+                tokio::task::spawn_blocking(move || d.merge_queue_pause(Some(&at), paused))
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue pause panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, 0, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueuePauseAll { paused } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.merge_queue_pause(None, paused))
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue pause panicked: {e}"))?
+                .map(|_| ())
+        }
+        proto::ClientMsg::MergeQueueRetry {
+            dir,
+            number,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || d.merge_queue_retry(&at, number))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue retry panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueRevert {
+            dir,
+            number,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || d.merge_queue_revert(&at, number))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue revert panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueAcknowledge { dir } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.merge_queue_acknowledge(&dir))
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue acknowledge panicked: {e}"))?
+        }
+        proto::ClientMsg::MergeQueueSummaryGet => {
+            let d = Arc::clone(daemon);
+            let summary = tokio::task::spawn_blocking(move || d.merge_queue_summary())
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue summary panicked: {e}"))??;
+            send_msg(sink, &summary)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending the merge queue summary failed"))
         }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {

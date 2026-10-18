@@ -64,6 +64,10 @@ auto_merge_enabled?: boolean | null,
  */
 auto_merge_method?: PrMergeMethod | null,
 /**
+ * The merge methods the repository allows; empty when the read could not say.
+ */
+merge_methods: Array<PrMergeMethod>,
+/**
  * GitHub's `isCrossRepository`: a fork head, which is the only kind whose
  * workflow runs can be waiting on a maintainer's approval.
  */

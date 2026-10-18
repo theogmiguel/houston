@@ -4,4 +4,4 @@
  * One gate a merge queue entry must pass. Gates fail closed: an input that has
  * not been read, or failed to read, is `failed` with the reason.
  */
-export type MergeQueueGateKind = "mergeable" | "review_threads" | "reviewer";
+export type MergeQueueGateKind = "mergeable" | "review_threads" | "reviewer" | "verification";

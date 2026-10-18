@@ -107,6 +107,7 @@ pub fn detail_from_json(
             .and_then(|a| a.get("mergeMethod"))
             .and_then(|m| m.as_str())
             .and_then(merge_method_from),
+        merge_methods: Vec::new(),
         cross_repository: v
             .get("isCrossRepository")
             .and_then(|b| b.as_bool())
@@ -396,13 +397,13 @@ const REACTION_GROUPS: &str =
 /// rather than passed as a nullable variable GraphQL refuses.
 const ACCESS_QUERY: &str = "query PrAccess($owner: String!, $name: String!, $number: Int!) { \
     repository(owner: $owner, name: $name) { \
-    viewerPermission \
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
     pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch } } }";
 
 const ACCESS_COMPARE_QUERY: &str =
     "query PrAccess($owner: String!, $name: String!, $number: Int!, $headRef: String!) { \
     repository(owner: $owner, name: $name) { \
-    viewerPermission \
+    viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed \
     pullRequest(number: $number) { \
     viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch \
     baseRef { compare(headRef: $headRef) { behindBy } } } } }";
@@ -410,6 +411,8 @@ const ACCESS_COMPARE_QUERY: &str =
 pub struct PrAccessData {
     pub permissions: proto::PrPermissions,
     pub behind_by: Option<u32>,
+    /// The merge methods the repository allows, in squash, merge, rebase order.
+    pub merge_methods: Vec<proto::PrMergeMethod>,
 }
 
 pub fn access(
@@ -454,6 +457,15 @@ pub fn access(
         .pointer("/baseRef/compare/behindBy")
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok());
+    let merge_methods = [
+        ("squashMergeAllowed", proto::PrMergeMethod::Squash),
+        ("mergeCommitAllowed", proto::PrMergeMethod::Merge),
+        ("rebaseMergeAllowed", proto::PrMergeMethod::Rebase),
+    ]
+    .into_iter()
+    .filter(|(field, _)| repository_node.get(*field).and_then(Value::as_bool) == Some(true))
+    .map(|(_, method)| method)
+    .collect();
     Ok(PrAccessData {
         permissions: proto::PrPermissions {
             can_write: matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE"),
@@ -472,6 +484,7 @@ pub fn access(
                 .unwrap_or(false),
         },
         behind_by,
+        merge_methods,
     })
 }
 

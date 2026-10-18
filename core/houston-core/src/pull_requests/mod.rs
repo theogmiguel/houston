@@ -192,6 +192,7 @@ fn enrich(dir: &Path, link: &PullRequestLink, detail: &mut PrDetail, head_owner:
         Ok(Ok(access)) => {
             detail.viewer = Some(access.permissions);
             detail.behind_by = access.behind_by;
+            detail.merge_methods = access.merge_methods;
         }
         Ok(Err(e)) => {
             detail.viewer = None;
@@ -652,6 +653,7 @@ mod tests {
             auto_merge_enabled: None,
             auto_merge_method: None,
             cross_repository: false,
+            merge_methods: Vec::new(),
         }
     }
 

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 145;
+pub const PROTOCOL_VERSION: u32 = 146;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2401,13 +2401,24 @@ pub struct PrWatchInfo {
     pub last_checked_at_ms: Option<i64>,
 }
 
-/// Whether a merge queue entry may be merged from the queue once it is first.
+/// Where a merge queue entry stands. Parked and fixing entries are out of line:
+/// the queue moves on without them until their head moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueStatus {
     Ready,
     Blocked,
+    /// The head's verification is running now.
+    Verifying,
+    /// The head needs a verification and the machine's one slot is taken.
+    WaitingForSlot,
+    /// A verification failed and the owning pane was told; out of line.
+    Fixing,
+    /// A verification failed with no live owner to tell; out of line.
+    Parked,
+    /// The head would verify, push or merge, but the queue is paused.
+    Paused,
 }
 
 /// One gate a merge queue entry must pass. Gates fail closed: an input that has
@@ -2422,6 +2433,8 @@ pub enum MergeQueueGateKind {
     ReviewThreads,
     /// A task Slice's newest reviewer verdict is pass.
     Reviewer,
+    /// The workspace's verification command passed on the head rebased onto the current base.
+    Verification,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2432,6 +2445,8 @@ pub enum MergeQueueGateState {
     Failed,
     /// The gate does not apply, such as the reviewer gate for a PR that is not a task Slice.
     NotApplicable,
+    /// Not decided yet, such as a verification that runs once the entry is first.
+    Pending,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2442,6 +2457,59 @@ pub struct MergeQueueGate {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
+}
+
+/// A passed verification: the head, rebased onto `base_sha`, passed the
+/// workspace's command as `verified_sha`, the commit the queue pushes and merges.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueVerification {
+    pub base_ref: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub verified_sha: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueFailureKind {
+    /// Rebasing onto the base stopped on a conflict; `files` names them.
+    Conflict,
+    /// The verification command exited non-zero.
+    Failed,
+    /// The verification command ran past the workspace's time limit.
+    TimedOut,
+    /// GitHub's checks failed on the pushed, verified commit.
+    ChecksFailed,
+    /// Houston could not verify, push or merge it, for the reason in `message`.
+    Refused,
+}
+
+/// Why an entry left the line. It applies to `head_sha` only: a new head re-enters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueFailure {
+    pub kind: MergeQueueFailureKind,
+    pub message: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// The tail of the command's bounded output.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub output_tail: Option<String>,
+    pub head_sha: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub base_sha: Option<String>,
+    /// The live owning pane that was told; absent when the entry is parked.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub handed_to: Option<u32>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 /// One pull request in a workspace's merge queue, in queue order.
@@ -2468,7 +2536,8 @@ pub struct MergeQueueEntry {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session: Option<u32>,
-    /// 1-based rank in queue order; 1 is the head.
+    /// 1-based rank in line; 1 is the head. 0 for an entry out of line: parked,
+    /// fixing, or held behind one of those.
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub position: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -2478,17 +2547,60 @@ pub struct MergeQueueEntry {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub read_at_ms: Option<i64>,
     pub status: MergeQueueStatus,
-    /// The single blocking reason; absent exactly when `status` is `ready`.
+    /// The single blocking reason; absent when nothing blocks the entry
+    /// (`ready`, `verifying` and `waiting_for_slot`).
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
     pub gates: Vec<MergeQueueGate>,
+    /// The verification that still holds for this head, if any.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub verification: Option<MergeQueueVerification>,
+    /// Why the entry is fixing or parked.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub failure: Option<MergeQueueFailure>,
+    /// The Houston-managed worktree on `head_ref`, where a hand-off pane starts.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub worktree: Option<String>,
+    /// When the running verification started, while `status` is `verifying`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub verifying_since_ms: Option<i64>,
 }
 
-/// One merge made from the queue, for the page's history.
+/// A workspace's merge queue settings. Only the user changes them; agents have no verb.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct MergeQueueMerge {
+pub struct MergeQueueSettings {
+    /// "Merge when verified": the daemon pushes and merges a verified head on its own.
+    pub merge_when_verified: bool,
+    /// Runs in the scratch worktree; empty means the queue does not verify.
+    pub verification_command: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub time_limit_minutes: u32,
+    pub paused: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeQueueLogKind {
+    /// The daemon pushed a verified commit to a pull request's branch.
+    Push,
+    /// A queue merge; `old_sha` and `new_sha` are the base before and after.
+    Merge,
+    /// An entry left the line, parked, with `detail` as its reason.
+    Park,
+}
+
+/// One row of the merge log: every daemon push and merge, and every park.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueLogEntry {
+    pub kind: MergeQueueLogKind,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub repository: String,
@@ -2496,13 +2608,52 @@ pub struct MergeQueueMerge {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub title: Option<String>,
-    pub head_sha: String,
+    /// The branch pushed, or the base merged into.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub base_ref: Option<String>,
-    pub method: PrMergeMethod,
+    pub ref_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub old_sha: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub new_sha: Option<String>,
+    /// The commit merged, for a merge row.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub head_sha: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub method: Option<PrMergeMethod>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub detail: Option<String>,
+    /// The daemon acted on the policy, with nobody clicking.
+    pub unattended: bool,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-    pub merged_at_ms: i64,
+    pub at_ms: i64,
+}
+
+/// Unattended merges and parks the user has not reviewed yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueAway {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub merged: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub parked: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_merge_at_ms: Option<i64>,
+}
+
+/// One workspace's parked count, for the rail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct MergeQueueParkedCount {
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub parked: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3061,6 +3212,9 @@ pub struct PrDetail {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub auto_merge_method: Option<PrMergeMethod>,
+    /// The merge methods the repository allows; empty when the read could not say.
+    #[serde(default)]
+    pub merge_methods: Vec<PrMergeMethod>,
     /// GitHub's `isCrossRepository`: a fork head, which is the only kind whose
     /// workflow runs can be waiting on a maintainer's approval.
     #[serde(default)]
@@ -4039,6 +4193,47 @@ pub enum ClientMsg {
         method: PrMergeMethod,
         request: u32,
     },
+    /// The workspace's merge queue settings. Turning `merge_when_verified` on
+    /// with an empty `verification_command` is refused by name.
+    MergeQueueSettingsSet {
+        dir: String,
+        merge_when_verified: bool,
+        verification_command: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        time_limit_minutes: u32,
+        request: u32,
+    },
+    /// Pauses or resumes one workspace's queue. A pause stops pushes and merges at once.
+    MergeQueuePause {
+        dir: String,
+        paused: bool,
+        request: u32,
+    },
+    /// Pauses or resumes every queue of the daemon, beside each workspace's own
+    /// pause. Each daemon answers with its `merge_queue_summary`.
+    MergeQueuePauseAll {
+        paused: bool,
+    },
+    /// Puts a parked or fixing entry back in line at its current head.
+    MergeQueueRetry {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        request: u32,
+    },
+    /// Opens a revert pull request for a queue merge. Nothing is pushed to the base.
+    MergeQueueRevert {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        request: u32,
+    },
+    /// The user saw the unattended merges and parks; the notice clears.
+    MergeQueueAcknowledge {
+        dir: String,
+    },
+    /// Every workspace's parked count and the global pause, for the rail.
+    MergeQueueSummaryGet,
     GitReviewDiffs {
         dir: String,
     },
@@ -4967,12 +5162,26 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         dir: Option<String>,
         entries: Vec<MergeQueueEntry>,
-        merged: Vec<MergeQueueMerge>,
+        /// The last day's merge log, newest first.
+        log: Vec<MergeQueueLogEntry>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        settings: Option<MergeQueueSettings>,
+        /// Every queue of this daemon is paused.
+        #[serde(default)]
+        global_paused: bool,
+        #[serde(default)]
+        away: MergeQueueAway,
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         message: Option<String>,
     },
-    /// The reply to an enqueue, dequeue or merge-head request.
+    /// Every workspace with a parked entry, and the global pause.
+    MergeQueueSummary {
+        parked: Vec<MergeQueueParkedCount>,
+        global_paused: bool,
+    },
+    /// The reply to a merge queue request; `number` is 0 for a workspace-wide one.
     MergeQueueReply {
         dir: String,
         request: u32,
@@ -6024,6 +6233,13 @@ pub const WORKTREE_IDLE_REMOVAL_DAYS_MAX: u32 = 365;
 pub const MERGE_QUEUE_MAX_ENTRIES: u32 = 32;
 /// The page shows the day's queue merges; fifty covers a busy day without growing the snapshot.
 pub const MERGE_QUEUE_HISTORY_MAX: u32 = 50;
+/// A verification past this many minutes counts as failed; thirty fits a full test suite.
+pub const MERGE_QUEUE_TIME_LIMIT_DEFAULT_MINUTES: u32 = 30;
+pub const MERGE_QUEUE_TIME_LIMIT_MIN_MINUTES: u32 = 1;
+/// Four hours: past that one entry holds the machine's only slot all night.
+pub const MERGE_QUEUE_TIME_LIMIT_MAX_MINUTES: u32 = 240;
+/// A command is one line a person types, not a script.
+pub const MERGE_QUEUE_COMMAND_MAX_BYTES: u32 = 1024;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 
@@ -6532,6 +6748,7 @@ mod tests {
             threads_message: None,
             auto_merge_enabled: None,
             auto_merge_method: None,
+            merge_methods: Vec::new(),
             cross_repository: false,
         };
         let msg = ServerMsg::PrDetail {

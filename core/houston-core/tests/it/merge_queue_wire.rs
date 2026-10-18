@@ -553,19 +553,27 @@ async fn only_the_head_merges_pinned_to_its_commit_and_the_next_entry_moves_up()
     );
     assert_eq!(rig.order(), [13]);
     assert_eq!(rig.entry(13).position, 1, "the next entry is now first");
-    let proto::ServerMsg::MergeQueue { merged, .. } =
+    let proto::ServerMsg::MergeQueue { log, .. } =
         rig.daemon.merge_queue_snapshot(&rig.workspace).unwrap()
     else {
         panic!("expected a merge queue snapshot");
     };
-    assert_eq!(merged.len(), 1);
+    assert_eq!(log.len(), 1);
     assert_eq!(
         (
-            merged[0].number,
-            merged[0].head_sha.as_str(),
-            merged[0].method
+            log[0].kind,
+            log[0].number,
+            log[0].head_sha.as_deref(),
+            log[0].method,
+            log[0].unattended
         ),
-        (12, SHA, proto::PrMergeMethod::Squash)
+        (
+            proto::MergeQueueLogKind::Merge,
+            12,
+            Some(SHA),
+            Some(proto::PrMergeMethod::Squash),
+            false
+        )
     );
 }
 
@@ -610,14 +618,11 @@ async fn an_entry_leaves_when_its_pull_request_closes_or_merges_outside_the_queu
         entry.reason.as_deref(),
         Some("depends on #13, which left the queue without merging")
     );
-    let proto::ServerMsg::MergeQueue { merged, .. } =
+    let proto::ServerMsg::MergeQueue { log, .. } =
         rig.daemon.merge_queue_snapshot(&rig.workspace).unwrap()
     else {
         panic!("expected a merge queue snapshot");
     };
-    assert!(
-        merged.is_empty(),
-        "only queue merges are history: {merged:?}"
-    );
+    assert!(log.is_empty(), "only queue merges are history: {log:?}");
     let _ = rig.daemon.kill(pane);
 }
