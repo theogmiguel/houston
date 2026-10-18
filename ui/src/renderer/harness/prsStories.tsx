@@ -144,19 +144,31 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
-  useState(() => { if (mode === 'merge-queue') requestPrsView({ view: 'queue' }) })
+  const queueMode = mode === 'merge-queue' || mode === 'merge-queue-policy' || mode === 'merge-queue-parked'
+  useState(() => { if (queueMode) requestPrsView({ view: 'queue' }) })
   const baseItems = mode === 'empty' || mode === 'loading' ? [] : mode === 'draft' || mode === 'closed'
     ? pullRequests.map((item) => item.number === 95 ? { ...item, state: mode === 'closed' ? 'closed' as const : 'open' as const, is_draft: mode === 'draft' } : item)
     : pullRequests
   const items = mode === 'folded' ? [...baseItems, ...Array.from({ length: 12 }, (_, index) => ({ ...pullRequests[3], number: 300 + index, title: `feat(agents): review pane lifecycle ${index + 1}`, updated_at: now - (index + 2) * 24 * 60 * 60 }))] : baseItems
   const selectedNumber = ['selected', 'timeline', 'code'].includes(mode) ? 93 : ['draft', 'closed'].includes(mode) ? 95 : null
-  const client = useMemo(() => new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' }) as unknown as HoustonClient, [mode, selectedNumber])
+  const client = useMemo(() => {
+    const inspector = new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' })
+    inspector.mergeQueuePolicy = mode === 'merge-queue-policy' || mode === 'merge-queue-parked'
+    return inspector as unknown as HoustonClient
+  }, [mode, selectedNumber])
   useEffect(() => {
     const screen = rootRef.current?.querySelector('[data-testid="pull-requests-screen"]')
+    if (mode === 'merge-queue-parked') {
+      const timer = window.setInterval(() => {
+        const parked = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes('#87'))
+        if (parked) { parked.click(); window.clearInterval(timer) }
+      }, 200)
+      return () => window.clearInterval(timer)
+    }
     if (mode === 'folded') {
       const timer = window.setTimeout(() => { const scroller = screen?.querySelector<HTMLElement>('[data-testid="pr-list-scroll"]'); if (scroller) scroller.scrollTop = 90 }, 200)
       return () => window.clearTimeout(timer)
@@ -183,10 +195,14 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
   )
 }
 
-export function PullRequestDetailStory({ width, tab = 'summary', state = 'open' }: { width: 470 | 732; tab?: 'summary' | 'timeline' | 'code'; state?: 'open' | 'merged' | 'draft' | 'closed' }): React.JSX.Element {
+export function PullRequestDetailStory({ width, tab = 'summary', state = 'open', policy = false }: { width: 470 | 732; tab?: 'summary' | 'timeline' | 'code'; state?: 'open' | 'merged' | 'draft' | 'closed'; policy?: boolean }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const number = state === 'merged' ? 93 : 95
-  const client = useMemo(() => new InspectorClient(false, false, { number, state: state === 'draft' ? 'open' : state, isDraft: state === 'draft' }) as unknown as HoustonClient, [number, state])
+  const client = useMemo(() => {
+    const inspector = new InspectorClient(false, false, { number, state: state === 'draft' ? 'open' : state, isDraft: state === 'draft' })
+    inspector.mergeQueuePolicy = policy
+    return inspector as unknown as HoustonClient
+  }, [number, state, policy])
   useEffect(() => {
     if (tab === 'summary') return
     const timer = window.setInterval(() => {

@@ -33,32 +33,60 @@ export class InspectorClient {
     for (const listener of this.subscribers.get(String(message.type)) ?? []) listener(message as never)
   }
 
+  /** The merge queue fixture: PR 1's human-merged queue, or the "merge when verified" policy
+   *  with the head verifying and one entry parked on a conflict. */
+  mergeQueuePolicy = false
+
   mergeQueueGet(dir: string): void {
     const sha = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'
-    const gates = (threads: string | null) => [
+    const policy = this.mergeQueuePolicy
+    const verification = (state: string, reason: string) => ({ kind: 'verification', state, reason })
+    const gates = (threads: string | null, verify: Record<string, unknown>) => [
       { kind: 'mergeable', state: 'passed', reason: null },
       { kind: 'review_threads', state: threads ? 'failed' : 'passed', reason: threads },
-      { kind: 'reviewer', state: 'not_applicable', reason: null }
+      { kind: 'reviewer', state: 'not_applicable', reason: null },
+      verify
     ]
     const entry = (number: number, title: string, position: number, reason: string | null, extra: Record<string, unknown> = {}) => ({
       number, repository: 'owner/houston', url: `https://github.com/owner/houston/pull/${number}`, title, head_ref: `houston/change-${number}`, head_sha: sha,
       base_ref: 'main', depends_on: null, session: null, position, enqueued_at_ms: Date.now() - position * 600_000, read_at_ms: Date.now() - 20_000,
-      status: reason ? 'blocked' : 'ready', reason, gates: gates(reason && reason.includes('thread') ? reason : null), ...extra
+      status: reason ? 'blocked' : 'ready', reason,
+      gates: gates(reason && reason.includes('thread') ? reason : null, policy ? verification('pending', 'Runs when it is first in line') : verification('not_applicable', 'No verification command is set')),
+      verification: null, failure: null, worktree: null, verifying_since_ms: null, ...extra
     })
+    const base = 'a91c2e4b7d0f13c58e62a90b1d4f7c3e8a5b6d21'
+    const conflict = { kind: 'conflict', message: 'Rebasing onto main@7f03d1a stopped on a conflict in 2 files', files: ['src/settings/Preferences.tsx', 'src/lib/loadPreferences.ts'], output_tail: null, head_sha: sha, base_sha: '7f03d1a9c2e45b6d8f0a1b3c5d7e9f2a4b6c8d0e', handed_to: null, at_ms: Date.now() - 3 * 3_600_000 }
+    const entries = policy ? [
+      entry(95, 'fix(panes): terminals keep their content while the inspector opens', 1, null, { status: 'verifying', verifying_since_ms: Date.now() - 252_000, gates: gates(null, verification('pending', 'Verifying now')) }),
+      entry(79, 'feat(agents): ZCode runs in a pane with reported status', 2, null, { depends_on: 95 }),
+      entry(90, 'refactor(ui): every screen composes components/ui roles', 3, 'PR #90 has 1 unresolved review thread'),
+      entry(87, 'feat(settings): show preferences in Settings', 0, conflict.message, { status: 'parked', head_ref: 'houston/settings-prefs', failure: conflict, worktree: '/repo/.houston/worktrees/settings-prefs', gates: gates(null, verification('failed', conflict.message)) })
+    ] : [
+      entry(95, 'fix(panes): terminals keep their content while the inspector opens', 1, null),
+      entry(79, 'feat(agents): ZCode runs in a pane with reported status', 2, null, { depends_on: 95 }),
+      entry(90, 'refactor(ui): every screen composes components/ui roles', 3, 'PR #90 has 1 unresolved review thread')
+    ]
+    const merged = { kind: 'merge', number: 88, repository: 'owner/houston', url: 'https://github.com/owner/houston/pull/88', title: 'fix(rail): background git refresh stays within the handler limit', ref_name: 'main', old_sha: '5c1d0e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d', new_sha: base, head_sha: sha, method: 'squash', detail: null, unattended: policy, at_ms: Date.now() - 45 * 60_000 }
+    const parked = { kind: 'park', number: 87, repository: 'owner/houston', url: 'https://github.com/owner/houston/pull/87', title: 'feat(settings): show preferences in Settings', ref_name: 'main', old_sha: conflict.base_sha, new_sha: null, head_sha: sha, method: null, detail: conflict.message, unattended: true, at_ms: conflict.at_ms }
     queueMicrotask(() => this.emit({
-      type: 'merge_queue', workspace: '/workspace/houston', dir, message: null,
-      entries: [
-        entry(95, 'fix(panes): terminals keep their content while the inspector opens', 1, null),
-        entry(79, 'feat(agents): ZCode runs in a pane with reported status', 2, null, { depends_on: 95 }),
-        entry(90, 'refactor(ui): every screen composes components/ui roles', 3, 'PR #90 has 1 unresolved review thread')
-      ],
-      merged: [{ number: 88, repository: 'owner/houston', url: 'https://github.com/owner/houston/pull/88', title: 'fix(rail): background git refresh stays within the handler limit', head_sha: sha, base_ref: 'main', method: 'squash', merged_at_ms: Date.now() - 45 * 60_000 }]
+      type: 'merge_queue', workspace: '/workspace/houston', dir, message: null, entries,
+      log: policy ? [merged, parked] : [merged],
+      settings: { merge_when_verified: policy, verification_command: policy ? 'cargo nextest run --workspace' : '', time_limit_minutes: 30, paused: false },
+      global_paused: false,
+      away: policy ? { merged: 1, parked: 1, last_merge_at_ms: merged.at_ms } : { merged: 0, parked: 0, last_merge_at_ms: null }
     }))
   }
 
   mergeQueueEnqueue(): number { return ++this.request }
   mergeQueueDequeue(): number { return ++this.request }
   mergeQueueMergeHead(): number { return ++this.request }
+  mergeQueueRetry(): number { return ++this.request }
+  mergeQueueRevert(): number { return ++this.request }
+  mergeQueuePause(): number { return ++this.request }
+  mergeQueueSettingsSet(): number { return ++this.request }
+  mergeQueueAcknowledge(): void {}
+  mergeQueuePauseAll(): void {}
+  mergeQueueSummaryGet(): void {}
 
   gitStatus(dir: string, base: string | null = null): void {
     setTimeout(() => this.emit({
