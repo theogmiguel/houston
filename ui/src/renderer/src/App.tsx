@@ -215,9 +215,8 @@ import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
-import { mergeQueuePaletteActions, requestPrsView } from "./components/prs/prsView";
-import { useMergeQueueParked } from "./components/prs/useMergeQueue";
-import { useMergeQueueAwayNotice } from "./components/prs/useMergeQueueAwayNotice";
+import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
+import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
 import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
@@ -919,7 +918,7 @@ export function App(): React.JSX.Element {
     setRailView("prs");
     setShowLauncher(false);
   }, [setSettings]);
-  useMergeQueueAwayNotice(readyClient(conn), selectedWs === "all" ? null : selectedWs, appNotices.push, appNotices.dismiss, openMergeQueue);
+  useMergeQueueAwayNotice(readyClient(conn), selectedWs, appNotices.push, appNotices.dismiss, openMergeQueue);
   const [requestedPr, setRequestedPr] = useState<PullRequestLink | null>(null);
 
   const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
@@ -3554,7 +3553,7 @@ export function App(): React.JSX.Element {
     },
     selectNavRow,
     ...mergeQueuePaletteActions(railPrByDir, sessions, activeId, selectNavRow),
-    pauseMergeQueue: selectedWs !== "all" ? () => client.mergeQueuePause(selectedWs, true) : undefined,
+    ...mergeQueuePauseAction(client, selectedWs),
     switchWorkspace: (path) => {
       setSelectedWs(path);
       setShowLauncher(false);

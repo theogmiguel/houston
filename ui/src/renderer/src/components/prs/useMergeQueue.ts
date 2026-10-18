@@ -111,33 +111,3 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
 
   return { workspace, entries, log, settings, globalPaused, away, loaded, unavailable, busy, reply, enqueue, dequeue, mergeHead, retry, revert, setPaused, setSettings, acknowledge, clearReply }
 }
-
-/** Parked entries across every workspace, for the rail's Pull requests count:
- *  each daemon's summary seeds it and every queue broadcast keeps it current. */
-export function useMergeQueueParked(client: HoustonClient | null): number {
-  const [parked, setParked] = useState<ReadonlyMap<string, number>>(new Map())
-  useEffect(() => {
-    setParked(new Map())
-    if (!client) return
-    const offSummary = client.subscribe('merge_queue_summary', (message) => setParked((current) => {
-      const next = new Map(current)
-      for (const row of message.parked) next.set(row.workspace, row.parked)
-      return next
-    }))
-    const offQueue = client.subscribe('merge_queue', (message) => {
-      if (!message.workspace) return
-      const count = message.entries.filter((entry) => entry.status === 'parked').length
-      setParked((current) => {
-        if ((current.get(message.workspace) ?? 0) === count) return current
-        const next = new Map(current)
-        next.set(message.workspace, count)
-        return next
-      })
-    })
-    client.mergeQueueSummaryGet()
-    return () => { offSummary(); offQueue() }
-  }, [client])
-  let total = 0
-  for (const count of parked.values()) total += count
-  return total
-}

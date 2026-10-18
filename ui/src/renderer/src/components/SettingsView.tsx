@@ -433,7 +433,7 @@ function SectionDispatch({
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
           />
-          <MergeQueueSettingsSection client={daemonClient ?? null} workspace={historyWorkspace} />
+          <MergeQueueSettingsSection client={daemonClient} workspace={historyWorkspace} />
           </>
         )}
 

@@ -1,4 +1,4 @@
-import type { PrDetail, PrMergeMethod, PullRequestLink } from '../../houston/client'
+import type { MergeQueueEntry, PrDetail, PrMergeMethod, PullRequestLink } from '../../houston/client'
 import type { PrDetailController } from './usePrDetailSubscription'
 import { PrChecksList, type PrChecksState } from '../prs/usePrChecksState'
 import { checkKey, CheckLog } from '../prs/ChecksList'
@@ -61,6 +61,16 @@ function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, wait
 /** The merge queue's footer: the pull request's place, with Dequeue or "Add to merge queue".
  *  With "merge when verified" on, the queue merges and the overflow keeps a skip-the-queue
  *  merge; with it off, the head's Merge pushes and merges the verified commit. */
+/** What the footer says will happen to a queued pull request: its one reason, else how it merges. */
+function queueLine(entry: MergeQueueEntry, queue: MergeQueueController, policy: boolean, headSha: string, method: PrMergeMethod): string {
+  if (entry.reason) return entry.reason
+  if (policy) return `merges on its own when verification passes on ${entry.base_ref ?? 'its base'}`
+  const verified = entry.verification
+  if (verified) return `verified on ${verified.base_ref}@${shortSha(verified.base_sha)}; merges ${shortSha(verified.verified_sha)} exactly`
+  if (entry.position === 1) return `merges ${shortSha(headSha)} exactly, by ${method}`
+  return `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`
+}
+
 function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController; pr: PrDetailController }): React.JSX.Element | null {
   if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
   const entry = queueEntryFor(queue.entries, link.repository, link.number)
@@ -72,12 +82,7 @@ function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestL
   const policy = queue.settings?.merge_when_verified ?? false
   const head = entry.position === 1
   const place = entry.position > 0 ? `${ordinal(entry.position)} in merge queue` : 'out of line'
-  const verified = entry.verification
-  const base = entry.base_ref ?? 'its base'
-  const line = entry.reason
-    ?? (policy ? `merges on its own when verification passes on ${base}`
-      : verified ? `verified on ${verified.base_ref}@${shortSha(verified.base_sha)}; merges ${shortSha(verified.verified_sha)} exactly`
-        : head ? `merges ${shortSha(detail.head_sha)} exactly, by ${method}` : `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`)
+  const line = queueLine(entry, queue, policy, detail.head_sha, method)
   const overflow = [
     ...(policy ? [{ label: 'Merge now, skipping the queue', onSelect: () => pr.merge(link.number, method, detail.head_sha) }] : []),
     { label: 'Open merge queue', onSelect: () => requestPrsView({ view: 'queue' }) }

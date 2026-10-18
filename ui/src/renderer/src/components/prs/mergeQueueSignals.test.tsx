@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, MergeQueueAway } from '../../houston/client'
-import { awayTitle, useMergeQueueAwayNotice } from './useMergeQueueAwayNotice'
+import { awayTitle, useMergeQueueAwayNotice } from './mergeQueueSignals'
 
 type Handler = (message: unknown) => void
 

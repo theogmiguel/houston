@@ -1,7 +1,13 @@
-import { useEffect, useRef } from 'react'
+// The merge queue's boot-path signals, the rail count and the morning notice, kept
+// apart from the queue view's controller and model, which load with the page.
+import { useEffect, useRef, useState } from 'react'
 import type { HoustonClient, MergeQueueAway } from '../../houston/client'
 import type { NoticeInput } from '../../notices'
-import { clockTime } from './mergeQueueModel'
+
+function clockTime(ms: number): string {
+  const at = new Date(ms)
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+}
 
 const CODE = 'merge-queue-away'
 
@@ -17,7 +23,7 @@ export function awayTitle(away: MergeQueueAway): string {
  *  opens the queue and acknowledges them; dismissing keeps them for the page. */
 export function useMergeQueueAwayNotice(
   client: HoustonClient | null,
-  workspace: string | null,
+  selected: string | null,
   push: (input: NoticeInput) => string,
   dismiss: (code: string) => void,
   openQueue: () => void
@@ -27,6 +33,7 @@ export function useMergeQueueAwayNotice(
   const actions = useRef({ push, dismiss, openQueue })
   actions.current = { push, dismiss, openQueue }
 
+  const workspace = selected === 'all' ? null : selected
   useEffect(() => {
     latest.current = null
     shown.current = null
@@ -70,4 +77,34 @@ export function useMergeQueueAwayNotice(
     client.mergeQueueGet(workspace)
     return () => { off(); window.removeEventListener('focus', show) }
   }, [client, workspace])
+}
+
+/** Parked entries across every workspace, for the rail's Pull requests count:
+ *  each daemon's summary seeds it and every queue broadcast keeps it current. */
+export function useMergeQueueParked(client: HoustonClient | null): number {
+  const [parked, setParked] = useState<ReadonlyMap<string, number>>(new Map())
+  useEffect(() => {
+    setParked(new Map())
+    if (!client) return
+    const offSummary = client.subscribe('merge_queue_summary', (message) => setParked((current) => {
+      const next = new Map(current)
+      for (const row of message.parked) next.set(row.workspace, row.parked)
+      return next
+    }))
+    const offQueue = client.subscribe('merge_queue', (message) => {
+      if (!message.workspace) return
+      const count = message.entries.filter((entry) => entry.status === 'parked').length
+      setParked((current) => {
+        if ((current.get(message.workspace) ?? 0) === count) return current
+        const next = new Map(current)
+        next.set(message.workspace, count)
+        return next
+      })
+    })
+    client.mergeQueueSummaryGet()
+    return () => { offSummary(); offQueue() }
+  }, [client])
+  let total = 0
+  for (const count of parked.values()) total += count
+  return total
 }

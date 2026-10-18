@@ -133,9 +133,15 @@
     "Re-cut against 946,074 bytes (one boot chunk) with the 126 bytes of headroom",
     "the previous cut left: input typed while a pane's attach snapshot is pending",
     "is held and released in order inside every mounted pane, so it is boot-path",
-    "code like the write-queue overflow resync."
+    "code like the write-queue overflow resync.",
+    "",
+    "Re-cut against 949,770 bytes (one boot chunk, Windows build) with 230 bytes of",
+    "headroom: the merge queue's rail count of parked entries, its morning notice and",
+    "the client's queue verbs must run at first paint, so they live in",
+    "`prs/mergeQueueSignals.ts` and `houston/client.ts`; the queue view, its controller",
+    "and its model stay behind the Pull requests page."
   ],
-  "maxBootBytes": 946200,
+  "maxBootBytes": 950000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

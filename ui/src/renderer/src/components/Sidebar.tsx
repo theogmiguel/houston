@@ -664,6 +664,13 @@ const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Elem
     usage: IconChartArea,
   });
 
+/** A rail row's count: the task turns in warn ink, parked merge queue entries in accent. */
+function railCount(view: RailView, taskTurnCount: number, mergeQueueParked = 0): React.JSX.Element | null {
+  if (view === "tasks" && taskTurnCount > 0) return <Count value={taskTurnCount} from="warn" />;
+  if (view === "prs" && mergeQueueParked > 0) return <Count value={mergeQueueParked} from="accent" />;
+  return null;
+}
+
 function RailNav({
   view,
   hidden,
@@ -678,7 +685,7 @@ function RailNav({
   hidden: ReadonlySet<RailView>;
   paletteChord: string | null | undefined;
   taskTurnCount: number;
-  mergeQueueParked: number;
+  mergeQueueParked: number | undefined;
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
@@ -701,9 +708,7 @@ function RailNav({
             selected={on}
             onClick={() => onSelect(v)}
             onContextMenu={(e) => onRowMenu(e, v)}
-            trailing={
-v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="warn" /> : v === "prs" && mergeQueueParked > 0 ? <Count value={mergeQueueParked} from="accent" /> : null
-            }
+            trailing={railCount(v, taskTurnCount, mergeQueueParked)}
           />
         );
       })}
@@ -1249,7 +1254,7 @@ export function Sidebar({
   updateVersion,
   agentAttention,
   taskTurnCount = 0,
-  mergeQueueParked = 0,
+  mergeQueueParked,
   className = "",
   gridArea,
   onHeadMouseDown,

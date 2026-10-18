@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { PrInfo, SessionInfo } from '../../houston/client'
+import type { HoustonClient, PrInfo, SessionInfo } from '../../houston/client'
 
 export type PrsView = 'requests' | 'queue'
 
@@ -45,4 +45,10 @@ export function mergeQueuePaletteActions(
   const focused = cwd === undefined ? null : prByDir.get(cwd)?.pr ?? null
   const number = focused && focused.state.toUpperCase() === 'OPEN' ? focused.number : null
   return { openMergeQueue: () => open(), addToMergeQueue: number === null ? undefined : () => open(number) }
+}
+
+/** The palette's "Pause merge queue": the selected workspace's queue, absent while
+ *  every workspace is shown. */
+export function mergeQueuePauseAction(client: Pick<HoustonClient, 'mergeQueuePause'>, selected: string): { pauseMergeQueue?: () => void } {
+  return selected === 'all' ? {} : { pauseMergeQueue: () => { client.mergeQueuePause(selected, true) } }
 }
