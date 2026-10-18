@@ -47,9 +47,8 @@ describe('the morning notice', () => {
     const at = new Date(2026, 9, 18, 6, 40).getTime()
     act(() => emit(snapshot({ merged: 5, parked: 1, last_merge_at_ms: at })))
     expect(push).toHaveBeenCalledTimes(1)
-    const notice = (push.mock.calls[0] as unknown as [{ title: string; body: string; action: { onClick: () => void } }])[0]
-    expect(notice.title).toBe('Merge queue merged 5 and parked 1 while you were away')
-    expect(notice.body).toBe('Last merge 06:40.')
+    const notice = (push.mock.calls[0] as unknown as [{ title: string; action: { onClick: () => void } }])[0]
+    expect(notice.title).toBe('Merge queue merged 5 and parked 1 while you were away. Last merge 06:40.')
 
     // A merge while the user is looking is not news from while they were away.
     act(() => emit(snapshot({ merged: 6, parked: 1, last_merge_at_ms: at + 1 })))

@@ -166,7 +166,7 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
       const timer = window.setInterval(() => {
         const parked = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes('#87'))
         if (parked) { parked.click(); window.clearInterval(timer) }
-      }, 200)
+      }, 50)
       return () => window.clearInterval(timer)
     }
     if (mode === 'folded') {

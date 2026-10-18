@@ -43,8 +43,7 @@ export function useMergeQueueAwayNotice(
       actions.current.push({
         code: CODE,
         kind: 'info',
-        title: awayTitle(current.away),
-        body: current.away.last_merge_at_ms != null ? `Last merge ${clockTime(current.away.last_merge_at_ms)}.` : undefined,
+        title: current.away.last_merge_at_ms != null ? `${awayTitle(current.away)}. Last merge ${clockTime(current.away.last_merge_at_ms)}.` : `${awayTitle(current.away)}.`,
         durationMs: null,
         action: {
           label: 'Review',
