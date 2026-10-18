@@ -800,7 +800,10 @@ mod tests {
             from_refusal: true,
         };
         r.facts.as_mut().unwrap().github_merge = Some(tools(None, None, None));
-        assert_eq!(mode(&r, Some(&learned)), proto::MergeQueueHandOff::MergeQueue);
+        assert_eq!(
+            mode(&r, Some(&learned)),
+            proto::MergeQueueHandOff::MergeQueue
+        );
         r.base_ref = Some("release".into());
         assert_eq!(
             mode(&r, Some(&learned)),

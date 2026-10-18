@@ -1566,7 +1566,11 @@ mod tests {
         assert_eq!(shown.required_checks, Some(vec!["ci".to_string()]));
         let entry = shown.queue_entry.unwrap();
         assert_eq!(
-            (entry.state.as_str(), entry.position, entry.head_sha.as_deref()),
+            (
+                entry.state.as_str(),
+                entry.position,
+                entry.head_sha.as_deref()
+            ),
             ("QUEUED", Some(2), Some("abc"))
         );
         assert_eq!(shown.removal.unwrap().reason, "Checks failed");
