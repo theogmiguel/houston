@@ -566,8 +566,10 @@ Dropping a queued frame or an incomplete body releases its reservation. Disconne
 through the response sender's closed signal; `notifications/cancelled` cancels the matching
 request in the caller's scope. This applies to SSE progress responses and plain JSON waits.
 Body completion is a server-side transport boundary; it cannot prove that the client
-application or model read the bytes. MCP returns each body once in textual content;
-structured rows carry metadata and omit `body`.
+application or model read the bytes. MCP carries each body in both textual content and
+the structured rows, because some clients surface only `structuredContent`; long result
+rows are bounded to an excerpt there, as on the CLI door, and `pane_get{result_id}` reads
+the full text.
 
 Zero tokens are spent while blocked. After spawn, agents must wait instead of polling
 `pane_get`, `pane_read` or `pane_list`; those are diagnostics after a timeout, for help,

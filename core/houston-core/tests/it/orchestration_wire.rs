@@ -9386,7 +9386,10 @@ async fn k1_disconnected_sse_and_json_waits_leave_results_undelivered() {
                 .contains("disconnect answer"),
             "{result}"
         );
-        assert!(result["structuredContent"]["rows"][0].get("body").is_none());
+        assert!(result["structuredContent"]["rows"][0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("disconnect answer"));
     }
 }
 
@@ -16303,4 +16306,98 @@ async fn concurrent_closes_of_a_parent_and_its_child_converge_without_errors() {
             .iter()
             .any(|s| s.id == parent.id || s.id == child));
     }
+}
+
+async fn spawn_opencode_child(r: &Rig, parent_token: &str) -> u32 {
+    let spawned = mcp_call(
+        r.addr,
+        parent_token,
+        "pane_spawn",
+        serde_json::json!({"kind": "opencode", "prompt": "child brief"}),
+    )
+    .await;
+    assert_eq!(spawned["isError"], false, "{spawned}");
+    spawned["structuredContent"]["session"].as_u64().unwrap() as u32
+}
+
+#[tokio::test]
+async fn a_workers_pane_wait_structured_reply_row_carries_the_reply_text() {
+    let _guard = serial().await;
+    let r = rig("wait-reply-body").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let child = spawn_opencode_child(&r, &token).await;
+    let child_token = r.token_for(child);
+
+    let reported = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_report",
+        serde_json::json!({"kind": "question", "body": "Which branch?", "request_id": 1}),
+    )
+    .await;
+    assert_eq!(reported["isError"], false, "{reported}");
+    let question_id = reported["structuredContent"]["message_id"]
+        .as_i64()
+        .unwrap();
+    let replied = mcp_call(
+        r.addr,
+        &token,
+        "pane_reply",
+        serde_json::json!({"message_id": question_id, "text": "Use the release-2 branch."}),
+    )
+    .await;
+    assert_eq!(replied["isError"], false, "{replied}");
+
+    let waited = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_wait",
+        serde_json::json!({"timeout_ms": 5000}),
+    )
+    .await;
+    let rows = waited["structuredContent"]["rows"].as_array().unwrap();
+    let reply = rows
+        .iter()
+        .find(|row| row["kind"] == "reply")
+        .unwrap_or_else(|| panic!("no reply row: {waited}"));
+    assert_eq!(reply["body"], "Use the release-2 branch.", "{waited}");
+}
+
+#[tokio::test]
+async fn a_parents_pane_wait_structured_question_row_carries_its_body() {
+    let _guard = serial().await;
+    let r = rig("wait-question-body").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let child = spawn_opencode_child(&r, &token).await;
+    let child_token = r.token_for(child);
+
+    let reported = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_report",
+        serde_json::json!({"kind": "question", "body": "Which branch should I target?", "request_id": 1}),
+    )
+    .await;
+    assert_eq!(reported["isError"], false, "{reported}");
+
+    let waited = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"timeout_ms": 5000}),
+    )
+    .await;
+    let rows = waited["structuredContent"]["rows"].as_array().unwrap();
+    let question = rows
+        .iter()
+        .find(|row| row["kind"] == "question")
+        .unwrap_or_else(|| panic!("no question row: {waited}"));
+    assert_eq!(
+        question["body"], "Which branch should I target?",
+        "{waited}"
+    );
 }
