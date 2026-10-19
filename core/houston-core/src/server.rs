@@ -3646,7 +3646,7 @@ async fn dispatch(
             Ok(profiles) => {
                 daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                     profiles,
-                    keyring_error: crate::ssh_credentials::keyring_error(),
+                    keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                 });
                 Ok(())
             }
@@ -3656,7 +3656,7 @@ async fn dispatch(
             Ok(profiles) => {
                 daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                     profiles,
-                    keyring_error: crate::ssh_credentials::keyring_error(),
+                    keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                 });
                 Ok(())
             }
@@ -3668,7 +3668,7 @@ async fn dispatch(
                     sink,
                     &proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     },
                 )
                 .await;
@@ -3682,7 +3682,7 @@ async fn dispatch(
                 Ok(profiles) => {
                     daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     });
                     Ok(())
                 }
@@ -3694,7 +3694,7 @@ async fn dispatch(
                 Ok(profiles) => {
                     daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     });
                     Ok(())
                 }

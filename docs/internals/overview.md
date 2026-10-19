@@ -447,6 +447,15 @@ channel shares it. Off Windows the commands refuse by name and Settings lists no
 - **Secrets never touch the DB.** SSH passwords, passphrases, the Groq key and the ntfy topic
   URL live in the OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
   known secret shapes from anything persisted or shown to another agent.
+- **Keychain services are per state directory.** SSH credentials, the Groq key, the ntfy topic
+  and the certificate authority's key each live under `<prefix>-<digest of the state
+  directory>` (`keychain.rs`), so a dev or test daemon never reads or replaces another
+  channel's secret. Before services were scoped, SSH and the Groq key used the fixed services
+  `houston-ssh` and `houston-voice`. Only the installed state directory (`~/.houston`) may read
+  those: on first read of an absent entry it copies the legacy one into its scoped service and
+  leaves the legacy entry in place, so an older build still finds it. Clearing a secret on the
+  installed directory removes the legacy entry too, otherwise the next read would restore it.
+  Other channels start with no key.
 - **Other CLIs' config is written only through reversible markers.** Hook entries carry a
   `--houston-managed[=<channel>]` sentinel matched per whitespace token; MCP
   self-registration goes through `claude mcp add`, never the file. Houston reads

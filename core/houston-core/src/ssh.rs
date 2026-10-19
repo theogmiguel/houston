@@ -6,7 +6,7 @@ use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::{load_secret_key, HashAlg, PublicKey};
 use russh::ChannelMsg;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch, Semaphore};
 
@@ -622,6 +622,7 @@ fn local_username() -> Option<String> {
 pub async fn connect(
     params: &SshParams,
     known_hosts: PathBuf,
+    state_dir: &Path,
     prompt_tx: mpsc::UnboundedSender<HostKeyPrompt>,
 ) -> Result<(SshHandle, Connected)> {
     let config = Arc::new(client::Config::default());
@@ -644,7 +645,7 @@ pub async fn connect(
             passphrase_profile,
         } => {
             let passphrase = match passphrase_profile.as_deref() {
-                Some(profile) => crate::ssh_credentials::load(profile)?,
+                Some(profile) => crate::ssh_credentials::load(state_dir, profile)?,
                 None => None,
             };
             let key =
@@ -670,7 +671,7 @@ pub async fn connect(
             res.success()
         }
         proto::SshAuth::Password { profile } => {
-            let secret = crate::ssh_credentials::load(profile)?.ok_or_else(|| {
+            let secret = crate::ssh_credentials::load(state_dir, profile)?.ok_or_else(|| {
                 anyhow!(
                     "no password is stored for ssh profile {profile:?} — save one in the \
                      connect dialog, or switch that profile to agent auth"

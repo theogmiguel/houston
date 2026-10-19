@@ -16,8 +16,6 @@ use tokio_rustls::rustls;
 use tokio_rustls::rustls::sign::CertifiedKey;
 use zeroize::Zeroizing;
 
-use super::hash_secret;
-
 const KEY_ENTRY: &str = "ca-key";
 pub(crate) const KEY_CA_CERT: &str = "remote_ca_cert";
 pub(crate) const KEY_CA_NAME: &str = "remote_ca_name";
@@ -354,9 +352,11 @@ fn xml_escape(s: &str) -> String {
 /// One keychain service per state directory, as for the ntfy topic, so a
 /// development daemon never reads or replaces the installed one's authority.
 fn entry(state_dir: &Path) -> Result<keyring::Entry> {
-    let digest = hash_secret(&state_dir.to_string_lossy());
-    keyring::Entry::new(&format!("houston-remote-{}", &digest[..16]), KEY_ENTRY)
-        .map_err(|e| anyhow!("opening the OS keychain for the certificate authority's key: {e}"))
+    keyring::Entry::new(
+        &crate::keychain::scoped_service("houston-remote", state_dir),
+        KEY_ENTRY,
+    )
+    .map_err(|e| anyhow!("opening the OS keychain for the certificate authority's key: {e}"))
 }
 
 pub fn store_key(state_dir: &Path, pem: &str) -> Result<()> {

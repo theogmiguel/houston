@@ -5651,6 +5651,10 @@ impl Daemon {
         self.safe_mode_flags
     }
 
+    pub fn state_dir(&self) -> &Path {
+        &self.state_dir
+    }
+
     fn marker_path(&self) -> PathBuf {
         self.state_dir.join(CLEAN_SHUTDOWN_FILE)
     }
@@ -12318,7 +12322,13 @@ impl Daemon {
         };
 
         let display = params.display();
-        let result = crate::ssh::connect(&params, self.known_hosts.clone(), prompt_tx).await;
+        let result = crate::ssh::connect(
+            &params,
+            self.known_hosts.clone(),
+            &self.state_dir,
+            prompt_tx,
+        )
+        .await;
         relay.abort();
         self.ssh_prompts
             .lock()
@@ -12615,7 +12625,7 @@ impl Daemon {
     }
 
     pub fn ssh_profile_delete(&self, name: &str) -> Result<Vec<proto::SshProfile>> {
-        if let Err(e) = crate::ssh_credentials::delete(name) {
+        if let Err(e) = crate::ssh_credentials::delete(&self.state_dir, name) {
             tracing::error!(
                 "deleting the stored credential for ssh profile {name:?} failed; \
                  the profile is being removed anyway and a keychain entry may remain: {e}"
@@ -12628,7 +12638,7 @@ impl Daemon {
     pub fn ssh_profiles(&self) -> Result<Vec<proto::SshProfile>> {
         let mut profiles = self.db.list_ssh_profiles()?;
         for p in &mut profiles {
-            p.has_credential = crate::ssh_credentials::has_credential(&p.name);
+            p.has_credential = crate::ssh_credentials::has_credential(&self.state_dir, &p.name);
         }
         Ok(profiles)
     }
@@ -12638,12 +12648,12 @@ impl Daemon {
         profile: &str,
         password: crate::ssh_credentials::Secret,
     ) -> Result<Vec<proto::SshProfile>> {
-        crate::ssh_credentials::store(profile, &password)?;
+        crate::ssh_credentials::store(&self.state_dir, profile, &password)?;
         self.ssh_profiles()
     }
 
     pub fn ssh_credential_clear(&self, profile: &str) -> Result<Vec<proto::SshProfile>> {
-        crate::ssh_credentials::delete(profile)?;
+        crate::ssh_credentials::delete(&self.state_dir, profile)?;
         self.ssh_profiles()
     }
 
@@ -17559,8 +17569,8 @@ impl Daemon {
     pub fn voice_settings_reply(&self) -> proto::ServerMsg {
         proto::ServerMsg::VoiceSettings {
             settings: self.voice_settings(),
-            cloud_key_present: crate::voice::cloud::has_key(),
-            keyring_error: crate::voice::cloud::keyring_error(),
+            cloud_key_present: crate::voice::cloud::has_key(&self.state_dir),
+            keyring_error: crate::voice::cloud::keyring_error(&self.state_dir),
             models: self.voice_model_states(),
         }
     }
@@ -17713,7 +17723,7 @@ impl Daemon {
                 }
             }
             proto::VoiceEngine::Cloud { provider } => {
-                match crate::voice::cloud::key_availability() {
+                match crate::voice::cloud::key_availability(&self.state_dir) {
                     crate::voice::cloud::KeyAvailability::Present => {}
                     crate::voice::cloud::KeyAvailability::Absent => {
                         return Some(proto::VoiceFailure::MissingKey {
@@ -17798,7 +17808,7 @@ impl Daemon {
             }
             proto::VoiceEngine::Cloud { provider } => {
                 let proto::CloudStt::Groq = provider;
-                let key = crate::voice::cloud::load_key()
+                let key = crate::voice::cloud::load_key(&self.state_dir)
                     .map_err(|e| engine_failure(e.to_string()))?
                     .ok_or_else(|| {
                         engine_failure(
@@ -18077,13 +18087,13 @@ impl Daemon {
 
     pub fn voice_key_set(&self, provider: proto::CloudStt, key: String) -> Result<()> {
         let proto::CloudStt::Groq = provider;
-        crate::voice::cloud::store_key(&crate::voice::cloud::Secret::new(key))
+        crate::voice::cloud::store_key(&self.state_dir, &crate::voice::cloud::Secret::new(key))
             .map_err(|e| anyhow::anyhow!("storing the Groq API key: {e}"))
     }
 
     pub fn voice_key_clear(&self, provider: proto::CloudStt) -> Result<()> {
         let proto::CloudStt::Groq = provider;
-        crate::voice::cloud::delete_key()
+        crate::voice::cloud::delete_key(&self.state_dir)
             .map_err(|e| anyhow::anyhow!("removing the Groq API key: {e}"))
     }
 

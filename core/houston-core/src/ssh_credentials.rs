@@ -2,10 +2,17 @@
 //! profile row holds a reference (a profile name), never a credential, so copying
 //! or backing up the database never carries a secret with it.
 
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use zeroize::Zeroizing;
 
-const SERVICE: &str = "houston-ssh";
+use crate::keychain::{scoped_service, Legacy};
+
+const SERVICE_PREFIX: &str = "houston-ssh";
+const LEGACY: Legacy = Legacy {
+    service: "houston-ssh",
+};
 
 /// A secret in memory, wrapped so it cannot be logged by accident: no `Debug`,
 /// `Display` or `Serialize`, so a `{:?}` will not compile rather than print it,
@@ -26,16 +33,19 @@ impl Secret {
     }
 }
 
-fn entry(profile: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(SERVICE, profile).with_context(|| {
+/// One service per state directory, so a development daemon's profiles never
+/// share credentials with the installed one's.
+fn entry(state_dir: &Path, profile: &str) -> Result<keyring::Entry> {
+    let service = scoped_service(SERVICE_PREFIX, state_dir);
+    keyring::Entry::new(&service, profile).with_context(|| {
         format!(
             "opening the system keychain for ssh profile {profile:?} \
-             (service {SERVICE:?}) failed"
+             (service {service:?}) failed"
         )
     })
 }
 
-pub fn store(profile: &str, secret: &Secret) -> Result<()> {
+pub fn store(state_dir: &Path, profile: &str, secret: &Secret) -> Result<()> {
     anyhow::ensure!(
         !profile.trim().is_empty(),
         "an ssh credential needs a profile name to be stored under (got an empty name)"
@@ -45,37 +55,37 @@ pub fn store(profile: &str, secret: &Secret) -> Result<()> {
         "refusing to store an empty ssh credential for profile {profile:?} — \
          clear the stored password instead if that is what you meant"
     );
-    entry(profile)?
+    entry(state_dir, profile)?
         .set_password(secret.expose())
         .with_context(|| format!("storing the ssh credential for profile {profile:?}"))
 }
 
-pub fn load(profile: &str) -> Result<Option<Secret>> {
-    match entry(profile)?.get_password() {
-        Ok(p) => Ok(Some(Secret::new(p))),
-        Err(keyring::Error::NoEntry) => Ok(None),
+/// Credentials the installed daemon stored under the fixed `houston-ssh`
+/// service are copied into its scoped service on first read.
+pub fn load(state_dir: &Path, profile: &str) -> Result<Option<Secret>> {
+    match LEGACY.load(&entry(state_dir, profile)?, state_dir, profile) {
+        Ok(p) => Ok(p.map(Secret::new)),
         Err(e) => Err(anyhow::Error::new(e))
             .with_context(|| format!("reading the ssh credential for profile {profile:?}")),
     }
 }
 
-pub fn delete(profile: &str) -> Result<()> {
-    match entry(profile)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(anyhow::Error::new(e))
-            .with_context(|| format!("deleting the ssh credential for profile {profile:?}")),
-    }
+pub fn delete(state_dir: &Path, profile: &str) -> Result<()> {
+    LEGACY
+        .delete(&entry(state_dir, profile)?, state_dir, profile)
+        .map_err(anyhow::Error::new)
+        .with_context(|| format!("deleting the ssh credential for profile {profile:?}"))
 }
 
-pub fn has_credential(profile: &str) -> bool {
-    matches!(load(profile), Ok(Some(_)))
+pub fn has_credential(state_dir: &Path, profile: &str) -> bool {
+    matches!(load(state_dir, profile), Ok(Some(_)))
 }
 
 /// Why a credential lookup came back empty. The badge cannot tell "no password
 /// saved" from "the keyring is asleep", and those mean very different things to a
 /// user; probed once per profile-list build since the answer is the session bus's.
-pub fn keyring_error() -> Option<String> {
-    match entry("__tr_probe__").and_then(|e| match e.get_password() {
+pub fn keyring_error(state_dir: &Path) -> Option<String> {
+    match entry(state_dir, "__tr_probe__").and_then(|e| match e.get_password() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(anyhow::Error::new(e)),
     }) {
@@ -97,7 +107,12 @@ mod tests {
 
     #[test]
     fn refuses_to_store_an_empty_credential() {
-        let err = store("tr-test-empty", &Secret::new(String::new())).unwrap_err();
+        let err = store(
+            Path::new("/tmp/tr-state"),
+            "tr-test-empty",
+            &Secret::new(String::new()),
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("tr-test-empty"), "{msg}");
         assert!(msg.contains("empty"), "{msg}");
@@ -105,7 +120,7 @@ mod tests {
 
     #[test]
     fn refuses_an_unnamed_profile() {
-        let err = store("  ", &Secret::new("x".into())).unwrap_err();
+        let err = store(Path::new("/tmp/tr-state"), "  ", &Secret::new("x".into())).unwrap_err();
         assert!(err.to_string().contains("profile name"), "{err}");
     }
 }
