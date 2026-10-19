@@ -155,7 +155,10 @@ async fn idle_waits_retain_admission_and_release_it_on_disconnect() {
                     if let proto::ServerMsg::Error { message, context } =
                         common::next_control(socket).await
                     {
-                        if context.as_deref() == Some("control_admission") {
+                        if context
+                            .as_deref()
+                            .is_some_and(|c| c.starts_with("control_admission"))
+                        {
                             assert!(message.contains("connection 16, process 64"));
                             refusals += 1;
                         }
@@ -232,7 +235,10 @@ async fn slow_control_bursts_bound_admission_across_disconnected_connections() {
                     if let Ok(proto::ServerMsg::Error { message, context }) =
                         serde_json::from_str(&text)
                     {
-                        if context.as_deref() == Some("control_admission") {
+                        if context
+                            .as_deref()
+                            .is_some_and(|c| c.starts_with("control_admission"))
+                        {
                             assert!(message.contains("connection 16, process 64"));
                             refusals += 1;
                             break;
@@ -275,4 +281,70 @@ async fn slow_control_bursts_bound_admission_across_disconnected_connections() {
             server::active_control_handlers_for_test(),
         )
     });
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn refusal_names_the_refused_message_type_and_its_target() {
+    let _home = Home::new();
+    let (addr, _state, daemon) = common::start_daemon_without_mail_loop().await;
+    let fixture = Arc::new(server::ControlTestGate::default());
+    server::set_control_test(&daemon, fixture.clone());
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    for _ in 0..16 {
+        socket
+            .send(Message::text(r#"{"type":"session_list"}"#))
+            .await
+            .unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while fixture.started.load(Ordering::SeqCst) < 16 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the connection's 16 handlers must be held at the barrier");
+    let dir = "/tmp/refused-dir";
+    let requests = [
+        format!(r#"{{"type":"git_branch","dir":"{dir}"}}"#),
+        r#"{"type":"pr_status","dir":"/tmp/other"}"#.to_string(),
+        r#"{"type":"wait_for_idle","request":9,"session":1}"#.to_string(),
+        r#"{"type":"session_list"}"#.to_string(),
+    ];
+    for request in &requests {
+        socket.send(Message::text(request.clone())).await.unwrap();
+    }
+    let mut contexts = Vec::new();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while contexts.len() < requests.len() {
+            if let proto::ServerMsg::Error { message, context } =
+                common::next_control(&mut socket).await
+            {
+                let context = context.expect("a refusal carries a context");
+                assert!(message.contains("connection 16, process 64"), "{message}");
+                contexts.push((message, context));
+            }
+        }
+    })
+    .await
+    .expect("every excess request must be refused with an error");
+    let expected = [
+        (
+            "git_branch",
+            "control_admission:git_branch:/tmp/refused-dir",
+        ),
+        ("pr_status", "control_admission:pr_status:/tmp/other"),
+        ("wait_for_idle", "control_admission:wait_for_idle:9"),
+        ("session_list", "control_admission:session_list"),
+    ];
+    for ((message, context), (kind, expected)) in contexts.iter().zip(expected) {
+        assert_eq!(context, expected, "refusal context for {kind}");
+        assert!(
+            message.ends_with(&format!("refused control request {kind}"))
+                || message.contains(&format!("refused control request {kind} (")),
+            "refusal message must name {kind}: {message}"
+        );
+    }
+    fixture.release.add_permits(16);
+    socket.close(None).await.unwrap();
 }

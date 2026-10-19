@@ -368,7 +368,8 @@ Off-connection control handlers use immediate admission: at most 16 per connecti
 mutations through completion, including after disconnect; this preserves partially applied
 mutations and subprocess cleanup. Completed handles are collected at the next admission.
 Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply being sent.
-Cloning senders adds no capacity. Admission refusal names the limits and current counts.
+Cloning senders adds no capacity. Admission refusal names the limits, their current counts and the refused message type with its
+`dir` or `request` id, so a client can retry or settle that request.
 Reply overflow closes the connection for a full state resync; mutations already admitted
 still finish. These limits apply to off-connection handlers, not the attach-family path.
 Idle waits retain their handler permits for the entire quiet-window or timeout check.
