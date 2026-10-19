@@ -27,6 +27,12 @@ Rules:
   config home outside the temp, fixture and target scratch roots, whatever the runner.
   Unit tests build daemons from `HostEnv::capture_with_home`. The confinement covers
   Houston's own config writes; a real CLI the daemon runs still sees the daemon's `HOME`.
+- The app's tests that spawn a real daemon (`src-tauri/src/daemon_host.rs`) start it through
+  `test_home::isolate`, which points `HOME`, `USERPROFILE`, `XDG_CONFIG_HOME`, `CODEX_HOME` and
+  `CLAUDE_CONFIG_DIR` into the test's throwaway home. Each such test then reads the spawned
+  daemon's `/proc/<pid>/environ` and fails when any of them locates configuration elsewhere,
+  because a daemon that inherits the account's home installs hooks and Codex trust blocks in
+  the developer's real configuration.
 - The integration files are modules of one binary and a test runs in its own process under
   nextest. A test that re-executes its binary with `--exact` builds the name with
   `common::exact_path(module_path!(), name)`, which refuses a name that matches no test:
