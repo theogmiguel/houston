@@ -1351,6 +1351,10 @@ export class HoustonClient {
     this.send({ type: 'inbox_resolve', id })
   }
 
+  childInputResolve(child: number, id: string): void {
+    this.send({ type: 'child_input_resolve', child, id })
+  }
+
   inboxDeliverNow(session: number): void {
     this.send({ type: 'inbox_deliver_now', session })
   }

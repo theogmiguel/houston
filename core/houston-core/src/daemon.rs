@@ -21206,8 +21206,13 @@ impl Daemon {
             None,
             true,
         )?;
-        let result = self.db.inbox_insert_report(&row, &receipt, now_ms())?;
+        let (result, superseded) =
+            self.db
+                .inbox_insert_report_superseding(&row, &receipt, now_ms())?;
         let id = result["message_id"].as_i64().expect("stored report id");
+        for closed in superseded {
+            self.broadcast_inbox_row(closed);
+        }
         if self.live_inbox_recipient(parent) != parent {
             self.escalate_child_inputs_locked(
                 parent,
@@ -21923,11 +21928,45 @@ impl Daemon {
         if self.db.inbox_resolve(id, "operator", now_ms())? == 0 {
             bail!("no inbox row {id} to resolve");
         }
-        Ok(self
+        let row = self
             .db
             .inbox_get(id)?
-            .ok_or_else(|| anyhow!("inbox row {id} vanished right after its own resolve"))?
-            .into())
+            .ok_or_else(|| anyhow!("inbox row {id} vanished right after its own resolve"))?;
+        if let (true, Some(child)) = (
+            matches!(row.kind.as_str(), "question" | "blocked"),
+            row.from_session,
+        ) {
+            if self.db.child_input_resolve_report(child, id, now_ms())? {
+                self.broadcast_delegation(child);
+                self.tasks_on_input_ownership(child);
+            }
+        }
+        Ok(row.into())
+    }
+
+    /// Operator dismissal of a worker-reported question or blocker. The worker is not
+    /// told anything: the ask just stops blocking it in the roster and the parent's counts.
+    pub fn child_input_resolve(&self, child: u32, id: &str) -> Result<()> {
+        let _guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.db
+            .child_input_dismiss(child, id, now_ms())?
+            .ok_or_else(|| {
+                anyhow!(
+                    "no open input request {id:?} for child {child}; it may already be resolved"
+                )
+            })?;
+        if let Some(message) = id
+            .strip_prefix("report:")
+            .and_then(|id| id.parse::<i64>().ok())
+        {
+            self.broadcast_inbox_row(message);
+        }
+        self.broadcast_delegation(child);
+        self.tasks_on_input_ownership(child);
+        Ok(())
     }
 
     /// The ended pane's output tail for its exit row and stop reason: text for a reader,

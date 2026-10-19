@@ -2559,6 +2559,7 @@ async fn dispatch(
             }
             Err(e) => Err(e),
         },
+        proto::ClientMsg::ChildInputResolve { child, id } => daemon.child_input_resolve(child, &id),
         proto::ClientMsg::InboxDeliverNow { session } => daemon.inbox_deliver_now(session),
         proto::ClientMsg::GitStatus { dir, base } => send_git_status(sink, dir, base).await,
         proto::ClientMsg::GitDiff { dir, path, base } => {

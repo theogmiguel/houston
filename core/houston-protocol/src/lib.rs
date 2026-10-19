@@ -3544,6 +3544,10 @@ pub enum ClientMsg {
     InboxResolve {
         id: i64,
     },
+    ChildInputResolve {
+        child: u32,
+        id: String,
+    },
     InboxDeliverNow {
         session: u32,
     },
