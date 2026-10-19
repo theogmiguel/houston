@@ -113,7 +113,10 @@ child's work is finished.
 During work, a child can call `pane_report` with `kind: progress`, `question` or
 `blocked`, a `body` and its current `request_id`. The CLI equivalent is
 `hs-pane report question "Use the existing fixture?" --request-id 1`. Reports do not
-complete the task. Questions and blockers remain open after the parent reads them.
+complete the task. Questions and blockers remain open after the parent reads them,
+until the parent replies, you dismiss them, or the worker sends a later `progress`
+report on the same request, which means it carried on without an answer. A new
+question or blocker never closes an earlier one.
 The parent answers with `pane_reply{message_id,text}` or `hs-pane reply ID TEXT`.
 The child waits with `pane_wait` without a `session`, then matches the reply's
 `reply_to` and `request_id` to its question. It still finishes through `pane_submit`.
@@ -153,6 +156,13 @@ route; without a live ancestor they remain Addressed to you in the operator inbo
 You can open a child and answer before escalation. Houston records your intervention
 for the parent, including the answer when the provider reports it. A reply does not
 expand the child's authority or grant permission for an action outside its brief.
+
+A reported question that reached you stays under Needs you even while its child reports
+working, because the worker may be waiting for the answer. If it carried on instead,
+Dismiss, on the banner or in the child's context menu, closes the question without
+sending anything to the worker; resolving the question's row in the inbox does the same.
+Dismiss is offered only for reported questions and blockers: a permission or native
+prompt clears from the pane.
 
 Each report or reply allows 1–8000 characters. A worker can have at most 64 outstanding
 reports and 64 unread replies; delivered unanswered questions count toward the limit.

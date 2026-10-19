@@ -27,7 +27,8 @@ export function inputEpisode(session: SessionInfo): string | null {
 
 export function attentionStatus(session: SessionInfo): AgentStatus | null | undefined {
   if (needsUserInput(session)) return 'needs-input'
-  if (askedOrchestrator(session)) return 'idle'
+  // A report ask leaves the child working; only a provider block reads as idle to the operator.
+  if (askedOrchestrator(session)) return session.status === 'working' ? 'working' : 'idle'
   return session.status
 }
 
