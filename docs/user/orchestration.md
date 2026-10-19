@@ -216,9 +216,12 @@ after a hook has added commits, Houston preserves them and reports that rollback
 
 While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
 whether their committed branches would conflict with their base or with each other. A
-new predicted conflict arrives once in the orchestrator's inbox, naming both branches and
+new predicted conflict arrives once in the orchestrator's inbox, naming the branches and
 the files, so it can reassign or sequence the work before either branch becomes a pull
-request. It reads only the local repository and requires Git 2.38 or newer; with an older
+request. A branch that conflicts with several others is one note listing them. Worktrees
+with no commits of their own, worktrees already merged into their base, and worktrees
+nobody is working in (their orchestrator has ended and no session runs there) are not
+compared. It reads only the local repository and requires Git 2.38 or newer; with an older
 Git, the orchestrator receives one note naming the installed and required versions.
 
 A new worktree is a fresh checkout, so files Git ignores, such as `.env` or local settings,

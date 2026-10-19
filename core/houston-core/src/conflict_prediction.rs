@@ -129,11 +129,12 @@ pub fn resolve<'a>(heads: &'a HashMap<String, String>, name: &str) -> Option<&'a
         .map(String::as_str)
 }
 
-/// Merges commits `ours` and `theirs` in memory. Git writes the resulting tree objects
-/// to the object store, unreferenced, so a later gc removes them; no ref, index or
-/// working tree changes.
-pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdict, String> {
-    let out = git(
+fn run_merge_tree(
+    git_dir: &Path,
+    ours: &str,
+    theirs: &str,
+) -> Result<std::process::Output, String> {
+    git(
         Some(git_dir),
         &[
             "merge-tree",
@@ -145,7 +146,14 @@ pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdi
             theirs,
         ],
         MERGE_TREE_TIMEOUT,
-    )?;
+    )
+}
+
+/// Merges commits `ours` and `theirs` in memory. Git writes the resulting tree objects
+/// to the object store, unreferenced, so a later gc removes them; no ref, index or
+/// working tree changes.
+pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdict, String> {
+    let out = run_merge_tree(git_dir, ours, theirs)?;
     parse_merge_tree(out.status.code(), &out.stdout).map_err(|e| {
         format!(
             "git merge-tree {ours} {theirs} in {}: {e}: {}",
@@ -153,6 +161,55 @@ pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdi
             String::from_utf8_lossy(&out.stderr).trim()
         )
     })
+}
+
+/// Whether `head`'s changes are already in `base`, from local objects only: `head` is an
+/// ancestor of `base`, or merging it leaves `base`'s tree unchanged (a squash or rebase
+/// merge whose lines `base` has not since edited again).
+pub fn is_integrated(git_dir: &Path, head: &str, base: &str) -> Result<bool, String> {
+    let ancestor = git(
+        Some(git_dir),
+        &["merge-base", "--is-ancestor", head, base],
+        GIT_QUERY_TIMEOUT,
+    )?;
+    match ancestor.status.code() {
+        Some(0) => return Ok(true),
+        Some(1) => {}
+        other => {
+            return Err(format!(
+                "git merge-base --is-ancestor {head} {base} in {} exited {other:?}; expected 0 or 1: {}",
+                git_dir.display(),
+                String::from_utf8_lossy(&ancestor.stderr).trim()
+            ))
+        }
+    }
+    let out = run_merge_tree(git_dir, base, head)?;
+    let verdict = parse_merge_tree(out.status.code(), &out.stdout).map_err(|e| {
+        format!(
+            "git merge-tree {base} {head} in {}: {e}: {}",
+            git_dir.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )
+    })?;
+    if verdict != MergeVerdict::Clean {
+        return Ok(false);
+    }
+    let merged = out.stdout.split(|b| *b == 0).next().unwrap_or_default();
+    let tree_spec = format!("{base}^{{tree}}");
+    let base_tree = git(
+        Some(git_dir),
+        &["rev-parse", "--verify", &tree_spec],
+        GIT_QUERY_TIMEOUT,
+    )?;
+    if !base_tree.status.success() {
+        return Err(format!(
+            "git rev-parse {tree_spec} in {} failed (exit {:?}): {}",
+            git_dir.display(),
+            base_tree.status.code(),
+            String::from_utf8_lossy(&base_tree.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&base_tree.stdout).trim().as_bytes() == merged)
 }
 
 /// Reads `merge-tree --write-tree --name-only --no-messages -z`: tree OID, then conflicted

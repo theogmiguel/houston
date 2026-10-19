@@ -1,6 +1,6 @@
 //! Conflict prediction between managed worktrees: each branch against its base and its
-//! siblings, re-run when a head moves. A new conflict is one note to the worktree's
-//! creator. See docs/internals/daemon.md.
+//! active siblings, re-run when a head moves. A tick's new conflicts reach a worktree's
+//! creator as one note per branch. See docs/internals/daemon.md.
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,6 +19,12 @@ pub(super) const CONFLICT_CHECK_INTERVAL_MS: u64 = 60_000;
 const MAX_RUNS_PER_TICK: usize = 8;
 /// Bounds the note; the remainder is counted, not listed.
 const MAX_NOTED_FILES: usize = 20;
+/// A grouped note lists several partners, so each gets a shorter file list.
+const MAX_FILES_PER_PARTNER: usize = 5;
+/// Deciding that a branch is integrated can cost a `merge-tree` run, like a pair does. The
+/// verdict is kept until a head moves, and a branch left undecided this tick is not
+/// compared until a later one.
+const MAX_INTEGRATION_CHECKS_PER_TICK: usize = 8;
 
 #[derive(Default)]
 pub(super) struct ConflictState {
@@ -26,6 +32,8 @@ pub(super) struct ConflictState {
     git: Option<Result<(), String>>,
     refusal_noted: HashSet<u32>,
     checked: HashMap<String, Checked>,
+    /// Whether a worktree head is already in its base, keyed by (head, base head).
+    integrated: HashMap<(String, String), bool>,
 }
 
 struct Checked {
@@ -38,6 +46,8 @@ struct Side {
     head: String,
     /// The worktree on this branch; `None` for a base branch.
     path: Option<String>,
+    /// The head of the worktree's recorded base, when that branch resolves.
+    base_head: Option<String>,
 }
 
 struct Pair {
@@ -81,6 +91,7 @@ impl Daemon {
                 .or_default()
                 .push(row);
         }
+        let active = self.active_worktrees(&rows);
         let mut known = HashSet::new();
         let mut pairs = Vec::new();
         for (common_dir, rows) in repos {
@@ -95,7 +106,9 @@ impl Daemon {
             }
             let git_dir = PathBuf::from(common_dir);
             match cp::branch_heads(&git_dir) {
-                Ok(heads) => pairs.extend(resolve_pairs(&git_dir, &rows, &heads)),
+                Ok(heads) => pairs.extend(resolve_pairs(&git_dir, &rows, &heads, &|row| {
+                    active.contains(row.path.as_str())
+                })),
                 Err(e) => tracing::warn!("conflict prediction: reading branch heads: {e}"),
             }
         }
@@ -104,6 +117,7 @@ impl Daemon {
             pair.recipients.retain(|s| reachable.contains(s));
         }
         pairs.retain(|p| !p.recipients.is_empty());
+        self.drop_integrated_pairs(&mut pairs);
 
         let due: Vec<Pair> = {
             let state = self.conflict_prediction.lock().expect("conflict lock");
@@ -121,6 +135,7 @@ impl Daemon {
                 .collect()
         };
 
+        let mut fresh = Vec::new();
         for pair in due {
             let verdict = cp::merge_tree(&pair.git_dir, &pair.ours.head, &pair.theirs.head);
             self.conflict_prediction
@@ -142,7 +157,7 @@ impl Daemon {
                 }
                 Ok(MergeVerdict::Conflict(files)) => {
                     match self.db.predicted_conflict_note(&pair.key, now_ms() as i64) {
-                        Ok(true) => self.note_predicted_conflict(&pair, &files),
+                        Ok(true) => fresh.push((pair, files)),
                         Ok(false) => {}
                         Err(e) => tracing::warn!("conflict prediction: recording a pair: {e:#}"),
                     }
@@ -151,6 +166,7 @@ impl Daemon {
                 Err(e) => tracing::warn!("conflict prediction: {e}"),
             }
         }
+        self.note_predicted_conflicts(&fresh);
 
         self.conflict_prediction
             .lock()
@@ -216,28 +232,115 @@ impl Daemon {
         }
     }
 
-    fn note_predicted_conflict(self: &Arc<Self>, pair: &Pair, files: &[String]) {
-        let (summary, body) = conflict_note(pair, files);
-        let repo = pair.git_dir.parent().unwrap_or(&pair.git_dir);
-        for &session in &pair.recipients {
+    /// Paths of the worktrees someone is working in: their creating pane is live, or a
+    /// live session runs inside them. Worktrees left over from finished work are not.
+    fn active_worktrees<'a>(&self, rows: &'a [ManagedWorktreeRow]) -> HashSet<&'a str> {
+        let (live, cwds): (HashSet<u32>, Vec<PathBuf>) = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            let ids: Vec<u32> = sessions
+                .iter()
+                .filter(|(_, s)| s.state.lock().expect("state lock").is_live())
+                .map(|(id, _)| *id)
+                .collect();
+            drop(sessions);
+            let cwds = ids
+                .iter()
+                .filter_map(|id| self.live_cwd(*id))
+                .map(|cwd| cwd.canonicalize().unwrap_or(cwd))
+                .collect();
+            (ids.into_iter().collect(), cwds)
+        };
+        rows.iter()
+            .filter(|row| {
+                row.created_by_session.is_some_and(|s| live.contains(&s)) || {
+                    let path = PathBuf::from(&row.path);
+                    let path = path.canonicalize().unwrap_or(path);
+                    cwds.iter().any(|cwd| cwd.starts_with(&path))
+                }
+            })
+            .map(|row| row.path.as_str())
+            .collect()
+    }
+
+    /// Drops pairs with a worktree whose changes are already in its base: a branch with no
+    /// commits of its own conflicts exactly as its base does, and an integrated one only
+    /// reports what its base changed since.
+    fn drop_integrated_pairs(&self, pairs: &mut Vec<Pair>) {
+        let mut budget = MAX_INTEGRATION_CHECKS_PER_TICK;
+        let mut known = self
+            .conflict_prediction
+            .lock()
+            .expect("conflict lock")
+            .integrated
+            .clone();
+        let mut seen = HashSet::new();
+        pairs.retain(|pair| {
+            [&pair.ours, &pair.theirs].into_iter().all(|side| {
+                let Some(base_head) = side.path.as_ref().and(side.base_head.as_ref()) else {
+                    return true;
+                };
+                let key = (side.head.clone(), base_head.clone());
+                seen.insert(key.clone());
+                let integrated = match known.get(&key) {
+                    Some(verdict) => *verdict,
+                    None if budget == 0 => return false,
+                    None => {
+                        budget -= 1;
+                        match cp::is_integrated(&pair.git_dir, &side.head, base_head) {
+                            Ok(known_verdict) => {
+                                known.insert(key, known_verdict);
+                                known_verdict
+                            }
+                            Err(e) => {
+                                tracing::warn!("conflict prediction: {e}");
+                                false
+                            }
+                        }
+                    }
+                };
+                !integrated
+            })
+        });
+        known.retain(|key, _| seen.contains(key));
+        self.conflict_prediction
+            .lock()
+            .expect("conflict lock")
+            .integrated = known;
+    }
+
+    /// One note per branch and recipient: a branch that conflicts with several others names
+    /// them all instead of filling the inbox with one row per pair.
+    fn note_predicted_conflicts(self: &Arc<Self>, fresh: &[(Pair, Vec<String>)]) {
+        let sessions: BTreeSet<u32> = fresh
+            .iter()
+            .flat_map(|(pair, _)| pair.recipients.iter().copied())
+            .collect();
+        for session in sessions {
+            let mine: Vec<&(Pair, Vec<String>)> = fresh
+                .iter()
+                .filter(|(pair, _)| pair.recipients.contains(&session))
+                .collect();
+            let repo = mine[0].0.git_dir.parent().unwrap_or(&mine[0].0.git_dir);
             let workspace = self
                 .current_workspace(session)
                 .unwrap_or_else(|_| repo.display().to_string());
-            if let Err(e) = self.inbox_write(
-                session,
-                &workspace,
-                None,
-                None,
-                orchestrate::InboxKind::OperatorNote,
-                &summary,
-                &body,
-                Vec::new(),
-                Some("conflict_predicted"),
-                None,
-                false,
-                true,
-            ) {
-                tracing::warn!("noting a predicted conflict to pane {session}: {e:#}");
+            for (summary, body) in grouped_notes(&mine) {
+                if let Err(e) = self.inbox_write(
+                    session,
+                    &workspace,
+                    None,
+                    None,
+                    orchestrate::InboxKind::OperatorNote,
+                    &summary,
+                    &body,
+                    Vec::new(),
+                    Some("conflict_predicted"),
+                    None,
+                    false,
+                    true,
+                ) {
+                    tracing::warn!("noting a predicted conflict to pane {session}: {e:#}");
+                }
             }
         }
     }
@@ -287,17 +390,26 @@ fn resolve_pairs(
     git_dir: &Path,
     rows: &[&ManagedWorktreeRow],
     heads: &HashMap<String, String>,
+    active: &dyn Fn(&ManagedWorktreeRow) -> bool,
 ) -> Vec<Pair> {
     let side = |row: &ManagedWorktreeRow| {
         Some(Side {
             head: cp::resolve(heads, &row.branch)?.to_string(),
             branch: row.branch.clone(),
             path: Some(row.path.clone()),
+            base_head: row
+                .base_branch
+                .as_deref()
+                .and_then(|base| cp::resolve(heads, base))
+                .map(str::to_string),
         })
     };
     pair_shapes(rows)
         .into_iter()
         .filter_map(|(key, a, b)| {
+            if b.is_some_and(|b| !active(a) || !active(b)) {
+                return None;
+            }
             let ours = side(a)?;
             let (theirs, recipients) = match b {
                 None => {
@@ -306,6 +418,7 @@ fn resolve_pairs(
                         head: cp::resolve(heads, &base)?.to_string(),
                         branch: base,
                         path: None,
+                        base_head: None,
                     };
                     (theirs, a.created_by_session.into_iter().collect())
                 }
@@ -328,12 +441,31 @@ fn resolve_pairs(
         .collect()
 }
 
+const NOTE_FOOTER: &str = "\n\nPredicted with `git merge-tree` from the committed branch heads; \
+    uncommitted changes are not included. Houston notes this pair once while the conflict \
+    persists, and again only if it recurs after merging clean.";
+
+fn describe(side: &Side) -> String {
+    let head: String = side.head.chars().take(10).collect();
+    match &side.path {
+        Some(path) => format!("{} ({head}, worktree {path})", side.branch),
+        None => format!("{} ({head})", side.branch),
+    }
+}
+
+fn file_lines(files: &[String], limit: usize) -> String {
+    let mut lines = String::new();
+    for file in files.iter().take(limit) {
+        lines.push_str("\n- ");
+        lines.push_str(file);
+    }
+    if files.len() > limit {
+        lines.push_str(&format!("\n- and {} more", files.len() - limit));
+    }
+    lines
+}
+
 fn conflict_note(pair: &Pair, files: &[String]) -> (String, String) {
-    let short = |head: &str| head.chars().take(10).collect::<String>();
-    let describe = |side: &Side| match &side.path {
-        Some(path) => format!("{} ({}, worktree {path})", side.branch, short(&side.head)),
-        None => format!("{} ({})", side.branch, short(&side.head)),
-    };
     let (summary, merge) = if pair.theirs.path.is_none() {
         (
             format!(
@@ -368,20 +500,78 @@ fn conflict_note(pair: &Pair, files: &[String]) -> (String, String) {
         body.push_str(" (git named no paths).");
     } else {
         body.push(':');
-        for file in files.iter().take(MAX_NOTED_FILES) {
-            body.push_str("\n- ");
-            body.push_str(file);
-        }
-        if files.len() > MAX_NOTED_FILES {
-            body.push_str(&format!("\n- and {} more", files.len() - MAX_NOTED_FILES));
+        body.push_str(&file_lines(files, MAX_NOTED_FILES));
+    }
+    body.push_str(NOTE_FOOTER);
+    (summary, body)
+}
+
+/// One recipient's notes for a tick's new conflicts: a branch in several sibling conflicts
+/// is one note naming its partners, the branch in the most pairs first. Base pairs and lone
+/// pairs keep the per-pair note.
+fn grouped_notes(fresh: &[&(Pair, Vec<String>)]) -> Vec<(String, String)> {
+    let mut notes = Vec::new();
+    let mut siblings: Vec<&(Pair, Vec<String>)> = Vec::new();
+    for entry in fresh {
+        if entry.0.theirs.path.is_none() {
+            notes.push(conflict_note(&entry.0, &entry.1));
+        } else {
+            siblings.push(entry);
         }
     }
-    body.push_str(
-        "\n\nPredicted with `git merge-tree` from the committed branch heads; uncommitted \
-         changes are not included. Houston notes this pair once while the conflict \
-         persists, and again only if it recurs after merging clean.",
-    );
-    (summary, body)
+    while !siblings.is_empty() {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for (pair, _) in &siblings {
+            *counts.entry(&pair.ours.branch).or_default() += 1;
+            *counts.entry(&pair.theirs.branch).or_default() += 1;
+        }
+        let (anchor, count) = counts
+            .into_iter()
+            .max_by_key(|(name, count)| (*count, std::cmp::Reverse(*name)))
+            .expect("a pair names two branches");
+        let anchor = anchor.to_string();
+        let (members, rest): (Vec<_>, Vec<_>) = siblings
+            .into_iter()
+            .partition(|(pair, _)| pair.ours.branch == anchor || pair.theirs.branch == anchor);
+        siblings = rest;
+        if count == 1 {
+            notes.extend(
+                members
+                    .iter()
+                    .map(|(pair, files)| conflict_note(pair, files)),
+            );
+            continue;
+        }
+        let mut body = String::new();
+        let mut anchor_side = None;
+        for (pair, files) in &members {
+            let (own, partner) = if pair.ours.branch == anchor {
+                (&pair.ours, &pair.theirs)
+            } else {
+                (&pair.theirs, &pair.ours)
+            };
+            anchor_side.get_or_insert(own);
+            body.push_str(&format!(
+                "\n- {}: {} file{}",
+                describe(partner),
+                files.len(),
+                if files.len() == 1 { "" } else { "s" }
+            ));
+            if !files.is_empty() {
+                body.push(':');
+                body.push_str(&file_lines(files, MAX_FILES_PER_PARTNER).replace('\n', "\n  "));
+            }
+        }
+        let anchor_side = anchor_side.expect("a group has a member");
+        notes.push((
+            format!("Predicted conflict: {anchor} with {count} other branches"),
+            format!(
+                "Merging {} with each of these branches would conflict:{body}{NOTE_FOOTER}",
+                describe(anchor_side)
+            ),
+        ));
+    }
+    notes
 }
 
 #[cfg(test)]
@@ -443,7 +633,7 @@ mod tests {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let pairs = resolve_pairs(Path::new("/r/.git"), &[&a, &b, &c], &heads);
+        let pairs = resolve_pairs(Path::new("/r/.git"), &[&a, &b, &c], &heads, &|_| true);
         let recipients: Vec<_> = pairs.iter().map(|p| p.recipients.clone()).collect();
         // No `main` head, so the base pairs do not resolve.
         assert_eq!(recipients, vec![vec![1], vec![1, 2], vec![1, 2]]);
@@ -458,11 +648,13 @@ mod tests {
                 branch: "houston/a".into(),
                 head: "0123456789abcdef".into(),
                 path: Some("/r/a".into()),
+                base_head: None,
             },
             theirs: Side {
                 branch: "houston/b".into(),
                 head: "fedcba9876543210".into(),
                 path: Some("/r/b".into()),
+                base_head: None,
             },
             recipients: vec![1],
         };

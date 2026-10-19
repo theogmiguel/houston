@@ -606,9 +606,15 @@ The conflict prediction loop has no setting because it is local, bounded and rea
 apart from unreferenced merge objects, and it is idle until a managed worktree has a
 creating session. Only sessions with a live inbox recipient are compared or notified;
 otherwise a closed orchestrator's notes would reach the workspace operator queue each time
-its abandoned branches fall behind. `MAX_RUNS_PER_TICK` caps `git merge-tree` runs, and
-an unchanged pair of heads is never re-run. `predicted_conflicts` keeps a conflict to one
-note until the pair merges clean. Merge-tree needs Git 2.38: an older or missing Git is
+its abandoned branches fall behind. Siblings are compared only while active (the creating
+pane is live, or a live session runs in the worktree), and a worktree whose head is already
+in its base is skipped: no commits of its own, or merged, including a squash merge that
+leaves the base's tree unchanged under `git merge-tree`. That judgement uses local objects
+only, is cached per (head, base head) and is bounded by `MAX_INTEGRATION_CHECKS_PER_TICK`.
+A merge whose lines the base has since edited again still reads as open. `MAX_RUNS_PER_TICK`
+caps `git merge-tree` runs, and an unchanged pair of heads is never re-run.
+`predicted_conflicts` keeps a conflict to one note until the pair merges clean. A tick's new
+sibling conflicts reach each recipient as one note per branch, listing its partners. Merge-tree needs Git 2.38: an older or missing Git is
 refused by name, once per creating session. Only committed heads are compared, so
 uncommitted work is invisible to it.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
