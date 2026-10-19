@@ -252,6 +252,7 @@ import { useDismissedUpdate } from "./updateDismissal";
 import { SettingsBreadcrumb } from "./components/ui/SettingsBreadcrumb";
 import { liveSessionCount, UpdateInstallHost } from "./components/UpdateInstallHost";
 import { useCheckoutFacts } from "./useCheckoutFacts";
+import { isBackgroundAdmissionRefusal } from "./houston/controlAdmission";
 import {
   addGrid,
   autoNameGrid,
@@ -485,7 +486,7 @@ const USAGE_SUMMARY_ERROR_CONTEXT = "usage_summary";
 const USAGE_ACTIVITY_ERROR_CONTEXT = "usage_activity";
 
 function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void, ops: PaneOps): void {
-  if (msg.context === GIT_STATUS_ERROR_CONTEXT || ops.isStaleInput(msg)) return;
+  if (msg.context === GIT_STATUS_ERROR_CONTEXT || isBackgroundAdmissionRefusal(msg.context) || ops.isStaleInput(msg)) return;
   if (ops.attribute(msg) === null) push(msg.message);
 }
 

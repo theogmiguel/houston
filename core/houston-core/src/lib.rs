@@ -37,6 +37,7 @@ pub mod home_dir;
 pub mod hook_drop;
 pub mod hook_state;
 pub mod host_env;
+pub mod keychain;
 pub mod launch;
 pub mod legacy_hook_sweep;
 pub mod lock;

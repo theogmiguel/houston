@@ -1514,6 +1514,8 @@ mod tests {
                 )
             });
         guard.connection = Some((handle.port, handle.token.clone()));
+        #[cfg(target_os = "linux")]
+        assert_daemon_confined_to_home(&state_dir, home.path());
 
         let sup: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(state_dir.join("supervisor.json")).expect("supervisor.json"),
@@ -2699,6 +2701,35 @@ mod tests {
         value["pid"].as_u64().map(|pid| pid as u32)
     }
 
+    /// Fails when the daemon at `state_dir` was started with an agent config home
+    /// outside `home`: such a daemon installs hooks and Codex trust blocks into the
+    /// developer's real configuration. Reads the environment the process was exec'd with.
+    #[cfg(target_os = "linux")]
+    fn assert_daemon_confined_to_home(state_dir: &Path, home: &Path) {
+        let pid = daemon_json_pid(state_dir).expect("daemon.json names a pid");
+        let raw = fs::read(format!("/proc/{pid}/environ"))
+            .unwrap_or_else(|e| panic!("reading /proc/{pid}/environ: {e}"));
+        let environment: std::collections::BTreeMap<String, String> = raw
+            .split(|byte| *byte == 0)
+            .filter_map(|pair| {
+                String::from_utf8_lossy(pair)
+                    .split_once('=')
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+            })
+            .collect();
+        assert_eq!(
+            environment.get("HOME").map(String::as_str),
+            Some(home.to_str().expect("UTF-8 throwaway home")),
+            "the test daemon (pid {pid}) must run with HOME set to its throwaway home"
+        );
+        let escaping = crate::test_home::config_outside_home(&environment, home);
+        assert!(
+            escaping.is_empty(),
+            "the test daemon (pid {pid}) locates agent configuration outside its throwaway home {}: {escaping:?}",
+            home.display()
+        );
+    }
+
     #[cfg(unix)]
     fn copy_of_the_core_binary() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -2746,6 +2777,8 @@ mod tests {
             .await
             .expect("the spawned daemon becomes ready");
         guard.connection = Some((handle.port, handle.token.clone()));
+        #[cfg(target_os = "linux")]
+        assert_daemon_confined_to_home(&state_dir, home.path());
         let before_pid = daemon_json_pid(&state_dir).expect("daemon.json names a pid");
 
         // A stand-in for this app's own sidecar: the real daemon binary at a
@@ -2771,6 +2804,8 @@ mod tests {
         );
 
         let after_pid = daemon_json_pid(&state_dir).expect("daemon.json names the successor");
+        #[cfg(target_os = "linux")]
+        assert_daemon_confined_to_home(&state_dir, home.path());
         assert_ne!(
             after_pid, before_pid,
             "a new generation must own the channel"
@@ -2809,6 +2844,8 @@ mod tests {
             .await
             .expect("the spawned daemon becomes ready");
         guard.connection = Some((handle.port, handle.token.clone()));
+        #[cfg(target_os = "linux")]
+        assert_daemon_confined_to_home(&state_dir, home.path());
         let before_pid = daemon_json_pid(&state_dir).expect("daemon.json names a pid");
 
         let missing = tempfile::tempdir().unwrap().path().join("houston-core");
@@ -2858,6 +2895,8 @@ mod tests {
             .await
             .expect("the spawned daemon becomes ready");
         guard.connection = Some((handle.port, handle.token.clone()));
+        #[cfg(target_os = "linux")]
+        assert_daemon_confined_to_home(&state_dir, home.path());
         let before_pid = daemon_json_pid(&state_dir).expect("daemon.json names a pid");
 
         let missing = tempfile::tempdir().unwrap().path().join("houston-core");

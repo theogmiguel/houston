@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../houston/client'
-import { withInputOwner, withPermissionOwner } from '../test/inputFixtures'
+import { withInputOwner, withPermissionOwner, withReportAsk } from '../test/inputFixtures'
 import { askedOrchestrator, attentionLabel, attentionStatus, needsUserInput } from '../sessionAttention'
 import { gridStatus } from './ui/railRows'
+import { classifyChild } from '../childStatus'
+import type { HoustonClient } from '../houston/client'
 import { ChildInputBanner, ChildInputDetails, ParentOwnedInput } from './ChildInputDetails'
 
 afterEach(cleanup)
@@ -47,4 +49,34 @@ it('preserves operator attention for an escalated descendant while this child as
   expect(needsUserInput(permission)).toBe(true)
   expect(attentionStatus(permission)).toBe('needs-input')
   expect(attentionLabel(permission)).toBe('Needs you')
+})
+
+it('keeps an escalated report question amber while its child works, since the worker may be waiting on it', () => {
+  const asked = withReportAsk(child, 'user')
+  expect(needsUserInput(asked)).toBe(true)
+  expect(attentionStatus(asked)).toBe('needs-input')
+  expect(attentionLabel(asked)).toBe('Needs you')
+  expect(classifyChild(asked).group).toBe('Needs you')
+})
+
+it('does not force a working child with a parent-owned report question to idle', () => {
+  const asked = withReportAsk(child, 'orchestrator')
+  expect(askedOrchestrator(asked)).toBe(true)
+  expect(attentionStatus(asked)).toBe('working')
+  expect(attentionLabel(asked)).toBe('Asked orchestrator')
+  expect(classifyChild(asked).group).toBe('Waiting on orchestrator')
+  const blocked = withPermissionOwner(child, 'orchestrator')
+  expect(attentionStatus(blocked)).toBe('idle')
+})
+
+it('dismisses a report ask from the banner and offers no dismissal for a provider prompt', () => {
+  const childInputResolve = vi.fn()
+  const client = { childInputResolve } as unknown as HoustonClient
+  const view = render(<ChildInputBanner info={withReportAsk(child, 'user')} client={client} />)
+  expect(screen.getByRole('note').textContent).toContain('Needs you')
+  screen.getByRole('button', { name: 'Dismiss' }).click()
+  expect(childInputResolve).toHaveBeenCalledWith(2, 'report:7')
+  view.unmount()
+  render(<ChildInputBanner info={withPermissionOwner(child, 'user')} client={client} />)
+  expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
 })

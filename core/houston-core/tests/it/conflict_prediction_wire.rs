@@ -244,6 +244,9 @@ async fn worktrees_without_a_live_orchestrator_or_a_conflict_note_nothing() {
     let b = worktree(&db, &repo, "b", Some(parent));
     let x = worktree(&db, &repo, "x", None);
     let y = worktree(&db, &repo, "y", None);
+    // Worktrees with no creator are compared only while a session runs in them.
+    let x_session = orchestrator(&daemon, &x);
+    let y_session = orchestrator(&daemon, &y);
     // Created by a pane that is gone, with no live ancestor to inherit its notes.
     let p = worktree(&db, &repo, "p", Some(9999));
     let q = worktree(&db, &repo, "q", Some(9999));
@@ -269,26 +272,264 @@ async fn worktrees_without_a_live_orchestrator_or_a_conflict_note_nothing() {
     tick(&daemon).await;
     tick(&daemon).await;
     let found = notes(&db);
-    // a conflicts with x and y; only those pairs have a live orchestrator to tell.
-    assert_eq!(found.len(), 2, "{found:#?}");
-    assert!(found.iter().all(|(to, _, _)| *to == parent));
-    assert!(
-        !found.iter().any(|(_, s, _)| s.contains("houston/b")),
-        "b merges clean with everyone: {found:#?}"
+    // a conflicts with x and y, which are the only pairs with a live orchestrator to tell:
+    // one note to the orchestrator, listing both.
+    assert_eq!(found.len(), 1, "{found:#?}");
+    let (to, summary, body) = &found[0];
+    assert_eq!(*to, parent);
+    assert_eq!(
+        summary,
+        "Predicted conflict: houston/a with 2 other branches"
     );
-    assert!(
-        !found
-            .iter()
-            .any(|(_, s, _)| s.contains("houston/x") && s.contains("houston/y")),
-        "x and y conflict, but no orchestrator created either: {found:#?}"
+    for listed in ["houston/x (", "houston/y ("] {
+        assert!(body.contains(&format!("- {listed}")), "{body}");
+    }
+    for absent in ["houston/b", "houston/p", "houston/q"] {
+        assert!(
+            !body.contains(absent),
+            "{absent} merges clean or has no live orchestrator: {body}"
+        );
+    }
+
+    for session in [parent, x_session, y_session] {
+        let _ = daemon.kill(session);
+        let _ = daemon.close(session);
+    }
+}
+
+/// Ends the panes a test started, whether or not it ran to the end.
+fn end(daemon: &Arc<Daemon>, panes: &[u32]) {
+    for pane in panes {
+        let _ = daemon.kill(*pane);
+        let _ = daemon.close(*pane);
+    }
+}
+
+/// Notes that name two branches, as opposed to a branch and its base.
+fn pair_notes(db: &rusqlite::Connection) -> Vec<(u32, String, String)> {
+    notes(db)
+        .into_iter()
+        .filter(|(_, summary, _)| !summary.contains(" into "))
+        .collect()
+}
+
+#[tokio::test]
+async fn an_ended_orchestrators_worktree_and_a_new_empty_one_note_nothing() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let ended = orchestrator(&daemon, &repo.dir);
+    let old = worktree(&db, &repo, "old", Some(ended));
+    commit_file(&old, "shared.txt", &shared(&[(1, "OLD")]), "old");
+    end(&daemon, &[ended]);
+    commit_file(
+        &repo.dir,
+        "shared.txt",
+        &shared(&[(1, "MAIN")]),
+        "main moves",
     );
-    assert!(
-        !found
-            .iter()
-            .any(|(_, s, _)| s.contains("houston/p") && s.contains("houston/q")),
-        "p and q conflict, but their orchestrator is closed: {found:#?}"
+    let live = orchestrator(&daemon, &repo.dir);
+    let _fresh = worktree(&db, &repo, "fresh", Some(live));
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, live).await;
+        end(&daemon, &[live]);
+        return;
+    }
+
+    tick(&daemon).await;
+    tick(&daemon).await;
+    let found = notes(&db);
+    assert!(found.is_empty(), "{found:#?}");
+
+    end(&daemon, &[live]);
+}
+
+#[tokio::test]
+async fn an_empty_worktree_beside_a_live_conflicting_sibling_has_no_pair_note() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let parent = orchestrator(&daemon, &repo.dir);
+    let busy = worktree(&db, &repo, "busy", Some(parent));
+    commit_file(&busy, "shared.txt", &shared(&[(1, "BUSY")]), "busy");
+    commit_file(
+        &repo.dir,
+        "shared.txt",
+        &shared(&[(1, "MAIN")]),
+        "main moves",
+    );
+    let _fresh = worktree(&db, &repo, "fresh", Some(parent));
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent]);
+        return;
+    }
+
+    tick(&daemon).await;
+    tick(&daemon).await;
+    let found = notes(&db);
+    assert_eq!(
+        found.iter().map(|(_, s, _)| s.as_str()).collect::<Vec<_>>(),
+        vec!["Predicted conflict: houston/busy into main"],
+        "busy still conflicts with its base, but an empty sibling adds no pair: {found:#?}"
     );
 
-    let _ = daemon.kill(parent);
-    let _ = daemon.close(parent);
+    end(&daemon, &[parent]);
+}
+
+#[tokio::test]
+async fn a_squash_merged_sibling_notes_nothing() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let parent = orchestrator(&daemon, &repo.dir);
+    let squashed = worktree(&db, &repo, "squashed", Some(parent));
+    commit_file(&squashed, "shared.txt", &shared(&[(1, "SQ")]), "squashed 1");
+    commit_file(&squashed, "extra.txt", "extra\n", "squashed 2");
+    git(&repo.dir, &["merge", "--squash", "houston/squashed"]);
+    git(&repo.dir, &["commit", "-q", "-m", "squash merge"]);
+    commit_file(
+        &repo.dir,
+        "shared.txt",
+        &shared(&[(1, "SQ"), (5, "MAIN5")]),
+        "main moves",
+    );
+    let other = worktree(&db, &repo, "other", Some(parent));
+    commit_file(
+        &other,
+        "shared.txt",
+        &shared(&[(1, "OTHER"), (5, "MAIN5")]),
+        "other",
+    );
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent]);
+        return;
+    }
+
+    tick(&daemon).await;
+    tick(&daemon).await;
+    let found = notes(&db);
+    assert!(found.is_empty(), "{found:#?}");
+
+    end(&daemon, &[parent]);
+}
+
+#[tokio::test]
+async fn two_live_siblings_editing_the_same_line_note_exactly_once() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let parent = orchestrator(&daemon, &repo.dir);
+    let first = orchestrator(&daemon, &repo.dir);
+    let a = worktree(&db, &repo, "a", Some(parent));
+    let b = worktree(&db, &repo, "b", Some(first));
+    commit_file(&a, "shared.txt", &shared(&[(1, "A")]), "a");
+    commit_file(&b, "shared.txt", &shared(&[(1, "B")]), "b");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent, first]);
+        return;
+    }
+
+    tick(&daemon).await;
+    tick(&daemon).await;
+    let found = notes(&db);
+    let mut recipients: Vec<u32> = found.iter().map(|(to, _, _)| *to).collect();
+    recipients.sort();
+    let mut expected = vec![parent, first];
+    expected.sort();
+    assert_eq!(
+        recipients, expected,
+        "one note per creating pane, none repeated: {found:#?}"
+    );
+    assert!(found
+        .iter()
+        .all(|(_, s, _)| s == "Predicted conflict: houston/a with houston/b"));
+
+    end(&daemon, &[parent, first]);
+}
+
+#[tokio::test]
+async fn a_branch_conflicting_with_several_siblings_gets_one_note_naming_them() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let parent = orchestrator(&daemon, &repo.dir);
+    let hub = worktree(&db, &repo, "hub", Some(parent));
+    let b = worktree(&db, &repo, "b", Some(parent));
+    let c = worktree(&db, &repo, "c", Some(parent));
+    commit_file(
+        &hub,
+        "shared.txt",
+        &shared(&[(1, "HUB"), (10, "HUB")]),
+        "hub",
+    );
+    commit_file(&b, "shared.txt", &shared(&[(1, "B")]), "b");
+    commit_file(&c, "shared.txt", &shared(&[(10, "C")]), "c");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent]);
+        return;
+    }
+
+    tick(&daemon).await;
+    let found = notes(&db);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    let (to, summary, body) = &found[0];
+    assert_eq!(*to, parent);
+    assert_eq!(
+        summary,
+        "Predicted conflict: houston/hub with 2 other branches"
+    );
+    for branch in ["houston/b", "houston/c"] {
+        assert!(body.contains(&format!("- {branch} (")), "{body}");
+    }
+    assert!(body.contains("shared.txt"), "{body}");
+
+    tick(&daemon).await;
+    assert_eq!(
+        notes(&db).len(),
+        1,
+        "a persisting conflict is not noted again"
+    );
+
+    end(&daemon, &[parent]);
+}
+
+#[tokio::test]
+async fn a_note_reports_each_branch_tip_at_prediction_time() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let base = git(&repo.dir, &["rev-parse", "--short=10", "main"]);
+    let parent = orchestrator(&daemon, &repo.dir);
+    let a = worktree(&db, &repo, "a", Some(parent));
+    let b = worktree(&db, &repo, "b", Some(parent));
+    commit_file(&a, "shared.txt", &shared(&[(1, "A")]), "a");
+    commit_file(&b, "shared.txt", &shared(&[(1, "B")]), "b");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent]);
+        return;
+    }
+
+    tick(&daemon).await;
+    let found = pair_notes(&db);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    let body = &found[0].2;
+    for (branch, tree) in [("houston/a", &a), ("houston/b", &b)] {
+        let tip = git(tree, &["rev-parse", "--short=10", "HEAD"]);
+        assert_eq!(tip, git(&repo.dir, &["rev-parse", "--short=10", branch]));
+        assert!(
+            body.contains(&format!("{branch} ({tip}, worktree")),
+            "{body}"
+        );
+    }
+    assert!(
+        !body.contains(&base),
+        "the base commit is not a branch tip: {body}"
+    );
+
+    end(&daemon, &[parent]);
 }

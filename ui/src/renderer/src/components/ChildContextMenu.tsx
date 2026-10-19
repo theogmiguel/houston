@@ -7,6 +7,7 @@ import { Icon } from './ui/Icon'
 import { MenuLayer } from './ui/AnimOut'
 import { ContextMenu, ContextMenuHeading, ContextMenuItem, ContextMenuItems, ContextMenuSeparator } from './ui/ContextMenu'
 import { IconArrowUpRight, IconClose, IconCopy, IconEye, IconStopCircle } from './icons'
+import { canDismissInput } from './ChildInputDetails'
 
 export function ChildContextMenu({ child, needsInput, parentId, client, x, y, onClose, onOpen, onMove }: {
   child: SessionInfo
@@ -54,6 +55,7 @@ export function ChildContextMenu({ child, needsInput, parentId, client, x, y, on
         <ContextMenuHeading title={child.delegation?.role ?? child.title} subtitle={`pane ${child.id}`} />
         <ContextMenuItems>
           {needsInput && <ContextMenuItem role="menuitem" onClick={run(onOpen)}><Icon glyph={IconEye} role="ui" /><span>Answer</span></ContextMenuItem>}
+          {canDismissInput(child) && <ContextMenuItem role="menuitem" onClick={run(() => client.childInputResolve(child.id, child.delegation!.input_request!.id))}><Icon glyph={IconClose} role="ui" /><span>Dismiss question</span></ContextMenuItem>}
           <ContextMenuItem role="menuitem" onClick={run(onOpen)}><Icon glyph={IconEye} role="ui" /><span>Open</span></ContextMenuItem>
           <ContextMenuItem role="menuitem" onClick={run(onMove)}><Icon glyph={IconArrowUpRight} role="ui" /><span>Move to grid</span></ContextMenuItem>
           <ContextMenuItem role="menuitem" disabled={!resultText} onClick={run(() => {

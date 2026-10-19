@@ -1,12 +1,18 @@
 use std::fmt;
 use std::io::Cursor;
+use std::path::Path;
 use std::time::Duration;
 
 use zeroize::Zeroizing;
 
+use crate::keychain::{scoped_service, Legacy};
+
 use super::{AudioBuffer, TranscribeRequest, Transcriber, Transcript};
 
-const SERVICE: &str = "houston-voice";
+const SERVICE_PREFIX: &str = "houston-voice";
+const LEGACY: Legacy = Legacy {
+    service: "houston-voice",
+};
 const KEY_ENTRY: &str = "groq-api-key";
 
 const BASE_URL: &str = "https://api.groq.com/openai/v1";
@@ -28,19 +34,21 @@ impl Secret {
     }
 }
 
-fn entry() -> Result<keyring::Entry, CloudError> {
-    keyring::Entry::new(SERVICE, KEY_ENTRY)
+/// One service per state directory, so a development or test daemon never reads
+/// the installed daemon's key.
+fn entry(state_dir: &Path) -> Result<keyring::Entry, CloudError> {
+    keyring::Entry::new(&scoped_service(SERVICE_PREFIX, state_dir), KEY_ENTRY)
         .map_err(|source| CloudError::Keychain(source.to_string()))
 }
 
-pub fn store_key(secret: &Secret) -> Result<(), CloudError> {
+pub fn store_key(state_dir: &Path, secret: &Secret) -> Result<(), CloudError> {
     if secret.is_empty() {
         return Err(CloudError::EmptyKey);
     }
-    entry()?
+    entry(state_dir)?
         .set_password(secret.expose())
         .map_err(|e| CloudError::Keychain(e.to_string()))?;
-    verify_persisted(load_key()?.as_ref(), secret)
+    verify_persisted(load_key(state_dir)?.as_ref(), secret)
 }
 
 fn verify_persisted(stored: Option<&Secret>, expected: &Secret) -> Result<(), CloudError> {
@@ -55,8 +63,8 @@ fn verify_persisted(stored: Option<&Secret>, expected: &Secret) -> Result<(), Cl
     }
 }
 
-pub fn keyring_error() -> Option<String> {
-    let probe = keyring::Entry::new(SERVICE, "__tr_probe__")
+pub fn keyring_error(state_dir: &Path) -> Option<String> {
+    let probe = keyring::Entry::new(&scoped_service(SERVICE_PREFIX, state_dir), "__tr_probe__")
         .map_err(|e| e.to_string())
         .and_then(|e| match e.get_password() {
             Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -65,23 +73,23 @@ pub fn keyring_error() -> Option<String> {
     probe.err()
 }
 
-pub fn load_key() -> Result<Option<Secret>, CloudError> {
-    match entry()?.get_password() {
-        Ok(p) => Ok(Some(Secret::new(p))),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(CloudError::Keychain(e.to_string())),
-    }
+/// A key the installed daemon stored under the fixed `houston-voice` service is
+/// copied into its scoped service on first read.
+pub fn load_key(state_dir: &Path) -> Result<Option<Secret>, CloudError> {
+    LEGACY
+        .load(&entry(state_dir)?, state_dir, KEY_ENTRY)
+        .map(|p| p.map(Secret::new))
+        .map_err(|e| CloudError::Keychain(e.to_string()))
 }
 
-pub fn delete_key() -> Result<(), CloudError> {
-    match entry()?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(CloudError::Keychain(e.to_string())),
-    }
+pub fn delete_key(state_dir: &Path) -> Result<(), CloudError> {
+    LEGACY
+        .delete(&entry(state_dir)?, state_dir, KEY_ENTRY)
+        .map_err(|e| CloudError::Keychain(e.to_string()))
 }
 
-pub fn has_key() -> bool {
-    matches!(load_key(), Ok(Some(_)))
+pub fn has_key(state_dir: &Path) -> bool {
+    matches!(load_key(state_dir), Ok(Some(_)))
 }
 
 pub enum KeyAvailability {
@@ -90,8 +98,8 @@ pub enum KeyAvailability {
     Unreadable(String),
 }
 
-pub fn key_availability() -> KeyAvailability {
-    availability_of(load_key())
+pub fn key_availability(state_dir: &Path) -> KeyAvailability {
+    availability_of(load_key(state_dir))
 }
 
 fn availability_of(loaded: Result<Option<Secret>, CloudError>) -> KeyAvailability {
@@ -315,6 +323,10 @@ mod tests {
     use axum::routing::post;
     use std::sync::{Arc, Mutex};
 
+    fn state() -> std::path::PathBuf {
+        std::path::PathBuf::from("/tmp/houston-voice-test-state")
+    }
+
     fn use_mock_keychain() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
@@ -329,7 +341,7 @@ mod tests {
     fn the_mock_store_survives_entry_creation() {
         let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use_mock_keychain();
-        let _ = entry().expect("creating an entry");
+        let _ = entry(&state()).expect("creating an entry");
         let store = keyring_core::get_default_store().expect("a default store is set");
         let dbg = format!("{store:?}");
         assert!(
@@ -344,35 +356,46 @@ mod tests {
     fn a_stored_key_round_trips_and_can_be_removed() {
         let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use_mock_keychain();
-        let _ = delete_key();
+        let _ = delete_key(&state());
 
-        assert!(!has_key(), "no key stored yet");
-        assert!(load_key().expect("a missing key is Ok(None)").is_none());
+        assert!(!has_key(&state()), "no key stored yet");
+        assert!(load_key(&state())
+            .expect("a missing key is Ok(None)")
+            .is_none());
 
-        store_key(&Secret::new("gsk-round-trip".to_string())).expect("storing a key");
-        assert!(has_key(), "the badge must read 'Key set' after a store");
-        let loaded = load_key().expect("reading back").expect("a key was stored");
+        store_key(&state(), &Secret::new("gsk-round-trip".to_string())).expect("storing a key");
+        assert!(
+            has_key(&state()),
+            "the badge must read 'Key set' after a store"
+        );
+        let loaded = load_key(&state())
+            .expect("reading back")
+            .expect("a key was stored");
         assert_eq!(loaded.expose(), "gsk-round-trip");
 
-        store_key(&Secret::new("gsk-second".to_string())).expect("replacing the key");
-        assert_eq!(load_key().unwrap().unwrap().expose(), "gsk-second");
+        store_key(&state(), &Secret::new("gsk-second".to_string())).expect("replacing the key");
+        assert_eq!(load_key(&state()).unwrap().unwrap().expose(), "gsk-second");
 
-        delete_key().expect("the way out must work");
-        assert!(!has_key(), "removal must actually clear the badge");
-        assert!(load_key().unwrap().is_none());
+        delete_key(&state()).expect("the way out must work");
+        assert!(!has_key(&state()), "removal must actually clear the badge");
+        assert!(load_key(&state()).unwrap().is_none());
 
-        delete_key().expect("deleting an absent key is success, not an error");
+        delete_key(&state()).expect("deleting an absent key is success, not an error");
     }
 
     #[test]
     fn an_empty_key_is_refused_and_never_written() {
         let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use_mock_keychain();
-        let _ = delete_key();
+        let _ = delete_key(&state());
 
-        let err = store_key(&Secret::new(String::new())).expect_err("empty must be refused");
+        let err =
+            store_key(&state(), &Secret::new(String::new())).expect_err("empty must be refused");
         assert!(matches!(err, CloudError::EmptyKey), "{err}");
-        assert!(!has_key(), "a refused store must leave nothing behind");
+        assert!(
+            !has_key(&state()),
+            "a refused store must leave nothing behind"
+        );
     }
 
     #[test]
@@ -442,25 +465,51 @@ mod tests {
     fn key_availability_tracks_the_real_store() {
         let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use_mock_keychain();
-        let _ = delete_key();
-        assert!(matches!(key_availability(), KeyAvailability::Absent));
+        let _ = delete_key(&state());
+        assert!(matches!(
+            key_availability(&state()),
+            KeyAvailability::Absent
+        ));
 
-        store_key(&Secret::new("gsk-stored".to_string())).expect("store");
-        assert!(matches!(key_availability(), KeyAvailability::Present));
+        store_key(&state(), &Secret::new("gsk-stored".to_string())).expect("store");
+        assert!(matches!(
+            key_availability(&state()),
+            KeyAvailability::Present
+        ));
 
-        delete_key().expect("cleanup");
-        assert!(matches!(key_availability(), KeyAvailability::Absent));
+        delete_key(&state()).expect("cleanup");
+        assert!(matches!(
+            key_availability(&state()),
+            KeyAvailability::Absent
+        ));
+    }
+
+    #[test]
+    fn a_key_stored_for_one_state_directory_is_absent_for_another() {
+        let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        use_mock_keychain();
+        let (a, b) = (
+            std::path::PathBuf::from("/tmp/houston-voice-state-a"),
+            std::path::PathBuf::from("/tmp/houston-voice-state-b"),
+        );
+        let _ = (delete_key(&a), delete_key(&b));
+
+        store_key(&a, &Secret::new("gsk-a".to_string())).expect("store");
+        assert!(has_key(&a));
+        assert!(!has_key(&b), "another state directory must not see the key");
+
+        delete_key(&a).expect("cleanup");
     }
 
     #[test]
     fn a_reachable_keychain_reports_no_error_to_explain_an_empty_badge() {
         let _guard = KEY_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use_mock_keychain();
-        let _ = delete_key();
+        let _ = delete_key(&state());
 
-        assert!(!has_key(), "nothing stored");
+        assert!(!has_key(&state()), "nothing stored");
         assert_eq!(
-            keyring_error(),
+            keyring_error(&state()),
             None,
             "a reachable keychain must not invent a fault — an empty badge is then the truth"
         );
@@ -795,7 +844,7 @@ mod tests {
 
     #[test]
     fn store_key_refuses_an_empty_secret() {
-        let err = store_key(&Secret::new(String::new())).unwrap_err();
+        let err = store_key(&state(), &Secret::new(String::new())).unwrap_err();
         assert!(matches!(err, CloudError::EmptyKey));
     }
 }

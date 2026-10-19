@@ -18,3 +18,9 @@ export function withPermissionOwner(session: SessionInfo, owner: ChildInputOwner
     escalation_detail: owner === 'user' ? 'Deny this command until the destination is verified.' : null
   } } }
 }
+
+/** A worker-reported question or blocker: provider status stays `working` because the report never blocks the turn. */
+export function withReportAsk(session: SessionInfo, owner: ChildInputOwner, kind: 'question' | 'blocked' = 'question', id = 'report:7'): SessionInfo {
+  const asked = withInputOwner(session, owner, 'Default X unless you say otherwise', id)
+  return { ...asked, status: 'working', delegation: { ...asked.delegation!, input_request: { ...asked.delegation!.input_request!, kind } } }
+}

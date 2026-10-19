@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Conn } from './App'
 import { checkoutNotes, type CheckoutFacts } from './checkoutFacts'
+import { createCheckoutBranchRequester, type CheckoutBranchRequester } from './checkoutBranchRequester'
+import { parseControlAdmission } from './houston/controlAdmission'
 import {
   isLive,
   type AgentKind,
@@ -71,6 +73,16 @@ export function useCheckoutFacts({
   const [paneCwds, setPaneCwds] = useState<Map<number, string>>(new Map())
   const pendingRef = useRef<ReadonlySet<string>>(pending)
   pendingRef.current = pending
+  // Bounds git_branch in flight and retries a refused or lost request; once it gives
+  // up, the directory stops being pending so the next focus or spawn can ask again.
+  const requesterRef = useRef<CheckoutBranchRequester | null>(null)
+  if (requesterRef.current === null) {
+    requesterRef.current = createCheckoutBranchRequester((dir) => {
+      pendingRef.current = settlePendingDir(pendingRef.current, dir)
+      setPending(pendingRef.current)
+    })
+  }
+  const requester = requesterRef.current
 
   const dirOf = useCallback(
     (session: SessionInfo): string => paneCwds.get(session.id) ?? session.cwd,
@@ -85,13 +97,19 @@ export function useCheckoutFacts({
       next.add(dir)
       pendingRef.current = next
       setPending(next)
-      target.gitBranch(dir)
+      requester.request(target, dir)
     },
-    []
+    [requester]
   )
 
   const handleMessage = useCallback((msg: ServerMsg): void => {
+    if (msg.type === 'error') {
+      const refusal = parseControlAdmission(msg.context)
+      if (refusal?.kind === 'git_branch' && refusal.target !== null) requester.refused(refusal.target)
+      return
+    }
     if (msg.type !== 'git_branch') return
+    requester.settle(msg.dir)
     setFacts((prev) => {
       const next = new Map(prev).set(msg.dir, checkoutFactsFromReply(msg))
       // One checkout has one branch: a reply keeps every other known directory
@@ -108,14 +126,15 @@ export function useCheckoutFacts({
     })
     pendingRef.current = settlePendingDir(pendingRef.current, msg.dir)
     setPending(pendingRef.current)
-  }, [])
+  }, [requester])
 
   const reset = useCallback((roster: SessionInfo[]): void => {
+    requester.reset()
     setFacts(new Map())
     pendingRef.current = new Set()
     setPending(new Set())
     setPaneCwds(new Map(roster.map((s) => [s.id, s.cwd])))
-  }, [])
+  }, [requester])
 
   const requestForSession = useCallback(
     (target: HoustonClient, session: SessionInfo): void => {

@@ -928,6 +928,53 @@ async fn dictation_names_a_missing_model_or_key() {
     daemon.kill(info.id).ok();
 }
 
+/// The fixed `houston-voice` service predates per-state-directory services. A
+/// daemon on any other state directory must not read a key stored there, or a
+/// test would post its recording to the hosted service with the user's key.
+#[tokio::test]
+async fn dictation_ignores_a_groq_key_in_the_shared_legacy_service() {
+    static MOCK: std::sync::Once = std::sync::Once::new();
+    MOCK.call_once(|| {
+        let _ = keyring::Entry::new("__tr_mock_priming__", "__tr_mock_priming__");
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().expect("building the mock credential store"),
+        );
+    });
+    let legacy = keyring::Entry::new("houston-voice", "groq-api-key").unwrap();
+    legacy.set_password("gsk-legacy-shared-key").unwrap();
+
+    let (daemon, addr, _state) = remote_daemon().await;
+    let key_present = match daemon.voice_settings_reply() {
+        proto::ServerMsg::VoiceSettings {
+            cloud_key_present, ..
+        } => cloud_key_present,
+        other => panic!("expected VoiceSettings, got {other:?}"),
+    };
+    assert!(
+        !key_present,
+        "a daemon on a throwaway state directory read the shared houston-voice key"
+    );
+
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    allow_dictation(&daemon);
+    daemon
+        .voice_settings_set(&proto::VoiceSettings {
+            engine: proto::VoiceEngine::Cloud {
+                provider: proto::CloudStt::Groq,
+            },
+            mic_policy: proto::MicPolicy::OnKeypress,
+            ..proto::VoiceSettings::default()
+        })
+        .unwrap();
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.5)).await;
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(reply.body.contains("no Groq API key"), "{}", reply.body);
+
+    legacy.delete_credential().unwrap();
+    daemon.kill(info.id).ok();
+}
+
 #[tokio::test]
 async fn dictation_refuses_a_recording_over_two_minutes_before_reading_it() {
     let (daemon, addr, _state) = remote_daemon().await;

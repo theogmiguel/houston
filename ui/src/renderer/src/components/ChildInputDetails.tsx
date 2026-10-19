@@ -1,4 +1,4 @@
-import type { SessionInfo } from '../houston/client'
+import type { HoustonClient, SessionInfo } from '../houston/client'
 import type { ProviderReportedText } from '../houston/generated/ProviderReportedText'
 import { attentionLabel, askedOrchestrator, ownUserInput } from '../sessionAttention'
 import { Notice } from './ui'
@@ -23,9 +23,18 @@ export function ChildInputDetails({ info }: { info: SessionInfo }): React.JSX.El
   </OrchestrationDetails>
 }
 
-export function ChildInputBanner({ info }: { info: SessionInfo }): React.JSX.Element | null {
+/** Only a worker-reported ask can be dismissed; provider prompts clear on provider evidence. */
+export function canDismissInput(info: SessionInfo): boolean {
+  return ownUserInput(info) && info.delegation?.input_request?.id.startsWith('report:') === true
+}
+
+export function ChildInputBanner({ info, client }: { info: SessionInfo; client?: HoustonClient }): React.JSX.Element | null {
   if (info.spawned_by == null || !ownUserInput(info)) return null
-  return <Notice tone="warn" inset="compact-inline" className="flex-none"><Text weight="semibold">Needs you</Text><ChildInputDetails info={info} /></Notice>
+  const input = info.delegation?.input_request
+  const dismiss = client && input && canDismissInput(info)
+    ? { label: 'Dismiss', onClick: () => client.childInputResolve(info.id, input.id) }
+    : undefined
+  return <Notice tone="warn" inset="compact-inline" className="flex-none" action={dismiss}><Text weight="semibold">Needs you</Text><ChildInputDetails info={info} /></Notice>
 }
 
 export function ParentOwnedInput({ info }: { info: SessionInfo }): React.JSX.Element | null {

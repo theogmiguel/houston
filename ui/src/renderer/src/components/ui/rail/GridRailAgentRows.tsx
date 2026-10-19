@@ -5,6 +5,7 @@ import type { AgentActivityMode, RailCardMode, RailCardProperty } from '../../..
 import { AgentSummaryPill } from '../AgentSummaryPill'
 import { IconAgent } from '../../icons'
 import { WorkingSpinner } from '../Spinner'
+import { Tooltip } from '../Tooltip'
 
 function AgentStatusDot({ session }: { session: SessionInfo }): React.JSX.Element {
   if (attentionStatus(session) === 'working') return <WorkingSpinner testId="agent-row-dot" label={attentionLabel(session)} />
@@ -53,7 +54,7 @@ function AgentRow({ agent, now, onFocusPane, lastMessage }: { agent: RailAgentRo
         {agent.leading}{shellLabel}
         {lastMessage && agent.trailing && <span className="block truncate text-[var(--text-muted)]">{agent.trailing}</span>}
       </span>
-      {warnContext && <span className="font-mono text-[var(--warn)]">{Math.round(context!)}%</span>}
+      {warnContext && <Tooltip label={`Context use · ${Math.round(context!)}% of the context window`} inline><span className="font-mono text-[var(--warn)]">{Math.round(context!)}%</span></Tooltip>}
       {!warnContext && attentionStatus(agent.session) !== 'needs-input' && agent.model && <span className="max-w-[76px] truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{agent.model}</span>}
       <time className={`min-w-[22px] flex-none text-right text-[length:var(--tr-text-xs)] tabular-nums ${attentionStatus(agent.session) === 'needs-input' ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}`}>{ageLabel(agent.session, now)}</time>
     </button>
