@@ -80,6 +80,47 @@ pub(super) fn resolve(conn: &Connection, child: u32, id: &str, now: u64) -> Resu
     Ok(changed)
 }
 
+/// The worker has moved on: resolves its open report asks on `request_id` and returns
+/// the inbox rows it closed. A question the parent has not read yet keeps its row, so
+/// the parent still sees what was asked next to the progress that followed.
+pub(super) fn supersede_report_asks(
+    tx: &rusqlite::Transaction<'_>,
+    child: u32,
+    request_id: u32,
+    now: u64,
+) -> Result<Vec<i64>> {
+    let mut stmt = tx.prepare(
+        "SELECT i.id, p.id, p.delivered_at IS NOT NULL FROM child_input_requests i
+         JOIN pane_inbox p ON i.id = 'report:' || p.id
+         WHERE i.child_session = ?1 AND i.source_key IS NULL AND i.resolved_at IS NULL
+           AND p.from_session = ?1 AND p.request_id = ?2 AND p.kind IN ('question', 'blocked')",
+    )?;
+    let asks = stmt
+        .query_map(rusqlite::params![child, request_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, bool>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    let mut closed_rows = Vec::new();
+    for (ask, message, delivered) in asks {
+        resolve(tx, child, &ask, now)?;
+        if delivered
+            && tx.execute(
+                "UPDATE pane_inbox SET resolved_at = ?2, reason = 'superseded_by_worker'
+                 WHERE id = ?1 AND resolved_at IS NULL",
+                rusqlite::params![message, now as i64],
+            )? != 0
+        {
+            closed_rows.push(message);
+        }
+    }
+    Ok(closed_rows)
+}
+
 impl Db {
     pub fn child_input_pending_provider_sources(&self, child: u32) -> Result<Vec<String>> {
         let conn = self.conn.lock().expect("db lock");
@@ -267,6 +308,58 @@ impl Db {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Operator dismissal of a worker-reported ask. Provider-sourced asks (permission and
+    /// native prompts) are refused: they clear on provider evidence, and dismissing one
+    /// would hide a prompt that is still blocking the pane. `Ok(None)` means no open ask.
+    pub fn child_input_dismiss(
+        &self,
+        child: u32,
+        id: &str,
+        now: u64,
+    ) -> Result<Option<proto::ChildInputRequest>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let found: Option<(String, Option<String>)> = tx
+            .query_row(
+                "SELECT request_json, source_key FROM child_input_requests
+                 WHERE child_session = ?1 AND id = ?2 AND resolved_at IS NULL",
+                rusqlite::params![child, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((json, source)) = found else {
+            return Ok(None);
+        };
+        let request: proto::ChildInputRequest = serde_json::from_str(&json)?;
+        anyhow::ensure!(
+            source.is_none(),
+            "dismiss refused: input {id} of child {child} is a provider {:?} prompt; expected a worker-reported question or blocker; answer it in the pane, where the provider clears it",
+            request.kind
+        );
+        resolve(&tx, child, id, now)?;
+        if let Some(message) = id
+            .strip_prefix("report:")
+            .and_then(|id| id.parse::<i64>().ok())
+        {
+            tx.execute(
+                "UPDATE pane_inbox SET resolved_at = ?3, reason = 'operator_dismissed'
+                 WHERE id = ?1 AND from_session = ?2 AND resolved_at IS NULL",
+                rusqlite::params![message, child, now as i64],
+            )?;
+        }
+        tx.commit()?;
+        Ok(Some(request))
+    }
+
+    /// Closes the ask behind a question row the operator resolved from the inbox.
+    pub fn child_input_resolve_report(&self, child: u32, message: i64, now: u64) -> Result<bool> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let changed = resolve(&tx, child, &format!("report:{message}"), now)?;
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn child_input_resolve_notices(&self, child: u32, now: u64) -> Result<()> {

@@ -413,11 +413,19 @@ bun run check:bundle      # reads bundle-stats.json — must run after build
 ```
 
 Captures for UI pull requests come from the story harness in
-`ui/src/renderer/harness/`. `node ui/harness/shot.mjs <story> <out.png>` serves it,
-renders one story in WebKit and writes a PNG (`--width`, `--height`, `--theme`,
-`--scale`); `node ui/harness/measure.mjs <story> '<selectors>'` prints the
-measured boxes of the given elements. Write captures outside the tracked tree
-(`ui/harness-shots/` is ignored).
+`ui/src/renderer/harness/`. `node ui/harness/shot.mjs <story> <out.png>` serves it
+on `127.0.0.1`, renders one story and writes a PNG (`--width`, `--height`,
+`--theme`, `--scale`); `node ui/harness/measure.mjs <story> '<selectors>'` prints
+the measured boxes of the given elements. Write captures outside the tracked
+tree (`ui/harness-shots/` is ignored).
+
+`shot.mjs` renders in WebKit on Linux, the closest match to WebKitGTK, and in
+Chromium on Windows, the closest match to WebView2. `--browser webkit|chromium`
+selects the engine and `--executable PATH` uses a specific binary. On Windows the
+script launches Playwright's Chromium and falls back to the installed Microsoft
+Edge when it is missing. A missing browser is reported with its install command:
+`bunx playwright install chromium` (or `webkit`). The Vite server's whole process
+tree is ended when the script exits, including on failure and on Ctrl-C.
 
 `bun run test`, never bare `bun test` — `bun test` invokes Bun's own test
 runner, which fails the jsdom-based suite.

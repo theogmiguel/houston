@@ -34,12 +34,13 @@ const POST_TOOL_USE_LEAF_CEILING_US: Option<u64> = Some(150_000);
 const POST_TOOL_USE_ORCHESTRATOR_CEILING_US: Option<u64> = Some(155_000);
 // 1250 ms leaves 51% headroom above the measured 826352 us restart p95.
 const RESTART_RESTORED_CEILING_US: Option<u64> = Some(1_250_000);
-// Preserve the existing 512-character delegation gate.
-const SMALL_DELEGATION_BYTE_BUDGET: Option<usize> = Some(2800);
-// 6000 bytes leaves 27% headroom above the measured 4730-byte 3072-character report.
-const DELEGATION_BYTE_BUDGET: Option<usize> = Some(6000);
-// 6000 bytes leaves 21% headroom above the measured 4957-byte 4096-character envelope.
-const PARENT_RESULT_BYTE_BUDGET: Option<usize> = Some(6000);
+// MCP rows carry the body in text and structured content, since some clients read only one.
+// 3400 bytes leaves 16% headroom above the measured 2920-byte 512-character delegation.
+const SMALL_DELEGATION_BYTE_BUDGET: Option<usize> = Some(3400);
+// 10000 bytes leaves 24% headroom above the measured 8040-byte 3072-character report.
+const DELEGATION_BYTE_BUDGET: Option<usize> = Some(10_000);
+// 9000 bytes leaves 25% headroom above the measured 7186-byte 3072-character envelope.
+const PARENT_RESULT_BYTE_BUDGET: Option<usize> = Some(9000);
 
 fn monotonic_us() -> u64 {
     let mut clock = std::mem::MaybeUninit::<libc::timespec>::uninit();

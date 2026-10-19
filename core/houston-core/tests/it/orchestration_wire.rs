@@ -9386,7 +9386,10 @@ async fn k1_disconnected_sse_and_json_waits_leave_results_undelivered() {
                 .contains("disconnect answer"),
             "{result}"
         );
-        assert!(result["structuredContent"]["rows"][0].get("body").is_none());
+        assert!(result["structuredContent"]["rows"][0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("disconnect answer"));
     }
 }
 
@@ -15151,6 +15154,169 @@ async fn input_policy_escalated_questions_accept_only_operator_answers() {
     }
 }
 
+fn input_policy_report_text(
+    r: &Rig,
+    child: u32,
+    kind: houston_core::orchestrate::ReportKind,
+    body: &str,
+) -> i64 {
+    r.daemon
+        .orchestrate_report(
+            child,
+            houston_core::orchestrate::WorkerReport {
+                kind,
+                body: body.into(),
+                request_id: 1,
+                client_request_id: None,
+            },
+        )
+        .unwrap()["message_id"]
+        .as_i64()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn input_policy_worker_progress_report_supersedes_its_escalated_question() {
+    let _guard = serial().await;
+    let r = rig("input-report-superseded").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.bypass_pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "claude", None).await;
+    let question = input_policy_report(&r, child, houston_core::orchestrate::ReportKind::Question);
+    r.daemon
+        .handle_hook_from(parent.id, proto::AgentKind::Claude, "Stop", None);
+    assert_eq!(
+        input_policy_request(&r, child).owner,
+        proto::ChildInputOwner::User
+    );
+    assert_eq!(info_of(&r.daemon, parent.id).children_waiting, 1);
+
+    input_policy_report_text(
+        &r,
+        child,
+        houston_core::orchestrate::ReportKind::Progress,
+        "Applied the default and kept going",
+    );
+    let delegation = info_of(&r.daemon, child).delegation.unwrap();
+    assert!(delegation.input_request.is_none(), "{delegation:?}");
+    assert_eq!(delegation.state, proto::DelegationState::Working);
+    assert_eq!(info_of(&r.daemon, parent.id).children_waiting, 0);
+    let rows = r.daemon.inbox_rows_for_test(parent.id);
+    let row = rows.iter().find(|row| row.id == question).unwrap();
+    assert!(
+        row.resolved_at.is_none() || row.reason.as_deref() == Some("superseded_by_worker"),
+        "{row:?}"
+    );
+
+    // A new question or blocker is its own ask: it never resolves itself, and a
+    // later progress report is what closes it.
+    let blocked = input_policy_report_text(
+        &r,
+        child,
+        houston_core::orchestrate::ReportKind::Blocked,
+        "Need credentials",
+    );
+    assert_eq!(
+        input_policy_request(&r, child).id,
+        format!("report:{blocked}")
+    );
+    input_policy_report_text(
+        &r,
+        child,
+        houston_core::orchestrate::ReportKind::Question,
+        "Which region?",
+    );
+    assert_eq!(
+        input_policy_request(&r, child).id,
+        format!("report:{blocked}"),
+        "a second question leaves the earlier blocker open"
+    );
+}
+
+#[tokio::test]
+async fn input_policy_operator_dismisses_a_report_ask_without_typing_into_the_pane() {
+    let _guard = serial().await;
+    let r = rig("input-report-dismissed").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.bypass_pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "claude", None).await;
+    let question = input_policy_report(&r, child, houston_core::orchestrate::ReportKind::Question);
+    r.daemon
+        .handle_hook_from(parent.id, proto::AgentKind::Claude, "Stop", None);
+    let ask = input_policy_request(&r, child);
+    assert_eq!(ask.owner, proto::ChildInputOwner::User);
+
+    let missing = r
+        .daemon
+        .child_input_resolve(child, "report:999999")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        missing.contains("report:999999") && missing.contains(&format!("child {child}")),
+        "{missing}"
+    );
+    r.daemon.child_input_resolve(child, &ask.id).unwrap();
+    let delegation = info_of(&r.daemon, child).delegation.unwrap();
+    assert!(delegation.input_request.is_none(), "{delegation:?}");
+    assert_eq!(delegation.state, proto::DelegationState::Working);
+    assert_eq!(info_of(&r.daemon, parent.id).children_waiting, 0);
+    let rows = r.daemon.inbox_rows_for_test(parent.id);
+    let row = rows.iter().find(|row| row.id == question).unwrap();
+    assert!(row.resolved_at.is_some(), "{row:?}");
+    assert_eq!(row.reason.as_deref(), Some("operator_dismissed"));
+    let again = r
+        .daemon
+        .child_input_resolve(child, &ask.id)
+        .unwrap_err()
+        .to_string();
+    assert!(again.contains(&ask.id), "{again}");
+}
+
+#[tokio::test]
+async fn input_policy_dismiss_refuses_a_provider_prompt() {
+    let _guard = serial().await;
+    let r = rig("input-dismiss-provider-refused").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.bypass_pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "claude", None).await;
+    input_policy_question(&r, child, "claude", "native-question").await;
+    let ask = input_policy_request(&r, child);
+    let refused = r
+        .daemon
+        .child_input_resolve(child, &ask.id)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains(&ask.id) && refused.contains("is a provider"),
+        "{refused}"
+    );
+    assert_eq!(input_policy_request(&r, child), ask);
+}
+
+#[tokio::test]
+async fn input_policy_inbox_resolve_of_a_question_row_resolves_its_ask() {
+    let _guard = serial().await;
+    let r = rig("input-inbox-resolve-ask").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.bypass_pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "claude", None).await;
+    let question = input_policy_report(&r, child, houston_core::orchestrate::ReportKind::Question);
+    r.daemon
+        .handle_hook_from(parent.id, proto::AgentKind::Claude, "Stop", None);
+    assert_eq!(info_of(&r.daemon, parent.id).children_waiting, 1);
+    r.daemon.inbox_resolve(question).unwrap();
+    assert!(info_of(&r.daemon, child)
+        .delegation
+        .unwrap()
+        .input_request
+        .is_none());
+    assert_eq!(info_of(&r.daemon, parent.id).children_waiting, 0);
+}
+
 #[tokio::test]
 async fn input_policy_permission_tool_hint_uses_deny_and_escalate() {
     let _guard = serial().await;
@@ -16303,4 +16469,98 @@ async fn concurrent_closes_of_a_parent_and_its_child_converge_without_errors() {
             .iter()
             .any(|s| s.id == parent.id || s.id == child));
     }
+}
+
+async fn spawn_opencode_child(r: &Rig, parent_token: &str) -> u32 {
+    let spawned = mcp_call(
+        r.addr,
+        parent_token,
+        "pane_spawn",
+        serde_json::json!({"kind": "opencode", "prompt": "child brief"}),
+    )
+    .await;
+    assert_eq!(spawned["isError"], false, "{spawned}");
+    spawned["structuredContent"]["session"].as_u64().unwrap() as u32
+}
+
+#[tokio::test]
+async fn a_workers_pane_wait_structured_reply_row_carries_the_reply_text() {
+    let _guard = serial().await;
+    let r = rig("wait-reply-body").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let child = spawn_opencode_child(&r, &token).await;
+    let child_token = r.token_for(child);
+
+    let reported = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_report",
+        serde_json::json!({"kind": "question", "body": "Which branch?", "request_id": 1}),
+    )
+    .await;
+    assert_eq!(reported["isError"], false, "{reported}");
+    let question_id = reported["structuredContent"]["message_id"]
+        .as_i64()
+        .unwrap();
+    let replied = mcp_call(
+        r.addr,
+        &token,
+        "pane_reply",
+        serde_json::json!({"message_id": question_id, "text": "Use the release-2 branch."}),
+    )
+    .await;
+    assert_eq!(replied["isError"], false, "{replied}");
+
+    let waited = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_wait",
+        serde_json::json!({"timeout_ms": 5000}),
+    )
+    .await;
+    let rows = waited["structuredContent"]["rows"].as_array().unwrap();
+    let reply = rows
+        .iter()
+        .find(|row| row["kind"] == "reply")
+        .unwrap_or_else(|| panic!("no reply row: {waited}"));
+    assert_eq!(reply["body"], "Use the release-2 branch.", "{waited}");
+}
+
+#[tokio::test]
+async fn a_parents_pane_wait_structured_question_row_carries_its_body() {
+    let _guard = serial().await;
+    let r = rig("wait-question-body").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let child = spawn_opencode_child(&r, &token).await;
+    let child_token = r.token_for(child);
+
+    let reported = mcp_call(
+        r.addr,
+        &child_token,
+        "pane_report",
+        serde_json::json!({"kind": "question", "body": "Which branch should I target?", "request_id": 1}),
+    )
+    .await;
+    assert_eq!(reported["isError"], false, "{reported}");
+
+    let waited = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"timeout_ms": 5000}),
+    )
+    .await;
+    let rows = waited["structuredContent"]["rows"].as_array().unwrap();
+    let question = rows
+        .iter()
+        .find(|row| row["kind"] == "question")
+        .unwrap_or_else(|| panic!("no question row: {waited}"));
+    assert_eq!(
+        question["body"], "Which branch should I target?",
+        "{waited}"
+    );
 }

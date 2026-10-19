@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import net from 'node:net'
@@ -13,7 +14,7 @@ const opt = (name, fallback) => {
 }
 const [story, out] = positional
 if (!story || !out) {
-  console.error('usage: node ui/harness/shot.mjs <story> <out.png> [--width N] [--height N] [--theme T] [--scale N]')
+  console.error('usage: node ui/harness/shot.mjs <story> <out.png> [--width N] [--height N] [--theme T] [--scale N] [--browser webkit|chromium] [--executable PATH]')
   process.exit(2)
 }
 const width = Number(opt('width', 1280))
@@ -33,11 +34,38 @@ const freePort = () =>
     srv.on('error', reject)
   })
 
+const isWindows = process.platform === 'win32'
+// WebKit matches WebKitGTK on Linux; Chromium is the closest to WebView2 on Windows.
+const browserName = opt('browser', isWindows ? 'chromium' : 'webkit')
+if (browserName !== 'webkit' && browserName !== 'chromium') {
+  console.error(`unknown --browser "${browserName}"; expected webkit or chromium`)
+  process.exit(2)
+}
+
 const port = await freePort()
-const vite = spawn('bunx', ['vite', '--port', String(port), '--strictPort', '--clearScreen', 'false'], {
-  cwd: uiDir,
-  stdio: ['ignore', 'pipe', 'pipe']
+// Detached on POSIX so the whole process group (bunx -> vite -> esbuild) can be signalled.
+const vite = spawn(
+  'bunx',
+  ['vite', '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--clearScreen', 'false'],
+  { cwd: uiDir, stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows }
+)
+vite.on('error', (e) => {
+  console.error(`could not start vite via bunx: ${e.message}`)
+  process.exit(1)
 })
+
+// Plain vite.kill() ends only the top process; on Windows the children keep running.
+const killVite = () => {
+  if (vite.pid === undefined || vite.exitCode !== null) return
+  try {
+    if (isWindows) spawnSync('taskkill', ['/pid', String(vite.pid), '/T', '/F'], { stdio: 'ignore' })
+    else process.kill(-vite.pid, 'SIGTERM')
+  } catch {}
+}
+process.on('exit', killVite)
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => process.exit(128))
+}
 let viteLog = ''
 vite.stdout.on('data', (d) => (viteLog += d))
 vite.stderr.on('data', (d) => (viteLog += d))
@@ -56,15 +84,47 @@ while (Date.now() < deadline) {
   await new Promise((r) => setTimeout(r, 250))
 }
 if (!ready) {
-  vite.kill()
   console.error(`vite did not answer on ${url} within 20s\n${viteLog}`)
   process.exit(1)
 }
 
+const launchBrowser = async () => {
+  const executablePath = opt('executable', undefined)
+  if (executablePath) return (browserName === 'webkit' ? webkit : chromium).launch({ executablePath })
+  if (browserName === 'webkit') return webkit.launch()
+  const attempts = [() => chromium.launch()]
+  if (isWindows) attempts.push(() => chromium.launch({ channel: 'msedge' }))
+  else if (fs.existsSync('/usr/bin/google-chrome')) {
+    attempts.push(() => chromium.launch({ executablePath: '/usr/bin/google-chrome' }))
+  }
+  let first
+  for (const attempt of attempts) {
+    try {
+      return await attempt()
+    } catch (e) {
+      first ??= e
+    }
+  }
+  throw first
+}
+
+let browser
 try {
-  const browser = opt('browser', 'webkit') === 'chromium'
-    ? await chromium.launch({ executablePath: opt('executable', '/usr/bin/google-chrome') })
-    : await webkit.launch()
+  browser = await launchBrowser()
+} catch (e) {
+  const explicit = opt('executable', undefined)
+  const missing = /Executable doesn't exist|Looks like Playwright|distribution .* is not found/i.test(String(e))
+  console.error(
+    missing && explicit
+      ? `${browserName} executable not found at ${explicit}; pass an existing --executable PATH or omit it to use Playwright's ${browserName}`
+      : missing
+      ? `${browserName} is not installed for Playwright; run: bunx playwright install ${browserName} (or pass --executable PATH)`
+      : `could not launch ${browserName}: ${String(e.message ?? e).replace(/[╔╗╚╝║═]/g, '').replace(/\s*\n\s*/g, ' ').trim()}`
+  )
+  process.exit(1)
+}
+
+try {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale })
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -75,12 +135,13 @@ try {
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(150)
   await page.screenshot({ path: out, fullPage: false })
-  await browser.close()
   console.log(`wrote ${out} (${width}x${height}@${scale}, theme ${theme}, story ${story})`)
   if (errors.length) {
     console.error(`page errors (${errors.length}):\n` + errors.join('\n'))
     process.exitCode = 1
   }
 } finally {
-  vite.kill()
+  await browser.close().catch(() => {})
 }
+// The Vite pipes keep the event loop alive; exiting runs the process-tree cleanup.
+process.exit(process.exitCode ?? 0)

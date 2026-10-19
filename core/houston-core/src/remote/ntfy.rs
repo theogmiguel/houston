@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use zeroize::Zeroizing;
 
-use super::{hash_secret, NotifyDetail};
+use super::NotifyDetail;
 
 const ENTRY: &str = "ntfy-url";
 pub const SEND_TIMEOUT: Duration = Duration::from_secs(10);
@@ -16,8 +16,7 @@ const PANE_NAME_MAX: usize = 80;
 /// One service per state directory, so a development daemon never reads or
 /// replaces the installed one's topic.
 fn service(state_dir: &Path) -> String {
-    let digest = hash_secret(&state_dir.to_string_lossy());
-    format!("houston-remote-{}", &digest[..16])
+    crate::keychain::scoped_service("houston-remote", state_dir)
 }
 
 fn entry(state_dir: &Path) -> Result<keyring::Entry> {

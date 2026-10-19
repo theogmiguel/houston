@@ -1250,7 +1250,7 @@ async fn r1_stop_confirmation_has_its_own_deadline() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn r1_mcp_wait_carries_one_body_copy() {
+async fn r1_mcp_wait_carries_the_body_in_text_and_structured_rows() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let parent = rig.parent();
@@ -1273,8 +1273,12 @@ async fn r1_mcp_wait_carries_one_body_copy() {
         .as_str()
         .unwrap()
         .contains("one-copy"));
+    let body = reply["structuredContent"]["rows"][0]["body"]
+        .as_str()
+        .unwrap_or_else(|| panic!("structured row without body: {reply}"));
+    assert!(body.starts_with("one-copy"), "{reply}");
     assert!(
-        reply["structuredContent"]["rows"][0].get("body").is_none(),
+        reply["content"][0]["text"].as_str().unwrap().contains(body),
         "{reply}"
     );
 }

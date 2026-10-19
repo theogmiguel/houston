@@ -86,6 +86,10 @@ can't be reached (locked or missing login keyring, common on some Linux setups),
 reports that failure loudly rather than silently treating it as "no key stored", since
 those are different problems that call for different fixes.
 
+Each Houston channel keeps its own key. The installed app's key is not visible to a
+development build, so enter the key again in a channel that has never had one. The
+installed app carries over a key saved by an earlier version the first time it reads it.
+
 ## Activation: push-to-talk vs toggle
 
 Two activation modes, both under Activation:

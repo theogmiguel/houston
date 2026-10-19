@@ -5128,16 +5128,31 @@ impl Db {
         receipt: &MessageReceipt,
         now: u64,
     ) -> Result<serde_json::Value> {
+        Ok(self.inbox_insert_report_superseding(row, receipt, now)?.0)
+    }
+
+    /// Stores a worker report. A `progress` report means the worker moved on, so it closes
+    /// its open question and blocker asks on the same request; a new ask never closes
+    /// another. Also returns the inbox rows it resolved, for the caller to broadcast.
+    pub fn inbox_insert_report_superseding(
+        &self,
+        row: &NewInboxRow,
+        receipt: &MessageReceipt,
+        now: u64,
+    ) -> Result<(serde_json::Value, Vec<i64>)> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         if let Some(result) = receipt.begin(&tx, now)? {
-            return Ok(result);
+            return Ok((result, Vec::new()));
         }
-        validate_worker_round(
-            &tx,
-            row.from_session.unwrap_or_default(),
-            row.request_id.unwrap_or_default(),
-        )?;
+        let worker = row.from_session.unwrap_or_default();
+        let request_id = row.request_id.unwrap_or_default();
+        validate_worker_round(&tx, worker, request_id)?;
+        let superseded = if row.kind == "progress" {
+            child_inputs::supersede_report_asks(&tx, worker, request_id, now)?
+        } else {
+            Vec::new()
+        };
         let pending: u32 = tx.query_row(
             "SELECT COUNT(*) FROM pane_inbox WHERE from_session = ?1
              AND resolved_at IS NULL
@@ -5175,7 +5190,7 @@ impl Db {
             "note":"Stored in the parent's inbox; this is not a final result. For a question or blocker, wait with pane_wait (omit session) for a reply; do not submit until the task is done."});
         receipt.finish(&tx, &result)?;
         tx.commit()?;
-        Ok(result)
+        Ok((result, superseded))
     }
 
     /// A sibling message: both panes must still be inside an open request, checked in the

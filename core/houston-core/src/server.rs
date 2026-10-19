@@ -1084,11 +1084,12 @@ async fn handle_control(
     let local = Arc::clone(handlers).try_acquire_owned();
     let global = Arc::clone(control_handlers()).try_acquire_owned();
     let (Ok(local), Ok(global)) = (local, global) else {
+        let (refused, context) = control_admission_refusal(text);
         send_error(sink, format!(
-            "control handler limits: connection {CONTROL_HANDLERS_PER_CONNECTION}, process {CONTROL_HANDLERS_PROCESS}; active connection {}, process {}; refused control request",
+            "control handler limits: connection {CONTROL_HANDLERS_PER_CONNECTION}, process {CONTROL_HANDLERS_PROCESS}; active connection {}, process {}; refused control request {refused}",
             CONTROL_HANDLERS_PER_CONNECTION - handlers.available_permits(),
             CONTROL_HANDLERS_PROCESS - control_handlers().available_permits(),
-        ), Some("control_admission".into())).await;
+        ), Some(context)).await;
         return;
     };
     let daemon = Arc::clone(daemon);
@@ -1132,6 +1133,28 @@ async fn handle_control(
         };
         report(&mut tx, result, context).await;
     });
+}
+
+/// Names the refused request for a client that must settle or retry it: its message type and
+/// the `dir` or `request` id it carried. The context is `control_admission:<type>[:<dir|request>]`.
+fn control_admission_refusal(text: &str) -> (String, String) {
+    let fields = serde_json::from_str::<serde_json::Value>(text).ok();
+    let field = |name: &str| fields.as_ref().and_then(|value| value.get(name));
+    let kind = field("type")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let detail = match (field("dir"), field("request")) {
+        (Some(serde_json::Value::String(dir)), _) => Some(("dir", dir.clone())),
+        (_, Some(request)) if request.is_number() => Some(("request", request.to_string())),
+        _ => None,
+    };
+    match detail {
+        Some((label, value)) => (
+            format!("{kind} ({label} {value})"),
+            format!("control_admission:{kind}:{value}"),
+        ),
+        None => (kind.to_string(), format!("control_admission:{kind}")),
+    }
 }
 
 /// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), so a
@@ -2688,6 +2711,7 @@ async fn dispatch(
             }
             Err(e) => Err(e),
         },
+        proto::ClientMsg::ChildInputResolve { child, id } => daemon.child_input_resolve(child, &id),
         proto::ClientMsg::InboxDeliverNow { session } => daemon.inbox_deliver_now(session),
         proto::ClientMsg::GitStatus { dir, base } => send_git_status(sink, dir, base).await,
         proto::ClientMsg::GitDiff { dir, path, base } => {
@@ -3774,7 +3798,7 @@ async fn dispatch(
             Ok(profiles) => {
                 daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                     profiles,
-                    keyring_error: crate::ssh_credentials::keyring_error(),
+                    keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                 });
                 Ok(())
             }
@@ -3784,7 +3808,7 @@ async fn dispatch(
             Ok(profiles) => {
                 daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                     profiles,
-                    keyring_error: crate::ssh_credentials::keyring_error(),
+                    keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                 });
                 Ok(())
             }
@@ -3796,7 +3820,7 @@ async fn dispatch(
                     sink,
                     &proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     },
                 )
                 .await;
@@ -3810,7 +3834,7 @@ async fn dispatch(
                 Ok(profiles) => {
                     daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     });
                     Ok(())
                 }
@@ -3822,7 +3846,7 @@ async fn dispatch(
                 Ok(profiles) => {
                     daemon.broadcast_control(&proto::ServerMsg::SshProfiles {
                         profiles,
-                        keyring_error: crate::ssh_credentials::keyring_error(),
+                        keyring_error: crate::ssh_credentials::keyring_error(daemon.state_dir()),
                     });
                     Ok(())
                 }

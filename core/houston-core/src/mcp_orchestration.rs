@@ -670,18 +670,14 @@ impl ToolProvider for OrchestrationTools {
                             if let Some(note) = &cap_note {
                                 text.push_str(&format!("\n{note}"));
                             }
-                            let wire_rows: Vec<Value> = entries
+                            let wire_rows: Vec<proto::InboxRow> = entries
                                 .into_iter()
                                 .map(|entry| {
-                                    let row = entry.row;
-                                    let mut metadata =
-                                        serde_json::to_value(proto::InboxRow::from(row))
-                                            .expect("inbox row serializes");
-                                    metadata
-                                        .as_object_mut()
-                                        .expect("inbox row object")
-                                        .remove("body");
-                                    metadata
+                                    let mut row = entry.row;
+                                    if let Some(excerpt) = orchestrate::result_body_excerpt(&row) {
+                                        row.body = excerpt;
+                                    }
+                                    row.into()
                                 })
                                 .collect();
                             Ok(ToolOutput {

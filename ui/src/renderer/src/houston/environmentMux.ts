@@ -86,6 +86,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   inbox_list: WORKSPACE,
   inbox_ack: 'local',
   inbox_resolve: 'local',
+  child_input_resolve: { session: 'child' },
   inbox_deliver_now: SESSION,
   session_resize: SESSION,
   session_list: 'list',
