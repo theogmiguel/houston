@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type { HoustonClient } from '../../houston/client'
+import { isBackgroundAdmissionRefusal } from '../../houston/controlAdmission'
 import { resolveGitError } from './gitErrors'
 import type { ReviewRequest } from './useReviewSubscription'
 
@@ -50,6 +51,9 @@ export function useGitErrorRouter({
   useEffect(() => {
     if (!client || !repoDir) return
     const unsubError = client.subscribe('error', (msg) => {
+      // A refused background fan-out request (branch chip, PR badge) is not a failure of
+      // the operation this pane has in flight.
+      if (isBackgroundAdmissionRefusal(msg.context)) return
       if (pendingTools.current !== null) {
         pendingTools.current = null
         setToolsBusy(false)
