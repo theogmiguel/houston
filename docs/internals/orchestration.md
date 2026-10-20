@@ -609,6 +609,9 @@ Pruning removes only terminal history. Request numbers are assigned under dispat
 serialization, and start/adoption evidence prevents an old idle event from dispatching
 the next instruction. Before the first prompt hook, dispatch uses the spawn's reserved
 initial request; its start and completion must still release the next queued instruction.
+A delivery into an open round prefixes the body with the same request header a spawn
+brief carries, worded for the child's door: `pane_submit` for MCP providers, `hs-pane
+submit` for CLI-only ones.
 A retry returns the same instruction's current state. Sessions without retained
 instructions do not emit queue updates for ordinary lifecycle events.
 

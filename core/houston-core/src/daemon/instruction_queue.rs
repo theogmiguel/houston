@@ -663,9 +663,19 @@ impl Daemon {
         let request = self
             .round_a_re_prompt_opens(target)
             .or_else(|| self.delegation_round_of(target));
+        // An unreadable kind keeps the pane_* spelling, as before.
+        let mcp_tools = self
+            .agent_kind_of(target)
+            .is_none_or(|kind| crate::mcp::MCP_TOOLS.contains(&kind));
         let text = request.map_or_else(
             || row.body.clone(),
-            |request| format!("{}\n\n{}", orchestrate::request_header(request), row.body),
+            |request| {
+                format!(
+                    "{}\n\n{}",
+                    orchestrate::request_header_for(request, mcp_tools),
+                    row.body
+                )
+            },
         );
         let prompt_id = self
             .last_prompt_id
