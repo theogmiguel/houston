@@ -7,7 +7,7 @@ let harness: AppHarness | null = null
 beforeEach(() => { resetHarness(); localStorage.clear() })
 afterEach(() => { harness?.unmount(); harness = null })
 
-it('a correlated scan failure clears loading and lets Usage refresh again', async () => {
+it('a correlated scan failure clears loading and lets Usage retry from the notice', async () => {
   harness = await renderReadyApp()
   const { container } = harness
   await act(async () => {
@@ -22,7 +22,10 @@ it('a correlated scan failure clears loading and lets Usage refresh again', asyn
   deliverControl({ type: 'error', message: 'usage scan panicked: task failed', context: 'usage_summary' })
   expect(refresh().disabled).toBe(false)
   expect(container.querySelector('[data-testid="usage-error"]')?.textContent).toContain('usage scan panicked: task failed')
-  act(() => refresh().click())
+  expect(container.querySelector('[data-testid="usage-error-empty"]')).not.toBeNull()
+  const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')
+  expect(retry).toBeDefined()
+  act(() => (retry as HTMLButtonElement).click())
   expect(refresh().disabled).toBe(true)
   expect(container.querySelector('[data-testid="usage-error"]')).toBeNull()
 })
