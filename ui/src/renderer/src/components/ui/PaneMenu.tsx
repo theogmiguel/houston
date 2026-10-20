@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ComponentType, ReactNode } from 'react'
 import { AGENT_DOT_COLOR, IconAgent, IconChevronDown, IconChevronRight } from '../icons'
 import type { AgentKind } from '../../houston/client'
+import { AGENT_LABEL } from '../sessionPresets'
 import { Icon, ICON_ROLE_CLS } from './Icon'
 import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './overlayChrome'
 import { Tooltip } from './Tooltip'
@@ -55,7 +56,7 @@ export function PaneMenuAgentRow({ agent, expanded, disabledReason, onClick }: {
         <span style={{ color: AGENT_DOT_COLOR[agent] ?? 'var(--text-muted)' }} className="flex-none inline-flex">
           <IconAgent agent={agent} className={ICON_ROLE_CLS.ui} />
         </span>
-        <Text size="ui" weight="ui" tone="secondary" className="flex-1 capitalize">{agent}</Text>
+        <Text size="ui" weight="ui" tone="secondary" className="flex-1">{AGENT_LABEL[agent] ?? agent}</Text>
         {expanded !== undefined && (
           <Icon
             glyph={expanded ? IconChevronDown : IconChevronRight}
