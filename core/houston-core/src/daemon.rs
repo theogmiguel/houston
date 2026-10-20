@@ -4128,7 +4128,10 @@ impl Daemon {
                 Err(anyhow!("provider without resume"))
             } else {
                 match self.db.session_resume_handle(child.id) {
-                    Ok(None) => Err(anyhow!("no resume handle")),
+                    Ok(None) => Err(anyhow!(
+                        "no resume handle{}",
+                        self.unbound_resume_reason(child.agent)
+                    )),
                     Err(e) => Err(e.context("reading resume handle")),
                     Ok(Some(_)) => {
                         let parent_live = || {
@@ -4222,6 +4225,32 @@ impl Daemon {
             } else {
                 self.retain_unresumed_descendants(child.id, children);
             }
+        }
+    }
+
+    /// Why a pane that can resume by exact id restored without a conversation:
+    /// hooks that were never installed never report one, and hooks that run can
+    /// still have delivered none (the pane ended before its first prompt).
+    fn unbound_resume_reason(&self, agent: proto::AgentKind) -> String {
+        if !crate::launch::resumes_conversations(agent) {
+            return String::new();
+        }
+        let slug = crate::agent_hooks::provider_slug(agent);
+        let installed = match self.hook_config_home() {
+            Ok(home) if agent == proto::AgentKind::Claude => crate::claude_hooks::is_installed(
+                &crate::claude_hooks::global_settings_path(&self.env(), &home),
+                &self.hook_sentinel(),
+            ),
+            Ok(home) => crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel()),
+            Err(_) => false,
+        };
+        if installed {
+            format!("; {slug} reported no conversation id for this pane")
+        } else {
+            format!(
+                "; {slug} lifecycle hooks are not installed, so this pane never reported a \
+                 conversation id to resume"
+            )
         }
     }
 

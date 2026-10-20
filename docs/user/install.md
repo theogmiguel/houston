@@ -173,7 +173,9 @@ minute it pastes regardless), and counts it delivered only when ZCode's prompt h
 reports it. Without that
 report Houston presses Enter once more, never pastes the prompt a second time, and then
 tells the pane's parent (or shows an error) to check the pane; the message never repeats
-the prompt. Without the hook toggle on, nothing can confirm the paste.
+the prompt. Without the hook toggle on, nothing can confirm the paste, and ZCode also
+reports no session ID, so its panes have no conversation to reopen after a shutdown or
+crash (see [panes](panes-and-grids.md#idle-and-restore-behavior)).
 ZCode has no read-only mode on its command line (it turns planning on only inside its own
 interface, with `/plan`), so Houston does not use it to plan a task; see
 [Tasks](tasks.md#planning-a-task).

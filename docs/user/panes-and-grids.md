@@ -318,7 +318,10 @@ working or waiting for input, once that conversation has had a prompt. The CLI r
 its history and waits for your next input; Houston does not resend a prompt or repeat an
 interrupted tool. Settings ▸ Workspaces ▸ Resume conversations when restoring panes turns
 this off. Codex requires native hooks that report the session ID and transcript path;
-older CLIs without those fields start fresh.
+older CLIs without those fields start fresh. ZCode records its conversation only while
+its hook toggle is on (see [Install](install.md#zcode)); a ZCode pane that ran without it
+has no conversation to reopen, and a child pane in that state says so in its restore
+notice to its parent.
 
 Restart offers Resume conversation and Start fresh when a pane holds a conversation.
 Start fresh, Kill and Close each forget it. If its transcript is gone, its folder changes,
