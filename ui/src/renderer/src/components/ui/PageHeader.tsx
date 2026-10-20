@@ -11,8 +11,9 @@ export interface PageHeaderProps {
 export function PageHeader({ heading, description, actions, count }: PageHeaderProps): React.JSX.Element {
   return (
     <header className="grid gap-[var(--space-3)]">
-      <div className="flex items-start gap-[var(--space-3)]">
-        <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
+      {/* The text column holds half the row as its floor: actions wider than that wrap below instead of starving the description. */}
+      <div className="flex flex-wrap items-start gap-[var(--space-3)]">
+        <div className="grid min-w-[50%] flex-1 gap-[var(--space-1)]">
           <h1 className="m-0 text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.2] text-[var(--text-primary)]">
             {heading}
             {count !== undefined && <Count value={count} />}
