@@ -37,6 +37,20 @@ const TASKS_REWORK_ROUNDS_SETTING_PREFIX: &str = "tasks_rework_rounds:";
 /// The stored value of a workspace with no default reviewer.
 const NO_REVIEWER: &str = "none";
 
+/// A submitted plan is serialized into the database row, so its encoded size is
+/// what is bounded, not any single field.
+fn check_proposal_size(proposal: &proto::TaskPlanProposal) -> Result<()> {
+    let encoded = serde_json::to_vec(proposal)?;
+    let limit = 16 * 1024;
+    if encoded.len() > limit {
+        anyhow::bail!(
+            "proposal is {} bytes; the task plan submission limit is {limit} bytes",
+            encoded.len()
+        );
+    }
+    Ok(())
+}
+
 /// The exact single-line JSON an implemented task child ends its `pane_submit`
 /// body with; the child brief quotes it and `orchestrate_submit` parses it.
 const TASK_RESULT_EXAMPLE: &str = "{\"task_result\":{\"status\":\"complete\",\"summary\":\"one \
@@ -1380,9 +1394,7 @@ impl Daemon {
                 check(name, value, max)?;
             }
         }
-        if serde_json::to_vec(&proposal)?.len() > 16 * 1024 {
-            anyhow::bail!("proposal is over the 16384-byte limit");
-        }
+        check_proposal_size(&proposal)?;
         let Some(plan) = self
             .db
             .submit_task_plan(id, session_id, task_revision, &proposal)?
@@ -5855,5 +5867,31 @@ pub(super) fn binding_to_session_task(binding: &SessionTaskBindingRow) -> proto:
         status: binding.task.status,
         run_id: binding.run.id,
         run_state: binding.run.state,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proposal_size_refusal_names_the_actual_and_allowed_sizes() {
+        let proposal = proto::TaskPlanProposal {
+            description: "x".repeat(17_000),
+            acceptance: vec![],
+            pointers: vec![],
+            out_of_scope: vec![],
+            questions: vec![],
+        };
+        let size = serde_json::to_vec(&proposal).unwrap().len();
+        let error = check_proposal_size(&proposal).unwrap_err().to_string();
+        assert!(
+            error.contains(&size.to_string()),
+            "refusal does not name the proposal size: {error}"
+        );
+        assert!(
+            error.contains("16384"),
+            "refusal does not name the limit: {error}"
+        );
     }
 }
