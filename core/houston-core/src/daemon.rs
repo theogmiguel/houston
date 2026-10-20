@@ -19954,8 +19954,11 @@ impl Daemon {
         )?;
         let prompt_file = prompt_file.or(argv_prompt_file);
         extra_args.extend(mode_args);
+        let brief = prompt_file.as_ref().map(|(path, _)| path.as_path());
         if !handoff {
-            extra_args.extend(crate::launch::dialogue_permission_args(kind));
+            extra_args.extend(crate::launch::child_permission_args(kind, brief));
+        } else if let Some(rule) = crate::launch::brief_read_rule(kind, brief) {
+            extra_args.push(format!("--allowedTools={rule}"));
         }
         if let Some(effort) = effort {
             extra_args.extend(crate::launch::effort_args(kind, effort)?);

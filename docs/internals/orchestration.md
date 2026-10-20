@@ -1494,6 +1494,11 @@ self-refusal exists for the verbs that act on a pane, and this one only reads.
 
 File-backed launch briefs have unique paths for each launch. A sibling launch cannot
 overwrite instructions that an existing agent may reread after compaction or resume.
+The instruction names the brief in its plain Windows form: internally kept paths may
+be canonicalised into the `\\?\` verbatim prefix, which a child CLI and its
+permission rules do not parse. A Claude child gets a launch-only Read rule for
+exactly its brief file, joined into the single `--allowedTools` token with the
+dialogue tools: Houston never relies on repeating the flag.
 
 `prompt` is unchanged and is still a complete request on its own;
 `output_format` and `boundaries` are optional and are composed WITH it, by

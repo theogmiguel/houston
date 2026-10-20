@@ -147,6 +147,48 @@ pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     }
 }
 
+/// The launch-only permission rules for an orchestrated child: Houston's dialogue
+/// tools plus, for a child given a file-backed brief, a Read rule for exactly that
+/// file. One `--allowedTools` token: Houston never relies on repeating the flag.
+pub fn child_permission_args(agent: proto::AgentKind, brief: Option<&Path>) -> Vec<String> {
+    let Some(mut flag) = dialogue_permission_args(agent).into_iter().next() else {
+        return Vec::new();
+    };
+    if let Some(rule) = brief_read_rule(agent, brief) {
+        flag.push(',');
+        flag.push_str(&rule);
+    }
+    vec![flag]
+}
+
+/// The child-facing form of a brief path. Paths Houston keeps internally may be
+/// canonicalised into the Windows `\\?\` verbatim form, which child CLIs read as
+/// a foreign path; the plain DOS/UNC form names the same file.
+pub fn brief_display_path(path: &Path) -> String {
+    #[cfg(windows)]
+    let plain = crate::paths::windows_command_path(path);
+    #[cfg(not(windows))]
+    let plain = path.to_path_buf();
+    plain.display().to_string()
+}
+
+/// Claude Code's exact-file Read allow rule for a launch brief, or `None` for other
+/// providers or no brief. Absolute rules start with `//`, and Claude matches Windows
+/// paths in POSIX form (`C:\x` becomes `/c/x`), so the rule is written that way.
+pub fn brief_read_rule(agent: proto::AgentKind, brief: Option<&Path>) -> Option<String> {
+    let brief = brief?;
+    if agent != proto::AgentKind::Claude {
+        return None;
+    }
+    let mut body = brief_display_path(brief).replace('\\', "/");
+    if body.as_bytes().get(1) == Some(&b':') {
+        // `C:/x` normalises to `/c/x`: the drive letter lowers and the colon drops.
+        let drive = body[..1].to_ascii_lowercase();
+        body.replace_range(..2, &format!("/{drive}"));
+    }
+    Some(format!("Read(/{body})"))
+}
+
 pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<String>> {
     use proto::AgentKind::*;
     ensure_launchable(agent)?;
@@ -284,7 +326,7 @@ pub fn prompt_text(
         let stub = format!(
             "Read the file {} and follow every instruction in it exactly. \
              It is your full mission brief for this job; start working immediately.",
-            path.display()
+            brief_display_path(&path)
         );
         prompt_file = Some((path, prompt.to_string()));
         stub
@@ -884,6 +926,125 @@ mod tests {
             .starts_with("prompt-a-b-"));
         assert_eq!(contents, long);
         assert!(text.contains(&path.display().to_string()), "{text}");
+    }
+
+    #[test]
+    fn a_prompt_file_instruction_names_a_plain_path() {
+        let dir = tempfile::tempdir().unwrap();
+        // Spawn briefs live under the canonicalised workspace, which on Windows
+        // is a `\\?\` verbatim path the child must never be told to read.
+        #[cfg(windows)]
+        let dir = std::fs::canonicalize(dir.path()).unwrap();
+        #[cfg(not(windows))]
+        let dir = dir.path().to_path_buf();
+        let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
+        let (stub, file) = prompt_text(&long, Some(&dir), "spawned").unwrap();
+        let (path, _) = file.expect("a long brief becomes a file");
+        assert!(
+            !stub.contains(r"\\?\"),
+            "the instruction names a verbatim path: {stub}"
+        );
+        #[cfg(windows)]
+        let plain = crate::paths::windows_command_path(&path);
+        #[cfg(not(windows))]
+        let plain = path.clone();
+        assert!(
+            stub.contains(&plain.display().to_string()),
+            "the instruction must name the plain path: {stub}"
+        );
+    }
+
+    #[test]
+    fn a_claude_child_rules_allow_reading_exactly_its_brief_file() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let dir = std::fs::canonicalize(dir.path()).unwrap();
+        #[cfg(not(windows))]
+        let dir = dir.path().to_path_buf();
+        let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
+        let (_, file) = prompt_text(&long, Some(&dir), "spawned").unwrap();
+        let (path, _) = file.expect("a long brief becomes a file");
+        let flag = child_permission_args(proto::AgentKind::Claude, Some(&path))
+            .into_iter()
+            .next()
+            .expect("a Claude child carries one permission flag");
+        let rules = flag.trim_start_matches("--allowedTools=");
+        let read: Vec<&str> = rules
+            .split(',')
+            .filter(|r| r.starts_with("Read("))
+            .collect();
+        assert_eq!(read.len(), 1, "exactly one Read rule: {flag}");
+        let rule = read[0];
+        assert!(
+            rule.starts_with("Read(//"),
+            "the Read rule must be absolute: {rule}"
+        );
+        assert!(
+            !rule.contains('*') && !rule.contains(r"\\?\"),
+            "the Read rule must name exactly one plain file: {rule}"
+        );
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap();
+        assert!(rule.contains(name), "the Read rule names the brief: {rule}");
+        for tool in [
+            "mcp__houston__pane_submit",
+            "mcp__houston__pane_report",
+            "mcp__houston__pane_reply",
+            "mcp__houston__pane_message",
+            "mcp__houston__pane_wait",
+            "mcp__houston__pane_deny",
+            "mcp__houston__pane_escalate",
+        ] {
+            assert!(rules.split(',').any(|r| r == tool), "{tool} lost: {flag}");
+        }
+    }
+
+    #[test]
+    fn a_child_without_a_brief_keeps_the_dialogue_rules_alone() {
+        use proto::AgentKind::*;
+        assert_eq!(
+            child_permission_args(Claude, None),
+            dialogue_permission_args(Claude)
+        );
+        for kind in [Codex, Antigravity, Opencode, Zcode] {
+            assert!(child_permission_args(kind, None).is_empty());
+            let brief = Path::new("/tmp/prompt-x.md");
+            assert!(child_permission_args(kind, Some(brief)).is_empty());
+            assert!(brief_read_rule(kind, Some(brief)).is_none());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn claude_brief_read_rule_uses_claudes_posix_absolute_form() {
+        let rule = brief_read_rule(
+            proto::AgentKind::Claude,
+            Some(Path::new(
+                r"\\?\C:\dev\houston\.houston\orchestration\prompts\prompt-spawned-01.md",
+            )),
+        )
+        .unwrap();
+        assert_eq!(
+            rule,
+            "Read(//c/dev/houston/.houston/orchestration/prompts/prompt-spawned-01.md)"
+        );
+        let plain = brief_read_rule(
+            proto::AgentKind::Claude,
+            Some(Path::new(r"C:\dev\prompt-x.md")),
+        )
+        .unwrap();
+        assert_eq!(plain, "Read(//c/dev/prompt-x.md)");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn claude_brief_read_rule_uses_the_double_slash_absolute_form() {
+        let rule = brief_read_rule(
+            proto::AgentKind::Claude,
+            Some(Path::new("/home/u/prompt-x.md")),
+        )
+        .unwrap();
+        assert_eq!(rule, "Read(//home/u/prompt-x.md)");
+        assert_eq!(brief_read_rule(proto::AgentKind::Claude, None), None);
     }
 
     #[test]
