@@ -53,6 +53,7 @@ mod idle_loops_wire;
 mod instruction_queue_wire;
 mod keymap_wire;
 mod launch_prompt_isolation;
+mod launched_identity_wire;
 mod manage_wire;
 mod mcp_server_wire;
 mod mcp_shutdown_wire;
