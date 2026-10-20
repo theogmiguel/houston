@@ -267,11 +267,11 @@ function TaskListMeta({ entry, notes, sessions }: { entry: TaskListEntry; notes:
   const { task } = entry
   const status = statusOf(task, sessions)
   return (
-    <span className="inline-flex min-w-0 items-center gap-[var(--space-1-5)]">
+    <span className="inline-flex max-w-full min-w-0 items-center gap-[var(--space-1-5)]">
       {status ? <StatusLabel status={status} size="small" /> : <span>{STATUS_LABEL[task.status]}</span>}
       <span aria-hidden="true">·</span>
       <Text as="span" mono>{task.key}</Text>
-      {notes.map((note, index) => <Fragment key={index}><span aria-hidden="true">·</span><span className="truncate">{note}</span></Fragment>)}
+      {notes.map((note, index) => <Fragment key={index}><span aria-hidden="true">·</span><span className="min-w-0 truncate">{note}</span></Fragment>)}
     </span>
   )
 }
@@ -307,7 +307,9 @@ function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, Se
   if (task.open_run?.state === 'waiting_for_input') {
     if (!taskNeedsUser(task, sessions)) {
       const session = sessions.get(task.open_run.session_id ?? -1)
-      return session ? attentionLabel(session) : 'Asked orchestrator'
+      const label = session ? attentionLabel(session) : 'Asked orchestrator'
+      // The StatusLabel already reads “Asked orchestrator”; the age is the part that changes.
+      return /asked orchestrator/i.test(label) ? formatAge(task.open_run.started_at_ms, now) : label
     }
     const question = questionFor(task, sessions, inboxRows)
     return question ? `${queueAgentLabel(task.open_run.provider)} asks: “${question}”` : `${queueAgentLabel(task.open_run.provider)} needs input`
