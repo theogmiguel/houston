@@ -140,14 +140,14 @@
     "run in App's connection handlers, and the child input banner's Dismiss action",
     "renders inside every mounted pane, so all three are boot-path code.",
     "",
-    "Re-cut against MEASURED bytes (one boot chunk) with the same small headroom:",
+    "Re-cut against 946,630 bytes (one boot chunk) with the same small headroom:",
     "the boot skeleton's spinner carries the renderer's own recipe; the class it",
     "dropped is styled only by the pre-boot page's inline stylesheet, so the",
     "mounted skeleton rendered no indicator at all. Pane menus label agents from",
     "the canonical map instead of CSS-capitalizing the raw id, and the map rides",
     "on the boot path with the menus."
   ],
-  "maxBootBytes": 946600,
+  "maxBootBytes": 946800,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
