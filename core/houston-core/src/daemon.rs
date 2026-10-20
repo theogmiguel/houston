@@ -1417,6 +1417,12 @@ struct ComposerKeystroke {
     submitting_enter: bool,
 }
 
+/// Banners and hooks name the CLI a shell or custom command started. A pane launched as a
+/// provider keeps it: its output may quote another CLI's banner, e.g. Houston's sources.
+fn detection_relabels(launched: proto::AgentKind, kind: proto::AgentKind) -> bool {
+    matches!(launched, proto::AgentKind::Shell | proto::AgentKind::Custom) || kind == launched
+}
+
 /// A frame ending in a bare `\r` submits the composer; one ending in the escape-prefixed
 /// `\x1b\r` is a newline within the text, not a submit.
 fn is_submitting_enter(payload: &[u8]) -> bool {
@@ -10846,6 +10852,9 @@ impl Daemon {
     }
 
     fn mark_detected(&self, id: u32, session: &Session, kind: proto::AgentKind) {
+        if !detection_relabels(session.info.agent, kind) {
+            return;
+        }
         let changed = {
             let mut cur = session.detected.lock().expect("detected lock");
             if *cur == Some(kind) {
@@ -11771,7 +11780,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
-            detected: Mutex::new(detected_agent),
+            detected: Mutex::new(detected_agent.filter(|kind| detection_relabels(agent, *kind))),
             running: Mutex::new(hosted_provider),
             blocks: shellint_token.as_ref().map(|token| {
                 let mut tracker = BlockTracker::new(token.clone());
