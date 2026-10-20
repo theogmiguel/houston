@@ -18,7 +18,8 @@ other on names and arguments:
 
 - An MCP tool set: `pane_spawn`, `pane_list`, `pane_get`, `pane_send_keys`, `pane_read`,
   `pane_prompt`, `pane_wait`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`,
-  `pane_deny`, `pane_escalate`, and the `pane_instruction_*` controls.
+  `pane_deny`, `pane_escalate`, `pane_pr_watch`, `pane_pr_unwatch`,
+  and the `pane_instruction_*` controls.
 - A command-line tool, `hs-pane`, with one subcommand per verb above (plus a CLI-only
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
 

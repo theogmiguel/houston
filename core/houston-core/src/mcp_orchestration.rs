@@ -874,9 +874,14 @@ impl OrchestrationTools {
                         },
                         "prompt": {
                             "type": "string",
+                            "description":
+                                "The child's complete brief: goal, scope, paths, output shape. \
+                                 No cap; long briefs go to a file the child reads. Not a pointer.",
                         },
                         "model": {
                             "type": "string",
+                            "description":
+                                "Refused for ZCode (no model flag); choose it in ZCode with /model.",
                         },
                         "cwd": {
                             "type": "string",
@@ -1289,6 +1294,33 @@ mod tests {
                 "`{key}` must stay optional so existing callers keep working"
             );
         }
+    }
+
+    #[test]
+    fn pane_spawn_describes_its_prompt_brief_and_the_zcode_model_refusal() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        let spawn = provider
+            .all_tools()
+            .into_iter()
+            .find(|s| s.name == "pane_spawn")
+            .expect("pane_spawn is listed");
+        let prompt = spawn.input_schema["properties"]["prompt"]["description"]
+            .as_str()
+            .expect("pane_spawn's prompt must carry a description");
+        assert!(
+            prompt.contains("brief") && prompt.contains("cap") && prompt.contains("pointer"),
+            "the prompt description must name the brief, its lack of a cap and that it is \
+             not a pointer: {prompt}"
+        );
+        let model = spawn.input_schema["properties"]["model"]["description"]
+            .as_str()
+            .expect("pane_spawn's model must carry a description");
+        assert!(
+            model.contains("ZCode") && model.contains("Refused"),
+            "the model description must name ZCode's refusal: {model}"
+        );
     }
 
     #[test]
