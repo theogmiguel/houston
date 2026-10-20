@@ -38,6 +38,7 @@ pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || {
         daemon.sweep_legacy_hooks();
+        daemon.sweep_orphan_handoff_prompts();
         daemon.install_consented_agent_hooks();
     });
     crate::mcp_register::spawn_at_boot(env.clone());

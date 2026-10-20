@@ -1970,6 +1970,8 @@ const HANDOFF_BUFFER_CAP: usize = 2 * 1024 * 1024;
 const TITLE_OUTPUT_CAP: usize = 4096;
 // A fixed deadline bounds provider stalls even if they keep emitting output.
 const TITLE_GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
+// A live handoff's prompt is minutes old; only a dead daemon's leftovers age past a day.
+const HANDOFF_PROMPT_STALE_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn handoff_timeout(env: &crate::host_env::HostEnv) -> Duration {
     env.var("HOUSTON_HANDOFF_TIMEOUT_MS")
@@ -14495,8 +14497,10 @@ impl Daemon {
             .or_else(|| self.live_cwd(source).filter(|d| d.is_dir()))
             .unwrap_or_else(|| PathBuf::from(&info.project_dir));
         let tr_dir = cwd.join(crate::paths::PROJECT_DIR);
-        std::fs::create_dir_all(&tr_dir)
-            .with_context(|| format!("creating {}", tr_dir.display()))?;
+        // Handoff prompts and results are session working files; like every other
+        // Houston subtree, the directory must not surface in the workspace's git status.
+        crate::worktrees::ensure_ignored(&tr_dir)
+            .with_context(|| format!("preparing {}", tr_dir.display()))?;
 
         let activity = if title_job.is_some() {
             String::new()
@@ -14923,6 +14927,40 @@ impl Daemon {
             markdown,
             saved_path,
         });
+    }
+
+    /// A daemon death mid-handoff (crash, update takeover) orphans the prompt file
+    /// the generator was reading; normal retirement removes it in `handoff_finish`.
+    /// Boot sweeps each known workspace's stale prompts so they do not accumulate.
+    pub fn sweep_orphan_handoff_prompts(&self) {
+        let Ok(workspaces) = self.db.list_workspaces() else {
+            return;
+        };
+        let now = std::time::SystemTime::now();
+        for workspace in &workspaces {
+            let dir = Path::new(&workspace.path).join(crate::paths::PROJECT_DIR);
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else { continue };
+                if !(name.starts_with("handoff-prompt-") && name.ends_with(".md")) {
+                    continue;
+                }
+                let stale = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .map(|modified| {
+                        now.duration_since(modified)
+                            .is_ok_and(|age| age >= HANDOFF_PROMPT_STALE_AGE)
+                    })
+                    .unwrap_or(false);
+                if stale {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
     }
 
     pub fn handoff_cancel(self: &Arc<Self>, request: u32) -> Result<()> {

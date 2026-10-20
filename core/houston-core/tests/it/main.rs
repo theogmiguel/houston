@@ -38,6 +38,7 @@ mod git_wire;
 mod handoff_start_order_wire;
 mod handoff_timeout_wire;
 mod handoff_wire;
+mod handoff_workspace_hygiene;
 mod harness_cli;
 mod harness_fix_task_wire;
 mod harness_review_wire;
