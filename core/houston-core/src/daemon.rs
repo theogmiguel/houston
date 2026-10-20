@@ -10635,6 +10635,10 @@ impl Daemon {
             return;
         };
         let Ok(session) = self.get(session_id) else {
+            tracing::warn!(
+                "session {session_id} is gone: dropping {} deferred shell children without restore",
+                pending.children.len()
+            );
             return;
         };
         let mut notices = Vec::new();
@@ -16667,6 +16671,22 @@ impl Daemon {
             .lock()
             .expect("prompt awaiting hook lock")
             .retain(|id| live.contains(id));
+        self.resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .retain(|id, _| live.contains(id));
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .retain(|id, _| live.contains(id));
+        self.pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .retain(|id, _| live.contains(id));
+        self.early_shell_resumes
+            .lock()
+            .expect("early shell resumes lock")
+            .retain(|id, _| live.contains(id));
     }
 
     fn stall_row_for_expired(self: &Arc<Self>, child: u32, gone: &orchestrate::Expired) {
@@ -27178,6 +27198,195 @@ mod reader_wake_tests {
         // SAFETY: the single entry and its owned descriptor are valid.
         assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
         wake.consume();
+    }
+}
+
+#[cfg(test)]
+mod shell_restore_bookkeeping_tests {
+    use super::*;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_child(project: &str, id: u32) -> proto::SessionInfo {
+        proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Claude,
+            project_dir: project.to_string(),
+            cwd: project.to_string(),
+            state: proto::SessionState::Exited,
+            title: "child".into(),
+            codename: "child".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: None,
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by: None,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn expiry_pass_sweeps_shell_restore_bookkeeping_whose_session_is_gone() {
+        let (daemon, state) = test_daemon();
+        // A parent closed or respawned away before its SessionStart hook fired
+        // leaves these entries behind; session ids are never reused, so the
+        // entries would otherwise outlive the run.
+        daemon
+            .pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .insert(
+                11,
+                PendingShellChildren {
+                    old_parent: 3,
+                    provider: proto::AgentKind::Claude,
+                    conversation: "conv-11".into(),
+                    children: vec![stub_child(state.path().to_str().unwrap(), 12)],
+                },
+            );
+        daemon
+            .early_shell_resumes
+            .lock()
+            .expect("early shell resumes lock")
+            .insert(13, (proto::AgentKind::Claude, "conv-13".into()));
+        daemon
+            .resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .insert(14, Instant::now());
+        daemon
+            .wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .insert(15, Instant::now());
+
+        daemon.subagent_expiry_pass(now_ms());
+
+        assert!(
+            daemon
+                .pending_shell_children
+                .lock()
+                .expect("pending shell children lock")
+                .is_empty(),
+            "pending shell children of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .early_shell_resumes
+                .lock()
+                .expect("early shell resumes lock")
+                .is_empty(),
+            "early shell resumes of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .resume_launches
+                .lock()
+                .expect("resume launches lock")
+                .is_empty(),
+            "resume launches of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .wake_launches
+                .lock()
+                .expect("wake launches lock")
+                .is_empty(),
+            "wake launches of a gone session must be swept"
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogBuf {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogBuf {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn finishing_pending_children_of_a_gone_session_records_a_notice() {
+        let (daemon, state) = test_daemon();
+        daemon
+            .pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .insert(
+                21,
+                PendingShellChildren {
+                    old_parent: 3,
+                    provider: proto::AgentKind::Claude,
+                    conversation: "conv-21".into(),
+                    children: vec![stub_child(state.path().to_str().unwrap(), 22)],
+                },
+            );
+        let reservation = daemon.reserve_shell_restore(21).unwrap();
+
+        crate::test_tracing_capture::ensure_permissive_global_default();
+        let buf = LogBuf::default();
+        let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
+        tracing::subscriber::with_default(subscriber, || {
+            daemon.finish_pending_shell_children(21, reservation);
+        });
+
+        assert!(
+            daemon
+                .pending_shell_children
+                .lock()
+                .expect("pending shell children lock")
+                .is_empty(),
+            "the gone-session path must still consume the pending entry"
+        );
+        let logged = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            logged.contains("21") && logged.contains("1"),
+            "the notice must name the gone session and its deferred child count: {logged}"
+        );
     }
 }
 
