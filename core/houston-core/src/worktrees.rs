@@ -128,12 +128,12 @@ pub fn validate_slug(slug: &str) -> Result<()> {
     }
 }
 
-/// Worktrees nested in the workspace would show in its `git status`; one `*` keeps the
-/// whole directory out, as `.houston/swarm/` does. A file already there is left alone.
-pub fn ensure_ignored(worktrees_dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(worktrees_dir)
-        .with_context(|| format!("creating {}", worktrees_dir.display()))?;
-    let gitignore = worktrees_dir.join(".gitignore");
+/// A Houston-managed subtree of a user workspace must not show in its `git status`;
+/// one `*` keeps the whole directory out, as `.houston/swarm/` does. A file already
+/// there is left alone.
+pub fn ensure_ignored(dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let gitignore = dir.join(".gitignore");
     if !gitignore.exists() {
         std::fs::write(&gitignore, "*\n")
             .with_context(|| format!("writing {}", gitignore.display()))?;
