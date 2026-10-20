@@ -125,7 +125,8 @@ Set the queue up in **Settings ▸ Workspaces ▸ Merge queue**:
 - **Merge when verified**: off by default. It cannot be turned on while the command is empty.
 - **Queue**: shows whether the queue is paused, with **Pause** and **Resume**.
 
-With a command set, Houston verifies the first entry whose gates pass. It fetches the base and
+With a command set, Houston verifies the first entry in line once its gates pass; entries
+behind a blocked first entry wait for it. It fetches the base and
 the pull request's branch from the remote, rebases the branch onto the latest base in a
 temporary worktree under Houston's state directory, runs the command there at lowered priority,
 and removes the worktree. One verification runs at a time on this machine, across every
