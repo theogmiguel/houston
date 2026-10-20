@@ -3397,11 +3397,12 @@ export function App(): React.JSX.Element {
     return ids;
   }, [currentTree, peekedChildren, sessions]);
   visiblePaneIdsRef.current = visiblePaneIds;
-  // Focusing a pane is seeing it: the finish marker's only read path.
+  // Focusing a pane is seeing it: the finish marker's only read path. The focus
+  // survives a workspace switch, so returning to an already-focused pane counts.
   useEffect(() => {
-    if (activeId === null) return;
+    if (activeId === null || !visiblePaneIds.has(activeId)) return;
     setFinishedUnseen((cur) => finishedUnseenWithout(cur, activeId));
-  }, [activeId]);
+  }, [activeId, visiblePaneIds]);
   useEffect(() => {
     setOpenedAttention((current) => {
       const next = new Map(current);

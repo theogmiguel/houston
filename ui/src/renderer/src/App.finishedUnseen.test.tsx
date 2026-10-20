@@ -93,4 +93,40 @@ describe('the finished-unread rail marker', () => {
     })
     expect(pip()).toBeNull()
   })
+  it('clears the mark when the user returns to a pane that stayed focused while it finished', async () => {
+    harness = await renderReadyApp()
+    deliverHelloOk({
+      sessions: [
+        makeSession({ id: 1, agent: 'claude', project_dir: WS_B, cwd: WS_B, status: 'working' }),
+        makeSession({ id: 2, agent: 'claude', project_dir: WS_A, cwd: WS_A, status: 'idle' })
+      ],
+      workspaces: [makeWorkspace({ path: WS_A, name: 'a' }), makeWorkspace({ path: WS_B, name: 'b' })]
+    })
+    await waitRailRow()
+    // Rails list workspaces in the hello order: a first, then b.
+    const rowOf = (workspace: 'a' | 'b'): HTMLElement => {
+      const rows = [...harness!.container.querySelectorAll<HTMLElement>('[data-testid="grid-row"]')]
+      if (rows.length !== 2) throw new Error(`expected one grid row per workspace, got ${rows.length}`)
+      return rows[workspace === 'a' ? 0 : 1]
+    }
+    // Both agents share the default codename, so focus through b's own row.
+    act(() => {
+      rowOf('b').querySelector<HTMLElement>('button[aria-label^="Focus "]')!.click()
+    })
+    // Leave the workspace by its grid row, which keeps the focused pane id.
+    act(() => rowOf('a').click())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    deliverControl({ type: 'agent_status', session: 1, status: 'idle' })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(pip()).not.toBeNull()
+    act(() => rowOf('b').click())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(pip()).toBeNull()
+  })
 })
