@@ -4305,6 +4305,11 @@ impl Daemon {
             Some(s) => Arc::clone(s),
             None => return Ok(()),
         };
+        if *session.state.lock().expect("state lock") == proto::SessionState::Killed {
+            // Kill released this pane's scrollback file; the EOF drain and the
+            // shutdown checkpoint must not re-create it for the Killed tile.
+            return Ok(());
+        }
         let ring = session.scrollback.lock().expect("scrollback lock");
         if ring.bytes_seen() == 0 {
             return Ok(());
@@ -13465,6 +13470,14 @@ impl Daemon {
             exit_code: None,
         });
         drop(state);
+        // The Killed tile stays listed and restorable, but the pane is gone: release
+        // what close_one_reserved releases for parts that do not need the session
+        // entry removed. A killed child's bearer token must stop working immediately.
+        self.mcp_creds.revoke_session(id);
+        self.mcp_notify.close_session(id);
+        self.remove_persisted_scrollback(id);
+        self.frame_taps.forget_session(id);
+        self.voice.forget_session(id);
         drop(cleanup);
         self.reap_reevaluate();
         Ok(())
@@ -26829,9 +26842,208 @@ mod handoff_refusal_tests {
         std::fs::write(&file, b"#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            handoff_binary(Some(&file.to_string_lossy())).unwrap(),
+            handoff_binary(Some(&file.to_string_lossy())),
             file,
             "a valid candidate must resolve to the exact path the caller named"
+        );
+    }
+}
+
+#[cfg(test)]
+mod kill_teardown_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_ssh_session(daemon: &Daemon, state: &Path, id: u32) -> Arc<Session> {
+        // Mirrors `run_ssh_connect`'s session construction, the one place a pane
+        // exists without a local process: the SSH stub keeps the test off the network.
+        let project = state.display().to_string();
+        let info = proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Ssh,
+            project_dir: project.clone(),
+            cwd: project.clone(),
+            state: proto::SessionState::Running,
+            title: "ssh".into(),
+            codename: "ssh".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: Some(project.clone()),
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by: None,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        };
+        let session = Arc::new(Session {
+            info: info.clone(),
+            pid: None,
+            custom_cmd: None,
+            state: Mutex::new(proto::SessionState::Running),
+            title: Mutex::new("ssh".into()),
+            project_dir: Mutex::new(project.clone()),
+            detected: Mutex::new(None),
+            running: Mutex::new(None),
+            blocks: None,
+            shell_token_redactor: None,
+            raw_output_bytes: AtomicU64::new(0),
+            shell_token_file: None,
+            shell: None,
+            osc_cwd: Mutex::new(None),
+            osc_title: None,
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
+            cli_title: Mutex::new(CliTitleState::default()),
+            title_source: Mutex::new(TitleSource::Codename),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
+            transient_title_candidates: Mutex::new(Vec::new()),
+            tags: Mutex::new(Vec::new()),
+            osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
+            acp: None,
+            scrollback: Mutex::new(Scrollback::new()),
+            ws_attaches: AtomicU32::new(0),
+            vt: Mutex::new(None),
+            vt_refused: AtomicBool::new(false),
+            last_output: AtomicU64::new(0),
+            status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
+            context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
+            removed: AtomicBool::new(false),
+            backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
+            lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
+            hook_cwd: Mutex::new(None),
+            hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
+            geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
+            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
+            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+            park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
+        });
+        daemon.db.insert_session(&session.info).unwrap();
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(id, session.clone());
+        session
+    }
+
+    fn seed_pane_state(daemon: &Daemon, id: u32, session: &Session) -> String {
+        let command = portable_pty::CommandBuilder::new("claude");
+        crate::launch::claude_pane_env_args(&command, &daemon.claude_settings_path(id)).unwrap();
+        let signal = daemon.tool_boundary_signal_path(id);
+        std::fs::create_dir_all(signal.parent().expect("signal parent")).unwrap();
+        std::fs::write(&signal, b"").unwrap();
+        session
+            .scrollback
+            .lock()
+            .expect("scrollback lock")
+            .push(b"pane output before the kill");
+        daemon.persist_scrollback(id);
+        daemon.mcp_creds.issue(crate::mcp_creds::McpScope {
+            session_id: id,
+            workspace_id: session.info.project_dir.clone(),
+        })
+    }
+
+    #[test]
+    fn kill_releases_pane_files_credential_and_scrollback() {
+        let (daemon, state) = test_daemon();
+        let session = stub_ssh_session(&daemon, state.path(), 7);
+        let token = seed_pane_state(&daemon, 7, &session);
+        let signal = daemon.tool_boundary_signal_path(7);
+        assert!(daemon.claude_settings_path(7).is_file());
+        assert!(signal.is_file());
+        assert!(daemon.scrollback_path(7).is_file());
+        assert!(daemon.mcp_creds.resolve(&token).is_some());
+
+        daemon.kill(7).unwrap();
+
+        assert!(
+            !daemon.claude_settings_path(7).exists(),
+            "a killed pane's Claude hook settings must be released, not kept for the tile's lifetime"
+        );
+        assert!(
+            !signal.exists(),
+            "a killed pane's child-context signal must be released with the pane"
+        );
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a killed pane's persisted scrollback must be released with the pane"
+        );
+        daemon.persist_scrollback(7);
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "the PTY EOF drain must not re-create a killed pane's scrollback"
+        );
+        assert!(
+            daemon.mcp_creds.resolve(&token).is_none(),
+            "a killed pane's MCP bearer token must be refused"
+        );
+        assert!(
+            daemon.list().iter().any(|info| info.id == 7),
+            "kill must keep the Killed tile listed"
+        );
+        assert_eq!(
+            daemon.db.session_final(7).unwrap(),
+            Some((proto::SessionState::Killed, None))
         );
     }
 }
