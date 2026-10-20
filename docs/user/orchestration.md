@@ -278,10 +278,12 @@ on the new generation. Pending results remain available for that wait.
 Claude children receive launch-only permission rules for exactly Houston's
 `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
 automatic approval is disabled. Other tools keep the selected approval mode.
-Codex, Antigravity, OpenCode and ZCode have no equivalent launch rule; their
-selected approval mode still applies to these tools. Outside yolo mode ZCode asks for
-approval before every Houston tool call, so a ZCode parent also asks before each
-`pane_spawn` and `pane_wait`.
+A child launched from a file-backed brief also gets a launch-only rule to read
+exactly that one brief file, so an unattended child never stops at a permission
+prompt for its own instructions. Codex, Antigravity, OpenCode and ZCode have no
+equivalent launch rule; their selected approval mode still applies to these
+tools. Outside yolo mode ZCode asks for approval before every Houston tool call,
+so a ZCode parent also asks before each `pane_spawn` and `pane_wait`.
 
 A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
 failure — or is interrupted reports no turn end: its parent's wait times out instead of
