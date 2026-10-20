@@ -6,6 +6,6 @@ Desktop notifications appear only while the Houston window is unfocused. Choose 
 
 On Linux, the desktop notification service controls whether these notices are allowed. If delivery is refused, allow notifications for Houston in the desktop's notification settings. Native desktop notifications are not available on Windows or macOS yet.
 
-In-app notifications appear while Houston is focused when the pane is in another grid or workspace. A pane already on screen only changes its status indicator. Finished notices dismiss after a few seconds; needs-input notices stay until opened or dismissed.
+In-app notifications appear while Houston is focused when the pane is in another grid or workspace. A pane already on screen only changes its status indicator. Finished notices dismiss after a few seconds; needs-input notices stay until opened or dismissed. After a finished notice dismisses, the pane's rail card keeps the unread mark — the grid name in bold with a dot — until you focus that pane.
 
 Child panes report to the agent that started them, not to you. The taskbar icon counts the panes waiting on you.
