@@ -19839,7 +19839,7 @@ impl Daemon {
             None => None,
         };
         let prompt = brief
-            .compose(1)
+            .compose(1, kind)
             .map_err(|e| anyhow!("spawn refused: {e}"))?;
         let project_dir = self.resolve_spawn_workspace(caller, target_workspace.as_deref())?;
         let ws = project_dir.display().to_string();

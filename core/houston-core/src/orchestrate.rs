@@ -521,11 +521,46 @@ pub const HANDBACK_PROTOCOL: &str = "\n\n## Handing back\nCall `pane_submit` wit
                                     when you are done — that, not this pane, is what reaches \
                                     whoever asked. Answering only here reaches nobody.\nDuring work, report progress, questions or blockers with `pane_report{kind,body,request_id}` using the current request number. For a question or blocker, wait with `pane_wait` without a session for a correlated reply; do not submit until the assigned work is complete. Delegated coding-agent work must use Houston panes, never internal sub-agents. Resolve routine child asks within existing authority first; request user decisions with pane_escalate, not prose alone. Every actual permission prompt routes parent-first in all launch modes. The parent NEVER approves: ALL keys are refused while any permission episode is pending; use pane_deny{child,episode_id} or pane_escalate{child,reason}; only the operator may approve. Verified denial stays pending until provider evidence. Input episode ids differ from worker request_id. Escalation transfers ownership to User and alerts amber; safety escalation requires authoritative Stop/ACP turn end or parent close/death, never quiet-settle. Bare Codex Auto PermissionRequest is non-alerting activity. Accepted instructions carry durable ids; use instruction list/get/cancel/resume, explicitly resume recovery holds and never resume uncertain work. Preserve partial results and distinguish steer adoption from delivery.\nTrack required background jobs with your CLI's supported wait or monitor tools until every job finishes. Never hand back while required work is still running. Close completed children you no longer need before your own handback. Finish with `pane_submit` and a non-empty body.";
 
+// One prose, two spellings: children without pane_* MCP tools (Antigravity, ZCode) get
+// the `hs-pane` commands, whose flags differ from the tool arguments. Every replacement
+// must consume a `pane_` token; the unit tests refuse any survivor.
+pub fn handback_protocol(mcp_tools: bool) -> String {
+    if mcp_tools {
+        return HANDBACK_PROTOCOL.to_string();
+    }
+    HANDBACK_PROTOCOL
+        .replace(
+            "`pane_submit`",
+            "`hs-pane submit \"<result>\" --request-id N`",
+        )
+        .replace(
+            "`pane_report{kind,body,request_id}`",
+            "`hs-pane report <progress|question|blocked> \"<body>\" --request-id N`",
+        )
+        .replace("`pane_wait`", "`hs-pane wait`")
+        .replace(
+            "pane_deny{child,episode_id} or pane_escalate{child,reason}",
+            "`hs-pane deny` or `hs-pane escalate`",
+        )
+        .replace("pane_escalate, not prose", "`hs-pane escalate`, not prose")
+}
+
 pub fn request_header(round: u32) -> String {
-    format!(
-        "This is request #{round} from your parent — pass the same number back as \
-         `pane_submit{{request_id: {round}}}`."
-    )
+    request_header_for(round, true)
+}
+
+pub fn request_header_for(round: u32, mcp_tools: bool) -> String {
+    if mcp_tools {
+        format!(
+            "This is request #{round} from your parent — pass the same number back as \
+             `pane_submit{{request_id: {round}}}`."
+        )
+    } else {
+        format!(
+            "This is request #{round} from your parent — pass the same number back as \
+             `hs-pane submit \"<result>\" --request-id {round}`."
+        )
+    }
 }
 
 fn brief_field<'a>(
@@ -547,7 +582,8 @@ fn brief_field<'a>(
 }
 
 impl Brief {
-    pub fn compose(&self, round: u32) -> Result<String, String> {
+    pub fn compose(&self, round: u32, kind: proto::AgentKind) -> Result<String, String> {
+        let mcp_tools = crate::mcp::MCP_TOOLS.contains(&kind);
         let output_format = brief_field(
             "output_format",
             self.output_format.as_deref(),
@@ -558,7 +594,7 @@ impl Brief {
             self.boundaries.as_deref(),
             "\"read-only outside ui/, and do not run the app\"",
         )?;
-        let mut out = request_header(round);
+        let mut out = request_header_for(round, mcp_tools);
         out.push_str("\n\n");
         out.push_str(self.prompt.trim());
         if let Some(format) = output_format {
@@ -572,7 +608,7 @@ impl Brief {
             );
             out.push_str(boundaries);
         }
-        out.push_str(HANDBACK_PROTOCOL);
+        out.push_str(&handback_protocol(mcp_tools));
         Ok(out)
     }
 }
@@ -3652,7 +3688,7 @@ mod tests {
     fn a_bare_prompt_composes_to_itself_and_the_two_halves_are_headed() {
         let bare = Brief::from("survey the call sites".to_string());
         assert_eq!(
-            bare.compose(1).unwrap(),
+            bare.compose(1, proto::AgentKind::Claude).unwrap(),
             format!(
                 "{}\n\nsurvey the call sites{HANDBACK_PROTOCOL}",
                 request_header(1)
@@ -3664,7 +3700,7 @@ mod tests {
             output_format: Some("a table of file:line".to_string()),
             boundaries: Some("read-only".to_string()),
         };
-        let composed = full.compose(1).unwrap();
+        let composed = full.compose(1, proto::AgentKind::Claude).unwrap();
         assert!(
             composed.starts_with(&request_header(1)),
             "the header names the request: {composed}"
@@ -3689,7 +3725,7 @@ mod tests {
             boundaries: None,
         };
         assert_eq!(
-            blank.compose(1).unwrap(),
+            blank.compose(1, proto::AgentKind::Claude).unwrap(),
             format!("{}\n\ndo the thing{HANDBACK_PROTOCOL}", request_header(1))
         );
     }
@@ -3709,19 +3745,58 @@ mod tests {
                 boundaries: Some("read-only".into()),
             },
         ] {
-            let composed = brief.compose(1).unwrap();
-            assert!(composed.contains("`pane_submit`"), "{composed}");
-            assert!(
-                composed.contains("supported wait or monitor tools")
-                    && composed.contains("Never hand back while required work is still running"),
-                "{composed}"
-            );
-            assert!(composed.ends_with(HANDBACK_PROTOCOL), "{composed}");
-            assert!(
-                composed.find("## Handing back") > composed.find("## Boundaries"),
-                "the protocol goes last, where the child cannot skim past it: {composed}"
-            );
+            for kind in [proto::AgentKind::Claude, proto::AgentKind::Zcode] {
+                let mcp = crate::mcp::MCP_TOOLS.contains(&kind);
+                let composed = brief.compose(1, kind).unwrap();
+                if mcp {
+                    assert!(composed.contains("`pane_submit`"), "{composed}");
+                    assert!(composed.ends_with(HANDBACK_PROTOCOL), "{composed}");
+                } else {
+                    assert!(
+                        composed.contains("`hs-pane submit \"<result>\""),
+                        "{composed}"
+                    );
+                    assert!(
+                        composed.ends_with(handback_protocol(mcp).as_str()),
+                        "{composed}"
+                    );
+                    assert!(
+                        !composed.contains("pane_"),
+                        "{kind:?} has no pane_* MCP tools: {composed}"
+                    );
+                }
+                assert!(
+                    composed.contains("supported wait or monitor tools")
+                        && composed
+                            .contains("Never hand back while required work is still running"),
+                    "{composed}"
+                );
+                assert!(
+                    composed.find("## Handing back") > composed.find("## Boundaries"),
+                    "the protocol goes last, where the child cannot skim past it: {composed}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn a_cli_only_child_brief_names_the_hs_pane_handback_spelling() {
+        let composed = Brief::from("do the thing".to_string())
+            .compose(1, proto::AgentKind::Zcode)
+            .unwrap();
+        assert!(
+            composed.contains("`hs-pane submit \"<result>\" --request-id 1`"),
+            "{composed}"
+        );
+        assert!(composed.contains("`hs-pane report"), "{composed}");
+        assert!(
+            composed.ends_with(handback_protocol(false).as_str()),
+            "{composed}"
+        );
+        assert!(
+            !composed.contains("pane_"),
+            "a ZCode child has no pane_* MCP tools, so no MCP spelling may survive: {composed}"
+        );
     }
 
     #[test]
@@ -3802,7 +3877,9 @@ mod tests {
                 },
             ),
         ] {
-            let msg = brief.compose(1).expect_err("over the cap must refuse");
+            let msg = brief
+                .compose(1, proto::AgentKind::Claude)
+                .expect_err("over the cap must refuse");
             assert!(msg.contains(name), "the refusal names the field: {msg}");
             assert!(
                 msg.contains(&(BRIEF_FIELD_MAX_CHARS + 1).to_string()),
@@ -3819,7 +3896,7 @@ mod tests {
             output_format: Some("x".repeat(BRIEF_FIELD_MAX_CHARS)),
             boundaries: None,
         }
-        .compose(1)
+        .compose(1, proto::AgentKind::Claude)
         .is_ok());
     }
 
