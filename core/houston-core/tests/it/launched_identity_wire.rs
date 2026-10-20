@@ -1,5 +1,3 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
-
 //! A pane Houston launched as a known provider keeps that provider when its output
 //! quotes another CLI's banner, for example while printing Houston's own sources.
 
@@ -12,7 +10,7 @@ const MARKER: &str = "IDENTITY-FIXTURE-UP";
 
 #[tokio::test]
 async fn a_launched_zcode_pane_that_prints_an_antigravity_banner_stays_zcode() {
-    if std::env::var_os("LAUNCHED_IDENTITY_FIXTURE").is_none() {
+    if common::process_var_os("LAUNCHED_IDENTITY_FIXTURE").is_none() {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join("bin");
         std::fs::create_dir(&bin).unwrap();
