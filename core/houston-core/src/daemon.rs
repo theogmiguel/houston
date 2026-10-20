@@ -8881,11 +8881,9 @@ impl Daemon {
         }
     }
 
-    /// Live sessions for the HEAD watcher, with recorded checkout identity. Sessions
-    /// without one (restored from storage, reparented) are resolved here, live first,
-    /// off every client connection, and the change is broadcast. Returns how many
-    /// sessions it resolved, so the watcher can keep ticking while resolution is
-    /// still converging instead of treating the pass as idle.
+    /// Live sessions for the HEAD watcher; sessions without a recorded checkout are
+    /// resolved here, live first, and broadcast. The count of resolutions keeps the
+    /// watcher ticking while they converge instead of treating the pass as idle.
     pub(crate) fn checkout_watch_sessions(&self) -> (Vec<proto::SessionInfo>, usize) {
         let mut live: Vec<_> = self
             .sessions
@@ -8938,10 +8936,9 @@ impl Daemon {
         (live, resolves)
     }
 
-    /// The HEAD watcher's idle fingerprint: id-plus-map pairs for the sessions a rebuild
-    /// would cover, sorted, read from map keys alone with no snapshots or stats. The map
-    /// tag (0 live, 1 dead) makes a session's move between the two maps a change, so
-    /// spawn, respawn, close, hide and restore all invalidate the fingerprint.
+    /// The HEAD watcher's idle fingerprint: sorted (id, map) pairs read from map keys
+    /// alone. The tag (0 live, 1 dead) makes a move between maps a change, so spawn,
+    /// respawn, close, hide and restore all invalidate it.
     pub(crate) fn checkout_watch_ids(&self) -> Vec<(u32, u8)> {
         let mut ids: Vec<(u32, u8)> = self
             .sessions
