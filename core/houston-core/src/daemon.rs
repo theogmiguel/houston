@@ -9836,6 +9836,16 @@ impl Daemon {
                     }
                     self.stop_session_for_recovery_unlocked(old_id)?;
                 } else if force {
+                    // Respawn repoints only the dead map, so a live child's results
+                    // would keep targeting the removed pane. Mirror the Sleep guard.
+                    let (live_children, _) = self.child_counts_of(old_id);
+                    if live_children > 0 {
+                        bail!(
+                            "Restart refused for session {old_id}: {live_children} live child \
+                             pane(s) would lose their handback target; close or wait for them \
+                             before restarting this orchestrator"
+                        );
+                    }
                     self.stop_session_for_recovery_unlocked(old_id)?;
                 } else {
                     bail!(
@@ -26823,6 +26833,184 @@ mod handoff_refusal_tests {
             handoff_binary(Some(&file.to_string_lossy())).unwrap(),
             file,
             "a valid candidate must resolve to the exact path the caller named"
+        );
+    }
+}
+
+#[cfg(test)]
+mod force_respawn_guard_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_agent_session(
+        daemon: &Daemon,
+        state: &Path,
+        id: u32,
+        spawned_by: Option<u32>,
+        custom_cmd: Option<Vec<String>>,
+    ) -> Arc<Session> {
+        // Mirrors `run_ssh_connect`'s session construction, the one place a pane
+        // exists without a local process: the SSH stub keeps the test off the network.
+        let project = state.display().to_string();
+        let info = proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Custom,
+            project_dir: project.clone(),
+            cwd: project.clone(),
+            state: proto::SessionState::Running,
+            title: "custom".into(),
+            codename: "custom".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: None,
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        };
+        let session = Arc::new(Session {
+            info: info.clone(),
+            pid: None,
+            custom_cmd,
+            state: Mutex::new(proto::SessionState::Running),
+            title: Mutex::new("custom".into()),
+            project_dir: Mutex::new(project),
+            detected: Mutex::new(None),
+            running: Mutex::new(None),
+            blocks: None,
+            shell_token_redactor: None,
+            raw_output_bytes: AtomicU64::new(0),
+            shell_token_file: None,
+            shell: None,
+            osc_cwd: Mutex::new(None),
+            osc_title: None,
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
+            cli_title: Mutex::new(CliTitleState::default()),
+            title_source: Mutex::new(TitleSource::Codename),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
+            transient_title_candidates: Mutex::new(Vec::new()),
+            tags: Mutex::new(Vec::new()),
+            osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
+            acp: None,
+            scrollback: Mutex::new(Scrollback::new()),
+            ws_attaches: AtomicU32::new(0),
+            vt: Mutex::new(None),
+            vt_refused: AtomicBool::new(false),
+            last_output: AtomicU64::new(0),
+            status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
+            context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
+            removed: AtomicBool::new(false),
+            backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
+            lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
+            hook_cwd: Mutex::new(None),
+            hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
+            geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
+            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
+            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+            park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
+        });
+        daemon.db.insert_session(&session.info).unwrap();
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(id, session.clone());
+        session
+    }
+
+    #[test]
+    fn force_respawn_of_a_parent_with_a_live_child_names_the_count() {
+        let (daemon, state) = test_daemon();
+        // A replacement whose program does not exist keeps a pre-refusal respawn
+        // failing fast instead of launching a real pane.
+        let parent = stub_agent_session(
+            &daemon,
+            state.path(),
+            7,
+            None,
+            Some(vec!["Z:\\houston-missing-replacement".into()]),
+        );
+        let child = stub_agent_session(&daemon, state.path(), 8, Some(7), None);
+        assert_eq!(daemon.child_counts_of(7).0, 1, "fixture: the child is live");
+
+        let error = daemon
+            .respawn_session_with(7, false, None, None, true, RespawnConversation::Fresh)
+            .expect_err("force-respawn of a parent with a live child must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("1 live child"),
+            "the refusal must name the live-child count: {message}"
+        );
+        assert_eq!(
+            *parent.state.lock().expect("state lock"),
+            proto::SessionState::Running,
+            "the refusal must leave the parent running"
+        );
+        assert!(
+            daemon.list().iter().any(|info| info.id == child.info.id),
+            "the live child must keep running"
         );
     }
 }
