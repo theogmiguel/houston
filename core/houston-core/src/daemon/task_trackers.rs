@@ -672,15 +672,20 @@ fn validate_settings(s: &proto::TaskTrackerWorkspaceSettings) -> Result<()> {
                 }
                 validate_property_id("PR URL property ID", s.notion_pr_url_property_id.as_deref(), false)?;
             }
-            if [
+            if let Some(value) = [
                 s.notion_status_mapping.todo.as_ref(), s.notion_status_mapping.in_progress.as_ref(),
                 s.notion_status_mapping.in_review.as_ref(), s.notion_status_mapping.done.as_ref(),
                 s.notion_status_mapping.canceled.as_ref(),
-            ].into_iter().flatten().any(|value| value.trim().is_empty() || value.len() > 100) {
-                bail!("Notion coarse status option mappings must be non-empty values of at most 100 bytes");
+            ].into_iter().flatten().find(|value| value.trim().is_empty() || value.len() > 100) {
+                let head: String = value.chars().take(64).collect();
+                bail!("Notion coarse status option mapping {head:?} is {} bytes; each mapping must be a non-empty value of at most 100 bytes", value.len());
             }
-            if s.notion_active_status_values.len() > 32 || s.notion_active_status_values.iter().any(|v| v.trim().is_empty() || v.len() > 100) {
-                bail!("Notion active status values must contain at most 32 non-empty values of at most 100 bytes each");
+            if s.notion_active_status_values.len() > 32 {
+                bail!("Notion active status values contain {} entries; at most 32 are allowed", s.notion_active_status_values.len());
+            }
+            if let Some(value) = s.notion_active_status_values.iter().find(|v| v.trim().is_empty() || v.len() > 100) {
+                let head: String = value.chars().take(64).collect();
+                bail!("Notion active status value {head:?} is {} bytes; each value must be non-empty and at most 100 bytes", value.len());
             }
         }
         proto::TaskTrackerProvider::Slack => bail!("Slack links are recorded by Slack intake; Slack tracker settings are not configurable here"),
@@ -953,5 +958,53 @@ mod tests {
             "Description":{"id":"projectDescription","type":"rich_text"}
         }});
         assert!(validate_notion_schema(&s, &task_schema, Some(&wrong_project_type)).is_err());
+    }
+
+    #[test]
+    fn notion_status_mapping_refusal_names_the_offending_value() {
+        let mut s = settings(proto::TaskTrackerProvider::Notion);
+        s.notion_status_mapping.in_progress = Some("x".repeat(101));
+        let error = validate_settings(&s).unwrap_err().to_string();
+        assert!(
+            error.contains("101 bytes"),
+            "refusal does not name the size: {error}"
+        );
+        assert!(
+            error.contains(&"x".repeat(64)),
+            "refusal does not quote the value: {error}"
+        );
+    }
+
+    #[test]
+    fn notion_active_status_refusals_name_the_count_and_offending_value() {
+        let mut s = settings(proto::TaskTrackerProvider::Notion);
+        s.notion_active_status_values = (0..33).map(|index| format!("status{index}")).collect();
+        let error = validate_settings(&s).unwrap_err().to_string();
+        assert!(
+            error.contains("33"),
+            "refusal does not name the count: {error}"
+        );
+        assert!(
+            error.contains("32"),
+            "refusal does not name the limit: {error}"
+        );
+
+        s.notion_active_status_values = vec!["Active".into(), "   ".into()];
+        let error = validate_settings(&s).unwrap_err().to_string();
+        assert!(
+            error.contains("\"   \""),
+            "refusal does not quote the blank value: {error}"
+        );
+
+        s.notion_active_status_values = vec!["x".repeat(101)];
+        let error = validate_settings(&s).unwrap_err().to_string();
+        assert!(
+            error.contains("101 bytes"),
+            "refusal does not name the size: {error}"
+        );
+        assert!(
+            error.contains(&"x".repeat(64)),
+            "refusal does not quote the value: {error}"
+        );
     }
 }

@@ -371,7 +371,10 @@ mod linux {
         }
         let socket = PathBuf::from(&args[0]);
         if !socket.is_absolute() || socket.as_os_str().len() > 100 {
-            bail!("Codex pane socket path must be absolute and at most 100 bytes");
+            bail!(
+                "Codex pane socket path {socket:?} is {} bytes; it must be absolute and at most 100 bytes",
+                socket.as_os_str().len()
+            );
         }
         let drop_dir = PathBuf::from(&args[1]);
         let resume = args[2]
@@ -779,7 +782,10 @@ mod linux {
         async fn send(&mut self, value: Value) -> Result<()> {
             let encoded = serde_json::to_string(&value)?;
             if encoded.len() > FRAME_CAP {
-                bail!("Codex observer request exceeds 64 KiB");
+                bail!(
+                    "Codex observer request is {} bytes; the socket frame cap is {FRAME_CAP} bytes",
+                    encoded.len()
+                );
             }
             tokio::time::timeout(RPC_TIMEOUT, self.socket.send(Message::Text(encoded.into())))
                 .await??;
@@ -792,7 +798,9 @@ mod linux {
             self.send(json!({"id":id,"method":method,"params":params}))
                 .await?;
             tokio::time::timeout(RPC_TIMEOUT, async {
-                for _ in 0..256 {
+                let mut unrelated = 0u64;
+                while unrelated < 256 {
+                    unrelated += 1;
                     let frame = self
                         .socket
                         .next()
@@ -811,7 +819,7 @@ mod linux {
                         .cloned()
                         .ok_or_else(|| anyhow!("Codex observer response has no result"));
                 }
-                bail!("Codex observer received too many unrelated messages")
+                bail!("Codex observer received {unrelated} unrelated messages while waiting for a reply to request {id}; the cap is 256")
             })
             .await?
         }
@@ -1055,6 +1063,96 @@ mod linux {
                 &json!({"source":"cli","cwd":missing}),
                 &missing
             ));
+        }
+
+        fn arguments(values: &[&str]) -> Vec<std::ffi::OsString> {
+            values.iter().map(std::ffi::OsString::from).collect()
+        }
+
+        async fn connected_rpc(flood_unrelated: bool) -> (tempfile::TempDir, Rpc) {
+            let directory = private_socket_dir().unwrap();
+            let path = directory.path().join("app.sock");
+            let listener = tokio::net::UnixListener::bind(&path).unwrap();
+            tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    let Message::Text(text) = message else {
+                        continue;
+                    };
+                    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                        continue;
+                    };
+                    if value.get("id").and_then(Value::as_u64) == Some(1) {
+                        let reply = json!({"id":1,"result":{}}).to_string();
+                        socket.send(Message::Text(reply.into())).await.unwrap();
+                    } else if flood_unrelated {
+                        for _ in 0..256 {
+                            let reply = json!({"id":987654,"result":{}}).to_string();
+                            socket.send(Message::Text(reply.into())).await.unwrap();
+                        }
+                    }
+                }
+            });
+            let rpc = Rpc::connect(&path).await.unwrap();
+            (directory, rpc)
+        }
+
+        #[test]
+        fn socket_path_refusal_names_the_path_and_its_byte_length() {
+            let long = format!("/tmp/{}", "x".repeat(100));
+            let error = helper_arguments(&arguments(&[&long, "drop", "-"]))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&long),
+                "refusal does not name the path: {error}"
+            );
+            assert!(
+                error.contains(&format!("{} bytes", long.len())),
+                "refusal does not name the length: {error}"
+            );
+            let error = helper_arguments(&arguments(&["relative.sock", "drop", "-"]))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("\"relative.sock\""),
+                "refusal does not name the path: {error}"
+            );
+        }
+
+        #[tokio::test]
+        async fn oversized_observer_request_refusal_names_both_sizes() {
+            let (_directory, mut rpc) = connected_rpc(false).await;
+            let value = json!({"blob": "x".repeat(70_000)});
+            let size = serde_json::to_string(&value).unwrap().len();
+            let error = rpc.send(value).await.unwrap_err().to_string();
+            assert!(
+                error.contains(&size.to_string()),
+                "refusal does not name the request size: {error}"
+            );
+            assert!(
+                error.contains("65536"),
+                "refusal does not name the frame cap: {error}"
+            );
+        }
+
+        #[tokio::test]
+        async fn unrelated_messages_refusal_names_the_count_and_request_id() {
+            let (_directory, mut rpc) = connected_rpc(true).await;
+            let error = rpc
+                .request("status", json!({}))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("256"),
+                "refusal does not name the frame count: {error}"
+            );
+            assert!(
+                error.contains("request 2"),
+                "refusal does not name the request: {error}"
+            );
         }
     }
 }
