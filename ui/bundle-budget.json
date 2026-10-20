@@ -140,14 +140,14 @@
     "run in App's connection handlers, and the child input banner's Dismiss action",
     "renders inside every mounted pane, so all three are boot-path code.",
     "",
-    "Re-cut against MEASURED bytes (one boot chunk) with the same small headroom:",
+    "Re-cut against 947,678 bytes (one boot chunk) with the same small headroom:",
     "a top-level pane that finished off screen marks its rail card through the",
     "unread dot; the finish transitions are tracked in App's connection handlers",
     "and folded into every rail card the sidebar renders. The first-run hooks",
     "step's no-CLI reason carries an install-guide action, so the guide URL and",
     "its openExternal call are boot-path code too."
   ],
-  "maxBootBytes": BUDGET,
+  "maxBootBytes": 947850,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
