@@ -165,6 +165,10 @@ const MAX_LISTEN_STREAMS_PER_SESSION: usize = 4;
 // reader is dropped past this many buffered notifications instead of backing up
 const LISTEN_CHANNEL_DEPTH: usize = 8;
 
+fn listener_overflow_warning() -> String {
+    format!("dropping an /mcp listening stream: {LISTEN_CHANNEL_DEPTH} notifications buffered and unread")
+}
+
 struct Listener {
     scope: McpScope,
     tx: tokio::sync::mpsc::Sender<Bytes>,
@@ -227,7 +231,8 @@ impl NotifierRegistry {
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                     tracing::warn!(
                         session = listener.scope.session_id,
-                        "dropping an /mcp listening stream: {LISTEN_CHANNEL_DEPTH}                          notifications buffered and unread"
+                        "{}",
+                        listener_overflow_warning()
                     );
                     false
                 }
@@ -1360,5 +1365,23 @@ mod delivery_tests {
             .unwrap();
         assert!(!bytes.is_empty());
         assert_eq!(*provider.finishes.lock().unwrap(), vec![true]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn listener_overflow_warning_carries_no_stray_multi_space_runs() {
+        let message = listener_overflow_warning();
+        assert!(
+            !message.contains("  "),
+            "warning has a multi-space run: {message:?}"
+        );
+        assert!(
+            message.contains(&LISTEN_CHANNEL_DEPTH.to_string()),
+            "warning does not name the buffered depth: {message}"
+        );
     }
 }

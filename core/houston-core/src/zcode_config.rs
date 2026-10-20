@@ -172,6 +172,17 @@ const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(25);
 // ZCode or an editor may write the file while Houston edits it; each retry rereads it.
 const EDIT_ATTEMPTS: u32 = 3;
 
+/// The refusal when another channel's lock outlives the wait; extracted so the
+/// text is testable without contending a real lock.
+fn lock_timeout_refusal(path: &Path, lock_path: &Path, wait: std::time::Duration) -> String {
+    format!(
+        "another Houston channel is editing {} (lock {} held for over {} ms); nothing was written, try again",
+        path.display(),
+        lock_path.display(),
+        wait.as_millis()
+    )
+}
+
 fn lock_config(path: &Path, wait: std::time::Duration) -> Result<std::fs::File> {
     let dir = path
         .parent()
@@ -191,12 +202,9 @@ fn lock_config(path: &Path, wait: std::time::Duration) -> Result<std::fs::File> 
             Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(LOCK_POLL);
             }
-            Err(std::fs::TryLockError::WouldBlock) => bail!(
-                "another Houston channel is editing {} (lock {} held for over {} ms); nothing                  was written, try again",
-                path.display(),
-                lock_path.display(),
-                wait.as_millis()
-            ),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                bail!("{}", lock_timeout_refusal(path, &lock_path, wait))
+            }
             Err(std::fs::TryLockError::Error(e)) => {
                 return Err(e).with_context(|| format!("locking {}", lock_path.display()))
             }
@@ -227,7 +235,7 @@ fn edit(
         return Ok(true);
     }
     bail!(
-        "{} changed while Houston was editing it, {EDIT_ATTEMPTS} times in a row; nothing was          written, try again once it is no longer being modified",
+        "{} changed while Houston was editing it, {EDIT_ATTEMPTS} times in a row; nothing was written, try again once it is no longer being modified",
         path.display()
     )
 }
@@ -1187,6 +1195,57 @@ mod tests {
         assert_eq!(
             read(&cli.join("setting.json")),
             json!({"permission": {"mode": "build"}})
+        );
+    }
+}
+
+#[cfg(test)]
+mod refusal_text_tests {
+    use super::*;
+
+    #[test]
+    fn a_stuck_lock_refusal_carries_no_stray_multi_space_runs() {
+        let error = lock_timeout_refusal(
+            Path::new("C:/project/.zcode/cli/config.json"),
+            Path::new("C:/project/.zcode/cli/config.json.houston-lock"),
+            std::time::Duration::from_millis(1500),
+        );
+        assert!(
+            !error.contains("  "),
+            "lock refusal has a multi-space run: {error}"
+        );
+        assert!(
+            error.contains("nothing was written") && error.contains("1500"),
+            "refusal lost its meaning: {error}"
+        );
+    }
+
+    #[test]
+    fn a_racing_edit_refusal_carries_no_stray_multi_space_runs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = config_path(dir.path());
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
+        std::fs::write(&path, "{}").expect("write");
+        let racing = path.clone();
+        let mut revision = 0u32;
+        let error = edit(
+            &path,
+            std::time::Duration::ZERO,
+            |root| Ok(Some(root.unwrap_or(Value::Null))),
+            || {
+                revision += 1;
+                std::fs::write(&racing, format!(r#"{{"changed":{revision}}}"#)).expect("write");
+            },
+        )
+        .expect_err("refused while the file keeps changing");
+        let error = error.to_string();
+        assert!(
+            !error.contains("  "),
+            "edit refusal has a multi-space run: {error}"
+        );
+        assert!(
+            error.contains("nothing was written"),
+            "refusal lost its meaning: {error}"
         );
     }
 }
