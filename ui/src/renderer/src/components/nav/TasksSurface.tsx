@@ -267,7 +267,7 @@ function TaskListMeta({ entry, notes, sessions }: { entry: TaskListEntry; notes:
   const { task } = entry
   const status = statusOf(task, sessions)
   return (
-    <span className="inline-flex max-w-full min-w-0 items-center gap-[var(--space-1-5)]">
+    <span className="flex min-w-0 items-center gap-[var(--space-1-5)]">
       {status ? <StatusLabel status={status} size="small" /> : <span>{STATUS_LABEL[task.status]}</span>}
       <span aria-hidden="true">·</span>
       <Text as="span" mono>{task.key}</Text>
