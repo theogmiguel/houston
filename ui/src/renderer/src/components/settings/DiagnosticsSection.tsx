@@ -1,8 +1,10 @@
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useEffect, useRef, useState } from 'react'
-import { Button, DevBadge, HookPanel, HookStatusList, Readout, ReadoutGrid, HookStatus, Stack, Text } from '../ui'
+import { Button, DevBadge, HookPanel, HookStatusList, Readout, ReadoutGrid, HookStatus, Stack, StatusLabel, Text, type StatusLabelValue } from '../ui'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
+import type { SessionState } from '../../houston/generated/SessionState'
+import type { SessionInfo } from '../../houston/client'
 import type { HostInfo } from '../SettingsView'
 import { SettingsList } from '../ui/settingsPrimitives'
 import { useSessions } from '../../sessionsStore'
@@ -25,6 +27,26 @@ const HOOK_LABELS: Partial<Record<AgentKind, string>> = {
   antigravity: 'Antigravity',
   opencode: 'opencode',
   zcode: 'ZCode'
+}
+
+// Raw agent and session states stay out of the table; a session without a
+// status reports its lifecycle state through the same vocabulary instead.
+function sessionStatusWord(session: SessionInfo): StatusLabelValue {
+  switch (session.status) {
+    case 'spawning': return 'Starting'
+    case 'working': return 'Working'
+    case 'idle': return 'Idle'
+    case 'needs-input': return 'Needs input'
+    case 'unavailable': return 'Not seen'
+  }
+  const state: SessionState = session.state
+  switch (state) {
+    case 'running': return 'Open'
+    case 'sleeping': return 'Paused'
+    case 'exited': return 'Done'
+    case 'killed': return 'Ended'
+    case 'interrupted': return 'Ended'
+  }
 }
 
 function DiagRead({
@@ -167,7 +189,7 @@ export function DiagnosticsSection({
           </ReadoutGrid>
 
           <div data-testid="daemon-live-sessions">
-            <SubHead>Sessions {sessions.size} live</SubHead>
+            <SubHead>Live sessions{sessions.size > 0 ? ` ${sessions.size}` : ''}</SubHead>
             <Table
               aria-label="Live sessions"
               rows={[...sessions.values()].map((session) => ({
@@ -175,7 +197,7 @@ export function DiagnosticsSection({
                 title: session.title || session.codename,
                 workspace: session.project_dir.split(/[\\/]/).filter(Boolean).at(-1) ?? session.project_dir,
                 agent: session.agent,
-                status: session.status ?? (session.state === 'exited' ? 'done' : session.state)
+                status: sessionStatusWord(session)
               }))}
               getRowId={(session) => String(session.id)}
               empty={{ heading: 'No live sessions', description: 'Sessions appear here while they are running.' }}
@@ -183,7 +205,7 @@ export function DiagnosticsSection({
                 { key: 'title', header: 'Session' },
                 { key: 'workspace', header: 'Workspace', tone: 'muted' },
                 { key: 'agent', header: 'Agent', tone: 'muted' },
-                { key: 'status', header: 'Status', tone: 'muted' }
+                { key: 'status', header: 'Status', render: (_, row) => <StatusLabel status={row.status} /> }
               ]}
             />
           </div>
