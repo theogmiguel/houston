@@ -8870,8 +8870,10 @@ impl Daemon {
 
     /// Live sessions for the HEAD watcher, with recorded checkout identity. Sessions
     /// without one (restored from storage, reparented) are resolved here, live first,
-    /// off every client connection, and the change is broadcast.
-    pub(crate) fn checkout_watch_sessions(&self) -> Vec<proto::SessionInfo> {
+    /// off every client connection, and the change is broadcast. Returns how many
+    /// sessions it resolved, so the watcher can keep ticking while resolution is
+    /// still converging instead of treating the pass as idle.
+    pub(crate) fn checkout_watch_sessions(&self) -> (Vec<proto::SessionInfo>, usize) {
         let mut live: Vec<_> = self
             .sessions
             .lock()
@@ -8920,7 +8922,33 @@ impl Daemon {
             }
         }
         live.retain(|info| info.ssh_host.is_none());
-        live
+        (live, resolves)
+    }
+
+    /// The HEAD watcher's idle fingerprint: id-plus-map pairs for the sessions a rebuild
+    /// would cover, sorted, read from map keys alone with no snapshots or stats. The map
+    /// tag (0 live, 1 dead) makes a session's move between the two maps a change, so
+    /// spawn, respawn, close, hide and restore all invalidate the fingerprint.
+    pub(crate) fn checkout_watch_ids(&self) -> Vec<(u32, u8)> {
+        let mut ids: Vec<(u32, u8)> = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|session| !session.info.hidden && session.info.ssh_host.is_none())
+            .map(|session| (session.info.id, 0u8))
+            .collect();
+        // Restored and interrupted sessions resolve through the dead map, so they are
+        // part of the rebuild this fingerprint must cover.
+        ids.extend(
+            self.dead
+                .lock()
+                .expect("dead lock")
+                .values()
+                .map(|i| (i.id, 1u8)),
+        );
+        ids.sort_unstable();
+        ids
     }
 
     pub fn list(&self) -> Vec<proto::SessionInfo> {
