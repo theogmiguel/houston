@@ -14771,34 +14771,69 @@ impl Daemon {
             .spawn(move || loop {
                 std::thread::sleep(Duration::from_millis(500.min(timeout.as_millis() as u64)));
                 let Some(daemon) = weak.upgrade() else { return };
-                let hidden = {
-                    let mut jobs = daemon.handoff_jobs.lock().expect("handoff lock");
-                    let Some(job) = jobs.get_mut(&request) else {
-                        return;
-                    };
-                    if (if is_title {
-                        started.elapsed()
-                    } else {
-                        job.last_activity.elapsed()
-                    }) < timeout
-                    {
-                        continue;
-                    }
-                    if job.fail_reason.is_none() {
-                        job.fail_reason = Some(format!(
-                            "{} exceeded its {}s generator deadline — is it installed and authenticated?",
-                            job.provider_name,
-                            timeout.as_secs()
-                        ));
-                    }
-                    job.hidden
-                };
-                let _ = daemon.kill(hidden);
-                return;
+                if daemon.handoff_watchdog_tick(request, timeout, started, is_title) {
+                    return;
+                }
             })
             .expect("spawn handoff watchdog");
 
         Ok(request)
+    }
+
+    /// One watchdog pass: enforce the generator deadline once it has passed.
+    /// Returns true when the watcher may stop; a kill that fails must still
+    /// finalise the job, or the request hangs with no reply forever.
+    fn handoff_watchdog_tick(
+        self: &Arc<Self>,
+        request: u32,
+        timeout: Duration,
+        started: Instant,
+        is_title: bool,
+    ) -> bool {
+        let hidden = {
+            let mut jobs = self.handoff_jobs.lock().expect("handoff lock");
+            let Some(job) = jobs.get_mut(&request) else {
+                return true;
+            };
+            let age = if is_title {
+                started.elapsed()
+            } else {
+                job.last_activity.elapsed()
+            };
+            if age < timeout {
+                return false;
+            }
+            if job.fail_reason.is_none() {
+                job.fail_reason = Some(format!(
+                    "{} exceeded its {}s generator deadline — is it installed and authenticated?",
+                    job.provider_name,
+                    timeout.as_secs()
+                ));
+            }
+            job.hidden
+        };
+        if self.kill(hidden).is_err() {
+            self.handoff_kill_failed(hidden);
+        }
+        true
+    }
+
+    /// A failed watchdog or cancel kill strands the job: no reader EOF arrives
+    /// while the generator keeps running, or after it is already gone. Finalise
+    /// through `handoff_finish` so the client still gets its HandoffError.
+    fn handoff_kill_failed(self: &Arc<Self>, hidden_id: u32) {
+        let mut jobs = self.handoff_jobs.lock().expect("handoff lock");
+        let Some((&request, job)) = jobs.iter_mut().find(|(_, j)| j.hidden == hidden_id) else {
+            return;
+        };
+        if job.fail_reason.is_none() {
+            job.fail_reason = Some(format!(
+                "generator session {hidden_id} could not be stopped; finalising the request as failed"
+            ));
+        }
+        let job = jobs.remove(&request).expect("job present");
+        drop(jobs);
+        self.handoff_finish(request, job);
     }
 
     fn handoff_output(&self, hidden_id: u32, chunk: &[u8]) {
@@ -14941,13 +14976,21 @@ impl Daemon {
             .get(&hidden)
             .and_then(|s| s.pid);
         let Some(pid) = pid else {
-            return self.kill(hidden);
+            return self.kill(hidden).or_else(|error| {
+                tracing::warn!(
+                    "handoff request {request}: kill on cancel failed, finalising: {error:#}"
+                );
+                self.handoff_kill_failed(hidden);
+                Ok(())
+            });
         };
         let _ = crate::pid::signal_process(pid, crate::pid::Signal::Int);
         let daemon = Arc::clone(self);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(1500));
-            let _ = daemon.kill(hidden);
+            if daemon.kill(hidden).is_err() {
+                daemon.handoff_kill_failed(hidden);
+            }
         });
         Ok(())
     }
@@ -26947,6 +26990,111 @@ mod reader_wake_tests {
         // SAFETY: the single entry and its owned descriptor are valid.
         assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
         wake.consume();
+    }
+}
+
+#[cfg(test)]
+mod handoff_stranding_tests {
+    use super::*;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn seed_handoff_job(daemon: &Daemon, request: u32, hidden: u32, prompt_path: &Path) {
+        daemon.handoff_jobs.lock().expect("handoff lock").insert(
+            request,
+            HandoffJob {
+                title_job: None,
+                hidden,
+                source: 1,
+                provider: proto::AgentKind::Custom,
+                provider_name: "custom".into(),
+                buffer: Vec::new(),
+                last_activity: Instant::now(),
+                prompt_path: prompt_path.to_path_buf(),
+                out_dir: prompt_path.parent().unwrap().to_path_buf(),
+                eof: false,
+                exit: None,
+                fail_reason: None,
+            },
+        );
+    }
+
+    fn drain_controls(rx: &mut broadcast::Receiver<Outbound>) -> Vec<String> {
+        let mut texts = Vec::new();
+        while let Ok(outbound) = rx.try_recv() {
+            if let Outbound::Control(json) = outbound {
+                texts.push(json.to_string());
+            }
+        }
+        texts
+    }
+
+    #[test]
+    fn cancelling_a_handoff_whose_generator_is_already_gone_finalises_it() {
+        let (daemon, state) = test_daemon();
+        let prompt = state.path().join("handoff-prompt-7.md");
+        std::fs::write(&prompt, b"prompt").unwrap();
+        seed_handoff_job(&daemon, 7, 42, &prompt);
+        let mut rx = daemon.tx.subscribe();
+
+        let result = daemon.handoff_cancel(7);
+
+        assert!(
+            result.is_ok(),
+            "cancelling a stranded handoff must finalise it, not refuse: {result:?}"
+        );
+        assert!(
+            daemon.handoff_jobs.lock().expect("handoff lock").is_empty(),
+            "the cancelled request must leave the job map"
+        );
+        assert!(
+            !prompt.exists(),
+            "the cancelled request's prompt file must be removed"
+        );
+        let texts = drain_controls(&mut rx);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("handoff_error") && t.contains("canceled")),
+            "the requesting client must receive the HandoffError: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn a_deadline_hit_for_an_unkillable_generator_finalises_the_handoff() {
+        let (daemon, state) = test_daemon();
+        let prompt = state.path().join("handoff-prompt-9.md");
+        std::fs::write(&prompt, b"prompt").unwrap();
+        seed_handoff_job(&daemon, 9, 77, &prompt);
+        let mut rx = daemon.tx.subscribe();
+
+        let fired = daemon.handoff_watchdog_tick(9, Duration::ZERO, Instant::now(), false);
+
+        assert!(fired, "a zero deadline must fire on the first tick");
+        assert!(
+            daemon.handoff_jobs.lock().expect("handoff lock").is_empty(),
+            "the deadline must not leave the job entry behind"
+        );
+        assert!(
+            !prompt.exists(),
+            "the deadline must remove the prompt file with the job"
+        );
+        let texts = drain_controls(&mut rx);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("handoff_error") && t.contains("deadline")),
+            "the requesting client must receive the deadline HandoffError: {texts:?}"
+        );
     }
 }
 
