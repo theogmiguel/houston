@@ -63,7 +63,7 @@ pub fn parse(output: &str) -> Result<String> {
     // Checked first: it bounds the title quoted by the refusals below.
     let length = title.chars().count();
     if length > 40 {
-        bail!("generated title has {length} characters; expected at most 40: {title:?}");
+        bail!("generated title has {length} characters; expected 1–40: {title:?}");
     }
     if title.contains(['\n', '\r']) {
         bail!("generated title contains a line break; expected one plain line: {title:?}");
