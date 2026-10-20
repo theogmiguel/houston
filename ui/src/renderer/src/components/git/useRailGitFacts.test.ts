@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { HoustonClient } from '../../houston/client'
 import { GIT_STATUS_IN_FLIGHT_LIMIT, GIT_STATUS_REPLY_TIMEOUT_MS } from './gitStatusPoller'
-import { useRailGitFacts } from './useRailGitFacts'
+import { FOCUS_REFRESH_MIN_MS, useRailGitFacts } from './useRailGitFacts'
 
 type Handler = (message: never) => void
 
@@ -79,8 +79,24 @@ describe('useRailGitFacts request bound', () => {
   test('a directory is polled again once its previous request has replied', () => {
     const { client } = mount(dirsOf(2))
     drain(client)
-    act(() => { window.dispatchEvent(new Event('focus')) })
+    act(() => { vi.advanceTimersByTime(FOCUS_REFRESH_MIN_MS); window.dispatchEvent(new Event('focus')) })
     expect(client.sent).toEqual([...dirsOf(2), ...dirsOf(2)])
+  })
+
+  test('ten rapid focus events send one refresh, not ten', () => {
+    const { client } = mount(dirsOf(2))
+    drain(client)
+    expect(client.sent).toHaveLength(2)
+    // Alt-tab back ten times over five seconds, each round trip replying before the next.
+    for (let i = 0; i < 10; i += 1) {
+      act(() => { vi.advanceTimersByTime(500); window.dispatchEvent(new Event('focus')) })
+      drain(client)
+    }
+    expect(client.sent).toHaveLength(2)
+    // Past the throttle window the next focus refreshes again.
+    act(() => { vi.advanceTimersByTime(FOCUS_REFRESH_MIN_MS); window.dispatchEvent(new Event('focus')) })
+    drain(client)
+    expect(client.sent).toHaveLength(4)
   })
 
   test('a changed directory set shares the bound with requests still pending', () => {
