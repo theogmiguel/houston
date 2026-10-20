@@ -700,9 +700,27 @@ pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, b
             range,
         ],
     )?;
+    let commits = parse_branch_commits(&raw)?;
+    Ok((commits, total, truncated))
+}
+
+/// One record is `sha NUL subject NUL author-time` from `git log -z`; a feed
+/// cut mid-record (killed git, closed pipe) ends in a trailing fragment.
+fn parse_branch_commits(raw: &str) -> Result<Vec<proto::GitBranchCommit>> {
     let mut fields: Vec<_> = raw.split('\0').collect();
     if fields.last() == Some(&"") {
         fields.pop();
+    }
+    if !fields.len().is_multiple_of(3) {
+        let leftover: Vec<String> = fields[fields.len() - fields.len() % 3..]
+            .iter()
+            .map(|field| field.chars().take(64).collect())
+            .collect();
+        anyhow::bail!(
+            "git log returned an incomplete branch commit record; expected sha, subject, \
+             and author time, got {} leftover field(s) {leftover:?}",
+            leftover.len()
+        );
     }
     let mut commits = Vec::with_capacity(fields.len() / 3);
     for record in fields.as_chunks::<3>().0 {
@@ -718,11 +736,7 @@ pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, b
             author_time_ms: seconds.saturating_mul(1000),
         });
     }
-    anyhow::ensure!(
-        fields.len().is_multiple_of(3),
-        "git log returned an incomplete branch commit record; expected sha, subject, and author time"
-    );
-    Ok((commits, total, truncated))
+    Ok(commits)
 }
 
 pub fn stage(dir: &Path, paths: &[String]) -> Result<()> {
@@ -3066,5 +3080,30 @@ mod tests {
         );
         assert!(!patch.contains("hunter2"), "{patch}");
         assert!(redacted);
+    }
+
+    #[test]
+    fn branch_commit_records_parse_in_threes() {
+        let commits = parse_branch_commits(
+            "abc1234\x00Fix the bug\x001700000000\x00def5678\x00Refactor\x00170000060\x00",
+        )
+        .unwrap();
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].sha, "abc1234");
+        assert_eq!(commits[0].subject, "Fix the bug");
+        assert_eq!(commits[0].author_time_ms, 1_700_000_000_000);
+        assert_eq!(commits[1].author_time_ms, 170_000_060_000);
+    }
+
+    #[test]
+    fn a_truncated_record_refusal_names_the_leftover_fields() {
+        let error =
+            parse_branch_commits("abc1234\x00Fix the bug\x001700000000\x00def5\x00Partial subj")
+                .unwrap_err()
+                .to_string();
+        assert!(
+            error.contains("def5") && error.contains("Partial subj"),
+            "refusal does not name the leftover fields: {error}"
+        );
     }
 }
