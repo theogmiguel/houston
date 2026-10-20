@@ -38,6 +38,7 @@ export interface RailEntryInput {
   filters: RailPrefs['filters']
   selected: string
   selectedGridId: string | null
+  finishedUnseen?: ReadonlySet<number>
 }
 
 export const entryKey = (entry: { workspace: Workspace; grid: GridItem }): string =>
@@ -91,6 +92,7 @@ export function buildRailEntries(input: RailEntryInput): RailEntry[] {
       branches: input.branches,
       diffByDir: input.diffByDir,
       prByDir: input.prByDir,
+      finishedUnseen: input.finishedUnseen,
     })
     if (!isSelected) {
       if (filters.hideIdle && ['idle', 'done'].includes(card.status.kind)) return []

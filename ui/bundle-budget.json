@@ -138,9 +138,15 @@
     "Re-cut against 946,269 bytes (one boot chunk) with the same small headroom:",
     "the bounded git_branch requester and the control-admission context parser",
     "run in App's connection handlers, and the child input banner's Dismiss action",
-    "renders inside every mounted pane, so all three are boot-path code."
+    "renders inside every mounted pane, so all three are boot-path code.",
+    "",
+    "Re-cut against 947,329 bytes (one boot chunk) with the same small headroom:",
+    "a top-level pane that finished off screen marks its rail card through the",
+    "unread dot; the finish transitions are tracked in App's connection handlers",
+    "and folded into every rail card the sidebar renders, so all of it is",
+    "boot-path code."
   ],
-  "maxBootBytes": 946400,
+  "maxBootBytes": 947700,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

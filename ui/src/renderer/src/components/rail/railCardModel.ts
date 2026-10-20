@@ -48,6 +48,8 @@ export type RailCardSource = {
   branches?: ReadonlyMap<number, string>
   diffByDir?: ReadonlyMap<string, { added: number; deleted: number; ahead?: number }>
   prByDir?: ReadonlyMap<string, { gh: string; pr: PrInfo | null }>
+  /** Top-level panes that finished while no grid showed them; rendered through the unread dot. */
+  finishedUnseen?: ReadonlySet<number>
 }
 
 function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, string>): CheckoutIdentity {
@@ -103,7 +105,7 @@ export function buildRailCard(source: RailCardSource): RailCard {
       leading,
       trailing: doingNow(session),
       model: activity?.model ?? null,
-      unread: session.inbox_unread > 0 || session.children_waiting > 0,
+      unread: session.inbox_unread > 0 || session.children_waiting > 0 || (source.finishedUnseen?.has(session.id) ?? false),
     }
   })
   const primaryPaneId = panes[0]?.session.id

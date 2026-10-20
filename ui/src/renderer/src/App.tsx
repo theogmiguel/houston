@@ -10,6 +10,7 @@ import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
+import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
 import { setTaskbarAttentionCount } from './houston/taskbarCount';
 import { registerOwned } from './pane/registration';
@@ -788,6 +789,9 @@ export function App(): React.JSX.Element {
   const sessions = useLayoutSessions(sessionsStore);
   const railPrByDir = useRailPrCache();
   const setSessions = sessionsStore.set;
+  // Top-level panes that finished while no grid showed them; renderer-only, cleared on focus.
+  const [finishedUnseen, setFinishedUnseen] = useState<ReadonlySet<number>>(() => new Set());
+  const visiblePaneIdsRef = useRef<ReadonlySet<number>>(new Set());
   const [rosterRevision, setRosterRevision] = useState(0);
   const [peekedChildren, setPeekedChildren] = useState<ReadonlyMap<number, number>>(() => new Map());
   const [openedAttention, setOpenedAttention] = useState<ReadonlyMap<number, string>>(() => new Map());
@@ -1394,6 +1398,7 @@ export function App(): React.JSX.Element {
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setFinishedUnseen((cur) => pruneFinishedUnseen(cur, new Set(msg.sessions.map((s) => s.id))));
             setRosterRevision((revision) => revision + 1);
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
@@ -1411,6 +1416,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_list":
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setFinishedUnseen((cur) => pruneFinishedUnseen(cur, new Set(msg.sessions.map((s) => s.id))));
             setRosterRevision((revision) => revision + 1);
             break;
           case "session_created": {
@@ -1480,6 +1486,7 @@ export function App(): React.JSX.Element {
               next.delete(msg.session);
               return next;
             });
+            setFinishedUnseen((cur) => finishedUnseenWithout(cur, msg.session));
             setExpandedId((cur) => (cur === msg.session ? null : cur));
             setActiveId((cur) => (cur === msg.session ? null : cur));
             forgetDictationSession(msg.session);
@@ -1493,13 +1500,18 @@ export function App(): React.JSX.Element {
               return next;
             });
             break;
-          case "agent_status":
+          case "agent_status": {
+            const previousSession = sessionsRef.current.get(msg.session);
             setSessions((prev) => {
               const s = prev.get(msg.session);
               if (!s || s.status === msg.status) return prev;
               return new Map(prev).set(msg.session, { ...s, status: msg.status, status_since_ms: Date.now() });
             });
+            if (previousSession) {
+              setFinishedUnseen((cur) => finishedUnseenOnStatus(cur, previousSession, msg.status, visiblePaneIdsRef.current));
+            }
             break;
+          }
           case "session_context":
             setSessions((prev) => {
               const next = new Map(prev);
@@ -3384,6 +3396,12 @@ export function App(): React.JSX.Element {
     for (const [parent, child] of peekedChildren) if (ids.has(parent) && sessions.has(child)) ids.add(child);
     return ids;
   }, [currentTree, peekedChildren, sessions]);
+  visiblePaneIdsRef.current = visiblePaneIds;
+  // Focusing a pane is seeing it: the finish marker's only read path.
+  useEffect(() => {
+    if (activeId === null) return;
+    setFinishedUnseen((cur) => finishedUnseenWithout(cur, activeId));
+  }, [activeId]);
   useEffect(() => {
     setOpenedAttention((current) => {
       const next = new Map(current);
@@ -3602,6 +3620,7 @@ export function App(): React.JSX.Element {
               onHeadDoubleClick={handleTitlebarDoubleClick}
               workspaces={orderedWorkspaces}
               sessions={[...sessions.values()]}
+              finishedUnseen={finishedUnseen}
               selected={workspacesEmptyOpen ? "" : selectedWs}
               customColors={wsColors}
               colorIndexByPath={wsColorIndex}

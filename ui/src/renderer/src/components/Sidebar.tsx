@@ -421,6 +421,8 @@ interface Props {
   mascotWorkspacesEmpty?: boolean;
   workspaces: Workspace[];
   sessions: SessionInfo[];
+  /** Top-level panes that finished while no grid showed them; shown through the unread dot. */
+  finishedUnseen?: ReadonlySet<number>;
   selected: string;
   customColors: Record<string, string>;
   colorIndexByPath: Record<string, number>;
@@ -1208,6 +1210,7 @@ export function Sidebar({
   mascotWorkspacesEmpty,
   workspaces,
   sessions,
+  finishedUnseen,
   selected,
   customColors,
   colorIndexByPath,
@@ -1311,6 +1314,7 @@ export function Sidebar({
       id: session.id,
       inboxUnread: session.inbox_unread,
       childrenWaiting: session.children_waiting,
+      finishedUnseen: finishedUnseen?.has(session.id) ?? false,
     })))
     return {
       unread: isRailGridUnread(railPrefs.gridUnreadOverrides, gridId, signature, agents.some((agent) => agent.unread)),
@@ -1350,6 +1354,7 @@ export function Sidebar({
         id: session.id,
         inboxUnread: session.inbox_unread,
         childrenWaiting: session.children_waiting,
+        finishedUnseen: finishedUnseen?.has(session.id) ?? false,
       }))))
     }
     setRailPrefs((current) => {
@@ -1360,7 +1365,7 @@ export function Sidebar({
         ? current
         : { ...current, gridUnreadOverrides }
     });
-  }, [gridsByWorkspace, sessions]);
+  }, [gridsByWorkspace, sessions, finishedUnseen]);
   useEffect(() => {
     try {
       localStorage.setItem(GRID_PINNED_KEY, JSON.stringify([...pinnedGridIds]))
@@ -1467,8 +1472,9 @@ export function Sidebar({
       filters: railPrefs.filters,
       selected,
       selectedGridId,
+      finishedUnseen,
     }),
-    [filteredWorkspaces, gridsByWorkspace, activeTagIds, sessions, pinnedGridIds, checkoutBranches, railDiffByDir, railPrByDir, railPrefs.filters, selected, selectedGridId],
+    [filteredWorkspaces, gridsByWorkspace, activeTagIds, sessions, pinnedGridIds, checkoutBranches, railDiffByDir, railPrByDir, railPrefs.filters, selected, selectedGridId, finishedUnseen],
   );
   const settledEntries = useSettledSmartCards(entries, railPrefs.sort === 'smart');
   const settledCards = useMemo(
