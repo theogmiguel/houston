@@ -83,7 +83,7 @@ impl SshHandle {
         )
     }
 
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
     pub(crate) fn stub() -> Self {
         Self::queue(80, 24).0
     }
