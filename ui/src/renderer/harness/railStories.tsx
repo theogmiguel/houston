@@ -372,7 +372,7 @@ function RailCardGitFixture(): null {
   return null
 }
 
-function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu, finishedUnseen }: { gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[]; finishedUnseen?: ReadonlySet<number> }): React.JSX.Element {
+function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu }: { gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
   const compact = initialCompact
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -439,7 +439,6 @@ function RailCardModes({ openTagPopover = false, openOptions = false, optionsPan
         tagDisplay={tagDisplay}
         tagFilter={tagFilter}
         sessions={CARD_SESSIONS}
-        finishedUnseen={finishedUnseen}
         gridsByWorkspace={CARD_GRIDS}
         pinnedGridIds={['terminal', 'mensageria']}
         showTags
@@ -493,7 +492,24 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/sidebar-options': () => <RailCardModes openOptions />,
   'rail/sidebar-tag-filter': () => <RailCardModes tagFilter={[1]} />,
   'rail/agent-focus': () => <RailCardModes />,
-  'rail/finished-unseen': () => <RailCardModes finishedUnseen={new Set([7])} />,
+  // A pane that works again drops the mark, so the marked pane keeps its own
+  // idle grid beside the working one the operator is reading.
+  'rail/finished-unseen': () => <RailFixture
+    workspaces={[ws('Houston')]}
+    pinned={[]}
+    selected={path('Houston')}
+    selectedGridId="flicker"
+    cardMode="detailed"
+    tagDisplay="chips"
+    sessions={CARD_SESSIONS.filter(({ id }) => id === 6 || id === 7)}
+    gridsByWorkspace={{ [path('Houston')]: [
+      { id: 'flicker', name: 'Fix the sidebar flicker', count: 1, state: 'working', sessionIds: [6], paneTagIds: [] },
+      { id: 'inspector-polish', name: 'Inspector polish', count: 1, state: 'idle', sessionIds: [7], paneTagIds: [] },
+    ] }}
+    pinnedGridIds={[]}
+    collapsed={[]}
+    finishedUnseen={new Set([7])}
+  />,
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,
   'rail/card-modes-options-sort': () => <RailCardModes optionsPanel="sort" />,
