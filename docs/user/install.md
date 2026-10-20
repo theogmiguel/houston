@@ -21,7 +21,8 @@ installs with your package manager.
 
 You also need at least one supported agent CLI already installed and logged in —
 Houston hosts these CLIs, it does not provide accounts for them. See
-[Providers](#providers) below for which CLIs Houston can spawn and drive.
+[Providers](#providers) below for which CLIs Houston can spawn and drive, and
+[Installing the CLIs](#installing-the-clis) for each vendor's install command.
 
 ## Installing the desktop app
 
@@ -87,6 +88,29 @@ Houston. That write is always a clearly marked block Houston owns, never a hand 
 of your file, and it is always reversible: turn the corresponding hook toggle off in
 Houston and its entries are removed, preserving unrelated configuration. Some installers
 also delete an empty file or object that Houston created.
+
+### Installing the CLIs
+
+Houston does not install agent CLIs for you. Install at least one from its vendor; the
+commands below come from each vendor's own install guide, and Houston can spawn a CLI
+once its command is on your PATH.
+
+- **Claude Code** ([install guide](https://code.claude.com/docs/en/setup)):
+  `curl -fsSL https://claude.ai/install.sh | bash` on macOS, Linux and WSL, or
+  `irm https://claude.ai/install.ps1 | iex` in Windows PowerShell; alternatively
+  `npm install -g @anthropic-ai/claude-code` with Node.js 22 or newer.
+- **Codex** ([install guide](https://learn.chatgpt.com/docs/codex/cli)):
+  `curl -fsSL https://chatgpt.com/codex/install.sh | sh` on macOS and Linux, or
+  `npm install -g @openai/codex`.
+- **Antigravity** ([install guide](https://antigravity.google/docs/getting-started?tab=cli)):
+  `curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, or
+  `irm https://antigravity.google/cli/install.ps1 | iex` in Windows PowerShell.
+- **OpenCode** ([install guide](https://opencode.ai/docs)):
+  `curl -fsSL https://opencode.ai/install | bash` on macOS and Linux, or
+  `npm install -g opencode-ai`.
+- **ZCode**: Z.ai publishes no installer for the `zcode` command. Build it from the
+  official [ZCode repository](https://github.com/zai-org/ZCode) or install the community
+  package with `npm install -g zcode-app-cli`; see [ZCode](#zcode) below.
 
 ### Claude Code
 

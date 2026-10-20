@@ -11,6 +11,9 @@ import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import { FirstRunHooksStep } from './ui/FirstRunHooksStep'
 import { firstRunHookInstallCount, firstRunHookRows } from './firstRunHooks'
+import { openExternal } from '../houston/bridge'
+
+const INSTALL_GUIDE_URL = 'https://github.com/theogmiguel/houston/blob/main/docs/user/install.md#installing-the-clis'
 
 const MascotIntro = lazy(() => import('./ui/MascotIntro'))
 
@@ -119,6 +122,14 @@ export function FirstRun({
         rows={rows}
         installCount={installCount}
         disabledReason={disabledReason}
+        guideAction={absentCount === rows.length
+          ? {
+              label: 'Open the install guide',
+              onClick: () => {
+                void openExternal(INSTALL_GUIDE_URL)
+              }
+            }
+          : undefined}
         onSet={onAgentHooksSet}
         onInstallAll={() => rows.filter((row) => row.status === 'silent').forEach((row) => onAgentHooksSet(row.provider, true))}
         onSkip={skip}
