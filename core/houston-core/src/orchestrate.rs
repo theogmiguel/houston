@@ -2961,6 +2961,9 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane whoami
   hs-pane spawn --kind <claude|codex|antigravity|opencode|zcode> --prompt \"…\" [--client-request-id KEY]
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
+                                       (--model is refused for zcode: it
+                                        has no model flag; choose the
+                                        model in ZCode with /model)
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
                 [--worktree SLUG [--branch B]]
