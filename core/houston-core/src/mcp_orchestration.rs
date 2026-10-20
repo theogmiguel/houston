@@ -140,7 +140,7 @@ const PANE_ROUTING: &str = concat!(
 /// forgets otherwise waits on a promise this very block made.
 fn worker_duty(parent: u32) -> String {
     format!(
-        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. During work, use pane_report with the current request_id for progress, questions or blockers, then pane_wait without a session for the correlated reply; only pane_submit completes the request. To coordinate with a sibling named in your brief, use pane_message with its role and receive its answers through pane_wait. Delegate coding-agent work through Houston panes, never internal sub-agents. "
+        "You were spawned by pane {parent}. When your task is done, hand the result back with `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes the pane waiting on you. Say what you did, what you did not, and anything it must decide. The parent closes the completed pane after receiving your result; do not try to close your own pane. During work, use pane_report with the current request_id for progress, questions or blockers, then pane_wait without a session for the correlated reply; only pane_submit completes the request. To coordinate with a sibling named in your brief, use pane_message with its role and receive its answers through pane_wait. Delegate coding-agent work through Houston panes, never internal sub-agents. "
     )
 }
 
@@ -1491,6 +1491,15 @@ mod argument_example_tests {
                 && error.contains("got null")
                 && error.contains("example: {\"body\": \"result text\"}"),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn worker_duty_carries_no_stray_multi_space_runs() {
+        let duty = worker_duty(7);
+        assert!(
+            !duty.contains("  "),
+            "worker duty has a multi-space run: {duty:?}"
         );
     }
 }
