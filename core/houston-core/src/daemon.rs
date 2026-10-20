@@ -26981,7 +26981,7 @@ mod handoff_refusal_tests {
         std::fs::write(&file, b"#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            handoff_binary(Some(&file.to_string_lossy())),
+            handoff_binary(Some(&file.to_string_lossy())).unwrap(),
             file,
             "a valid candidate must resolve to the exact path the caller named"
         );
