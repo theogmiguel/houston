@@ -85,6 +85,30 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
     const [mood,duration]=pick<[Mood,number]>([['wave',3400],['party',2200]])
     moment(mood,pick(LINES()),duration,0,2400); if (getMascotPrefs().style === 'pixel') animate('hop'); chirp()
   }
+  // Pointer moves arrive at the mouse poll rate and each one forced a style+layout
+  // read. One rAF per frame, with the eyes element and its rect cached (invalidated
+  // on resize, scroll and placement changes), keeps it to at most one measure per frame.
+  const lookFrame = useRef(0)
+  const lookPointer = useRef({ x: 0, y: 0 })
+  const lookCache = useRef<{ el: HTMLElement; rect: DOMRect } | null>(null)
+  const invalidateLook = (): void => { lookCache.current = null }
+  const applyLook = (): void => {
+    lookFrame.current = 0
+    if (state.current.sleeping || state.current.playing || state.current.active || motionRef.current.reduced || getMascotPrefs().style === 'pixel') return
+    if (!lookCache.current?.el.isConnected) {
+      const el = button.current?.querySelector<HTMLElement>('.eyes-look')
+      const rect = button.current?.getBoundingClientRect()
+      if (!el || !rect) { lookCache.current = null; return }
+      lookCache.current = { el, rect }
+    }
+    const { el, rect } = lookCache.current!
+    const dx = lookPointer.current.x - (rect.left + rect.width / 2), dy = lookPointer.current.y - (rect.top + rect.height * .35), d = Math.hypot(dx, dy), k = Math.min(d / 80, 1)
+    el.style.transform = d > 460 || d < 8 ? '' : `translate(${dx / d * 2.6 * k}%, ${dy / d * 1.8 * k}%)`
+  }
+  const look = (e: PointerEvent): void => {
+    lookPointer.current = { x: e.clientX, y: e.clientY }
+    if (!lookFrame.current) lookFrame.current = requestAnimationFrame(applyLook)
+  }
   useEffect(() => {
     persistLedger(state.current.ledger)
     let code = 0
@@ -109,20 +133,16 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
       if (theme !== 'paper') animate('glowup'); else if (getMascotPrefs().style === 'pixel') animate('hop')
     })
     observer?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    const look = (e: PointerEvent): void => {
-      if (state.current.sleeping || state.current.playing || state.current.active || motionRef.current.reduced || getMascotPrefs().style === 'pixel') return
-      const el=button.current?.querySelector<HTMLElement>('.eyes-look'), b=button.current?.getBoundingClientRect()
-      if(!el || !b)return
-      const dx=e.clientX-(b.left+b.width/2),dy=e.clientY-(b.top+b.height*.35),d=Math.hypot(dx,dy),k=Math.min(d/80,1)
-      el.style.transform=d>460 || d<8 ? '' : `translate(${dx/d*2.6*k}%, ${dy/d*1.8*k}%)`
-    }
     window.addEventListener('pointermove',look,{passive:true})
+    window.addEventListener('resize',invalidateLook)
+    window.addEventListener('scroll',invalidateLook,true)
     window.addEventListener('keydown',input,{capture:true,passive:true}); window.addEventListener('pointerdown',input,{capture:true,passive:true})
     window.addEventListener('keydown',key); window.addEventListener('houston-mascot-action',action); window.addEventListener('houston-mascot-landed',landed)
     const queuedAction=consumeMascotAction();if(queuedAction)act(queuedAction)
     const interval = setInterval(tick,1000)
-    return () => { pending.current = false; lastMoment.current=undefined; clearInterval(interval); observer?.disconnect(); window.removeEventListener('pointermove',look); window.removeEventListener('keydown',input,true); window.removeEventListener('pointerdown',input,true); window.removeEventListener('keydown',key); window.removeEventListener('houston-mascot-action',action); window.removeEventListener('houston-mascot-landed',landed); timers.current.forEach(clearTimeout); timers.current.clear(); void audio.current?.close() }
+    return () => { pending.current = false; lastMoment.current=undefined; clearInterval(interval); observer?.disconnect(); if (lookFrame.current) cancelAnimationFrame(lookFrame.current); window.removeEventListener('pointermove',look); window.removeEventListener('resize',invalidateLook); window.removeEventListener('scroll',invalidateLook,true); window.removeEventListener('keydown',input,true); window.removeEventListener('pointerdown',input,true); window.removeEventListener('keydown',key); window.removeEventListener('houston-mascot-action',action); window.removeEventListener('houston-mascot-landed',landed); timers.current.forEach(clearTimeout); timers.current.clear(); void audio.current?.close() }
   }, [])
+  useEffect(() => { invalidateLook() }, [placement.position, placement.dragging])
   useEffect(() => {
     if (existingUser && !firstRun && !state.current.ledger.introSeen && !pending.current) {
       pending.current = true; later(() => { animate('arrive'); moment('wave','',3400,1) },450); later(() => setMeet(true),1500)
