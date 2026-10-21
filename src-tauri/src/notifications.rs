@@ -1,18 +1,16 @@
 use tauri::AppHandle;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
-#[cfg(windows)]
-use targets::remember_target;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "linux")]
 use targets::take_target;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub const EVENT_FOCUS_PANE: &str = "native-notification://focus-pane";
 
-// Clicking a desktop notification must reach the pane it announced; both platforms
-// hand back a per-notification id that maps to a session here.
-#[cfg(any(target_os = "linux", target_os = "windows", test))]
+// Clicking a Linux notification hands back only the server's notification id, which maps
+// to a session here. A Windows toast's activation handler carries its session itself.
+#[cfg(any(target_os = "linux", test))]
 mod targets {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
@@ -122,18 +120,20 @@ fn notification_text(title: &str, body: &str) -> (String, String) {
     (title, body)
 }
 
+// Shows the window as the tray does, so a window hidden by Keep in tray appears too.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-fn focus_notification_target(app: &AppHandle, notification: u32) {
-    let Some(session) = take_target(notification) else {
-        return;
-    };
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window.unminimize().and_then(|()| window.set_focus()) {
-            eprintln!("houston-tauri: could not focus notification target: {error}");
-        }
-    }
+fn focus_pane(app: &AppHandle, session: i64) {
+    crate::tray::show_main_window(app);
     if let Err(error) = app.emit(EVENT_FOCUS_PANE, session) {
         eprintln!("houston-tauri: could not emit notification pane action: {error}");
+    }
+}
+
+// ActionInvoked also reports other applications' notifications; unknown ids are ignored.
+#[cfg(target_os = "linux")]
+fn focus_notification_target(app: &AppHandle, notification: u32) {
+    if let Some(session) = take_target(notification) {
+        focus_pane(app, session);
     }
 }
 
@@ -283,12 +283,13 @@ mod windows_toasts {
         FOLDERID_CommonPrograms, FOLDERID_Programs, SHGetKnownFolderPath,
     };
 
-    use super::{focus_notification_target, notification_text, remember_target, take_target};
+    use super::{focus_pane, notification_text};
 
     // Windows caps tag and group at 64 characters and drops longer ones.
     pub(super) const TOAST_TAG_MAX_CHARS: usize = 64;
     const TOAST_GROUP: &str = "houston";
-    // One live toast per pane (its tag replaces older ones); same bound as the click targets.
+    // One live toast per pane (its tag replaces older ones); an evicted toast no longer
+    // opens its pane when clicked in Action Center.
     const LIVE_TOAST_CAP: usize = 256;
 
     // Activated is raised on this toast object, so hold it until it is clicked, closed or
@@ -470,7 +471,7 @@ mod windows_toasts {
         toast
             .Activated(&TypedEventHandler::new(move |_, _| {
                 release_toast(session_id, notification_id);
-                focus_notification_target(&activation_app, notification_id);
+                focus_pane(&activation_app, session_id);
                 Ok(())
             }))
             .map_err(|e| format!("Windows toast activation handler: {e}"))?;
@@ -480,7 +481,6 @@ mod windows_toasts {
                     let reason = args.as_ref().and_then(|dismissal| dismissal.Reason().ok());
                     if reason != Some(ToastDismissalReason::TimedOut) {
                         release_toast(session_id, notification_id);
-                        take_target(notification_id);
                     }
                     Ok(())
                 },
@@ -490,7 +490,6 @@ mod windows_toasts {
             .Failed(&TypedEventHandler::new(
                 move |_, args: Ref<'_, ToastFailedEventArgs>| {
                     release_toast(session_id, notification_id);
-                    take_target(notification_id);
                     let code = args
                         .as_ref()
                         .and_then(|failure| failure.ErrorCode().ok())
@@ -502,11 +501,9 @@ mod windows_toasts {
                 },
             ))
             .map_err(|e| format!("Windows toast failure handler: {e}"))?;
-        remember_target(notification_id, session_id);
         keep_toast(session_id, notification_id, toast.clone());
         if let Err(error) = notifier.Show(&toast) {
             release_toast(session_id, notification_id);
-            take_target(notification_id);
             return Err(format!("Windows toast delivery: {error}"));
         }
         Ok(())
