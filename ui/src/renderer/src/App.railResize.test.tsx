@@ -106,10 +106,14 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
 
     down(264)
     move(300)
+    // Other pointer-move listeners (the mascot's eye tracking) also take one frame,
+    // so the burst is measured against the frames the first move scheduled.
+    const firstMoveFrames = frames.length
     move(360)
     move(400)
 
-    expect(frames.length).toBe(1)
+    expect(firstMoveFrames).toBeGreaterThanOrEqual(1)
+    expect(frames.length).toBe(firstMoveFrames)
     flush()
     expect(railWidthVar(harness)).toBe('400px')
     up(400)

@@ -156,9 +156,9 @@ export function moveSelectedRailGrid(
 }
 
 export function railUnreadSignature(
-  agents: readonly { id: number; inboxUnread: number; childrenWaiting: number }[],
+  agents: readonly { id: number; inboxUnread: number; childrenWaiting: number; finishedUnseen?: boolean }[],
 ): string {
-  return JSON.stringify(agents.map(({ id, inboxUnread, childrenWaiting }) => [id, inboxUnread, childrenWaiting]))
+  return JSON.stringify(agents.map(({ id, inboxUnread, childrenWaiting, finishedUnseen }) => [id, inboxUnread, childrenWaiting, finishedUnseen ?? false]))
 }
 
 export function isRailGridUnread(

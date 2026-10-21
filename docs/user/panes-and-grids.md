@@ -160,9 +160,10 @@ With collapsed agent activity, a grid with more than three agents shows its firs
 and an **N more agents** action; expand it to see the rest. Expanded activity shows the
 full list. Prompt and latest-message previews stay local unless you enable generated titles or choose
 **Generate title** for a pane.
-The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
-read or unread. **Agent activity** sort places unread cards after cards that need input
-or are working.
+The unread marker reflects inbox messages and waiting child panes, and marks a
+top-level pane that finished while it was not on screen; focusing that pane clears
+its finished mark. Use the marker to set a grid read or unread. **Agent activity** sort
+places unread cards after cards that need input or are working.
 
 Open the Workspaces options menu to group cards by workspace, status, pull-request state
 or not at all, and sort by **Manual**, **Agent activity**, **Recent** or **Name**. Its other

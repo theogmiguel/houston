@@ -10,6 +10,11 @@ export interface RailDiffTotals {
   changedFiles: number
 }
 
+// Each refresh runs three git processes per workspace, and returning to the window
+// should not pay that on every alt-tab: a focus-triggered refresh is honoured only
+// when the last poll is older than this. The 60 s interval still bounds staleness.
+export const FOCUS_REFRESH_MIN_MS = 10_000
+
 function totals(files: GitFileStatus[], ahead: number, behind: number): RailDiffTotals {
   return files.reduce((sum, file) => ({
     added: sum.added + (file.added ?? 0),
@@ -42,14 +47,22 @@ export function useRailGitFacts(client: HoustonClient | null, dirs: readonly str
       if (!wanted.has(message.dir) || message.base != null) return
       setFacts((current) => new Map(current).set(message.dir, totals(message.files, message.ahead, message.behind)))
     })
-    const refresh = (): void => poller.current?.request(requestedDirs)
+    let lastPollAt = 0
+    const refresh = (): void => {
+      lastPollAt = Date.now()
+      poller.current?.request(requestedDirs)
+    }
+    const onFocus = (): void => {
+      if (Date.now() - lastPollAt < FOCUS_REFRESH_MIN_MS) return
+      refresh()
+    }
     refresh()
-    window.addEventListener('focus', refresh)
+    window.addEventListener('focus', onFocus)
     const timer = window.setInterval(refresh, 60_000)
     return () => {
       unsubscribe()
       poller.current?.dropQueued()
-      window.removeEventListener('focus', refresh)
+      window.removeEventListener('focus', onFocus)
       window.clearInterval(timer)
     }
   }, [client, key])

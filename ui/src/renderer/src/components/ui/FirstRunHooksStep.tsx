@@ -11,6 +11,7 @@ export interface FirstRunHooksStepProps {
   rows: FirstRunHookRow[]
   installCount: number
   disabledReason: string | null
+  guideAction?: { label: string; onClick: () => void }
   onSet: (provider: AgentKind, enabled: boolean) => void
   onInstallAll: () => void
   onSkip: () => void
@@ -80,6 +81,7 @@ export function FirstRunHooksStep({
   rows,
   installCount,
   disabledReason,
+  guideAction,
   onSet,
   onInstallAll,
   onSkip
@@ -106,10 +108,13 @@ export function FirstRunHooksStep({
           </div>
         </div>
         <footer className="flex w-full items-center gap-[var(--space-2)]">
-          <span data-testid="first-run-step" className="[font-size:var(--tr-text-label-size)] tabular-nums text-[var(--text-muted)]">Step 3 of 3</span>
+          <span data-testid="first-run-step" className="whitespace-nowrap [font-size:var(--tr-text-label-size)] tabular-nums text-[var(--text-muted)]">Step 3 of 3</span>
           <span className="flex-1" />
           <Button variant="ghost" size="sm" data-testid="first-run-skip" onClick={onSkip}>Not now</Button>
           {disabledReason && <span data-testid="first-run-install-reason" className="max-w-[180px] text-right [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">{disabledReason}</span>}
+          {disabledReason && guideAction && (
+            <Button variant="muted-link" size="sm" data-testid="first-run-install-guide" onClick={guideAction.onClick}>{guideAction.label}</Button>
+          )}
           <Button size="sm" variant="primary" data-testid="first-run-install-all" disabled={installCount === 0} aria-describedby={disabledReason ? 'first-run-install-reason' : undefined} onClick={onInstallAll}>Install for {installCount} CLIs</Button>
         </footer>
       </section>
@@ -126,4 +131,15 @@ export function FirstRunHooksStepSpecimen(): React.JSX.Element {
     { provider: 'zcode', name: 'ZCode', version: '3.14.4', status: 'silent', error: null }
   ]
   return <FirstRunHooksStep steps={[{ label: 'Workspace', state: 'done' }, { label: 'Orchestration', state: 'done' }, { label: 'Hooks', state: 'current' }]} rows={rows} installCount={3} disabledReason={null} onSet={() => {}} onInstallAll={() => {}} onSkip={() => {}} />
+}
+
+export function FirstRunHooksStepNoCliSpecimen(): React.JSX.Element {
+  const rows: FirstRunHookRow[] = [
+    { provider: 'claude', name: 'Claude Code', version: null, status: 'not-found', error: null },
+    { provider: 'codex', name: 'Codex', version: null, status: 'not-found', error: null },
+    { provider: 'opencode', name: 'OpenCode', version: null, status: 'not-found', error: null },
+    { provider: 'antigravity', name: 'Antigravity', version: null, status: 'not-found', error: null },
+    { provider: 'zcode', name: 'ZCode', version: null, status: 'not-found', error: null }
+  ]
+  return <FirstRunHooksStep steps={[{ label: 'Workspace', state: 'done' }, { label: 'Orchestration', state: 'done' }, { label: 'Hooks', state: 'current' }]} rows={rows} installCount={0} disabledReason="No supported CLI was found on PATH." guideAction={{ label: 'Open the install guide', onClick: () => {} }} onSet={() => {}} onInstallAll={() => {}} onSkip={() => {}} />
 }
