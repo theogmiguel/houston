@@ -5,6 +5,20 @@ use common::{escaped_tail, TOKEN};
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;
 
+/// Session markers of an enclosing agent, multiplexer or Electron host; a pane must not inherit any.
+const LAUNCHER_MARKERS: [(&str, &str); 10] = [
+    ("CLAUDE_CODE_CHILD_SESSION", "1"),
+    ("CLAUDECODE", "1"),
+    ("CLAUDE_CODE_SESSION_ID", "the-launchers-session"),
+    ("TMUX", "/tmp/tmux-1000/default,1234,0"),
+    ("TMUX_PANE", "%3"),
+    ("STY", "1234.pts-0.host"),
+    ("ZELLIJ", "0"),
+    ("ZELLIJ_SESSION_NAME", "outer"),
+    ("ZELLIJ_PANE_ID", "2"),
+    ("ELECTRON_RUN_AS_NODE", "1"),
+];
+
 #[tokio::test]
 async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     let tmp = tempfile::tempdir().unwrap();
@@ -12,20 +26,13 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("HOME", tmp.path());
     std::env::set_var("USERPROFILE", tmp.path());
 
-    std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
-    std::env::set_var("CLAUDECODE", "1");
-    std::env::set_var("CLAUDE_CODE_SESSION_ID", "the-launchers-session");
+    for (name, value) in LAUNCHER_MARKERS {
+        std::env::set_var(name, value);
+    }
     std::env::set_var("CLAUDE_EFFORT", "xhigh");
     std::env::set_var("NO_COLOR", "1");
     std::env::set_var("TERM", "dumb");
     std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
-    std::env::set_var("TMUX", "/tmp/tmux-1000/default,1234,0");
-    std::env::set_var("TMUX_PANE", "%3");
-    std::env::set_var("STY", "1234.pts-0.host");
-    std::env::set_var("ZELLIJ", "0");
-    std::env::set_var("ZELLIJ_SESSION_NAME", "outer");
-    std::env::set_var("ZELLIJ_PANE_ID", "2");
-    std::env::set_var("ELECTRON_RUN_AS_NODE", "1");
     houston_core::env_hygiene::scrub();
     assert!(std::env::var_os("HOUSTON_SUPERVISOR_FD").is_none());
     std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
@@ -104,19 +111,11 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         has("TR_SESSION="),
         "sanity: this really is a daemon-spawned pane: {child_env}"
     );
-    for marker in [
-        "CLAUDE_CODE_CHILD_SESSION=",
-        "CLAUDECODE=",
-        "CLAUDE_CODE_SESSION_ID=",
-        "TMUX=",
-        "TMUX_PANE=",
-        "STY=",
-        "ZELLIJ=",
-        "ZELLIJ_SESSION_NAME=",
-        "ZELLIJ_PANE_ID=",
-        "ELECTRON_RUN_AS_NODE=",
-    ] {
-        assert!(!has(marker), "pane inherited {marker} — {child_env}");
+    for (name, _) in LAUNCHER_MARKERS {
+        assert!(
+            !has(&format!("{name}=")),
+            "pane inherited {name} — {child_env}"
+        );
     }
     assert!(
         !has("HOUSTON_SUPERVISOR_FD="),
