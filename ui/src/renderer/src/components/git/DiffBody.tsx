@@ -44,15 +44,23 @@ const TRUNCATED_NOTE = '… patch truncated at 512 KiB — review locally'
 
 function PlainDiff({ lines, truncated, marks }: { lines: string[]; truncated: boolean; marks: ((line: number) => ReturnType<DiffMarksLookup>) | null }): React.JSX.Element {
   if (marks === null) return <DiffPlainText>{lines.join('\n')}{truncated ? `\n${TRUNCATED_NOTE}` : ''}</DiffPlainText>
-  return (
-    <DiffPlainText>
-      {lines.map((line, i) => {
-        const text = displayText(line, lineKind(line))
-        return <span key={i}>{i > 0 ? '\n' : ''}{line.slice(0, line.length - text.length)}<DiffFindText text={text} marks={marks(i)} /></span>
-      })}
-      {truncated ? `\n${TRUNCATED_NOTE}` : ''}
-    </DiffPlainText>
-  )
+  // Only lines holding a match get a node; the runs between them stay single text chunks.
+  const parts: React.ReactNode[] = []
+  let run = ''
+  lines.forEach((line, i) => {
+    const separator = i > 0 ? '\n' : ''
+    const found = marks(i)
+    if (!found || found.ranges.length === 0) {
+      run += separator + line
+      return
+    }
+    if (run) parts.push(run)
+    run = ''
+    const text = displayText(line, lineKind(line))
+    parts.push(<span key={i}>{separator}{line.slice(0, line.length - text.length)}<DiffFindText text={text} marks={found} /></span>)
+  })
+  if (run) parts.push(run)
+  return <DiffPlainText>{parts}{truncated ? `\n${TRUNCATED_NOTE}` : ''}</DiffPlainText>
 }
 
 export function DiffBody({ patch, truncated, split = false, findKey }: { patch: string; truncated: boolean; split?: boolean; findKey?: string }): React.JSX.Element {
