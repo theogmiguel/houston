@@ -17,6 +17,12 @@ const INSTALL_GUIDE_URL = 'https://github.com/theogmiguel/houston/blob/main/docs
 
 const MascotIntro = lazy(() => import('./ui/MascotIntro'))
 
+// Offered only when no supported CLI is on PATH: the hooks step has nothing else to do.
+function installGuideAction(noCliFound: boolean): { label: string; onClick: () => void } | undefined {
+  if (!noCliFound) return undefined
+  return { label: 'Open the install guide', onClick: () => { void openExternal(INSTALL_GUIDE_URL) } }
+}
+
 export type FirstRunStepId = 'workspace' | 'orchestration' | 'hooks'
 
 export interface FirstRunProps {
@@ -122,14 +128,7 @@ export function FirstRun({
         rows={rows}
         installCount={installCount}
         disabledReason={disabledReason}
-        guideAction={absentCount === rows.length
-          ? {
-              label: 'Open the install guide',
-              onClick: () => {
-                void openExternal(INSTALL_GUIDE_URL)
-              }
-            }
-          : undefined}
+        guideAction={installGuideAction(absentCount === rows.length)}
         onSet={onAgentHooksSet}
         onInstallAll={() => rows.filter((row) => row.status === 'silent').forEach((row) => onAgentHooksSet(row.provider, true))}
         onSkip={skip}
