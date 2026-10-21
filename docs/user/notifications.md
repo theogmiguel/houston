@@ -4,7 +4,9 @@ Open Settings ▸ Notifications to choose how Houston reports when an agent pane
 
 Desktop notifications appear only while the Houston window is unfocused. Choose Off, Notifications only, Sound only, or Notifications with sound. A desktop notification shows the pane, agent and workspace; clicking it focuses Houston and opens that pane. Sound only plays locally and does not send a desktop notification.
 
-On Linux, the desktop notification service controls whether these notices are allowed. If delivery is refused, allow notifications for Houston in the desktop's notification settings. Native desktop notifications are not available on Windows or macOS yet.
+On Linux, the desktop notification service controls whether these notices are allowed. If delivery is refused, allow notifications for Houston in the desktop's notification settings.
+
+On Windows, desktop notifications require Houston installed with its Windows installer, which registers the Start menu shortcut that Windows uses to identify the app. If notices are missing, allow Houston in Windows Settings ▸ System ▸ Notifications. When Windows reports notifications as off for Houston, or no installed shortcut exists, Settings ▸ Notifications shows the reason and the notification options stay unavailable. Native desktop notifications are not available on macOS yet.
 
 In-app notifications appear while Houston is focused when the pane is in another grid or workspace. A pane already on screen only changes its status indicator. Finished notices dismiss after a few seconds; needs-input notices stay until opened or dismissed. After a finished notice dismisses, the pane's rail card keeps the unread mark — the grid name in bold with a dot — until you focus that pane.
 

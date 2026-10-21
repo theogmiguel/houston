@@ -63,7 +63,7 @@ have narrower support:
 | Feature | Linux | Windows |
 |---|---|---|
 | [Updates with live sessions](updating.md) | Keep sessions running when daemon handoff is available | Stop sessions before installing |
-| [Native desktop notifications](notifications.md) | Supported by the desktop notification service | Unavailable; in-app notices and taskbar counts remain available |
+| [Native desktop notifications](notifications.md) | Supported by the desktop notification service | Supported when Houston is installed with its installer |
 | [Dictation](voice.md) | Local Whisper or Groq | Groq; the local engine is unavailable |
 | [Browser element picking and agent DOM actions](files-editor-browser.md) | Supported with consent | Unavailable; navigation, history and normal reload work |
 | [WSL environments](wsl.md) | Unavailable | Experimental; x86_64 WSL 2 distros with glibc 2.35 or newer |
