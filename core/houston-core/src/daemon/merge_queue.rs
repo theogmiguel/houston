@@ -515,6 +515,13 @@ impl Daemon {
                     ),
                 }
             }
+            // A new head must not wait behind a verification holding the runner.
+            match self.merge_queue_take_back_moved(&workspace) {
+                Ok(took) => any |= took,
+                Err(e) => tracing::warn!(
+                    "merge queue: taking moved heads back from GitHub in {workspace}: {e:#}"
+                ),
+            }
             if changed {
                 self.broadcast_merge_queue(&workspace);
                 any = true;

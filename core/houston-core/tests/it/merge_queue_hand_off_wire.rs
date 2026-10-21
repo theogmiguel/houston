@@ -3,7 +3,7 @@
 //! head goes to GitHub instead of Houston's own merge, and Houston watches it there.
 #![allow(clippy::disallowed_methods)]
 
-use crate::merge_queue_rig::{agent_pane, Rig, NEEDS_BASE, SERIAL};
+use crate::merge_queue_rig::{agent_pane, commit, git, slashed, Rig, NEEDS_BASE, SERIAL};
 
 use houston_protocol as proto;
 
@@ -204,6 +204,121 @@ async fn auto_merge_is_pinned_to_the_verified_commit_turned_off_by_a_pause_and_e
     assert!(
         rig.calls("pr merge 1 --match").is_empty(),
         "Houston never merged"
+    );
+}
+
+#[tokio::test]
+async fn a_new_head_takes_the_hand_off_back_while_another_workspace_verifies() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.flag("auto-merge-allowed", "");
+    rig.flag("required-checks", "ci");
+    let one = rig.change(1, "one", "one.txt", "one\n");
+    rig.settings(true, "git --version");
+    rig.enqueue(1, None);
+    rig.tick().await;
+    assert_eq!(rig.entry(1).status, proto::MergeQueueStatus::Watching);
+    assert!(rig.has_flag("auto-1"));
+
+    // A second workspace whose verification holds the slot until the gate opens.
+    let b_root = rig.state.path().join("second");
+    let b_origin = rig
+        .state
+        .path()
+        .join("b")
+        .join("github.com")
+        .join("owner")
+        .join("other.git");
+    std::fs::create_dir_all(&b_origin).unwrap();
+    git(&b_origin, &["init", "-q", "--bare", "-b", "main"]);
+    std::fs::create_dir_all(&b_root).unwrap();
+    git(&b_root, &["init", "-q", "-b", "main"]);
+    for (key, value) in [
+        ("user.email", "t@t.local"),
+        ("user.name", "t"),
+        ("core.autocrlf", "false"),
+    ] {
+        git(&b_root, &["config", key, value]);
+    }
+    commit(&b_root, "app.txt", "b\n", "init");
+    git(&b_root, &["remote", "add", "origin", &slashed(&b_origin)]);
+    git(&b_root, &["push", "-q", "origin", "main"]);
+    git(&b_root, &["checkout", "-q", "-b", "houston/b"]);
+    commit(&b_root, "b.txt", "b\n", "b");
+    git(&b_root, &["push", "-q", "origin", "houston/b"]);
+    git(&b_root, &["checkout", "-q", "main"]);
+    let b_workspace = b_root.display().to_string();
+    rig.daemon.workspace_add(&b_workspace).unwrap();
+    let json = std::fs::read_to_string(rig.bin.join("pr-1.json"))
+        .unwrap()
+        .replace("pull/1", "pull/2")
+        .replace("\"number\":1", "\"number\":2")
+        .replace("houston/one", "houston/b")
+        .replace("owner/repo", "owner/other");
+    std::fs::write(rig.bin.join("pr-2.json"), json).unwrap();
+    git(
+        &rig.origin,
+        &[
+            "fetch",
+            "-q",
+            &b_origin.display().to_string(),
+            "houston/b:houston/b",
+        ],
+    );
+    let gate = rig.state.path().join("gate");
+    #[cfg(unix)]
+    let gated = format!("while [ ! -e '{}' ]; do sleep 0.1; done", gate.display());
+    #[cfg(windows)]
+    let gated = format!(
+        "for /l %i in (0,1,600) do @if not exist \"{}\" (ping -n 2 127.0.0.1 > nul)",
+        gate.display()
+    );
+    rig.daemon
+        .merge_queue_settings_set(&b_workspace, false, &gated, 30)
+        .unwrap();
+    rig.daemon
+        .merge_queue_enqueue(&b_workspace, "2", None, None)
+        .unwrap();
+
+    let pass = {
+        let daemon = rig.daemon.clone();
+        tokio::task::spawn_blocking(move || daemon.merge_queue_runner_tick())
+    };
+    let mut verifying = false;
+    for _ in 0..200 {
+        let status = rig.daemon.merge_queue_entries(&b_workspace).unwrap()[0].status;
+        if status == proto::MergeQueueStatus::Verifying {
+            verifying = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(
+        verifying,
+        "the second workspace's verification holds the slot"
+    );
+
+    // A push with write access leaves GitHub's auto-merge armed on the new head.
+    let moved = commit(&one, "one.txt", "one, again\n", "again");
+    git(&one, &["push", "-q", "origin", "houston/one"]);
+    rig.read_pass().await;
+
+    // The entry view already hides a moved hold: what counts is GitHub's side.
+    let disabled = rig.calls("pr merge 1 --disable-auto").len();
+    let armed = rig.has_flag("auto-1");
+    let still_verifying = !pass.is_finished();
+    std::fs::write(&gate, "").unwrap();
+    pass.await.unwrap();
+    assert!(
+        still_verifying,
+        "the take-back did not wait for the verification"
+    );
+    assert_eq!(disabled, 1, "auto-merge was turned off for {moved}");
+    assert!(!armed, "GitHub no longer holds {moved}");
+    let again = rig.entry(1).github.map(|h| h.head_sha);
+    assert!(
+        again.as_deref().is_none_or(|h| h == moved),
+        "only the new head, verified once the slot freed, is handed off again: {again:?}"
     );
 }
 

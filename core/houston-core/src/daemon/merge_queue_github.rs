@@ -263,7 +263,7 @@ impl Daemon {
     /// finishes the landing, a new head takes the hand-off back, and a head
     /// GitHub let go takes the failure path. Returns whether anything moved.
     pub(super) fn merge_queue_watch_github(self: &Arc<Self>, workspace: &str) -> Result<bool> {
-        let mut moved = false;
+        let mut moved = self.merge_queue_take_back_moved(workspace)?;
         for row in self.db.merge_queue_entries(workspace)? {
             let Some(hold) = row.github.clone() else {
                 continue;
@@ -274,26 +274,6 @@ impl Daemon {
                 return Ok(true);
             }
             if row.head_sha != hold.head_sha {
-                // GitHub must not merge a head Houston did not verify.
-                if let Err(e) = self.merge_queue_cancel_github(&row, &hold) {
-                    tracing::warn!(
-                        "merge queue: PR #{} moved to {}; taking it back from {}: {e:#}",
-                        row.number,
-                        row.head_sha,
-                        hand_off_name(hold.mode)
-                    );
-                    continue;
-                }
-                self.db
-                    .merge_queue_set_github(workspace, row.number, None)?;
-                tracing::info!(
-                    "merge queue: PR #{} moved to {}; took it back from {} and it re-enters the line",
-                    row.number,
-                    row.head_sha,
-                    hand_off_name(hold.mode)
-                );
-                self.broadcast_merge_queue(workspace);
-                moved = true;
                 continue;
             }
             let Some(failed) = let_go(&row, &hold) else {
@@ -310,6 +290,47 @@ impl Daemon {
                 .merge_queue_set_github(workspace, row.number, None)?;
             self.merge_queue_fail(workspace, &row, failed, hold.unattended)?;
             moved = true;
+        }
+        Ok(moved)
+    }
+
+    /// Takes back every hand-off of `workspace` whose head moved, so GitHub never
+    /// merges a head Houston did not verify. The PR watch's read pass calls it too,
+    /// so a verification holding the runner never delays it. Returns whether any moved.
+    pub(super) fn merge_queue_take_back_moved(&self, workspace: &str) -> Result<bool> {
+        let _one = self
+            .merge_queue_take_back
+            .lock()
+            .expect("merge queue take-back lock");
+        let mut moved = false;
+        for row in self.db.merge_queue_entries(workspace)? {
+            let Some(hold) = row.github.clone() else {
+                continue;
+            };
+            if row.head_sha == hold.head_sha || row.facts.as_ref().is_some_and(|f| f.merged) {
+                continue;
+            }
+            if let Err(e) = self.merge_queue_cancel_github(&row, &hold) {
+                tracing::warn!(
+                    "merge queue: PR #{} moved to {}; taking it back from {}: {e:#}",
+                    row.number,
+                    row.head_sha,
+                    hand_off_name(hold.mode)
+                );
+                continue;
+            }
+            self.db
+                .merge_queue_set_github(workspace, row.number, None)?;
+            tracing::info!(
+                "merge queue: PR #{} moved to {}; took it back from {} and it re-enters the line",
+                row.number,
+                row.head_sha,
+                hand_off_name(hold.mode)
+            );
+            moved = true;
+        }
+        if moved {
+            self.broadcast_merge_queue(workspace);
         }
         Ok(moved)
     }

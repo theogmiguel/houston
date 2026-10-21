@@ -1809,6 +1809,8 @@ pub struct Daemon {
     merge_queue_wake: tokio::sync::Notify,
     /// The workspace served last, so the slot goes round the workspaces in turn.
     merge_queue_cursor: Mutex<Option<String>>,
+    /// The read pass and the runner both take moved heads back from GitHub: one at a time.
+    merge_queue_take_back: Mutex<()>,
     /// One landing at a time: the runner's and the user's Merge never push or merge together.
     merge_queue_landing: Mutex<()>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
@@ -3571,6 +3573,7 @@ impl Daemon {
             merge_queue_slot: Mutex::new(None),
             merge_queue_wake: tokio::sync::Notify::new(),
             merge_queue_cursor: Mutex::new(None),
+            merge_queue_take_back: Mutex::new(()),
             merge_queue_landing: Mutex::new(()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
