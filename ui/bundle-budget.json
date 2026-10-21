@@ -168,12 +168,21 @@
     "that headroom pays for Next request, which must answer from the keymap at",
     "any time and keep the operator inbox current.",
     "",
+    "Re-cut against 942,883 bytes (one boot chunk) with the same small headroom:",
+    "opening an editor compares Windows paths in one spelling, so a file opened from",
+    "the Files tree and again from Quick Open or Changes reuses its editor; that",
+    "lookup runs in App's editor opener on the boot path.",
+    "",
     "Re-cut against 942,793 bytes (one boot chunk) with the same small headroom:",
     "the orchestration sound burst gate keeps N panes finishing together to one",
     "sound; `claimSoundSlot` is exported for its unit tests and the per-kind slot",
-    "map rides in App's notification delivery, so both are boot-path code."
+    "map rides in App's notification delivery, so both are boot-path code.",
+    "",
+    "Re-cut against 943,125 bytes (one boot chunk) once both additions above",
+    "landed together: the editor path key and the sound burst gate each measured",
+    "within the previous 943,000 cap alone but not combined."
   ],
-  "maxBootBytes": 943000,
+  "maxBootBytes": 943300,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

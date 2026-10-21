@@ -3,7 +3,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { IconClose, IconRefresh } from '../icons'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
-import { FOCUS_HALO_CLS, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
+import { FOCUS_HALO_CLS, GLOSS_TOP_HIGHLIGHT_CLS, GLOW_ACCENT_CLS, GLOW_DANGER_CLS, GLOW_WARNING_CLS, FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { Icon } from './Icon'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 import { Text } from './Text'
@@ -44,7 +44,7 @@ export function DevicePresetButton(props: ButtonHTMLAttributes<HTMLButtonElement
 }
 
 const HEAD_BTN_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-[var(--space-px)] active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[var(--browser-control-size)] [@container_(max-width:200px)]:h-[var(--browser-control-size)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
+  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-[var(--space-px)] active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] ${FOCUS_RING_ACCENT_ICON_CLS} focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[var(--browser-control-size)] [@container_(max-width:200px)]:h-[var(--browser-control-size)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
 
 const HEAD_BTN_TONE = {
   regular:
@@ -147,8 +147,8 @@ const BAND_TONE: Record<BandTone, string> = {
     'text-[color-mix(in_srgb,var(--danger)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border-[color-mix(in_srgb,var(--danger)_28%,transparent)]'
 }
 const BAND_DOT: Record<BandTone, string> = {
-  warning: `flex-none w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-warning shadow-[${GLOW_WARNING}]`,
-  danger: `flex-none w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-danger shadow-[${GLOW_DANGER}]`
+  warning: `flex-none w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-warning ${GLOW_WARNING_CLS}`,
+  danger: `flex-none w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-danger ${GLOW_DANGER_CLS}`
 }
 const BAND_TEXT_BTN =
   'btn flex-none py-[var(--browser-status-action-pad-y)] px-[var(--browser-button-inline-inset)] border-0 rounded-[var(--tr-radius-input)] bg-transparent text-inherit font-semibold [transition:background_0.12s_ease] hover:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)]'
@@ -308,7 +308,7 @@ const PICKER_HINT_CLS =
   'flex items-center gap-[var(--space-2)] pt-[var(--space-1-5)] pr-[var(--space-1-5)] pb-[var(--space-1-5)] pl-[var(--space-2-5)] min-h-[var(--browser-picker-hint-height)] ' +
   'text-[color-mix(in_srgb,var(--text-primary)_80%,var(--accent)_10%)] border-t border-border flex-none'
 const PICKER_DOT_CLS =
-  `loop-anim w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-[var(--accent)] shadow-[${GLOW_ACCENT}] ` +
+  `loop-anim w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-[var(--accent)] ${GLOW_ACCENT_CLS} ` +
   'flex-none [--dot-pulse-opacity:0.45] [--dot-pulse-scale:0.82] ' +
   'motion-safe:animate-[dot-pulse-scale_1.8s_steps(4,end)_infinite]'
 const PICKER_SELROW_CLS = 'flex items-center gap-[var(--browser-picker-row-gap)] py-[var(--space-1-5)] px-[var(--space-2-5)] border-t border-border min-w-0 flex-none'
@@ -319,11 +319,10 @@ const PICKER_PROMPT_INPUT_CLS =
 const PICKER_AGENT_SELECT_CLS =
   'h-[var(--h-ctl)] rounded-[var(--tr-radius-button)] border border-border bg-surface text-text-primary px-[var(--space-2)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] flex-none'
 
-const PICKER_SUBMIT_GLOSS = 'inset_0_1px_color-mix(in_srgb,#fff_22%,transparent)'
 const PICKER_SUBMIT_CLS =
   'h-[var(--h-ctl)] px-[var(--space-3)] border-0 rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-small-size)] font-semibold text-white flex-none cursor-pointer ' +
   'bg-[linear-gradient(180deg,color-mix(in_srgb,var(--accent)_100%,white_8%)_0%,var(--accent)_100%)] ' +
-  `shadow-[${PICKER_SUBMIT_GLOSS}] disabled:opacity-50 disabled:cursor-default`
+  `${GLOSS_TOP_HIGHLIGHT_CLS} disabled:opacity-50 disabled:cursor-default`
 
 export function BrowserPickerHint({ children, ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
   return <div {...props} className={`${PICKER_HINT_CLS} ${props.className ?? ''}`}><span className={PICKER_DOT_CLS} aria-hidden /><Text size="small" weight="small" className="flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{children}</Text></div>

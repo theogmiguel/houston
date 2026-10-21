@@ -10,11 +10,16 @@ interface QuickOpenOverlayProps {
   onOpen: (path: string) => void;
 }
 
+// Search results are relative to the workspace; the editor needs an absolute path.
+function workspaceFilePath(workspace: string, path: string): string {
+  return `${workspace.replace(/[\\/]+$/, "")}/${path}`;
+}
+
 export function QuickOpenOverlay({ open, workspace, onClose, onOpen }: QuickOpenOverlayProps): React.JSX.Element | null {
   if (!open || workspace === "all") return null;
   return (
     <Suspense fallback={null}>
-      <QuickOpen root={workspace} workspaceName={basename(workspace)} onClose={onClose} onOpen={onOpen} />
+      <QuickOpen root={workspace} workspaceName={basename(workspace)} onClose={onClose} onOpen={(path) => onOpen(workspaceFilePath(workspace, path))} />
     </Suspense>
   );
 }
