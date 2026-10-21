@@ -2,7 +2,7 @@
 
 Open Settings ▸ Notifications to choose how Houston reports when an agent pane finishes a turn or needs your input. Both options are off by default.
 
-Desktop notifications appear only while the Houston window is unfocused. Choose Off, Notifications only, Sound only, or Notifications with sound. A desktop notification shows the pane, agent and workspace; clicking it focuses Houston and opens that pane. Sound only plays locally and does not send a desktop notification.
+Desktop notifications appear only while the Houston window is unfocused. Choose Off, Notifications only, Sound only, or Notifications with sound. A desktop notification shows the pane, agent and workspace; clicking it focuses Houston and opens that pane. Sound only plays locally and does not send a desktop notification. When several panes finish in the same moment, the finished sound plays once for the burst; a needs-input sound is never silenced by it.
 
 On Linux, the desktop notification service controls whether these notices are allowed. If delivery is refused, allow notifications for Houston in the desktop's notification settings. Native desktop notifications are not available on Windows or macOS yet.
 
