@@ -356,7 +356,7 @@ impl Daemon {
             session_id: session,
             position: 0,
             enqueued_at_ms: now,
-            facts: Some(Facts::from_read(&detail, now)),
+            facts: Some(Facts::from_read(link.number, &detail, now)),
             verification: None,
             failure: None,
             stacked: None,
@@ -418,7 +418,7 @@ impl Daemon {
                 match link.state {
                     // GitHub merged what it was handed: the runner finishes the landing.
                     proto::PullRequestState::Merged if row.github.is_some() => {
-                        let mut facts = Facts::from_read(&detail, now);
+                        let mut facts = Facts::from_read(link.number, &detail, now);
                         facts.merged = true;
                         row.facts = Some(facts);
                         self.db.merge_queue_set_read(&row)?;
@@ -456,7 +456,7 @@ impl Daemon {
                 }
                 row.head_sha = detail.head_sha.clone();
                 row.base_ref = detail.base_ref.clone();
-                let facts = Facts::from_read(&detail, now);
+                let facts = Facts::from_read(link.number, &detail, now);
                 // A held entry's read always matters to the runner watching GitHub.
                 let changed = moved
                     || row.github.is_some()

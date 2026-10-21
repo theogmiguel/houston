@@ -644,6 +644,11 @@ The constraints:
   colour and secrets removed. The queue never parses that output for progress. The rebase
   commits as the configured git identity or, where git config names none, as the head
   commit's author, passed with `-c`; no git config is written.
+- **Base refusals wait for the rebase.** With a verification command set, GitHub reporting
+  that the head conflicts with or is behind its base, as the only refusal, leaves the
+  mergeable gate pending instead of blocking: the verification's rebase decides, and a real
+  conflict takes the failure path. After a clean push the landing waits until a read of the
+  pushed commit stops reporting it. Without a command the refusal blocks.
 - **The push guard** refuses, by name, a push to the pull request's base, to the
   repository's default branch, to a branch outside `houston/*`, and to a `houston/*` branch
   with no `managed_worktrees` row in the workspace's repository. A push is
