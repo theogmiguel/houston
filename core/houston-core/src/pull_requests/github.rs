@@ -662,8 +662,8 @@ const THREADS_QUERY_TEMPLATE: &str = "query PrThreads($owner: String!, $name: St
     pullRequest(number: $number) { \
     id \
     __REACTION_GROUPS__ \
-    comments(first: 100) { nodes { id author { __typename } __REACTION_GROUPS__ } } \
-    reviews(first: 100) { nodes { id __REACTION_GROUPS__ } } \
+    comments(last: 100) { nodes { id author { __typename } __REACTION_GROUPS__ } } \
+    reviews(last: 100) { nodes { id __REACTION_GROUPS__ } } \
     reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } } \
     latestReviews(first: 50) { nodes { author { login } } } \
     reviewThreads(first: 100) { \
@@ -1552,6 +1552,60 @@ mod tests {
         );
     }
 
+    /// The ids GitHub answers for the query's top-level `field(first|last: N) { nodes { id`.
+    fn graphql_window<'a>(query: &str, field: &str, ids: &'a [String]) -> &'a [String] {
+        for (direction, from_end) in [("first", false), ("last", true)] {
+            let prefix = format!("{field}({direction}: ");
+            for (at, _) in query.match_indices(&prefix) {
+                let Some((count, tail)) = query[at + prefix.len()..].split_once(')') else {
+                    continue;
+                };
+                if !tail.starts_with(" { nodes { id") {
+                    continue;
+                }
+                let n = count.parse::<usize>().unwrap().min(ids.len());
+                return if from_end {
+                    &ids[ids.len() - n..]
+                } else {
+                    &ids[..n]
+                };
+            }
+        }
+        panic!("the threads query reads no top-level {field} page: {query}");
+    }
+
+    #[test]
+    fn reaction_and_bot_marks_cover_the_newest_comments_and_reviews_shown() {
+        let ids: Vec<String> = (0..150).map(|i| format!("N{i}")).collect();
+        let rows: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|id| json!({"id": id, "author": {"login": "ci-app"}, "body": "coverage", "state": "COMMENTED"}))
+            .collect();
+        let (_, d) = detail(json!({
+            "number": 5u64, "url": "https://github.com/o/r/pull/5", "state": "OPEN",
+            "comments": rows, "reviews": rows,
+        }));
+        let query = threads_query();
+        let shown = [
+            (
+                "comments",
+                d.comments.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
+            ),
+            ("reviews", d.reviews.iter().map(|r| r.id.clone()).collect()),
+        ];
+        for (field, shown) in shown {
+            let window = graphql_window(&query, field, &ids);
+            assert_eq!(shown.len(), 20);
+            for id in shown {
+                let id = id.expect("every fixture row has an id");
+                assert!(
+                    window.contains(&id),
+                    "{field} {id} is shown but outside the GraphQL page that marks bots and reactions"
+                );
+            }
+        }
+    }
+
     #[test]
     fn comments_and_reviews_keep_totals_when_capped() {
         let comments: Vec<serde_json::Value> = (0..25)
@@ -1792,7 +1846,7 @@ mod tests {
         );
         let query = threads_query();
         assert!(
-            query.contains("comments(first: 100) { nodes { id author { __typename } ")
+            query.contains("comments(last: 100) { nodes { id author { __typename } ")
                 && query.contains("author { __typename login }"),
             "both comment reads must ask for the actor type: {query}"
         );
