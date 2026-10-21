@@ -110,12 +110,34 @@ fn content_matcher(
             if end { r"\b" } else { "" }
         )
     };
+    // The whole-file prefilter must agree with the per-line pass on where `^` and `$` match.
     RegexBuilder::new(&pattern)
         .case_insensitive(!case_sensitive)
+        .multi_line(true)
+        .crlf(true)
         .build()
         .map_err(|error| {
             format!("fs_search_contents: {query:?} is not a valid regular expression: {error}")
         })
+}
+
+// Splits like the editor (`\r\n`, `\r` or `\n`) so reported line numbers open the same line.
+fn editor_lines(text: &str) -> impl Iterator<Item = &str> {
+    let mut rest = Some(text);
+    std::iter::from_fn(move || {
+        let current = rest?;
+        let Some(at) = current.find(['\r', '\n']) else {
+            rest = None;
+            return Some(current);
+        };
+        let terminator = if current[at..].starts_with("\r\n") {
+            2
+        } else {
+            1
+        };
+        rest = Some(&current[at + terminator..]);
+        Some(&current[..at])
+    })
 }
 
 fn utf16_len(text: &str) -> usize {
@@ -243,8 +265,7 @@ fn scan(
             continue;
         }
         let mut matches = Vec::new();
-        for (number, line) in text.split('\n').enumerate() {
-            let line = line.strip_suffix('\r').unwrap_or(line);
+        for (number, line) in editor_lines(&text).enumerate() {
             let Some(hit) = line_match(line, number + 1, matcher) else {
                 continue;
             };
@@ -422,6 +443,46 @@ mod tests {
             )),
             "{long}"
         );
+    }
+
+    #[test]
+    fn regex_anchors_match_every_line_of_a_file() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("a.rs"),
+            "// header\r\nuse foo;\r\nlet x = 1;\r\n",
+        )
+        .unwrap();
+        let lines = |query| {
+            search(
+                root.path(),
+                &["a.rs"],
+                content_matcher(query, true, false, true).unwrap(),
+            )
+            .files
+            .iter()
+            .flat_map(|file| file.matches.iter().map(|hit| hit.line))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(lines("^use "), [2]);
+        assert_eq!(lines(";$"), [2, 3]);
+    }
+
+    #[test]
+    fn lone_carriage_returns_end_lines_as_in_the_editor() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("mac.txt"), "one\rneedle\r\nthree\nneedle").unwrap();
+        let result = search(
+            root.path(),
+            &["mac.txt"],
+            content_matcher("^needle$", true, false, true).unwrap(),
+        );
+        let lines = result.files[0]
+            .matches
+            .iter()
+            .map(|hit| hit.line)
+            .collect::<Vec<_>>();
+        assert_eq!(lines, [2, 4]);
     }
 
     #[test]
