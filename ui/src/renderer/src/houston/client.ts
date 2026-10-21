@@ -84,6 +84,22 @@ export type { PrMutationKind } from './generated/PrMutationKind'
 export type { PrStack } from './generated/PrStack'
 export type { PrStackLayer } from './generated/PrStackLayer'
 export type { PrStackHead } from './generated/PrStackHead'
+export type { MergeQueueEntry } from './generated/MergeQueueEntry'
+export type { MergeQueueGate } from './generated/MergeQueueGate'
+export type { MergeQueueGateKind } from './generated/MergeQueueGateKind'
+export type { MergeQueueGateState } from './generated/MergeQueueGateState'
+export type { MergeQueueGitHubHold } from './generated/MergeQueueGitHubHold'
+export type { MergeQueueHandOff } from './generated/MergeQueueHandOff'
+export type { MergeQueueHandOffInfo } from './generated/MergeQueueHandOffInfo'
+export type { MergeQueueAway } from './generated/MergeQueueAway'
+export type { MergeQueueFailure } from './generated/MergeQueueFailure'
+export type { MergeQueueFailureKind } from './generated/MergeQueueFailureKind'
+export type { MergeQueueLogEntry } from './generated/MergeQueueLogEntry'
+export type { MergeQueueLogKind } from './generated/MergeQueueLogKind'
+export type { MergeQueueParkedCount } from './generated/MergeQueueParkedCount'
+export type { MergeQueueSettings } from './generated/MergeQueueSettings'
+export type { MergeQueueStatus } from './generated/MergeQueueStatus'
+export type { MergeQueueVerification } from './generated/MergeQueueVerification'
 export type { PullRequestLink } from './generated/PullRequestLink'
 export type { PullRequestLinkSource } from './generated/PullRequestLinkSource'
 export type { PullRequestState } from './generated/PullRequestState'
@@ -858,6 +874,69 @@ export class HoustonClient {
     const request = this.nextPrRequest()
     this.send({ type: 'pr_unlink', dir, request })
     return request
+  }
+
+  /** The merge queue of the workspace `dir` belongs to; the reply echoes `dir`. */
+  mergeQueueGet(dir: string): void {
+    this.send({ type: 'merge_queue_get', dir })
+  }
+
+  mergeQueueEnqueue(dir: string, number: number, dependsOn: number | null = null): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_enqueue', dir, number, depends_on: dependsOn, request })
+    return request
+  }
+
+  mergeQueueDequeue(dir: string, number: number): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_dequeue', dir, number, request })
+    return request
+  }
+
+  /** Merges the queue head, pinned to the head commit the user saw. */
+  mergeQueueMergeHead(dir: string, number: number, expectedHeadSha: string, method: PrMergeMethod): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_merge_head', dir, number, expected_head_sha: expectedHeadSha, method, request })
+    return request
+  }
+
+  /** The workspace's policy, command and limit; the daemon refuses the policy without a command. */
+  mergeQueueSettingsSet(dir: string, mergeWhenVerified: boolean, verificationCommand: string, timeLimitMinutes: number): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_settings_set', dir, merge_when_verified: mergeWhenVerified, verification_command: verificationCommand, time_limit_minutes: timeLimitMinutes, request })
+    return request
+  }
+
+  mergeQueuePause(dir: string, paused: boolean): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_pause', dir, paused, request })
+    return request
+  }
+
+  /** Every queue on every daemon; each answers with its summary. */
+  mergeQueuePauseAll(paused: boolean): void {
+    this.send({ type: 'merge_queue_pause_all', paused })
+  }
+
+  mergeQueueRetry(dir: string, number: number): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_retry', dir, number, request })
+    return request
+  }
+
+  /** Opens a revert pull request for a queue merge; nothing is pushed to the base. */
+  mergeQueueRevert(dir: string, number: number): number {
+    const request = this.nextPrRequest()
+    this.send({ type: 'merge_queue_revert', dir, number, request })
+    return request
+  }
+
+  mergeQueueAcknowledge(dir: string): void {
+    this.send({ type: 'merge_queue_acknowledge', dir })
+  }
+
+  mergeQueueSummaryGet(): void {
+    this.send({ type: 'merge_queue_summary_get' })
   }
 
   prMerge(

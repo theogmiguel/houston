@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import type { HoustonClient, PrListItem, PrListState, PrSort, PullRequestLink, Workspace } from '../../houston/client'
+import type { AgentKind, HoustonClient, PrListItem, PrListState, PrSort, PullRequestLink, Workspace } from '../../houston/client'
 import type { SurfaceKind } from '../../scmPanel'
 
 const PullRequestsScreen = lazy(() =>
@@ -23,6 +23,8 @@ interface PullRequestsRailScreenProps {
   onRefresh: () => void
   onOpenSurface?: (surface: SurfaceKind) => void
   onOpenUrlInPane?: (url: string) => void
+  onHandOff?: (worktree: string, prompt: string, agent: AgentKind) => void
+  onOpenMergeQueueSettings?: () => void
 }
 
 export function PullRequestsRailScreen(props: PullRequestsRailScreenProps): React.JSX.Element {

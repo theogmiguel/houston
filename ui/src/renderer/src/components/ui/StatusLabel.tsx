@@ -26,7 +26,11 @@ export const STATUS_LABELS = [
   'Stale',
   'Kept',
   'Watching',
-  'Verified'
+  'Verified',
+  'Blocked',
+  'Merged',
+  'Verifying',
+  'Parked'
 ] as const
 
 export type StatusLabelValue = (typeof STATUS_LABELS)[number]
@@ -59,7 +63,11 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Stale: 'var(--warn)',
   Kept: 'var(--text-faint)',
   Watching: 'var(--info)',
-  Verified: 'var(--ok)'
+  Verified: 'var(--ok)',
+  Blocked: 'var(--warn)',
+  Merged: 'var(--ok)',
+  Verifying: 'var(--info)',
+  Parked: 'var(--stop)'
 }
 
 const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
@@ -71,6 +79,9 @@ const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
   Paused: 'text-[var(--text-muted)]',
   Idle: 'text-[var(--text-muted)]'
 }
+
+/** Words for work in progress whose dot pulses; reduced motion keeps it still. */
+const PULSING: ReadonlySet<StatusLabelValue> = new Set(['Verifying'])
 
 type PillTone = 'waiting' | 'failed' | 'done' | 'working' | 'unknown'
 
@@ -91,7 +102,7 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
     <span role={variant === 'dot' ? 'img' : undefined} aria-label={typeof children === 'string' ? children : status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
         aria-hidden="true"
-        className="agent-dot h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"
+        className={`agent-dot h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full ${PULSING.has(status) ? 'loop-anim [--dot-pulse-opacity:var(--opacity-connection-dot-pulse)] motion-safe:[animation:var(--motion-connection-pulse)]' : ''}`}
         style={hollow
           ? { backgroundColor: 'transparent', border: '1px solid var(--text-faint)' }
           : { backgroundColor: STATUS_DOT[status] }}

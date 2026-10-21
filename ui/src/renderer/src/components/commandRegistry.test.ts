@@ -204,6 +204,32 @@ describe('commandRegistry — buildCommands', () => {
     expect(selectNavRow).toHaveBeenCalledWith('prs')
   })
 
+  it('opens the merge queue, and adds the focused pane’s pull request only when it has an open one', () => {
+    const openMergeQueue = vi.fn()
+    const addToMergeQueue = vi.fn()
+    const commands = buildCommands({ actions: makeActions({ openMergeQueue, addToMergeQueue }), hasWorkspace: true, workspaces: [] })
+    commands.find((c) => c.id === 'go-to.merge-queue')?.run()
+    expect(openMergeQueue).toHaveBeenCalled()
+    const add = commands.find((c) => c.id === 'pr.add-to-merge-queue')
+    expect(add?.title).toBe('Add to merge queue')
+    add?.run()
+    expect(addToMergeQueue).toHaveBeenCalled()
+    const without = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] }).find((c) => c.id === 'pr.add-to-merge-queue')
+    expect(without?.enabled).toBe(false)
+    expect(without?.disabledReason).toMatch(/no open pull request/)
+  })
+
+  it('pauses the selected workspace’s merge queue, and says why it cannot with every workspace shown', () => {
+    const pauseMergeQueue = vi.fn()
+    const pause = buildCommands({ actions: makeActions({ pauseMergeQueue }), hasWorkspace: true, workspaces: [] }).find((c) => c.id === 'pr.pause-merge-queue')
+    expect(pause?.title).toBe('Pause merge queue')
+    pause?.run()
+    expect(pauseMergeQueue).toHaveBeenCalled()
+    const without = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] }).find((c) => c.id === 'pr.pause-merge-queue')
+    expect(without?.enabled).toBe(false)
+    expect(without?.disabledReason).toMatch(/Select a workspace/)
+  })
+
   it('any pending Settings section is offered but disabled, with a reason', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
     for (const section of SETTINGS_SECTIONS.filter((x) => x.pending)) {

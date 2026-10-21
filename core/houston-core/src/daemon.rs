@@ -1528,6 +1528,9 @@ impl DelegationSettleSample {
 mod child_inputs;
 mod conflict_pass;
 mod harness_review;
+mod merge_queue;
+mod merge_queue_github;
+mod merge_queue_runner;
 mod provider_deny;
 mod remote;
 mod remote_phone;
@@ -1807,6 +1810,15 @@ pub struct Daemon {
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     worktree_cleanup_notify: tokio::sync::Notify,
     conflict_prediction: Mutex<conflict_pass::ConflictState>,
+    /// The machine's one verification slot, shared by every workspace's queue.
+    merge_queue_slot: Mutex<Option<merge_queue_runner::Running>>,
+    merge_queue_wake: tokio::sync::Notify,
+    /// The workspace served last, so the slot goes round the workspaces in turn.
+    merge_queue_cursor: Mutex<Option<String>>,
+    /// The read pass and the runner both take moved heads back from GitHub: one at a time.
+    merge_queue_take_back: Mutex<()>,
+    /// One landing at a time: the runner's and the user's Merge never push or merge together.
+    merge_queue_landing: Mutex<()>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -3566,6 +3578,11 @@ impl Daemon {
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             worktree_cleanup_notify: tokio::sync::Notify::new(),
             conflict_prediction: Mutex::new(conflict_pass::ConflictState::default()),
+            merge_queue_slot: Mutex::new(None),
+            merge_queue_wake: tokio::sync::Notify::new(),
+            merge_queue_cursor: Mutex::new(None),
+            merge_queue_take_back: Mutex::new(()),
+            merge_queue_landing: Mutex::new(()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),

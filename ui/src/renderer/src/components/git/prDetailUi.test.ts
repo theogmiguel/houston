@@ -73,6 +73,7 @@ function detail(o: Partial<PrDetail> = {}): PrDetail {
     threads_message: null,
     auto_merge_enabled: null,
     auto_merge_method: null,
+    merge_methods: [],
     cross_repository: false,
     ...o
   }

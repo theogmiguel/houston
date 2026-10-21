@@ -183,6 +183,7 @@ export function WorkspaceDefaultsSection({
           <Toggle
             on={openLinksInPane}
             onChange={onOpenLinksInPane}
+            aria-label="Open links in a browser pane"
           />
         </Row>
       </SettingsList>

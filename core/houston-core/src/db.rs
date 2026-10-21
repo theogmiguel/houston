@@ -10,6 +10,7 @@ mod child_inputs;
 mod harness;
 mod instructions;
 mod intake;
+mod merge_queue;
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
@@ -2326,6 +2327,7 @@ impl Db {
         )?;
         add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
         instructions::init(&conn)?;
+        merge_queue::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
