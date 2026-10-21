@@ -240,6 +240,11 @@ impl Scrollback {
     }
 
     pub fn persist(&self, path: &Path) -> Result<()> {
+        write_snapshot(path, self.snapshot())
+    }
+
+    /// The checkpoint file's bytes, so a caller can release the ring's lock before writing.
+    pub fn snapshot(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(17 + self.buf.len());
         out.extend_from_slice(PERSIST_MAGIC);
         out.push(PERSIST_VERSION);
@@ -248,11 +253,7 @@ impl Scrollback {
         let (first, second) = self.buf.as_slices();
         out.extend_from_slice(first);
         out.extend_from_slice(second);
-        let tmp = path.with_extension("bin.tmp");
-        crate::fs_retry::write(&tmp, out)
-            .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
-        crate::fs_retry::rename(&tmp, path)
-            .with_context(|| format!("moving {} into place", tmp.display()))
+        out
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -300,6 +301,16 @@ impl Scrollback {
             generation,
         })
     }
+}
+
+/// Writes a `Scrollback::snapshot` to `path` through a temporary file; callers that share a
+/// checkpoint path must serialise their writes.
+pub fn write_snapshot(path: &Path, snapshot: Vec<u8>) -> Result<()> {
+    let tmp = path.with_extension("bin.tmp");
+    crate::fs_retry::write(&tmp, snapshot)
+        .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
+    crate::fs_retry::rename(&tmp, path)
+        .with_context(|| format!("moving {} into place", tmp.display()))
 }
 
 #[cfg(test)]
