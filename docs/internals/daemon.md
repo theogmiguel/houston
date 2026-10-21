@@ -666,8 +666,11 @@ The constraints:
   the request against that commit, or the hand-off is taken back and the entry fails. While
   GitHub holds the head (`github_json`) the entry is Watching and stays first in line.
   GitHub merging it runs the after-merge steps above; GitHub removing it, turning its
-  auto-merge off or failing a check on it takes the failure path with GitHub's reason, and
-  a new head takes the hand-off back so GitHub never merges an unverified commit. Dequeue
+  auto-merge off or failing a check on it takes the failure path with GitHub's reason. A
+  new head takes the hand-off back in the PR watch read pass that first reports it, not on
+  the runner's pass, which a verification in any workspace can hold for its whole time
+  limit. GitHub keeps auto-merge armed after a push with write access, so it can merge the
+  unverified head only if its required checks pass before that read. Dequeue
   and every pause take it back too, which loses the place in GitHub's merge queue.
 
 The merge method is the repository's allowed method, squash first, read from
