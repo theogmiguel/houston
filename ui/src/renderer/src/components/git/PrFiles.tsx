@@ -18,7 +18,7 @@ import { PrTab } from '../ui/PrTab'
 import { Tooltip } from '../ui/Tooltip'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { draftKey, parsePrDiff, type PrDiffFile, type PrDiffLine } from './prDetailUi'
-import { markPrFileUnviewed, markPrFileViewed, patchHash, prViewedKey, usePrViewedMarks, viewedState, type PrFileViewedState } from './prViewedMarks'
+import { markPrFileUnviewed, markPrFileViewed, patchHash, prViewedKey, usePrViewedMarks, viewedFingerprint, viewedState, type PrFileViewedState } from './prViewedMarks'
 import type { PrDiffView } from './usePrDetailSubscription'
 import { ScmNotice } from './ScmNotice'
 function anchorFor(line: PrDiffLine): { side: PrDiffSide; line: number } | null {
@@ -181,13 +181,7 @@ export function PrFiles({
   // One fingerprint per file at parse time; the mark store compares it with
   // the hash taken when the file was last viewed.
   const files = useMemo(
-    () =>
-      diff === null
-        ? []
-        : parsePrDiff(diff.patch).map((file) => ({
-            file,
-            hash: patchHash(file.lines.map((line) => line.text).join('\n'))
-          })),
+    () => (diff === null ? [] : parsePrDiff(diff.patch).map((file) => ({ file, hash: patchHash(viewedFingerprint(file)) }))),
     [diff]
   )
   const prKey = link === null ? null : prViewedKey(link.host, link.repository, link.number)

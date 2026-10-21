@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { PrDiffFile } from './prDetailUi'
 
 const STORAGE_KEY = 'tr-pr-viewed-marks'
 
@@ -32,11 +33,22 @@ function fnv1a(text: string, backwards: boolean): number {
   return hash >>> 0
 }
 
-/** A 16-hex-digit fingerprint of one file's patch text, taken at mark time.
+/** A 16-hex-digit fingerprint of a file's `viewedFingerprint`, taken at mark time.
  * Two FNV-1a passes (forward and backward) stand in for the unavailable
- * synchronous digest; a patch that differs in any line differs here. */
+ * synchronous digest; text that differs in any line differs here. */
 export function patchHash(text: string): string {
   return fnv1a(text, false).toString(16).padStart(8, '0') + fnv1a(text, true).toString(16).padStart(8, '0')
+}
+
+/** The fingerprint input for one file: rename identity plus only the added and
+ * removed lines, whose raw text keeps its `+`/`-`. Meta and hunk lines stay out, so a
+ * rebase that renumbers hunks or moves index blobs does not un-view an unchanged file. */
+export function viewedFingerprint(file: PrDiffFile): string {
+  const parts: string[] = [file.previousPath ?? '', file.path]
+  for (const line of file.lines) {
+    if (line.kind === 'add' || line.kind === 'del') parts.push(line.text)
+  }
+  return parts.join('\n')
 }
 
 /** The mark's meaning against the patch now on screen: a stored hash that no

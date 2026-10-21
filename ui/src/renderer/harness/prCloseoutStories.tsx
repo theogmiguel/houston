@@ -4,7 +4,7 @@ import { PrBrowse } from '../src/components/git/PrBrowse'
 import { PrComments, PrThreads } from '../src/components/git/PrDiscussion'
 import { PrEmptyStates } from '../src/components/git/PrEmptyStates'
 import { PrFiles } from '../src/components/git/PrFiles'
-import { prViewedKey, patchHash, markPrFileViewed, clearPrViewedMarksForTests } from '../src/components/git/prViewedMarks'
+import { prViewedKey, patchHash, markPrFileViewed, clearPrViewedMarksForTests, viewedFingerprint } from '../src/components/git/prViewedMarks'
 import { parsePrDiff } from '../src/components/git/prDetailUi'
 import { PrFooterBar } from '../src/components/git/PrFooterBar'
 import { PrLabelPicker, PrReviewerPicker } from '../src/components/git/PrPickers'
@@ -155,7 +155,7 @@ export function PrFilesViewedMarksCapture(): React.JSX.Element {
     clearPrViewedMarksForTests()
     const key = prViewedKey(link.host, link.repository, link.number)
     const [viewed, changed] = parsePrDiff(marksPatch)
-    markPrFileViewed(key, viewed.path, patchHash(viewed.lines.map((line) => line.text).join('\n')))
+    markPrFileViewed(key, viewed.path, patchHash(viewedFingerprint(viewed)))
     markPrFileViewed(key, changed.path, patchHash('the patch as it stood when the file was viewed'))
   }, [])
   return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles link={link} diff={{ number: 412, patch: marksPatch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>

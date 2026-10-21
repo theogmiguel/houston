@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { PullRequestLink } from '../../houston/client'
 import type { PrDiffView } from './usePrDetailSubscription'
 import { parsePrDiff } from './prDetailUi'
-import { clearPrViewedMarksForTests, markPrFileViewed, patchHash, prViewedKey } from './prViewedMarks'
+import { clearPrViewedMarksForTests, markPrFileViewed, patchHash, prViewedKey, viewedFingerprint } from './prViewedMarks'
 import { PrFiles } from './PrFiles'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -51,7 +51,7 @@ const FILES = parsePrDiff(PATCH)
 function fileHash(path: string): string {
   const file = FILES.find((candidate) => candidate.path === path)
   if (file === undefined) throw new Error(`no fixture file ${path}`)
-  return patchHash(file.lines.map((line) => line.text).join('\n'))
+  return patchHash(viewedFingerprint(file))
 }
 
 function renderFiles(patchText: string): ReturnType<typeof render> {
@@ -111,6 +111,19 @@ describe('PrFiles viewed marks', () => {
     expect(viewedButton(container, 'core/orchestrate.rs').getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText('Changed since viewed')).toBeNull()
     expect(localStorage.getItem('tr-pr-viewed-marks')).toContain(fileHash('core/orchestrate.rs'))
+  })
+
+  it('keeps a viewed mark when a rebase only moves hunk headers and index blobs', () => {
+    const first = renderFiles(PATCH)
+    fireEvent.click(viewedButton(first.container, 'core/orchestrate.rs'))
+    first.unmount()
+    const rebased = PATCH.replace(
+      '--- a/core/orchestrate.rs\n+++ b/core/orchestrate.rs\n@@ -10,2 +10,3 @@',
+      'index 1a2b3c4..5d6e7f8 100644\n--- a/core/orchestrate.rs\n+++ b/core/orchestrate.rs\n@@ -108,2 +208,3 @@'
+    )
+    const second = renderFiles(rebased)
+    expect(viewedButton(second.container, 'core/orchestrate.rs').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByText('Changed since viewed')).toBeNull()
   })
 
   it('unviewing a persisted mark withdraws it for later sessions', () => {

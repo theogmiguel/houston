@@ -7,8 +7,10 @@ import {
   patchHash,
   prViewedKey,
   prViewedMarks,
+  viewedFingerprint,
   viewedState
 } from './prViewedMarks'
+import { parsePrDiff } from './prDetailUi'
 
 const KEY = prViewedKey('github.com', 'acme/houston', 412)
 
@@ -41,6 +43,48 @@ describe('viewedState', () => {
 
   it('reads a stale mark as changed, never viewed', () => {
     expect(viewedState('a1b2c3d4e5f60718', 'ffffffffffffffff')).toBe('changed')
+  })
+})
+
+describe('viewedFingerprint', () => {
+  const REBASED = `diff --git a/core/orchestrate.rs b/core/orchestrate.rs
+index 1a2b3c4..5d6e7f8 100644
+--- a/core/orchestrate.rs
++++ b/core/orchestrate.rs
+@@ -108,2 +208,3 @@
+-    wake_parent(parent);
++    for parent in parents {
++        wake_parent(parent);
++    }
+`
+  const ORIGINAL = `diff --git a/core/orchestrate.rs b/core/orchestrate.rs
+index 9a8b7c6..0d1e2f3 100644
+--- a/core/orchestrate.rs
++++ b/core/orchestrate.rs
+@@ -10,2 +10,3 @@
+-    wake_parent(parent);
++    for parent in parents {
++        wake_parent(parent);
++    }
+`
+
+  it('ignores hunk headers and index lines, so identical edits on a newer base keep their mark', () => {
+    expect(patchHash(viewedFingerprint(parsePrDiff(REBASED)[0]))).toBe(patchHash(viewedFingerprint(parsePrDiff(ORIGINAL)[0])))
+  })
+
+  it('changes when an added line changes', () => {
+    const edited = ORIGINAL.replace('+        wake_parent(parent);', '+        wake_parents(parents);')
+    expect(patchHash(viewedFingerprint(parsePrDiff(edited)[0]))).not.toBe(patchHash(viewedFingerprint(parsePrDiff(ORIGINAL)[0])))
+  })
+
+  it('changes when a line moves between the added and removed sides', () => {
+    const swapped = ORIGINAL.replace('-    wake_parent(parent);', '+    wake_parent(parent);')
+    expect(patchHash(viewedFingerprint(parsePrDiff(swapped)[0]))).not.toBe(patchHash(viewedFingerprint(parsePrDiff(ORIGINAL)[0])))
+  })
+
+  it('carries the rename identity, so a renamed file reads changed', () => {
+    const renamed = ORIGINAL.replace('diff --git a/core/orchestrate.rs b/core/orchestrate.rs\nindex 9a8b7c6..0d1e2f3 100644\n--- a/core/orchestrate.rs', 'diff --git a/core/old.rs b/core/orchestrate.rs\nindex 9a8b7c6..0d1e2f3 100644\n--- a/core/old.rs')
+    expect(patchHash(viewedFingerprint(parsePrDiff(renamed)[0]))).not.toBe(patchHash(viewedFingerprint(parsePrDiff(ORIGINAL)[0])))
   })
 })
 
