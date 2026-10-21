@@ -111,7 +111,7 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
@@ -559,6 +559,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'surface/pane-header-orchestrator': () => <PaneOrchestratorHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/sleeping': () => <PaneSleepingStory />,
+  'panes/limited': () => <PaneLimitedStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,

@@ -47,6 +47,7 @@ fn info(id: u32, project: &Path, agent: proto::AgentKind) -> proto::SessionInfo 
         latest_prompt: Some("Last user prompt".into()),
         last_agent_message: Some("Finished output".into()),
         slept_at_ms: None,
+        limit: None,
     }
 }
 

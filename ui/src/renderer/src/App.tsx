@@ -1530,6 +1530,13 @@ export function App(): React.JSX.Element {
               return next;
             });
             break;
+          case "session_limit":
+            setSessions((prev) => {
+              const s = prev.get(msg.session);
+              if (!s) return prev;
+              return new Map(prev).set(msg.session, { ...s, limit: msg.limit ?? null });
+            });
+            break;
 
           case "clipboard_set":
             if (osc52Ref.current) {

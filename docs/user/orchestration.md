@@ -466,9 +466,11 @@ Spawn warnings return to the orchestrator. Addressed to you is hidden when empty
 
 Provider usage limits and API failures reported by Claude or OpenCode leave
 the child available for inspection with a failed delegation and send its parent
-the reported reason. Send a follow-up when the provider allows another turn;
-Houston cannot infer a limit reset time from these hooks. A provider may also
-continue on its own.
+the reported reason. A Claude rate limit sends one `claude limited` note per limit
+episode, naming the account profile; the child shows **Limited** until its next turn
+starts, and a `pane_wait` timeout on it names the limit. Claude's hooks report no
+reset time, so Houston cannot say when the limit resets. Send a follow-up when the
+provider allows another turn; Claude may also continue on its own.
 
 When a child's process ends before it hands anything back, for example a CLI that
 fails at launch, its parent receives the exit status and the last lines the pane
