@@ -1,6 +1,6 @@
 import { childSummary } from '../childStatus'
 import { ChildInputDetails, ParentOwnedInput } from './ChildInputDetails'
-import { attentionReason, attentionStatus } from '../sessionAttention'
+import { addressedToOperator, attentionReason, attentionStatus } from '../sessionAttention'
 import { DelegationResults } from './DelegationResults'
 import { InstructionQueue } from './InstructionQueue'
 import { OverviewButton } from './ui/OverviewButtonRoles'
@@ -89,7 +89,7 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   }, [client, parentId, children.map((child) => `${child.id}:${child.delegation?.state}:${child.delegation?.result_staged}`).join(',')])
   useEffect(() => { setResults([]); setNextMessageId(null); setTruncated(false) }, [parentId])
   const childIds = new Set(children.map((child) => child.id))
-  const addressed = rows.filter((row) => row.to_session === 0 && row.resolved_at == null && (row.reason === 'parent_dead' || (row.from_session != null && sessions.get(row.from_session)?.spawned_by === null)) && (row.original_to === parentId || row.from_session === parentId || (row.from_session != null && childIds.has(row.from_session))))
+  const addressed = rows.filter((row) => addressedToOperator(row, sessions) && (row.original_to === parentId || row.from_session === parentId || (row.from_session != null && childIds.has(row.from_session))))
   const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
   const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : CHILD_GROUPS.indexOf(childGroup(a)) - CHILD_GROUPS.indexOf(childGroup(b)))

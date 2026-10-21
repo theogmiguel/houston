@@ -44,6 +44,19 @@ neutral gray for ready, amber for needs input, and a hollow gray dot when status
 unavailable. Green is reserved for successful completion and red for failure. A grid's
 tooltip lists the contributing pane states, so the indicator does not rely on color alone.
 
+### Plan and rate limits
+
+A Claude pane whose turn ends with a reported rate limit (`StopFailure` with
+`error: rate_limit`) shows a neutral **Limited** detail beside its status. The tooltip names
+the error and the details Claude reported. Claude's hooks report no reset time, so the
+detail does not show one. It clears when the next turn starts or when Claude reports that
+its own automatic continue resumed the task (`quota_auto_resume_fired`). Limited is not a
+request for input and raises no alert. It is held in memory, so a daemon restart clears it.
+
+Other providers do not show Limited: Codex, Cursor and Antigravity report no limit through
+the hooks Houston installs, Grok and OpenCode report a failed turn without classifying it as
+a limit, and ZCode reports no failed turn at all.
+
 On Linux with user systemd, Codex 0.160.0 and later use a private app-server for each
 pane while keeping the normal Codex terminal. Houston confirms startup readiness from the provider's
 thread status, so a restored pane can become Idle before its first turn. Houston trusts

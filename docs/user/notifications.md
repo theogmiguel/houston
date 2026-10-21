@@ -9,3 +9,5 @@ On Linux, the desktop notification service controls whether these notices are al
 In-app notifications appear while Houston is focused when the pane is in another grid or workspace. A pane already on screen only changes its status indicator. Finished notices dismiss after a few seconds; needs-input notices stay until opened or dismissed. After a finished notice dismisses, the pane's rail card keeps the unread mark — the grid name in bold with a dot — until you focus that pane.
 
 Child panes report to the agent that started them, not to you. The taskbar icon counts the panes waiting on you.
+
+To visit each request in turn, press the prefix key and then `!` (**Next request**). It goes to the oldest pane in Needs input, child escalated to you or message addressed to you, in any workspace; `Backspace` after the prefix returns to where you were. See [Keybindings](keybindings.md).
