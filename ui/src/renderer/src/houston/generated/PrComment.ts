@@ -6,4 +6,9 @@ export type PrComment = {
  * GitHub's node id, where the read that produced this comment carried one;
  * it is what an edit or a reaction on the remark names.
  */
-id?: string | null, author: string, body: string, created_at: number, url?: string | null, reactions: Array<PrReactionCount>, };
+id?: string | null, author: string, body: string, created_at: number, url?: string | null, reactions: Array<PrReactionCount>,
+/**
+ * GitHub reports the author as an app account rather than a person; a read
+ * that did not ask GitHub leaves it false.
+ */
+bot: boolean, };

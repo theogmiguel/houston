@@ -498,6 +498,7 @@ pub(crate) mod tests {
             created_at: 2,
             url: None,
             reactions: Vec::new(),
+            bot: false,
         });
         detail.reviews.push(proto::PrReview {
             id: Some("review-1".into()),
@@ -520,6 +521,7 @@ pub(crate) mod tests {
                 created_at: 5,
                 url: None,
                 reactions: Vec::new(),
+                bot: false,
             }],
         });
         detail.comments.push(proto::PrComment {
@@ -529,6 +531,7 @@ pub(crate) mod tests {
             created_at: 3,
             url: None,
             reactions: Vec::new(),
+            bot: false,
         });
         detail.comments.push(proto::PrComment {
             id: Some("3".into()),
@@ -537,6 +540,7 @@ pub(crate) mod tests {
             created_at: 6,
             url: None,
             reactions: Vec::new(),
+            bot: false,
         });
         let first = evaluate(
             state(),
@@ -574,6 +578,7 @@ pub(crate) mod tests {
             created_at: 2,
             url: None,
             reactions: Vec::new(),
+            bot: false,
         });
         let result = evaluate(
             comment_state,

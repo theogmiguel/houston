@@ -341,6 +341,7 @@ fn comments(v: Option<&serde_json::Value>) -> Vec<PrComment> {
             created_at: timestamp(c.get("createdAt")).unwrap_or(0),
             url: text(c.get("url")),
             reactions: Vec::new(),
+            bot: false,
         })
         .collect()
 }
@@ -661,7 +662,7 @@ const THREADS_QUERY_TEMPLATE: &str = "query PrThreads($owner: String!, $name: St
     pullRequest(number: $number) { \
     id \
     __REACTION_GROUPS__ \
-    comments(first: 100) { nodes { id __REACTION_GROUPS__ } } \
+    comments(first: 100) { nodes { id author { __typename } __REACTION_GROUPS__ } } \
     reviews(first: 100) { nodes { id __REACTION_GROUPS__ } } \
     reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } } \
     latestReviews(first: 50) { nodes { author { login } } } \
@@ -673,7 +674,7 @@ const THREADS_QUERY_TEMPLATE: &str = "query PrThreads($owner: String!, $name: St
     comments(first: 50) { \
     totalCount \
     pageInfo { hasNextPage } \
-    nodes { id author { login } body createdAt url __REACTION_GROUPS__ } } } } } } }";
+    nodes { id author { __typename login } body createdAt url __REACTION_GROUPS__ } } } } } } }";
 
 fn threads_query() -> String {
     THREADS_QUERY_TEMPLATE.replace("__REACTION_GROUPS__", REACTION_GROUPS)
@@ -687,6 +688,9 @@ pub struct PrThreadsData {
     /// Reactions by node id, for the conversation comments and reviews the `gh`
     /// JSON read reports none on.
     pub reactions_by_id: Vec<(String, Vec<proto::PrReactionCount>)>,
+    /// Conversation comments whose author GitHub types as a bot, by node id,
+    /// for the same reason: the `gh` JSON read carries only the login.
+    pub bot_comment_ids: Vec<String>,
     pub reviewers: Vec<proto::PrReviewer>,
 }
 
@@ -709,6 +713,7 @@ pub fn threads(dir: &Path, repository: &str, number: u32) -> Result<PrThreadsDat
     let (threads, mut truncated) = threads_from(pull_request.get("reviewThreads"));
 
     let mut reactions_by_id: Vec<(String, Vec<proto::PrReactionCount>)> = Vec::new();
+    let mut bot_comment_ids: Vec<String> = Vec::new();
     for group in ["comments", "reviews"] {
         if let Some(nodes) = pull_request
             .pointer(&format!("/{group}/nodes"))
@@ -718,6 +723,9 @@ pub fn threads(dir: &Path, repository: &str, number: u32) -> Result<PrThreadsDat
                 let Some(id) = text(node.get("id")) else {
                     continue;
                 };
+                if group == "comments" && bot_author(node) {
+                    bot_comment_ids.push(id.clone());
+                }
                 let counts = reaction_counts(node.get(REACTION_GROUPS_FIELD_NAME));
                 if !counts.is_empty() {
                     reactions_by_id.push((id, counts));
@@ -787,8 +795,15 @@ pub fn threads(dir: &Path, repository: &str, number: u32) -> Result<PrThreadsDat
         truncated,
         reactions: reaction_counts(pull_request.get(REACTION_GROUPS_FIELD_NAME)),
         reactions_by_id,
+        bot_comment_ids,
         reviewers,
     })
+}
+
+/// GitHub's GraphQL login for an app omits the `[bot]` suffix its REST API
+/// shows, so the actor type is the only reliable mark.
+fn bot_author(node: &Value) -> bool {
+    node.pointer("/author/__typename").and_then(Value::as_str) == Some("Bot")
 }
 
 /// The GraphQL alias under which reaction groups come back; the same name in the
@@ -843,6 +858,7 @@ fn threads_from(v: Option<&Value>) -> (Vec<proto::PrThread>, bool) {
                     created_at: timestamp(c.get("createdAt")).unwrap_or(0),
                     url: text(c.get("url")),
                     reactions: reaction_counts(c.get(REACTION_GROUPS_FIELD_NAME)),
+                    bot: bot_author(c),
                 });
             }
         }
@@ -1751,6 +1767,34 @@ mod tests {
         assert!(
             malformed.is_empty(),
             "a nameless thread is skipped, not fatal"
+        );
+    }
+
+    #[test]
+    fn a_bot_author_is_marked_from_its_actor_type_not_its_login() {
+        let (threads, _) = threads_from(Some(&json!({
+            "totalCount": 1,
+            "nodes": [{
+                "id": "PRT_1", "isResolved": false, "isOutdated": false,
+                "comments": {"totalCount": 3, "nodes": [
+                    {"id": "C1", "author": {"__typename": "Bot", "login": "review-app"}, "body": "a"},
+                    {"id": "C2", "author": {"__typename": "User", "login": "rev"}, "body": "b"},
+                    {"id": "C3", "author": {"__typename": "User", "login": "fake[bot]"}, "body": "c"},
+                ]},
+            }],
+        })));
+        let marks: Vec<bool> = threads[0].comments.iter().map(|c| c.bot).collect();
+        assert_eq!(marks, vec![true, false, false]);
+        assert!(bot_author(&json!({"author": {"__typename": "Bot"}})));
+        assert!(
+            !bot_author(&json!({"author": null})),
+            "a deleted account is not a bot"
+        );
+        let query = threads_query();
+        assert!(
+            query.contains("comments(first: 100) { nodes { id author { __typename } ")
+                && query.contains("author { __typename login }"),
+            "both comment reads must ask for the actor type: {query}"
         );
     }
 
