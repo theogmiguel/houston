@@ -70,6 +70,12 @@ Choose **Retry** after the current work finishes, or refine the query.
 An editor pane holds a single file. It shares the same underlying buffer as a Files
 pane's editor half, so a file open in both places never drifts out of sync.
 
+An image opens fitted to the pane and zooms from that fit up to 800%. Scroll over it to
+zoom around the pointer, drag to pan a zoomed image, and double-click to switch between
+fit and 100%. When the image has keyboard focus, `+` and `-` zoom, `0` fits and `1` shows
+it at 100%; these keys are not captured anywhere else. The control in the corner shows
+the current zoom and returns to fit.
+
 ## Browser surface
 
 A browser tab is a real browser surface in the side panel, and an agent can drive it:
