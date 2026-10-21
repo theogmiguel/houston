@@ -169,6 +169,7 @@ mod windows_ecoqos_sweep;
 mod windows_instruction_submit;
 mod windows_orchestration_wire;
 mod windows_pty_lifecycle;
+mod windows_zcode_resume_wire;
 mod workspace_actions_wire;
 mod worktree_cleanup_wire;
 mod worktree_include_wire;

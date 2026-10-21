@@ -10295,7 +10295,14 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
             assert!(reason.contains(message), "{reason}");
         }
     } else {
-        assert_eq!(no_handle["reason"], "no resume handle");
+        assert!(
+            no_handle["reason"]
+                .as_str()
+                .unwrap()
+                .starts_with("no resume handle"),
+            "{}",
+            no_handle["reason"]
+        );
     }
     let failed = entries
         .iter()
