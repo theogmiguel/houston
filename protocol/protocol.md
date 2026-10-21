@@ -1,4 +1,4 @@
-# Wire protocol v147
+# Wire protocol v148
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -405,6 +405,7 @@ every refusal names the setting.
 | Message | Fields | Reply |
 |---|---|---|
 | `host_info_get` | — | `host_info` (direct), never a broadcast — a point-in-time snapshot the client re-polls (~30 s is the recommended cadence) |
+| `storage_reclaim` | — | `storage_reclaimed` (direct), then `host_info` (bcast) after a reclaim. Checkpoints the WAL (`TRUNCATE`), runs `VACUUM` and checkpoints again, off the connection task. Refused, with nothing changed, while any session is live or when the free space on the state directory's volume is below the database plus WAL size. Never automatic |
 | `restore_budget_set` | `budget` (`0..=RESTORE_BUDGET_MAX`) | `host_info` (bcast); out of range is an `error` naming ceiling and value |
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
@@ -554,7 +555,8 @@ every refusal names the setting.
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
-| `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
+| `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change or a reclaim |
+| `storage_reclaimed` | `before_bytes`, `after_bytes` (database plus WAL), `refusal?` | direct reply to `storage_reclaim`; `refusal` names the blocking condition (live session count, or free and required bytes) or the SQLite failure, and then both sizes are the current size |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only. A request refused by the control handler limits (16 per connection, 64 per process) carries `context: "control_admission:<type>[:<dir|request>]"` naming its message type and its `dir` or `request` id, and never replies otherwise. A failed `session_close`, `session_respawn`, `session_wake`, `session_attach`, `session_resize` or `session_visibility` carries `context: "session:<id>"` naming the session it asked about |
@@ -902,7 +904,9 @@ HostInfo           channel, state_dir, pid, port, protocol_version, app_version,
                    live_sessions, restore_budget, restore_resume, restore_deferred, orchestration_depth_in_use,
                    orchestration_max_depth, mailbox_files_on_disk, mailbox_retention_hours, settled_retention_hours,
                    worktree_cleanup_enabled, worktree_cleanup_grace_hours, worktree_idle_removal_days,
-                   command_history_ignore_glob_count, session_db_bytes
+                   command_history_ignore_glob_count, session_db_bytes, session_db_wal_bytes,
+                   session_db_free_bytes (freelist pages: what storage_reclaim can return), scrollback_bytes,
+                   logs_bytes (totals of the state directory's scrollback/ and logs/)
 
 ManagedWorktreeInfo path, branch, base_branch?, status: WorktreeStatus, pr?, keep: WorktreeKeep | null, bytes?, measured_at_ms?,
                    checked_at_ms? (null until a pass evaluated it; only then does keep: null mean
@@ -1396,6 +1400,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 148 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |
 | 146 | **Pull requests queue for merging in a per-workspace merge queue that verifies them, can merge on its own, restacks dependents and hands off to GitHub.** New `merge_queue_get`, `merge_queue_enqueue`, `merge_queue_dequeue`, `merge_queue_merge_head`, `merge_queue_settings_set`, `merge_queue_pause`, `merge_queue_pause_all`, `merge_queue_retry`, `merge_queue_revert`, `merge_queue_acknowledge` and `merge_queue_summary_get`, answered by `merge_queue` (also bcast), `merge_queue_reply` and `merge_queue_summary`. `merge_queue` carries `entries: MergeQueueEntry[]`, `log: MergeQueueLogEntry[]` (pushes, merges, parks, restacks, retargets and hand-offs with their old and new commits), `settings?: MergeQueueSettings`, `global_paused`, `away: MergeQueueAway` and `hand_off?: MergeQueueHandOffInfo`; `merge_queue_summary` carries `MergeQueueParkedCount` per workspace. New types: `MergeQueueEntry` (with `verification?`, `failure?`, `worktree?`, `verifying_since_ms?` and `github?: MergeQueueGitHubHold`; `position` is 0 for an entry out of line), `MergeQueueStatus`, `MergeQueueGate`, `MergeQueueGateKind`, `MergeQueueGateState`, `MergeQueueVerification`, `MergeQueueFailure`, `MergeQueueFailureKind`, `MergeQueueSettings`, `MergeQueueLogEntry`, `MergeQueueLogKind`, `MergeQueueAway`, `MergeQueueParkedCount`, `MergeQueueHandOff`, `MergeQueueHandOffInfo` and `MergeQueueGitHubHold`. `PrDetail` gains `merge_methods`, the methods the repository allows, and `github_merge?: PrGitHubMerge` (with `PrMergeQueueEntry` and `PrMergeRemoval`); its `auto_merge_enabled` and `auto_merge_method` are now filled from the access read. Agents reach enqueue and dequeue through `pane_pr_enqueue` and `pane_pr_dequeue`; there is no agent merge verb |
 | 145 | **A refused control request names itself.** The `error` for a request past the per-connection or process control limits keeps its message prefix and now ends with the refused message type and its `dir` or `request` id; its `context` changes from `control_admission` to `control_admission:<type>[:<dir or request id>]` (for example `control_admission:git_branch:/repo/wt-3`), so a client can settle or retry that request. A directory may contain `:`: everything after the second `:` is the target. No message changes shape. **A worker's progress report closes its own open question, and the operator can dismiss one.** New `child_input_resolve{child, id}`; `inbox_resolve` on a question or blocker row also resolves its input request. A `pane_report{kind: progress}` on the same `request_id` resolves that worker's open `report:*` asks (inbox rows read by the parent get `reason: "superseded_by_worker"`), so a worker that carried on after an unanswered question no longer stays under the operator's attention. No payload shape changes. |

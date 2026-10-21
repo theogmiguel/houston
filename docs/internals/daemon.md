@@ -506,6 +506,12 @@ come out wrong.
 `synchronous = NORMAL`, `cache_size = -8000` (8 MB), `temp_store = MEMORY`. Writes happen
 only on rare control-plane events — the PTY path never touches SQLite.
 
+Deleted rows leave free pages inside the file; only `storage_reclaim`, an explicit user
+action, returns them to the disk. `VACUUM` holds the one connection's lock for its whole
+run, so every database call (hook status, title and inbox writes) waits behind it. The
+daemon therefore refuses it while any session is live, and when the volume has less free
+space than the database, since the rebuilt copy is written before the old pages are freed.
+
 | Group | Tables |
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |

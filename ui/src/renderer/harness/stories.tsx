@@ -29,7 +29,7 @@ import {
 } from './browserStories'
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDiagnosticsStorage, SettingsDiagnosticsStorageReclaimed, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -447,6 +447,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/diagnostics': () => <SettingsDiagnostics />,
   'settings/diagnostics-loading': () => <SettingsDiagnosticsLoading />,
   'settings/diagnostics-open-hooks': () => <SettingsDiagnosticsOpenHooks />,
+  'settings/diagnostics-storage': () => <SettingsDiagnosticsStorage />,
+  'settings/diagnostics-storage-reclaimed': () => <SettingsDiagnosticsStorageReclaimed />,
   'settings/daemon': () => <SettingsDaemon />,
   'settings/daemon-error': () => <SettingsDaemonError />,
   'settings/orchestration': () => <SettingsOrchestration />,

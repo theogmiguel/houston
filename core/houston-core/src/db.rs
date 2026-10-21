@@ -2338,6 +2338,32 @@ impl Db {
         self.conn.try_lock().is_err()
     }
 
+    /// Bytes held by free pages inside the database file.
+    pub fn free_bytes(&self) -> Result<u64> {
+        let conn = self.conn.lock().expect("db lock");
+        let pages: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
+        let page_size: i64 = conn.pragma_query_value(None, "page_size", |r| r.get(0))?;
+        Ok(u64::try_from(pages.saturating_mul(page_size)).unwrap_or(0))
+    }
+
+    /// VACUUM in WAL mode writes the rebuilt database into the WAL, so the second
+    /// checkpoint is what returns the space to the disk.
+    pub fn reclaim(&self) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let checkpoint = |stage: &str| -> Result<()> {
+            let busy: i64 = conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+                .with_context(|| format!("wal_checkpoint(TRUNCATE) {stage} VACUUM"))?;
+            if busy != 0 {
+                anyhow::bail!("wal_checkpoint(TRUNCATE) {stage} VACUUM was blocked by another connection to the database");
+            }
+            Ok(())
+        };
+        checkpoint("before")?;
+        conn.execute_batch("VACUUM").context("VACUUM")?;
+        checkpoint("after")
+    }
+
     pub fn mark_live_as_interrupted(&self) -> Result<usize> {
         let conn = self.conn.lock().expect("db lock");
         let n = conn.execute(

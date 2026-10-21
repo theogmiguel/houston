@@ -17456,6 +17456,10 @@ impl Daemon {
         let session_db_bytes = std::fs::metadata(&self.db_path)
             .map(|m| m.len())
             .unwrap_or(0);
+        let session_db_free_bytes = self.db.free_bytes().unwrap_or_else(|e| {
+            tracing::warn!("host_info: reading the database freelist: {e:#}");
+            0
+        });
         proto::ServerMsg::HostInfo {
             channel: self.channel().unwrap_or("release").to_string(),
             state_dir: self.state_dir.display().to_string(),
@@ -17479,6 +17483,36 @@ impl Daemon {
             worktree_idle_removal_days: self.worktree_idle_removal_days(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
             session_db_bytes,
+            session_db_wal_bytes: std::fs::metadata(crate::storage::wal_path(&self.db_path))
+                .map(|m| m.len())
+                .unwrap_or(0),
+            session_db_free_bytes,
+            scrollback_bytes: crate::storage::dir_bytes(&self.scrollback_dir),
+            logs_bytes: crate::storage::dir_bytes(&self.state_dir.join("logs")),
+        }
+    }
+
+    /// Blocking: runs VACUUM on the session database. Callers run it off the connection loop.
+    pub fn reclaim_storage(&self) -> proto::ServerMsg {
+        let before_bytes = crate::storage::db_footprint(&self.db_path);
+        let live = self.sessions.lock().expect("sessions lock").len();
+        let free = crate::storage::free_disk_bytes(&self.state_dir);
+        let refusal = crate::storage::reclaim_refusal(live, &free, before_bytes, &self.state_dir)
+            .or_else(|| {
+                self.db
+                    .reclaim()
+                    .err()
+                    .map(|e| format!("reclaiming space failed: {e:#}"))
+            });
+        let after_bytes = crate::storage::db_footprint(&self.db_path);
+        match &refusal {
+            Some(reason) => tracing::warn!("storage_reclaim: {reason}"),
+            None => tracing::info!("storage_reclaim: {before_bytes} -> {after_bytes} bytes"),
+        }
+        proto::ServerMsg::StorageReclaimed {
+            before_bytes,
+            after_bytes,
+            refusal,
         }
     }
 
