@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import type { PrDetail, PrReviewDraft, PullRequestLink } from '../src/houston/client'
 import { PrBrowse } from '../src/components/git/PrBrowse'
 import { PrComments, PrThreads } from '../src/components/git/PrDiscussion'
 import { PrEmptyStates } from '../src/components/git/PrEmptyStates'
 import { PrFiles } from '../src/components/git/PrFiles'
+import { prViewedKey, patchHash, markPrFileViewed, clearPrViewedMarksForTests } from '../src/components/git/prViewedMarks'
+import { parsePrDiff } from '../src/components/git/prDetailUi'
 import { PrFooterBar } from '../src/components/git/PrFooterBar'
 import { PrLabelPicker, PrReviewerPicker } from '../src/components/git/PrPickers'
 import { PrReviewBar } from '../src/components/git/PrReviewBar'
@@ -61,6 +63,8 @@ const controller = {
 } as unknown as PrDetailController
 
 const link = {
+  host: 'github.com',
+  repository: 'acme/houston',
   number: 412,
   url: 'https://github.com/acme/houston/pull/412',
   state: 'open',
@@ -76,6 +80,21 @@ const patch = `diff --git a/core/orchestrate.rs b/core/orchestrate.rs
 +    for parent in parents {
 +        wake_parent(parent);
 +    }
+`
+
+const marksPatch = `${patch}diff --git a/ui/src/tasks/useBacklog.ts b/ui/src/tasks/useBacklog.ts
+--- a/ui/src/tasks/useBacklog.ts
++++ b/ui/src/tasks/useBacklog.ts
+@@ -20,1 +20,2 @@
+-  const gate = openGate()
++  const gate = openGate({ bounded: true })
++  track(gate)
+diff --git a/docs/user/tasks.md b/docs/user/tasks.md
+--- a/docs/user/tasks.md
++++ b/docs/user/tasks.md
+@@ -1,2 +1,3 @@
+ # Tasks
++Backlogs wake in bounded batches.
 `
 
 export function PrBrowseCapture(): React.JSX.Element {
@@ -123,11 +142,23 @@ export function PrEmptyCapture(): React.JSX.Element {
 }
 
 export function PrFilesCapture(): React.JSX.Element {
-  return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles diff={{ number: 412, patch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
+  useMemo(() => clearPrViewedMarksForTests(), [])
+  return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles link={link} diff={{ number: 412, patch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
 }
 
 export function PrFilesStatesCapture(): React.JSX.Element {
-  return <div className="flex h-full flex-col gap-[var(--space-2)] overflow-auto bg-[var(--content-bg)]"><PrFiles diff={{ number: 412, patch: '', truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /><PrFiles diff={{ number: 412, patch: '', truncated: false, message: 'The remote diff could not be read.' } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
+  return <div className="flex h-full flex-col gap-[var(--space-2)] overflow-auto bg-[var(--content-bg)]"><PrFiles link={link} diff={{ number: 412, patch: '', truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /><PrFiles link={link} diff={{ number: 412, patch: '', truncated: false, message: 'The remote diff could not be read.' } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
+}
+
+export function PrFilesViewedMarksCapture(): React.JSX.Element {
+  useMemo(() => {
+    clearPrViewedMarksForTests()
+    const key = prViewedKey(link.host, link.repository, link.number)
+    const [viewed, changed] = parsePrDiff(marksPatch)
+    markPrFileViewed(key, viewed.path, patchHash(viewed.lines.map((line) => line.text).join('\n')))
+    markPrFileViewed(key, changed.path, patchHash('the patch as it stood when the file was viewed'))
+  }, [])
+  return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles link={link} diff={{ number: 412, patch: marksPatch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
 }
 
 export function PrActionsCapture(): React.JSX.Element {

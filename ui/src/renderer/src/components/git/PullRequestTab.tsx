@@ -690,6 +690,7 @@ function PrDetailBody({
         <PullRequestRole as="div" role="file-pane" className={compact ? '!p-0 !gap-0' : ''}>
           <PrFiles
             key={number}
+            link={link}
             diff={pr.diff}
             loading={pr.diffBusy}
             drafts={drafts}

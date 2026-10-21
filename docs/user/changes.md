@@ -66,6 +66,12 @@ and inspect changed files. Timeline and Files report their item counts. Reply to
 comments, resolve discussions, submit a review or send a comment to the orchestrator
 pane. Details also let you edit the title and description, reviewers and labels.
 
+Each file in **Files** carries a **Viewed** toggle. Marks are kept per pull request, so
+files you have already reviewed stay viewed when you reopen the panel. When a viewed
+file's patch changes — after a new push, for example — the file reads unviewed again and
+carries a **Changed since viewed** badge until you review the new version; marking it
+viewed records the new patch.
+
 Merge readiness reports checks, required reviews and conflicts with the base branch.
 Choose squash, merge commit or rebase, and review the stated consequence before
 merging: squash combines the request's commits into one. Actions remain subject to
