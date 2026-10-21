@@ -119,7 +119,9 @@ typecheck, tests, and build without a single warning.
 Rule: always leave a space between a static utility and an interpolation.
 Never build a class name by string concatenation Tailwind can't statically
 see; switch between whole utility strings instead. Only a grep of the *built*
-stylesheet catches this — the source looks correct either way.
+stylesheet catches this — the source looks correct either way. An arbitrary
+value assembled from an interpolation (`` `shadow-[${RECIPE}]` ``) fails the same
+way; `check-focus-visible.sh` rejects that shape, so store the whole literal class.
 
 ### 12. A design system's own token names can collide with Tailwind's utility scale
 Problem: if your unlayered stylesheet declares a custom property under the same

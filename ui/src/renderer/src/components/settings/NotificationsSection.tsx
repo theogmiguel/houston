@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isTauri } from '../../houston/host'
-import { nativeNotificationsSupported } from '../../houston/bridge'
+import { nativeNotificationSupport, type NativeNotificationSupport } from '../../houston/bridge'
 import type { DesktopNotificationMode } from '../../usePreferences'
 import { Select } from '../ui/Select'
 import { Icon } from '../ui/Icon'
@@ -20,26 +20,26 @@ const DESKTOP_OPTIONS = [
 function desktopStatusMessage({
   delivery,
   tauri,
-  windows,
   unsupportedPlatform,
-  unavailable,
   nativeMode,
-  supported
+  support
 }: {
   delivery: { allowed: boolean; error?: string } | null
   tauri: boolean
-  windows: boolean
   unsupportedPlatform: boolean
-  unavailable: boolean
   nativeMode: boolean
-  supported: boolean | null
+  support: NativeNotificationSupport | null
 }): string {
   if (delivery?.allowed) return 'Allowed by the desktop'
   if (delivery) return 'The desktop refused this notification. Enable notifications for Houston in desktop settings.'
-  if (tauri && unsupportedPlatform) return `Not available on ${windows ? 'Windows' : 'macOS'} yet`
-  if (unavailable) return 'Desktop notification service is unavailable or lacks action support. Enable notifications for Houston in desktop settings.'
-  if (nativeMode && supported === null) return 'Checking desktop notification support…'
-  if (!tauri) return 'Desktop notifications are available in the Linux desktop app.'
+  if (tauri && unsupportedPlatform) return 'Not available on macOS yet'
+  if (tauri && support?.supported === false) {
+    return support.reason
+      ? `Desktop notifications are unavailable: ${support.reason}`
+      : 'Desktop notification service is unavailable or lacks action support. Enable notifications for Houston in desktop settings.'
+  }
+  if (nativeMode && support === null) return 'Checking desktop notification support…'
+  if (!tauri) return 'Desktop notifications are available in the Linux and Windows desktop apps.'
   if (nativeMode) return 'Desktop notification service available'
   return 'Desktop notifications are off.'
 }
@@ -65,35 +65,33 @@ export function NotificationsSection({
   delivery: { allowed: boolean; error?: string } | null
 }): React.JSX.Element {
   const tauri = isTauri()
-  const windows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent)
-  const macos = typeof navigator !== 'undefined' && /Macintosh|Mac OS/i.test(navigator.userAgent)
-  const unsupportedPlatform = windows || macos
-  const [supported, setSupported] = useState<boolean | null>(() => tauri && unsupportedPlatform ? false : null)
+  const unsupportedPlatform = typeof navigator !== 'undefined' && /Macintosh|Mac OS/i.test(navigator.userAgent)
+  const [support, setSupport] = useState<NativeNotificationSupport | null>(() =>
+    tauri && unsupportedPlatform ? { supported: false, reason: null } : null
+  )
 
   useEffect(() => {
     const asksForDesktopNotification = desktopMode === 'notifications' || desktopMode === 'notifications-sound'
     if (!tauri || unsupportedPlatform || !asksForDesktopNotification) {
-      if (unsupportedPlatform) setSupported(false)
-      else if (!asksForDesktopNotification) setSupported(null)
+      if (unsupportedPlatform) setSupport({ supported: false, reason: null })
+      else if (!asksForDesktopNotification) setSupport(null)
       return
     }
     let current = true
-    void nativeNotificationsSupported().then((value) => {
-      if (current) setSupported(value)
+    void nativeNotificationSupport().then((value) => {
+      if (current) setSupport(value)
     })
     return () => { current = false }
   }, [desktopMode, tauri, unsupportedPlatform])
 
-  const unavailable = tauri && supported === false
+  const unavailable = tauri && support?.supported === false
   const nativeMode = desktopMode === 'notifications' || desktopMode === 'notifications-sound'
   const supportStatus = desktopStatusMessage({
     delivery,
     tauri,
-    windows,
     unsupportedPlatform,
-    unavailable,
     nativeMode,
-    supported
+    support
   })
 
   return (

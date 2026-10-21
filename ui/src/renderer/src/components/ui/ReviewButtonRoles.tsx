@@ -1,5 +1,5 @@
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
-import { RING_ACCENT_INSET_18 } from './shadowChrome'
+import { RING_ACCENT_INSET_18_CLS } from './shadowChrome'
 import { ButtonRecipe } from './ButtonRecipe'
 import type { ButtonRecipeProps } from './Button'
 
@@ -33,7 +33,7 @@ export type ReviewButtonVariant = keyof typeof RECIPES
 
 const SELECTED = {
   reaction: 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--text-primary)]',
-  'agent-option': `border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] shadow-[${RING_ACCENT_INSET_18}] text-[var(--text-primary)]`,
+  'agent-option': `border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] ${RING_ACCENT_INSET_18_CLS} text-[var(--text-primary)]`,
   'diff-line-action': 'text-[var(--accent)]'
 } as const
 

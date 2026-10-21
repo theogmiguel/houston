@@ -212,10 +212,15 @@ export async function notifyNative(title: string, body: string, sessionId: numbe
   return invoke<void>('native_notify', { title, body, sessionId })
 }
 
-export async function nativeNotificationsSupported(): Promise<boolean> {
-  if (!isTauri()) return false
+export interface NativeNotificationSupport {
+  supported: boolean
+  reason: string | null
+}
+
+export async function nativeNotificationSupport(): Promise<NativeNotificationSupport> {
+  if (!isTauri()) return { supported: false, reason: null }
   const invoke = await invoker()
-  return invoke<boolean>('native_notifications_supported', {})
+  return invoke<NativeNotificationSupport>('native_notifications_supported', {})
 }
 
 export async function statFile(path: string): Promise<{ mtimeMs: number } | null> {
