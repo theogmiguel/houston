@@ -1,4 +1,4 @@
-import type { PrDetail, PrMergeMethod, PullRequestLink } from '../../houston/client'
+import type { MergeQueueEntry, PrDetail, PrMergeMethod, PullRequestLink } from '../../houston/client'
 import type { PrDetailController } from './usePrDetailSubscription'
 import { PrChecksList, type PrChecksState } from '../prs/usePrChecksState'
 import { checkKey, CheckLog } from '../prs/ChecksList'
@@ -7,8 +7,13 @@ import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
 import { PrCheckLogFrame, PrMergeFrame, PrMergeFooter, PrReadinessRow } from '../ui/PrPresentation'
 import { actionDisabledReason } from './prDetailUi'
+import { MergeQueueStanding } from '../ui/MergeQueue'
+import { entryStatus, ordinal, queueEntryFor, shortSha } from '../prs/mergeQueueModel'
+import type { MergeQueueController } from '../prs/useMergeQueue'
+import { requestPrsView } from '../prs/prsView'
+import { ActionMenu } from '../ui/ActionMenu'
 
-type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState }
+type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState; queue?: MergeQueueController }
 
 function mergeConsequence(link: PullRequestLink, detail: PrDetail, method: PrMergeMethod, waiting: boolean): string {
   if (link.state === 'merged') return 'Merged'
@@ -53,14 +58,53 @@ function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, wait
   return <SplitButton label={labels[method]} testId="pr-merge" disabled={busy || mergeReason !== null} disabledReason={mergeReason ?? undefined} onClick={() => pr.merge(link.number, method, detail.head_sha)} items={(['squash', 'merge', 'rebase'] as const).map((value) => ({ label: `Use ${methods[value]}`, onClick: () => setMethod(value) }))} />
 }
 
+/** What the footer says will happen to a queued pull request: its one reason, else how it merges. */
+function queueLine(entry: MergeQueueEntry, queue: MergeQueueController, policy: boolean, headSha: string, method: PrMergeMethod): string {
+  if (entry.reason) return entry.reason
+  if (policy) return `merges on its own when verification passes on ${entry.base_ref ?? 'its base'}`
+  const verified = entry.verification
+  if (verified) return `verified on ${verified.base_ref}@${shortSha(verified.base_sha)}; merges ${shortSha(verified.verified_sha)} exactly`
+  if (entry.position === 1) return `merges ${shortSha(headSha)} exactly, by ${method}`
+  return `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`
+}
+
+/** The merge queue's footer: the pull request's place, with Dequeue or "Add to merge queue".
+ *  With "merge when verified" on, the queue merges and the overflow keeps a skip-the-queue
+ *  merge; with it off, the head's Merge pushes and merges the verified commit. */
+function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController; pr: PrDetailController }): React.JSX.Element | null {
+  if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
+  const entry = queueEntryFor(queue.entries, link.repository, link.number)
+  const busy = queue.busy !== null
+  if (!entry) {
+    const last = queue.entries.filter((e) => e.position > 0).at(-1)
+    return <PrMergeFooter consequence={last ? `Not queued; joins after #${last.number}` : 'Not queued'}><Button variant="secondary" size="sm" data-testid="pr-queue-add" disabled={busy} onClick={() => queue.enqueue(link.number)}>Add to merge queue</Button></PrMergeFooter>
+  }
+  const policy = queue.settings?.merge_when_verified ?? false
+  const head = entry.position === 1
+  const place = entry.position > 0 ? `${ordinal(entry.position)} in merge queue` : 'out of line'
+  const line = queueLine(entry, queue, policy, detail.head_sha, method)
+  const overflow = [
+    ...(policy ? [{ label: 'Merge now, skipping the queue', onSelect: () => pr.merge(link.number, method, detail.head_sha) }] : []),
+    { label: 'Open merge queue', onSelect: () => requestPrsView({ view: 'queue' }) }
+  ]
+  return <PrMergeFooter consequence={<MergeQueueStanding status={entryStatus(entry)}>{place} · {line}</MergeQueueStanding>}>
+    <Button variant={head && !policy ? 'ghost' : 'secondary'} size="sm" data-testid="pr-queue-dequeue" disabled={busy} onClick={() => queue.dequeue(link.number)}>Dequeue</Button>
+    {head && !policy && <Tooltip label={entry.reason ?? undefined}><Button variant="primary" size="sm" data-testid="pr-queue-merge" disabled={busy || entry.status !== 'ready'} onClick={() => queue.mergeHead(link.number, detail.head_sha, method)}>Merge</Button></Tooltip>}
+    <ActionMenu label="More merge queue actions" iconOnly items={overflow} />
+  </PrMergeFooter>
+}
+
 export function PrMergeBox(props: MergeBoxProps): React.JSX.Element {
-  const { link, detail, method, checks } = props
+  const { link, detail, method, checks, queue } = props
+  const queued = queue !== undefined && queueEntryFor(queue.entries, link.repository, link.number) !== null
   const waiting = detail.checks.some((check) => ['failing', 'running', 'queued', 'unknown'].includes(check.state))
   const headline = checks.failedCount > 0 ? checks.listProps.checks.find((check) => check.state === 'failing') : undefined
   const rest = checks.listProps.checks.filter((check) => check !== headline)
   return <PrMergeFrame>
     {checks.failedCount > 0 ? <PrFailedChecks checks={checks} /> : <PrSettledChecks checks={checks} waiting={waiting} />}
     {rest.length > 0 && <PrChecksList state={{ ...checks, listProps: { ...checks.listProps, checks: rest } }} />}
-    <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>
+    {queue?.reply && !queue.reply.ok && queue.reply.number === link.number && <PrReadinessRow tone="stop" heading="The merge queue refused" detail={queue.reply.text} />}
+    {!queued && <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>}
+    {queue && <PrQueueFooter link={link} detail={detail} method={method} queue={queue} pr={props.pr} />}
   </PrMergeFrame>
 }

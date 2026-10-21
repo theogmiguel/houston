@@ -4,6 +4,7 @@ import { Icon } from '../src/components/ui/Icon'
 import { IconChevronLeft, IconGrid, IconSearch } from '../src/components/icons'
 import { PullRequestsScreen } from '../src/components/prs/PullRequestsScreen'
 import { PullRequestTab } from '../src/components/git/PullRequestTab'
+import { requestPrsView } from '../src/components/prs/prsView'
 import { PanelTab } from '../src/components/ui/PanelTab'
 import { IconGitPullRequest } from '../src/components/icons'
 import { InspectorClient } from './inspectorStories'
@@ -143,18 +144,36 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded' | 'merge-queue' | 'merge-queue-policy' | 'merge-queue-parked' | 'merge-queue-restacked' | 'merge-queue-watching' | 'merge-queue-hand-off-picker'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
+  const queueMode = mode.startsWith('merge-queue')
+  useState(() => { if (queueMode) requestPrsView({ view: 'queue' }) })
   const baseItems = mode === 'empty' || mode === 'loading' ? [] : mode === 'draft' || mode === 'closed'
     ? pullRequests.map((item) => item.number === 95 ? { ...item, state: mode === 'closed' ? 'closed' as const : 'open' as const, is_draft: mode === 'draft' } : item)
     : pullRequests
   const items = mode === 'folded' ? [...baseItems, ...Array.from({ length: 12 }, (_, index) => ({ ...pullRequests[3], number: 300 + index, title: `feat(agents): review pane lifecycle ${index + 1}`, updated_at: now - (index + 2) * 24 * 60 * 60 }))] : baseItems
   const selectedNumber = ['selected', 'timeline', 'code'].includes(mode) ? 93 : ['draft', 'closed'].includes(mode) ? 95 : null
-  const client = useMemo(() => new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' }) as unknown as HoustonClient, [mode, selectedNumber])
+  const client = useMemo(() => {
+    const inspector = new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' })
+    inspector.mergeQueuePolicy = mode === 'merge-queue-policy' || mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker'
+    inspector.mergeQueueGitHub = mode === 'merge-queue-restacked' ? 'restacked' : mode === 'merge-queue-watching' ? 'watching' : 'houston'
+    return inspector as unknown as HoustonClient
+  }, [mode, selectedNumber])
   useEffect(() => {
     const screen = rootRef.current?.querySelector('[data-testid="pull-requests-screen"]')
+    if (mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker' || mode === 'merge-queue-restacked' || mode === 'merge-queue-watching') {
+      const pick = mode === 'merge-queue-parked' || mode === 'merge-queue-hand-off-picker' ? '#87' : '#79'
+      const timer = window.setInterval(() => {
+        const row = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]') ?? [])].find((item) => item.textContent?.includes(pick))
+        if (!row) return
+        row.click()
+        window.clearInterval(timer)
+        if (mode === 'merge-queue-hand-off-picker') window.setTimeout(() => screen?.querySelector<HTMLButtonElement>('[data-testid="merge-queue-hand-off"]')?.click(), 50)
+      }, 50)
+      return () => window.clearInterval(timer)
+    }
     if (mode === 'folded') {
       const timer = window.setTimeout(() => { const scroller = screen?.querySelector<HTMLElement>('[data-testid="pr-list-scroll"]'); if (scroller) scroller.scrollTop = 90 }, 200)
       return () => window.clearTimeout(timer)
@@ -174,17 +193,21 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 text-[12px] text-[var(--text-muted)]"><span className="h-4 w-4 rounded-[5px] bg-gradient-to-br from-[#9b63ff] to-[#4e74ff]" /><span className="font-semibold text-[var(--text-primary)]">Houston</span><span className="ml-[150px]">◫</span><span className="ml-auto">▦　◫　−</span></header>
       <div className="flex min-h-0 flex-1">
         <PrRail />
-        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'closed' ? 'closed' : 'open'} loading={mode === 'loading'} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={noop} onOpenUrlInPane={noop} onRefresh={noop} onOpenPullRequest={noop} />
+        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'closed' ? 'closed' : 'open'} loading={mode === 'loading'} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={noop} onOpenUrlInPane={noop} onRefresh={noop} onOpenPullRequest={noop} onHandOff={queueMode ? noop : undefined} onOpenMergeQueueSettings={queueMode ? noop : undefined} />
       </div>
       </div>
     </div>
   )
 }
 
-export function PullRequestDetailStory({ width, tab = 'summary', state = 'open' }: { width: 470 | 732; tab?: 'summary' | 'timeline' | 'code'; state?: 'open' | 'merged' | 'draft' | 'closed' }): React.JSX.Element {
+export function PullRequestDetailStory({ width, tab = 'summary', state = 'open', policy = false }: { width: 470 | 732; tab?: 'summary' | 'timeline' | 'code'; state?: 'open' | 'merged' | 'draft' | 'closed'; policy?: boolean }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const number = state === 'merged' ? 93 : 95
-  const client = useMemo(() => new InspectorClient(false, false, { number, state: state === 'draft' ? 'open' : state, isDraft: state === 'draft' }) as unknown as HoustonClient, [number, state])
+  const client = useMemo(() => {
+    const inspector = new InspectorClient(false, false, { number, state: state === 'draft' ? 'open' : state, isDraft: state === 'draft' })
+    inspector.mergeQueuePolicy = policy
+    return inspector as unknown as HoustonClient
+  }, [number, state, policy])
   useEffect(() => {
     if (tab === 'summary') return
     const timer = window.setInterval(() => {

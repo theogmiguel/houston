@@ -129,6 +129,17 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   pr_link: DIR,
   pr_unlink: DIR,
   pr_merge: DIR,
+  merge_queue_get: DIR,
+  merge_queue_enqueue: DIR,
+  merge_queue_dequeue: DIR,
+  merge_queue_merge_head: DIR,
+  merge_queue_settings_set: DIR,
+  merge_queue_pause: DIR,
+  merge_queue_pause_all: 'all',
+  merge_queue_retry: DIR,
+  merge_queue_revert: DIR,
+  merge_queue_acknowledge: DIR,
+  merge_queue_summary_get: 'all',
   pr_action: DIR,
   pr_edit: DIR,
   pr_comment: DIR,
@@ -382,6 +393,15 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   pr_linked: 'forward',
   pr_unlinked: 'forward',
   pr_merged: 'forward',
+  merge_queue: (msg, tag) => {
+    for (const entry of msg.entries as Array<Record<string, unknown>>) {
+      if (typeof entry.session === 'number') entry.session = tag(entry.session)
+      const failure = entry.failure as Record<string, unknown> | null | undefined
+      if (failure && typeof failure.handed_to === 'number') failure.handed_to = tag(failure.handed_to)
+    }
+  },
+  merge_queue_reply: 'forward',
+  merge_queue_summary: 'forward',
   pr_mutation: 'forward',
   pr_reviewer_candidates: 'forward',
   pr_label_candidates: 'forward',
