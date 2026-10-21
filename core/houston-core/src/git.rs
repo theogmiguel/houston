@@ -10,10 +10,9 @@ const MAX_UNTRACKED_DIFF_FILES: usize = 1024;
 // enforces the subprocess collector's 8 MiB combined stdout/stderr limit.
 const GIT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// Every git process the daemon starts. `GIT_OPTIONAL_LOCKS=0` stops background reads such
-/// as `status` from refreshing `.git/index` under `index.lock`, which would make an agent's
-/// own `git add` or `git commit` in that checkout fail; required locks are still taken.
-/// `spawn::git` additionally runs Git for Windows' real binary instead of its launcher.
+/// Every git process the daemon starts. `GIT_OPTIONAL_LOCKS=0` stops background reads such as
+/// `status` from refreshing `.git/index` under `index.lock`, which would make an agent's own
+/// `git add` or `git commit` fail; `spawn::git` also runs Git for Windows' real binary.
 pub fn command() -> std::process::Command {
     let mut command = crate::spawn::git();
     command.env("GIT_OPTIONAL_LOCKS", "0");
