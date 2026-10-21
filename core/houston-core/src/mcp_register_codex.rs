@@ -443,7 +443,7 @@ fn take_houston_field(parsed: &mut toml::Value, key: &str) -> Option<toml::Value
 
 fn write_config_if_changed(path: &Path, before: &str, after: &str) -> Result<(), String> {
     if before != after {
-        std::fs::write(path, after)
+        crate::fs_retry::write(path, after)
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
     Ok(())

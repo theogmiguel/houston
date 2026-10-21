@@ -35,7 +35,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
 | | `lock.rs` | The daemon-ownership advisory `flock` |
-| | `fs_retry.rs` | State-file renames and creates that retry Windows sharing violations |
+| | `fs_retry.rs` | State-file renames and creates that retry transient Windows contention |
 | | `power_throttling.rs` | Windows EcoQoS opt-out for the daemon and every process it starts |
 | | `server.rs` | WebSocket endpoint: handshake, control dispatch, binary PTY path |
 | | `boot.rs` | The background-loop set: one spawn list, called only by the daemon's own `main` |
@@ -530,12 +530,15 @@ every column a later version added. **There is no `PRAGMA user_version`**: evolu
 additions plus two one-shot boot sweeps.
 
 State files outside SQLite (`daemon.json`, run state, scrollback checkpoints, the hook-state
-scope file, the model catalog cache and managed agent CLI configuration) are written through
-`fs_retry`.
+scope file, the model catalog cache, managed hook configuration and the Codex and Antigravity
+MCP entries) are written through `fs_retry`. The hook binary's own rename is not.
 On Windows an antivirus scanner or the search indexer briefly opens a fresh file without
-sharing, so a rename or create that fails with `ERROR_SHARING_VIOLATION` or
-`ERROR_LOCK_VIOLATION` is retried up to five times within 300 ms. `ERROR_ACCESS_DENIED` and
-every other error fail at once, and Unix runs each operation once.
+sharing. A create that fails with `ERROR_SHARING_VIOLATION` or `ERROR_LOCK_VIOLATION` is
+retried up to five times within 300 ms. A rename also retries `ERROR_ACCESS_DENIED`, which is
+what replacing a destination held without delete sharing reports, so a real permission failure
+on a rename surfaces only after those 300 ms. Other errors fail at once, and Unix runs each
+operation once. A scrollback checkpoint copies the ring under its lock and writes outside it,
+so a retrying write never stalls the pane's output.
 
 In memory only, by design: live `sessions` and restored `dead` husks; `swarm_activity`
 (transient chip text); and the ephemeral routing maps (`respawned_as`, `handoff_jobs`,
