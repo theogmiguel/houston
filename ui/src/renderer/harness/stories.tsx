@@ -110,6 +110,7 @@ import { FirstRunHooksStepNoCliSpecimen, FirstRunHooksStepSpecimen } from '../sr
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
+import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
@@ -602,6 +603,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/pr-browse': () => <PrBrowseCapture />,
   'shell-a/pr-browse-states': () => <PrBrowseStatesCapture />,
   'shell-a/pr-discussion': () => <PrDiscussionCapture />,
+  'shell-a/pr-discussion-filters': () => <PrDiscussionFiltersCapture hide={false} />,
+  'shell-a/pr-discussion-filters-on': () => <PrDiscussionFiltersCapture hide />,
   'shell-a/pr-comment-edit': () => <PrCommentEditCapture />,
   'shell-a/pr-empty': () => <PrEmptyCapture />,
   'shell-a/pr-files': () => <PrFilesCapture />,
