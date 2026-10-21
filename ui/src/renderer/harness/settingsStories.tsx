@@ -488,14 +488,34 @@ export function SettingsDictationCloud(): React.JSX.Element {
   return <SettingsScreen section="dictation" props={{ voiceSettings, voiceCloudKeyPresent: true, voiceKeyringError: 'Secret Service is unavailable' }} />
 }
 
-export function SettingsWorkspaces(): React.JSX.Element {
+export function SettingsWorkspaces({ mergeQueue = false }: { mergeQueue?: boolean } = {}): React.JSX.Element {
+  React.useEffect(() => {
+    if (!mergeQueue) return
+    const timer = window.setInterval(() => {
+      const policy = document.querySelector('[data-testid="merge-queue-policy-switch"]')
+      if (policy) { policy.scrollIntoView({ block: 'start' }); window.clearInterval(timer) }
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [mergeQueue])
   const client = React.useMemo(() => {
     let enabled = false
     const listeners = new Set<(message: ServerMsg) => void>()
+    const typed = new Map<string, Set<(message: ServerMsg) => void>>()
     return new Proxy({
       subscribeAll(handler: (message: ServerMsg) => void) {
         listeners.add(handler)
         return () => { listeners.delete(handler) }
+      },
+      subscribe(kind: string, handler: (message: ServerMsg) => void) {
+        const set = typed.get(kind) ?? new Set()
+        typed.set(kind, set)
+        set.add(handler)
+        return () => { set.delete(handler) }
+      },
+      mergeQueueGet(dir: string) {
+        queueMicrotask(() => {
+          for (const listener of typed.get('merge_queue') ?? []) listener({ type: 'merge_queue', workspace: dir, dir, entries: [], log: [], settings: { merge_when_verified: false, verification_command: '', time_limit_minutes: 30, paused: false }, global_paused: false, away: { merged: 0, parked: 0, last_merge_at_ms: null }, message: null })
+        })
       },
       send(message: { type: string; enabled?: boolean }) {
         if (message.type === 'generated_titles_set') enabled = message.enabled === true

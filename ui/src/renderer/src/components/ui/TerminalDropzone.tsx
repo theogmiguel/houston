@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { IconComponent, IconProps } from '../icons'
 import { ICON_ROLE_CLS } from './Icon'
-import { Text } from './Text'
+import { PaneDropLabel } from './PaneDropIndicator'
 /** The dashed overlay shown while files are dragged over, or copied into, the terminal. */
 export function TerminalDropzone({ children }: { children: ReactNode }): React.JSX.Element {
   return (
@@ -23,6 +23,8 @@ export function DropzoneIcon({ glyph: Glyph, tone, ...rest }: { glyph: IconCompo
   return <Glyph {...rest} className={`${ICON_ROLE_CLS.ui} ${state}`} />
 }
 
+// The same accent-fill chip the pane-drag zones wear: accent ink cannot be
+// read over live terminal output, the white-on-accent pair can.
 export function DropzoneLabel({ children }: { children: ReactNode }): React.JSX.Element {
-  return <Text tabular size="small" weight="semibold" tone="accent">{children}</Text>
+  return <PaneDropLabel>{children}</PaneDropLabel>
 }

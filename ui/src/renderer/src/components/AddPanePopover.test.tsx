@@ -64,12 +64,12 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('lists the real agent CLIs Houston can spawn, every one brand-tinted', () => {
     const el = mount()
     const buttons = Array.from(el.querySelectorAll('button'))
-    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'zcode']) {
-      expect(el.textContent).toContain(agent)
-      const row = buttons.find((b) => b.textContent?.includes(agent))
+    for (const [agent, label] of [['claude', 'Claude Code'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['opencode', 'OpenCode'], ['zcode', 'ZCode']]) {
+      expect(el.textContent).toContain(label)
+      const row = buttons.find((b) => b.textContent?.includes(label))
       expect(
         row?.querySelector('span[style]')?.getAttribute('style'),
-        `${agent} row tint`
+        `${label} row tint`
       ).toContain(`var(--${agent})`)
     }
   })
@@ -77,7 +77,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('disables every workspace-gated row when no workspace is open, without hiding them', () => {
     const el = mount({ hasWorkspace: false })
     const buttons = Array.from(el.querySelectorAll('button'))
-    const claude = buttons.find((b) => b.textContent?.includes('claude')) as HTMLButtonElement
+    const claude = buttons.find((b) => b.textContent?.includes('Claude Code')) as HTMLButtonElement
     expect(claude.disabled).toBe(true)
   })
 
@@ -94,7 +94,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     const el = mount()
     const buttons = Array.from(el.querySelectorAll('button'))
     const paths = new Set<string>()
-    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'zcode']) {
+    for (const agent of ['Claude Code', 'Codex', 'Antigravity', 'OpenCode', 'ZCode']) {
       const btn = buttons.find((b) => b.textContent?.includes(agent))!
       const svg = btn.querySelector('svg')
       expect(svg, agent).not.toBeNull()
@@ -124,7 +124,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('keeps every tooltip-wrapped row full width', () => {
     const el = mount({ hasWorkspace: false, onSplitDown: undefined })
     const rows = Array.from(el.querySelectorAll('button'))
-    const labels = ['claude', 'codex', 'antigravity', 'opencode', 'zcode', 'Split down', 'New tab']
+    const labels = ['Claude Code', 'Codex', 'Antigravity', 'OpenCode', 'ZCode', 'Split down', 'New tab']
 
     for (const label of labels) {
       const row = rows.find((button) => button.textContent?.includes(label))
@@ -148,7 +148,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('closes and dispatches the chosen agent on a CLI row click', () => {
     const onSpawnAgent = vi.fn()
     const el = mount({ onSpawnAgent })
-    const codexBtn = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('codex'))!
+    const codexBtn = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('Codex'))!
     act(() => codexBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onSpawnAgent).toHaveBeenCalledWith('codex')
   })
@@ -166,7 +166,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     const none = { ...TWO_CLAUDE_PROFILES, profiles: [] }
     const el = mount({ onSpawnAgent, agentProfiles: none })
     const claudeBtn = Array.from(el.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('claude')
+      b.textContent?.includes('Claude Code')
     )!
     expect(claudeBtn.querySelector('svg[class*="rotate"]')).toBeNull()
     act(() => claudeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -178,7 +178,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     const oneProfile = { ...TWO_CLAUDE_PROFILES, profiles: TWO_CLAUDE_PROFILES.profiles.slice(0, 1) }
     const el = mount({ onSpawnAgent, agentProfiles: oneProfile })
     const claudeBtn = Array.from(el.querySelectorAll('button')).find(
-      (b) => b.textContent?.includes('claude') && !b.textContent?.includes('codex')
+      (b) => b.textContent?.includes('Claude Code') && !b.textContent?.includes('Codex')
     )!
     act(() => claudeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onSpawnAgent).not.toHaveBeenCalled()
@@ -190,7 +190,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     const onSpawnAgent = vi.fn()
     const el = mount({ onSpawnAgent, agentProfiles: TWO_CLAUDE_PROFILES })
     const claudeBtn = Array.from(el.querySelectorAll('button')).find(
-      (b) => b.textContent?.includes('claude') && !b.textContent?.includes('codex')
+      (b) => b.textContent?.includes('Claude Code') && !b.textContent?.includes('Codex')
     )!
     act(() => claudeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onSpawnAgent).not.toHaveBeenCalled()
@@ -212,7 +212,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('never splits codex off claude having profiles — each agent is independent', () => {
     const onSpawnAgent = vi.fn()
     const el = mount({ onSpawnAgent, agentProfiles: TWO_CLAUDE_PROFILES })
-    const codexBtn = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('codex'))!
+    const codexBtn = Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.includes('Codex'))!
     expect(codexBtn.querySelector('svg[class*="rotate"]')).toBeNull()
     act(() => codexBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onSpawnAgent).toHaveBeenCalledWith('codex')

@@ -21,6 +21,8 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     // Idle until Settings > Remote access turns the listener on.
     tokio::spawn(daemon.clone().remote_loops());
     tokio::spawn(daemon.clone().pr_watch_loop());
+    // Idle until a workspace has a merge queue; a pause stops its pushes and merges.
+    tokio::spawn(daemon.clone().merge_queue_loop());
     tokio::spawn(crate::checkout_watch::checkout_watch_loop(daemon.clone()));
     // Idle until Settings ▸ Slack turns the intake on.
     tokio::spawn(daemon.clone().slack_loops());

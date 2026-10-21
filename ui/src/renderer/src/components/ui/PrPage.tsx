@@ -6,8 +6,9 @@ import { Select } from './Select'
 import { Segmented } from './SegmentedControl'
 import { ROW_STATE } from './rowState'
 
-export function PrPageContent({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="mx-auto grid w-full max-w-[760px] content-start gap-[var(--space-4)] px-[var(--space-6)] pb-[var(--space-6)] pt-[var(--space-5)]">{children}</div>
+/** `wide` fits a list beside its detail, as the merge queue shows them. */
+export function PrPageContent({ children, width = 'default', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; width?: 'default' | 'wide' }): React.JSX.Element {
+  return <div {...props} className={`mx-auto grid w-full ${width === 'wide' ? 'max-w-[1040px]' : 'max-w-[760px]'} content-start gap-[var(--space-4)] px-[var(--space-6)] pb-[var(--space-6)] pt-[var(--space-5)]`}>{children}</div>
 }
 
 export function PrPageHeader({ workspace, options, onWorkspaceChange }: { workspace: string; options: { value: string; label: string }[]; onWorkspaceChange: (workspace: string) => void }): React.JSX.Element {

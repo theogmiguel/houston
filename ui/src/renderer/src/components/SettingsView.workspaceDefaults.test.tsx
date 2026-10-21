@@ -161,8 +161,7 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
     openWorkspaceDefaults()
     expect(container.textContent).toContain('Open links in a browser pane')
     expect(container.textContent).toContain('Browser')
-    const toggles = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="switch"]'))
-    const live = toggles[toggles.length - 1]
+    const live = container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Open links in a browser pane"]')!
     expect(live.getAttribute('aria-checked')).toBe('false')
     act(() => {
       live.dispatchEvent(new MouseEvent('click', { bubbles: true }))

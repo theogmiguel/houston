@@ -65,10 +65,10 @@ describe('WorkspaceEmpty — state matrix', () => {
   })
 
   it('installed agents launch directly and unavailable providers are absent', () => {
-    const button = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'codex')!
+    const button = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Codex')!
     act(() => button.click())
     expect(clicks).toEqual(['codex'])
-    expect(container.textContent).not.toContain('antigravity')
+    expect(container.textContent).not.toContain('Antigravity')
     expect(container.querySelector('[data-testid="workspace-empty-new-session"]')).toBeNull()
   })
 

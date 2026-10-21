@@ -216,6 +216,8 @@ import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
+import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
+import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
 import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
@@ -914,6 +916,14 @@ export function App(): React.JSX.Element {
   const railView = useRailView();
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
+  const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  const openMergeQueue = useCallback((): void => {
+    requestPrsView({ view: "queue" });
+    setSettings(false);
+    setRailView("prs");
+    setShowLauncher(false);
+  }, [setSettings]);
+  useMergeQueueAwayNotice(readyClient(conn), selectedWs, appNotices.push, appNotices.dismiss, openMergeQueue);
   const [requestedPr, setRequestedPr] = useState<PullRequestLink | null>(null);
 
   const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
@@ -3562,6 +3572,8 @@ export function App(): React.JSX.Element {
       );
     },
     selectNavRow,
+    ...mergeQueuePaletteActions(railPrByDir, sessions, activeId, selectNavRow),
+    ...mergeQueuePauseAction(client, selectedWs),
     switchWorkspace: (path) => {
       setSelectedWs(path);
       setShowLauncher(false);
@@ -3656,6 +3668,7 @@ export function App(): React.JSX.Element {
               harnessAttention={harnessAttention}
               agentAttention={agentAttention}
               taskTurnCount={taskTurnCount}
+              mergeQueueParked={mergeQueueParked}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
@@ -4104,6 +4117,20 @@ export function App(): React.JSX.Element {
                       onSortChange={prScreen.setSort}
                       onRefresh={prScreen.refresh}
                       onOpenSurface={openPanelSurface}
+                      onOpenMergeQueueSettings={() => {
+                        setSettingsSection("workspaces");
+                        setSettings(true);
+                      }}
+                      onHandOff={(worktree, prompt, agent) => {
+                        if (conn.kind !== "ready") return;
+                        setRailView(null);
+                        conn.client.createSession({
+                          ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
+                          agent,
+                          project_dir: worktree,
+                          prompt,
+                        });
+                      }}
                     />
                   ) : railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
