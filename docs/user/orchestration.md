@@ -18,7 +18,8 @@ other on names and arguments:
 
 - An MCP tool set: `pane_spawn`, `pane_list`, `pane_get`, `pane_send_keys`, `pane_read`,
   `pane_prompt`, `pane_wait`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`,
-  `pane_deny`, `pane_escalate`, and the `pane_instruction_*` controls.
+  `pane_deny`, `pane_escalate`, `pane_pr_watch`, `pane_pr_unwatch`,
+  and the `pane_instruction_*` controls.
 - A command-line tool, `hs-pane`, with one subcommand per verb above (plus a CLI-only
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
 
@@ -291,10 +292,12 @@ on the new generation. Pending results remain available for that wait.
 Claude children receive launch-only permission rules for exactly Houston's
 `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
 automatic approval is disabled. Other tools keep the selected approval mode.
-Codex, Antigravity, OpenCode and ZCode have no equivalent launch rule; their
-selected approval mode still applies to these tools. Outside yolo mode ZCode asks for
-approval before every Houston tool call, so a ZCode parent also asks before each
-`pane_spawn` and `pane_wait`.
+A child launched from a file-backed brief also gets a launch-only rule to read
+exactly that one brief file, so an unattended child never stops at a permission
+prompt for its own instructions. Codex, Antigravity, OpenCode and ZCode have no
+equivalent launch rule; their selected approval mode still applies to these
+tools. Outside yolo mode ZCode asks for approval before every Houston tool call,
+so a ZCode parent also asks before each `pane_spawn` and `pane_wait`.
 
 A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
 failure — or is interrupted reports no turn end: its parent's wait times out instead of

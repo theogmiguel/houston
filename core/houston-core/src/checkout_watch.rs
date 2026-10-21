@@ -10,6 +10,22 @@ const MAX_HEAD_WATCHES: usize = 256; // Bounds inotify use while covering a typi
 const DEBOUNCE: Duration = Duration::from_millis(250);
 const FALLBACK_POLL: Duration = Duration::from_secs(30);
 
+// Pass counters for the idle-skip regression test; never built outside tests.
+#[cfg(test)]
+static TEST_PASSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(test)]
+static TEST_HEAD_PATHS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(test)]
+fn note_pass() {
+    TEST_PASSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(test)]
+fn note_head_path() {
+    TEST_HEAD_PATHS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 struct HeadWatch {
     refs: HashSet<u32>,
     watcher: Option<notify::RecommendedWatcher>,
@@ -17,6 +33,8 @@ struct HeadWatch {
 
 /// Resolve the per-checkout HEAD file, including the indirection used by linked worktrees.
 pub(crate) fn head_path(root: &Path) -> Option<PathBuf> {
+    #[cfg(test)]
+    note_head_path();
     let dot_git = root.join(".git");
     if dot_git.is_dir() {
         return Some(dot_git.join("HEAD"));
@@ -72,18 +90,41 @@ pub async fn checkout_watch_loop(daemon: Arc<Daemon>) {
     let mut warned_overflow = HashSet::new();
     let mut next_fallback_poll = Instant::now() + FALLBACK_POLL;
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    let mut last_ids: Vec<(u32, u8)> = Vec::new();
+    let mut resolves_pending = false;
 
     loop {
         tokio::select! {
             _ = hints.wake.notified() => {}
             _ = ticker.tick() => {}
         }
-        let deadline = Instant::now() + DEBOUNCE;
-        for head in std::mem::take(&mut *hints.dirty.lock().expect("checkout hints lock")) {
-            pending.insert(head, deadline);
+        let now = Instant::now();
+        let deadline = now + DEBOUNCE;
+        let hinted = std::mem::take(&mut *hints.dirty.lock().expect("checkout hints lock"));
+        for head in &hinted {
+            pending.insert(head.clone(), deadline);
         }
 
-        let sessions = daemon.checkout_watch_sessions();
+        let due: Vec<PathBuf> = pending
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(path, _)| path.clone())
+            .collect();
+        let ids = daemon.checkout_watch_ids();
+        if hinted.is_empty()
+            && due.is_empty()
+            && !resolves_pending
+            && now < next_fallback_poll
+            && ids == last_ids
+        {
+            continue;
+        }
+        last_ids = ids;
+
+        #[cfg(test)]
+        note_pass();
+        let (sessions, resolves) = daemon.checkout_watch_sessions();
+        resolves_pending = resolves > 0;
         let mut refs: HashMap<PathBuf, HashSet<u32>> = HashMap::new();
         for info in &sessions {
             let Some(checkout) = info.checkout.as_ref() else {
@@ -165,12 +206,6 @@ pub async fn checkout_watch_loop(daemon: Arc<Daemon>) {
             watches.insert(head, HeadWatch { refs: ids, watcher });
         }
 
-        let now = Instant::now();
-        let due: Vec<PathBuf> = pending
-            .iter()
-            .filter(|(_, deadline)| **deadline <= now)
-            .map(|(path, _)| path.clone())
-            .collect();
         for head in due {
             pending.remove(&head);
             refresh_head(&daemon, &sessions, &head, &mut previous);
@@ -220,6 +255,7 @@ fn refresh_head(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::*;
     use notify::event::{
         AccessKind, AccessMode, CreateKind, DataChange, EventKind, ModifyKind, RenameMode,
@@ -267,5 +303,93 @@ mod tests {
         let create = EventKind::Create(CreateKind::File);
         assert!(is_head_change(&event(create, &["/repo/.git/HEAD"]), head));
         assert!(is_head_change(&event(EventKind::Other, &[]), head));
+    }
+
+    fn git_repo(dir: &Path) {
+        for args in [
+            vec!["init"],
+            vec![
+                "-c",
+                "user.email=t@example",
+                "-c",
+                "user.name=t",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "c",
+            ],
+        ] {
+            let ok = std::process::Command::new("git")
+                .args(&args)
+                .current_dir(dir)
+                .status()
+                .expect("git runs")
+                .success();
+            assert!(ok, "git {args:?} failed in {}", dir.display());
+        }
+    }
+
+    // The 8 s window starts fresh after a settle, so the 30 s std-clock fallback and
+    // the 250 ms debounce never fire inside the measured span on either platform.
+    #[tokio::test]
+    async fn idle_ticks_skip_the_session_rebuild() {
+        let state = tempfile::tempdir().unwrap();
+        git_repo(state.path());
+        let daemon = Arc::new(
+            Daemon::new(crate::daemon::DaemonConfig::new(
+                "token".into(),
+                state.path().join("test.db"),
+                crate::host_env::HostEnv::capture_with_home(state.path()),
+            ))
+            .unwrap(),
+        );
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            ids.push(
+                daemon
+                    .create_session(crate::daemon::CreateParams {
+                        agent: proto::AgentKind::Custom,
+                        project_dir: state.path().to_path_buf(),
+                        cmd: Some(if cfg!(windows) {
+                            vec!["cmd.exe".into(), "/d".into(), "/c".into(), "more".into()]
+                        } else {
+                            vec!["cat".into()]
+                        }),
+                        cols: 80,
+                        rows: 24,
+                        cwd_from: None,
+                        shell_integration: false,
+                        auto_approve: false,
+                        acp: None,
+                        profile: None,
+                        prompt: None,
+                        model: None,
+                        effort: None,
+                    })
+                    .unwrap()
+                    .id,
+            );
+        }
+        let watcher = tokio::spawn(checkout_watch_loop(Arc::clone(&daemon)));
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let passes_before = TEST_PASSES.load(std::sync::atomic::Ordering::Relaxed);
+        let heads_before = TEST_HEAD_PATHS.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(passes_before >= 1, "the watcher never ran a pass");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let ordering = std::sync::atomic::Ordering::Relaxed;
+        let passes = TEST_PASSES.load(ordering) - passes_before;
+        let heads = TEST_HEAD_PATHS.load(ordering) - heads_before;
+        println!(
+            "over 5 idle ticks: {passes} checkout_watch_sessions calls, {heads} head_path calls"
+        );
+        assert_eq!(
+            passes, 0,
+            "idle ticks rebuilt per-session state {passes} times"
+        );
+        assert_eq!(heads, 0, "idle ticks stat'd HEAD paths {heads} times");
+        watcher.abort();
+        for id in ids {
+            let _ = daemon.close(id);
+        }
     }
 }

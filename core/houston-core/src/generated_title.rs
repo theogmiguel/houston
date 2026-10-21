@@ -57,15 +57,77 @@ pub fn argv(provider: AgentKind, prompt: String) -> Result<Vec<String>> {
 
 pub fn parse(output: &str) -> Result<String> {
     let title = crate::agents::strip_ansi(output).trim().to_string();
+    if title.is_empty() {
+        bail!("generated title is empty; expected one plain line of 1–40 characters");
+    }
+    // Checked first: it bounds the title quoted by the refusals below.
     let length = title.chars().count();
-    if title.is_empty()
-        || length > 40
-        || title.contains(['\n', '\r'])
-        || title.chars().any(char::is_control)
-    {
-        bail!(
-            "generated title has {length} characters; expected one plain line of 1–40 characters"
-        );
+    if length > 40 {
+        bail!("generated title has {length} characters; expected 1–40: {title:?}");
+    }
+    if title.contains(['\n', '\r']) {
+        bail!("generated title contains a line break; expected one plain line: {title:?}");
+    }
+    if let Some(character) = title.chars().find(|&c| c.is_control()) {
+        bail!("generated title contains control character {character:?}; expected plain printable text: {title:?}");
     }
     Ok(title)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_break_is_refused_with_its_own_reason_and_the_offending_text() {
+        let error = parse("Fix\nthe\nbug").unwrap_err().to_string();
+        assert!(error.contains("line break"), "unexpected refusal: {error}");
+        assert!(
+            error.contains(r#"Fix\nthe\nbug"#),
+            "refusal does not quote the title: {error}"
+        );
+        assert!(
+            !error.contains("11 characters"),
+            "refusal blames the length: {error}"
+        );
+    }
+
+    #[test]
+    fn a_control_character_is_refused_with_the_offender_and_the_text() {
+        let error = parse("Fix\u{7f}the bug").unwrap_err().to_string();
+        assert!(
+            error.contains("control character"),
+            "unexpected refusal: {error}"
+        );
+        assert!(
+            error.contains(r#"\u{7f}"#),
+            "refusal does not name the control character: {error}"
+        );
+        assert!(
+            error.contains(r#"Fix\u{7f}the bug"#),
+            "refusal does not quote the title: {error}"
+        );
+    }
+
+    #[test]
+    fn an_over_long_title_is_refused_with_its_length_and_text() {
+        let title = "abcdefghij".repeat(5);
+        let error = parse(&title).unwrap_err().to_string();
+        assert!(
+            error.contains("50 characters"),
+            "unexpected refusal: {error}"
+        );
+        assert!(error.contains(&title), "refusal does not quote it: {error}");
+    }
+
+    #[test]
+    fn an_empty_result_is_refused_as_empty() {
+        let error = parse("   \n ").unwrap_err().to_string();
+        assert!(error.contains("empty"), "unexpected refusal: {error}");
+    }
+
+    #[test]
+    fn a_plain_one_line_title_is_accepted() {
+        assert_eq!(parse("  Fix the bug  ").unwrap(), "Fix the bug");
+    }
 }

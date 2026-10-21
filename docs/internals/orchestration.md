@@ -1495,24 +1495,33 @@ self-refusal exists for the verbs that act on a pane, and this one only reads.
 
 File-backed launch briefs have unique paths for each launch. A sibling launch cannot
 overwrite instructions that an existing agent may reread after compaction or resume.
+The instruction names the brief in its plain Windows form: internally kept paths may
+be canonicalised into the `\\?\` verbatim prefix, which a child CLI and its
+permission rules do not parse. A Claude child gets a launch-only Read rule for
+exactly its brief file, joined into the single `--allowedTools` token with the
+dialogue tools: Houston never relies on repeating the flag.
 
 `prompt` is unchanged and is still a complete request on its own;
 `output_format` and `boundaries` are optional and are composed WITH it, by
 `orchestrate::Brief::compose`, into one instruction string before anything is launched.
-Additive on purpose: the same bytes reach every provider's CLI, no wire shape changes, and
+Additive on purpose: each child still receives one composed text, no wire shape changes, and
 nothing downstream — the prompt file, `delegations.brief`, `pane_get` — learns a second
-shape. Composing IS the validation (the caps live inside `compose`), so no door can build a
+shape. Only the handback wording varies, with the child's provider, as below. Composing IS
+the validation (the caps live inside `compose`), so no door can build a
 brief that skipped them, and an over-long half is REFUSED rather than clipped: the caller of
 a spawn is still there to fix what it sent, and half a response schema instructs worse than
 none. There are no new columns; the row's `brief` holds the composed text, which is what a
 parent reading `pane_get` actually needs to see.
 
-Every composed brief ends with the same short **handback protocol**: call `pane_submit`,
-because that and not the child's own pane is what reaches whoever
-asked. The MCP `initialize` paragraph says this too, but it is read once at connect and
-then has to win against the whole task — and on a small enough task it loses. The
-instruction the child is launched with is the one text it cannot skim past, so the protocol
-goes there as well, last, after the task and both of its optional halves.
+Every composed brief ends with the same short **handback protocol**, worded for the door the
+child actually has: a child with the pane_* MCP tools (Claude, Codex, OpenCode) is told to
+call `pane_submit`, while a CLI-only provider (Antigravity, ZCode) gets the same protocol in
+`hs-pane` spelling — naming a tool the child cannot call made hand-backs arrive late or
+never. The protocol points at the parent, because that and not the child's own pane is what
+reaches whoever asked. The MCP `initialize` paragraph says this too, but it is read once at
+connect and then has to win against the whole task — and on a small enough task it loses.
+The instruction the child is launched with is the one text it cannot skim past, so the
+protocol goes there as well, last, after the task and both of its optional halves.
 
 ## Artifacts
 

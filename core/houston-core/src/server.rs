@@ -498,6 +498,9 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
     }
 
     let wake = Arc::new(Notify::new());
+    // The session this connection last typed into; flush_frames drains its tap
+    // first so a keystroke echo never queues behind a turn of every busy pane.
+    let last_typed = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let mut frames_wanted = AttachSet::new(Arc::clone(&daemon), Arc::clone(&wake));
     let conn_id = daemon.conn_register();
 
@@ -517,6 +520,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
         stream,
         inbound_tx,
         conn_id,
+        Arc::clone(&last_typed),
     )));
     loop {
         tokio::select! {
@@ -529,7 +533,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 if replies.failed.load(std::sync::atomic::Ordering::Acquire) {
                     break;
                 }
-                if !flush_frames(&mut sink, &frames_wanted).await {
+                if !flush_frames(&mut sink, &frames_wanted, &last_typed).await {
                     break;
                 }
             }
@@ -623,6 +627,7 @@ async fn read_client(
     mut stream: futures_util::stream::SplitStream<WebSocket>,
     inbound: tokio::sync::mpsc::Sender<Inbound>,
     conn_id: u64,
+    last_typed: Arc<std::sync::atomic::AtomicU32>,
 ) {
     let bytes = Arc::new(tokio::sync::Semaphore::new(CONTROL_INBOUND_BYTES));
     loop {
@@ -641,6 +646,7 @@ async fn read_client(
                 let Some((id, payload)) = proto::decode_stdin_frame(&buf) else {
                     continue;
                 };
+                last_typed.store(id, std::sync::atomic::Ordering::Relaxed);
                 daemon.note_operator_keystroke(id, payload);
                 if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
                     if vanished(&daemon, id, "stdin") {
@@ -669,13 +675,18 @@ async fn read_client(
     }
 }
 
-// Payload one session sends per turn. Sessions take turns on the connection, so a quiet
-// pane's echo waits behind at most one turn of each busy pane, not their whole backlogs.
+// Payload one session sends per flush turn, and the last-typed session's tap is drained
+// first, so its echo never waits behind one turn of every busy pane, only its own write.
 const FLUSH_TURN_BYTES: usize = 64 * 1024;
 
-async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachSet) -> bool {
+async fn flush_frames(
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    taps: &AttachSet,
+    last_typed: &std::sync::atomic::AtomicU32,
+) -> bool {
+    let typed = last_typed.load(std::sync::atomic::Ordering::Relaxed);
     let mut fed = false;
-    for tap in taps.taps() {
+    for tap in taps.taps((typed != 0).then_some(typed)) {
         let Some(session) = tap.session() else {
             continue;
         };
@@ -779,11 +790,24 @@ impl AttachSet {
             .unwrap_or(0)
     }
 
-    fn taps(&self) -> Vec<Arc<FrameTap>> {
-        self.visible
-            .iter()
-            .filter_map(|id| self.taps.get(id).cloned())
-            .collect()
+    /// Visible taps with `priority` (this connection's last-typed session) first, so
+    /// its echo does not wait behind one turn of every busy pane in HashSet order.
+    fn taps(&self, priority: Option<u32>) -> Vec<Arc<FrameTap>> {
+        let mut ordered = Vec::with_capacity(self.visible.len());
+        if let Some(id) = priority {
+            if self.visible.contains(&id) {
+                if let Some(tap) = self.taps.get(&id) {
+                    ordered.push(Arc::clone(tap));
+                }
+            }
+        }
+        ordered.extend(
+            self.visible
+                .iter()
+                .filter(|id| Some(**id) != priority)
+                .filter_map(|id| self.taps.get(id).cloned()),
+        );
+        ordered
     }
 }
 
@@ -6387,10 +6411,19 @@ mod frame_flush_tests {
                 crate::host_env::HostEnv::capture_with_home(state.path()),
             ))
             .unwrap();
-            let id = daemon
+            let id = Self::spawn(&daemon, state.path());
+            Self {
+                daemon,
+                id,
+                _state: state,
+            }
+        }
+
+        fn spawn(daemon: &Arc<Daemon>, dir: &Path) -> u32 {
+            daemon
                 .create_session(crate::daemon::CreateParams {
                     agent: proto::AgentKind::Custom,
-                    project_dir: state.path().to_path_buf(),
+                    project_dir: dir.to_path_buf(),
                     cmd: Some(if cfg!(windows) {
                         vec!["cmd.exe".into(), "/d".into(), "/c".into(), "more".into()]
                     } else {
@@ -6408,12 +6441,7 @@ mod frame_flush_tests {
                     effort: None,
                 })
                 .unwrap()
-                .id;
-            Self {
-                daemon,
-                id,
-                _state: state,
-            }
+                .id
         }
     }
 
@@ -6515,7 +6543,7 @@ mod frame_flush_tests {
         }
 
         let mut sink = RecordingSink::default();
-        assert!(flush_frames(&mut sink, &taps).await);
+        assert!(flush_frames(&mut sink, &taps, &std::sync::atomic::AtomicU32::new(0)).await);
         assert_eq!(sink.flushes, 1);
         let payloads = sink
             .messages
@@ -6548,7 +6576,7 @@ mod frame_flush_tests {
         let mut sink = RecordingSink::default();
         let mut turns = Vec::new();
         loop {
-            assert!(flush_frames(&mut sink, &taps).await);
+            assert!(flush_frames(&mut sink, &taps, &std::sync::atomic::AtomicU32::new(0)).await);
             let sent = std::mem::take(&mut sink.messages);
             turns.push(sent.len());
             for message in sent {
@@ -6564,6 +6592,69 @@ mod frame_flush_tests {
             }
         }
         assert_eq!(turns, [1, 1, 1], "three turns cover the backlog, in order");
+    }
+
+    #[tokio::test]
+    async fn the_last_typed_sessions_echo_flushes_before_flooding_neighbours() {
+        let fixture = LiveSession::new();
+        let quiet = fixture.id;
+        let busy: Vec<u32> = (0..3)
+            .map(|_| LiveSession::spawn(&fixture.daemon, fixture._state.path()))
+            .collect();
+        let backlog = 2 * FLUSH_TURN_BYTES + 100;
+        // A fresh AttachSet per round re-seeds the HashSet, so the unordered
+        // baseline rotates instead of passing every round by one lucky order.
+        for round in 0..24 {
+            let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
+            for id in std::iter::once(quiet).chain(busy.iter().copied()) {
+                taps.insert(id);
+                let tap = taps.taps.get(&id).unwrap();
+                fixture.daemon.frame_taps().unregister(tap);
+                tap.clear();
+            }
+            for id in &busy {
+                taps.taps.get(id).unwrap().offer(
+                    0,
+                    backlog,
+                    &Arc::new(proto::encode_output_frame(*id, 0, &vec![b'x'; backlog])),
+                );
+            }
+            taps.taps.get(&quiet).unwrap().offer(
+                0,
+                4,
+                &Arc::new(proto::encode_output_frame(quiet, 0, b"echo")),
+            );
+            let last_typed = Arc::new(std::sync::atomic::AtomicU32::new(quiet));
+            let mut sink = RecordingSink::default();
+            assert!(flush_frames(&mut sink, &taps, &last_typed).await);
+            assert_eq!(
+                sink.messages.len(),
+                4,
+                "one turn per busy neighbour plus the echo"
+            );
+            let mut bytes_before = 0usize;
+            let mut echo = None;
+            for message in &sink.messages {
+                let Message::Binary(bytes) = message else {
+                    panic!("expected binary output frame, got {message:?}");
+                };
+                let (session, _, payload) = proto::decode_output_frame(bytes).unwrap();
+                if session == quiet {
+                    echo = Some(payload.to_vec());
+                    break;
+                }
+                bytes_before += payload.len();
+            }
+            let payload = echo
+                .unwrap_or_else(|| panic!("round {round}: the typed session's echo never flushed"));
+            println!("round {round}: {bytes_before} bytes precede the typed session's echo");
+            assert_eq!(payload, b"echo");
+            assert_eq!(
+                bytes_before, 0,
+                "round {round}: the typed session's echo waited behind {bytes_before} bytes \
+                 of neighbour turns"
+            );
+        }
     }
 
     #[tokio::test]
