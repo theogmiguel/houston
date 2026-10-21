@@ -83,7 +83,7 @@ export function PaneNoticeTitle({ className, ...rest }: HTMLAttributes<HTMLDivEl
 }
 
 export function PaneNoticeHint({ className, ...rest }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
-  return <Text {...rest} as="div" size="xs" tone="muted" breakAll className={join('max-w-[36ch]', className)} />
+  return <Text {...rest} as="div" size="xs" tone="muted" className={join('max-w-[36ch] break-words', className)} />
 }
 
 export function NoticeAction({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {

@@ -66,6 +66,7 @@ interface RailProps {
   cardMode?: 'detailed' | 'compact'
   tagDisplay?: 'icon' | 'dots' | 'chips'
   sessions?: SessionInfo[]
+  finishedUnseen?: ReadonlySet<number>
   gridsByWorkspace?: Record<string, { id: string; name: string; count?: number; state?: 'starting' | 'working' | 'needs-input' | 'idle' | 'unavailable' | 'stopped'; sessionIds?: number[]; tagIds?: number[]; paneTagIds?: number[] }[]>
   pinnedGridIds?: string[]
   selectedGridId?: string
@@ -109,6 +110,7 @@ function RailFixture({
   cardMode = 'detailed',
   tagDisplay = 'icon',
   sessions = [],
+  finishedUnseen,
   gridsByWorkspace,
   pinnedGridIds = [],
   selectedGridId = 'work-in',
@@ -126,6 +128,7 @@ function RailFixture({
       <Sidebar
         workspaces={workspaces}
         sessions={sessions}
+        finishedUnseen={finishedUnseen}
         selected={selected}
         selectedGridId={selectedGridId}
         gridsByWorkspace={fixtureGrids(gridsByWorkspace, withGrids)}
@@ -489,6 +492,24 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/sidebar-options': () => <RailCardModes openOptions />,
   'rail/sidebar-tag-filter': () => <RailCardModes tagFilter={[1]} />,
   'rail/agent-focus': () => <RailCardModes />,
+  // A pane that works again drops the mark, so the marked pane keeps its own
+  // idle grid beside the working one the operator is reading.
+  'rail/finished-unseen': () => <RailFixture
+    workspaces={[ws('Houston')]}
+    pinned={[]}
+    selected={path('Houston')}
+    selectedGridId="flicker"
+    cardMode="detailed"
+    tagDisplay="chips"
+    sessions={CARD_SESSIONS.filter(({ id }) => id === 6 || id === 7)}
+    gridsByWorkspace={{ [path('Houston')]: [
+      { id: 'flicker', name: 'Fix the sidebar flicker', count: 1, state: 'working', sessionIds: [6], paneTagIds: [] },
+      { id: 'inspector-polish', name: 'Inspector polish', count: 1, state: 'idle', sessionIds: [7], paneTagIds: [] },
+    ] }}
+    pinnedGridIds={[]}
+    collapsed={[]}
+    finishedUnseen={new Set([7])}
+  />,
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,
   'rail/card-modes-options-sort': () => <RailCardModes optionsPanel="sort" />,

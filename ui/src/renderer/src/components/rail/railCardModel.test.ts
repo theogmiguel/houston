@@ -78,5 +78,30 @@ describe('buildRailCard', () => {
     expect(card.checkouts).toEqual([])
     expect(card.status.kind).toBe('idle')
   })
+
+  it('marks a pane that finished unseen as unread', () => {
+    const card = buildRailCard({
+      gridId: 'g1',
+      workspace: '/repo',
+      title: 'Finished unseen',
+      paneIds: [1, 2],
+      sessions: [session({ id: 1, status: 'idle' }), session({ id: 2, status: 'idle' })],
+      finishedUnseen: new Set([2]),
+    })
+    expect(card.agents[0].unread).toBe(false)
+    expect(card.agents[1].unread).toBe(true)
+  })
+
+  it('keeps a finished-unseen pane read when the pane is not marked', () => {
+    const card = buildRailCard({
+      gridId: 'g1',
+      workspace: '/repo',
+      title: 'Idle',
+      paneIds: [1],
+      sessions: [session({ id: 1, status: 'idle' })],
+      finishedUnseen: new Set([9]),
+    })
+    expect(card.agents[0].unread).toBe(false)
+  })
 })
 

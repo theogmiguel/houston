@@ -394,7 +394,7 @@ function RemoteGroups(props: RemoteGroupProps): React.JSX.Element {
     return () => clearInterval(timer)
   }, [])
   return <>
-    <SectionHead variant="section" title="Paired devices" count={remote.devices.length} />
+    <SectionHead variant="section" title="Paired devices" count={remote.devices.length > 0 ? remote.devices.length : undefined} />
     <SettingsList>{remote.devices.length ? remote.devices.map((device) => <DeviceRow key={device.id} device={device} enabled={remote.enabled} now={now} onRevoke={onRevoke} onSetTier={onSetTier} />) : <Row title="No devices paired" desc="Show a code above to pair your first device." />}</SettingsList>
     <Card shape="card"><SettingsDisclosure heading="Phone notifications" status={<Text size="small" tone="muted">{remote.ntfy_server ? `${remote.ntfy_server} · after ${remote.notify_delay_secs}s waiting` : 'Off'}</Text>}><RemoteNotifications {...props} /></SettingsDisclosure></Card>
     <Card shape="card"><SettingsDisclosure heading="Route and address" status={<Text size="small" tone="muted">{routeKind(remote)} · {remote.bind}</Text>}><RemoteRoute {...props} /></SettingsDisclosure></Card>
