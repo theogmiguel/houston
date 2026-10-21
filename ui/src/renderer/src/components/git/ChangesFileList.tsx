@@ -221,7 +221,7 @@ export function ChangesFileList({
               {compact && expandedPaths?.has(row.path) && (
                 <PrTab as="div" surface="changes-inline-diff" states={[wrapDiff ? 'wrapped' : '', splitDiff ? 'split' : ''].filter(Boolean)} data-testid="changes-inline-diff" data-path={row.path}>
                   {inlineDiffs?.get(row.path)
-                    ? <DiffBody patch={inlineDiffs.get(row.path)!.patch} truncated={inlineDiffs.get(row.path)!.truncated} split={splitDiff} />
+                    ? <DiffBody patch={inlineDiffs.get(row.path)!.patch} truncated={inlineDiffs.get(row.path)!.truncated} split={splitDiff} findKey={row.path} />
                     : <PrTab as="div" surface="changes-inline-loading">Loading diff…</PrTab>}
                 </PrTab>
               )}

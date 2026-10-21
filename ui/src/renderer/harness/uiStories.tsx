@@ -310,7 +310,7 @@ import {
   SingleLineText
 } from '../src/components/ui'
 import { BrowserBlankState, BrowserUnreachableState } from '../src/components/ui/BrowserPaneStates'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal, IconPanelRight, IconRefresh } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconMinus, IconPlus, IconSearch, IconTerminal, IconPanelRight, IconRefresh } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
@@ -322,6 +322,7 @@ import { Prose } from '../src/components/ui/Prose'
 import { MarkdownToggle } from '../src/components/ui/MarkdownToggle'
 import { MarkdownImageAction, MarkdownImageCaption, MarkdownImageFigure, MarkdownImageLabel } from '../src/components/ui/MarkdownImage'
 import { MediaPreviewAudioGroup, MediaPreviewImage, MediaPreviewSurface, PreviewDetail, PreviewName, PreviewState, PreviewTitle } from '../src/components/ui/EditorPreview'
+import { MediaZoomBar, MediaZoomImage, MediaZoomReadout, MediaZoomViewport } from '../src/components/ui/MediaZoom'
 import { PaneDropIndicator, PaneDropLabel, SplitterAffordance, PaneGridSurface, PaneDragScrim } from '../src/components/ui/PaneDropIndicator'
 import { WindowControlDisc } from '../src/components/ui/WindowControl'
 import { AnimOut } from '../src/components/ui/AnimOut'
@@ -1573,6 +1574,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <div className="relative h-40 w-72"><PreviewState><PreviewTitle>Preview unavailable</PreviewTitle><PreviewName>diagram.png</PreviewName><PreviewDetail>Open this file externally.</PreviewDetail></PreviewState></div>
               <div className="relative h-40 w-64"><MediaPreviewSurface><MediaPreviewImage alt="preview sample" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" /></MediaPreviewSurface></div>
               <MediaPreviewAudioGroup><PreviewName>audio.wav</PreviewName></MediaPreviewAudioGroup>
+              <div className="relative h-40 w-64"><MediaZoomViewport cursor="grab" tabIndex={0} aria-label="zoom viewport sample"><div className="relative h-60 w-96"><MediaZoomImage pixelated alt="zoomed sample" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" style={{ left: 24, top: 24, width: 336, height: 192 }} /></div></MediaZoomViewport><MediaZoomBar><Button variant="icon" icon={IconMinus} aria-label="Zoom out" /><MediaZoomReadout>200%</MediaZoomReadout><Button variant="icon" icon={IconPlus} aria-label="Zoom in" /><Button variant="ghost" size="sm">Fit</Button></MediaZoomBar></div>
             </SpecimenRow>
           </section>
         </SpecimenGroup>

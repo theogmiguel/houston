@@ -48,6 +48,15 @@ another. Press `/` to focus the filename filter, then use `J` and `K` to move th
 matching files when you are not typing into a field. **Unified** and **Split** choose the
 diff layout. Press **Esc** to restore the panel's previous width.
 
+To find text in a diff, click into Changes or a pull request's **Files** and press `Ctrl+F`.
+The find strip counts matches; **Enter** and **Shift+Enter** move to the next and previous
+match, **Aa** matches case, and **Esc** closes it. Find searches only patch text Houston has
+already loaded: in Changes, the selected file's diff, or every expanded file in the side
+panel's list; in **Files**, every file of the pull request, and a match in a collapsed file
+expands it. When a patch was truncated at its size cap, the count is marked **partial**.
+Rebind the chord in **Settings ▸ Shortcuts** under **Find in the focused diff**; in a
+focused terminal, `Ctrl+F` remains terminal search.
+
 Review with agent opens a picker with the five engines Houston can spawn — Claude Code,
 Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
@@ -65,6 +74,21 @@ Use **Summary**, **Timeline** and **Files** to read the description, review disc
 and inspect changed files. Timeline and Files report their item counts. Reply to review
 comments, resolve discussions, submit a review or send a comment to the orchestrator
 pane. Details also let you edit the title and description, reviewers and labels.
+
+Each file in **Files** carries a **Viewed** toggle. Marks are kept per pull request, so
+files you have already reviewed stay viewed when you reopen the panel. When a viewed
+file's patch changes — after a new push, for example — the file reads unviewed again and
+carries a **Changed since viewed** badge until you review the new version; marking it
+viewed records the new patch. Binary files and mode changes count as changes too. When a
+patch is too large to load in full, the file it cuts off reads **Patch cut off** and its
+Viewed toggle is unavailable, because Houston cannot compare the whole file.
+
+**Hide resolved** and **Hide bots** filter a pull request's discussions and comments; each
+names how many items it applies to, and hidden items collapse to one line with **Show**.
+A comment counts as a bot's when GitHub reports its author as an app. A discussion counts as
+a bot's only until a person replies in it. Both toggles are off by default, and the choice
+is remembered on this device for every pull request. The Timeline already omits resolved
+discussions, so it offers only **Hide bots**.
 
 Merge readiness reports checks, required reviews and conflicts with the base branch.
 Choose squash, merge commit or rebase, and review the stated consequence before

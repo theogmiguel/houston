@@ -457,6 +457,33 @@ export async function searchFilePaths(root: string, query: string, limit = 200):
   return invoke('fs_search_paths', { root, query, limit })
 }
 
+export interface ContentSearchOptions {
+  caseSensitive: boolean
+  wholeWord: boolean
+  regex: boolean
+}
+
+export interface ContentSearchMatch {
+  line: number
+  column: number
+  preview: string
+  ranges: [number, number][]
+}
+
+export interface ContentSearchResult {
+  files: { path: string; matches: ContentSearchMatch[] }[]
+  matchingLines: number
+  scannedFiles: number
+  skippedLarge: number
+  skippedBinary: number
+  stoppedAt: { kind: 'matchingLines' | 'scannedFiles' | 'milliseconds'; limit: number; actual: number } | null
+}
+
+export async function searchFileContents(root: string, query: string, options: ContentSearchOptions): Promise<ContentSearchResult> {
+  const invoke = await invoker()
+  return invoke('fs_search_contents', { root, query, ...options })
+}
+
 export async function watchFileDirs(root: string, dirs: string[]): Promise<void> {
   const invoke = await invoker()
   return invoke('fs_watch_dirs', { root, dirs })

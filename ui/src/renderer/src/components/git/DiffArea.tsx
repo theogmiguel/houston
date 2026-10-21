@@ -40,7 +40,7 @@ function DiffBodyArea({
   if (diff.patch.trim().length === 0) {
     return <DiffEmptyState>No textual diff for this file.</DiffEmptyState>
   }
-  return <DiffBody patch={diff.patch} truncated={diff.truncated} split={split} />
+  return <DiffBody patch={diff.patch} truncated={diff.truncated} split={split} findKey={row.path} />
 }
 
 export function DiffArea({

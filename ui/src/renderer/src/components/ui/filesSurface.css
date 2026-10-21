@@ -797,6 +797,67 @@
 .files-qfoot .r {
   margin-left: auto;
 }
+.files-cstoggles {
+  display: flex;
+  gap: var(--space-1);
+}
+.files-csfile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1-5) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--tr-text-file-breadcrumb);
+  font-weight: 500;
+}
+.files-csfile > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-csfile > .r {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.files-csrow {
+  width: 100%;
+  height: var(--h-ctl);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--tr-radius-sm);
+  text-align: left;
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--h-ctl);
+}
+.files-csrow > .n {
+  min-width: 4ch;
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--tr-text-file-breadcrumb);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.files-csrow > .t {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--tr-text-file-breadcrumb);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.files-csrow mark {
+  border-radius: var(--tr-radius-xs);
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+  color: var(--text-primary);
+}
 @keyframes files-fade {
   from {
     opacity: 0;

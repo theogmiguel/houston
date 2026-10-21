@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 147;
+pub const PROTOCOL_VERSION: u32 = 148;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -3201,6 +3201,10 @@ pub struct PrComment {
     pub url: Option<String>,
     #[serde(default)]
     pub reactions: Vec<PrReactionCount>,
+    /// GitHub reports the author as an app account rather than a person; a read
+    /// that did not ask GitHub leaves it false.
+    #[serde(default)]
+    pub bot: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3570,6 +3574,9 @@ pub struct PrThreadComment {
     pub url: Option<String>,
     #[serde(default)]
     pub reactions: Vec<PrReactionCount>,
+    /// GitHub reports the author as an app account rather than a person.
+    #[serde(default)]
+    pub bot: bool,
 }
 
 /// One inline review discussion: its anchor, its resolution, and the remarks in

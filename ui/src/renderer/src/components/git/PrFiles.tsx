@@ -8,17 +8,23 @@ import { ReviewDiffLine } from '../ui/ReviewDiffLine'
 import { Text } from '../ui/Text'
 import { DiffCodeBlock, DiffCommentComposer, DiffCommentActions, DiffLoadingPanel, PullRequestDiffPanel } from '../ui/PullRequestDiff'
 import { EmptyFilesMessage, FileErrorMessage, FileRetryPanel } from '../ui/FilePanelMessage'
-import { useMemo, useState } from 'react'
-import type { PrDiffSide, PrReviewDraft } from '../../houston/client'
+import { useContext, useMemo, useState } from 'react'
+import type { PrDiffSide, PrReviewDraft, PullRequestLink } from '../../houston/client'
 import { Icon } from '../ui/Icon'
 import { IconCheck, IconChevronDown, IconFile, IconLoaderCircle, IconPlus, IconSplitDown, IconSplitRight, IconCollapse, IconExpand } from '../icons'
+import { Chip } from '../ui/Chip'
 import { DiffLoadingMark } from '../ui'
 import { PrTab } from '../ui/PrTab'
 import { Tooltip } from '../ui/Tooltip'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { draftKey, parsePrDiff, type PrDiffFile, type PrDiffLine } from './prDetailUi'
+import { markPrFileUnviewed, markPrFileViewed, patchHash, prViewedKey, usePrViewedMarks, viewedFingerprint, viewedState, type PrFileViewedState } from './prViewedMarks'
 import type { PrDiffView } from './usePrDetailSubscription'
 import { ScmNotice } from './ScmNotice'
+import { DiffFindContext, type DiffFindSource } from './diffFind'
+import { useDiffFind } from './useDiffFind'
+import { DiffFindBar } from './DiffFindBar'
+import { FindStripDock } from '../ui/FindStripParts'
 function anchorFor(line: PrDiffLine): { side: PrDiffSide; line: number } | null {
   if (line.side === null || line.line === null) return null
   return { side: line.side, line: line.line }
@@ -43,24 +49,30 @@ function visibleLines(lines: PrDiffLine[], hideWhitespace: boolean): PrDiffLine[
 }
 
 function FileSection({
+  findKey,
   file,
   drafts,
   busy,
   onAddDraft,
   open,
   viewed,
+  changed,
+  untracked,
   wrapped,
   split,
   hideWhitespace,
   onToggleOpen,
   onToggleViewed
 }: {
+  findKey: string
   file: PrDiffFile
   drafts: PrReviewDraft[]
   busy: boolean
   onAddDraft: (draft: PrReviewDraft) => void
   open: boolean
   viewed: boolean
+  changed: boolean
+  untracked: boolean
   wrapped: boolean
   split: boolean
   hideWhitespace: boolean
@@ -70,6 +82,7 @@ function FileSection({
   const [composer, setComposer] = useState<{ side: PrDiffSide; line: number } | null>(null)
   const [text, setText] = useState('')
   const path = file.path
+  const marks = useContext(DiffFindContext)
   return (
     <PrTab as="div" surface="pr-code-file" data-testid="pr-file" data-path={path} id={`pr-file-${encodeURIComponent(path)}`}>
       <PrTab as="div" surface="pr-code-file-heading" role="button" tabIndex={0} aria-expanded={open} onClick={onToggleOpen} onKeyDown={(event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggleOpen() } }}>
@@ -82,7 +95,9 @@ function FileSection({
           <Text as="span" size="small" tone="ok">+{file.additions}</Text>{' '}
           <Text as="span" size="small" tone="danger">−{file.deletions}</Text>
         </Text>
-        <PrTab as="button" surface="pr-code-viewed" type="button" aria-pressed={viewed} onClick={(event: React.MouseEvent) => { event.stopPropagation(); onToggleViewed() }}><PrTab as="span" surface="pr-code-viewed-box" state={viewed ? 'viewed' : undefined}>{viewed && <Icon glyph={IconCheck} role="small" />}</PrTab>Viewed</PrTab>
+        {changed && <span onClick={(event: React.MouseEvent) => event.stopPropagation()}><Chip variant="state" tone="warning" label="Changed since viewed" className="flex-none" /></span>}
+        {untracked && <span onClick={(event: React.MouseEvent) => event.stopPropagation()}><Chip variant="state" label="Patch cut off" className="flex-none" /></span>}
+        <PrTab as="button" surface="pr-code-viewed" type="button" aria-pressed={viewed} disabled={untracked} onClick={(event: React.MouseEvent) => { event.stopPropagation(); onToggleViewed() }}><PrTab as="span" surface="pr-code-viewed-box" state={viewed ? 'viewed' : undefined}>{viewed && <Icon glyph={IconCheck} role="small" />}</PrTab>Viewed</PrTab>
       </PrTab>
       {open && <PrTab as="div" surface="pr-code-file-body" states={[wrapped ? 'wrapped' : '', split ? 'split' : ''].filter(Boolean)}><DiffCodeBlock>
         {visibleLines(file.lines, hideWhitespace).map((line, index) => {
@@ -92,7 +107,7 @@ function FileSection({
           const isComposer = composer !== null && anchor !== null && composer.side === anchor.side && composer.line === anchor.line
           return (
             <PrTab as="div" surface="pr-code-line" key={index} data-kind={line.kind}>
-              <ReviewDiffLine variant="pr" kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} action={anchor !== null && (
+              <ReviewDiffLine variant="pr" kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} marks={marks?.(findKey, index)} action={anchor !== null && (
                   <Tooltip label={`Comment on line ${anchor.line}`}>
                   <ReviewButton variant="diff-line-action"
                     type="button"
@@ -157,6 +172,7 @@ function FileSection({
 }
 
 export function PrFiles({
+  link,
   diff,
   loading,
   drafts,
@@ -164,6 +180,7 @@ export function PrFiles({
   onAddDraft,
   onReload
 }: {
+  link: PullRequestLink | null
   diff: PrDiffView | null
   loading: boolean
   drafts: PrReviewDraft[]
@@ -171,19 +188,35 @@ export function PrFiles({
   onAddDraft: (draft: PrReviewDraft) => void
   onReload: () => void
 }): React.JSX.Element {
-  const files = useMemo(() => (diff === null ? [] : parsePrDiff(diff.patch)), [diff])
+  // One fingerprint per file at parse time; the mark store compares it with the hash
+  // taken when the file was last viewed. A truncated patch's last file may be partial.
+  const files = useMemo(() => {
+    if (diff === null) return []
+    const parsed = parsePrDiff(diff.patch)
+    return parsed.map((file, index) => ({ file, hash: diff.truncated && index === parsed.length - 1 ? null : patchHash(viewedFingerprint(file)) }))
+  }, [diff])
+  const prKey = link === null ? null : prViewedKey(link.host, link.repository, link.number)
+  const storedMarks = usePrViewedMarks(prKey)
+  const stateOf = (entry: { file: PrDiffFile; hash: string | null }): PrFileViewedState => viewedState(storedMarks[entry.file.path], entry.hash)
   const [openOverrides, setOpenOverrides] = useState<Map<string, boolean>>(() => new Map())
-  const [viewedOverrides, setViewedOverrides] = useState<Map<string, boolean>>(() => new Map())
   const [wrapped, setWrapped] = useState(false)
   const [split, setSplit] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const [hideWhitespace, setHideWhitespace] = useState(false)
   const isOpen = (path: string, index: number): boolean => openOverrides.get(path) ?? index === 0
-  const isViewed = (path: string, index: number): boolean => viewedOverrides.get(path) ?? index === 0
-  const viewedCount = files.filter((file, index) => isViewed(file.path, index)).length
-  const allClosed = files.length > 0 && files.every((file, index) => !isOpen(file.path, index))
+  const viewedCount = files.filter((entry) => stateOf(entry) === 'viewed').length
+  const allClosed = files.length > 0 && files.every((entry, index) => !isOpen(entry.file.path, index))
   const toggleFile = (path: string, index: number): void => setOpenOverrides((current) => new Map(current).set(path, !isOpen(path, index)))
-  const toggleViewed = (path: string, index: number): void => setViewedOverrides((current) => new Map(current).set(path, !isViewed(path, index)))
+  const toggleViewed = (entry: { file: PrDiffFile; hash: string | null }): void => {
+    if (entry.hash === null) return
+    if (stateOf(entry) === 'viewed') markPrFileUnviewed(prKey, entry.file.path)
+    else markPrFileViewed(prKey, entry.file.path, entry.hash)
+  }
+  const findSources = useMemo<DiffFindSource[]>(() => files.map((entry, index) => ({ key: String(index), lines: visibleLines(entry.file.lines, hideWhitespace).map((line) => line.text), truncated: diff?.truncated === true })), [files, hideWhitespace, diff])
+  const find = useDiffFind(findSources, (key) => {
+    const entry = files[Number(key)]
+    if (entry && !isOpen(entry.file.path, Number(key))) setOpenOverrides((current) => new Map(current).set(entry.file.path, true))
+  })
   if (loading && diff === null) {
     return (
       <DiffLoadingPanel data-testid="pr-files-loading">
@@ -210,19 +243,21 @@ export function PrFiles({
     )
   }
   return (
-    <PullRequestDiffPanel data-testid="pr-files">
+    <PullRequestDiffPanel data-testid="pr-files" ref={find.rootRef} tabIndex={-1} onKeyDownCapture={find.onKeyDownCapture}>
+      <DiffFindContext.Provider value={find.lookup}>
       <PrTab as="div" surface="pr-code-toolbar">
         <PrTab as="span" surface="pr-code-commit-scope">All commits<Icon glyph={IconChevronDown} role="small" /></PrTab>
         <PrTab as="span" surface="pr-code-count">{files.length} files <span>·</span> {viewedCount} / {files.length} viewed</PrTab>
         <PrTab as="div" surface="pr-code-actions">
           <Tooltip label="Hide whitespace changes"><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={hideWhitespace} onClick={() => setHideWhitespace((value) => !value)}>¶</PrTab></Tooltip>
-          <Tooltip label={allClosed ? 'Expand all' : 'Collapse all'}><PrTab as="button" surface="pr-code-action" type="button" onClick={() => setOpenOverrides(new Map<string, boolean>(files.map((file) => [file.path, allClosed])))}><Icon glyph={allClosed ? IconExpand : IconCollapse} role="small" /></PrTab></Tooltip>
+          <Tooltip label={allClosed ? 'Expand all' : 'Collapse all'}><PrTab as="button" surface="pr-code-action" type="button" onClick={() => setOpenOverrides(new Map<string, boolean>(files.map((entry) => [entry.file.path, allClosed])))}><Icon glyph={allClosed ? IconExpand : IconCollapse} role="small" /></PrTab></Tooltip>
           <PrTab as="span" surface="pr-code-layout" role="group" aria-label="Diff layout"><Tooltip label="Stacked diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Stacked diff" aria-pressed={!split} onClick={() => setSplit(false)}><Icon glyph={IconSplitDown} role="small" /></PrTab></Tooltip><Tooltip label="Split diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Split diff" aria-pressed={split} onClick={() => setSplit(true)}><Icon glyph={IconSplitRight} role="small" /></PrTab></Tooltip></PrTab>
           <Tooltip label={wrapped ? 'Disable line wrapping' : 'Wrap lines'}><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><Icon glyph={GLYPH_FOR_VERB['wrap-lines']} role="small" /></PrTab></Tooltip>
           <Tooltip label="File tree"><PrTab as="button" surface="pr-code-action" type="button" aria-expanded={treeOpen} onClick={() => setTreeOpen((value) => !value)}><Icon glyph={GLYPH_FOR_VERB['toggle-file-tree']} role="small" /></PrTab></Tooltip>
         </PrTab>
       </PrTab>
-      {treeOpen && <PrTab as="div" surface="pr-code-tree" role="menu" aria-label="Changed files">{files.map((file) => <PrTab as="button" surface="pr-code-tree-item" type="button" role="menuitem" key={file.path} onClick={() => { setTreeOpen(false); document.getElementById(`pr-file-${encodeURIComponent(file.path)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>{file.path}</PrTab>)}</PrTab>}
+      <FindStripDock><DiffFindBar find={find} /></FindStripDock>
+      {treeOpen && <PrTab as="div" surface="pr-code-tree" role="menu" aria-label="Changed files">{files.map((entry) => <PrTab as="button" surface="pr-code-tree-item" type="button" role="menuitem" key={entry.file.path} onClick={() => { setTreeOpen(false); document.getElementById(`pr-file-${encodeURIComponent(entry.file.path)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>{entry.file.path}</PrTab>)}</PrTab>}
       {diff.truncated && (
         <ScmNotice tone="info" testId="pr-files-truncated">
           The patch hit the daemon's byte cap; open on GitHub for the rest.
@@ -231,23 +266,27 @@ export function PrFiles({
       {files.length === 0 ? (
         <EmptyFilesMessage>The pull request has no files.</EmptyFilesMessage>
       ) : (
-        files.map((file, index) => (
+        files.map((entry, index) => (
           <FileSection
-            key={`${file.path}-${index}`}
-            file={file}
+            findKey={String(index)}
+            key={`${entry.file.path}-${index}`}
+            file={entry.file}
             drafts={drafts}
             busy={writeBusy}
             onAddDraft={onAddDraft}
-            open={isOpen(file.path, index)}
-            viewed={isViewed(file.path, index)}
+            open={isOpen(entry.file.path, index)}
+            viewed={stateOf(entry) === 'viewed'}
+            changed={stateOf(entry) === 'changed'}
+            untracked={stateOf(entry) === 'unknown'}
             wrapped={wrapped}
             split={split}
             hideWhitespace={hideWhitespace}
-            onToggleOpen={() => toggleFile(file.path, index)}
-            onToggleViewed={() => toggleViewed(file.path, index)}
+            onToggleOpen={() => toggleFile(entry.file.path, index)}
+            onToggleViewed={() => toggleViewed(entry)}
           />
         ))
       )}
+      </DiffFindContext.Provider>
     </PullRequestDiffPanel>
   )
 }

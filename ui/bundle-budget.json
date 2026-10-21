@@ -180,9 +180,20 @@
     "",
     "Re-cut against 943,125 bytes (one boot chunk) once both additions above",
     "landed together: the editor path key and the sound burst gate each measured",
-    "within the previous 943,000 cap alone but not combined."
+    "within the previous 943,000 cap alone but not combined.",
+    "",
+    "Re-cut against 944,208 bytes (one boot chunk) with the same small headroom:",
+    "the rail's pin, read and hide actions record an Undo as they run, so their",
+    "wrappers in `rail/useRailUndoActions.ts` are boot-path code. The batching,",
+    "the notice wording and the restore loop load on the first action from",
+    "`rail/railUndo.ts`, behind one `import()`.",
+    "",
+    "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
+    "three additions share this chunk with main's editor path key and sound burst",
+    "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
   ],
-  "maxBootBytes": 943300,
+  "maxBootBytes": 946800,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

@@ -85,6 +85,7 @@
 .pr-code-file-heading .pr-code-file-status { color: var(--info); }
 .pr-code-file-heading .pr-code-file-status.is-added { color: var(--ok); }
 .pr-code-viewed { display: inline-flex; align-items: center; gap: var(--space-1-5); margin-left: var(--space-3); border: 0; background: none; color: var(--text-muted); font-size: var(--tr-text-xs); cursor: pointer; }
+.pr-code-viewed:disabled { cursor: default; opacity: 0.5; }
 .pr-code-viewed-box { display: inline-flex; width: 14px; height: 14px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: var(--tr-radius-input); background: var(--hover-fill); }
 .pr-code-viewed-box.is-viewed { border-color: var(--accent); background: var(--accent); color: white; }
 .pr-code-file-body { padding-bottom: var(--space-2); background: var(--tool-code-bg); }

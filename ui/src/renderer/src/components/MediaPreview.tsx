@@ -3,9 +3,10 @@ import { basename } from '../editor/bufferStore'
 import { readMediaFile, openMediaFile } from '../houston/bridge'
 import { classifyReadError, type EditorPreviewState } from '../editor/previewState'
 import { mimeForPath } from '../editor/mediaKind'
-import { MediaPreviewAudio, MediaPreviewAudioGroup, MediaPreviewImage, MediaPreviewSurface, MediaPreviewVideo, PreviewDetail, PreviewName, PreviewTitle } from './ui/EditorPreview'
+import { MediaPreviewAudio, MediaPreviewAudioGroup, MediaPreviewSurface, MediaPreviewVideo, PreviewDetail, PreviewName, PreviewTitle } from './ui/EditorPreview'
 import { Button } from './ui/Button'
 import { EditorPreviewBlock } from './EditorPreviewBlock'
+import { ZoomableImage } from './ZoomableImage'
 
 type LoadState =
   | { status: 'loading' }
@@ -126,7 +127,7 @@ export function ImagePreview({ filePath }: { filePath: string }): React.JSX.Elem
   return (
     <MediaPreviewShell filePath={filePath} kindLabel="image" testId="image">
       {(url, onError) => (
-        <MediaPreviewImage src={url} alt={basename(filePath)} onError={onError} />
+        <ZoomableImage src={url} alt={basename(filePath)} onError={onError} />
       )}
     </MediaPreviewShell>
   )

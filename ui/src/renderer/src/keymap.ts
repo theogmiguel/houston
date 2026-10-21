@@ -180,6 +180,11 @@ export const reorderCardNext: ShortcutEntry = {
   category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'ArrowDown' || e.key === 'ArrowDown')
 }
 
+export const contentSearchShortcut: ShortcutEntry = {
+  id: 'search-file-contents', keyLabel: 'Mod+Shift+F', description: 'search file contents in this workspace (outside a terminal)',
+  category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyF'
+}
+
 export const expandPane: ShortcutEntry = {
   id: 'expand-pane',
   keyLabel: 'z',
@@ -463,6 +468,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   openPullRequestsScreen,
   reorderCardPrev,
   reorderCardNext,
+  contentSearchShortcut,
   expandPane,
   splitRight,
   splitDown,
@@ -586,7 +592,16 @@ export const toggleFilesTree: ShortcutEntry = {
   chord: { code: 'KeyT', ctrl: true, alt: true, shift: false, meta: false }
 }
 
-const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown, toggleFilesTree]
+export const diffFindShortcut: ShortcutEntry = {
+  id: 'find-in-diff',
+  keyLabel: 'Ctrl+F',
+  description: 'find in the focused diff',
+  category: 'editor',
+  chord: { code: 'KeyF', ctrl: true, alt: false, shift: false, meta: false },
+  remappable: true
+}
+
+const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown, toggleFilesTree, diffFindShortcut]
 
 const GESTURE_SHORTCUTS: ShortcutEntry[] = [
   {
@@ -622,7 +637,7 @@ export const KEYMAP: ShortcutEntry[] = [
   ...GESTURE_SHORTCUTS
 ]
 
-function chordMatchesEvent(chord: Chord, e: KeyboardEvent): boolean {
+export function chordMatchesEvent(chord: Chord, e: KeyboardEvent): boolean {
   return (
     e.code === chord.code &&
     e.ctrlKey === chord.ctrl &&
@@ -783,7 +798,8 @@ export function findConflict(
     if (other.id === entryId) continue
     if (resolveMatch(other, overrides)(e)) return { kind: 'shortcut', entry: other }
   }
-  for (const term of TERMINAL_SHORTCUTS) {
+  // A diff surface never hosts a terminal, so the diff find chord may equal the terminal's.
+  for (const term of entryId === diffFindShortcut.id ? [] : TERMINAL_SHORTCUTS) {
     if (term.id === entryId) continue
     const chord = effectiveChord(term, overrides)
     if (chord && chordMatchesEvent(chord, e)) return { kind: 'terminal', entry: term }

@@ -5,6 +5,7 @@ import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
 import { ChangesStory } from './changesStories'
+import { ChangesFindStory, PrFilesFindCapture } from './diffFindStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
 import { Segmented as SegmentedControl } from '../src/components/ui/SegmentedControl'
@@ -76,7 +77,7 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { PhonePairingSpecimen, StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
-import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceQuickOpenHighlighted, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
+import { FilesSurfaceContentSearch, FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceQuickOpenHighlighted, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory, PaletteRequestsStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserTabs, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceDiffGraphite, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
@@ -110,11 +111,14 @@ import { FirstRunHooksStepNoCliSpecimen, FirstRunHooksStepSpecimen } from '../sr
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
-import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
+import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
+import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
+import { ImagePreviewZoomStory } from './imagePreviewStories'
+import { RailUndoStory } from './railUndoStories'
 
 const noop = (): void => {}
 
@@ -279,6 +283,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'changes/maximized': () => <ChangesStory ready maximized />,
   'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
+  'changes/find': () => <ChangesFindStory />,
   'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
   'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
@@ -326,6 +331,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,
+  'editor/image-zoom': () => <ImagePreviewZoomStory />,
   'voice/dictation-listening': () => <DictationListeningStory />,
   'voice/dictation-transcribing': () => <DictationTranscribingStory />,
   'shell/window-controls-resize': () => <WindowControlsStory />,
@@ -341,6 +347,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/surface-file-732': () => <FilesSurfaceFile732 />,
   'files/surface-quick-open-highlighted': () => <FilesSurfaceQuickOpenHighlighted />,
   'files/surface-quick-open': () => <FilesSurfaceQuickOpen />,
+  'files/surface-content-search': () => <FilesSurfaceContentSearch />,
   'files/surface-disk-changed': () => <FilesSurfaceDiskChanged />,
   'files/surface-open-in': () => <FilesSurfaceOpenIn />,
   'files/surface-markdown-470': () => <FilesSurfaceMarkdown470 />,
@@ -603,10 +610,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/pr-browse': () => <PrBrowseCapture />,
   'shell-a/pr-browse-states': () => <PrBrowseStatesCapture />,
   'shell-a/pr-discussion': () => <PrDiscussionCapture />,
+  'shell-a/pr-discussion-filters': () => <PrDiscussionFiltersCapture hide={false} />,
+  'shell-a/pr-discussion-filters-on': () => <PrDiscussionFiltersCapture hide />,
   'shell-a/pr-comment-edit': () => <PrCommentEditCapture />,
   'shell-a/pr-empty': () => <PrEmptyCapture />,
   'shell-a/pr-files': () => <PrFilesCapture />,
+  'shell-a/pr-files-find': () => <PrFilesFindCapture />,
   'shell-a/pr-file-states': () => <PrFilesStatesCapture />,
+  'shell-a/pr-file-viewed-marks': () => <PrFilesViewedMarksCapture />,
   'shell-a/pr-actions': () => <PrActionsCapture />,
   'shell-a/pr-pickers': () => <PrPickerCapture />,
   'shell-a/pr-review': () => <PrReviewCapture />,
@@ -626,5 +637,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/root-error': () => <FilesRootErrorGraphite />,
   'settings/tasks': () => <TasksSettingsStory />,
   'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />,
+  'rail/undo-notice': () => <RailUndoStory />,
   ...RAIL_STORIES
 }
