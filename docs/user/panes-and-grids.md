@@ -275,8 +275,8 @@ the free space inside the database, and the scrollback and log folders of the cu
 channel. Closing panes and pruning history leaves free space inside the database rather
 than returning it to the disk. **Reclaim space** compacts the database and reports its
 size before and after. It runs only when you click it, only while every pane is closed or
-asleep, and only when the disk has at least as much free space as the database occupies;
-otherwise it names the condition that blocked it.
+asleep, and only when the disk has at least twice as much free space as the database
+occupies; otherwise it names the condition that blocked it.
 
 ## Killing a pane
 

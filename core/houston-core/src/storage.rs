@@ -75,9 +75,9 @@ pub fn free_disk_bytes(dir: &Path) -> io::Result<u64> {
     Ok(available)
 }
 
-/// Why `storage_reclaim` must not run now, or `None` when it may. VACUUM holds the
-/// database for its whole run, which would stall every live pane's status writes, and
-/// it writes a full copy of the database before releasing the old pages.
+/// Why `storage_reclaim` must not run now, or `None` when it may. VACUUM stalls every live
+/// pane's status writes, and its temporary copy plus the rebuilt pages in the WAL need up
+/// to twice the database's size before the old pages are released.
 pub fn reclaim_refusal(
     live_sessions: usize,
     free_disk: &io::Result<u64>,
@@ -95,10 +95,11 @@ pub fn reclaim_refusal(
             "refused: could not read the free disk space at {}: {e}",
             state_dir.display()
         )),
-        Ok(free) if *free < db_bytes => Some(format!(
-            "refused: {free} bytes free at {}; reclaiming space needs at least the database \
-             size, {db_bytes} bytes",
-            state_dir.display()
+        Ok(free) if *free < db_bytes.saturating_mul(2) => Some(format!(
+            "refused: {free} bytes free at {}; reclaiming space needs twice the database and \
+             write-ahead log size, {} bytes, for the temporary copy and the rebuilt database",
+            state_dir.display(),
+            db_bytes.saturating_mul(2)
         )),
         Ok(_) => None,
     }
@@ -134,14 +135,17 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_refusal_names_free_space_and_database_size() {
+    fn reclaim_refusal_requires_twice_the_database_size_free() {
         let dir = Path::new("/state");
-        let msg = reclaim_refusal(0, &Ok(99), 100, dir).unwrap();
-        assert!(msg.contains("99 bytes free"), "{msg}");
-        assert!(msg.contains("100 bytes"), "{msg}");
+        let msg = reclaim_refusal(0, &Ok(199), 100, dir).unwrap();
+        assert!(msg.contains("199 bytes free"), "{msg}");
+        assert!(
+            msg.contains("twice the database and write-ahead log size, 200 bytes"),
+            "{msg}"
+        );
         let unreadable = Err(io::Error::other("no such volume"));
         let msg = reclaim_refusal(0, &unreadable, 100, dir).unwrap();
         assert!(msg.contains("no such volume"), "{msg}");
-        assert_eq!(reclaim_refusal(0, &Ok(100), 100, dir), None);
+        assert_eq!(reclaim_refusal(0, &Ok(200), 100, dir), None);
     }
 }
