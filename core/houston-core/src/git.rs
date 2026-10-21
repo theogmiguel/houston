@@ -13,8 +13,9 @@ const GIT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// Every git process the daemon starts. `GIT_OPTIONAL_LOCKS=0` stops background reads such
 /// as `status` from refreshing `.git/index` under `index.lock`, which would make an agent's
 /// own `git add` or `git commit` in that checkout fail; required locks are still taken.
+/// `spawn::git` additionally runs Git for Windows' real binary instead of its launcher.
 pub fn command() -> std::process::Command {
-    let mut command = crate::spawn::command("git");
+    let mut command = crate::spawn::git();
     command.env("GIT_OPTIONAL_LOCKS", "0");
     command
 }
