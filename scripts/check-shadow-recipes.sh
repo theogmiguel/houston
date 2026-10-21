@@ -22,21 +22,19 @@ counts="$(perl -e '
     my $src = <$fh>;
     close $fh;
     my $n = 0;
-    # Shared focus classes (FOCUS_*_CLS in shadowChrome.ts) must be literal for Tailwind discovery.
-    my %focus_literal;
+    # Shared recipe classes (*_CLS in shadowChrome.ts) must be literal for Tailwind discovery.
+    my %recipe_literal;
     if ($f =~ m{components/ui/shadowChrome\.ts$}) {
-      $focus_literal{$1} = 1 while $src =~ /\bFOCUS_[A-Z0-9_]*_CLS = \x27[a-z-]+:shadow-\[([^\]]*)\]\x27/g;
+      $recipe_literal{$1} = 1 while $src =~ /\b[A-Z0-9_]+_CLS = \x27(?:[a-z-]+:)*shadow-\[([^\]]*)\]\x27/g;
     }
     while ($src =~ /shadow-\[([^\]]*)\]/g) {
       my $content = $1;
-      next if $focus_literal{$content};
-      # Strip every destination-shaped term: a var() whose fallback may
-      # nest parens or an interpolation one level deep, then a bare
-      # `${CONSTANT}` on its own, as a multi-shadow composite spells it.
+      next if $recipe_literal{$content};
+      # Strip every token reference: a var() whose fallback may nest parens
+      # one level deep. An interpolation stays, since Tailwind never generates it.
       my $stripped = $content;
-      1 while $stripped =~ s/var\(--[A-Za-z0-9-]+(?:,(?:[^()]|\([^()]*\)|\$\{[^}]*\})*)?\)//;
-      $stripped =~ s/\$\{[^}]*\}//g;
-      # What is left is punctuation the two shapes above are joined by --
+      1 while $stripped =~ s/var\(--[A-Za-z0-9-]+(?:,(?:[^()]|\([^()]*\))*)?\)//;
+      # What is left is punctuation the token references are joined by --
       # commas and Tailwind'"'"'s underscore-for-space -- never recipe content.
       $stripped =~ s/[,_\s]//g;
       $n++ if length $stripped;
@@ -65,7 +63,7 @@ if [ -n "$counts" ]; then
   echo "      A violation is a shadow-[...] bracket content, or a boxShadow:" >&2
   echo "      style value, that is a hand-typed px length or colour. Use a" >&2
   echo "      token (shadow-[var(--x)]) or a complete literal class exported" >&2
-  echo "      from components/ui/shadowChrome.ts (FOCUS_*_CLS). Tailwind generates" >&2
+  echo "      from components/ui/shadowChrome.ts (*_CLS). Tailwind generates" >&2
   echo "      no CSS for shadow-[\${CONSTANT}], so an interpolation never paints." >&2
   exit 1
 fi

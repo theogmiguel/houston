@@ -1,4 +1,4 @@
-import { RING_CARD_HOVER_GAP } from '../shadowChrome'
+import { RING_CARD_HOVER_GAP_CLS } from '../shadowChrome'
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react'
 import { Button } from '../Button'
 import { ContextMenu } from '../ContextMenu'
@@ -144,7 +144,7 @@ export function RailUpdateIconButton({ failed = false, ...props }: ComponentProp
 }
 
 export function RailUpdateDot(): React.JSX.Element {
-  return <span aria-hidden className={`absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current shadow-[${RING_CARD_HOVER_GAP}]`} />
+  return <span aria-hidden className={`absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current ${RING_CARD_HOVER_GAP_CLS}`} />
 }
 
 export function RailSrOnlyText({ children }: { children: ReactNode }): React.JSX.Element {
