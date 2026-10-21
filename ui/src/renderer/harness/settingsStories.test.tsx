@@ -2,12 +2,15 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import { preloadRailChunks } from '../src/components/Sidebar'
+import { preloadGridRailRow } from '../src/components/ui/GridRailRowFallback'
 import { RemoteSection } from '../src/components/settings/RemoteSection'
 import type { RemoteInfo } from '../src/houston/generated/RemoteInfo'
 import { remoteClient, SettingsRemote } from './settingsStories'
 import { HarnessPageStory } from './navStories'
 
-beforeAll(() => preloadRailChunks(), 30_000)
+// Sidebar preloads the GridRailRow chunk on a timer after mount; loading it first keeps that
+// import from resolving after the environment is torn down.
+beforeAll(() => Promise.all([preloadRailChunks(), preloadGridRailRow()]), 30_000)
 afterEach(cleanup)
 const remote: RemoteInfo = { enabled: false, listening: false, bind: '127.0.0.1:47823', public_url: 'https://box.ts.net', url: 'https://box.ts.net', error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, dictation: false, tls: false, ca_fingerprint: null, devices: [] }
 it('lets the Remote fixture enable its listener, show an inline code and retain subscriptions', async () => {

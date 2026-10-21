@@ -396,6 +396,10 @@ tiers on top of the ladder — use a constant, don't hand-roll a shadow:
 | `OVERLAY_GLASS_RAISED_CLS` + `OVERLAY_GLASS_RAISED_ATTRS` | `raised-glass` |
 | `OVERLAY_GLASS_OVERLAY_CLS` + `OVERLAY_GLASS_OVERLAY_ATTRS` | `overlay-glass` |
 
+Smaller recipes (status glows, selected-tile rings, the badge gap ring) are complete literal
+`*_CLS` classes in `shadowChrome.ts`. Tailwind generates no CSS for `shadow-[${CONSTANT}]`, so a
+recipe is never stored as a bare value and interpolated at the call site.
+
 All four add the shared structure the ladder does not carry: `--tr-radius-md`,
 `no-drag` and `select-text`. Floating menus and popovers appear immediately.
 The scrim under the `overlay` rung is a sibling element at the call site, not part of the class.
@@ -826,7 +830,7 @@ tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.s
 | State | Treatment |
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
+| **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." The other shared focus recipes (`FOCUS_RING_ACCENT_ICON_CLS`, `FOCUS_RING_ACCENT_INSET_45_CLS`, `FOCUS_HAIRLINE_INSET_CLS`) follow the same rule: a complete literal class, because Tailwind generates no CSS for `focus-visible:shadow-[${CONSTANT}]`. |
 | **Hover** | `ROW_STATE.rest` adds `--hover-fill` to an otherwise transparent row or rail item. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
 | **Selected** | `ROW_STATE.selected` uses `--selected-fill` and primary ink, with the stronger `--selected-hover-fill` on hover. Full-row fill, no left bar or accent tint. Pressable chips use the neutral recipe; an explicitly selected `IconTile` retains its primitive accent treatment. |
@@ -964,7 +968,7 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
 | `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
-| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). No exemptions. |
+| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`), and any utility whose arbitrary value is interpolated. No exemptions. |
 | `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
 | `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
 | `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
