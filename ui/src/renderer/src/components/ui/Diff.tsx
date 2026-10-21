@@ -70,6 +70,29 @@ export function DiffGutter({ children }: { children?: ReactNode }): React.JSX.El
   return <span className="shrink-0 w-[18px] pl-1.5 text-center text-[color-mix(in_srgb,currentColor_55%,transparent)] select-none" aria-hidden>{children}</span>
 }
 
+/** Find matches on one rendered line: half-open [start, end) ranges and the index of the current one. */
+export interface DiffTextMarks {
+  ranges: readonly (readonly [number, number])[]
+  active: number | null
+}
+
+export function DiffFindMark({ active, children }: { active: boolean; children: ReactNode }): React.JSX.Element {
+  return <mark data-diff-find-mark data-diff-find-active={active || undefined} className={`rounded-[var(--tr-radius-sm)] text-inherit ${active ? 'bg-[color-mix(in_srgb,var(--warning)_62%,transparent)] outline outline-1 outline-[var(--warning)]' : 'bg-[color-mix(in_srgb,var(--warning)_28%,transparent)]'}`}>{children}</mark>
+}
+
+export function DiffFindText({ text, marks }: { text: string; marks?: DiffTextMarks }): React.JSX.Element {
+  if (!marks || marks.ranges.length === 0) return <>{text}</>
+  const parts: ReactNode[] = []
+  let at = 0
+  marks.ranges.forEach(([start, end], index) => {
+    if (start > at) parts.push(text.slice(at, start))
+    parts.push(<DiffFindMark key={index} active={marks.active === index}>{text.slice(start, end)}</DiffFindMark>)
+    at = end
+  })
+  if (at < text.length) parts.push(text.slice(at))
+  return <>{parts}</>
+}
+
 export function DiffLineText({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{children}</span>
 }

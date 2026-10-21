@@ -5,6 +5,7 @@ import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
 import { ChangesStory } from './changesStories'
+import { ChangesFindStory, PrFilesFindCapture } from './diffFindStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
 import { Segmented as SegmentedControl } from '../src/components/ui/SegmentedControl'
@@ -281,6 +282,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'changes/maximized': () => <ChangesStory ready maximized />,
   'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
+  'changes/find': () => <ChangesFindStory />,
   'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
   'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
@@ -608,6 +610,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/pr-comment-edit': () => <PrCommentEditCapture />,
   'shell-a/pr-empty': () => <PrEmptyCapture />,
   'shell-a/pr-files': () => <PrFilesCapture />,
+  'shell-a/pr-files-find': () => <PrFilesFindCapture />,
   'shell-a/pr-file-states': () => <PrFilesStatesCapture />,
   'shell-a/pr-file-viewed-marks': () => <PrFilesViewedMarksCapture />,
   'shell-a/pr-actions': () => <PrActionsCapture />,

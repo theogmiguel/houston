@@ -8,7 +8,7 @@ import { ReviewDiffLine } from '../ui/ReviewDiffLine'
 import { Text } from '../ui/Text'
 import { DiffCodeBlock, DiffCommentComposer, DiffCommentActions, DiffLoadingPanel, PullRequestDiffPanel } from '../ui/PullRequestDiff'
 import { EmptyFilesMessage, FileErrorMessage, FileRetryPanel } from '../ui/FilePanelMessage'
-import { useMemo, useState } from 'react'
+import { useContext, useMemo, useState } from 'react'
 import type { PrDiffSide, PrReviewDraft, PullRequestLink } from '../../houston/client'
 import { Icon } from '../ui/Icon'
 import { IconCheck, IconChevronDown, IconFile, IconLoaderCircle, IconPlus, IconSplitDown, IconSplitRight, IconCollapse, IconExpand } from '../icons'
@@ -21,6 +21,10 @@ import { draftKey, parsePrDiff, type PrDiffFile, type PrDiffLine } from './prDet
 import { markPrFileUnviewed, markPrFileViewed, patchHash, prViewedKey, usePrViewedMarks, viewedFingerprint, viewedState, type PrFileViewedState } from './prViewedMarks'
 import type { PrDiffView } from './usePrDetailSubscription'
 import { ScmNotice } from './ScmNotice'
+import { DiffFindContext, type DiffFindSource } from './diffFind'
+import { useDiffFind } from './useDiffFind'
+import { DiffFindBar } from './DiffFindBar'
+import { FindStripDock } from '../ui/FindStripParts'
 function anchorFor(line: PrDiffLine): { side: PrDiffSide; line: number } | null {
   if (line.side === null || line.line === null) return null
   return { side: line.side, line: line.line }
@@ -45,6 +49,7 @@ function visibleLines(lines: PrDiffLine[], hideWhitespace: boolean): PrDiffLine[
 }
 
 function FileSection({
+  findKey,
   file,
   drafts,
   busy,
@@ -59,6 +64,7 @@ function FileSection({
   onToggleOpen,
   onToggleViewed
 }: {
+  findKey: string
   file: PrDiffFile
   drafts: PrReviewDraft[]
   busy: boolean
@@ -76,6 +82,7 @@ function FileSection({
   const [composer, setComposer] = useState<{ side: PrDiffSide; line: number } | null>(null)
   const [text, setText] = useState('')
   const path = file.path
+  const marks = useContext(DiffFindContext)
   return (
     <PrTab as="div" surface="pr-code-file" data-testid="pr-file" data-path={path} id={`pr-file-${encodeURIComponent(path)}`}>
       <PrTab as="div" surface="pr-code-file-heading" role="button" tabIndex={0} aria-expanded={open} onClick={onToggleOpen} onKeyDown={(event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggleOpen() } }}>
@@ -100,7 +107,7 @@ function FileSection({
           const isComposer = composer !== null && anchor !== null && composer.side === anchor.side && composer.line === anchor.line
           return (
             <PrTab as="div" surface="pr-code-line" key={index} data-kind={line.kind}>
-              <ReviewDiffLine variant="pr" kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} action={anchor !== null && (
+              <ReviewDiffLine variant="pr" kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} marks={marks?.(findKey, index)} action={anchor !== null && (
                   <Tooltip label={`Comment on line ${anchor.line}`}>
                   <ReviewButton variant="diff-line-action"
                     type="button"
@@ -205,6 +212,11 @@ export function PrFiles({
     if (stateOf(entry) === 'viewed') markPrFileUnviewed(prKey, entry.file.path)
     else markPrFileViewed(prKey, entry.file.path, entry.hash)
   }
+  const findSources = useMemo<DiffFindSource[]>(() => files.map((entry, index) => ({ key: String(index), lines: visibleLines(entry.file.lines, hideWhitespace).map((line) => line.text), truncated: diff?.truncated === true })), [files, hideWhitespace, diff])
+  const find = useDiffFind(findSources, (key) => {
+    const entry = files[Number(key)]
+    if (entry && !isOpen(entry.file.path, Number(key))) setOpenOverrides((current) => new Map(current).set(entry.file.path, true))
+  })
   if (loading && diff === null) {
     return (
       <DiffLoadingPanel data-testid="pr-files-loading">
@@ -231,7 +243,8 @@ export function PrFiles({
     )
   }
   return (
-    <PullRequestDiffPanel data-testid="pr-files">
+    <PullRequestDiffPanel data-testid="pr-files" ref={find.rootRef} tabIndex={-1} onKeyDownCapture={find.onKeyDownCapture}>
+      <DiffFindContext.Provider value={find.lookup}>
       <PrTab as="div" surface="pr-code-toolbar">
         <PrTab as="span" surface="pr-code-commit-scope">All commits<Icon glyph={IconChevronDown} role="small" /></PrTab>
         <PrTab as="span" surface="pr-code-count">{files.length} files <span>·</span> {viewedCount} / {files.length} viewed</PrTab>
@@ -243,6 +256,7 @@ export function PrFiles({
           <Tooltip label="File tree"><PrTab as="button" surface="pr-code-action" type="button" aria-expanded={treeOpen} onClick={() => setTreeOpen((value) => !value)}><Icon glyph={GLYPH_FOR_VERB['toggle-file-tree']} role="small" /></PrTab></Tooltip>
         </PrTab>
       </PrTab>
+      <FindStripDock><DiffFindBar find={find} /></FindStripDock>
       {treeOpen && <PrTab as="div" surface="pr-code-tree" role="menu" aria-label="Changed files">{files.map((entry) => <PrTab as="button" surface="pr-code-tree-item" type="button" role="menuitem" key={entry.file.path} onClick={() => { setTreeOpen(false); document.getElementById(`pr-file-${encodeURIComponent(entry.file.path)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>{entry.file.path}</PrTab>)}</PrTab>}
       {diff.truncated && (
         <ScmNotice tone="info" testId="pr-files-truncated">
@@ -254,6 +268,7 @@ export function PrFiles({
       ) : (
         files.map((entry, index) => (
           <FileSection
+            findKey={String(index)}
             key={`${entry.file.path}-${index}`}
             file={entry.file}
             drafts={drafts}
@@ -271,6 +286,7 @@ export function PrFiles({
           />
         ))
       )}
+      </DiffFindContext.Provider>
     </PullRequestDiffPanel>
   )
 }

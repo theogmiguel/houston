@@ -8,7 +8,7 @@ export function TerminalFindStrip({ children }: { children: ReactNode }): React.
   )
 }
 
-export function TerminalFindInput(props: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
+export function TerminalFindInput(props: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }): React.JSX.Element {
   return (
     <input
       {...props}

@@ -48,6 +48,15 @@ another. Press `/` to focus the filename filter, then use `J` and `K` to move th
 matching files when you are not typing into a field. **Unified** and **Split** choose the
 diff layout. Press **Esc** to restore the panel's previous width.
 
+To find text in a diff, click into Changes or a pull request's **Files** and press `Ctrl+F`.
+The find strip counts matches; **Enter** and **Shift+Enter** move to the next and previous
+match, **Aa** matches case, and **Esc** closes it. Find searches only patch text Houston has
+already loaded: in Changes, the selected file's diff, or every expanded file in the side
+panel's list; in **Files**, every file of the pull request, and a match in a collapsed file
+expands it. When a patch was truncated at its size cap, the count is marked **partial**.
+Rebind the chord in **Settings ▸ Shortcuts** under **Find in the focused diff**; in a
+focused terminal, `Ctrl+F` remains terminal search.
+
 Review with agent opens a picker with the five engines Houston can spawn — Claude Code,
 Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
