@@ -1908,6 +1908,21 @@ async fn dispatch(
             let _ = send_msg(sink, &daemon.host_info()).await;
             Ok(())
         }
+        proto::ClientMsg::StorageReclaim => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.reclaim_storage())
+                .await
+                .map_err(|e| anyhow::anyhow!("storage reclaim panicked: {e}"))?;
+            let reclaimed = matches!(
+                reply,
+                proto::ServerMsg::StorageReclaimed { refusal: None, .. }
+            );
+            let _ = send_msg(sink, &reply).await;
+            if reclaimed {
+                daemon.broadcast_control(&daemon.host_info());
+            }
+            Ok(())
+        }
         proto::ClientMsg::UsageSummaryGet {
             since_ms,
             until_ms,

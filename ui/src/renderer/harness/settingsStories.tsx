@@ -235,6 +235,48 @@ export function SettingsDiagnosticsOpenHooks(): React.JSX.Element {
   )
 }
 
+function storageClient(): HoustonClient {
+  const handlers = new Set<(message: ServerMsg) => void>()
+  return {
+    subscribeAll(handler: (message: ServerMsg) => void) {
+      handlers.add(handler)
+      return () => { handlers.delete(handler) }
+    },
+    send(message: { type: string }) {
+      if (message.type !== 'storage_reclaim') return
+      const reply: ServerMsg = { type: 'storage_reclaimed', before_bytes: 214_958_080, after_bytes: 25_165_824, refusal: null }
+      setTimeout(() => { for (const handler of handlers) handler(reply) }, 0)
+    }
+  } as unknown as HoustonClient
+}
+
+function StorageDiagnosticsStory({ reclaim }: { reclaim: boolean }): React.JSX.Element {
+  React.useEffect(() => {
+    if (reclaim) document.querySelector<HTMLButtonElement>('[data-testid="settings-storage-reclaim"]')?.click()
+  }, [reclaim])
+  return (
+    <SessionsStoreContext.Provider value={createSessionsStore(new Map())}>
+      <div style={{ padding: 'var(--space-4)' }}>
+        <DiagnosticsSection
+          hostInfo={hostInfoFixture({ live_sessions: 0, session_db_bytes: 201_326_592, session_db_wal_bytes: 13_631_488, session_db_free_bytes: 178_257_920 })}
+          agentHooks={agentHookFixture}
+          onOpenHooks={noop}
+          onOpenLogsFolder={noop}
+          client={storageClient()}
+        />
+      </div>
+    </SessionsStoreContext.Provider>
+  )
+}
+
+export function SettingsDiagnosticsStorage(): React.JSX.Element {
+  return <StorageDiagnosticsStory reclaim={false} />
+}
+
+export function SettingsDiagnosticsStorageReclaimed(): React.JSX.Element {
+  return <StorageDiagnosticsStory reclaim />
+}
+
 export function SettingsDaemon(): React.JSX.Element {
   const originalFetch = window.fetch
   Object.assign(window, {

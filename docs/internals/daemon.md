@@ -507,6 +507,21 @@ come out wrong.
 `synchronous = NORMAL`, `cache_size = -8000` (8 MB), `temp_store = MEMORY`. Writes happen
 only on rare control-plane events — the PTY path never touches SQLite.
 
+Deleted rows leave free pages inside the file; only `storage_reclaim`, an explicit user
+action, returns them to the disk. `VACUUM` holds the one connection's lock for its whole
+run, so every database call (hook status, title and inbox writes) waits behind it. The
+daemon therefore refuses it while any session is live. VACUUM writes a temporary copy of the
+database and then the rebuilt pages into the WAL before freeing the old pages, so the daemon
+also refuses it when the volume has less free space than twice the database and WAL size.
+The reclaim switches its connection to `temp_store = FILE` for the VACUUM, so that copy goes
+to the OS temporary directory instead of daemon memory, and restores `MEMORY` afterwards.
+That directory may be on another volume; if it fills, VACUUM fails and leaves the database
+unchanged.
+
+`host_info` is polled by every connected client. The scrollback and log totals and the
+freelist size it reports are measured at most once per `STORAGE_TOTALS_MAX_AGE`, and the
+freelist read never waits for the connection lock; a reclaim measures them again.
+
 | Group | Tables |
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |

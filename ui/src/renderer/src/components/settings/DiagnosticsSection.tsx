@@ -4,12 +4,13 @@ import { Button, DevBadge, HookPanel, HookStatusList, Readout, ReadoutGrid, Hook
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { SessionState } from '../../houston/generated/SessionState'
-import type { SessionInfo } from '../../houston/client'
+import type { HoustonClient, SessionInfo } from '../../houston/client'
 import type { HostInfo } from '../SettingsView'
 import { SettingsList } from '../ui/settingsPrimitives'
 import { useSessions } from '../../sessionsStore'
 import { Table } from '../ui/Table'
-import { Row, SubHead } from './shared'
+import { formatBytes, Row, SubHead } from './shared'
+import { StorageDiagnostics } from './StorageDiagnostics'
 
 function formatUptime(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000)
@@ -91,6 +92,9 @@ function DiagnosticsCopyRow({
       `Deferred by restore budget: ${hostInfo.restore_deferred} of ${hostInfo.restore_budget}`,
       `Orchestration depth in use: ${hostInfo.orchestration_depth_in_use} of ${hostInfo.orchestration_max_depth}`,
       `Mailbox files on disk: ${hostInfo.mailbox_files_on_disk}`,
+      `Session database: ${formatBytes(hostInfo.session_db_bytes)} (write-ahead log ${formatBytes(hostInfo.session_db_wal_bytes)}, reclaimable ${formatBytes(hostInfo.session_db_free_bytes)})`,
+      `Scrollback: ${formatBytes(hostInfo.scrollback_bytes)}`,
+      `Logs: ${formatBytes(hostInfo.logs_bytes)}`,
       'Hooks:',
       hookLines
     ].join('\n')
@@ -131,13 +135,15 @@ export interface DiagnosticsSectionProps {
   agentHooks: AgentHookState[] | null
   onOpenHooks: () => void
   onOpenLogsFolder: () => void
+  client?: HoustonClient | null
 }
 
 export function DiagnosticsSection({
   hostInfo,
   agentHooks,
   onOpenHooks,
-  onOpenLogsFolder
+  onOpenLogsFolder,
+  client = null
 }: DiagnosticsSectionProps): React.JSX.Element {
   const sessions = useSessions()
   return (
@@ -209,6 +215,8 @@ export function DiagnosticsSection({
               ]}
             />
           </div>
+
+          <StorageDiagnostics hostInfo={hostInfo} client={client} />
 
           <SubHead>
             Hooks

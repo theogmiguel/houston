@@ -268,6 +268,16 @@ stops the local daemon; its confirmation names the affected sessions and routine
 Stopping a daemon preserves recoverable panes and their conversation handles for the next
 launch. Use Kill or Close on an individual pane to discard its continuation.
 
+## Disk space
+
+Settings ▸ Daemon ▸ Storage shows the size of the session database, its write-ahead log,
+the free space inside the database, and the scrollback and log folders of the current
+channel, measured at most once a minute. Closing panes and pruning history leaves free
+space inside the database rather than returning it to the disk. **Reclaim space** compacts the database and reports its
+size before and after. It runs only when you click it, only while every pane is closed or
+asleep, and only when the disk has at least twice as much free space as the database
+occupies; otherwise it names the condition that blocked it.
+
 ## Killing a pane
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.

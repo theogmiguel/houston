@@ -131,6 +131,7 @@ mod slack_intake_wire;
 mod ssh_io_fairness;
 mod ssh_stalled_window;
 mod ssh_wire;
+mod storage_reclaim_wire;
 mod subprocess_deadlines;
 mod subprocess_deadlines_windows;
 mod supervisor_perf_smoke;

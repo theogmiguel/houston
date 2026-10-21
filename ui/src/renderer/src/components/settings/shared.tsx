@@ -3,6 +3,18 @@ import { NumberField, NumberFieldMessage, NumberFieldUnit } from '../ui/NumberFi
 
 export { SectionHead, SubHead, Group, SettingsRow as Row } from '../ui/settingsPrimitives'
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(1)} ${units[unit]}`
+}
+
 // Deliberately does not clamp the typed value before sending — the daemon is
 // the authority on this limit and its refusal already names it; clamping
 // here would silently swallow that refusal.

@@ -43,7 +43,11 @@ const HOST: HostInfo = {
   worktree_cleanup_grace_hours: 24,
   worktree_idle_removal_days: 30,
   command_history_ignore_glob_count: 0,
-  session_db_bytes: 0
+  session_db_bytes: 0,
+  session_db_wal_bytes: 0,
+  session_db_free_bytes: 0,
+  scrollback_bytes: 0,
+  logs_bytes: 0
 }
 
 const NOTES = '## What changed\n\n- a fix\n- a feature'

@@ -110,6 +110,10 @@ export function hostInfoFixture(overrides: Partial<HostInfo> = {}): HostInfo {
     worktree_idle_removal_days: 30,
     command_history_ignore_glob_count: 6,
     session_db_bytes: 3_984_588,
+    session_db_wal_bytes: 412_160,
+    session_db_free_bytes: 1_048_576,
+    scrollback_bytes: 6_291_456,
+    logs_bytes: 2_097_152,
     ...overrides
   }
 }
