@@ -207,6 +207,40 @@ export function IconSearch(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconCaseSensitive(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="m3 15 4-8 4 8" />
+      <path d="M4 13h6" />
+      <circle cx="18" cy="12" r="3" />
+      <path d="M21 9v6" />
+    </Svg>
+  )
+}
+
+export function IconWholeWord(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <circle cx="7" cy="12" r="3" />
+      <path d="M10 9v6" />
+      <circle cx="17" cy="12" r="3" />
+      <path d="M14 7v8" />
+      <path d="M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1" />
+    </Svg>
+  )
+}
+
+export function IconRegex(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M17 3v10" />
+      <path d="m12.67 5.5 8.66 5" />
+      <path d="m12.67 10.5 8.66-5" />
+      <path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z" />
+    </Svg>
+  )
+}
+
 export function IconFilter(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>

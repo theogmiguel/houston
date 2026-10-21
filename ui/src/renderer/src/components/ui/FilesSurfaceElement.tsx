@@ -18,6 +18,8 @@ export const FilesSurfaceClass = {
   contextItem: 'files-context-item', openIn: 'files-openin', openInWrap: 'files-openin-wrap', openInMenu: 'files-openin-menu',
   openInLabel: 'files-openin-label', openInOption: 'files-openin-option', openInSeparator: 'files-openin-separator',
   iconButton: 'files-icon-button', responsiveAction: 'files-responsive-action',
+  contentSearchFile: 'files-csfile', contentSearchRow: 'files-csrow', contentSearchToggles: 'files-cstoggles',
+  contentSearchLine: 'n', contentSearchText: 't',
   overflow: 'overflow', open: 'open', collapsing: 'collapsing', nested: 'nested', selected: 'sel', current: 'cur',
   flash: 'flash', ignored: 'ign', menuOpen: 'menu-on', modified: 'M', added: 'A', deleted: 'D',
   danger: 'danger', sheet: 'sheet', active: 'on', dock: 'dock', shut: 'shut', highlighted: 'hi', wrap: 'wrap',
@@ -41,4 +43,8 @@ export function FilesSurfaceElement<T extends ElementType>({
 
 export function QuickOpenRow({ highlighted, ...props }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & { highlighted: boolean }): React.JSX.Element {
   return <button {...props} className={`${filesSurfaceClass(FilesSurfaceClass.quickOpenRow, highlighted && FilesSurfaceClass.highlighted)} ${ROW_HIGHLIGHT[highlighted ? 'selected' : 'rest']}`} />
+}
+
+export function ContentSearchRow({ highlighted, ...props }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & { highlighted: boolean }): React.JSX.Element {
+  return <button {...props} className={`${filesSurfaceClass(FilesSurfaceClass.contentSearchRow, highlighted && FilesSurfaceClass.highlighted)} ${ROW_HIGHLIGHT[highlighted ? 'selected' : 'rest']}`} />
 }

@@ -3,6 +3,7 @@ import type { HoustonClient, KeymapOverrides, SessionInfo, ServerMsg, Workspace 
 import { basename } from "./editor/bufferStore";
 import { bracketedPaste } from "./pane/bracketedPaste";
 import {
+  contentSearchShortcut,
   openBrowserSurface,
   openDiffSurface,
   openFilesSurface,
@@ -63,17 +64,33 @@ export function handleSurfaceShortcut(
   return true;
 }
 
+function terminalFocused(event: KeyboardEvent): boolean {
+  const target = event.target instanceof Element ? event.target : null;
+  return Boolean(target?.closest('[aria-label="Terminal input"], .term-host textarea'));
+}
+
 export function handleQuickOpenShortcut(
   event: KeyboardEvent,
   selectedWorkspace: string,
   openQuickOpen: () => void,
 ): boolean {
-  const target = event.target instanceof Element ? event.target : null;
-  const terminalFocused = Boolean(target?.closest('[aria-label="Terminal input"], .term-host textarea'));
-  if (terminalFocused || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "p" || event.altKey) return false;
+  if (terminalFocused(event) || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "p" || event.altKey) return false;
   if (selectedWorkspace === "all") return false;
   event.preventDefault();
   openQuickOpen();
+  return true;
+}
+
+export function handleContentSearchShortcut(
+  event: KeyboardEvent,
+  keymapOverrides: KeymapOverrides,
+  selectedWorkspace: string,
+  openContentSearch: () => void,
+): boolean {
+  if (terminalFocused(event) || selectedWorkspace === "all") return false;
+  if (!resolveGlobalMatch(contentSearchShortcut, keymapOverrides)(event)) return false;
+  event.preventDefault();
+  openContentSearch();
   return true;
 }
 

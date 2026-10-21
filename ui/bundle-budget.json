@@ -166,9 +166,15 @@
     "command registry left the boot path once App took its navigation helper from",
     "paletteNav.ts, and",
     "that headroom pays for Next request, which must answer from the keymap at",
-    "any time and keep the operator inbox current."
+    "any time and keep the operator inbox current.",
+    "",
+    "Re-cut against 944,209 bytes (one boot chunk) with the same small headroom:",
+    "the rebindable Search in files chord answers from App's keydown handler, so",
+    "its keymap entry, handler and lazy overlay wrapper are boot-path code. The",
+    "dialog itself loads on first use; its three toggle glyphs live in icons.tsx,",
+    "the only icon import surface, which is a boot module."
   ],
-  "maxBootBytes": 942700,
+  "maxBootBytes": 944350,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

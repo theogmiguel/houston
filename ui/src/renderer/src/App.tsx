@@ -27,7 +27,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { ENVIRONMENT_SESSION_BASE, ENVIRONMENT_SESSION_SPAN, getEnvironmentRosterPending, subscribeEnvironmentRosterPending } from "./houston/environments";
-import { QuickOpenOverlay } from "./QuickOpenOverlay";
+import { ContentSearchOverlay, QuickOpenOverlay } from "./QuickOpenOverlay";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentKind,
@@ -140,7 +140,7 @@ import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { useRailPrCache } from "./components/git/railPrCache";
 import { usePullRequestRailData } from "./usePullRequestRailData";
 import { useBrowserLayoutMigration } from "./useBrowserLayoutMigration";
-import { focusAndFlashPane, handlePullRequestWireMessage, handleQuickOpenShortcut, handleSurfaceShortcut, pasteToAgent as pasteToAgentMessage, pullRequestRepositoryName, pullRequestWorkspace } from "./appSurfaceEvents";
+import { focusAndFlashPane, handleContentSearchShortcut, handlePullRequestWireMessage, handleQuickOpenShortcut, handleSurfaceShortcut, pasteToAgent as pasteToAgentMessage, pullRequestRepositoryName, pullRequestWorkspace } from "./appSurfaceEvents";
 import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -990,6 +990,7 @@ export function App(): React.JSX.Element {
   const gridHidden = openOverlays > 0;
   const [shortcutSheet, setShortcutSheet] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [contentSearch, setContentSearch] = useState(false);
   const [confirmRemoveWs, setConfirmRemoveWs] = useState<{
     path: string;
     message: string;
@@ -2717,11 +2718,12 @@ export function App(): React.JSX.Element {
   );
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      handleQuickOpenShortcut(event, selectedWs, () => setQuickOpen(true));
+      if (handleQuickOpenShortcut(event, selectedWs, () => setQuickOpen(true))) return;
+      handleContentSearchShortcut(event, keymapOverrides, selectedWs, () => setContentSearch(true));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedWs]);
+  }, [selectedWs, keymapOverrides]);
 
   // In All view the focused pane supplies its checkout; within a workspace the
   // selected workspace stays authoritative when a stale pane has focus.
@@ -4540,6 +4542,16 @@ export function App(): React.JSX.Element {
             onOpen={(path) => {
               openEditorFile(selectedWs, path, null);
               setQuickOpen(false);
+            }}
+          />
+
+          <ContentSearchOverlay
+            open={contentSearch}
+            workspace={selectedWs}
+            onClose={() => setContentSearch(false)}
+            onOpen={(path, line, column) => {
+              openEditorFile(selectedWs, path, null, line, column);
+              setContentSearch(false);
             }}
           />
 
