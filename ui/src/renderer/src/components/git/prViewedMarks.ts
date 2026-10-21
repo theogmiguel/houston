@@ -8,7 +8,7 @@ const STORAGE_KEY = 'tr-pr-viewed-marks'
 // which is the behaviour this store exists to improve on, not to corrupt.
 const MAX_PRS = 200
 
-export type PrFileViewedState = 'viewed' | 'changed' | 'unviewed'
+export type PrFileViewedState = 'viewed' | 'changed' | 'unviewed' | 'unknown'
 
 interface PrViewedEntry {
   at: number
@@ -67,8 +67,9 @@ export function viewedFingerprint(file: PrDiffFile): string {
 
 /** The mark's meaning against the patch now on screen: a stored hash that no
  * longer matches is a file that changed after it was viewed, never a silent
- * viewed state. */
-export function viewedState(storedHash: string | undefined, currentHash: string): PrFileViewedState {
+ * viewed state. A null current hash is a file the patch cut off: unknown either way. */
+export function viewedState(storedHash: string | undefined, currentHash: string | null): PrFileViewedState {
+  if (currentHash === null) return 'unknown'
   if (storedHash === undefined) return 'unviewed'
   return storedHash === currentHash ? 'viewed' : 'changed'
 }

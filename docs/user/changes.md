@@ -70,7 +70,9 @@ Each file in **Files** carries a **Viewed** toggle. Marks are kept per pull requ
 files you have already reviewed stay viewed when you reopen the panel. When a viewed
 file's patch changes — after a new push, for example — the file reads unviewed again and
 carries a **Changed since viewed** badge until you review the new version; marking it
-viewed records the new patch. Binary files and mode changes count as changes too.
+viewed records the new patch. Binary files and mode changes count as changes too. When a
+patch is too large to load in full, the file it cuts off reads **Patch cut off** and its
+Viewed toggle is unavailable, because Houston cannot compare the whole file.
 
 Merge readiness reports checks, required reviews and conflicts with the base branch.
 Choose squash, merge commit or rebase, and review the stated consequence before

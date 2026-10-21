@@ -44,6 +44,11 @@ describe('viewedState', () => {
   it('reads a stale mark as changed, never viewed', () => {
     expect(viewedState('a1b2c3d4e5f60718', 'ffffffffffffffff')).toBe('changed')
   })
+
+  it('reads a file the patch cut off as unknown, marked or not', () => {
+    expect(viewedState('a1b2c3d4e5f60718', null)).toBe('unknown')
+    expect(viewedState(undefined, null)).toBe('unknown')
+  })
 })
 
 describe('viewedFingerprint', () => {

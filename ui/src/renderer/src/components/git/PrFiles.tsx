@@ -52,6 +52,7 @@ function FileSection({
   open,
   viewed,
   changed,
+  untracked,
   wrapped,
   split,
   hideWhitespace,
@@ -65,6 +66,7 @@ function FileSection({
   open: boolean
   viewed: boolean
   changed: boolean
+  untracked: boolean
   wrapped: boolean
   split: boolean
   hideWhitespace: boolean
@@ -87,7 +89,8 @@ function FileSection({
           <Text as="span" size="small" tone="danger">−{file.deletions}</Text>
         </Text>
         {changed && <span onClick={(event: React.MouseEvent) => event.stopPropagation()}><Chip variant="state" tone="warning" label="Changed since viewed" className="flex-none" /></span>}
-        <PrTab as="button" surface="pr-code-viewed" type="button" aria-pressed={viewed} onClick={(event: React.MouseEvent) => { event.stopPropagation(); onToggleViewed() }}><PrTab as="span" surface="pr-code-viewed-box" state={viewed ? 'viewed' : undefined}>{viewed && <Icon glyph={IconCheck} role="small" />}</PrTab>Viewed</PrTab>
+        {untracked && <span onClick={(event: React.MouseEvent) => event.stopPropagation()}><Chip variant="state" label="Patch cut off" className="flex-none" /></span>}
+        <PrTab as="button" surface="pr-code-viewed" type="button" aria-pressed={viewed} disabled={untracked} onClick={(event: React.MouseEvent) => { event.stopPropagation(); onToggleViewed() }}><PrTab as="span" surface="pr-code-viewed-box" state={viewed ? 'viewed' : undefined}>{viewed && <Icon glyph={IconCheck} role="small" />}</PrTab>Viewed</PrTab>
       </PrTab>
       {open && <PrTab as="div" surface="pr-code-file-body" states={[wrapped ? 'wrapped' : '', split ? 'split' : ''].filter(Boolean)}><DiffCodeBlock>
         {visibleLines(file.lines, hideWhitespace).map((line, index) => {
@@ -178,15 +181,16 @@ export function PrFiles({
   onAddDraft: (draft: PrReviewDraft) => void
   onReload: () => void
 }): React.JSX.Element {
-  // One fingerprint per file at parse time; the mark store compares it with
-  // the hash taken when the file was last viewed.
-  const files = useMemo(
-    () => (diff === null ? [] : parsePrDiff(diff.patch).map((file) => ({ file, hash: patchHash(viewedFingerprint(file)) }))),
-    [diff]
-  )
+  // One fingerprint per file at parse time; the mark store compares it with the hash
+  // taken when the file was last viewed. A truncated patch's last file may be partial.
+  const files = useMemo(() => {
+    if (diff === null) return []
+    const parsed = parsePrDiff(diff.patch)
+    return parsed.map((file, index) => ({ file, hash: diff.truncated && index === parsed.length - 1 ? null : patchHash(viewedFingerprint(file)) }))
+  }, [diff])
   const prKey = link === null ? null : prViewedKey(link.host, link.repository, link.number)
   const storedMarks = usePrViewedMarks(prKey)
-  const stateOf = (entry: { file: PrDiffFile; hash: string }): PrFileViewedState => viewedState(storedMarks[entry.file.path], entry.hash)
+  const stateOf = (entry: { file: PrDiffFile; hash: string | null }): PrFileViewedState => viewedState(storedMarks[entry.file.path], entry.hash)
   const [openOverrides, setOpenOverrides] = useState<Map<string, boolean>>(() => new Map())
   const [wrapped, setWrapped] = useState(false)
   const [split, setSplit] = useState(false)
@@ -196,7 +200,8 @@ export function PrFiles({
   const viewedCount = files.filter((entry) => stateOf(entry) === 'viewed').length
   const allClosed = files.length > 0 && files.every((entry, index) => !isOpen(entry.file.path, index))
   const toggleFile = (path: string, index: number): void => setOpenOverrides((current) => new Map(current).set(path, !isOpen(path, index)))
-  const toggleViewed = (entry: { file: PrDiffFile; hash: string }): void => {
+  const toggleViewed = (entry: { file: PrDiffFile; hash: string | null }): void => {
+    if (entry.hash === null) return
     if (stateOf(entry) === 'viewed') markPrFileUnviewed(prKey, entry.file.path)
     else markPrFileViewed(prKey, entry.file.path, entry.hash)
   }
@@ -257,6 +262,7 @@ export function PrFiles({
             open={isOpen(entry.file.path, index)}
             viewed={stateOf(entry) === 'viewed'}
             changed={stateOf(entry) === 'changed'}
+            untracked={stateOf(entry) === 'unknown'}
             wrapped={wrapped}
             split={split}
             hideWhitespace={hideWhitespace}

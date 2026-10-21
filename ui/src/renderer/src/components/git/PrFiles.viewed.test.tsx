@@ -126,6 +126,32 @@ describe('PrFiles viewed marks', () => {
     expect(screen.queryByText('Changed since viewed')).toBeNull()
   })
 
+  it('leaves a truncated patch’s last file untracked: neither viewed nor changed, and not markable', () => {
+    const key = prViewedKey(LINK.host, LINK.repository, LINK.number)
+    markPrFileViewed(key, 'core/orchestrate.rs', fileHash('core/orchestrate.rs'))
+    markPrFileViewed(key, 'docs/user/tasks.md', patchHash('the whole file as it stood when viewed'))
+    const { container } = render(
+      <PrFiles
+        link={LINK}
+        diff={{ number: 412, patch: PATCH, truncated: true, message: null } as PrDiffView}
+        loading={false}
+        drafts={[]}
+        writeBusy={false}
+        onAddDraft={NOOP}
+        onReload={NOOP}
+      />
+    )
+    const cut = viewedButton(container, 'docs/user/tasks.md')
+    expect(cut.getAttribute('aria-pressed')).toBe('false')
+    expect(cut.disabled).toBe(true)
+    expect(screen.queryByText('Changed since viewed')).toBeNull()
+    expect(screen.getByText('Patch cut off').textContent).toBe('Patch cut off')
+    fireEvent.click(cut)
+    expect(localStorage.getItem('tr-pr-viewed-marks')).not.toContain(fileHash('docs/user/tasks.md'))
+    expect(viewedButton(container, 'core/orchestrate.rs').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText(/1 \/ 2 viewed/).textContent).toContain('1 / 2 viewed')
+  })
+
   it('un-views a binary file when a new push replaces its content', () => {
     const binary = 'diff --git a/assets/logo.png b/assets/logo.png\nindex 3f2a1b0..7c4d9e2 100644\nBinary files a/assets/logo.png and b/assets/logo.png differ\n'
     const first = renderFiles(binary)
