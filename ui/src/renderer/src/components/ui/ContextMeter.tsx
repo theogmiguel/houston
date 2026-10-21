@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes } from 'react'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
 
@@ -24,7 +24,7 @@ export function ContextMeterButton({
     <button
       type="button"
       {...rest}
-      className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.mini} ${HIT_TARGET_28} flex-none items-center justify-center rounded-[var(--tr-radius-sm)] cursor-pointer hover:bg-[var(--hover-fill)] focus-visible:bg-[var(--hover-fill)] outline-none focus-visible:shadow-[${RING_ACCENT_ICON}] ${TONE[tone]}`}
+      className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.mini} ${HIT_TARGET_28} flex-none items-center justify-center rounded-[var(--tr-radius-sm)] cursor-pointer hover:bg-[var(--hover-fill)] focus-visible:bg-[var(--hover-fill)] outline-none ${FOCUS_RING_ACCENT_ICON_CLS} ${TONE[tone]}`}
     >
       <svg data-testid="context-meter" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
         <circle cx="7" cy="7" r={RADIUS} fill="none" stroke="var(--text-muted)" strokeWidth="1.5" />

@@ -3,7 +3,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { IconClose, IconRefresh } from '../icons'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
-import { FOCUS_HALO_CLS, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
+import { FOCUS_HALO_CLS, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { Icon } from './Icon'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 import { Text } from './Text'
@@ -44,7 +44,7 @@ export function DevicePresetButton(props: ButtonHTMLAttributes<HTMLButtonElement
 }
 
 const HEAD_BTN_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-[var(--space-px)] active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[var(--browser-control-size)] [@container_(max-width:200px)]:h-[var(--browser-control-size)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
+  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-[var(--space-px)] active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] ${FOCUS_RING_ACCENT_ICON_CLS} focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[var(--browser-control-size)] [@container_(max-width:200px)]:h-[var(--browser-control-size)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
 
 const HEAD_BTN_TONE = {
   regular:

@@ -1,7 +1,9 @@
 export const FOCUS_HALO_CLS = 'focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]'
 export const FOCUS_WITHIN_HALO_CLS = 'focus-within:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]'
 
-export const RING_ACCENT_ICON = '0_0_0_1px_color-mix(in_srgb,var(--accent)_50%,transparent)'
+// Focus recipes ship as complete literal utilities: Tailwind only generates a class it
+// can read whole in the source, never one assembled from an interpolated constant.
+export const FOCUS_RING_ACCENT_ICON_CLS = 'focus-visible:shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_50%,transparent)]'
 
 export const RING_ACCENT_BUTTON = '0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)'
 
@@ -11,11 +13,11 @@ export const RING_OK_HALO = '0_0_0_4px_color-mix(in_srgb,var(--ok)_15%,transpare
 
 export const RING_OK_HALO_PULSE = '0_0_0_3px_color-mix(in_srgb,var(--ok)_13%,transparent)'
 
-export const BORDER_HAIRLINE_INSET = 'inset_0_0_0_1px_var(--border)'
+export const FOCUS_HAIRLINE_INSET_CLS = 'focus-visible:shadow-[inset_0_0_0_1px_var(--border)]'
 
 export const BORDER_HAIRLINE_INSET_TRANSPARENT = 'inset_0_0_0_1px_transparent'
 
-export const RING_ACCENT_INSET_45 = 'inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_45%,transparent)'
+export const FOCUS_RING_ACCENT_INSET_45_CLS = 'focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_45%,transparent)]'
 
 export const RING_ACCENT_INSET_18 = 'inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_18%,transparent)'
 

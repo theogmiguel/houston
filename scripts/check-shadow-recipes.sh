@@ -22,11 +22,14 @@ counts="$(perl -e '
     my $src = <$fh>;
     close $fh;
     my $n = 0;
+    # Shared focus classes (FOCUS_*_CLS in shadowChrome.ts) must be literal for Tailwind discovery.
+    my %focus_literal;
+    if ($f =~ m{components/ui/shadowChrome\.ts$}) {
+      $focus_literal{$1} = 1 while $src =~ /\bFOCUS_[A-Z0-9_]*_CLS = \x27[a-z-]+:shadow-\[([^\]]*)\]\x27/g;
+    }
     while ($src =~ /shadow-\[([^\]]*)\]/g) {
       my $content = $1;
-      # The shared focus class must be literal for Tailwind discovery.
-      next if $f =~ m{components/ui/shadowChrome\.ts$}
-        && $content eq "0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)";
+      next if $focus_literal{$content};
       # Strip every destination-shaped term: a var() whose fallback may
       # nest parens or an interpolation one level deep, then a bare
       # `${CONSTANT}` on its own, as a multi-shadow composite spells it.
@@ -61,9 +64,9 @@ if [ -n "$counts" ]; then
   done <<< "$counts"
   echo "      A violation is a shadow-[...] bracket content, or a boxShadow:" >&2
   echo "      style value, that is a hand-typed px length or colour. Use a" >&2
-  echo "      token (shadow-[var(--x)])" >&2
-  echo "      or a named constant from components/ui/shadowChrome.ts" >&2
-  echo "      (shadow-[\${RING_...}] / \${GLOW_...}), interpolated." >&2
+  echo "      token (shadow-[var(--x)]) or a complete literal class exported" >&2
+  echo "      from components/ui/shadowChrome.ts (FOCUS_*_CLS). Tailwind generates" >&2
+  echo "      no CSS for shadow-[\${CONSTANT}], so an interpolation never paints." >&2
   exit 1
 fi
 
