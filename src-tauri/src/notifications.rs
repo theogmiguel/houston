@@ -1,6 +1,6 @@
 use tauri::AppHandle;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use targets::{remember_target, take_target};
@@ -69,16 +69,13 @@ fn notification_text(title: &str, body: &str) -> (String, String) {
     (title, body)
 }
 
+// Shows the window as the tray does, so a window hidden by Keep in tray appears too.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 fn focus_notification_target(app: &AppHandle, notification: u32) {
     let Some(session) = take_target(notification) else {
         return;
     };
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window.unminimize().and_then(|()| window.set_focus()) {
-            eprintln!("houston-tauri: could not focus notification target: {error}");
-        }
-    }
+    crate::tray::show_main_window(app);
     if let Err(error) = app.emit(EVENT_FOCUS_PANE, session) {
         eprintln!("houston-tauri: could not emit notification pane action: {error}");
     }
