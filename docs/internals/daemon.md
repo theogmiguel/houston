@@ -371,7 +371,8 @@ Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply
 Cloning senders adds no capacity. Admission refusal names the limits, their current counts and the refused message type with its
 `dir` or `request` id, so a client can retry or settle that request.
 Reply overflow closes the connection for a full state resync; mutations already admitted
-still finish. These limits apply to off-connection handlers, not the attach-family path.
+still finish. These limits apply to off-connection handlers, not the attach-family path,
+which runs at most one spawn per connection at a time.
 Idle waits retain their handler permits for the entire quiet-window or timeout check.
 Disconnect cancels these read-only waits and releases their session ownership; admitted
 mutations continue to completion.

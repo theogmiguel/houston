@@ -167,6 +167,7 @@ mod worktree_cleanup_wire;
 mod worktree_include_wire;
 mod worktree_spawn_wire;
 mod worktrees_wire;
+mod ws_control_offload_wire;
 mod ws_control_wire;
 mod ws_frame_optin_wire;
 mod ws_frame_queue_wire;

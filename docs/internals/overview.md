@@ -181,9 +181,13 @@ task, not on the connection's loop: that loop flushes the connection's PTY frame
 resizes, and a handler awaited there — a `git` shell-out, a CLI probe, a directory scan —
 held both for its whole duration, which is how a resize ack missed the renderer's deadline
 and a CLI drew into an 80×24 box. Only the attach-family messages (`session_create`,
-`session_respawn`, `session_wake`, `session_attach`, `session_visibility`) stay on the loop,
-in request order, because they edit the connection's own frame set; every other reply comes
-back through a bounded per-connection queue.
+`session_respawn`, `session_wake`, `session_attach`, `session_visibility`) are ordered by the
+loop, because they edit the connection's own frame set; every other reply comes back through
+a bounded per-connection queue. A spawn (create, respawn, wake) runs on a blocking thread
+while the loop keeps flushing frames and serving replies; when it lands, the loop taps the
+new session and then replies, so none of its frames precede the reply. Until then, later
+attach-family requests and requests naming the spawning session wait in socket order,
+bounded by the inbound queue's 256 messages and 1 MiB.
 The scrollback replay is the one base64 payload, riding the JSON channel so it
 orders against the attach that asked for it. Details: [renderer.md](renderer.md).
 
