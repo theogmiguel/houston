@@ -223,10 +223,9 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
     );
 }
 
-/// A request that names a session through `parent` or `child` is the same dependency as one
-/// naming it through `session`: before the spawns ran off the loop a blocking spawn held the
-/// connection, so the request ran after it. A spawn that names a session through `cwd_from`
-/// holds it busy, so both requests must wait for the spawn's reply.
+/// A request naming a session through `parent`, `child` or `session` depends on it: a
+/// blocking spawn used to hold the connection, so the request ran after it. A spawn naming a
+/// session through `cwd_from` is busy too, so both requests wait for its reply.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_request_naming_a_busy_session_waits_behind_the_spawn() {
     tokio::spawn(houston_core::power_throttling::sweep_loop());
