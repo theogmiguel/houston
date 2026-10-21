@@ -166,9 +166,14 @@
     "command registry left the boot path once App took its navigation helper from",
     "paletteNav.ts, and",
     "that headroom pays for Next request, which must answer from the keymap at",
-    "any time and keep the operator inbox current."
+    "any time and keep the operator inbox current.",
+    "",
+    "Re-cut against 942,793 bytes (one boot chunk) with the same small headroom:",
+    "the orchestration sound burst gate keeps N panes finishing together to one",
+    "sound; `claimSoundSlot` is exported for its unit tests and the per-kind slot",
+    "map rides in App's notification delivery, so both are boot-path code."
   ],
-  "maxBootBytes": 942700,
+  "maxBootBytes": 943000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
