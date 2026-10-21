@@ -42,6 +42,10 @@ Rules:
 - The shared renderer harness loads application modules during test collection. Keep this
   setup outside individual test deadlines: a timed-out asynchronous React `act` can remain
   pending and make every subsequent test in that file fail before rendering.
+- The renderer's one Vitest setup file gives jsdom's `Range` the empty geometry jsdom already
+  gives `Element`. Without it every mounted CodeMirror editor logs a caught
+  `getClientRects is not a function` TypeError, which reads like a failure in CI output.
+  Keep other environment state in the test files: Vitest runs without globals.
 - `tracing`-capture tests call `ensure_permissive_global_default()` from
   `test_tracing_capture.rs` before their own `with_default`. Callsite interest is
   process-global: a sibling test with no subscriber votes `never` and silences that callsite

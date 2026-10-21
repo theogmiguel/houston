@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { FOCUS_HALO_CLS, RING_ACCENT_SOLID } from './shadowChrome'
+import { FOCUS_HALO_CLS, RING_ACCENT_SOLID_CLS } from './shadowChrome'
 import { Text } from './Text'
 
 export type RadioCardEmphasis = 'subtle' | 'raised'
@@ -15,7 +15,7 @@ export type RadioCardProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'clas
 export function RadioCard({ selected, emphasis = 'subtle', children, className = '', type = 'button', ...props }: RadioCardProps): React.JSX.Element {
   const selectedStyle = selected
     ? emphasis === 'raised'
-      ? `border-[var(--accent)] shadow-[${RING_ACCENT_SOLID}] bg-[var(--card-bg)] ${FOCUS_HALO_CLS}`
+      ? `border-[var(--accent)] ${RING_ACCENT_SOLID_CLS} bg-[var(--card-bg)] ${FOCUS_HALO_CLS}`
       : 'border-[var(--accent)] bg-[var(--card-bg)]'
     : 'border-[var(--border)] hover:border-[var(--border-hover)] bg-[var(--card-bg)]'
   const focus = emphasis === 'subtle' ? `${FOCUS_HALO_CLS}` : ''

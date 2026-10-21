@@ -401,6 +401,21 @@ describe('editor leaves (batch D)', () => {
     expect(findEditorByPath(tree, '/proj/missing.ts')).toBeNull()
   })
 
+  it('findEditorByPath matches a Files-tree Windows path against the Quick Open spelling', () => {
+    const tree = row(leaf(1), editor('e1', '\\\\?\\C:\\ws\\src\\a.ts'))
+    expect(findEditorByPath(tree, 'C:\\ws/src/a.ts')).toEqual(editor('e1', '\\\\?\\C:\\ws\\src\\a.ts'))
+    expect(findEditorByPath(tree, 'c:\\WS\\src\\a.ts')).toEqual(editor('e1', '\\\\?\\C:\\ws\\src\\a.ts'))
+    expect(findEditorByPath(tree, 'C:\\ws/src/b.ts')).toBeNull()
+    const share = row(leaf(1), editor('e2', '\\\\?\\UNC\\host\\share\\a.ts'))
+    expect(findEditorByPath(share, '\\\\host\\share/a.ts')).toEqual(editor('e2', '\\\\?\\UNC\\host\\share\\a.ts'))
+  })
+
+  it('findEditorByPath keeps POSIX paths case-sensitive and exact', () => {
+    const tree = row(leaf(1), editor('e1', '/proj/A.ts'))
+    expect(findEditorByPath(tree, '/proj/a.ts')).toBeNull()
+    expect(findEditorByPath(tree, '/proj\\A.ts')).toBeNull()
+  })
+
   it('round-trips through saveLayout/loadLayout', () => {
     const key = `test-editor-roundtrip-${Date.now()}`
     const tree = row(leaf(1), editor('e1', '/proj/a.ts'))
