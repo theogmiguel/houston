@@ -83,6 +83,13 @@ viewed records the new patch. Binary files and mode changes count as changes too
 patch is too large to load in full, the file it cuts off reads **Patch cut off** and its
 Viewed toggle is unavailable, because Houston cannot compare the whole file.
 
+**Hide resolved** and **Hide bots** filter a pull request's discussions and comments; each
+names how many items it applies to, and hidden items collapse to one line with **Show**.
+A comment counts as a bot's when GitHub reports its author as an app. A discussion counts as
+a bot's only until a person replies in it. Both toggles are off by default, and the choice
+is remembered on this device for every pull request. The Timeline already omits resolved
+discussions, so it offers only **Hide bots**.
+
 Merge readiness reports checks, required reviews and conflicts with the base branch.
 Choose squash, merge commit or rebase, and review the stated consequence before
 merging: squash combines the request's commits into one. Actions remain subject to

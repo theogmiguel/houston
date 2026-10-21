@@ -2,17 +2,26 @@ import { PrTab } from '../ui/PrTab'
 import { Button } from '../ui/Button'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { TextArea } from '../ui/TextArea'
-import { DiscussionEntry, DiscussionBody, DiscussionMeta, DiscussionActionsRow, DiscussionComposer, DiscussionCommentRow, DiscussionThreadHeader, DiscussionCommentMetaRow, DiscussionThreadList, DiscussionErrorMessage, DiscussionComposerPanel, DiscussionAuthor, DiscussionPath, DiscussionResolveAction } from '../ui/DiscussionEntry'
+import { DiscussionEntry, DiscussionBody, DiscussionMeta, DiscussionActionsRow, DiscussionComposer, DiscussionCommentRow, DiscussionThreadHeader, DiscussionCommentMetaRow, DiscussionThreadList, DiscussionErrorMessage, DiscussionComposerPanel, DiscussionAuthor, DiscussionPath, DiscussionResolveAction, DiscussionFilterRow, DiscussionHiddenSummary } from '../ui/DiscussionEntry'
 import { useState } from 'react'
 import type { PrComment, PrDetail, PrReaction, PrThread } from '../../houston/client'
+import { Checkbox } from '../ui/Checkbox'
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
 import { IconCheck, IconChevronDown, IconRefresh } from '../icons'
 import { PrReactions } from './PrPickers'
 import { ScmNotice } from './ScmNotice'
+import { filterComments, filterThreads, hiddenLabel, isBotThread, setPrDiscussionFilter, usePrDiscussionFilter, type PrDiscussionFilter } from './prDiscussionFilter'
 
 type ReactFn = (subjectId: string | null, content: PrReaction, reacted: boolean) => void
+
+// A toggle with nothing to hide stays out of the way unless it is already on,
+// so a saved preference is always visible where it applies.
+function FilterToggle({ field, label, count, filter }: { field: keyof PrDiscussionFilter; label: string; count: number; filter: PrDiscussionFilter }): React.JSX.Element | null {
+  if (count === 0 && !filter[field]) return null
+  return <Checkbox size="xs" data-testid={`pr-filter-${field}`} label={`${label} (${count})`} checked={filter[field]} onChange={(checked) => setPrDiscussionFilter({ [field]: checked })} />
+}
 
 function CommentRow({
   comment,
@@ -206,6 +215,8 @@ export function PrThreads({
       ? null
       : 'resolving needs write access or authorship'
     : 'permissions could not be read — refresh'
+  const filter = usePrDiscussionFilter()
+  const view = filterThreads(detail.threads, filter)
   return (
     <Disclosure
       summary="Discussions"
@@ -215,6 +226,10 @@ export function PrThreads({
       variant="flush"
     >
       <DiscussionThreadList data-testid="pr-threads">
+        <DiscussionFilterRow>
+          <FilterToggle field="hideResolved" label="Hide resolved" count={view.resolved} filter={filter} />
+          <FilterToggle field="hideBots" label="Hide bots" count={view.bots} filter={filter} />
+        </DiscussionFilterRow>
         {detail.threads_truncated && (
           <ScmNotice tone="info" testId="pr-threads-capped">
             GitHub had more discussions than this read carried.
@@ -225,7 +240,7 @@ export function PrThreads({
             {detail.threads_message}
           </DiscussionErrorMessage>
         )}
-        {detail.threads.map((thread) => (
+        {view.shown.map((thread) => (
           <ThreadRow
             key={thread.id}
             thread={thread}
@@ -239,6 +254,8 @@ export function PrThreads({
             onReact={onReact}
           />
         ))}
+        {view.hiddenResolved > 0 && <DiscussionHiddenSummary testId="pr-threads-resolved-hidden" label={hiddenLabel(view.hiddenResolved, 'resolved thread')} onShow={() => setPrDiscussionFilter({ hideResolved: false })} />}
+        {view.hiddenBots > 0 && <DiscussionHiddenSummary testId="pr-threads-bots-hidden" label={hiddenLabel(view.hiddenBots, 'bot thread')} onShow={() => setPrDiscussionFilter({ hideBots: false })} />}
       </DiscussionThreadList>
     </Disclosure>
   )
@@ -269,15 +286,18 @@ export function PrInspectorComments({
   const [newestFirst, setNewestFirst] = useState(true)
   const [replyThread, setReplyThread] = useState<string | null>(null)
   const [reply, setReply] = useState('')
+  const filter = usePrDiscussionFilter()
   const threads = detail.threads.filter((thread) => !thread.resolved)
-  const comments = [
-    ...detail.comments.map((comment) => ({ thread: null as PrThread | null, comment })),
-    ...threads.flatMap((thread) => thread.comments.map((comment) => ({ thread, comment }))),
+  const all = [
+    ...detail.comments.map((comment) => ({ thread: null as PrThread | null, comment, bot: comment.bot })),
+    ...threads.flatMap((thread) => thread.comments.map((comment) => ({ thread, comment, bot: isBotThread(thread) }))),
   ]
+  const bots = all.filter((entry) => entry.bot).length
+  const comments = filter.hideBots ? all.filter((entry) => !entry.bot) : all
   comments.sort((a, b) => newestFirst
     ? b.comment.created_at - a.comment.created_at
     : a.comment.created_at - b.comment.created_at)
-  const count = detail.comments_total + comments.length - detail.comments.length
+  const count = detail.comments_total + all.length - detail.comments.length
   const resolveReason = detail.viewer?.can_write || detail.viewer?.did_author
     ? null
     : detail.viewer
@@ -292,6 +312,7 @@ export function PrInspectorComments({
       <PrTab as={Button} surface="pr-inspector-comments-sort" type="button" variant="ghost" size="sm" onClick={() => setNewestFirst((value) => !value)}>
         {newestFirst ? 'Newest first' : 'Oldest first'}
       </PrTab>
+      <FilterToggle field="hideBots" label="Hide bots" count={bots} filter={filter} />
     </PrTab>
     {open && <PrTab as="div" surface="pr-inspector-comments-body">
       {detail.threads_truncated && <ScmNotice tone="info" testId="pr-threads-capped">GitHub had more discussions than this read carried.</ScmNotice>}
@@ -326,6 +347,7 @@ export function PrInspectorComments({
             </PrTab>}
           </PrTab>
         })}
+        {all.length > comments.length && <DiscussionHiddenSummary testId="pr-inspector-bots-hidden" label={hiddenLabel(all.length - comments.length, 'bot comment')} onShow={() => setPrDiscussionFilter({ hideBots: false })} />}
         </PrTab>
       </PrTab>
       {threads.length > 0 && <PrTab as="div" surface="pr-inspector-thread-actions">
@@ -350,6 +372,8 @@ export function PrComments({
   onReact: ReactFn
 }): React.JSX.Element {
   const [draft, setDraft] = useState('')
+  const filter = usePrDiscussionFilter()
+  const view = filterComments(detail.comments, filter)
   return (
     <Disclosure
       summary="Comments"
@@ -358,13 +382,16 @@ export function PrComments({
       variant="flush"
     >
       <DiscussionThreadList data-testid="pr-comments">
+        <DiscussionFilterRow>
+          <FilterToggle field="hideBots" label="Hide bots" count={view.bots} filter={filter} />
+        </DiscussionFilterRow>
         {detail.comments.length < detail.comments_total && (
           <ScmNotice tone="info" testId="pr-comments-capped">
             Showing {detail.comments.length} of {detail.comments_total} comments — open on GitHub
             for the rest.
           </ScmNotice>
         )}
-        {detail.comments.map((comment, index) => (
+        {view.shown.map((comment, index) => (
           <CommentRow
             key={comment.id ?? `${comment.author}-${index}`}
             comment={comment}
@@ -373,6 +400,7 @@ export function PrComments({
             onEdit={onCommentEdit}
           />
         ))}
+        {view.hiddenBots > 0 && <DiscussionHiddenSummary testId="pr-comments-bots-hidden" label={hiddenLabel(view.hiddenBots, 'bot comment')} onShow={() => setPrDiscussionFilter({ hideBots: false })} />}
         <DiscussionComposerPanel>
           <TextArea surface="background"
             data-testid="pr-comment-composer"

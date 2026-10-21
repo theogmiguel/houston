@@ -229,6 +229,7 @@ fn enrich(dir: &Path, link: &PullRequestLink, detail: &mut PrDetail, head_owner:
                     {
                         comment.reactions = counts.clone();
                     }
+                    comment.bot = threads.bot_comment_ids.iter().any(|bot| bot == id);
                 }
             }
             for review in detail.reviews.iter_mut() {

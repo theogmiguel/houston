@@ -1,4 +1,4 @@
-# Wire protocol v147
+# Wire protocol v148
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -723,7 +723,7 @@ PrGitHubMerge      merge_queue_required?, auto_merge_allowed?, required_checks?,
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
                    url?, duration_ms?, run_id?
 PrCheckLog         dir, run_id, lines, truncated, available
-PrComment          author, body, created_at, url?
+PrComment          author, body, created_at, url?, bot (GitHub types the author as an app)
 PrReview           author, state, body, submitted_at
 PrWatchInfo        number, url
 SessionPrWatches   session, watches: PrWatchInfo[]
@@ -1396,6 +1396,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |
 | 146 | **Pull requests queue for merging in a per-workspace merge queue that verifies them, can merge on its own, restacks dependents and hands off to GitHub.** New `merge_queue_get`, `merge_queue_enqueue`, `merge_queue_dequeue`, `merge_queue_merge_head`, `merge_queue_settings_set`, `merge_queue_pause`, `merge_queue_pause_all`, `merge_queue_retry`, `merge_queue_revert`, `merge_queue_acknowledge` and `merge_queue_summary_get`, answered by `merge_queue` (also bcast), `merge_queue_reply` and `merge_queue_summary`. `merge_queue` carries `entries: MergeQueueEntry[]`, `log: MergeQueueLogEntry[]` (pushes, merges, parks, restacks, retargets and hand-offs with their old and new commits), `settings?: MergeQueueSettings`, `global_paused`, `away: MergeQueueAway` and `hand_off?: MergeQueueHandOffInfo`; `merge_queue_summary` carries `MergeQueueParkedCount` per workspace. New types: `MergeQueueEntry` (with `verification?`, `failure?`, `worktree?`, `verifying_since_ms?` and `github?: MergeQueueGitHubHold`; `position` is 0 for an entry out of line), `MergeQueueStatus`, `MergeQueueGate`, `MergeQueueGateKind`, `MergeQueueGateState`, `MergeQueueVerification`, `MergeQueueFailure`, `MergeQueueFailureKind`, `MergeQueueSettings`, `MergeQueueLogEntry`, `MergeQueueLogKind`, `MergeQueueAway`, `MergeQueueParkedCount`, `MergeQueueHandOff`, `MergeQueueHandOffInfo` and `MergeQueueGitHubHold`. `PrDetail` gains `merge_methods`, the methods the repository allows, and `github_merge?: PrGitHubMerge` (with `PrMergeQueueEntry` and `PrMergeRemoval`); its `auto_merge_enabled` and `auto_merge_method` are now filled from the access read. Agents reach enqueue and dequeue through `pane_pr_enqueue` and `pane_pr_dequeue`; there is no agent merge verb |
 | 145 | **A refused control request names itself.** The `error` for a request past the per-connection or process control limits keeps its message prefix and now ends with the refused message type and its `dir` or `request` id; its `context` changes from `control_admission` to `control_admission:<type>[:<dir or request id>]` (for example `control_admission:git_branch:/repo/wt-3`), so a client can settle or retry that request. A directory may contain `:`: everything after the second `:` is the target. No message changes shape. **A worker's progress report closes its own open question, and the operator can dismiss one.** New `child_input_resolve{child, id}`; `inbox_resolve` on a question or blocker row also resolves its input request. A `pane_report{kind: progress}` on the same `request_id` resolves that worker's open `report:*` asks (inbox rows read by the parent get `reason: "superseded_by_worker"`), so a worker that carried on after an unanswered question no longer stays under the operator's attention. No payload shape changes. |
