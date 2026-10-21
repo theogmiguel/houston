@@ -58,7 +58,9 @@ export function ZoomableImage({ src, alt, onError }: { src: string; alt: string;
       return
     }
     const anchor = point ?? { x: viewport.width / 2, y: viewport.height / 2 }
-    pendingScroll.current = zoomScroll(natural, viewport, from, to, anchor, { left: element.scrollLeft, top: element.scrollTop })
+    // A zoom React has not committed yet already moved the scroll the next one starts from.
+    const start = pendingScroll.current ?? { left: element.scrollLeft, top: element.scrollTop }
+    pendingScroll.current = zoomScroll(natural, viewport, from, to, anchor, start)
     scaleRef.current = to
     setMode(nextMode)
   }, [natural, viewport])

@@ -95,6 +95,23 @@ describe('ZoomableImage', () => {
     expect(button('Zoom in').disabled).toBe(true)
   })
 
+  it('keeps the pointer anchored when a second wheel arrives before React commits the first', () => {
+    const wheel = (): WheelEvent => new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -200, clientX: 300, clientY: 200 })
+    mount()
+    act(() => viewport().dispatchEvent(wheel()))
+    act(() => viewport().dispatchEvent(wheel()))
+    const committed = { left: viewport().scrollLeft, top: viewport().scrollTop, level: level() }
+    expect(committed.left).toBeGreaterThan(0)
+    act(() => root.unmount())
+    root = createRoot(container)
+    mount()
+    act(() => {
+      viewport().dispatchEvent(wheel())
+      viewport().dispatchEvent(wheel())
+    })
+    expect({ left: viewport().scrollLeft, top: viewport().scrollTop, level: level() }).toEqual(committed)
+  })
+
   it('returns to fit from the Fit button', () => {
     mount()
     act(() => button('Zoom in').click())
