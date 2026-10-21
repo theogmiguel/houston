@@ -187,7 +187,11 @@ a bounded per-connection queue. A spawn (create, respawn, wake) runs on a blocki
 while the loop keeps flushing frames and serving replies; when it lands, the loop taps the
 new session and then replies, so none of its frames precede the reply. Until then, later
 attach-family requests and requests naming the spawning session wait in socket order,
-bounded by the inbound queue's 256 messages and 1 MiB.
+bounded by the inbound queue's 256 messages and 1 MiB. An attach taps its session, then copies and
+encodes the snapshot or replay on a blocking thread while that tap holds its frames; when it
+lands, the loop prunes what the reply covers, replies, and only then flushes the held frames.
+Up to four attaches of different sessions prepare at once; requests naming an attaching
+session wait behind it.
 The scrollback replay is the one base64 payload, riding the JSON channel so it
 orders against the attach that asked for it. Details: [renderer.md](renderer.md).
 
