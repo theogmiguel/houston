@@ -9,6 +9,7 @@ import {
   movePaneNext,
   movePanePrev,
   newTerminal,
+  nextRequestShortcut,
   openBrowserSurface,
   openFilesSurface,
   openDiffSurface,
@@ -18,6 +19,7 @@ import {
   openFileShortcut,
   paletteLayer,
   prefixShortcut,
+  requestBackShortcut,
   selectPane,
   shortcutSheetShortcut,
   splitDown,
@@ -75,6 +77,7 @@ const GROUPS: { label: string; rows: { entries: ShortcutEntry[]; what: string }[
     label: 'App',
     rows: [
       { entries: [newTerminal, openFileShortcut], what: 'terminal / file' },
+      { entries: [nextRequestShortcut, requestBackShortcut], what: 'next request / back' },
       { entries: [openBrowserSurface, openFilesSurface, openDiffSurface, openPullRequestSurface, openLinkedPullRequestsSurface], what: 'panel surfaces' },
       { entries: [openPullRequestsScreen], what: 'Pull Requests screen' },
       { entries: [toggleGit], what: 'source control' },

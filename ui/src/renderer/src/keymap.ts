@@ -413,6 +413,24 @@ export const paletteLayer: ShortcutEntry = {
   match: (e) => NO_MODS(e) && !e.shiftKey && (e.code === 'Space' || e.key === ' ')
 }
 
+export const nextRequestShortcut: ShortcutEntry = {
+  id: 'next-request',
+  keyLabel: '!',
+  description: 'go to the oldest request waiting on you (after the prefix)',
+  category: 'global',
+  layer: 'prefix',
+  match: (e) => NO_MODS(e) && e.key === '!'
+}
+
+export const requestBackShortcut: ShortcutEntry = {
+  id: 'request-back',
+  keyLabel: 'Backspace',
+  description: 'back to the pane focused before Next request (after the prefix)',
+  category: 'global',
+  layer: 'prefix',
+  match: (e) => NO_MODS(e) && !e.shiftKey && e.key === 'Backspace'
+}
+
 export function focusedPaneOwnsKey(e: KeyboardEvent): boolean {
   if (!e.ctrlKey && !e.metaKey && !e.altKey) return true
   return (
@@ -470,7 +488,9 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   wsLast,
   gridPrev,
   gridNext,
-  paletteLayer
+  paletteLayer,
+  nextRequestShortcut,
+  requestBackShortcut
 ]
 
 export const dictationShortcut: ShortcutEntry = {

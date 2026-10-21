@@ -13,6 +13,7 @@ import type { OrchestrationNotificationContext } from './orchestrationNotificati
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
 import { setTaskbarAttentionCount } from './houston/taskbarCount';
+import { focusWaitingRequest, restoreRequestOrigin, useNextRequest, useOperatorInbox, waitingRequests, type RequestNavigation } from './nextRequest';
 import { registerOwned } from './pane/registration';
 import {
   lazy,
@@ -207,11 +208,8 @@ import {
 } from "./keymap";
 import { prefixLayer } from "./prefixLayer";
 import { PrefixHint } from "./components/PrefixHint";
-import {
-  paletteNavActions,
-  type GridTarget,
-  type PaletteActions,
-} from "./components/commandRegistry";
+import type { GridTarget, PaletteActions } from "./components/commandRegistry";
+import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
@@ -2261,6 +2259,25 @@ export function App(): React.JSX.Element {
     },
     [selectedWs, gridsFor, activeGridId, handleSelectGrid],
   );
+  const operatorInbox = useOperatorInbox(readyClient(conn), workspaces.map((w) => w.path));
+  const requestNavigation: RequestNavigation = {
+    focusPane,
+    switchWorkspace: (path) => { setSelectedWs(path); setShowLauncher(false); },
+    selectGrid: handleSelectGrid,
+    setActivePane: setActiveId,
+  };
+  const nextRequest = useNextRequest({
+    requests: () => waitingRequests(sessionsRef.current, operatorInbox),
+    focus: (request) => focusWaitingRequest(request, sessionsRef.current, requestNavigation),
+    captureOrigin: () => ({
+      workspace: selectedWs,
+      grid: selectedWs === "all" ? null : activeGridId(selectedWs),
+      pane: activeId,
+      peek: activeId === null ? null : peekedChildren.get(activeId) ?? null,
+    }),
+    restoreOrigin: (origin) => restoreRequestOrigin(origin, sessionsRef.current, requestNavigation),
+    nothingWaiting: () => pushNotice({ code: "next-request-empty", title: "Nothing is waiting on you" }),
+  });
   const handleAddGrid = useCallback((path: string): void => {
     if (!workspacesRef.current.some((w) => w.path === path)) return;
     const next = addGrid(path, "Untitled");
@@ -3210,7 +3227,7 @@ export function App(): React.JSX.Element {
         e.preventDefault();
         return;
       }
-      if (handleSurfaceShortcut(e, keymapOverrides, layerArmed, openPanelSurface, () => setRailView('prs'))) return;
+      if (handleSurfaceShortcut(e, keymapOverrides, layerArmed, openPanelSurface, () => setRailView('prs'), nextRequest)) return;
       if (
         !layerArmed &&
         resolveGlobalMatch(prefixShortcut, keymapOverrides)(e)
@@ -3406,6 +3423,8 @@ export function App(): React.JSX.Element {
     stepWorkspace,
     selectLastWorkspace,
     stepGrid,
+    nextRequest.next,
+    nextRequest.back,
   ]);
 
   const visiblePaneIds = useMemo(() => {
@@ -3587,6 +3606,7 @@ export function App(): React.JSX.Element {
     },
     switchGrid: handleSelectGrid,
     focusPane,
+    nextRequest,
     restartPane: (id) => client.respawnSession(id, undefined, null, undefined, undefined, false),
     ...paletteNavActions({
       workspaceCount: orderedWorkspaces.length,

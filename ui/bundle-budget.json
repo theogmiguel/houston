@@ -160,11 +160,15 @@
     "step's no-CLI reason carries an install-guide action, so the guide URL and",
     "its openExternal call are boot-path code too.",
     "",
-    "Re-cut against MEASURED bytes (one boot chunk) with the same small headroom:",
+    "Re-cut against 942,567 bytes (one boot chunk) with the same small headroom:",
     "the provider-reported Limited detail renders in every mounted pane header",
-    "and its `session_limit` handler runs in App, so both are boot-path code."
+    "and its `session_limit` handler runs in App, so both are boot-path code. The",
+    "command registry left the boot path once App took its navigation helper from",
+    "paletteNav.ts, and",
+    "that headroom pays for Next request, which must answer from the keymap at",
+    "any time and keep the operator inbox current."
   ],
-  "maxBootBytes": 999999,
+  "maxBootBytes": 942700,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

@@ -28,6 +28,8 @@ import {
   wsLast,
   gridPrev,
   gridNext,
+  nextRequestShortcut,
+  requestBackShortcut,
   type ShortcutEntry
 } from '../keymap'
 
@@ -104,6 +106,8 @@ export interface PaletteActions {
 
   switchGrid: (path: string, gridId: string) => void
   focusPane?: (id: number) => void
+  /// Requests waiting on the operator; Back is offered only after a jump.
+  nextRequest?: { count: number; next: () => void; back: () => void; canGoBack: boolean }
   restartPane?: (id: number) => void
 
   stepWorkspace?: (offset: 1 | -1) => void
@@ -111,25 +115,7 @@ export interface PaletteActions {
   stepGrid?: (offset: 1 | -1) => void
 }
 
-type PaletteNav = Pick<PaletteActions, 'stepWorkspace' | 'selectLastWorkspace' | 'stepGrid'>
-
-// A navigation command with nowhere to go is disabled with its reason, so each move
-// is offered only when it can act.
-export function paletteNavActions(
-  nav: Required<PaletteNav> & {
-    workspaceCount: number
-    lastWorkspace: string | null
-    selectedWs: string
-    gridsFor: (path: string) => readonly unknown[]
-  }
-): PaletteNav {
-  const gridsToStep = nav.selectedWs !== 'all' && nav.gridsFor(nav.selectedWs).length > 1
-  return {
-    stepWorkspace: nav.workspaceCount > 0 ? nav.stepWorkspace : undefined,
-    selectLastWorkspace: nav.lastWorkspace !== null ? nav.selectLastWorkspace : undefined,
-    stepGrid: gridsToStep ? nav.stepGrid : undefined
-  }
-}
+export { paletteNavActions } from './paletteNav'
 
 export const APPEARANCE_PICKER_COMMAND_ID = 'go-to.appearance-picker'
 
@@ -601,6 +587,32 @@ function buildWorkspaceCommands(actions: PaletteActions, workspaces: readonly Wo
   return commands
 }
 
+function buildRequestCommands(actions: PaletteActions): Command[] {
+  const requests = actions.nextRequest
+  if (!requests) return []
+  return [
+    {
+      id: 'go-to.next-request',
+      title: `Next request (${requests.count})`,
+      group: 'Go to',
+      keywords: ['needs input', 'waiting', 'escalated', 'answer', 'attention'],
+      chord: nextRequestShortcut,
+      enabled: true,
+      run: requests.next
+    },
+    {
+      id: 'go-to.request-back',
+      title: 'Back from request',
+      group: 'Go to',
+      keywords: ['return', 'previous pane', 'request'],
+      chord: requestBackShortcut,
+      enabled: requests.canGoBack,
+      disabledReason: requests.canGoBack ? undefined : 'No request jump to return from',
+      run: requests.back
+    }
+  ]
+}
+
 function buildAppearanceCommand(): Command {
   return {
     id: APPEARANCE_PICKER_COMMAND_ID,
@@ -663,6 +675,7 @@ export function buildCommands(input: BuildCommandsInput): Command[] {
     ...buildGridCommands(actions),
     ...buildViewCommands(actions),
     ...buildRailNavCommands(actions),
+    ...buildRequestCommands(actions),
     {
       id: 'go-to.settings',
       title: 'Settings',
