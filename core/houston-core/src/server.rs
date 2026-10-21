@@ -749,6 +749,8 @@ struct AttachSet {
     taps: std::collections::HashMap<u32, Arc<FrameTap>>,
     visible: std::collections::HashSet<u32>,
     attempts: std::collections::HashMap<u32, u32>,
+    // Sessions whose attach reply is still being prepared; their frames wait behind it.
+    held: std::collections::HashSet<u32>,
     daemon: Arc<Daemon>,
     wake: Arc<Notify>,
 }
@@ -759,8 +761,19 @@ impl AttachSet {
             taps: std::collections::HashMap::new(),
             visible: std::collections::HashSet::new(),
             attempts: std::collections::HashMap::new(),
+            held: std::collections::HashSet::new(),
             daemon,
             wake,
+        }
+    }
+
+    fn hold(&mut self, session: u32) {
+        self.held.insert(session);
+    }
+
+    fn release(&mut self, session: u32) {
+        if self.held.remove(&session) {
+            self.wake.notify_one();
         }
     }
 
@@ -808,11 +821,12 @@ impl AttachSet {
     }
 
     /// Visible taps with `priority` (this connection's last-typed session) first, so
-    /// its echo does not wait behind one turn of every busy pane in HashSet order.
+    /// its echo does not wait behind one turn of every busy pane in HashSet order. Taps held
+    /// behind an attach reply are skipped until it lands.
     fn taps(&self, priority: Option<u32>) -> Vec<Arc<FrameTap>> {
         let mut ordered = Vec::with_capacity(self.visible.len());
         if let Some(id) = priority {
-            if self.visible.contains(&id) {
+            if self.visible.contains(&id) && !self.held.contains(&id) {
                 if let Some(tap) = self.taps.get(&id) {
                     ordered.push(Arc::clone(tap));
                 }
@@ -822,6 +836,7 @@ impl AttachSet {
             self.visible
                 .iter()
                 .filter(|id| Some(**id) != priority)
+                .filter(|id| !self.held.contains(id))
                 .filter_map(|id| self.taps.get(id).cloned()),
         );
         ordered
@@ -1066,9 +1081,9 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
     )
 }
 
-/// Attach-family requests whose blocking work (a spawn) runs off the connection loop. The loop
-/// edits its frame set and replies when the work lands; requests that depend on it wait here,
-/// in socket order, while frames and other replies keep flowing.
+/// Attach-family requests whose blocking work (a spawn, an attach's copy and encode) runs off
+/// the connection loop. The loop edits its frame set and replies when the work lands; requests
+/// that depend on it wait here, in socket order, while frames and other replies keep flowing.
 #[derive(Default)]
 struct OnLoop {
     landing: FuturesUnordered<BoxFuture<'static, Landed>>,
@@ -1094,7 +1109,32 @@ enum Landed {
         result: anyhow::Result<proto::SessionInfo>,
         context: Option<String>,
     },
+    Attached {
+        session: u32,
+        result: anyhow::Result<AttachReply>,
+        context: Option<String>,
+    },
 }
+
+/// An attach reply prepared off the loop, its payload already base64-encoded.
+enum AttachReply {
+    Snapshot {
+        generation: u32,
+        output_offset: u64,
+        format_version: u32,
+        state: String,
+    },
+    Replay {
+        data: String,
+        generation: u32,
+        replayed_bytes: u64,
+        bytes_seen: u64,
+    },
+}
+
+// Attaches prepared at once per connection: a startup or grid switch attaches every pane, and
+// each holds a replay (up to the ring) plus its base64 copy until it is sent.
+const ON_LOOP_IN_FLIGHT: usize = 4;
 
 impl OnLoop {
     fn is_idle(&self) -> bool {
@@ -1102,7 +1142,8 @@ impl OnLoop {
     }
 
     fn waits(&self, family: bool, session: Option<u32>) -> bool {
-        (family && self.spawning) || session.is_some_and(|session| self.busy.contains(&session))
+        let full = self.spawning || self.landing.len() >= ON_LOOP_IN_FLIGHT;
+        (family && full) || session.is_some_and(|session| self.busy.contains(&session))
     }
 
     /// Returns the request when it can run now. An attach-family request waits for an in-flight
@@ -1141,15 +1182,50 @@ impl OnLoop {
         self.deferred.pop_front()
     }
 
-    /// Starts a spawn off the loop, or hands back a request that runs inline.
+    /// Starts a spawn or an attach off the loop, or hands back a request that runs inline.
     fn start(
         &mut self,
         daemon: &Arc<Daemon>,
         msg: proto::ClientMsg,
         context: Option<String>,
+        frames_wanted: &mut AttachSet,
     ) -> Option<proto::ClientMsg> {
         let daemon = Arc::clone(daemon);
         let (session, work): (Option<u32>, BoxFuture<'static, Landed>) = match msg {
+            proto::ClientMsg::SessionAttach {
+                session,
+                replay_bytes,
+                snapshot,
+                from_offset,
+                generation,
+            } => {
+                // Tapped before the copy so no output falls between its cutoff and the tap.
+                frames_wanted.insert(session);
+                frames_wanted.hold(session);
+                let task = tokio::task::spawn_blocking(move || {
+                    prepare_attach(
+                        &daemon,
+                        session,
+                        replay_bytes,
+                        snapshot,
+                        from_offset,
+                        generation,
+                    )
+                });
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("attach task panicked: {e}")));
+                    Landed::Attached {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                self.busy.insert(session);
+                self.landing.push(work.boxed());
+                return None;
+            }
             proto::ClientMsg::SessionCreate {
                 request,
                 agent,
@@ -1254,9 +1330,17 @@ impl OnLoop {
         frames_wanted: &mut AttachSet,
         landed: Landed,
     ) {
-        self.spawning = false;
         match landed {
+            Landed::Attached {
+                session,
+                result,
+                context,
+            } => {
+                self.busy.remove(&session);
+                land_attach(sink, frames_wanted, session, result, context).await;
+            }
             Landed::Created { request, result } => {
+                self.spawning = false;
                 if let Ok(info) = &result {
                     frames_wanted.insert(info.id);
                 }
@@ -1284,6 +1368,7 @@ impl OnLoop {
                 result,
                 context,
             } => {
+                self.spawning = false;
                 self.busy.remove(&session);
                 let result = result.map(|info| frames_wanted.insert(info.id));
                 report(sink, result, context).await;
@@ -1307,6 +1392,100 @@ fn classify(text: &str) -> (bool, Option<u32>) {
         .and_then(|named| named.session?.as_u64())
         .and_then(|session| u32::try_from(session).ok());
     (family, session)
+}
+
+/// Copies and encodes an attach's snapshot or replay; runs on a blocking thread.
+fn prepare_attach(
+    daemon: &Daemon,
+    session: u32,
+    replay_bytes: Option<u64>,
+    snapshot: Option<bool>,
+    from_offset: Option<u64>,
+    generation: Option<u32>,
+) -> anyhow::Result<AttachReply> {
+    let taken = if snapshot == Some(true) {
+        daemon
+            .attach_snapshot(session)
+            .inspect_err(|e| {
+                tracing::warn!(
+                    "session {session}: no snapshot for this attach ({e}); replying with a byte \
+                     replay instead"
+                );
+            })
+            .ok()
+    } else {
+        None
+    };
+    if let Some(taken) = taken {
+        return Ok(AttachReply::Snapshot {
+            generation: taken.generation,
+            output_offset: taken.output_offset,
+            format_version: taken.format_version,
+            state: base64::engine::general_purpose::STANDARD.encode(taken.state),
+        });
+    }
+    let replay = match (from_offset, generation) {
+        (Some(offset), Some(generation)) => daemon
+            .scrollback_from(session, offset, generation)
+            .transpose()
+            .unwrap_or_else(|| daemon.scrollback(session, replay_bytes)),
+        _ => daemon.scrollback(session, replay_bytes),
+    }?;
+    Ok(AttachReply::Replay {
+        data: base64::engine::general_purpose::STANDARD.encode(replay.data),
+        generation: replay.generation,
+        replayed_bytes: replay.replayed_bytes,
+        bytes_seen: replay.bytes_seen,
+    })
+}
+
+/// Prunes what the reply covers from the held tap, replies, then lets the tap's frames follow.
+async fn land_attach(
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    frames_wanted: &mut AttachSet,
+    session: u32,
+    result: anyhow::Result<AttachReply>,
+    context: Option<String>,
+) {
+    frames_wanted.release(session);
+    if vanished(&frames_wanted.daemon, session, "attach") {
+        frames_wanted.forget(session);
+        return;
+    }
+    let reply = match result {
+        Ok(AttachReply::Snapshot {
+            generation,
+            output_offset,
+            format_version,
+            state,
+        }) => proto::ServerMsg::AttachSnapshot {
+            session,
+            generation,
+            attempt: frames_wanted.attach(session, Some(output_offset)),
+            output_offset,
+            format_version,
+            state,
+        },
+        Ok(AttachReply::Replay {
+            data,
+            generation,
+            replayed_bytes,
+            bytes_seen,
+        }) => proto::ServerMsg::Scrollback {
+            session,
+            data,
+            generation,
+            replayed_bytes,
+            bytes_seen,
+            attempt: frames_wanted.attach(session, Some(bytes_seen)),
+        },
+        Err(e) => {
+            frames_wanted.attach(session, None);
+            report(sink, Err(e), context).await;
+            return;
+        }
+    };
+    let _ = send_msg(sink, &reply).await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1363,7 +1542,7 @@ async fn handle_control(
 
     let context = session_error_context(&msg);
     if runs_on_connection_task(&msg) {
-        let Some(msg) = on_loop.start(daemon, msg, context.clone()) else {
+        let Some(msg) = on_loop.start(daemon, msg, context.clone(), frames_wanted) else {
             return;
         };
         let result = dispatch(daemon, sink, msg, Some(frames_wanted), conn_id).await;
@@ -1640,8 +1819,9 @@ async fn dispatch(
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate { .. }
         | proto::ClientMsg::SessionRespawn { .. }
-        | proto::ClientMsg::SessionWake { .. } => Err(anyhow::anyhow!(
-            "spawn requests land through the connection loop, not dispatch"
+        | proto::ClientMsg::SessionWake { .. }
+        | proto::ClientMsg::SessionAttach { .. } => Err(anyhow::anyhow!(
+            "spawn and attach requests land through the connection loop, not dispatch"
         )),
         proto::ClientMsg::SessionKill {
             session,
@@ -2547,82 +2727,6 @@ async fn dispatch(
         proto::ClientMsg::VoiceLevelMonitor { enabled } => {
             daemon.voice_level_monitor(conn_id, enabled);
             Ok(())
-        }
-        proto::ClientMsg::SessionAttach {
-            session,
-            replay_bytes,
-            snapshot,
-            from_offset,
-            generation,
-        } => {
-            let frames_wanted =
-                frames_wanted.expect("an attach-family message runs on the connection task");
-            frames_wanted.insert(session);
-            let taken = if snapshot == Some(true) {
-                daemon
-                    .attach_snapshot(session)
-                    .inspect_err(|e| {
-                        tracing::warn!(
-                            "session {session}: no snapshot for this attach ({e}); replying \
-                             with a byte replay instead"
-                        );
-                    })
-                    .ok()
-            } else {
-                None
-            };
-            if let Some(taken) = taken {
-                let attempt = frames_wanted.attach(session, Some(taken.output_offset));
-                let state = base64::engine::general_purpose::STANDARD.encode(taken.state);
-                let _ = send_msg(
-                    sink,
-                    &proto::ServerMsg::AttachSnapshot {
-                        session,
-                        generation: taken.generation,
-                        attempt,
-                        output_offset: taken.output_offset,
-                        format_version: taken.format_version,
-                        state,
-                    },
-                )
-                .await;
-                Ok(())
-            } else {
-                let replay = match (from_offset, generation) {
-                    (Some(offset), Some(generation)) => daemon
-                        .scrollback_from(session, offset, generation)
-                        .transpose()
-                        .unwrap_or_else(|| daemon.scrollback(session, replay_bytes)),
-                    _ => daemon.scrollback(session, replay_bytes),
-                };
-                match replay {
-                    Ok(replay) => {
-                        let attempt = frames_wanted.attach(session, Some(replay.bytes_seen));
-                        let data = base64::engine::general_purpose::STANDARD.encode(replay.data);
-                        let _ = send_msg(
-                            sink,
-                            &proto::ServerMsg::Scrollback {
-                                session,
-                                data,
-                                generation: replay.generation,
-                                replayed_bytes: replay.replayed_bytes,
-                                bytes_seen: replay.bytes_seen,
-                                attempt,
-                            },
-                        )
-                        .await;
-                        Ok(())
-                    }
-                    Err(_) if vanished(daemon, session, "attach") => {
-                        frames_wanted.forget(session);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        frames_wanted.attach(session, None);
-                        Err(e)
-                    }
-                }
-            }
         }
         proto::ClientMsg::SessionSleep { session } => {
             let daemon = Arc::clone(daemon);

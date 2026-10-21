@@ -5,7 +5,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use crate::common::*;
-use crate::ws_input::{attach_msg, flood, sleeper, spawn, RawWs, Sessions};
+use crate::ws_input::{attach_msg, flood, shell, sleeper, spawn, ticker, RawWs, Sessions};
 use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use std::time::{Duration, Instant};
@@ -18,7 +18,7 @@ const SPAWN_DELAY: Duration = Duration::from_millis(2000);
 const EVENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 enum Event {
-    Frame(u32),
+    Frame(u32, u64, usize),
     Control(Box<proto::ServerMsg>),
 }
 
@@ -45,7 +45,7 @@ fn read_events(
             let at = Instant::now();
             let event = match &message {
                 Message::Binary(buf) => match proto::decode_output_frame(buf) {
-                    Some((id, _, _)) => Event::Frame(id),
+                    Some((id, offset, payload)) => Event::Frame(id, offset, payload.len()),
                     None => continue,
                 },
                 Message::Text(text) => match serde_json::from_str(text) {
@@ -124,7 +124,7 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
             .await
             .expect("the flooding session produced no frame")
             .unwrap();
-        if let Event::Frame(id) = event {
+        if let Event::Frame(id, ..) = event {
             frames.push((at, id));
         }
     }
@@ -150,7 +150,7 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
             .expect("the create, attach or probe reply never arrived")
             .unwrap();
         match event {
-            Event::Frame(id) => {
+            Event::Frame(id, ..) => {
                 if created.is_none() && id != flooding {
                     early_frames += 1;
                 }
@@ -218,5 +218,151 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
         "session_list took {} ms while a {} ms spawn ran on the same connection",
         probe_rtt.as_millis(),
         SPAWN_DELAY.as_millis()
+    );
+}
+
+const ATTACHES: usize = 12;
+// What the renderer asks a reattaching pane to replay.
+const ATTACH_REPLAY: u64 = 2 * 1024 * 1024;
+// A replay starts on a character boundary, so a full one is a few bytes short of the budget.
+const FULL_REPLAY: u64 = ATTACH_REPLAY - 64;
+
+/// Writes well past `ATTACH_REPLAY` once, then idles, as a pane with a long history does.
+#[cfg(unix)]
+fn history() -> Vec<String> {
+    shell("yes \"$(printf '%0190d' 0)\" | head -c 8388608; sleep 600")
+}
+
+#[cfg(windows)]
+fn history() -> Vec<String> {
+    shell(concat!(
+        "$b = ((1..320) | ForEach-Object { \"$_ \" + ('0' * 190) }) -join \"`r`n\"; ",
+        "for ($i = 0; $i -lt 400; $i++) { [Console]::Out.Write($b) }; Start-Sleep 600",
+    ))
+}
+
+async fn wait_for_history(daemon: &houston_core::daemon::Daemon, panes: &[u32]) {
+    let started = Instant::now();
+    let mut reported = Duration::ZERO;
+    loop {
+        let held: Vec<u64> = panes
+            .iter()
+            .map(|&pane| {
+                daemon
+                    .scrollback(pane, Some(ATTACH_REPLAY))
+                    .map(|replay| replay.replayed_bytes)
+                    .unwrap_or(0)
+            })
+            .collect();
+        if held.iter().all(|&bytes| bytes >= FULL_REPLAY) {
+            eprintln!("histories filled in {} ms", started.elapsed().as_millis());
+            return;
+        }
+        if started.elapsed() >= reported + Duration::from_secs(5) {
+            reported = started.elapsed();
+            eprintln!("history bytes after {} s: {held:?}", reported.as_secs());
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(90),
+            "sessions {panes:?} hold {held:?} of {FULL_REPLAY} history bytes after 90 s"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_attach_storm_does_not_stall_control_replies_or_reorder_frames() {
+    tokio::spawn(houston_core::power_throttling::sweep_loop());
+    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let project = tempfile::tempdir().unwrap();
+    let panes: Vec<u32> = (0..ATTACHES)
+        .map(|_| spawn(&daemon, project.path(), history()))
+        .collect();
+    let live = spawn(&daemon, project.path(), ticker());
+    let _sessions = Sessions(
+        daemon.clone(),
+        panes.iter().copied().chain([live]).collect(),
+    );
+    wait_for_history(&daemon, &panes).await;
+
+    let (mut sink, stream) = connect(addr).await.split();
+    let mut events = read_events(stream);
+    let sent = Instant::now();
+    sink.send(attach_msg(live, Some(ATTACH_REPLAY)))
+        .await
+        .unwrap();
+    for &pane in &panes {
+        sink.send(attach_msg(pane, Some(ATTACH_REPLAY)))
+            .await
+            .unwrap();
+    }
+    let probed = Instant::now();
+    sink.send(control(&proto::ClientMsg::SessionList))
+        .await
+        .unwrap();
+
+    let mut probe_rtt = None;
+    let mut latencies = Vec::new();
+    let mut live_seen = None;
+    let mut live_frame = None;
+    while latencies.len() < ATTACHES || probe_rtt.is_none() || live_frame.is_none() {
+        let (at, event) = tokio::time::timeout(EVENT_TIMEOUT, events.recv())
+            .await
+            .expect("an attach reply, the probe reply or the live pane's frame never arrived")
+            .unwrap();
+        match event {
+            Event::Frame(id, offset, len) if id == live && live_frame.is_none() => {
+                let bytes_seen = live_seen.unwrap_or_else(|| {
+                    panic!("session {live} sent a frame before its attach reply")
+                });
+                assert!(
+                    offset <= bytes_seen && bytes_seen < offset + len as u64,
+                    "session {live}'s first frame after its replay covers {offset}..{}, not \
+                     the replay's end {bytes_seen}",
+                    offset + len as u64
+                );
+                live_frame = Some(at);
+            }
+            Event::Frame(..) => {}
+            Event::Control(msg) => match *msg {
+                proto::ServerMsg::SessionList { .. } if probe_rtt.is_none() => {
+                    probe_rtt = Some(at - probed);
+                }
+                proto::ServerMsg::Scrollback {
+                    session,
+                    bytes_seen,
+                    ..
+                } if session == live => live_seen = Some(bytes_seen),
+                proto::ServerMsg::Scrollback {
+                    session,
+                    replayed_bytes,
+                    ..
+                } if panes.contains(&session) => {
+                    assert!(
+                        replayed_bytes >= FULL_REPLAY,
+                        "session {session} replayed {replayed_bytes} bytes"
+                    );
+                    latencies.push(at - sent);
+                }
+                _ => {}
+            },
+        }
+    }
+    latencies.sort();
+    let probe_rtt = probe_rtt.unwrap();
+    let storm = *latencies.last().unwrap();
+    eprintln!(
+        "{ATTACHES} attaches of {} MiB: request to reply p50 {} ms, max {} ms; session_list \
+         round trip issued after them {} ms",
+        ATTACH_REPLAY >> 20,
+        latencies[ATTACHES / 2].as_millis(),
+        storm.as_millis(),
+        probe_rtt.as_millis(),
+    );
+    assert!(
+        probe_rtt < storm / 2,
+        "session_list took {} ms behind {ATTACHES} attaches that took {} ms to answer",
+        probe_rtt.as_millis(),
+        storm.as_millis()
     );
 }
