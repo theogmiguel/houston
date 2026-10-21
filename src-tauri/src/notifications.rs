@@ -2,10 +2,10 @@ use tauri::AppHandle;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use tauri::{Emitter, Manager};
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-use targets::take_target;
 #[cfg(windows)]
 use targets::remember_target;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use targets::take_target;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub const EVENT_FOCUS_PANE: &str = "native-notification://focus-pane";
