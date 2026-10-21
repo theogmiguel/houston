@@ -27185,6 +27185,7 @@ mod kill_teardown_tests {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27244,6 +27245,7 @@ mod kill_teardown_tests {
             sleep_notice: Mutex::new(None),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
+            limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
             backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
@@ -27503,6 +27505,7 @@ mod shell_restore_bookkeeping_tests {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         }
     }
 
@@ -27769,6 +27772,7 @@ mod force_respawn_guard_tests {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27828,6 +27832,7 @@ mod force_respawn_guard_tests {
             sleep_notice: Mutex::new(None),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
+            limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
             backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
