@@ -15,7 +15,7 @@ export function lineKind(line: string): DiffLineKind {
     line.startsWith('deleted file') ||
     line.startsWith('rename ') ||
     line.startsWith('similarity ') ||
-    line.startsWith('\ No newline')
+    line.startsWith('\\ No newline')
   )
     return 'meta'
   if (line.startsWith('+')) return 'add'

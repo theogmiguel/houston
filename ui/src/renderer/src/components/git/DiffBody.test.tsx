@@ -52,6 +52,19 @@ describe('DiffBody', () => {
     expect(diffBodyLines('+x')).toEqual(['+x'])
   })
 
+  it('numbers the lines after a no-newline marker as if the marker were absent', () => {
+    const patch = '@@ -1,2 +1,3 @@\n keep\n-last\n\\ No newline at end of file\n+last\n+added'
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() => root.render(<DiffBody patch={patch} truncated={false} />))
+    const rows = Array.from(host.querySelectorAll('[data-kind]'))
+    const marker = rows.find((row) => row.textContent?.includes('No newline'))
+    expect(marker?.getAttribute('data-kind')).toBe('meta')
+    expect(marker?.hasAttribute('data-old-line') || marker?.hasAttribute('data-new-line')).toBe(false)
+    expect(rows.filter((row) => row.getAttribute('data-kind') === 'add').map((row) => row.getAttribute('data-new-line'))).toEqual(['2', '3'])
+    act(() => root.unmount())
+  })
+
   it('omits the terminal newline without hiding blank lines inside a hunk', () => {
     expect(diffBodyLines('@@ -1 +1 @@\n context\n\n+new\n')).toEqual(['@@ -1 +1 @@', ' context', '', '+new'])
   })
