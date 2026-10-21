@@ -4,7 +4,7 @@ import type { IconComponent } from '../icons'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { Icon } from './Icon'
 import { POP_ORIGIN_CLS } from './overlayChrome'
-import { BORDER_HAIRLINE_INSET, FOCUS_HALO_CLS } from './shadowChrome'
+import { FOCUS_HAIRLINE_INSET_CLS, FOCUS_HALO_CLS } from './shadowChrome'
 import { Text } from './Text'
 import { Tooltip } from './Tooltip'
 import { PaneHeadButton } from './PaneControls'
@@ -204,7 +204,7 @@ export function UnsavedDot(props: HTMLAttributes<HTMLSpanElement>): React.JSX.El
 const MENU_BASE =
   `ctx-menu fixed z-[var(--z-overlay)] flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`
 const MENU_SIZE = {
-  tree: `min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto focus:outline-none focus-visible:shadow-[${BORDER_HAIRLINE_INSET}]`,
+  tree: `min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto focus:outline-none ${FOCUS_HAIRLINE_INSET_CLS}`,
   tab: 'min-w-[180px]',
   overflow: 'min-w-[220px] max-w-[280px]'
 } as const

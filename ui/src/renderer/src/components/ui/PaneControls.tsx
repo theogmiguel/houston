@@ -3,7 +3,7 @@ import type { AgentStatus } from '../../houston/client'
 import { Text } from './Text'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Tooltip, TooltipContext } from './Tooltip'
 
@@ -12,7 +12,7 @@ export function PaneHeadActions({ children }: { children: ReactNode }): React.JS
 }
 
 const HEAD_BUTTON_STYLE =
-  `rounded-[var(--tr-radius-sm)] [transition:background-color_0.15s,color_0.15s] active:scale-[0.97] focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
+  `rounded-[var(--tr-radius-sm)] [transition:background-color_0.15s,color_0.15s] active:scale-[0.97] focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] ${FOCUS_RING_ACCENT_ICON_CLS} focus-visible:outline-none`
 const HEAD_BUTTON_SIZE = {
   default: CONTROL_SIZE_SQUARE_CLS.mini,
   small: CONTROL_SIZE_SQUARE_CLS.small,

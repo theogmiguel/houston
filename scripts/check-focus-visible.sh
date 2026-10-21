@@ -28,7 +28,7 @@ counts="$(perl -e '
         my $ok = $content =~ /focus-visible:\[?$paint/
               || $content =~ /focus-visible:after:$paint/
               || $content =~ /:focus-visible\]:$paint/
-              || $content =~ /\$\{FOCUS_HALO_CLS\}/;
+              || $content =~ /\$\{FOCUS_[A-Z0-9_]*_CLS\}/;
         $n++ unless $ok;
       }
     }
@@ -36,7 +36,28 @@ counts="$(perl -e '
   }
 ' "${sources[@]}")"
 
+# Tailwind generates only classes it can read whole, so a focus variant whose arbitrary
+# value is interpolated (focus-visible:shadow-[${X}]) produces no CSS and never paints.
+interpolated="$(perl -e '
+  for my $f (@ARGV) {
+    open my $fh, "<", $f or next;
+    local $/ = undef;
+    my $src = <$fh>;
+    close $fh;
+    (my $code = $src) =~ s{/\*.*?\*/}{}gs;
+    $code =~ s{//[^\n]*}{}g;
+    my $n = () = $code =~ /\bfocus(?:-visible|-within)?:\S*?-\[\$\{/g;
+    print "$n\t$f\n" if $n > 0;
+  }
+' "${sources[@]}")"
+
 fail=0
+while IFS=$'\t' read -r n f; do
+  [ -z "$f" ] && continue
+  echo "FAIL: focus-visible $f has $n focus class(es) with an interpolated arbitrary value; expected a literal FOCUS_*_CLS from components/ui/shadowChrome.ts" >&2
+  fail=1
+done <<< "$interpolated"
+
 while IFS=$'\t' read -r n f; do
   [ -z "$f" ] && continue
   echo "FAIL: focus-visible $f has $n outline-none site(s) with no focus-visible paint; expected a visible focus-visible state" >&2
