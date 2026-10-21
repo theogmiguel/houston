@@ -217,7 +217,11 @@ no recorded size and starts at 80×24 until its pane's first resize.
 adds the rcfile args and env when shell integration is on. `env_hygiene::scrub()` has already
 removed inherited agent-session *identity* markers from the daemon's own environment at
 startup — identity only, never config variables — so a daemon started inside a pane does not
-leak that identity into everything it spawns. `login_path.rs` probes `$SHELL -lic` once and
+leak that identity into everything it spawns. The same scrub drops the launching terminal
+multiplexer's variables (`TMUX`, `STY`, `ZELLIJ` and their pane/session companions), which
+would point pane shells at the outer tmux server, and `ELECTRON_RUN_AS_NODE`, which an
+Electron-based editor's terminal sets and which turns Electron tools started in a pane into
+plain Node. `login_path.rs` probes `$SHELL -lic` once and
 merges the login `PATH` in front of the inherited one, best-effort and fail-soft.
 
 ## Supervisor

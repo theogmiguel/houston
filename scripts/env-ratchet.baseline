@@ -28,7 +28,7 @@
 1 core/houston-core/tests/it/claude_turns_wire.rs
 9 core/houston-core/tests/it/codex_hook_defaults.rs
 4 core/houston-core/tests/it/control_admission_wire.rs
-12 core/houston-core/tests/it/env_hygiene_wire.rs
+10 core/houston-core/tests/it/env_hygiene_wire.rs
 1 core/houston-core/tests/it/exited_root_restore.rs
 2 core/houston-core/tests/it/generated_titles.rs
 4 core/houston-core/tests/it/handoff_start_order_wire.rs
