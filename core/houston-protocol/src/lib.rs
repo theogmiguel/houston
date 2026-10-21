@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 148;
+pub const PROTOCOL_VERSION: u32 = 149;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -5075,6 +5075,8 @@ pub enum ClientMsg {
         enabled: bool,
     },
     HostInfoGet,
+    /// Checkpoints the WAL and runs VACUUM on the channel database. Never automatic.
+    StorageReclaim,
     RestoreBudgetSet {
         budget: u32,
     },
@@ -6075,6 +6077,30 @@ pub enum ServerMsg {
         command_history_ignore_glob_count: u32,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        session_db_wal_bytes: u64,
+        /// Free pages inside the database file: what `storage_reclaim` can return to the disk.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        session_db_free_bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        scrollback_bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        logs_bytes: u64,
+    },
+    /// Reply to `storage_reclaim`. Sizes are the database plus its WAL; a refusal
+    /// leaves both at the current size and changes nothing.
+    StorageReclaimed {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        before_bytes: u64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        after_bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        refusal: Option<String>,
     },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,

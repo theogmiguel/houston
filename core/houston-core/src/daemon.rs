@@ -1736,6 +1736,7 @@ pub struct Daemon {
     state_dir: PathBuf,
     db_path: PathBuf,
     scrollback_dir: PathBuf,
+    storage_totals: crate::storage::StorageTotalsCache,
     shellint_dir: Option<PathBuf>,
     #[cfg(any(target_os = "linux", windows))]
     session_launcher: Mutex<Option<PathBuf>>,
@@ -3519,6 +3520,9 @@ impl Daemon {
             state_dir: state_dir.clone(),
             db_path: cfg.db_path.clone(),
             scrollback_dir,
+            storage_totals: crate::storage::StorageTotalsCache::new(
+                crate::storage::STORAGE_TOTALS_MAX_AGE,
+            ),
             shellint_dir,
             #[cfg(any(target_os = "linux", windows))]
             session_launcher: Mutex::new(session_launcher),
@@ -4161,7 +4165,10 @@ impl Daemon {
                 Err(anyhow!("provider without resume"))
             } else {
                 match self.db.session_resume_handle(child.id) {
-                    Ok(None) => Err(anyhow!("no resume handle")),
+                    Ok(None) => Err(anyhow!(
+                        "no resume handle{}",
+                        self.unbound_resume_reason(child.agent)
+                    )),
                     Err(e) => Err(e.context("reading resume handle")),
                     Ok(Some(_)) => {
                         let parent_live = || {
@@ -4255,6 +4262,32 @@ impl Daemon {
             } else {
                 self.retain_unresumed_descendants(child.id, children);
             }
+        }
+    }
+
+    /// Why a pane that can resume by exact id restored without a conversation:
+    /// hooks that were never installed never report one, and hooks that run can
+    /// still have delivered none (the pane ended before its first prompt).
+    fn unbound_resume_reason(&self, agent: proto::AgentKind) -> String {
+        if !crate::launch::resumes_conversations(agent) {
+            return String::new();
+        }
+        let slug = crate::agent_hooks::provider_slug(agent);
+        let installed = match self.hook_config_home() {
+            Ok(home) if agent == proto::AgentKind::Claude => crate::claude_hooks::is_installed(
+                &crate::claude_hooks::global_settings_path(&self.env(), &home),
+                &self.hook_sentinel(),
+            ),
+            Ok(home) => crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel()),
+            Err(_) => false,
+        };
+        if installed {
+            format!("; {slug} reported no conversation id for this pane")
+        } else {
+            format!(
+                "; {slug} lifecycle hooks are not installed, so this pane never reported a \
+                 conversation id to resume"
+            )
         }
     }
 
@@ -17472,6 +17505,7 @@ impl Daemon {
         let session_db_bytes = std::fs::metadata(&self.db_path)
             .map(|m| m.len())
             .unwrap_or(0);
+        let storage = self.storage_totals();
         proto::ServerMsg::HostInfo {
             channel: self.channel().unwrap_or("release").to_string(),
             state_dir: self.state_dir.display().to_string(),
@@ -17495,6 +17529,57 @@ impl Daemon {
             worktree_idle_removal_days: self.worktree_idle_removal_days(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
             session_db_bytes,
+            session_db_wal_bytes: std::fs::metadata(crate::storage::wal_path(&self.db_path))
+                .map(|m| m.len())
+                .unwrap_or(0),
+            session_db_free_bytes: storage.db_free_bytes,
+            scrollback_bytes: storage.scrollback_bytes,
+            logs_bytes: storage.logs_bytes,
+        }
+    }
+
+    /// At most one directory walk per `STORAGE_TOTALS_MAX_AGE`; never waits for the
+    /// database while a reclaim holds it.
+    fn storage_totals(&self) -> crate::storage::StorageTotals {
+        self.storage_totals
+            .get(Instant::now(), |previous| crate::storage::StorageTotals {
+                db_free_bytes: match self.db.try_free_bytes() {
+                    Ok(Some(bytes)) => bytes,
+                    Ok(None) => previous.map_or(0, |p| p.db_free_bytes),
+                    Err(e) => {
+                        tracing::warn!("host_info: reading the database freelist: {e:#}");
+                        0
+                    }
+                },
+                scrollback_bytes: crate::storage::dir_bytes(&self.scrollback_dir),
+                logs_bytes: crate::storage::dir_bytes(&self.state_dir.join("logs")),
+            })
+    }
+
+    /// Blocking: runs VACUUM on the session database. Callers run it off the connection loop.
+    pub fn reclaim_storage(&self) -> proto::ServerMsg {
+        let before_bytes = crate::storage::db_footprint(&self.db_path);
+        let live = self.sessions.lock().expect("sessions lock").len();
+        let free = crate::storage::free_disk_bytes(&self.state_dir);
+        let refusal = crate::storage::reclaim_refusal(live, &free, before_bytes, &self.state_dir)
+            .or_else(|| {
+                self.db
+                    .reclaim()
+                    .err()
+                    .map(|e| format!("reclaiming space failed: {e:#}"))
+            });
+        let after_bytes = crate::storage::db_footprint(&self.db_path);
+        // Measured here, off the connection loop, for the host_info broadcast that follows.
+        self.storage_totals.invalidate();
+        self.storage_totals();
+        match &refusal {
+            Some(reason) => tracing::warn!("storage_reclaim: {reason}"),
+            None => tracing::info!("storage_reclaim: {before_bytes} -> {after_bytes} bytes"),
+        }
+        proto::ServerMsg::StorageReclaimed {
+            before_bytes,
+            after_bytes,
+            refusal,
         }
     }
 

@@ -86,6 +86,7 @@
 11 core/houston-core/tests/it/windows_codex_launch_wire.rs
 8 core/houston-core/tests/it/windows_orchestration_wire.rs
 4 core/houston-core/tests/it/windows_pty_lifecycle.rs
+9 core/houston-core/tests/it/windows_zcode_resume_wire.rs
 15 core/houston-core/tests/it/worktree_cleanup_wire.rs
 11 core/houston-core/tests/it/worktree_spawn_wire.rs
 2 core/houston-core/tests/it/ws_control_wire.rs

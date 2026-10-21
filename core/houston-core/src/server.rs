@@ -15,6 +15,8 @@ use axum::routing::{get, post};
 use axum::serve::ListenerExt;
 use axum::Router;
 use base64::Engine;
+use futures_util::future::{BoxFuture, FutureExt};
+use futures_util::stream::FuturesUnordered;
 use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use std::net::SocketAddr;
@@ -522,8 +524,20 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
         conn_id,
         Arc::clone(&last_typed),
     )));
+    let mut on_loop = OnLoop::default();
+    let mut reader_done = false;
     loop {
+        if reader_done && on_loop.is_idle() {
+            break;
+        }
         tokio::select! {
+            Some(landed) = on_loop.landing.next(), if !on_loop.landing.is_empty() => {
+                on_loop.land(&mut sink, &mut frames_wanted, landed).await;
+                while let Some(deferred) = on_loop.next_ready() {
+                    handle_control(&daemon, &mut sink, &replies, &handlers, &deferred.text, &mut frames_wanted, &mut on_loop, conn_id)
+                        .await;
+                }
+            }
             Some(reply) = reply_rx.recv() => {
                 if sink.send(reply.message).await.is_err() {
                     break;
@@ -575,15 +589,18 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 }
                 Err(RecvError::Closed) => break,
             },
-            incoming = inbound_rx.recv() => match incoming {
-                Some(Inbound::Control(text, _bytes)) => {
-                    handle_control(&daemon, &mut sink, &replies, &handlers, &text, &mut frames_wanted, conn_id)
-                        .await;
+            incoming = inbound_rx.recv(), if !reader_done && on_loop.deferred.len() < CONTROL_INBOUND_QUEUE => match incoming {
+                Some(Inbound::Control(text, bytes)) => {
+                    if let Some(deferred) = on_loop.order(text, bytes) {
+                        handle_control(&daemon, &mut sink, &replies, &handlers, &deferred.text, &mut frames_wanted, &mut on_loop, conn_id)
+                            .await;
+                    }
                 }
                 Some(Inbound::StdinError(message)) => {
                     send_error(&mut sink, message, Some("stdin".into())).await;
                 }
-                None => break,
+                // Requests already admitted still land and send their replies before the loop ends.
+                None => reader_done = true,
             },
         }
     }
@@ -732,6 +749,8 @@ struct AttachSet {
     taps: std::collections::HashMap<u32, Arc<FrameTap>>,
     visible: std::collections::HashSet<u32>,
     attempts: std::collections::HashMap<u32, u32>,
+    // Sessions whose attach reply is still being prepared; their frames wait behind it.
+    held: std::collections::HashSet<u32>,
     daemon: Arc<Daemon>,
     wake: Arc<Notify>,
 }
@@ -742,8 +761,19 @@ impl AttachSet {
             taps: std::collections::HashMap::new(),
             visible: std::collections::HashSet::new(),
             attempts: std::collections::HashMap::new(),
+            held: std::collections::HashSet::new(),
             daemon,
             wake,
+        }
+    }
+
+    fn hold(&mut self, session: u32) {
+        self.held.insert(session);
+    }
+
+    fn release(&mut self, session: u32) {
+        if self.held.remove(&session) {
+            self.wake.notify_one();
         }
     }
 
@@ -791,11 +821,12 @@ impl AttachSet {
     }
 
     /// Visible taps with `priority` (this connection's last-typed session) first, so
-    /// its echo does not wait behind one turn of every busy pane in HashSet order.
+    /// its echo does not wait behind one turn of every busy pane in HashSet order. Taps held
+    /// behind an attach reply are skipped until it lands.
     fn taps(&self, priority: Option<u32>) -> Vec<Arc<FrameTap>> {
         let mut ordered = Vec::with_capacity(self.visible.len());
         if let Some(id) = priority {
-            if self.visible.contains(&id) {
+            if self.visible.contains(&id) && !self.held.contains(&id) {
                 if let Some(tap) = self.taps.get(&id) {
                     ordered.push(Arc::clone(tap));
                 }
@@ -805,6 +836,7 @@ impl AttachSet {
             self.visible
                 .iter()
                 .filter(|id| Some(**id) != priority)
+                .filter(|id| !self.held.contains(id))
                 .filter_map(|id| self.taps.get(id).cloned()),
         );
         ordered
@@ -1035,9 +1067,9 @@ impl futures_util::Sink<Message> for ReplySink {
     }
 }
 
-// Attach-family messages run on the connection task because they mutate its
-// own `AttachSet`; everything else runs off-task. An awaited handler would
-// hold frame flushing and resize acks, leaving the CLI in an 80x24 box.
+// Attach-family messages are ordered by the connection task because they mutate its
+// own `AttachSet`; everything else runs off-task. An awaited handler would hold frame
+// flushing and resize acks, leaving the CLI in an 80x24 box, so spawns land via `OnLoop`.
 fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
     matches!(
         msg,
@@ -1049,6 +1081,467 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
     )
 }
 
+/// Attach-family requests whose blocking work (a spawn, an attach's copy and encode) runs off
+/// the connection loop. The loop edits its frame set and replies when the work lands; requests
+/// that depend on it wait here, in socket order, while frames and other replies keep flowing.
+#[derive(Default)]
+struct OnLoop {
+    landing: FuturesUnordered<BoxFuture<'static, Landed>>,
+    spawning: bool,
+    busy: std::collections::HashSet<u32>,
+    deferred: std::collections::VecDeque<Deferred>,
+}
+
+struct Deferred {
+    text: axum::extract::ws::Utf8Bytes,
+    _bytes: tokio::sync::OwnedSemaphorePermit,
+    family: bool,
+    sessions: Vec<u32>,
+}
+
+enum Landed {
+    Created {
+        request: Option<u32>,
+        busy: Vec<u32>,
+        result: anyhow::Result<proto::SessionInfo>,
+    },
+    Spawned {
+        session: u32,
+        result: anyhow::Result<proto::SessionInfo>,
+        context: Option<String>,
+    },
+    Attached {
+        session: u32,
+        result: anyhow::Result<AttachReply>,
+        context: Option<String>,
+    },
+}
+
+/// An attach reply prepared off the loop, its payload already base64-encoded.
+enum AttachReply {
+    Snapshot {
+        generation: u32,
+        output_offset: u64,
+        format_version: u32,
+        state: String,
+    },
+    Replay {
+        data: String,
+        generation: u32,
+        replayed_bytes: u64,
+        bytes_seen: u64,
+    },
+}
+
+// Attaches prepared at once per connection: a startup or grid switch attaches every pane, and
+// each holds a replay (up to the ring) plus its base64 copy until it is sent.
+const ON_LOOP_IN_FLIGHT: usize = 4;
+
+impl OnLoop {
+    fn is_idle(&self) -> bool {
+        self.landing.is_empty() && self.deferred.is_empty()
+    }
+
+    fn waits(&self, family: bool, sessions: &[u32]) -> bool {
+        let full = self.spawning || self.landing.len() >= ON_LOOP_IN_FLIGHT;
+        (family && full) || sessions.iter().any(|session| self.busy.contains(session))
+    }
+
+    /// Returns the request when it can run now. An attach-family request waits for an in-flight
+    /// spawn, and any request naming a busy session — through `session`, `parent`, `child`,
+    /// `cwd_from`, `orchestrator_session` or `sessions` — waits behind earlier waiters.
+    fn order(
+        &mut self,
+        text: axum::extract::ws::Utf8Bytes,
+        bytes: tokio::sync::OwnedSemaphorePermit,
+    ) -> Option<Deferred> {
+        let (family, sessions) = if self.is_idle() {
+            (false, Vec::new())
+        } else {
+            classify(&text)
+        };
+        let behind = self.deferred.iter().any(|earlier| {
+            (family && earlier.family)
+                || earlier
+                    .sessions
+                    .iter()
+                    .any(|earlier| sessions.contains(earlier))
+        });
+        let request = Deferred {
+            text,
+            _bytes: bytes,
+            family,
+            sessions,
+        };
+        if behind || self.waits(family, &request.sessions) {
+            self.deferred.push_back(request);
+            return None;
+        }
+        Some(request)
+    }
+
+    fn next_ready(&mut self) -> Option<Deferred> {
+        let front = self.deferred.front()?;
+        if self.waits(front.family, &front.sessions) {
+            return None;
+        }
+        self.deferred.pop_front()
+    }
+
+    /// Starts a spawn or an attach off the loop, or hands back a request that runs inline.
+    fn start(
+        &mut self,
+        daemon: &Arc<Daemon>,
+        msg: proto::ClientMsg,
+        context: Option<String>,
+        frames_wanted: &mut AttachSet,
+    ) -> Option<proto::ClientMsg> {
+        let daemon = Arc::clone(daemon);
+        let (busy, work): (Vec<u32>, BoxFuture<'static, Landed>) = match msg {
+            proto::ClientMsg::SessionAttach {
+                session,
+                replay_bytes,
+                snapshot,
+                from_offset,
+                generation,
+            } => {
+                // Tapped before the copy so no output falls between its cutoff and the tap.
+                frames_wanted.insert(session);
+                frames_wanted.hold(session);
+                let task = tokio::task::spawn_blocking(move || {
+                    prepare_attach(
+                        &daemon,
+                        session,
+                        replay_bytes,
+                        snapshot,
+                        from_offset,
+                        generation,
+                    )
+                });
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("attach task panicked: {e}")));
+                    Landed::Attached {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                self.busy.insert(session);
+                self.landing.push(work.boxed());
+                return None;
+            }
+            proto::ClientMsg::SessionCreate {
+                request,
+                agent,
+                project_dir,
+                cmd,
+                cols,
+                rows,
+                cwd_from,
+                shell_integration,
+                auto_approve,
+                acp,
+                profile,
+                prompt,
+                model,
+                effort,
+            } => {
+                let busy: Vec<u32> = cwd_from.iter().copied().collect();
+                let params = CreateParams {
+                    agent,
+                    project_dir: PathBuf::from(project_dir),
+                    cmd,
+                    cols: cols.unwrap_or(80),
+                    rows: rows.unwrap_or(24),
+                    cwd_from,
+                    shell_integration: shell_integration.unwrap_or(true),
+                    auto_approve: auto_approve.unwrap_or(false),
+                    acp,
+                    profile,
+                    prompt,
+                    model,
+                    effort,
+                };
+                let task = tokio::task::spawn_blocking(move || daemon.create_session(params));
+                let landed_busy = busy.clone();
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")));
+                    Landed::Created {
+                        request,
+                        busy: landed_busy,
+                        result,
+                    }
+                };
+                (busy, work.boxed())
+            }
+            proto::ClientMsg::SessionRespawn {
+                session,
+                shell_integration,
+                cwd,
+                shell,
+                force,
+                fresh,
+            } => {
+                let conversation = if fresh.unwrap_or(false) {
+                    crate::daemon::RespawnConversation::Fresh
+                } else {
+                    crate::daemon::RespawnConversation::Resume
+                };
+                let task = tokio::task::spawn_blocking(move || {
+                    daemon.respawn_with(
+                        session,
+                        shell_integration.unwrap_or(true),
+                        cwd.map(PathBuf::from),
+                        shell,
+                        force.unwrap_or(false),
+                        conversation,
+                    )
+                });
+                let busy = vec![session];
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("respawn task panicked: {e}")));
+                    Landed::Spawned {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                (busy, work.boxed())
+            }
+            proto::ClientMsg::SessionWake { session } => {
+                let task = tokio::task::spawn_blocking(move || daemon.wake_session(session));
+                let busy = vec![session];
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("Wake task panicked: {e}")));
+                    Landed::Spawned {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                (busy, work.boxed())
+            }
+            other => return Some(other),
+        };
+        self.spawning = true;
+        self.busy.extend(busy);
+        self.landing.push(work);
+        None
+    }
+
+    /// Taps the new session before replying, so none of its frames precede the reply.
+    async fn land(
+        &mut self,
+        sink: &mut (impl SinkExt<Message> + Unpin),
+        frames_wanted: &mut AttachSet,
+        landed: Landed,
+    ) {
+        match landed {
+            Landed::Attached {
+                session,
+                result,
+                context,
+            } => {
+                self.busy.remove(&session);
+                land_attach(sink, frames_wanted, session, result, context).await;
+            }
+            Landed::Created {
+                request,
+                busy,
+                result,
+            } => {
+                self.spawning = false;
+                for session in busy {
+                    self.busy.remove(&session);
+                }
+                if let Ok(info) = &result {
+                    frames_wanted.insert(info.id);
+                }
+                let result = match request {
+                    Some(request) => {
+                        let (info, error) = match result {
+                            Ok(info) => (Some(info), None),
+                            Err(error) => (None, Some(format!("{error:#}"))),
+                        };
+                        let reply = proto::ServerMsg::SessionCreateResult {
+                            request,
+                            info,
+                            error,
+                        };
+                        send_msg(sink, &reply)
+                            .await
+                            .map_err(|_| anyhow::anyhow!("sending create result failed"))
+                    }
+                    None => result.map(|_| ()),
+                };
+                report(sink, result, None).await;
+            }
+            Landed::Spawned {
+                session,
+                result,
+                context,
+            } => {
+                self.spawning = false;
+                self.busy.remove(&session);
+                let result = result.map(|info| frames_wanted.insert(info.id));
+                report(sink, result, context).await;
+            }
+        }
+    }
+}
+
+/// Whether a request is attach-family and every session id it names, read only while
+/// something is in flight.
+fn classify(text: &str) -> (bool, Vec<u32>) {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        #[serde(default)]
+        session: Option<serde_json::Value>,
+        #[serde(default)]
+        parent: Option<serde_json::Value>,
+        #[serde(default)]
+        child: Option<serde_json::Value>,
+        #[serde(default)]
+        cwd_from: Option<serde_json::Value>,
+        #[serde(default)]
+        orchestrator_session: Option<serde_json::Value>,
+        #[serde(default)]
+        sessions: Vec<serde_json::Value>,
+    }
+    impl Named {
+        fn sessions(self) -> Vec<u32> {
+            let mut found = Vec::new();
+            for value in [
+                self.session,
+                self.parent,
+                self.child,
+                self.cwd_from,
+                self.orchestrator_session,
+            ]
+            .into_iter()
+            .flatten()
+            .chain(self.sessions)
+            {
+                if let Some(session) = value.as_u64().and_then(|s| u32::try_from(s).ok()) {
+                    if !found.contains(&session) {
+                        found.push(session);
+                    }
+                }
+            }
+            found
+        }
+    }
+    let family = serde_json::from_str::<proto::ClientMsg>(text)
+        .is_ok_and(|msg| runs_on_connection_task(&msg));
+    let sessions = serde_json::from_str::<Named>(text)
+        .map(Named::sessions)
+        .unwrap_or_default();
+    (family, sessions)
+}
+
+/// Copies and encodes an attach's snapshot or replay; runs on a blocking thread.
+fn prepare_attach(
+    daemon: &Daemon,
+    session: u32,
+    replay_bytes: Option<u64>,
+    snapshot: Option<bool>,
+    from_offset: Option<u64>,
+    generation: Option<u32>,
+) -> anyhow::Result<AttachReply> {
+    let taken = if snapshot == Some(true) {
+        daemon
+            .attach_snapshot(session)
+            .inspect_err(|e| {
+                tracing::warn!(
+                    "session {session}: no snapshot for this attach ({e}); replying with a byte \
+                     replay instead"
+                );
+            })
+            .ok()
+    } else {
+        None
+    };
+    if let Some(taken) = taken {
+        return Ok(AttachReply::Snapshot {
+            generation: taken.generation,
+            output_offset: taken.output_offset,
+            format_version: taken.format_version,
+            state: base64::engine::general_purpose::STANDARD.encode(taken.state),
+        });
+    }
+    let replay = match (from_offset, generation) {
+        (Some(offset), Some(generation)) => daemon
+            .scrollback_from(session, offset, generation)
+            .transpose()
+            .unwrap_or_else(|| daemon.scrollback(session, replay_bytes)),
+        _ => daemon.scrollback(session, replay_bytes),
+    }?;
+    Ok(AttachReply::Replay {
+        data: base64::engine::general_purpose::STANDARD.encode(replay.data),
+        generation: replay.generation,
+        replayed_bytes: replay.replayed_bytes,
+        bytes_seen: replay.bytes_seen,
+    })
+}
+
+/// Prunes what the reply covers from the held tap, replies, then lets the tap's frames follow.
+async fn land_attach(
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    frames_wanted: &mut AttachSet,
+    session: u32,
+    result: anyhow::Result<AttachReply>,
+    context: Option<String>,
+) {
+    frames_wanted.release(session);
+    if vanished(&frames_wanted.daemon, session, "attach") {
+        frames_wanted.forget(session);
+        return;
+    }
+    let reply = match result {
+        Ok(AttachReply::Snapshot {
+            generation,
+            output_offset,
+            format_version,
+            state,
+        }) => proto::ServerMsg::AttachSnapshot {
+            session,
+            generation,
+            attempt: frames_wanted.attach(session, Some(output_offset)),
+            output_offset,
+            format_version,
+            state,
+        },
+        Ok(AttachReply::Replay {
+            data,
+            generation,
+            replayed_bytes,
+            bytes_seen,
+        }) => proto::ServerMsg::Scrollback {
+            session,
+            data,
+            generation,
+            replayed_bytes,
+            bytes_seen,
+            attempt: frames_wanted.attach(session, Some(bytes_seen)),
+        },
+        Err(e) => {
+            frames_wanted.attach(session, None);
+            report(sink, Err(e), context).await;
+            return;
+        }
+    };
+    let _ = send_msg(sink, &reply).await;
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn handle_control(
     daemon: &Arc<Daemon>,
     sink: &mut (impl SinkExt<Message> + Unpin),
@@ -1056,6 +1549,7 @@ async fn handle_control(
     handlers: &Arc<tokio::sync::Semaphore>,
     text: &str,
     frames_wanted: &mut AttachSet,
+    on_loop: &mut OnLoop,
     conn_id: u64,
 ) {
     let msg: proto::ClientMsg = match serde_json::from_str(text) {
@@ -1101,6 +1595,9 @@ async fn handle_control(
 
     let context = session_error_context(&msg);
     if runs_on_connection_task(&msg) {
+        let Some(msg) = on_loop.start(daemon, msg, context.clone(), frames_wanted) else {
+            return;
+        };
         let result = dispatch(daemon, sink, msg, Some(frames_wanted), conn_id).await;
         report(sink, result, context).await;
         return;
@@ -1373,65 +1870,12 @@ async fn dispatch(
                 .map_err(|_| anyhow::anyhow!("sending the merge queue summary failed"))
         }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
-        proto::ClientMsg::SessionCreate {
-            request,
-            agent,
-            project_dir,
-            cmd,
-            cols,
-            rows,
-            cwd_from,
-            shell_integration,
-            auto_approve,
-            acp,
-            profile,
-            prompt,
-            model,
-            effort,
-        } => {
-            let frames_wanted =
-                frames_wanted.expect("an attach-family message runs on the connection task");
-            let daemon = Arc::clone(daemon);
-            let params = CreateParams {
-                agent,
-                project_dir: PathBuf::from(project_dir),
-                cmd,
-                cols: cols.unwrap_or(80),
-                rows: rows.unwrap_or(24),
-                cwd_from,
-                shell_integration: shell_integration.unwrap_or(true),
-                auto_approve: auto_approve.unwrap_or(false),
-                acp,
-                profile,
-                prompt,
-                model,
-                effort,
-            };
-            let result = tokio::task::spawn_blocking(move || daemon.create_session(params))
-                .await
-                .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")));
-            if let Ok(info) = &result {
-                frames_wanted.insert(info.id);
-            }
-            if let Some(request) = request {
-                let (info, error) = match result {
-                    Ok(info) => (Some(info), None),
-                    Err(error) => (None, Some(format!("{error:#}"))),
-                };
-                send_msg(
-                    sink,
-                    &proto::ServerMsg::SessionCreateResult {
-                        request,
-                        info,
-                        error,
-                    },
-                )
-                .await
-                .map_err(|_| anyhow::anyhow!("sending create result failed"))
-            } else {
-                result.map(|_| ())
-            }
-        }
+        proto::ClientMsg::SessionCreate { .. }
+        | proto::ClientMsg::SessionRespawn { .. }
+        | proto::ClientMsg::SessionWake { .. }
+        | proto::ClientMsg::SessionAttach { .. } => Err(anyhow::anyhow!(
+            "spawn and attach requests land through the connection loop, not dispatch"
+        )),
         proto::ClientMsg::SessionKill {
             session,
             confirm_children,
@@ -1515,6 +1959,21 @@ async fn dispatch(
         }
         proto::ClientMsg::HostInfoGet => {
             let _ = send_msg(sink, &daemon.host_info()).await;
+            Ok(())
+        }
+        proto::ClientMsg::StorageReclaim => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.reclaim_storage())
+                .await
+                .map_err(|e| anyhow::anyhow!("storage reclaim panicked: {e}"))?;
+            let reclaimed = matches!(
+                reply,
+                proto::ServerMsg::StorageReclaimed { refusal: None, .. }
+            );
+            let _ = send_msg(sink, &reply).await;
+            if reclaimed {
+                daemon.broadcast_control(&daemon.host_info());
+            }
             Ok(())
         }
         proto::ClientMsg::UsageSummaryGet {
@@ -2336,125 +2795,6 @@ async fn dispatch(
         proto::ClientMsg::VoiceLevelMonitor { enabled } => {
             daemon.voice_level_monitor(conn_id, enabled);
             Ok(())
-        }
-        proto::ClientMsg::SessionAttach {
-            session,
-            replay_bytes,
-            snapshot,
-            from_offset,
-            generation,
-        } => {
-            let frames_wanted =
-                frames_wanted.expect("an attach-family message runs on the connection task");
-            frames_wanted.insert(session);
-            let taken = if snapshot == Some(true) {
-                daemon
-                    .attach_snapshot(session)
-                    .inspect_err(|e| {
-                        tracing::warn!(
-                            "session {session}: no snapshot for this attach ({e}); replying \
-                             with a byte replay instead"
-                        );
-                    })
-                    .ok()
-            } else {
-                None
-            };
-            if let Some(taken) = taken {
-                let attempt = frames_wanted.attach(session, Some(taken.output_offset));
-                let state = base64::engine::general_purpose::STANDARD.encode(taken.state);
-                let _ = send_msg(
-                    sink,
-                    &proto::ServerMsg::AttachSnapshot {
-                        session,
-                        generation: taken.generation,
-                        attempt,
-                        output_offset: taken.output_offset,
-                        format_version: taken.format_version,
-                        state,
-                    },
-                )
-                .await;
-                Ok(())
-            } else {
-                let replay = match (from_offset, generation) {
-                    (Some(offset), Some(generation)) => daemon
-                        .scrollback_from(session, offset, generation)
-                        .transpose()
-                        .unwrap_or_else(|| daemon.scrollback(session, replay_bytes)),
-                    _ => daemon.scrollback(session, replay_bytes),
-                };
-                match replay {
-                    Ok(replay) => {
-                        let attempt = frames_wanted.attach(session, Some(replay.bytes_seen));
-                        let data = base64::engine::general_purpose::STANDARD.encode(replay.data);
-                        let _ = send_msg(
-                            sink,
-                            &proto::ServerMsg::Scrollback {
-                                session,
-                                data,
-                                generation: replay.generation,
-                                replayed_bytes: replay.replayed_bytes,
-                                bytes_seen: replay.bytes_seen,
-                                attempt,
-                            },
-                        )
-                        .await;
-                        Ok(())
-                    }
-                    Err(_) if vanished(daemon, session, "attach") => {
-                        frames_wanted.forget(session);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        frames_wanted.attach(session, None);
-                        Err(e)
-                    }
-                }
-            }
-        }
-        proto::ClientMsg::SessionRespawn {
-            session,
-            shell_integration,
-            cwd,
-            shell,
-            force,
-            fresh,
-        } => {
-            let frames_wanted =
-                frames_wanted.expect("an attach-family message runs on the connection task");
-            let daemon = Arc::clone(daemon);
-            let conversation = if fresh.unwrap_or(false) {
-                crate::daemon::RespawnConversation::Fresh
-            } else {
-                crate::daemon::RespawnConversation::Resume
-            };
-            tokio::task::spawn_blocking(move || {
-                daemon.respawn_with(
-                    session,
-                    shell_integration.unwrap_or(true),
-                    cwd.map(PathBuf::from),
-                    shell,
-                    force.unwrap_or(false),
-                    conversation,
-                )
-            })
-            .await
-            .unwrap_or_else(|e| Err(anyhow::anyhow!("respawn task panicked: {e}")))
-            .map(|info| {
-                frames_wanted.insert(info.id);
-            })
-        }
-        proto::ClientMsg::SessionWake { session } => {
-            let frames_wanted =
-                frames_wanted.expect("an attach-family message runs on the connection task");
-            let daemon = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || daemon.wake_session(session))
-                .await
-                .unwrap_or_else(|e| Err(anyhow::anyhow!("Wake task panicked: {e}")))
-                .map(|info| {
-                    frames_wanted.insert(info.id);
-                })
         }
         proto::ClientMsg::SessionSleep { session } => {
             let daemon = Arc::clone(daemon);

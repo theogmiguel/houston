@@ -124,6 +124,10 @@ function hostInfoFixture(overrides: Partial<HostInfo> = {}): HostInfo {
     worktree_idle_removal_days: 30,
     command_history_ignore_glob_count: 0,
     session_db_bytes: 1024,
+    session_db_wal_bytes: 0,
+    session_db_free_bytes: 0,
+    scrollback_bytes: 0,
+    logs_bytes: 0,
     ...overrides,
   };
 }

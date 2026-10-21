@@ -444,6 +444,7 @@ function SectionDispatch({
               agentHooks={agentHooks}
               onOpenHooks={onOpenHooks}
               onOpenLogsFolder={onOpenLogsFolder}
+              client={daemonClient}
             />
             <DaemonSection />
           </>

@@ -275,6 +275,16 @@ stops the local daemon; its confirmation names the affected sessions and routine
 Stopping a daemon preserves recoverable panes and their conversation handles for the next
 launch. Use Kill or Close on an individual pane to discard its continuation.
 
+## Disk space
+
+Settings ▸ Daemon ▸ Storage shows the size of the session database, its write-ahead log,
+the free space inside the database, and the scrollback and log folders of the current
+channel, measured at most once a minute. Closing panes and pruning history leaves free
+space inside the database rather than returning it to the disk. **Reclaim space** compacts the database and reports its
+size before and after. It runs only when you click it, only while every pane is closed or
+asleep, and only when the disk has at least twice as much free space as the database and
+its write-ahead log occupy; otherwise it names the condition that blocked it.
+
 ## Killing a pane
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.
@@ -326,7 +336,10 @@ working or waiting for input, once that conversation has had a prompt. The CLI r
 its history and waits for your next input; Houston does not resend a prompt or repeat an
 interrupted tool. Settings ▸ Workspaces ▸ Resume conversations when restoring panes turns
 this off. Codex requires native hooks that report the session ID and transcript path;
-older CLIs without those fields start fresh.
+older CLIs without those fields start fresh. ZCode records its conversation only while
+its hook toggle is on (see [Install](install.md#zcode)); a ZCode pane that ran without it
+has no conversation to reopen, and a child pane in that state says so in its restore
+notice to its parent.
 
 Restart offers Resume conversation and Start fresh when a pane holds a conversation.
 Start fresh, Kill and Close each forget it. If its transcript is gone, its folder changes,

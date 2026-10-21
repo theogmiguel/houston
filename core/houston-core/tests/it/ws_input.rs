@@ -198,12 +198,10 @@ pub async fn fill_scrollback(daemon: &Daemon, session: u32) {
     }
 }
 
-/// Attaches a session with a full scrollback on an unread socket with a whole-ring replay,
-/// and waits until that connection's queue for it holds `TAP_BACKLOG`.
-pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
-    ws.send(attach_msg(session, Some(REPLAY_BYTES)))
-        .await
-        .unwrap();
+/// Waits until the connection whose only watcher is the test's unread socket queues
+/// `TAP_BACKLOG` bytes for `session`. After the attach reply is drained this means the
+/// writer's send is blocked; while an attach is held frames queue without a blocked send.
+pub async fn wait_for_backlog(daemon: &Daemon, session: u32) {
     let attached = Instant::now();
     loop {
         let queued = daemon
@@ -214,7 +212,7 @@ pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
             .map(|tap| tap.queued_bytes_for_test())
             .max();
         if queued.is_some_and(|bytes| bytes >= TAP_BACKLOG) {
-            break;
+            return;
         }
         assert!(
             attached.elapsed() < Duration::from_secs(120),
@@ -223,11 +221,51 @@ pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+}
+
+/// Attaches with a whole-ring replay on an unread socket and waits until the connection
+/// queues `TAP_BACKLOG` bytes for the session.
+pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
+    ws.send(attach_msg(session, Some(REPLAY_BYTES)))
+        .await
+        .unwrap();
+    let attached = Instant::now();
+    wait_for_backlog(daemon, session).await;
     eprintln!(
         "backlog: {TAP_BACKLOG} bytes queued for session {session} {} ms after attach; client \
          read nothing",
         attached.elapsed().as_millis()
     );
+}
+
+/// Attaches with the given replay and reads until the attach reply lands, so the caller can
+/// then stop reading and know only output can block the writer.
+pub async fn attach_until_reply(ws: &mut RawWs, session: u32, replay_bytes: u64) {
+    use futures_util::StreamExt;
+    ws.send(attach_msg(session, Some(replay_bytes)))
+        .await
+        .unwrap();
+    let started = Instant::now();
+    loop {
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "session {session}: attach reply did not land in 60 s"
+        );
+        let frame = tokio::time::timeout(Duration::from_secs(30), ws.next())
+            .await
+            .expect("timed out waiting for the attach reply")
+            .expect("socket closed before the attach reply")
+            .expect("socket error before the attach reply");
+        if let Message::Text(text) = frame {
+            if matches!(
+                serde_json::from_str::<proto::ServerMsg>(&text),
+                Ok(proto::ServerMsg::Scrollback { session: got, .. }
+                    | proto::ServerMsg::AttachSnapshot { session: got, .. }) if got == session
+            ) {
+                return;
+            }
+        }
+    }
 }
 
 /// Waits until no client is connected and no connection still queues `session`'s output.

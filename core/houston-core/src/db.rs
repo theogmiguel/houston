@@ -247,6 +247,23 @@ const CREATE_COMMAND_HISTORY: &str = "CREATE TABLE IF NOT EXISTS command_history
     );
     CREATE INDEX IF NOT EXISTS idx_cmdhist_ws ON command_history(workspace, id);";
 
+/// VACUUM builds its rebuilt copy in the temp store; with `temp_store = MEMORY` that copy
+/// would occupy about the database's size in daemon memory. The setting is per connection.
+fn with_temp_store_file<T>(
+    conn: &Connection,
+    run: impl FnOnce(&Connection) -> Result<T>,
+) -> Result<T> {
+    conn.pragma_update(None, "temp_store", "FILE")
+        .context("setting temp_store=FILE")?;
+    let result = run(conn);
+    let restored = conn
+        .pragma_update(None, "temp_store", "MEMORY")
+        .context("restoring temp_store=MEMORY");
+    let value = result?;
+    restored?;
+    Ok(value)
+}
+
 fn add_column_if_missing(
     conn: &Connection,
     table: &str,
@@ -2336,6 +2353,37 @@ impl Db {
     #[cfg(all(test, unix))]
     pub(crate) fn query_in_progress_for_test(&self) -> bool {
         self.conn.try_lock().is_err()
+    }
+
+    /// Bytes held by free pages inside the database file, or `None` while another call
+    /// (such as a running VACUUM) holds the connection.
+    pub fn try_free_bytes(&self) -> Result<Option<u64>> {
+        let Ok(conn) = self.conn.try_lock() else {
+            return Ok(None);
+        };
+        let pages: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
+        let page_size: i64 = conn.pragma_query_value(None, "page_size", |r| r.get(0))?;
+        Ok(Some(
+            u64::try_from(pages.saturating_mul(page_size)).unwrap_or(0),
+        ))
+    }
+
+    /// VACUUM in WAL mode writes the rebuilt database into the WAL, so the second
+    /// checkpoint is what returns the space to the disk.
+    pub fn reclaim(&self) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let checkpoint = |stage: &str| -> Result<()> {
+            let busy: i64 = conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+                .with_context(|| format!("wal_checkpoint(TRUNCATE) {stage} VACUUM"))?;
+            if busy != 0 {
+                anyhow::bail!("wal_checkpoint(TRUNCATE) {stage} VACUUM was blocked by another connection to the database");
+            }
+            Ok(())
+        };
+        checkpoint("before")?;
+        with_temp_store_file(&conn, |conn| conn.execute_batch("VACUUM").context("VACUUM"))?;
+        checkpoint("after")
     }
 
     pub fn mark_live_as_interrupted(&self) -> Result<usize> {
@@ -6654,6 +6702,26 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reclaim_vacuums_with_an_on_disk_temp_store_and_restores_memory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let temp_store = |conn: &Connection| -> i64 {
+            conn.pragma_query_value(None, "temp_store", |r| r.get(0))
+                .unwrap()
+        };
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(temp_store(&conn), 2, "MEMORY outside a reclaim");
+        let inside = with_temp_store_file(&conn, |conn| Ok(temp_store(conn))).unwrap();
+        assert_eq!(inside, 1, "FILE while VACUUM runs");
+        let failed = with_temp_store_file(&conn, |_| -> Result<()> { anyhow::bail!("full") });
+        assert_eq!(failed.unwrap_err().to_string(), "full");
+        assert_eq!(temp_store(&conn), 2, "restored after a failed VACUUM");
+        drop(conn);
+        db.reclaim().unwrap();
+        assert_eq!(temp_store(&db.conn.lock().unwrap()), 2);
+    }
 
     #[test]
     fn routine_rebuild_rolls_back_when_storage_cannot_allocate_the_new_table() {
