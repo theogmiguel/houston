@@ -166,9 +166,14 @@
     "command registry left the boot path once App took its navigation helper from",
     "paletteNav.ts, and",
     "that headroom pays for Next request, which must answer from the keymap at",
-    "any time and keep the operator inbox current."
+    "any time and keep the operator inbox current.",
+    "",
+    "Re-cut against 942,883 bytes (one boot chunk) with the same small headroom:",
+    "opening an editor compares Windows paths in one spelling, so a file opened from",
+    "the Files tree and again from Quick Open or Changes reuses its editor; that",
+    "lookup runs in App's editor opener on the boot path."
   ],
-  "maxBootBytes": 942700,
+  "maxBootBytes": 943000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
