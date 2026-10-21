@@ -529,3 +529,42 @@ fn a_command_past_its_limit_times_out_with_the_tail_of_its_output() {
         "and unregistered"
     );
 }
+
+#[tokio::test]
+async fn a_rebase_needs_no_configured_git_identity_and_commits_as_the_head_author() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    let base = rig.advance_base("base.txt", "base\n");
+    // The daemon's test HOME has no global identity, and git may not guess one.
+    git(&rig.root, &["config", "--unset", "user.name"]);
+    git(&rig.root, &["config", "--unset", "user.email"]);
+    git(&rig.root, &["config", "user.useConfigOnly", "true"]);
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+
+    rig.tick().await;
+
+    assert!(
+        rig.entries().iter().all(|e| e.number != 1),
+        "#1 merged and left: {:?}",
+        rig.entries()
+    );
+    let merged = rig.origin_tip("main");
+    assert_eq!(git(&rig.root, &["rev-parse", &format!("{merged}^")]), base);
+    assert_eq!(
+        git(&rig.origin, &["log", "-1", "--format=%cn <%ce>", &merged]),
+        "t <t@t.local>",
+        "the rebased commit's committer is the head commit's author"
+    );
+    assert_eq!(
+        git(&rig.root, &["config", "--get", "user.useConfigOnly"]),
+        "true"
+    );
+    assert!(
+        git(&rig.root, &["config", "--list", "--local"])
+            .lines()
+            .all(|l| !l.starts_with("user.name") && !l.starts_with("user.email")),
+        "no identity was written to the repository's config"
+    );
+}

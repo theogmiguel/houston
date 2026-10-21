@@ -641,7 +641,9 @@ The constraints:
   leftover is removed before the next run. The command runs through `sh -c` or `cmd /c` under
   `spawn::tail_within`: the process group or job ends at the time limit, priority is lowered,
   and only a 64 KiB tail of the output is kept; a failure reports its last 40 lines with
-  colour and secrets removed. The queue never parses that output for progress.
+  colour and secrets removed. The queue never parses that output for progress. The rebase
+  commits as the configured git identity or, where git config names none, as the head
+  commit's author, passed with `-c`; no git config is written.
 - **The push guard** refuses, by name, a push to the pull request's base, to the
   repository's default branch, to a branch outside `houston/*`, and to a `houston/*` branch
   with no `managed_worktrees` row in the workspace's repository. A push is
