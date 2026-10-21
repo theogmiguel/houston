@@ -5418,8 +5418,8 @@ async fn pane_get_answers_the_whole_question_about_one_child() {
         got["delegation"]["brief"],
         format!(
             "{}\n\ncount the callers{}",
-            houston_core::orchestrate::request_header(1),
-            houston_core::orchestrate::HANDBACK_PROTOCOL
+            houston_core::orchestrate::request_header_for(1, false),
+            houston_core::orchestrate::handback_protocol(false)
         ),
         "the record stores what was actually asked, request header and handback protocol included"
     );
@@ -5501,7 +5501,7 @@ async fn a_brief_composes_into_one_instruction_and_over_long_halves_are_refused_
     .await;
     let brief = got["delegation"]["brief"].as_str().unwrap();
     assert!(
-        brief.starts_with(&houston_core::orchestrate::request_header(1)),
+        brief.starts_with(&houston_core::orchestrate::request_header_for(1, false)),
         "the composed brief names the request it answers: {brief}"
     );
     assert!(brief.contains("survey the call sites"), "{brief}");
@@ -5530,8 +5530,8 @@ async fn a_brief_composes_into_one_instruction_and_over_long_halves_are_refused_
         got["delegation"]["brief"],
         format!(
             "{}\n\njust the task{}",
-            houston_core::orchestrate::request_header(1),
-            houston_core::orchestrate::HANDBACK_PROTOCOL
+            houston_core::orchestrate::request_header_for(1, false),
+            houston_core::orchestrate::handback_protocol(false)
         )
     );
 
@@ -5591,7 +5591,7 @@ async fn the_composed_prompt_and_workspace_info_name_the_same_request() {
     .await;
     let brief = got["delegation"]["brief"].as_str().unwrap();
     assert!(
-        brief.starts_with(&houston_core::orchestrate::request_header(1)),
+        brief.starts_with(&houston_core::orchestrate::request_header_for(1, false)),
         "the spawn's own prompt names request #1: {brief}"
     );
 
