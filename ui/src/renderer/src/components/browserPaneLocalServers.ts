@@ -6,6 +6,12 @@ import type { ServerMsg } from '../houston/generated/ServerMsg'
 
 type LocalServerReply = Extract<ServerMsg, { type: 'workspace_local_servers' }>
 
+// 3 s keeps the list responsive while an agent boots its dev server; after two
+// identical replies the set has settled and 10 s bounds how long a new server
+// stays unnoticed by an idle pane.
+const POLL_MS = 3000
+const SETTLED_POLL_MS = 10_000
+
 export function useBrowserPaneLocalServers(
   client: HoustonClient | undefined,
   workspaceDir: string,
@@ -17,16 +23,26 @@ export function useBrowserPaneLocalServers(
 
   useEffect(() => {
     if (!client || !fresh || hiddenByExpand || gridHidden) return
+    let signature: string | null = null
+    let identical = 0
+    let timer = 0
     const unsubscribe = client.subscribe('workspace_local_servers', (message) => {
-      if (message.workspace === workspaceDir) setReply(message)
+      if (message.workspace !== workspaceDir) return
+      setReply(message)
+      const next = JSON.stringify([message.servers, message.unsupported, message.truncated])
+      identical = next === signature ? identical + 1 : 0
+      signature = next
     })
-    const refresh = (): void => client.workspaceLocalServers(workspaceDir)
+    const refresh = (): void => {
+      client.workspaceLocalServers(workspaceDir)
+      // The reply for this request usually arrived through the subscription above;
+      // identical counts the repeats seen, so 1 means two identical replies in a row.
+      timer = window.setTimeout(refresh, identical >= 1 ? SETTLED_POLL_MS : POLL_MS)
+    }
     refresh()
-    // Three seconds keeps the list responsive while limiting repeated /proc scans.
-    const interval = window.setInterval(refresh, 3000)
     return () => {
       unsubscribe()
-      window.clearInterval(interval)
+      window.clearTimeout(timer)
     }
   }, [client, fresh, gridHidden, hiddenByExpand, workspaceDir])
 

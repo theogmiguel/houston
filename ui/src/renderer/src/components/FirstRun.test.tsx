@@ -8,6 +8,12 @@ import type { AgentHookState } from '../houston/generated/AgentHookState'
 import { isSettingsOpen, settingsSectionLabel, setSettingsNavForTests } from '../settingsNav'
 import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 
+const openExternalMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+vi.mock('../houston/bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../houston/bridge')>()),
+  openExternal: openExternalMock
+}))
+
 const keymapOverrides = { shortcuts_enabled: true, bindings: {} } as unknown as KeymapOverrides
 
 function props(over: Partial<FirstRunProps> = {}): FirstRunProps {
@@ -238,5 +244,24 @@ describe('FirstRun', () => {
     expect(host.querySelector('[data-testid="first-run-hook-error-claude"]')?.textContent).toBe('Unsupported settings format')
     expect(host.querySelector('[data-testid="first-run-install-all"]')?.hasAttribute('disabled')).toBe(true)
     expect(host.querySelector('[data-testid="first-run-install-reason"]')?.textContent).toBe('All present CLIs are already reporting.')
+  })
+
+  it('offers the install guide when no supported CLI is on PATH', async () => {
+    openExternalMock.mockClear()
+    render(props({ hasWorkspace: true, orchestrationConsented: true, agentHooks: [] }))
+    expect(host.querySelector('[data-testid="first-run-install-reason"]')?.textContent).toBe('No supported CLI was found on PATH.')
+    const guide = host.querySelector<HTMLButtonElement>('[data-testid="first-run-install-guide"]')
+    expect(guide).not.toBeNull()
+    await act(async () => guide!.click())
+    expect(openExternalMock).toHaveBeenCalledWith(expect.stringContaining('docs/user/install.md'))
+  })
+
+  it('offers no install guide while the present CLIs are only reporting already', () => {
+    const claude: AgentHookState = {
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
+      installed: true, error: null, present: true, version: '2.3.1', trust: null
+    }
+    render(props({ hasWorkspace: true, orchestrationConsented: true, agentHooks: [claude] }))
+    expect(host.querySelector('[data-testid="first-run-install-guide"]')).toBeNull()
   })
 })
