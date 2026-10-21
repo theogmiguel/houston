@@ -115,6 +115,7 @@ import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestr
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
+import { ImagePreviewZoomStory } from './imagePreviewStories'
 
 const noop = (): void => {}
 
@@ -326,6 +327,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,
+  'editor/image-zoom': () => <ImagePreviewZoomStory />,
   'voice/dictation-listening': () => <DictationListeningStory />,
   'voice/dictation-transcribing': () => <DictationTranscribingStory />,
   'shell/window-controls-resize': () => <WindowControlsStory />,
