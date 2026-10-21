@@ -11420,6 +11420,134 @@ async fn provider_failure_retains_temporary_child_and_notifies_once() {
 }
 
 #[tokio::test]
+async fn a_claude_limit_shows_limited_tells_the_parent_once_and_clears_on_the_next_turn() {
+    let _guard = serial().await;
+    let r = rig("provider-limit").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (status, spawned) = r
+        .post_spawn(&token, serde_json::json!({"kind":"claude","prompt":"work"}))
+        .await;
+    assert_eq!(status, 200, "{spawned}");
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    let hook = |event: &str| houston_core::hook_drop::HookDrop {
+        session: child,
+        agent: Some("claude".into()),
+        event: event.into(),
+        ..Default::default()
+    };
+    let limited = houston_core::hook_drop::HookDrop {
+        error: Some("rate_limit".into()),
+        error_details: Some("Usage limit reached".into()),
+        ..hook("StopFailure")
+    };
+    let limit_notes = |r: &Rig| {
+        r.daemon
+            .inbox_rows_for_test(parent.id)
+            .into_iter()
+            .filter(|row| row.from_session == Some(child) && row.summary == "claude limited")
+            .collect::<Vec<_>>()
+    };
+    apply_drop(r._state.path(), hook("UserPromptSubmit")).await;
+    assert_eq!(r.daemon.session_limit(child), None);
+
+    apply_drop(r._state.path(), limited.clone()).await;
+    apply_drop(r._state.path(), limited.clone()).await;
+    let limit = r
+        .daemon
+        .session_limit(child)
+        .expect("a rate_limit StopFailure marks the pane");
+    assert_eq!(limit.error, "rate_limit");
+    assert_eq!(limit.details.as_deref(), Some("Usage limit reached"));
+    let listed = r.daemon.list().into_iter().find(|s| s.id == child).unwrap();
+    assert_eq!(listed.limit.as_ref(), Some(&limit));
+    let notes = limit_notes(&r);
+    assert_eq!(notes.len(), 1, "one note per limit episode: {notes:?}");
+    assert!(notes[0].urgent);
+    assert!(
+        notes[0].body.contains("Usage limit reached"),
+        "{}",
+        notes[0].body
+    );
+    assert!(
+        notes[0].body.contains("profile default"),
+        "{}",
+        notes[0].body
+    );
+    assert!(
+        notes[0].body.contains("with no reset time"),
+        "{}",
+        notes[0].body
+    );
+
+    let delivered = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"session": child, "timeout_ms": 5_000}),
+    )
+    .await;
+    assert_eq!(delivered["isError"], false, "{delivered}");
+    let timeout = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"session": child, "timeout_ms": 200}),
+    )
+    .await;
+    assert_eq!(timeout["structuredContent"]["timed_out"], true, "{timeout}");
+    assert!(
+        timeout["structuredContent"]["next_action"]
+            .as_str()
+            .unwrap()
+            .contains(&format!(
+                "pane {child}: limited: claude reported rate_limit"
+            )),
+        "{timeout}"
+    );
+
+    apply_drop(r._state.path(), hook("UserPromptSubmit")).await;
+    assert_eq!(
+        r.daemon.session_limit(child),
+        None,
+        "a turn start clears Limited"
+    );
+
+    apply_drop(r._state.path(), limited).await;
+    assert!(r.daemon.session_limit(child).is_some());
+    assert_eq!(limit_notes(&r).len(), 2, "a new episode is a new note");
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            notification_type: Some("quota_auto_resume_fired".into()),
+            ..hook("Notification")
+        },
+    )
+    .await;
+    assert_eq!(
+        r.daemon.session_limit(child),
+        None,
+        "Claude's own resume clears Limited"
+    );
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            error: Some("server_error".into()),
+            ..hook("StopFailure")
+        },
+    )
+    .await;
+    assert_eq!(
+        r.daemon.session_limit(child),
+        None,
+        "other failures are not limits"
+    );
+}
+
+#[tokio::test]
 async fn workspace_info_reports_bounded_local_provider_catalog() {
     let _guard = serial().await;
     let r = rig("provider-catalog").await;

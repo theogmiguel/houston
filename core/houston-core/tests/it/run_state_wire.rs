@@ -77,6 +77,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         latest_prompt: None,
         last_agent_message: None,
         slept_at_ms: None,
+        limit: None,
     })
     .unwrap();
 }

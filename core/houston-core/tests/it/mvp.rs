@@ -424,6 +424,7 @@ async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
             latest_prompt: None,
             last_agent_message: None,
             slept_at_ms: None,
+            limit: None,
         })
         .unwrap();
     }
