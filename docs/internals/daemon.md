@@ -35,6 +35,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
 | | `lock.rs` | The daemon-ownership advisory `flock` |
+| | `fs_retry.rs` | State-file renames and creates that retry transient Windows contention |
 | | `power_throttling.rs` | Windows EcoQoS opt-out for the daemon and every process it starts |
 | | `server.rs` | WebSocket endpoint: handshake, control dispatch, binary PTY path |
 | | `boot.rs` | The background-loop set: one spawn list, called only by the daemon's own `main` |
@@ -216,7 +217,11 @@ no recorded size and starts at 80×24 until its pane's first resize.
 adds the rcfile args and env when shell integration is on. `env_hygiene::scrub()` has already
 removed inherited agent-session *identity* markers from the daemon's own environment at
 startup — identity only, never config variables — so a daemon started inside a pane does not
-leak that identity into everything it spawns. `login_path.rs` probes `$SHELL -lic` once and
+leak that identity into everything it spawns. The same scrub drops the launching terminal
+multiplexer's variables (`TMUX`, `STY`, `ZELLIJ` and their pane/session companions), which
+would point pane shells at the outer tmux server, and `ELECTRON_RUN_AS_NODE`, which an
+Electron-based editor's terminal sets and which turns Electron tools started in a pane into
+plain Node. `login_path.rs` probes `$SHELL -lic` once and
 merges the login `PATH` in front of the inherited one, best-effort and fail-soft.
 
 ## Supervisor
@@ -528,6 +533,17 @@ Column evolution is
 every column a later version added. **There is no `PRAGMA user_version`**: evolution is idempotent per-column
 additions plus two one-shot boot sweeps.
 
+State files outside SQLite (`daemon.json`, run state, scrollback checkpoints, the hook-state
+scope file, the model catalog cache, managed hook configuration and the Codex and Antigravity
+MCP entries) are written through `fs_retry`. The hook binary's own rename is not.
+On Windows an antivirus scanner or the search indexer briefly opens a fresh file without
+sharing. A create that fails with `ERROR_SHARING_VIOLATION` or `ERROR_LOCK_VIOLATION` is
+retried up to five times within 300 ms. A rename also retries `ERROR_ACCESS_DENIED`, which is
+what replacing a destination held without delete sharing reports, so a real permission failure
+on a rename surfaces only after those 300 ms. Other errors fail at once, and Unix runs each
+operation once. A scrollback checkpoint copies the ring under its lock and writes outside it,
+so a retrying write never stalls the pane's output.
+
 In memory only, by design: live `sessions` and restored `dead` husks; `swarm_activity`
 (transient chip text); and the ephemeral routing maps (`respawned_as`, `handoff_jobs`,
 `ssh_prompts`, `visibility`, `hook_drop_states`).
@@ -836,6 +852,18 @@ value. `ssh_config.rs` honours exactly `HostName`, `User`, `Port`, `IdentityFile
 `ProxyJump`, `Match` and `Include` are documented as ignored rather than half-honoured.
 
 ## Git and GitHub
+
+Every git process the daemon and app start comes from `git::command()`, which sets
+`GIT_OPTIONAL_LOCKS=0` so a background `status` never rewrites `.git/index` under `index.lock`
+and an agent's own `git add` or `git commit` in the same checkout cannot fail on that lock;
+required locks are still taken. It builds the process through `crate::spawn::git()`, which on
+Windows resolves PATH's `git` once per process: when that is a Git for Windows launcher
+(`<root>\cmd\git.exe` or `<root>\bin\git.exe`), it runs `<root>\mingw64\bin\git.exe` (or the
+`clangarm64` or `mingw32` binary) directly, because the launcher starts that binary as a
+second process on every call, measured at about 12 ms each. The real binary sets `MSYSTEM`,
+`HOME` and Git's own `PATH` entries itself, so hooks, credential helpers and `ssh` resolve
+as before; only `%HOME%\bin` moves behind Git's directories. Any other layout keeps plain
+`git`. A Git install moved or removed while the process runs takes effect after a restart.
 
 `git.rs` shells out to the system `git`; libgit2 was rejected. Its surface is the Changes
 pane's data model: `status`, `diff`, `review_diffs`, `head_sha`, `branch`, `sync`, `stage`,

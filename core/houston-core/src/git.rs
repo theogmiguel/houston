@@ -10,6 +10,15 @@ const MAX_UNTRACKED_DIFF_FILES: usize = 1024;
 // enforces the subprocess collector's 8 MiB combined stdout/stderr limit.
 const GIT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+/// Every git process the daemon starts. `GIT_OPTIONAL_LOCKS=0` stops background reads such as
+/// `status` from refreshing `.git/index` under `index.lock`, which would make an agent's own
+/// `git add` or `git commit` fail; `spawn::git` also runs Git for Windows' real binary.
+pub fn command() -> std::process::Command {
+    let mut command = crate::spawn::git();
+    command.env("GIT_OPTIONAL_LOCKS", "0");
+    command
+}
+
 fn git_output(
     mut command: std::process::Command,
     timeout: std::time::Duration,
@@ -532,7 +541,7 @@ fn facts_uncached(dir: &Path) -> CheckoutFacts {
                 .filter(|b| !b.is_empty())
         });
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command.arg("-C").arg(dir).args([
             "rev-parse",
             "--show-toplevel",
@@ -851,7 +860,7 @@ pub fn push(dir: &Path) -> Result<String> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
 
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command
             .arg("-C")
             .arg(dir)
@@ -1071,7 +1080,7 @@ pub fn probe_repo(dir: &Path) -> Result<bool> {
     const ARGS: &[&str] = &["rev-parse", "--is-inside-work-tree"];
 
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command.env("LC_ALL", "C").arg("-C").arg(dir).args(ARGS);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1334,7 +1343,7 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
         bail!("branch name {name:?} starts with '-'; expected a name git will not read as a flag");
     }
     let ok = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command.args(["check-ref-format", "--branch", trimmed]);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1532,7 +1541,7 @@ pub fn pull(dir: &Path) -> Result<PullOutcome> {
 
 fn pull_ff_only(dir: &Path) -> Result<String> {
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command
             .arg("-C")
             .arg(dir)
@@ -1561,7 +1570,7 @@ pub fn fetch(dir: &Path) -> Result<String> {
         );
     };
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command
             .arg("-C")
             .arg(dir)
@@ -1635,7 +1644,7 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
 
 fn run_git_status_ok(dir: &Path, args: &[&str], ok_codes: &[i32]) -> Result<String> {
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command.arg("-C").arg(dir).args(args);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1722,7 +1731,7 @@ mod tests {
         let hook = repo.path().join(".git/hooks/pre-commit");
         fs::write(&hook, "#!/bin/sh\nprintf x >> hook-runs\nexec sleep 5\n").unwrap();
         fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
-        let mut command = crate::spawn::command("git");
+        let mut command = command();
         command
             .arg("-C")
             .arg(repo.path())
@@ -1919,6 +1928,35 @@ mod tests {
         fs::write(dir.join("README.md"), "hello\n").unwrap();
         git(dir, &["add", "-A"]);
         git(dir, &["commit", "-m", "init"]);
+    }
+
+    #[test]
+    fn status_of_a_stat_dirty_checkout_leaves_the_index_unwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let readme = tmp.path().join("README.md");
+        fs::write(&readme, "hello\n").unwrap();
+        let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        fs::File::options()
+            .write(true)
+            .open(&readme)
+            .unwrap()
+            .set_modified(earlier)
+            .unwrap();
+        let index = tmp.path().join(".git").join("index");
+        let before = (
+            fs::read(&index).unwrap(),
+            fs::metadata(&index).unwrap().modified().unwrap(),
+        );
+
+        let files = status(tmp.path()).unwrap();
+
+        assert!(files.is_empty(), "{files:?}");
+        let after = (
+            fs::read(&index).unwrap(),
+            fs::metadata(&index).unwrap().modified().unwrap(),
+        );
+        assert!(before == after, "git status rewrote .git/index");
     }
 
     #[test]

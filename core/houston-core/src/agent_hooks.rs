@@ -52,8 +52,7 @@ fn atomic_config_write_with(
     write(temporary.as_file_mut())
         .with_context(|| format!("writing temporary config for {}", path.display()))?;
     temporary.as_file().sync_all()?;
-    temporary
-        .persist(&target)
+    crate::fs_retry::persist(temporary, &target)
         .with_context(|| format!("replacing {}", path.display()))?;
     Ok(())
 }

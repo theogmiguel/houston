@@ -136,6 +136,22 @@ pub fn strip_deleted_exe_suffix(exe: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
+/// Git for Windows puts launchers in `<root>\cmd` and `<root>\bin` that start the real
+/// `<root>\<toolchain>\bin\git.exe` as a second process on every call; the real binary
+/// sets up the same `MSYSTEM`, `HOME` and `PATH` itself. `None` means use `shim` as is.
+pub fn git_for_windows_binary(shim: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = shim.parent()?;
+    let dir_name = dir.file_name()?.to_str()?;
+    if !dir_name.eq_ignore_ascii_case("cmd") && !dir_name.eq_ignore_ascii_case("bin") {
+        return None;
+    }
+    let root = dir.parent()?;
+    ["mingw64", "clangarm64", "mingw32"]
+        .iter()
+        .map(|toolchain| root.join(toolchain).join("bin").join("git.exe"))
+        .find(|real| real.is_file())
+}
+
 pub const HELPER_NAME: &str = if cfg!(windows) {
     "tr-helper.exe"
 } else {
@@ -274,6 +290,64 @@ mod tests {
         assert_eq!(
             strip_deleted_exe_suffix(std::path::Path::new("/opt/houston-core (deleted)/bin")),
             std::path::PathBuf::from("/opt/houston-core (deleted)/bin")
+        );
+    }
+
+    fn touch(path: &std::path::Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"").unwrap();
+    }
+
+    #[test]
+    fn a_git_for_windows_launcher_resolves_to_its_toolchain_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("mingw64").join("bin").join("git.exe");
+        touch(&real);
+        for launcher_dir in ["cmd", "bin", "Cmd"] {
+            let shim = root.path().join(launcher_dir).join("git.exe");
+            touch(&shim);
+            assert_eq!(
+                git_for_windows_binary(&shim).as_deref(),
+                Some(real.as_path()),
+                "{shim:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_arm64_install_resolves_to_clangarm64() {
+        let root = tempfile::tempdir().unwrap();
+        let shim = root.path().join("cmd").join("git.exe");
+        let real = root.path().join("clangarm64").join("bin").join("git.exe");
+        touch(&shim);
+        touch(&real);
+        assert_eq!(git_for_windows_binary(&shim), Some(real));
+    }
+
+    #[test]
+    fn a_git_outside_a_git_for_windows_layout_is_used_as_is() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("mingw64").join("bin").join("git.exe");
+        touch(&real);
+        assert_eq!(
+            git_for_windows_binary(&real),
+            None,
+            "already the real binary"
+        );
+
+        let shims = root.path().join("shims").join("git.exe");
+        touch(&shims);
+        assert_eq!(git_for_windows_binary(&shims), None, "not a launcher dir");
+
+        let bare = tempfile::tempdir().unwrap();
+        let lone = bare.path().join("cmd").join("git.exe");
+        touch(&lone);
+        assert_eq!(git_for_windows_binary(&lone), None, "no toolchain binary");
+        std::fs::create_dir_all(bare.path().join("mingw64").join("bin").join("git.exe")).unwrap();
+        assert_eq!(
+            git_for_windows_binary(&lone),
+            None,
+            "a directory is not a binary"
         );
     }
 
