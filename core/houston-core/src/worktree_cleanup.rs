@@ -11,7 +11,7 @@ use std::time::UNIX_EPOCH;
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
-    let mut cmd = crate::spawn::command("git");
+    let mut cmd = crate::spawn::git();
     cmd.arg("-C")
         .arg(dir)
         .args(args)

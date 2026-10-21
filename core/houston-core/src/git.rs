@@ -532,7 +532,7 @@ fn facts_uncached(dir: &Path) -> CheckoutFacts {
                 .filter(|b| !b.is_empty())
         });
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command.arg("-C").arg(dir).args([
             "rev-parse",
             "--show-toplevel",
@@ -851,7 +851,7 @@ pub fn push(dir: &Path) -> Result<String> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
 
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command
             .arg("-C")
             .arg(dir)
@@ -1071,7 +1071,7 @@ pub fn probe_repo(dir: &Path) -> Result<bool> {
     const ARGS: &[&str] = &["rev-parse", "--is-inside-work-tree"];
 
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command.env("LC_ALL", "C").arg("-C").arg(dir).args(ARGS);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1334,7 +1334,7 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
         bail!("branch name {name:?} starts with '-'; expected a name git will not read as a flag");
     }
     let ok = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command.args(["check-ref-format", "--branch", trimmed]);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1532,7 +1532,7 @@ pub fn pull(dir: &Path) -> Result<PullOutcome> {
 
 fn pull_ff_only(dir: &Path) -> Result<String> {
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command
             .arg("-C")
             .arg(dir)
@@ -1561,7 +1561,7 @@ pub fn fetch(dir: &Path) -> Result<String> {
         );
     };
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command
             .arg("-C")
             .arg(dir)
@@ -1635,7 +1635,7 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
 
 fn run_git_status_ok(dir: &Path, args: &[&str], ok_codes: &[i32]) -> Result<String> {
     let out = {
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command.arg("-C").arg(dir).args(args);
         git_output(command, GIT_COMMAND_TIMEOUT)
     }
@@ -1722,7 +1722,7 @@ mod tests {
         let hook = repo.path().join(".git/hooks/pre-commit");
         fs::write(&hook, "#!/bin/sh\nprintf x >> hook-runs\nexec sleep 5\n").unwrap();
         fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
-        let mut command = crate::spawn::command("git");
+        let mut command = crate::spawn::git();
         command
             .arg("-C")
             .arg(repo.path())

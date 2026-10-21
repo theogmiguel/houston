@@ -272,7 +272,7 @@ fn resolve_ref(dir: &Path, refname: &str) -> Result<String> {
 const CLEAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 fn clean_workspace(dir: &Path) -> Result<()> {
-    let mut command = crate::spawn::command("git");
+    let mut command = crate::spawn::git();
     command
         .arg("-C")
         .arg(dir)
@@ -362,7 +362,7 @@ fn bounded_git(
 }
 
 fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String> {
-    let mut cmd = crate::spawn::command("git");
+    let mut cmd = crate::spawn::git();
     cmd.arg("-C").arg(dir).args(args);
     for &(key, value) in envs {
         cmd.env(key, value);
@@ -381,7 +381,7 @@ fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String>
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
-    let mut command = crate::spawn::command("git");
+    let mut command = crate::spawn::git();
     command.arg("-C").arg(dir).args(args);
     let out = bounded_git(command, args, dir)?;
     if !out.status.success() {

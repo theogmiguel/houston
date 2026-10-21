@@ -837,6 +837,15 @@ value. `ssh_config.rs` honours exactly `HostName`, `User`, `Port`, `IdentityFile
 
 ## Git and GitHub
 
+Every git process the daemon and app start comes from `crate::spawn::git()`. On Windows it
+resolves PATH's `git` once per process: when that is a Git for Windows launcher
+(`<root>\cmd\git.exe` or `<root>\bin\git.exe`), it runs `<root>\mingw64\bin\git.exe` (or the
+`clangarm64` or `mingw32` binary) directly, because the launcher starts that binary as a
+second process on every call, measured at about 12 ms each. The real binary sets `MSYSTEM`,
+`HOME` and Git's own `PATH` entries itself, so hooks, credential helpers and `ssh` resolve
+as before; only `%HOME%\bin` moves behind Git's directories. Any other layout keeps plain
+`git`. A Git install moved or removed while the process runs takes effect after a restart.
+
 `git.rs` shells out to the system `git`; libgit2 was rejected. Its surface is the Changes
 pane's data model: `status`, `diff`, `review_diffs`, `head_sha`, `branch`, `sync`, `stage`,
 `unstage`, `commit`, `push`, `discard`, `default_base`, `status_vs_base`, `is_git_repo`.

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 fn inside_git(dir: &Path) -> bool {
-    crate::spawn::command("git")
+    crate::spawn::git()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--git-dir"])

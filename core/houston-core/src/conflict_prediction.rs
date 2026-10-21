@@ -28,7 +28,7 @@ fn git(
     args: &[&str],
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
-    let mut cmd = crate::spawn::command("git");
+    let mut cmd = crate::spawn::git();
     if let Some(dir) = git_dir {
         cmd.arg("--git-dir").arg(dir);
     }

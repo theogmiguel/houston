@@ -387,7 +387,7 @@ struct GitOut {
 
 /// `check-ignore` exits 1 when nothing is ignored, so that exit is an answer too.
 fn git(dir: &Path, args: &[&str], stdin: Option<Vec<u8>>) -> Result<GitOut> {
-    let mut cmd = crate::spawn::command("git");
+    let mut cmd = crate::spawn::git();
     #[cfg(windows)]
     cmd.args(["-c", "core.longpaths=true"]);
     cmd.args(["-c", "core.fsmonitor=false"])
