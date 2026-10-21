@@ -86,6 +86,31 @@ index 9a8b7c6..0d1e2f3 100644
     const renamed = ORIGINAL.replace('diff --git a/core/orchestrate.rs b/core/orchestrate.rs\nindex 9a8b7c6..0d1e2f3 100644\n--- a/core/orchestrate.rs', 'diff --git a/core/old.rs b/core/orchestrate.rs\nindex 9a8b7c6..0d1e2f3 100644\n--- a/core/old.rs')
     expect(patchHash(viewedFingerprint(parsePrDiff(renamed)[0]))).not.toBe(patchHash(viewedFingerprint(parsePrDiff(ORIGINAL)[0])))
   })
+
+  const fingerprintOf = (patch: string): string => patchHash(viewedFingerprint(parsePrDiff(patch)[0]))
+  const BINARY = `diff --git a/assets/logo.png b/assets/logo.png
+index 3f2a1b0..7c4d9e2 100644
+Binary files a/assets/logo.png and b/assets/logo.png differ
+`
+
+  it('changes when a binary file gets new content', () => {
+    expect(fingerprintOf(BINARY.replace('..7c4d9e2', '..a91b0c3'))).not.toBe(fingerprintOf(BINARY))
+  })
+
+  it('keeps a binary file whose base alone moved', () => {
+    expect(fingerprintOf(BINARY.replace('3f2a1b0..', '0e0e0e0..'))).toBe(fingerprintOf(BINARY))
+  })
+
+  it('changes when only the file mode changes', () => {
+    const modeOnly = 'diff --git a/scripts/run.sh b/scripts/run.sh\nold mode 100644\nnew mode 100755\n'
+    expect(fingerprintOf(modeOnly.replace('new mode 100755', 'new mode 100644'))).not.toBe(fingerprintOf(modeOnly))
+  })
+
+  it('carries rename and similarity lines that describe the change itself', () => {
+    const renameOnly = 'diff --git a/core/old.rs b/core/new.rs\nsimilarity index 100%\nrename from core/old.rs\nrename to core/new.rs\n'
+    expect(fingerprintOf(renameOnly.replace('rename to core/new.rs', 'rename to core/newer.rs'))).not.toBe(fingerprintOf(renameOnly))
+    expect(fingerprintOf(renameOnly.replace('similarity index 100%', 'similarity index 92%'))).not.toBe(fingerprintOf(renameOnly))
+  })
 })
 
 describe('prViewedKey', () => {

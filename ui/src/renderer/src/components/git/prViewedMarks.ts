@@ -40,14 +40,28 @@ export function patchHash(text: string): string {
   return fnv1a(text, false).toString(16).padStart(8, '0') + fnv1a(text, true).toString(16).padStart(8, '0')
 }
 
-/** The fingerprint input for one file: rename identity plus only the added and
- * removed lines, whose raw text keeps its `+`/`-`. Meta and hunk lines stay out, so a
- * rebase that renumbers hunks or moves index blobs does not un-view an unchanged file. */
+// Header lines that describe the file's own change rather than where it sits on the base.
+const OWN_CHANGE_PREFIXES = ['old mode ', 'new mode ', 'new file mode ', 'deleted file mode ', 'rename from ', 'rename to ', 'copy from ', 'copy to ', 'similarity index ', 'dissimilarity index ', 'Binary files ', 'GIT binary patch']
+
+/** Rename identity, own-change header lines and `+`/`-` lines. Hunk headers and text
+ * files' index blobs stay out, so a rebase keeps the mark; a binary file has no lines,
+ * so its post-image blob id stands in for its content. */
 export function viewedFingerprint(file: PrDiffFile): string {
   const parts: string[] = [file.previousPath ?? '', file.path]
+  let header = true
+  let binary = false
+  let postImage: string | null = null
   for (const line of file.lines) {
-    if (line.kind === 'add' || line.kind === 'del') parts.push(line.text)
+    if (line.kind === 'hunk') header = false
+    if (line.kind === 'add' || line.kind === 'del') {
+      parts.push(line.text)
+    } else if (header) {
+      if (OWN_CHANGE_PREFIXES.some((prefix) => line.text.startsWith(prefix))) parts.push(line.text)
+      if (line.text.startsWith('Binary files ') || line.text.startsWith('GIT binary patch')) binary = true
+      postImage = /^index [0-9a-f]+\.\.([0-9a-f]+)/.exec(line.text)?.[1] ?? postImage
+    }
   }
+  if (binary && postImage !== null) parts.push(`post-image ${postImage}`)
   return parts.join('\n')
 }
 

@@ -126,6 +126,16 @@ describe('PrFiles viewed marks', () => {
     expect(screen.queryByText('Changed since viewed')).toBeNull()
   })
 
+  it('un-views a binary file when a new push replaces its content', () => {
+    const binary = 'diff --git a/assets/logo.png b/assets/logo.png\nindex 3f2a1b0..7c4d9e2 100644\nBinary files a/assets/logo.png and b/assets/logo.png differ\n'
+    const first = renderFiles(binary)
+    fireEvent.click(viewedButton(first.container, 'assets/logo.png'))
+    first.unmount()
+    const second = renderFiles(binary.replace('..7c4d9e2', '..a91b0c3'))
+    expect(viewedButton(second.container, 'assets/logo.png').getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText('Changed since viewed').textContent).toBe('Changed since viewed')
+  })
+
   it('unviewing a persisted mark withdraws it for later sessions', () => {
     const key = prViewedKey(LINK.host, LINK.repository, LINK.number)
     markPrFileViewed(key, 'core/orchestrate.rs', fileHash('core/orchestrate.rs'))
