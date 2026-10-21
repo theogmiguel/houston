@@ -479,7 +479,7 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn git_command(dir: &Path) -> std::process::Command {
-    let mut command = crate::spawn::command("git");
+    let mut command = crate::git::command();
     #[cfg(windows)]
     command.args(["-c", "core.longpaths=true"]);
     command.arg("-C").arg(dir);

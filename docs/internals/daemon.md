@@ -841,7 +841,9 @@ value. `ssh_config.rs` honours exactly `HostName`, `User`, `Port`, `IdentityFile
 pane's data model: `status`, `diff`, `review_diffs`, `head_sha`, `branch`, `sync`, `stage`,
 `unstage`, `commit`, `push`, `discard`, `default_base`, `status_vs_base`, `is_git_repo`.
 Subprocesses run with `GIT_TERMINAL_PROMPT=0`, and diffs pass `redact_review_secrets` before
-display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
+display. Every git process the daemon and app start comes from `git::command()`, which sets
+`GIT_OPTIONAL_LOCKS=0`: a background `status` never rewrites `.git/index` under `index.lock`,
+so an agent's own `git add` or `git commit` in the same checkout cannot fail on that lock. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs
 `gh pr create --fill` then re-reads. A missing or unauthenticated `gh` is a **typed state**,
 never a wire error — a wire error here becomes a toast loop. Pull-request check logs are

@@ -159,7 +159,7 @@ pub fn environment_refusal(path: &str) -> Option<String> {
 }
 
 fn git(dir: &Path, args: &[&str], timeout: Duration) -> Result<std::process::Output> {
-    let mut command = crate::spawn::command("git");
+    let mut command = crate::git::command();
     command
         .arg("-C")
         .arg(dir)
