@@ -54,6 +54,25 @@ describe('App Quick Open', () => {
     )
   })
 
+  it('focuses the open editor rather than opening the same file twice', async () => {
+    harness = await renderReadyApp()
+    for (let pick = 0; pick < 2; pick++) {
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true, cancelable: true }))
+      })
+      const input = await screen.findByRole('combobox', { name: 'Search files' })
+      fireEvent.change(input, { target: { value: 'a' } })
+      await screen.findByRole('option', { name: /a\.ts/ })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Search files' })).toBeNull())
+    }
+    await waitFor(() =>
+      expect(editorPaths(loadLayout(gridStorageKey('/tmp/project', DEFAULT_GRID_ID)).tree)).toEqual([
+        '/tmp/project/src/a.ts',
+      ])
+    )
+  })
+
   it('joins a Windows root that ends in a separator without doubling it', async () => {
     const onOpen = vi.fn()
     render(<QuickOpenOverlay open workspace={'C:\\ws\\'} onClose={vi.fn()} onOpen={onOpen} />)

@@ -238,11 +238,23 @@ export function findStackContaining(node: LayoutNode, key: PaneKey): StackNode |
   return null
 }
 
+/** One spelling per Windows file: the Files tree reports `\\?\C:\ws\a.ts` while Quick Open
+ * and Changes join `C:\ws/a.ts`. POSIX paths are case-sensitive and compare exactly. */
+export function editorPathKey(path: string): string {
+  if (!/^([A-Za-z]:[\\/]|\\\\)/.test(path)) return path
+  const key = path.replace(/^\\\\\?\\(UNC\\)?/, '').replace(/[\\/]+/g, '/').replace(/^\//, '').toLowerCase()
+  return /^\\\\(\?\\UNC\\|[^?])/.test(path) ? `//${key}` : key
+}
+
 export function findEditorByPath(node: LayoutNode, path: string): EditorNode | null {
-  if (node.kind === 'editor') return node.path === path ? node : null
+  return findEditorByKey(node, editorPathKey(path))
+}
+
+function findEditorByKey(node: LayoutNode, key: string): EditorNode | null {
+  if (node.kind === 'editor') return editorPathKey(node.path) === key ? node : null
   if (node.kind !== 'split' && node.kind !== 'stack') return null
   for (const child of node.children) {
-    const found = findEditorByPath(child, path)
+    const found = findEditorByKey(child, key)
     if (found) return found
   }
   return null
