@@ -272,8 +272,8 @@ launch. Use Kill or Close on an individual pane to discard its continuation.
 
 Settings ▸ Daemon ▸ Storage shows the size of the session database, its write-ahead log,
 the free space inside the database, and the scrollback and log folders of the current
-channel. Closing panes and pruning history leaves free space inside the database rather
-than returning it to the disk. **Reclaim space** compacts the database and reports its
+channel, measured at most once a minute. Closing panes and pruning history leaves free
+space inside the database rather than returning it to the disk. **Reclaim space** compacts the database and reports its
 size before and after. It runs only when you click it, only while every pane is closed or
 asleep, and only when the disk has at least twice as much free space as the database
 occupies; otherwise it names the condition that blocked it.

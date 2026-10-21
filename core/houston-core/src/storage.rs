@@ -1,5 +1,57 @@
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+// Every connected client polls host_info every 30 s; one walk a minute bounds the
+// directory I/O regardless of how many clients are connected.
+pub const STORAGE_TOTALS_MAX_AGE: Duration = Duration::from_secs(60);
+
+/// The host_info fields that need a directory walk or the database connection.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StorageTotals {
+    pub db_free_bytes: u64,
+    pub scrollback_bytes: u64,
+    pub logs_bytes: u64,
+}
+
+pub struct StorageTotalsCache {
+    max_age: Duration,
+    /// When the totals were measured (`None` once invalidated) and the totals.
+    last: Mutex<(Option<Instant>, Option<StorageTotals>)>,
+}
+
+impl StorageTotalsCache {
+    pub fn new(max_age: Duration) -> Self {
+        Self {
+            max_age,
+            last: Mutex::new((None, None)),
+        }
+    }
+
+    /// The cached totals while younger than `max_age`; otherwise `measure` runs with the
+    /// previous totals (for values it cannot read right now) and its result is cached.
+    pub fn get(
+        &self,
+        now: Instant,
+        measure: impl FnOnce(Option<StorageTotals>) -> StorageTotals,
+    ) -> StorageTotals {
+        let (measured_at, previous) = *self.last.lock().expect("storage totals lock");
+        if let (Some(at), Some(totals)) = (measured_at, previous) {
+            if now.saturating_duration_since(at) < self.max_age {
+                return totals;
+            }
+        }
+        let totals = measure(previous);
+        *self.last.lock().expect("storage totals lock") = (Some(now), Some(totals));
+        totals
+    }
+
+    /// The next `get` measures again, still seeing the previous totals.
+    pub fn invalidate(&self) {
+        self.last.lock().expect("storage totals lock").0 = None;
+    }
+}
 
 /// Total size of the regular files under `dir`, not following symlinks. A missing
 /// directory is 0 bytes.
@@ -147,5 +199,31 @@ mod tests {
         let msg = reclaim_refusal(0, &unreadable, 100, dir).unwrap();
         assert!(msg.contains("no such volume"), "{msg}");
         assert_eq!(reclaim_refusal(0, &Ok(200), 100, dir), None);
+    }
+
+    #[test]
+    fn storage_totals_are_measured_once_per_interval_and_again_after_invalidate() {
+        let cache = StorageTotalsCache::new(Duration::from_secs(60));
+        let start = Instant::now();
+        let totals = |logs_bytes| StorageTotals {
+            logs_bytes,
+            ..StorageTotals::default()
+        };
+        assert_eq!(
+            cache.get(start, |prev| totals(prev.map_or(1, |_| 99))),
+            totals(1)
+        );
+        let within = start + Duration::from_secs(59);
+        assert_eq!(cache.get(within, |_| unreachable!()), totals(1));
+        let after = start + Duration::from_secs(60);
+        assert_eq!(
+            cache.get(after, |prev| totals(prev.unwrap().logs_bytes + 1)),
+            totals(2)
+        );
+        cache.invalidate();
+        assert_eq!(
+            cache.get(after, |prev| totals(prev.unwrap().logs_bytes + 1)),
+            totals(3)
+        );
     }
 }

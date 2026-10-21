@@ -110,6 +110,40 @@ async fn host_info_reports_scrollback_and_log_totals() {
     assert!(session_db_bytes > 0);
 }
 
+fn logs_bytes(daemon: &Daemon) -> u64 {
+    let proto::ServerMsg::HostInfo { logs_bytes, .. } = daemon.host_info() else {
+        panic!("expected HostInfo");
+    };
+    logs_bytes
+}
+
+#[tokio::test]
+async fn host_info_polls_reuse_storage_totals_until_a_reclaim_measures_them() {
+    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let logs = state.path().join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::write(logs.join("a.log"), [b'x'; 1000]).unwrap();
+    assert_eq!(logs_bytes(&daemon), 1000);
+    std::fs::write(logs.join("b.log"), [b'x'; 24]).unwrap();
+    assert_eq!(
+        logs_bytes(&daemon),
+        1000,
+        "a poll within the interval does not walk the directories again"
+    );
+
+    let mut asker = connect_and_hello(addr, TOKEN).await;
+    let mut other = connect_and_hello(addr, TOKEN).await;
+    let (_, _, refusal) = reclaim(&mut asker).await;
+    assert_eq!(refusal, None);
+    let proto::ServerMsg::HostInfo { logs_bytes, .. } = next_host_info(&mut other).await else {
+        unreachable!()
+    };
+    assert_eq!(
+        logs_bytes, 1024,
+        "a reclaim reports freshly measured totals"
+    );
+}
+
 #[tokio::test]
 async fn reclaim_returns_free_pages_to_the_disk_and_rebroadcasts_host_info() {
     let (addr, state, daemon) = start_daemon_with_handle().await;

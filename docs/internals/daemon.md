@@ -517,6 +517,10 @@ to the OS temporary directory instead of daemon memory, and restores `MEMORY` af
 That directory may be on another volume; if it fills, VACUUM fails and leaves the database
 unchanged.
 
+`host_info` is polled by every connected client. The scrollback and log totals and the
+freelist size it reports are measured at most once per `STORAGE_TOTALS_MAX_AGE`, and the
+freelist read never waits for the connection lock; a reclaim measures them again.
+
 | Group | Tables |
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |

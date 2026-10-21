@@ -2355,12 +2355,17 @@ impl Db {
         self.conn.try_lock().is_err()
     }
 
-    /// Bytes held by free pages inside the database file.
-    pub fn free_bytes(&self) -> Result<u64> {
-        let conn = self.conn.lock().expect("db lock");
+    /// Bytes held by free pages inside the database file, or `None` while another call
+    /// (such as a running VACUUM) holds the connection.
+    pub fn try_free_bytes(&self) -> Result<Option<u64>> {
+        let Ok(conn) = self.conn.try_lock() else {
+            return Ok(None);
+        };
         let pages: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
         let page_size: i64 = conn.pragma_query_value(None, "page_size", |r| r.get(0))?;
-        Ok(u64::try_from(pages.saturating_mul(page_size)).unwrap_or(0))
+        Ok(Some(
+            u64::try_from(pages.saturating_mul(page_size)).unwrap_or(0),
+        ))
     }
 
     /// VACUUM in WAL mode writes the rebuilt database into the WAL, so the second
