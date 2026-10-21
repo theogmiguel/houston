@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { variants } from './variants'
 import { Text } from './Text'
 import { IconPlus } from '../icons'
+import { DiffFindText, type DiffTextMarks } from './Diff'
 
 export type ReviewDiffLineKind = 'ctx' | 'add' | 'del' | 'hunk' | 'meta'
 
@@ -28,14 +29,15 @@ export interface ReviewDiffLineProps {
   newLine: number | null
   text: string
   action?: ReactNode
+  marks?: DiffTextMarks
 }
 
-export function ReviewDiffLine({ variant, kind, drafted = false, oldLine, newLine, text, action }: ReviewDiffLineProps): React.JSX.Element {
+export function ReviewDiffLine({ variant, kind, drafted = false, oldLine, newLine, text, action, marks }: ReviewDiffLineProps): React.JSX.Element {
   return (
     <div className={`${lineClasses({ kind, drafted: drafted ? 'true' : 'false' })}${variant === 'pr' ? ' pr-code-diff-line' : ''}`} data-kind={kind}>
       <Text size="xs" mono className="flex-none w-4 text-right select-none opacity-60" aria-hidden>{oldLine ?? ''}</Text>
       <Text size="xs" mono className="flex-none w-4 text-right select-none opacity-60" aria-hidden>{newLine ?? ''}</Text>
-      <Text size="xs" mono className="flex-1 min-w-0">{text || ' '}</Text>
+      <Text size="xs" mono className="flex-1 min-w-0">{text ? <DiffFindText text={text} marks={marks} /> : ' '}</Text>
       {action}
     </div>
   )

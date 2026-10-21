@@ -166,9 +166,14 @@
     "command registry left the boot path once App took its navigation helper from",
     "paletteNav.ts, and",
     "that headroom pays for Next request, which must answer from the keymap at",
-    "any time and keep the operator inbox current."
+    "any time and keep the operator inbox current.",
+    "",
+    "Re-cut against 942,801 bytes (one boot chunk) with the same small headroom:",
+    "find in diff adds one rebindable entry to KEYMAP, which Settings and the",
+    "shortcuts sheet read at any time. Its strip parts, matcher and search live",
+    "in modules only the lazy diff surfaces import."
   ],
-  "maxBootBytes": 942700,
+  "maxBootBytes": 942934,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

@@ -28,8 +28,8 @@ export function DiffLoadingPanel({ children, ...props }: HTMLAttributes<HTMLDivE
   return <div {...props} className={`flex-1 flex items-center justify-center p-[var(--space-6)] ${props.className ?? ''}`}>{children}</div>
 }
 
-export function PullRequestDiffPanel({ children, ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
-  return <div {...props} className={`flex flex-col bg-[var(--tool-code-bg)] ${props.className ?? ''}`}>{children}</div>
+export function PullRequestDiffPanel({ children, ...props }: HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }): React.JSX.Element {
+  return <div {...props} className={`flex flex-col bg-[var(--tool-code-bg)] outline-none ${props.className ?? ''}`}>{children}</div>
 }
 
 export function PullRequestDiffSpecimen(): React.JSX.Element {

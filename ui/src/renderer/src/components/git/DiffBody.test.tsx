@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
-import { DiffBody, diffBodyLines } from './DiffBody'
+import { DiffBody, diffBodyLines, diffFindLines } from './DiffBody'
+import { DiffFindContext, findInDiff, lineMarkKey, marksByLine } from './diffFind'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -53,5 +54,35 @@ describe('DiffBody', () => {
 
   it('omits the terminal newline without hiding blank lines inside a hunk', () => {
     expect(diffBodyLines('@@ -1 +1 @@\n context\n\n+new\n')).toEqual(['@@ -1 +1 @@', ' context', '', '+new'])
+  })
+
+  it('highlights find matches at the same offsets it reports, marking a context line once in split', () => {
+    const patch = '@@ -1,2 +1,2 @@\n same key\n-key = 1\n+key = 2'
+    const sources = [{ key: 'f', lines: diffFindLines(patch), truncated: false }]
+    expect(sources[0].lines).toEqual(['@@ -1,2 +1,2 @@', 'same key', 'key = 1', 'key = 2'])
+    const { matches } = findInDiff(sources, 'key', false)
+    const marks = marksByLine(matches, 0)
+    const lookup = (key: string, line: number) => marks.get(lineMarkKey(key, line))
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() => root.render(<DiffFindContext.Provider value={lookup}><DiffBody patch={patch} truncated={false} findKey="f" /></DiffFindContext.Provider>))
+    expect(Array.from(host.querySelectorAll('[data-diff-find-mark]')).map((mark) => mark.textContent)).toEqual(['key', 'key', 'key'])
+    expect(host.querySelectorAll('[data-diff-find-active]')).toHaveLength(1)
+    act(() => root.render(<DiffFindContext.Provider value={lookup}><DiffBody patch={patch} truncated={false} split findKey="f" /></DiffFindContext.Provider>))
+    expect(host.querySelectorAll('[data-diff-find-mark]')).toHaveLength(4)
+    expect(host.querySelector('[data-diff-find-active]')?.closest('[data-side]')?.getAttribute('data-side')).toBe('new')
+    act(() => root.unmount())
+  })
+
+  it('highlights matches in the plain fallback for very long patches', () => {
+    const patch = ['@@ -1,4001 +1,4001 @@', ...Array.from({ length: 4001 }, (_, i) => (i === 4000 ? '+needle' : ' line'))].join('\n')
+    const sources = [{ key: 'f', lines: diffFindLines(patch), truncated: false }]
+    const marks = marksByLine(findInDiff(sources, 'needle', false).matches, 0)
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() => root.render(<DiffFindContext.Provider value={(key, line) => marks.get(lineMarkKey(key, line))}><DiffBody patch={patch} truncated={false} findKey="f" /></DiffFindContext.Provider>))
+    expect(host.querySelector('pre')?.textContent).toContain('+needle')
+    expect(host.querySelector('[data-diff-find-active]')?.textContent).toBe('needle')
+    act(() => root.unmount())
   })
 })

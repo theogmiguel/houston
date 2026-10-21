@@ -120,6 +120,7 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Open settings | Ctrl+, |
 | Open the command palette | Ctrl+K |
 | Split editor pane down (not remappable) | Ctrl+Shift+D |
+| Find in the focused diff: Changes, pull request files | Ctrl+F |
 | Hold to dictate into this terminal (Settings ▸ Dictation) | Ctrl+Shift+Space |
 | Copy selection — no selection interrupts the agent (not remappable) | Ctrl+C |
 | Copy selection, force (not remappable) | Ctrl+Shift+C |
@@ -142,3 +143,7 @@ files. These keys do not navigate while you type into a field or use a menu. **E
 restores the panel's previous width. In branch search, **Enter** creates a new branch
 from the default base; **Ctrl+Enter** creates its worktree in a new pane. These local
 review and search shortcuts are separate from the terminal prefix key.
+
+`Ctrl+F` in Changes or a pull request's **Files** opens find in the diff (see
+[Changes](changes.md#reviewing-a-diff)). It answers only while focus is inside the diff, so
+it never takes `Ctrl+F` from a focused terminal, and it can be rebound on its own.
