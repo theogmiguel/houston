@@ -1280,6 +1280,10 @@ mod tests {
         daemon
             .workspace_add(&workspace)
             .expect("register workspace");
+        // On Windows, registration pre-warms the hook launcher in a background child. Exiting
+        // while that child is still being created orphans it holding this process's stdout,
+        // and the parent test then waits forever for the pipe to close.
+        houston_core::claude_hooks::wait_for_launcher_prewarm();
 
         let served_bytes_and_count = |specs: &[ToolSpec]| -> (usize, usize) {
             let bytes: usize = specs.iter().map(|s| s.to_json().to_string().len()).sum();
