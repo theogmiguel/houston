@@ -94,6 +94,8 @@ pub async fn start_with_listener(
         )
         .route("/orchestrate/pr-watch", post(orch_pr_watch))
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
+        .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
+        .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
         .route("/harness/publish", post(harness_publish))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
@@ -827,6 +829,8 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::PrCheckLog { .. }
             | proto::ClientMsg::PrDetail { .. }
             | proto::ClientMsg::PrWatchList
+            | proto::ClientMsg::MergeQueueGet { .. }
+            | proto::ClientMsg::MergeQueueSummaryGet
             | proto::ClientMsg::GitReviewDiffs { .. }
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
@@ -1195,6 +1199,154 @@ async fn dispatch(
         },
         proto::ClientMsg::PrWatchUnwatch { session, number } => {
             daemon.pr_watch_stop(session, number).map(|_| ())
+        }
+        proto::ClientMsg::MergeQueueGet { dir } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.merge_queue_reply(&dir))
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue read panicked: {e}"))?;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending the merge queue failed"))
+        }
+        proto::ClientMsg::MergeQueueEnqueue {
+            dir,
+            number,
+            depends_on,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                d.merge_queue_enqueue(&at, &number.to_string(), depends_on, None)
+                    .map(|entry| {
+                        format!(
+                            "PR #{number} is number {} in the merge queue",
+                            entry.position
+                        )
+                    })
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue enqueue panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueDequeue {
+            dir,
+            number,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                d.merge_queue_dequeue(&at, &number.to_string())
+                    .map(|()| format!("PR #{number} left the merge queue"))
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue dequeue panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueMergeHead {
+            dir,
+            number,
+            expected_head_sha,
+            method,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                d.merge_queue_merge_head(&at, number, &expected_head_sha, method)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue merge panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueSettingsSet {
+            dir,
+            merge_when_verified,
+            verification_command,
+            time_limit_minutes,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                d.merge_queue_settings_set(
+                    &at,
+                    merge_when_verified,
+                    &verification_command,
+                    time_limit_minutes,
+                )
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue settings panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, 0, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueuePause {
+            dir,
+            paused,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result =
+                tokio::task::spawn_blocking(move || d.merge_queue_pause(Some(&at), paused))
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue pause panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, 0, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueuePauseAll { paused } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.merge_queue_pause(None, paused))
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue pause panicked: {e}"))?
+                .map(|_| ())
+        }
+        proto::ClientMsg::MergeQueueRetry {
+            dir,
+            number,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || d.merge_queue_retry(&at, number))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue retry panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueRevert {
+            dir,
+            number,
+            request,
+        } => {
+            let d = Arc::clone(daemon);
+            let at = dir.clone();
+            let result = tokio::task::spawn_blocking(move || d.merge_queue_revert(&at, number))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("merge queue revert panicked: {e}")));
+            send_merge_queue_reply(sink, dir, request, number, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::MergeQueueAcknowledge { dir } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.merge_queue_acknowledge(&dir))
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue acknowledge panicked: {e}"))?
+        }
+        proto::ClientMsg::MergeQueueSummaryGet => {
+            let d = Arc::clone(daemon);
+            let summary = tokio::task::spawn_blocking(move || d.merge_queue_summary())
+                .await
+                .map_err(|e| anyhow::anyhow!("merge queue summary panicked: {e}"))??;
+            send_msg(sink, &summary)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending the merge queue summary failed"))
         }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {
@@ -4316,6 +4468,30 @@ async fn unlink_pull_request(
     }
 }
 
+async fn send_merge_queue_reply(
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    dir: String,
+    request: u32,
+    number: u32,
+    result: anyhow::Result<String>,
+) {
+    let (ok, message) = match result {
+        Ok(message) => (true, Some(message)),
+        Err(e) => (false, Some(format!("{e:#}"))),
+    };
+    let _ = send_msg(
+        sink,
+        &proto::ServerMsg::MergeQueueReply {
+            dir,
+            request,
+            number,
+            ok,
+            message,
+        },
+    )
+    .await;
+}
+
 /// A commit sha a merge may be pinned to: gh reports and the UI sends the full
 /// 40-character hex head, so anything else is refused rather than guessed.
 fn valid_head_sha(sha: &str) -> bool {
@@ -5467,6 +5643,63 @@ async fn orch_pr_unwatch(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) 
     match result {
         Ok(stopped) => (StatusCode::OK, axum::Json(json!({"stopped": stopped}))).into_response(),
         Err(e) => orch_err_response(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PrEnqueueBody {
+    pr: String,
+    #[serde(default)]
+    depends_on: Option<u32>,
+}
+
+async fn orch_pr_enqueue(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<PrEnqueueBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.merge_queue_enqueue_from_pane(scope.session_id, &body.pr, body.depends_on)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("PR enqueue panicked: {e}")));
+    match result {
+        Ok(entry) => (
+            StatusCode::OK,
+            axum::Json(crate::mcp_orchestration::enqueue_result(&entry)),
+        )
+            .into_response(),
+        Err(e) => orch_error(StatusCode::CONFLICT, e),
+    }
+}
+
+async fn orch_pr_dequeue(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<PrWatchBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let target = body.pr;
+    let dequeue_target = target.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.merge_queue_dequeue_from_pane(scope.session_id, &dequeue_target)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("PR dequeue panicked: {e}")));
+    match result {
+        Ok(()) => (
+            StatusCode::OK,
+            axum::Json(json!({"dequeued": true, "pr": target})),
+        )
+            .into_response(),
+        Err(e) => orch_error(StatusCode::CONFLICT, e),
     }
 }
 

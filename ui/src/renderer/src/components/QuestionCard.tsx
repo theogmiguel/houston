@@ -128,7 +128,7 @@ export function QuestionCard({
         </Tooltip>
       ) :
         options === undefined ? (
-        <QuestionNote data-testid="question-card-empty">–</QuestionNote>
+        <QuestionNote data-testid="question-card-empty" role="status">Loading options…</QuestionNote>
       ) : options.length === 0 ? (
         <QuestionNote data-testid="question-card-empty-set">No options</QuestionNote>
       ) : (

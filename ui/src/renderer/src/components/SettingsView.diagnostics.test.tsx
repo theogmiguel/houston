@@ -106,7 +106,7 @@ describe('Settings › Diagnostics (settings-03/-65..-69/-61)', () => {
     expect(table?.textContent).toContain('API review')
     expect(table?.textContent).toContain('api')
     expect(table?.textContent).toContain('codex')
-    expect(table?.textContent).toContain('working')
+    expect(table?.textContent).toContain('Working')
   })
 
   it('settings-67: Hooks — wired count, per-CLI dot list, warn callout for the unwired one, no toggle (read-only mirror)', () => {

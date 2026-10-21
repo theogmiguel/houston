@@ -26,13 +26,15 @@ describe('QuestionCard — state matrix', () => {
     vi.restoreAllMocks()
   })
 
-  it('Empty — single-select body with options not yet loaded renders a neutral placeholder', () => {
+  it('Empty — single-select body with options not yet loaded reads as loading, not a bare dash', () => {
     act(() => {
       root.render(
         <QuestionCard questionIndex={1} questionCount={1} question="Proceed?" body="single-select" />
       )
     })
-    expect(container.querySelector('[data-testid="question-card-empty"]')?.textContent).toBe('–')
+    const note = container.querySelector('[data-testid="question-card-empty"]')
+    expect(note?.textContent).toBe('Loading options…')
+    expect(note?.getAttribute('role')).toBe('status')
   })
 
   it('Filled — free-text body renders the pager, question and current value', () => {

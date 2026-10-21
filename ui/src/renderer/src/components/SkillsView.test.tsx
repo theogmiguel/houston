@@ -125,13 +125,17 @@ describe('SkillsView — the redesigned library', () => {
     expect(byLabel('View triage')).toBeDefined()
   })
 
-  it('shows an actionable empty state (New skill / Install from link) with zero skills', async () => {
+  it('empty state stays quiet — the toolbar above already carries New skill / Install from link', async () => {
     listSkills.mockResolvedValue([])
     render()
     await flush()
-    expect(container.querySelector('[data-testid="skills-empty"]')).not.toBeNull()
-    expect(container.textContent).toContain('New skill')
-    expect(container.textContent).toContain('Install from link')
+    const empty = container.querySelector('[data-testid="skills-empty"]')
+    expect(empty).not.toBeNull()
+    expect(empty!.querySelector('button')).toBeNull()
+    const toolbar = [...container.querySelectorAll('button')].filter(
+      (b) => b.textContent === 'New skill' || b.textContent === 'Install from link'
+    )
+    expect(toolbar).toHaveLength(2)
   })
 
   it('opens a skill\'s detail view with its real description, origin and scope', async () => {

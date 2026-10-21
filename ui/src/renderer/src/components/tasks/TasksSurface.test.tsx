@@ -9,6 +9,7 @@ import { TaskStartCard } from './TaskExecution'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import type { SessionInfo } from '../../houston/client'
 import type { TaskRun } from '../../houston/generated/TaskRun'
+import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { TaskNowCard } from './TaskNowCard'
 import { TaskDetail } from './TaskDetail'
 
@@ -103,6 +104,19 @@ describe('Tasks surface and drawer', () => {
     const meta = container.querySelector('[data-testid="list-detail-item"]')!.textContent
     expect(meta).toContain('stopped just now')
     expect(meta).not.toContain('now ago')
+  })
+
+  it('shows the wait age instead of repeating the asked-orchestrator status word', () => {
+    const session: SessionInfo = { id: 1, agent: 'claude', state: 'running', status: 'idle', spawned_by: 9, delegation: { state: 'asked_orchestrator', input_request: { id: 'q1', kind: 'question', owner: 'orchestrator', reason: null, escalation_reason: null, escalation_detail: null } } as SessionInfo['delegation'], title_source: 'prompt' as const, codename: 'worker', title: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+    const snapshot = state()
+    const waiting: TaskSummary = { ...TASK, status: 'in_progress', open_run: { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'waiting_for_input', provider: 'claude', session_id: 1, initial_revision: 1, started_at_ms: 0 }, acceptance_checked: 0, acceptance_total: 0 }
+    snapshot.snapshot.tasks = [waiting] as typeof snapshot.snapshot.tasks
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map([[1, session]])} now={25 * 60_000}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    const meta = container.querySelector('[data-testid="list-detail-item"]')!.textContent ?? ''
+    expect(meta.match(/Asked orchestrator/g)).toHaveLength(1)
+    expect(meta.endsWith('·25m')).toBe(true)
   })
 
   it('expands finished tasks below the Done and archived toggle', () => {

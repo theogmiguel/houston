@@ -93,6 +93,11 @@ export interface PaletteActions {
   quitAndStopDaemon?: () => void
 
   selectNavRow: (row: 'routines' | 'prs' | 'usage') => void
+  openMergeQueue?: () => void
+  /// Present only while the focused pane's branch has an open pull request.
+  addToMergeQueue?: () => void
+  /// Pauses the selected workspace's merge queue; absent with every workspace shown.
+  pauseMergeQueue?: () => void
   openManageTags?: () => void
 
   switchWorkspace: (path: string | 'all') => void
@@ -212,6 +217,31 @@ function buildRailNavCommands(actions: PaletteActions): Command[] {
       } else actions.selectNavRow(r.id)
     }
   }))
+  commands.push({
+    id: 'go-to.merge-queue',
+    title: 'Open merge queue',
+    group: 'Go to' as const,
+    keywords: ['pull requests', 'merge', 'queue', 'land'],
+    enabled: Boolean(actions.openMergeQueue),
+    disabledReason: actions.openMergeQueue ? undefined : 'The merge queue is unavailable',
+    run: () => actions.openMergeQueue?.()
+  }, {
+    id: 'pr.add-to-merge-queue',
+    title: 'Add to merge queue',
+    group: 'Go to' as const,
+    keywords: ['pull request', 'merge', 'queue', 'enqueue'],
+    enabled: Boolean(actions.addToMergeQueue),
+    disabledReason: actions.addToMergeQueue ? undefined : "The focused pane's branch has no open pull request",
+    run: () => actions.addToMergeQueue?.()
+  }, {
+    id: 'pr.pause-merge-queue',
+    title: 'Pause merge queue',
+    group: 'Go to' as const,
+    keywords: ['pull requests', 'merge', 'queue', 'stop', 'hold', 'push'],
+    enabled: Boolean(actions.pauseMergeQueue),
+    disabledReason: actions.pauseMergeQueue ? undefined : 'Select a workspace to pause its merge queue',
+    run: () => actions.pauseMergeQueue?.()
+  })
   commands.push({
     id: 'go-to.manage-tags',
     title: 'Manage tags',

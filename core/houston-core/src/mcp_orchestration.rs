@@ -26,6 +26,34 @@ impl OrchestrationTools {
     }
 }
 
+/// A pull request named by URL or number, as `pane_pr_watch` and the queue verbs take it.
+fn pr_target(args: &Value) -> Result<String, ToolError> {
+    match args.get("pr") {
+        Some(Value::String(value)) => Ok(value.clone()),
+        Some(Value::Number(value)) => Ok(value.to_string()),
+        Some(value) => Err(ToolError(format!(
+            "pr must be a pull request URL or number; got {value}"
+        ))),
+        None => Err(ToolError(
+            "pr is required and must be a pull request URL or number".into(),
+        )),
+    }
+}
+
+/// What an agent learns from an enqueue: its place, and the one thing that
+/// blocks it, so it can fix that instead of polling.
+pub fn enqueue_result(entry: &proto::MergeQueueEntry) -> Value {
+    json!({
+        "queued": true,
+        "pr": entry.number,
+        "position": entry.position,
+        "status": entry.status,
+        "reason": entry.reason,
+        "depends_on": entry.depends_on,
+        "note": "The user merges the queue head. Fix the blocking reason if there is one; do not poll.",
+    })
+}
+
 fn refused(e: anyhow::Error) -> ToolError {
     ToolError(format!("{e:#}"))
 }
@@ -112,11 +140,12 @@ const PANE_ROUTING: &str = concat!(
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
-    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`. ",
+    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`, `pane_pr_enqueue`, `pane_pr_dequeue`. ",
     "A worker sends `pane_report{kind: progress|question|blocked, body, request_id}` during work; question/blocked stays open until its recipient calls `pane_reply{message_id,text}`. The worker then uses `pane_wait` without a session, including without children or spawn authority. These messages do not finish a request; only `pane_submit` does. Parents resolve routine questions within existing authority first. When a child input episode needs a user decision, call `pane_escalate{child,reason}`; prose alone does not escalate. A reply does not grant extra permissions or automatically approve a CLI prompt. Reports/replies allow 8000 characters and 64 outstanding messages per worker; use a stable `client_request_id` for retry. Siblings — live children of the same parent — talk directly with `pane_message{to: role, body}` while both have an open request; `workspace_info.siblings` lists them, the message arrives in the recipient's `pane_wait`, and the parent receives no copy. ",
     "For reusable workers `pane_prompt{mode: queue|steer|restart}` defaults to queue and returns an accepted instruction id and current state, not proof of completion or delivery. Use `pane_instruction_list/get/cancel/resume` for current durable control state: queued, held_after_recovery, delivered, cancelled or uncertain. After restart recovery, held work requires explicit resume; never resume uncertain work. Cancel/resume retries report current truth. Steer delivery and adoption are distinct: adoption starts a separate request round. Restart requires verified interrupt-to-idle (Codex Escape); Claude, Antigravity, OpenCode and ZCode restart is refused. Preserve partial results. Needs-input requires an explicit decision, not paste. ",
     "After receiving a completed child's result, preserve its needed output and artifacts, then close it with `pane_kill` (or `hs-pane kill`) as soon as no further task is planned. Before your final response or handback, close every completed child you no longer need. A reusable flag is not a reason to leave a completed pane open; keep one only for intentional assigned follow-up work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
+    "When a PR is ready to land, add it to the workspace merge queue with `pane_pr_enqueue{pr, depends_on?}`; the user merges the queue head. You cannot merge. ",
     "Questions and every actual permission prompt route to the parent first in all launch modes. Parent-owned input stays gray and has an actionable needs_input inbox row. Answer routine questions within authority with pane_reply or pane_send_keys. The parent NEVER approves permissions: every pending permission episode refuses ALL pane_send_keys, including n/Escape. Use pane_deny{child,episode_id} for verified provider denial or pane_escalate{child,reason} for the operator's decision; only the operator may approve. Denial stays pending until provider evidence. Escalation transfers ownership to User with amber notifications. Bare Codex Auto PermissionRequest is non-alerting approval activity. Operator intervention is reported to the parent. Accepted Stop/ACP turn end or parent close/death escalates unanswered input; quiet-settle never does. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
     "need, and when you do delegate, size the model to that chunk rather than taking the CLI's own ",
@@ -392,20 +421,7 @@ impl ToolProvider for OrchestrationTools {
                     Ok(ToolOutput::structured(outcome))
                 }
                 "pane_pr_watch" => {
-                    let target = match args.get("pr") {
-                        Some(Value::String(value)) => value.clone(),
-                        Some(Value::Number(value)) => value.to_string(),
-                        Some(value) => {
-                            return Err(ToolError(format!(
-                                "pr must be a pull request URL or number; got {value}"
-                            )))
-                        }
-                        None => {
-                            return Err(ToolError(
-                                "pr is required and must be a pull request URL or number".into(),
-                            ))
-                        }
-                    };
+                    let target = pr_target(args)?;
                     let start_target = target.clone();
                     tokio::task::spawn_blocking(move || {
                         daemon.pr_watch_start(caller, &start_target)
@@ -415,6 +431,33 @@ impl ToolProvider for OrchestrationTools {
                     .map_err(refused)?;
                     Ok(ToolOutput::structured(
                         json!({"watching": true, "pr": target, "note": "End your turn now. Houston checks for changes and wakes this pane; do not poll."}),
+                    ))
+                }
+                "pane_pr_enqueue" => {
+                    let target = pr_target(args)?;
+                    let depends_on = match args.get("depends_on") {
+                        None | Some(Value::Null) => None,
+                        Some(_) => Some(u32_arg(args, "depends_on")?),
+                    };
+                    let entry = tokio::task::spawn_blocking(move || {
+                        daemon.merge_queue_enqueue_from_pane(caller, &target, depends_on)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("PR enqueue task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(enqueue_result(&entry)))
+                }
+                "pane_pr_dequeue" => {
+                    let target = pr_target(args)?;
+                    let dequeue_target = target.clone();
+                    tokio::task::spawn_blocking(move || {
+                        daemon.merge_queue_dequeue_from_pane(caller, &dequeue_target)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("PR dequeue task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(
+                        json!({"dequeued": true, "pr": target}),
                     ))
                 }
                 "pane_pr_unwatch" => {
@@ -861,6 +904,20 @@ impl OrchestrationTools {
                 annotations: local(Annotations::local_write()),
             },
             ToolSpec {
+                name: "pane_pr_enqueue".into(),
+                title: "Queue a PR".into(),
+                description: "Queue an open PR (URL or number) for the user to merge, after a queued depends_on PR if given. You cannot merge.".into(),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":"string"},"depends_on":{"type":"integer","minimum":1}},"required":["pr"],"additionalProperties":false}),
+                annotations: local(Annotations::local_write()),
+            },
+            ToolSpec {
+                name: "pane_pr_dequeue".into(),
+                title: "Dequeue a PR".into(),
+                description: "Remove a PR from the merge queue.".into(),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":"string"}},"required":["pr"],"additionalProperties":false}),
+                annotations: local(Annotations::local_write()),
+            },
+            ToolSpec {
                 name: "pane_spawn".into(),
                 title: "Spawn an agent pane".into(),
                 description: spawn_description,
@@ -1187,6 +1244,8 @@ mod tests {
                 "pane_message",
                 "pane_pr_watch",
                 "pane_pr_unwatch",
+                "pane_pr_enqueue",
+                "pane_pr_dequeue",
                 "pane_spawn",
                 "pane_list",
                 "pane_get",
@@ -1348,6 +1407,8 @@ mod tests {
                     | "pane_message"
                     | "pane_pr_watch"
                     | "pane_pr_unwatch"
+                    | "pane_pr_enqueue"
+                    | "pane_pr_dequeue"
                     | "pane_deny"
                     | "pane_escalate"
                     | "pane_instruction_cancel"

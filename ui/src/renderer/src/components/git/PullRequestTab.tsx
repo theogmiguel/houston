@@ -1,4 +1,5 @@
 import { PrMergeBox } from './PrMergeBox'
+import { useMergeQueue } from '../prs/useMergeQueue'
 import { PrHeaderFrame, PrHeaderActions, PrHeaderNumber, PrHeaderAvatar, PrHeaderSentence, PrStatusWord, PrViewTabs, PrChangeStats, PrHeaderAuthor, PrHeaderRef } from '../ui/PrPresentation'
 import { prRelativeAge } from './prRelativeAge'
 import { PrTab } from '../ui/PrTab'
@@ -754,6 +755,7 @@ function PrDetailView({
   const commentMotion = useExitAnimation(compact && commentOpen, 150)
   const [openPicker, setOpenPicker] = useState<'reviewers' | 'labels' | 'stack' | null>(null)
   const checkState = usePrChecksState({ client, dir, number: link.number, url: link.url, branch: detail.head_ref ?? null, checks: detail.checks, agents: checkAgentTargets, onPasteToAgent, onCreateAgent: onCreateCheckAgent ? (provider, text) => Promise.resolve(onCreateCheckAgent(provider, text)).then((session) => session ?? null) : undefined, onOpenUrl: onOpenUrlInPane, onOpenPane })
+  const queue = useMergeQueue(client, dir)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const preloadedCodePr = useRef<number | null>(null)
   const mergeReason = pendingMergeReason(detail)
@@ -844,7 +846,7 @@ function PrDetailView({
   return (
     <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
       <PrBranchHeader link={link} detail={detail} actionBar={actionBar} onOpenUrlInPane={onOpenUrlInPane} />
-      <PrMergeBox link={link} detail={detail} pr={pr} method={method} setMethod={setMethod} mergeReason={mergeReason} checks={checkState} />
+      <PrMergeBox link={link} detail={detail} pr={pr} method={method} setMethod={setMethod} mergeReason={mergeReason} checks={checkState} queue={queue} />
       <PrDetailToolbar
         pane={pane}
         detail={detail}

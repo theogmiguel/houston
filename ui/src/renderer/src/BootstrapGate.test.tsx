@@ -86,7 +86,7 @@ describe('BootstrapGate under Tauri', () => {
     renderGate(load)
 
     expect(container.textContent).not.toContain('APP-MOUNTED')
-    expect(container.querySelector('.boot-spinner')).not.toBeNull()
+    expect(container.querySelector('.animate-spin')).not.toBeNull()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(14_999)

@@ -141,6 +141,18 @@ export function NoticesExiting(): React.JSX.Element {
   )
 }
 
+export function NoticesMergeQueueAway(): React.JSX.Element {
+  return (
+    <Ground>
+      <NoticeStack
+        anchor="workspace-top"
+        label="Workspace notices"
+        store={store([rec({ code: 'merge-queue-away', title: 'Merge queue merged 5 and parked 1 while you were away. Last merge 06:40.', kind: 'info', durationMs: null, action: { label: 'Review', onClick: () => {} } }, 1)])}
+      />
+    </Ground>
+  )
+}
+
 export function NoticesPaneCorner(): React.JSX.Element {
   return (
     <Ground>
