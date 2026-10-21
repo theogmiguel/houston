@@ -115,6 +115,7 @@ import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestr
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
+import { RailUndoStory } from './railUndoStories'
 
 const noop = (): void => {}
 
@@ -625,5 +626,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/root-error': () => <FilesRootErrorGraphite />,
   'settings/tasks': () => <TasksSettingsStory />,
   'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />,
+  'rail/undo-notice': () => <RailUndoStory />,
   ...RAIL_STORIES
 }

@@ -166,9 +166,15 @@
     "command registry left the boot path once App took its navigation helper from",
     "paletteNav.ts, and",
     "that headroom pays for Next request, which must answer from the keymap at",
-    "any time and keep the operator inbox current."
+    "any time and keep the operator inbox current.",
+    "",
+    "Re-cut against 944,208 bytes (one boot chunk) with the same small headroom:",
+    "the rail's pin, read and hide actions record an Undo as they run, so their",
+    "wrappers in `rail/useRailUndoActions.ts` are boot-path code. The batching,",
+    "the notice wording and the restore loop load on the first action from",
+    "`rail/railUndo.ts`, behind one `import()`."
   ],
-  "maxBootBytes": 942700,
+  "maxBootBytes": 944350,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

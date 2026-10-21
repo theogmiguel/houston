@@ -3670,6 +3670,7 @@ export function App(): React.JSX.Element {
                 )
               }
               pinnedWorkspaces={wsPinnedSet}
+              notices={appNotices}
               onTogglePinWorkspace={(path) =>
                 setWsPinned((prev) =>
                   prev.includes(path)
