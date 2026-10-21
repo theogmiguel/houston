@@ -43,7 +43,7 @@ function render(overrides: KeymapOverrides = { bindings: {}, shortcuts_enabled: 
   act(() => root!.render(
     <KeymapOverridesContext.Provider value={overrides}>
       <div data-testid="terminal-stand-in" tabIndex={0} />
-      <PrFiles diff={diff} loading={false} drafts={[]} writeBusy={false} onAddDraft={() => {}} onReload={() => {}} />
+      <PrFiles link={null} diff={diff} loading={false} drafts={[]} writeBusy={false} onAddDraft={() => {}} onReload={() => {}} />
     </KeymapOverridesContext.Provider>
   ))
 }

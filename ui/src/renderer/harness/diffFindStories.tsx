@@ -55,7 +55,7 @@ function useScriptedFind(rootSelector: string, term: string, enterPresses: numbe
 
 export function PrFilesFindCapture(): React.JSX.Element {
   useScriptedFind('[data-testid="pr-files"]', 'parent', 6)
-  return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles diff={{ number: 412, patch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
+  return <div className="h-full overflow-auto bg-[var(--content-bg)]"><PrFiles link={null} diff={{ number: 412, patch, truncated: false, message: null } as PrDiffView} loading={false} drafts={[]} writeBusy={false} onAddDraft={noop} onReload={noop} /></div>
 }
 
 export function ChangesFindStory(): React.JSX.Element {
