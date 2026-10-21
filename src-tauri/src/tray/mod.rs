@@ -155,7 +155,7 @@ fn icon_size_for(base: u32, scale_factor: Option<f64>) -> u32 {
         .expect("ICON_CUTS is never empty")
 }
 
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_window("main") else {
         return;
     };
