@@ -54,7 +54,7 @@ interpolated="$(perl -e '
 fail=0
 while IFS=$'\t' read -r n f; do
   [ -z "$f" ] && continue
-  echo "FAIL: focus-visible $f has $n class(es) with an interpolated arbitrary value; expected a complete literal class such as a *_CLS from components/ui/shadowChrome.ts" >&2
+  echo "FAIL: $f has $n class(es) with an interpolated arbitrary value; expected a complete literal class such as a *_CLS from components/ui/shadowChrome.ts" >&2
   fail=1
 done <<< "$interpolated"
 
