@@ -1,5 +1,5 @@
-//! Drop inherited session identities and private supervisor startup state before
-//! the daemon spawns children. Agent settings such as `CLAUDE_CONFIG_DIR` and
+//! Drop inherited agent-session and multiplexer identities and private supervisor
+//! startup state before the daemon spawns children. Agent settings such as `CLAUDE_CONFIG_DIR` and
 //! `ANTHROPIC_*` remain available.
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 const SESSION_MARKERS: &[&str] = &[
@@ -14,6 +14,15 @@ const SESSION_MARKERS: &[&str] = &[
     "HOUSTON_EXEC_NONCE",
     "HOUSTON_COMMITTED_SCOPE",
     crate::supervisor::SUPERVISOR_FD_ENV,
+    // A pane is not inside the launcher's multiplexer: tmux commands would target its server.
+    "TMUX",
+    "TMUX_PANE",
+    "STY",
+    "ZELLIJ",
+    "ZELLIJ_SESSION_NAME",
+    "ZELLIJ_PANE_ID",
+    // Set by an Electron-based editor's terminal; Electron tools in a pane would run as node.
+    "ELECTRON_RUN_AS_NODE",
 ];
 
 pub fn markers_in(keys: impl Iterator<Item = String>) -> Vec<String> {
@@ -65,6 +74,33 @@ mod tests {
                 "CLAUDECODE",
                 "CLAUDE_CODE_CHILD_SESSION",
                 "CLAUDE_CODE_SESSION_ID"
+            ]
+        );
+    }
+
+    #[test]
+    fn multiplexer_and_electron_launcher_markers_are_picked() {
+        let env = [
+            "TMUX",
+            "TMUX_PANE",
+            "STY",
+            "ZELLIJ",
+            "ZELLIJ_SESSION_NAME",
+            "ZELLIJ_PANE_ID",
+            "ELECTRON_RUN_AS_NODE",
+            "TERM",
+        ];
+        let hits = markers_in(env.iter().map(|s| s.to_string()));
+        assert_eq!(
+            hits,
+            vec![
+                "ELECTRON_RUN_AS_NODE",
+                "STY",
+                "TMUX",
+                "TMUX_PANE",
+                "ZELLIJ",
+                "ZELLIJ_PANE_ID",
+                "ZELLIJ_SESSION_NAME"
             ]
         );
     }

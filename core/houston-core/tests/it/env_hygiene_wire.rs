@@ -19,6 +19,13 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("NO_COLOR", "1");
     std::env::set_var("TERM", "dumb");
     std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
+    std::env::set_var("TMUX", "/tmp/tmux-1000/default,1234,0");
+    std::env::set_var("TMUX_PANE", "%3");
+    std::env::set_var("STY", "1234.pts-0.host");
+    std::env::set_var("ZELLIJ", "0");
+    std::env::set_var("ZELLIJ_SESSION_NAME", "outer");
+    std::env::set_var("ZELLIJ_PANE_ID", "2");
+    std::env::set_var("ELECTRON_RUN_AS_NODE", "1");
     houston_core::env_hygiene::scrub();
     assert!(std::env::var_os("HOUSTON_SUPERVISOR_FD").is_none());
     std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
@@ -101,6 +108,13 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         "CLAUDE_CODE_CHILD_SESSION=",
         "CLAUDECODE=",
         "CLAUDE_CODE_SESSION_ID=",
+        "TMUX=",
+        "TMUX_PANE=",
+        "STY=",
+        "ZELLIJ=",
+        "ZELLIJ_SESSION_NAME=",
+        "ZELLIJ_PANE_ID=",
+        "ELECTRON_RUN_AS_NODE=",
     ] {
         assert!(!has(marker), "pane inherited {marker} — {child_env}");
     }
