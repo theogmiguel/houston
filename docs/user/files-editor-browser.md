@@ -21,6 +21,16 @@ the prefix key and then `F` to open the Files surface; Quick Open is available t
 Type to search, use Up/Down or hover to highlight a result, and press Enter to open it.
 Focus stays in the search field while moving through results. Escape closes Quick Open.
 
+Use `Ctrl+Shift+F` (`Mod+Shift+F`, rebindable in Settings ▸ Shortcuts) outside a terminal to
+search file contents in the selected workspace. It searches the same files as Quick Open:
+in a Git repository, tracked and untracked files that `.gitignore` does not exclude. Results
+are grouped by file with the matching line text. Toggle **Match case** (`Alt+C`), **Match
+whole word** (`Alt+W`) or **Use regular expression** (`Alt+R`). Up/Down moves through
+matches and Enter opens the file in an editor pane at the matching line. The search skips
+binary files, symbolic links and files over 1 MB. It stops at 1,000 matching lines,
+20,000 searched files or 5 seconds, and names the limit it reached; refine the query to
+see the rest. A newer query replaces a running one.
+
 When the Files area is at least 720 pixels wide, the tree and editor sit side by side.
 Drag their divider to resize the tree, or double-click it to reset. Tree width and
 collapse state are remembered per workspace. Collapse the tree for more editing room;

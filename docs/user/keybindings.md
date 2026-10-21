@@ -98,6 +98,7 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Back to the pane you were on before Next request (after the prefix) | Backspace |
 | Move the selected rail card up / down (Manual sort) | Mod+Shift+↑ / Mod+Shift+↓ |
 | Open Files Quick Open outside a terminal | Mod+P |
+| Search file contents in this workspace outside a terminal | Mod+Shift+F |
 | Select pane (visual order) | 1–9 |
 | New terminal in this workspace | t |
 | Open a file in the editor | o |

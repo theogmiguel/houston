@@ -8,6 +8,8 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
+pub mod content_search;
+
 use crate::fs_allowlist::{
     assert_entry_within_allowed_roots, assert_within_allowed_roots, register_allowed_root,
     AllowedRoots,

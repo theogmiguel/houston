@@ -180,6 +180,11 @@ export const reorderCardNext: ShortcutEntry = {
   category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'ArrowDown' || e.key === 'ArrowDown')
 }
 
+export const contentSearchShortcut: ShortcutEntry = {
+  id: 'search-file-contents', keyLabel: 'Mod+Shift+F', description: 'search file contents in this workspace (outside a terminal)',
+  category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyF'
+}
+
 export const expandPane: ShortcutEntry = {
   id: 'expand-pane',
   keyLabel: 'z',
@@ -463,6 +468,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   openPullRequestsScreen,
   reorderCardPrev,
   reorderCardNext,
+  contentSearchShortcut,
   expandPane,
   splitRight,
   splitDown,
