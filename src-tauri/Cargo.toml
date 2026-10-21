@@ -63,6 +63,11 @@ windows = { version = "0.61", features = [
   "Win32_System_Com",
   "Win32_System_Memory",
   "Win32_UI_WindowsAndMessaging",
+  # Toast notifications: UI_Notifications for ToastNotificationManager,
+  # Data_Xml_Dom for the toast XML, Foundation for the activation handler.
+  "UI_Notifications",
+  "Data_Xml_Dom",
+  "Foundation",
 ] }
 # Win32_UI_Shell is ShellExecuteW ("open this like a double-click would"), the
 # Windows twin of xdg-open. It takes the target as a wide string with no command

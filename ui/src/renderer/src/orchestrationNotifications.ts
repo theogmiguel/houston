@@ -9,8 +9,11 @@ import completedSound from './assets/notify-completed.wav'
 import needsInputSound from './assets/notify-needs-input.wav'
 
 export const NOTIFICATION_FLAP_WINDOW_MS = 2_000
+// Both clips are ~0.3 s and events of one burst reach playSound milliseconds apart, so the
+// window covers the clip plus that skew without silencing a distinct later event for long.
+export const SOUND_BURST_WINDOW_MS = 1_000
 
-type EventKind = 'finished' | 'needs-input'
+export type EventKind = 'finished' | 'needs-input'
 type StatusSnapshot = Pick<SessionInfo, 'state' | 'status' | 'spawned_by' | 'hidden'> & { episode: string | null }
 
 export interface OrchestrationNotificationContext {
@@ -40,7 +43,23 @@ function transitionFor(previous: StatusSnapshot | undefined, current: SessionInf
   return null
 }
 
-function playSound(kind: EventKind): void {
+export interface SoundSlotClaim {
+  granted: boolean
+  busyUntil: number
+}
+
+/** One playback stands for a same-kind burst; each kind owns a slot, so needs-input is
+ * never swallowed by a finished burst. Pure: store `busyUntil` for the kind when granted. */
+export function claimSoundSlot(busyUntil: ReadonlyMap<EventKind, number>, kind: EventKind, now: number): SoundSlotClaim {
+  const until = busyUntil.get(kind)
+  if (until !== undefined && now < until) return { granted: false, busyUntil: until }
+  return { granted: true, busyUntil: now + SOUND_BURST_WINDOW_MS }
+}
+
+function playSound(kind: EventKind, slots: Map<EventKind, number>): void {
+  const claim = claimSoundSlot(slots, kind, Date.now())
+  if (!claim.granted) return
+  slots.set(kind, claim.busyUntil)
   const audio = new Audio(kind === 'needs-input' ? needsInputSound : completedSound)
   void audio.play().catch(() => {})
 }
@@ -48,6 +67,7 @@ function playSound(kind: EventKind): void {
 export function useOrchestrationNotifications(options: OrchestrationNotificationOptions): void {
   const previous = useRef<{ revision: number; states: Map<number, StatusSnapshot> } | null>(null)
   const lastEventAt = useRef(new Map<number, number>())
+  const soundSlots = useRef(new Map<EventKind, number>())
   // Bound replay memory to the most recent user-owned episodes.
   const deliveredEpisodes = useRef(new Set<string>())
   const latestSessions = useRef(options.sessions)
@@ -101,7 +121,7 @@ export function useOrchestrationNotifications(options: OrchestrationNotification
       for (const [id, at] of lastEventAt.current) {
         if (now - at >= NOTIFICATION_FLAP_WINDOW_MS) lastEventAt.current.delete(id)
       }
-      void deliver(options, session, kind, () => {
+      void deliver(options, session, kind, soundSlots.current, () => {
         const current = latestSessions.current.get(session.id)
         return !!current && !current.hidden && (kind !== 'needs-input' || inputEpisode(current) === episode)
       })
@@ -113,6 +133,7 @@ async function deliver(
   options: OrchestrationNotificationOptions,
   session: SessionInfo,
   kind: EventKind,
+  soundSlots: Map<EventKind, number>,
   isCurrent: () => boolean
 ): Promise<void> {
   let focused: boolean
@@ -126,7 +147,7 @@ async function deliver(
   const sound = options.desktopMode === 'sound' || options.desktopMode === 'notifications-sound'
   const desktop = options.desktopMode === 'notifications' || options.desktopMode === 'notifications-sound'
   if (!focused && options.desktopMode !== 'off') {
-    if (sound) playSound(kind)
+    if (sound) playSound(kind, soundSlots)
     if (!desktop) return
     const title = kind === 'needs-input' ? `${session.title} needs your input` : `${session.title} finished`
     const context = options.getContext(session)
@@ -141,7 +162,7 @@ async function deliver(
     return
   }
 
-  if (!focused && sound) playSound(kind)
+  if (!focused && sound) playSound(kind, soundSlots)
   if (focused && options.inAppEnabled && !options.visiblePaneIds.has(session.id)) {
     const context = options.getContext(session)
     options.pushNotice(orchestrationNotice(session, kind, context, options.onFocusPane))
