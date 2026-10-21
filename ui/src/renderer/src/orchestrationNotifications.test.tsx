@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useOrchestrationNotifications, type OrchestrationNotificationOptions } from './orchestrationNotifications'
+import {
+  NOTIFICATION_FLAP_WINDOW_MS,
+  SOUND_BURST_WINDOW_MS,
+  claimSoundSlot,
+  useOrchestrationNotifications,
+  type EventKind,
+  type OrchestrationNotificationOptions
+} from './orchestrationNotifications'
 import type { SessionInfo } from './houston/client'
 import { isFocused, notifyNative } from './houston/bridge'
 import type { NoticeInput } from './notices'
@@ -193,5 +200,51 @@ describe('orchestration notifications', () => {
     expect(play).toHaveBeenCalledOnce()
     expect(notifyNative).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it('plays one sound for a burst of finishes and still sounds a child input request', async () => {
+    vi.useFakeTimers()
+    const play = vi.fn().mockResolvedValue(undefined)
+    class FakeAudio { play = play }
+    vi.stubGlobal('Audio', FakeAudio)
+    const child = pane({ id: 3, spawned_by: 1, title: 'Child' })
+    const sessions = (first: SessionInfo, second: SessionInfo, worker: SessionInfo) =>
+      options(new Map([[1, first], [2, second], [3, worker]]), { desktopMode: 'sound' })
+    const idleSecond = () => pane({ id: 2, title: 'Second', status: 'idle' })
+    const view = render(<Notifications options={sessions(pane(), pane({ id: 2, title: 'Second' }), child)} />)
+    view.rerender(<Notifications options={sessions(pane({ status: 'idle' }), idleSecond(), child)} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(play).toHaveBeenCalledOnce()
+    view.rerender(<Notifications options={sessions(pane({ status: 'idle' }), idleSecond(), withInputOwner(child, 'user', 'Approve the push?'))} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(play).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(NOTIFICATION_FLAP_WINDOW_MS + 1)
+    view.rerender(<Notifications options={sessions(pane({ status: 'working' }), idleSecond(), child)} />)
+    view.rerender(<Notifications options={sessions(pane({ status: 'idle' }), idleSecond(), child)} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(play).toHaveBeenCalledTimes(3)
+    expect(notifyNative).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('sound burst gate', () => {
+  it('grants one slot for a burst of same-kind events', () => {
+    const slots = new Map<EventKind, number>()
+    const first = claimSoundSlot(slots, 'finished', 1_000)
+    expect(first).toEqual({ granted: true, busyUntil: 1_000 + SOUND_BURST_WINDOW_MS })
+    slots.set('finished', first.busyUntil)
+    expect(claimSoundSlot(slots, 'finished', 1_400).granted).toBe(false)
+    expect(claimSoundSlot(slots, 'finished', 1_999).granted).toBe(false)
+  })
+
+  it('keeps the needs-input slot open while a finished burst is sounding', () => {
+    const slots = new Map<EventKind, number>([['finished', 2_000]])
+    expect(claimSoundSlot(slots, 'needs-input', 1_500).granted).toBe(true)
+  })
+
+  it('grants a new finished sound once the burst window has passed', () => {
+    const slots = new Map<EventKind, number>([['finished', 2_000]])
+    expect(claimSoundSlot(slots, 'finished', 2_000)).toEqual({ granted: true, busyUntil: 2_000 + SOUND_BURST_WINDOW_MS })
   })
 })

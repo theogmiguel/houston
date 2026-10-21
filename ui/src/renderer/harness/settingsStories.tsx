@@ -176,6 +176,22 @@ export function SettingsNotifications(): React.JSX.Element {
   }} />
 }
 
+// Stands in for the desktop app's answer before the section first renders.
+export function SettingsNotificationsUnavailable(): React.JSX.Element {
+  Object.assign(window, {
+    __TAURI_INTERNALS__: {
+      invoke: async (command: string) => command === 'native_notifications_supported'
+        ? { supported: false, reason: "Windows reports notifications for 'dev.houston.desktop' as disabled for this user, expected enabled; allow Houston in Windows Settings ▸ System ▸ Notifications" }
+        : null
+    }
+  })
+  return <SettingsScreen section="notifications" props={{
+    desktopNotificationMode: 'notifications-sound',
+    inAppNotifications: true,
+    desktopNotificationDelivery: null
+  }} />
+}
+
 export function SettingsDiagnostics(): React.JSX.Element {
   const originalFetch = window.fetch
   Object.assign(window, {

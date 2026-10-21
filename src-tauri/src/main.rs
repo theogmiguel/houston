@@ -503,6 +503,7 @@ fn main() {
             fs::fs_rename,
             fs::fs_entry_count,
             fs::fs_search_paths,
+            fs::content_search::fs_search_contents,
             fs::fs_watch_dirs,
             fs::fs_unwatch,
             fs::fs_save_image,

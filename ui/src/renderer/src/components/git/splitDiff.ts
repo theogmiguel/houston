@@ -5,6 +5,8 @@ export interface NumberedDiffLine {
   text: string
   oldNumber: number | null
   newNumber: number | null
+  /** Position in the patch body; absent on synthetic lines such as the truncation note. */
+  index?: number
 }
 
 export type SplitDiffRow = { header: NumberedDiffLine } | { old: NumberedDiffLine | null; new: NumberedDiffLine | null }

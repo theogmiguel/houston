@@ -27,6 +27,7 @@ import {
   zoomIn,
   splitSideFor
 } from './keymap'
+import { diffFindMatches } from './components/git/useDiffFind'
 import type { KeymapOverrides } from './houston/generated/KeymapOverrides'
 
 function fakeKey(key: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent {
@@ -125,6 +126,7 @@ describe('KEYMAP', () => {
         'term-paste',
         'split-editor-down',
         'toggle-files-tree',
+        'find-in-diff',
         'voice-dictate'
       ].sort()
     )
@@ -162,7 +164,7 @@ describe('dictation chord remapping (v56)', () => {
   }
 
   it('is the only remappable terminal entry', () => {
-    const remappables = KEYMAP.filter((s) => s.remappable).map((s) => s.id)
+    const remappables = KEYMAP.filter((s) => s.remappable && s.category === 'terminal').map((s) => s.id)
     expect(remappables).toEqual(['voice-dictate'])
     expect(dictationShortcut.category).toBe('terminal')
   })
@@ -366,5 +368,24 @@ describe('filesTreeToggleMatches', () => {
     const overrides: KeymapOverrides = { bindings: { 'toggle-files-tree': { code: 'Backslash', ctrl: true, alt: false, shift: false, meta: false } }, shortcuts_enabled: true }
     expect(filesTreeToggleMatches(fakeChord({ code: 'KeyT', ctrl: true, alt: true }), overrides)).toBe(false)
     expect(filesTreeToggleMatches(fakeChord({ code: 'Backslash', ctrl: true }), overrides)).toBe(true)
+  })
+})
+
+describe('diffFindMatches', () => {
+  it('answers Ctrl+F by default and follows a rebinding', () => {
+    expect(diffFindMatches(fakeChord({ code: 'KeyF', ctrl: true }), noOverrides)).toBe(true)
+    expect(diffFindMatches(fakeChord({ code: 'KeyF', ctrl: true, shift: true }), noOverrides)).toBe(false)
+    const overrides: KeymapOverrides = { bindings: { 'find-in-diff': { code: 'KeyG', ctrl: true, alt: false, shift: false, meta: false } }, shortcuts_enabled: true }
+    expect(diffFindMatches(fakeChord({ code: 'KeyF', ctrl: true }), overrides)).toBe(false)
+    expect(diffFindMatches(fakeChord({ code: 'KeyG', ctrl: true }), overrides)).toBe(true)
+    expect(diffFindMatches(fakeChord({ code: 'KeyF', ctrl: true }), { bindings: {}, shortcuts_enabled: false })).toBe(false)
+  })
+  it('is listed as a rebindable editor shortcut whose chord may equal terminal find', () => {
+    const entry = KEYMAP.find((s) => s.id === 'find-in-diff')
+    expect(entry?.category).toBe('editor')
+    expect(entry?.remappable).toBe(true)
+    expect(findConflict('find-in-diff', fakeChord({ code: 'KeyF', ctrl: true }), noOverrides)).toBeNull()
+    expect(findConflict('find-in-diff', fakeChord({ code: 'KeyD', ctrl: true, shift: true }), noOverrides)?.entry.id).toBe('split-editor-down')
+    expect(findConflict('toggle-sidebar', fakeChord({ code: 'KeyF', ctrl: true }), noOverrides)?.entry.id).toBe('term-find')
   })
 })

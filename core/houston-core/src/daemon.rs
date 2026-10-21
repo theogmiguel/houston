@@ -1756,6 +1756,9 @@ pub struct Daemon {
     delegation_wake: Arc<tokio::sync::Notify>,
     idle_tick_counts: [AtomicU64; 2],
     checkpoint_lock: Mutex<()>,
+    /// Serialises scrollback file writes, which share one temporary path per pane and may
+    /// sleep in Windows retries, so the ring's own lock is held only to take a snapshot.
+    scrollback_writes: Mutex<()>,
     reap_armed: Mutex<Option<ReapArm>>,
     reap_generation: AtomicU64,
     exit_hook: Mutex<Box<dyn Fn() + Send + Sync>>,
@@ -3539,6 +3542,7 @@ impl Daemon {
             delegation_wake: Arc::new(tokio::sync::Notify::new()),
             idle_tick_counts: [AtomicU64::new(0), AtomicU64::new(0)],
             checkpoint_lock: Mutex::new(()),
+            scrollback_writes: Mutex::new(()),
             reap_armed: Mutex::new(None),
             reap_generation: AtomicU64::new(0),
             exit_hook: Mutex::new(Box::new(|| std::process::exit(0))),
@@ -4368,11 +4372,18 @@ impl Daemon {
             // re-create it. Shutdown's own kills keep theirs for the restart.
             return Ok(());
         }
-        let ring = session.scrollback.lock().expect("scrollback lock");
-        if ring.bytes_seen() == 0 {
-            return Ok(());
-        }
-        ring.persist(&self.scrollback_path(id))
+        let _writes = self
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
+        let snapshot = {
+            let ring = session.scrollback.lock().expect("scrollback lock");
+            if ring.bytes_seen() == 0 {
+                return Ok(());
+            }
+            ring.snapshot()
+        };
+        crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
     }
 
     fn persist_scrollback(&self, id: u32) {
@@ -5794,7 +5805,7 @@ impl Daemon {
             SEQ.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| {
+        crate::fs_retry::rename(&tmp, path).with_context(|| {
             format!(
                 "renaming {} into place at {}",
                 tmp.display(),
@@ -11974,11 +11985,16 @@ impl Daemon {
         if carries_scrollback && replacement.is_some() {
             // The row can retire its predecessor only after the new snapshot exists.
             startup.scrollback_prepared = true;
-            session
+            let _writes = self
+                .scrollback_writes
+                .lock()
+                .expect("scrollback writes lock");
+            let snapshot = session
                 .scrollback
                 .lock()
                 .expect("scrollback lock")
-                .persist(&self.scrollback_path(id))
+                .snapshot();
+            crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
                 .context(orchestrate::MutationMayHaveActed)?;
         }
         let prepare = || -> Result<()> {
@@ -27365,6 +27381,43 @@ mod kill_teardown_tests {
             session_id: id,
             workspace_id: session.info.project_dir.clone(),
         })
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_checkpoint_retrying_a_held_file_leaves_the_ring_free_for_pane_output() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let (daemon, state) = test_daemon();
+        let session = stub_ssh_session(&daemon, state.path(), 7);
+        session
+            .scrollback
+            .lock()
+            .expect("scrollback lock")
+            .push(b"first checkpoint");
+        daemon.persist_scrollback_result(7).unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1) // FILE_SHARE_READ: a scanner reading the previous checkpoint
+            .open(daemon.scrollback_path(7))
+            .unwrap();
+        let writer = std::thread::spawn({
+            let daemon = Arc::clone(&daemon);
+            move || daemon.persist_scrollback_result(7)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(
+            !writer.is_finished(),
+            "the checkpoint must still be retrying"
+        );
+        session
+            .scrollback
+            .try_lock()
+            .expect("the PTY reader must reach the ring while the checkpoint retries")
+            .push(b"\nlater output");
+        drop(held);
+        writer.join().unwrap().unwrap();
+        let saved = Scrollback::load(&daemon.scrollback_path(7)).unwrap();
+        assert_eq!(saved.tail_lines(1), ["first checkpoint"]);
     }
 
     #[test]

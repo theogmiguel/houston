@@ -212,10 +212,15 @@ export async function notifyNative(title: string, body: string, sessionId: numbe
   return invoke<void>('native_notify', { title, body, sessionId })
 }
 
-export async function nativeNotificationsSupported(): Promise<boolean> {
-  if (!isTauri()) return false
+export interface NativeNotificationSupport {
+  supported: boolean
+  reason: string | null
+}
+
+export async function nativeNotificationSupport(): Promise<NativeNotificationSupport> {
+  if (!isTauri()) return { supported: false, reason: null }
   const invoke = await invoker()
-  return invoke<boolean>('native_notifications_supported', {})
+  return invoke<NativeNotificationSupport>('native_notifications_supported', {})
 }
 
 export async function statFile(path: string): Promise<{ mtimeMs: number } | null> {
@@ -450,6 +455,33 @@ export interface FileSearchResult {
 export async function searchFilePaths(root: string, query: string, limit = 200): Promise<{ items: FileSearchResult[]; total: number; truncated: boolean }> {
   const invoke = await invoker()
   return invoke('fs_search_paths', { root, query, limit })
+}
+
+export interface ContentSearchOptions {
+  caseSensitive: boolean
+  wholeWord: boolean
+  regex: boolean
+}
+
+export interface ContentSearchMatch {
+  line: number
+  column: number
+  preview: string
+  ranges: [number, number][]
+}
+
+export interface ContentSearchResult {
+  files: { path: string; matches: ContentSearchMatch[] }[]
+  matchingLines: number
+  scannedFiles: number
+  skippedLarge: number
+  skippedBinary: number
+  stoppedAt: { kind: 'matchingLines' | 'scannedFiles' | 'milliseconds'; limit: number; actual: number } | null
+}
+
+export async function searchFileContents(root: string, query: string, options: ContentSearchOptions): Promise<ContentSearchResult> {
+  const invoke = await invoker()
+  return invoke('fs_search_contents', { root, query, ...options })
 }
 
 export async function watchFileDirs(root: string, dirs: string[]): Promise<void> {

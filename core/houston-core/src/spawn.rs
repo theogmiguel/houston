@@ -20,6 +20,28 @@ pub fn command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
     cmd
 }
 
+/// Every production git spawn. On Windows, PATH's Git for Windows launcher is resolved
+/// once to the binary it would start, saving a process per call; see
+/// `exe_path::git_for_windows_binary`.
+pub fn git() -> std::process::Command {
+    command(git_program())
+}
+
+#[cfg(windows)]
+fn git_program() -> &'static std::ffi::OsStr {
+    static PROGRAM: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
+    PROGRAM.get_or_init(|| {
+        crate::exe_path::resolve("git")
+            .and_then(|shim| crate::exe_path::git_for_windows_binary(&shim))
+            .map_or_else(|| "git".into(), std::path::PathBuf::into_os_string)
+    })
+}
+
+#[cfg(not(windows))]
+fn git_program() -> &'static std::ffi::OsStr {
+    "git".as_ref()
+}
+
 #[allow(clippy::disallowed_methods)]
 pub fn tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
     #[allow(unused_mut)]
@@ -581,6 +603,16 @@ mod tests {
             .expect("cmd /C echo must run");
         assert!(out.status.success());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "houston");
+    }
+
+    #[test]
+    fn the_git_command_runs_git() {
+        let out = git().arg("--version").output().expect("git must run");
+        assert!(out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stdout).starts_with("git version"),
+            "{out:?}"
+        );
     }
 
     #[cfg(unix)]

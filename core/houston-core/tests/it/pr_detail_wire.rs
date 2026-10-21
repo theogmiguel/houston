@@ -145,6 +145,23 @@ const THREADS_JSON: &str = r#"{"data":{"repository":{"pullRequest":{
        {"id":"PRRC_1","author":{"login":"rev"},"body":"rename this",
         "createdAt":"2026-09-02T10:00:00Z","url":"https://github.com/owner/repo/pull/61#discussion_r1"}]}}]}}}}}"#;
 
+// GitHub's GraphQL types an app's comments as `Bot` and drops the `[bot]` suffix
+// from its login, so the login alone cannot tell the two apart.
+const BOT_THREADS_JSON: &str = r#"{"data":{"repository":{"pullRequest":{
+  "id":"PR_kw",
+  "reactionGroups":[],
+  "comments":{"nodes":[{"id":"IC_1","author":{"__typename":"Bot"},"reactionGroups":[]}]},
+  "reviews":{"nodes":[]},
+  "reviewRequests":{"nodes":[]},
+  "latestReviews":{"nodes":[]},
+  "reviewThreads":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[
+    {"id":"PRT_1","isResolved":true,"isOutdated":false,"path":"src/a.rs","line":12,
+     "comments":{"totalCount":2,"pageInfo":{"hasNextPage":false},"nodes":[
+       {"id":"PRRC_1","author":{"__typename":"Bot","login":"review-app"},"body":"finding",
+        "createdAt":"2026-09-02T10:00:00Z","reactionGroups":[]},
+       {"id":"PRRC_2","author":{"__typename":"User","login":"rev"},"body":"fixed",
+        "createdAt":"2026-09-02T11:00:00Z","reactionGroups":[]}]}}]}}}}}"#;
+
 const REVIEWERS_JSON: &str = r#"{"data":{"repository":{
   "assignableUsers":{"pageInfo":{"hasNextPage":false},"nodes":[
     {"login":"theo","name":"Theo"},
@@ -1271,6 +1288,61 @@ async fn the_detail_carries_threads_reactions_reviewers_and_the_comparison() {
         }
         other => panic!("expected an enriched pr_detail, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn bot_authored_comments_are_marked_from_githubs_actor_type() {
+    let _serial = SERIAL.lock().await;
+    let mut rig = rig().await;
+    let view = rich_json(61).replace(
+        r#""comments": [{"id": "IC_1", "author": {"login": "theo"}, "body": "looks good","#,
+        r#""comments": [{"id": "IC_1", "author": {"login": "ci-app"}, "body": "coverage 91%","#,
+    );
+    assert!(view.contains("ci-app"), "the fixture swap must apply");
+    write_scenario(&rig.shim, "view-branch.json", &view);
+    write_scenario(
+        &rig.shim,
+        "graphql-access.json",
+        &access_json("WRITE", true, false),
+    );
+    write_scenario(&rig.shim, "graphql-threads.json", BOT_THREADS_JSON);
+
+    send(
+        &mut rig.ws,
+        &proto::ClientMsg::PrDetail {
+            dir: rig.dir.clone(),
+            request: 45,
+            number: None,
+        },
+    )
+    .await;
+    match expect_pr_detail(&mut rig.ws).await {
+        proto::ServerMsg::PrDetail {
+            detail: Some(detail),
+            ..
+        } => {
+            assert_eq!(detail.comments.len(), 1);
+            assert_eq!(detail.comments[0].author, "ci-app");
+            assert!(
+                detail.comments[0].bot,
+                "a conversation comment takes its bot mark from the GraphQL page by node id"
+            );
+            let thread = &detail.threads[0];
+            assert!(thread.resolved);
+            let marks: Vec<(&str, bool)> = thread
+                .comments
+                .iter()
+                .map(|c| (c.author.as_str(), c.bot))
+                .collect();
+            assert_eq!(marks, vec![("review-app", true), ("rev", false)]);
+        }
+        other => panic!("expected an enriched pr_detail, got {other:?}"),
+    }
+    let log = std::fs::read_to_string(rig.shim.join("graphql.log")).unwrap_or_default();
+    assert!(
+        log.contains("__typename"),
+        "the threads read must ask GitHub for the author's actor type: {log}"
+    );
 }
 
 #[tokio::test]

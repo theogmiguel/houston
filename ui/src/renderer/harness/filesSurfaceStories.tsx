@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FilesSurface } from '../src/components/files/FilesSurface'
 import { QuickOpen } from '../src/components/files/QuickOpen'
+import { ContentSearch } from '../src/components/files/ContentSearch'
 import { getBuffer, noteUpdate } from '../src/editor/bufferStore'
 import type { HoustonClient } from '../src/houston/client'
 
@@ -88,6 +89,36 @@ function makeEntries(directory: string): Array<{ name: string; path: string; dir
   return [...children].map(([name, dir]) => ({ name, path: directory ? `${directory}/${name}` : name, dir, ignored: name === 'target' }))
 }
 
+const searchCorpus: Record<string, string> = {
+  'ui/src/renderer/src/App.tsx': source,
+  'ui/src/renderer/src/components/SidePanel.tsx': [
+    "import { requestReveal } from '../editor/bufferStore'",
+    '',
+    'export function SidePanelIntegration({ open, width }: SidePanelProps): React.JSX.Element | null {',
+    '  // The side panel keeps its surfaces mounted while closed.',
+    '  return open ? <SidePanel width={width} /> : null',
+    '}',
+  ].join('\n'),
+  'docs/user/files.md': markdownSource,
+}
+
+function searchContents(query: string, caseSensitive: boolean): unknown {
+  const needle = caseSensitive ? query : query.toLowerCase()
+  const files = Object.entries(searchCorpus).flatMap(([path, text]) => {
+    const matches = text.split('\n').flatMap((line, index) => {
+      const haystack = caseSensitive ? line : line.toLowerCase()
+      const ranges: [number, number][] = []
+      const indent = line.length - line.trimStart().length
+      for (let at = haystack.indexOf(needle); needle && at >= 0; at = haystack.indexOf(needle, at + needle.length))
+        ranges.push([at - indent, at - indent + needle.length])
+      return ranges.length ? [{ line: index + 1, column: ranges[0][0] + indent + 1, preview: line.trimStart(), ranges }] : []
+    })
+    return matches.length ? [{ path, matches }] : []
+  })
+  const matchingLines = files.reduce((sum, file) => sum + file.matches.length, 0)
+  return { files, matchingLines, scannedFiles: paths.length, skippedLarge: 1, skippedBinary: 1, stoppedAt: null }
+}
+
 let emitDiskChange: (() => void) | null = null
 
 function setupBridge(): void {
@@ -130,6 +161,7 @@ function setupBridge(): void {
       }).slice(0, Number(args.limit ?? 200))
       return { items, total: items.length, truncated: false }
     }
+    if (command === 'fs_search_contents') return searchContents(String(args.query ?? ''), Boolean(args.caseSensitive))
     if (command === 'fs_watch_dirs' || command === 'fs_unwatch' || command === 'plugin:event|unlisten') return null
     if (command === 'plugin:event|listen') {
       const id = nextCallback++
@@ -154,7 +186,7 @@ function setupBridge(): void {
   })
 }
 
-function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'file' | 'quick' | 'disk' | 'open-in' | 'markdown' | 'image' | 'delete' }): React.JSX.Element {
+function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'file' | 'quick' | 'content' | 'disk' | 'open-in' | 'markdown' | 'image' | 'delete' }): React.JSX.Element {
   const selectedPath = state === 'markdown' ? markdownPath : state === 'image' ? imagePath : openPath
   useState(() => {
     document.documentElement.dataset.theme = 'paper'
@@ -268,6 +300,7 @@ function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'f
         <FilesSurface workspaceRoot={root} panelWidth={width} client={client} />
       </div>
       {state === 'quick' && <QuickOpen root={root} workspaceName="Houston" onClose={() => {}} onOpen={() => {}} />}
+      {state === 'content' && <ContentSearch root={root} workspaceName="Houston" onClose={() => {}} onOpen={() => {}} />}
     </div>
   )
 }
@@ -307,4 +340,18 @@ export function FilesSurfaceQuickOpenHighlighted(): React.JSX.Element {
     return () => observer.disconnect()
   }, [])
   return <FilesSurfaceFrame width={470} state="quick" />
+}
+
+export function FilesSurfaceContentSearch(): React.JSX.Element {
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const input = document.querySelector<HTMLInputElement>('[role="combobox"][aria-label="Search in files"]')
+      if (!input) return
+      window.clearInterval(timer)
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'sidepanel')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }, 25)
+    return () => window.clearInterval(timer)
+  }, [])
+  return <FilesSurfaceFrame width={470} state="content" />
 }

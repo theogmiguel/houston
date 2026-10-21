@@ -8,6 +8,8 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
+pub mod content_search;
+
 use crate::fs_allowlist::{
     assert_entry_within_allowed_roots, assert_within_allowed_roots, register_allowed_root,
     AllowedRoots,
@@ -311,7 +313,7 @@ fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchR
 }
 
 fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, String> {
-    let mut command = houston_core::spawn::command("git");
+    let mut command = houston_core::git::command();
     command
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
         .current_dir(root);
@@ -2430,7 +2432,7 @@ mod tests {
             std::fs::write(root.path().join(format!("file-{n:05}.txt")), "fixture\n").unwrap();
         }
         for args in [["init", "-q"], ["add", "-A"]] {
-            let output = houston_core::spawn::command("git")
+            let output = houston_core::git::command()
                 .args(args)
                 .current_dir(root.path())
                 .output()
@@ -2548,7 +2550,7 @@ mod tests {
     #[test]
     fn git_search_excludes_ignored_untracked_files() {
         let root = tempdir().unwrap();
-        let initialized = houston_core::spawn::command("git")
+        let initialized = houston_core::git::command()
             .args(["init", "-q"])
             .current_dir(root.path())
             .status();

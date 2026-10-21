@@ -12,6 +12,8 @@ import { TagFieldGroup, TagFieldLabel, TagFormActions, TagFormPreview, TagHint, 
 import { TagSwatchButton, TagSwatchDot, TagSwatchGrid } from '../src/components/ui/TagSwatch'
 import { DropzoneIcon, TerminalDropzone, DropzoneLabel } from '../src/components/ui/TerminalDropzone'
 import { TerminalFindButton, TerminalFindInput, TerminalFindStrip } from '../src/components/ui/TerminalFind'
+import { FindStripCount, FindStripDock, FindStripToggle } from '../src/components/ui/FindStripParts'
+import { DiffCode, DiffFindText, DiffLine, DiffLineText } from '../src/components/ui/Diff'
 import { SkeletonCursor, SkeletonLine, TerminalSkeleton } from '../src/components/ui/TerminalSkeleton'
 import { TerminalHost, TerminalSurface } from '../src/components/ui/TerminalHost'
 import { RenameActionButton, RenameTitleInput } from '../src/components/ui/TitleEditControls'
@@ -59,6 +61,8 @@ export function UiRoleSpecimen(): React.JSX.Element {
         <StackTabStrip><StackTab active><StackTabLabel>Terminal</StackTabLabel></StackTab><StackTab active={false}><StackTabLabel>Shell</StackTabLabel><StackTabBadge aria-label="Needs input" /><StackTabClose aria-label="Close tab">×</StackTabClose></StackTab><StackTabCapacity>2/4</StackTabCapacity></StackTabStrip>
         <TerminalSurface><TerminalHost hostRef={hostRef} /><TerminalSkeleton><SkeletonCursor synced={false} /><SkeletonLine synced={false} widthPercent={56} delayMs={0} /></TerminalSkeleton><TerminalDropzone><DropzoneIcon glyph={IconLoaderCircle} tone="busy" /><DropzoneIcon glyph={IconImage} tone="image" /><DropzoneIcon glyph={IconFileDown} tone="file" /><DropzoneLabel>Drop files to share</DropzoneLabel></TerminalDropzone></TerminalSurface>
         <TerminalFindStrip><TerminalFindInput aria-label="Find" value="needle" readOnly /><TerminalFindButton aria-label="Close find"><IconSearch /></TerminalFindButton></TerminalFindStrip>
+        <div className="relative h-[var(--h-top)] overflow-auto"><FindStripDock><TerminalFindStrip><TerminalFindInput aria-label="Find in diff" value="needle" readOnly /><FindStripCount>1/2</FindStripCount><FindStripToggle pressed aria-label="Match case">Aa</FindStripToggle></TerminalFindStrip></FindStripDock></div>
+        <DiffCode><DiffLine kind="add"><DiffLineText><DiffFindText text="const needle = needle" marks={{ ranges: [[6, 12], [15, 21]], active: 0 }} /></DiffLineText></DiffLine></DiffCode>
         <KeymapHintSurface><KeymapHintHeading>KEYBOARD SHORTCUTS</KeymapHintHeading><KeymapHintGroup label="Navigation"><KeymapHintRow what="Focus next"><KeyCap>⌘</KeyCap><KeyCap>J</KeyCap></KeymapHintRow></KeymapHintGroup></KeymapHintSurface>
       </div>
     </div>

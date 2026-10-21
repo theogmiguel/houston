@@ -1,3 +1,4 @@
+import { Checkbox } from './Checkbox'
 import { ReviewButton } from './ReviewButtonRoles'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
@@ -58,6 +59,19 @@ export function DiscussionComposerPanel({ children }: { children: ReactNode }): 
   return <div className="flex flex-col gap-[var(--space-1-5)] p-[var(--space-3)] border-t border-t-[var(--divider)]">{children}</div>
 }
 
+export function DiscussionFilterRow({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
+  return <div {...props} className="flex items-center gap-[var(--space-3)] flex-wrap px-[var(--space-3)] py-[var(--space-1-5)] empty:hidden">{children}</div>
+}
+
+export function DiscussionHiddenSummary({ label, testId, onShow }: { label: string; testId: string; onShow: () => void }): React.JSX.Element {
+  return (
+    <div data-testid={testId} className="flex items-center gap-[var(--space-2)] px-[var(--space-3)] py-[var(--space-1)] border-t border-t-[var(--divider)] first:border-t-0">
+      <Text size="small" tone="faint">{label}</Text>
+      <ReviewButton type="button" variant="compact-action" onClick={onShow}>Show</ReviewButton>
+    </div>
+  )
+}
+
 export function DiscussionAuthor({ children }: { children: ReactNode }): React.JSX.Element {
   return <Text size="small" weight="small" tone="primary">{children}</Text>
 }
@@ -65,11 +79,16 @@ export function DiscussionAuthor({ children }: { children: ReactNode }): React.J
 export function DiscussionEntrySpecimen(): React.JSX.Element {
   return (
     <div className="overflow-hidden rounded-[var(--tr-radius-sm)] border border-[var(--divider)]">
+      <DiscussionFilterRow>
+        <Checkbox size="xs" label="Hide resolved (2)" checked readOnly />
+        <Checkbox size="xs" label="Hide bots (1)" readOnly />
+      </DiscussionFilterRow>
       <DiscussionEntry>
         <DiscussionActionsRow><DiscussionAuthor>Reviewer</DiscussionAuthor><DiscussionMeta>Updated</DiscussionMeta></DiscussionActionsRow>
         <DiscussionBody>Could we preserve this status after refresh?</DiscussionBody>
         <DiscussionMeta>2 minutes ago</DiscussionMeta>
       </DiscussionEntry>
+      <DiscussionHiddenSummary label="2 resolved threads hidden" testId="discussion-hidden-specimen" onShow={() => {}} />
       <DiscussionActionsRow>
         <ReviewButton variant="discussion-edit-action">Edit</ReviewButton>
         <ReviewButton variant="secondary-action">Cancel</ReviewButton>

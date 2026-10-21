@@ -442,6 +442,7 @@
   --w-pane-context-menu: 180px;
   --w-pane-context-menu-heading: 260px;
   --w-terminal-find-input: 150px;
+  --w-terminal-find-count: 56px;
   --space-terminal-find-gap: 2px;
   --space-terminal-find-block: 3px;
   --h-terminal-skeleton-cursor: 16px;
@@ -940,6 +941,7 @@
   --w-pane-context-menu: 180px;
   --w-pane-context-menu-heading: 260px;
   --w-terminal-find-input: 150px;
+  --w-terminal-find-count: 56px;
   --space-terminal-find-gap: 2px;
   --space-terminal-find-block: 3px;
   --h-terminal-skeleton-cursor: 16px;

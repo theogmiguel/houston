@@ -12,6 +12,10 @@ import type { AgentKind, GitFileStatus, HoustonClient } from '../houston/client'
 
 import { DiffArea } from './git/DiffArea'
 import { DiffBody } from './git/DiffBody'
+import { DiffFindContext } from './git/diffFind'
+import { useDiffFind } from './git/useDiffFind'
+import { DiffFindBar } from './git/DiffFindBar'
+import { changesFindSources } from './git/changesFind'
 import {
   discardConfirmLabel,
   discardConfirmMessage,
@@ -515,7 +519,7 @@ function CompactDetachedDiffs({ splitDiff, visibleRows, expandedPaths, inlineDif
   if (expandedPaths.size === 0) return <PrTab as="div" surface="changes-inline-empty">File tree hidden</PrTab>
   return <>{visibleRows.filter((row) => expandedPaths.has(row.path)).map((row) => {
     const inline = inlineDiffs.get(row.path)
-    return <PrTab as="div" surface="changes-inline-diff" state="detached" key={row.path} data-path={row.path}>{inline ? <DiffBody patch={inline.patch} truncated={inline.truncated} split={splitDiff} /> : 'Loading diff…'}</PrTab>
+    return <PrTab as="div" surface="changes-inline-diff" state="detached" key={row.path} data-path={row.path}>{inline ? <DiffBody patch={inline.patch} truncated={inline.truncated} split={splitDiff} findKey={row.path} /> : 'Loading diff…'}</PrTab>
   })}</>
 }
 
@@ -979,6 +983,9 @@ export function ChangesPane({
     }
   }, [maximized, visibleRows, selected])
 
+  const findSources = useMemo(() => changesFindSources({ inline: compact === true && !maximized, visibleRows, expandedPaths, inlineDiffs, selectedRow, diff }), [compact, maximized, visibleRows, expandedPaths, inlineDiffs, selectedRow, diff])
+  const find = useDiffFind(findSources)
+
   const reviewKeyDown = (event: React.KeyboardEvent): void => {
     if (!maximized || event.ctrlKey || event.metaKey || event.altKey) return
     if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
@@ -996,8 +1003,9 @@ export function ChangesPane({
   }
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <GitChangesSurface data-maximized={maximized} onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
-      {body}
+    <GitChangesSurface ref={find.rootRef} tabIndex={-1} onKeyDownCapture={find.onKeyDownCapture} data-maximized={maximized} onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
+      <DiffFindContext.Provider value={find.lookup}>{body}</DiffFindContext.Provider>
+      <DiffFindBar find={find} />
       <GitToolsDialogs open={branchManageOpen ? "branches" : null} dir={repoDir} tools={tools} busy={toolsBusy} error={toolsError} fallbackBase={defaultBase} onClose={() => setBranchManageOpen(false)} onAddWorkspace={addWorkspace} />
       {reviewPickerOpen && (
         <ReviewProviderModal

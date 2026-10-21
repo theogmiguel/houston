@@ -198,6 +198,13 @@ The work destinations in the rail are **Tasks**, **Pull requests**, **Routines**
 **Usage**. Settings, theme switching and update status are separate application actions.
 Hide an unneeded work destination with **Hide from sidebar**; restore it in Settings ▸ Appearance ▸ Sidebar. Hidden destinations remain available from the command palette.
 
+Pinning or unpinning a grid or workspace, setting a grid read or unread, and hiding a work
+destination show a notice with **Undo** for five seconds. Repeating the same action within
+that time updates the notice with a count, such as "Unpinned 3 grids", and **Undo**
+reverses all of them. A grid or workspace removed in the meantime is skipped, and a
+second notice names how many could not be restored. `Ctrl+Z` is not used for this, because
+it belongs to the focused terminal.
+
 Open Settings ▸ Agents for Skills, MCP servers and Review. **Back to workspaces** returns
 to the workspace view; **Esc** clears an active settings search first, then returns.
 

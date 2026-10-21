@@ -246,8 +246,8 @@ pub fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<()> {
         .sync_all()
         .with_context(|| format!("syncing temp file in {}", dir.display()))?;
     let dest = dir.join(name);
-    tmp.persist(&dest)
-        .map_err(|e| anyhow!("persisting {}: {}", dest.display(), e.error))?;
+    crate::fs_retry::persist(tmp, &dest)
+        .map_err(|e| anyhow!("persisting {}: {e}", dest.display()))?;
     sync_dir(dir).with_context(|| format!("syncing directory {}", dir.display()))?;
     Ok(())
 }

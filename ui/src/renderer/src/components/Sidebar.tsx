@@ -55,7 +55,6 @@ import { wslWorkspaces } from "../houston/environments";
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,
-  setRailViewHidden,
   toggleRailView,
   useHiddenRailViews,
   useRailView,
@@ -106,7 +105,6 @@ import {
   railUnreadSignature,
   reorderRailGrid,
   saveRailPrefs,
-  toggleRailGridRead,
   type RailPrefs,
 } from "../railPrefs";
 import { gridStorageKey } from "../layout/tree";
@@ -154,6 +152,8 @@ import {
 } from "./ui/rail/RailChrome";
 import { preloadable } from "../preloadable";
 import type { CtxMenu, GridCtxMenu } from "./rail/RailContextMenus";
+import { useRailUndoActions } from "./rail/useRailUndoActions";
+import type { NoticeStore } from "../notices";
 
 const GridRailGitSubscription = lazy(() =>
   import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })),
@@ -438,6 +438,8 @@ interface Props {
   onReorderWorkspace: (fromPath: string, toIndex: number) => void;
   pinnedWorkspaces: ReadonlySet<string>;
   onTogglePinWorkspace: (path: string) => void;
+  /** Where reversible rail actions offer Undo. */
+  notices?: Pick<NoticeStore, "push" | "dismiss">;
   onSshConnect: () => void;
   railClient?: HoustonClient | null;
   checkoutBranches?: ReadonlyMap<number, string>;
@@ -1234,6 +1236,7 @@ export function Sidebar({
   onReorderWorkspace,
   pinnedWorkspaces,
   onTogglePinWorkspace,
+  notices,
   onSshConnect,
   railClient,
   checkoutBranches = NO_BRANCHES,
@@ -1331,12 +1334,18 @@ export function Sidebar({
       signature,
     }
   };
-  const onToggleGridUnread = (gridId: string, signature: string, unread: boolean): void => {
-    setRailPrefs((current) => {
-      const gridUnreadOverrides = toggleRailGridRead(current.gridUnreadOverrides, gridId, signature, unread);
-      return { ...current, gridUnreadOverrides };
-    });
-  };
+  const undoable = useRailUndoActions({
+    notices,
+    workspaces,
+    gridsByWorkspace,
+    pinnedWorkspaces,
+    onTogglePinWorkspace,
+    pinnedGridIds,
+    setPinnedGridIds,
+    railPrefs,
+    setRailPrefs,
+  });
+  const onToggleGridUnread = undoable.toggleGridUnread;
 
   useEffect(() => {
     const reorderSelected = (event: Event): void => {
@@ -1745,13 +1754,7 @@ export function Sidebar({
     });
   };
 
-  const toggleGridPin = (path: string, gridId: string): void => setPinnedGridIds((current) => {
-    const key = gridStorageKey(path, gridId)
-    const next = new Set(current)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    return next
-  });
+  const toggleGridPin = undoable.toggleGridPin;
 
   useEffect(() => {
     localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(activeTagIds));
@@ -1801,7 +1804,7 @@ export function Sidebar({
       onRenameStart={onRenameStart}
       onRemoveWorkspace={onRemoveWorkspace}
       onOpenExternalError={onOpenExternalError}
-      onTogglePin={onTogglePinWorkspace}
+      onTogglePin={undoable.togglePinWorkspace}
     />
   );
 
@@ -1837,7 +1840,7 @@ export function Sidebar({
     <NavViewMenu
       navMenu={navMenu}
       onClose={() => setNavMenu(null)}
-      onHide={(v) => setRailViewHidden(v, true)}
+      onHide={undoable.hideView}
     />
   );
 

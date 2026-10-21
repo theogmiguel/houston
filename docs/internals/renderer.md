@@ -541,17 +541,19 @@ candidates while counting every match. Index scans and ranking each have a two-w
 limit; excess requests return a visible error instead of accumulating blocking jobs.
 
 Native notifications use the Linux desktop notification service over the existing session
-bus. The daemon is not involved: the renderer detects top-level status transitions, checks
-the OS window focus state, and sends only the pane, agent and workspace to the desktop
-service. The service's `ActionInvoked` signal returns a pane id to the renderer's existing
-focus path. Windows returns an explicit unsupported-platform error. Linux has no standard
-permission query on this D-Bus interface; Houston reports successful delivery or a refusal
-after a notification attempt.
+bus, or Windows toasts. The daemon is not involved: the renderer detects top-level status
+transitions, checks the OS window focus state, and sends only the pane, agent and workspace
+to the desktop. A click returns a pane id to the renderer's existing focus path: the Linux
+service's `ActionInvoked` signal, or the toast's `Activated` event; the app keeps each toast
+object until it is clicked, closed or replaced so that handler stays alive. Windows attributes toasts to the AppUserModelID that
+the installer writes on the Start menu shortcut (the bundle identifier); without that
+shortcut, support is refused with the missing path. Toasts are silent because the renderer
+plays notification sounds. Linux has no standard permission query on this D-Bus interface;
+Houston reports successful delivery or a refusal after a notification attempt.
 
 The window badge count is updated from top-level, visible panes waiting for input and is
 cleared when a pane is opened. Tauri exposes a badge count on Linux and macOS and an overlay
-icon on Windows. Windows desktop notifications remain explicitly unsupported until a click
-route is verified. macOS desktop notification delivery is also explicitly unsupported.
+icon on Windows. macOS desktop notification delivery is explicitly unsupported.
 
 ## Testing
 

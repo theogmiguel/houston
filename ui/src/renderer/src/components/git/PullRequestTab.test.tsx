@@ -762,7 +762,8 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
       body: `body ${i}`,
       created_at: i,
       url: null,
-      reactions: []
+      reactions: [],
+      bot: false
     }))
     emit(
       client,
@@ -829,14 +830,15 @@ function thread(): PrThread {
         body: 'rename this',
         created_at: 1,
         url: null,
-        reactions: []
+        reactions: [],
+        bot: false
       }
     ]
   }
 }
 
 function comment(): PrComment {
-  return { id: 'IC_1', author: 'theo', body: 'looks good', created_at: 1, url: null, reactions: [] }
+  return { id: 'IC_1', author: 'theo', body: 'looks good', created_at: 1, url: null, reactions: [], bot: false }
 }
 
 describe('PullRequestTab — editing, comments and reviews', () => {
