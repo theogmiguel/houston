@@ -45,8 +45,8 @@ pub fn scrub() {
         std::env::remove_var(k);
     }
     tracing::info!(
-        "dropped inherited private marker(s) {} — this daemon was started from inside an \
-         agent session; spawned panes get their own identity",
+        "dropped inherited launcher variable(s) {} so spawned panes get their own session \
+         identity",
         hits.join(", ")
     );
 }
