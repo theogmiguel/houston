@@ -199,7 +199,8 @@ pub async fn fill_scrollback(daemon: &Daemon, session: u32) {
 }
 
 /// Waits until the connection whose only watcher is the test's unread socket queues
-/// `TAP_BACKLOG` bytes for `session`, which means its writer's send is blocked.
+/// `TAP_BACKLOG` bytes for `session`. After the attach reply is drained this means the
+/// writer's send is blocked; while an attach is held frames queue without a blocked send.
 pub async fn wait_for_backlog(daemon: &Daemon, session: u32) {
     let attached = Instant::now();
     loop {
@@ -222,7 +223,8 @@ pub async fn wait_for_backlog(daemon: &Daemon, session: u32) {
     }
 }
 
-/// Attaches with a whole-ring replay on an unread socket and waits for the writer to block.
+/// Attaches with a whole-ring replay on an unread socket and waits until the connection
+/// queues `TAP_BACKLOG` bytes for the session.
 pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
     ws.send(attach_msg(session, Some(REPLAY_BYTES)))
         .await
