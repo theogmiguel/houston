@@ -405,7 +405,7 @@ every refusal names the setting.
 | Message | Fields | Reply |
 |---|---|---|
 | `host_info_get` | — | `host_info` (direct), never a broadcast — a point-in-time snapshot the client re-polls (~30 s is the recommended cadence) |
-| `storage_reclaim` | — | `storage_reclaimed` (direct), then `host_info` (bcast) after a reclaim. Checkpoints the WAL (`TRUNCATE`), runs `VACUUM` and checkpoints again, off the connection task. Refused, with nothing changed, while any session is live or when the free space on the state directory's volume is below the database plus WAL size. Never automatic |
+| `storage_reclaim` | — | `storage_reclaimed` (direct), then `host_info` (bcast) after a reclaim. Checkpoints the WAL (`TRUNCATE`), runs `VACUUM` and checkpoints again, off the connection task. Refused, with nothing changed, while any session is live or when the free space on the state directory's volume is below twice the combined size of the database and its WAL. Never automatic |
 | `restore_budget_set` | `budget` (`0..=RESTORE_BUDGET_MAX`) | `host_info` (bcast); out of range is an `error` naming ceiling and value |
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
