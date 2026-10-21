@@ -1417,6 +1417,12 @@ struct ComposerKeystroke {
     submitting_enter: bool,
 }
 
+/// Banners and hooks name the CLI a shell or custom command started. A pane launched as a
+/// provider keeps it: its output may quote another CLI's banner, e.g. Houston's sources.
+fn detection_relabels(launched: proto::AgentKind, kind: proto::AgentKind) -> bool {
+    matches!(launched, proto::AgentKind::Shell | proto::AgentKind::Custom) || kind == launched
+}
+
 /// A frame ending in a bare `\r` submits the composer; one ending in the escape-prefixed
 /// `\x1b\r` is a newline within the text, not a submit.
 fn is_submitting_enter(payload: &[u8]) -> bool {
@@ -1982,6 +1988,8 @@ const HANDOFF_BUFFER_CAP: usize = 2 * 1024 * 1024;
 const TITLE_OUTPUT_CAP: usize = 4096;
 // A fixed deadline bounds provider stalls even if they keep emitting output.
 const TITLE_GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
+// A live handoff's prompt is minutes old; only a dead daemon's leftovers age past a day.
+const HANDOFF_PROMPT_STALE_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn handoff_timeout(env: &crate::host_env::HostEnv) -> Duration {
     env.var("HOUSTON_HANDOFF_TIMEOUT_MS")
@@ -4316,6 +4324,13 @@ impl Daemon {
             Some(s) => Arc::clone(s),
             None => return Ok(()),
         };
+        if *session.state.lock().expect("state lock") == proto::SessionState::Killed
+            && !self.is_shutting_down()
+        {
+            // Kill released this pane's scrollback file; the EOF drain must not
+            // re-create it. Shutdown's own kills keep theirs for the restart.
+            return Ok(());
+        }
         let ring = session.scrollback.lock().expect("scrollback lock");
         if ring.bytes_seen() == 0 {
             return Ok(());
@@ -8885,10 +8900,10 @@ impl Daemon {
         }
     }
 
-    /// Live sessions for the HEAD watcher, with recorded checkout identity. Sessions
-    /// without one (restored from storage, reparented) are resolved here, live first,
-    /// off every client connection, and the change is broadcast.
-    pub(crate) fn checkout_watch_sessions(&self) -> Vec<proto::SessionInfo> {
+    /// Live sessions for the HEAD watcher; sessions without a recorded checkout are
+    /// resolved here, live first, and broadcast. The count of resolutions keeps the
+    /// watcher ticking while they converge instead of treating the pass as idle.
+    pub(crate) fn checkout_watch_sessions(&self) -> (Vec<proto::SessionInfo>, usize) {
         let mut live: Vec<_> = self
             .sessions
             .lock()
@@ -8937,7 +8952,32 @@ impl Daemon {
             }
         }
         live.retain(|info| info.ssh_host.is_none());
-        live
+        (live, resolves)
+    }
+
+    /// The HEAD watcher's idle fingerprint: sorted (id, map) pairs read from map keys
+    /// alone. The tag (0 live, 1 dead) makes a move between maps a change, so spawn,
+    /// respawn, close, hide and restore all invalidate it.
+    pub(crate) fn checkout_watch_ids(&self) -> Vec<(u32, u8)> {
+        let mut ids: Vec<(u32, u8)> = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|session| !session.info.hidden && session.info.ssh_host.is_none())
+            .map(|session| (session.info.id, 0u8))
+            .collect();
+        // Restored and interrupted sessions resolve through the dead map, so they are
+        // part of the rebuild this fingerprint must cover.
+        ids.extend(
+            self.dead
+                .lock()
+                .expect("dead lock")
+                .values()
+                .map(|i| (i.id, 1u8)),
+        );
+        ids.sort_unstable();
+        ids
     }
 
     pub fn list(&self) -> Vec<proto::SessionInfo> {
@@ -9853,6 +9893,16 @@ impl Daemon {
                     }
                     self.stop_session_for_recovery_unlocked(old_id)?;
                 } else if force {
+                    // Respawn repoints only the dead map, so a live child's results
+                    // would keep targeting the removed pane. Mirror the Sleep guard.
+                    let (live_children, _) = self.child_counts_of(old_id);
+                    if live_children > 0 {
+                        bail!(
+                            "Restart refused for session {old_id}: {live_children} live child \
+                             pane(s) would lose their handback target; close or wait for them \
+                             before restarting this orchestrator"
+                        );
+                    }
                     self.stop_session_for_recovery_unlocked(old_id)?;
                 } else {
                     bail!(
@@ -10631,6 +10681,10 @@ impl Daemon {
             return;
         };
         let Ok(session) = self.get(session_id) else {
+            tracing::warn!(
+                "session {session_id} is gone: dropping {} deferred shell children without restore",
+                pending.children.len()
+            );
             return;
         };
         let mut notices = Vec::new();
@@ -10863,6 +10917,9 @@ impl Daemon {
     }
 
     fn mark_detected(&self, id: u32, session: &Session, kind: proto::AgentKind) {
+        if !detection_relabels(session.info.agent, kind) {
+            return;
+        }
         let changed = {
             let mut cur = session.detected.lock().expect("detected lock");
             if *cur == Some(kind) {
@@ -11788,7 +11845,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
-            detected: Mutex::new(detected_agent),
+            detected: Mutex::new(detected_agent.filter(|kind| detection_relabels(agent, *kind))),
             running: Mutex::new(hosted_provider),
             blocks: shellint_token.as_ref().map(|token| {
                 let mut tracker = BlockTracker::new(token.clone());
@@ -13473,6 +13530,16 @@ impl Daemon {
             exit_code: None,
         });
         drop(state);
+        // The Killed tile stays listed and restorable, but the pane is gone: release
+        // what close_one_reserved releases for parts that do not need the session
+        // entry removed. A killed child's bearer token must stop working immediately.
+        self.mcp_creds.revoke_session(id);
+        self.mcp_notify.close_session(id);
+        if !self.is_shutting_down() {
+            self.remove_persisted_scrollback(id);
+        }
+        self.frame_taps.forget_session(id);
+        self.voice.forget_session(id);
         drop(cleanup);
         self.reap_reevaluate();
         Ok(())
@@ -14512,8 +14579,10 @@ impl Daemon {
             .or_else(|| self.live_cwd(source).filter(|d| d.is_dir()))
             .unwrap_or_else(|| PathBuf::from(&info.project_dir));
         let tr_dir = cwd.join(crate::paths::PROJECT_DIR);
-        std::fs::create_dir_all(&tr_dir)
-            .with_context(|| format!("creating {}", tr_dir.display()))?;
+        // Handoff prompts and results are session working files; like every other
+        // Houston subtree, the directory must not surface in the workspace's git status.
+        crate::worktrees::ensure_ignored(&tr_dir)
+            .with_context(|| format!("preparing {}", tr_dir.display()))?;
 
         let activity = if title_job.is_some() {
             String::new()
@@ -14788,34 +14857,69 @@ impl Daemon {
             .spawn(move || loop {
                 std::thread::sleep(Duration::from_millis(500.min(timeout.as_millis() as u64)));
                 let Some(daemon) = weak.upgrade() else { return };
-                let hidden = {
-                    let mut jobs = daemon.handoff_jobs.lock().expect("handoff lock");
-                    let Some(job) = jobs.get_mut(&request) else {
-                        return;
-                    };
-                    if (if is_title {
-                        started.elapsed()
-                    } else {
-                        job.last_activity.elapsed()
-                    }) < timeout
-                    {
-                        continue;
-                    }
-                    if job.fail_reason.is_none() {
-                        job.fail_reason = Some(format!(
-                            "{} exceeded its {}s generator deadline — is it installed and authenticated?",
-                            job.provider_name,
-                            timeout.as_secs()
-                        ));
-                    }
-                    job.hidden
-                };
-                let _ = daemon.kill(hidden);
-                return;
+                if daemon.handoff_watchdog_tick(request, timeout, started, is_title) {
+                    return;
+                }
             })
             .expect("spawn handoff watchdog");
 
         Ok(request)
+    }
+
+    /// One watchdog pass: enforce the generator deadline once it has passed.
+    /// Returns true when the watcher may stop; a kill that fails must still
+    /// finalise the job, or the request hangs with no reply forever.
+    fn handoff_watchdog_tick(
+        self: &Arc<Self>,
+        request: u32,
+        timeout: Duration,
+        started: Instant,
+        is_title: bool,
+    ) -> bool {
+        let hidden = {
+            let mut jobs = self.handoff_jobs.lock().expect("handoff lock");
+            let Some(job) = jobs.get_mut(&request) else {
+                return true;
+            };
+            let age = if is_title {
+                started.elapsed()
+            } else {
+                job.last_activity.elapsed()
+            };
+            if age < timeout {
+                return false;
+            }
+            if job.fail_reason.is_none() {
+                job.fail_reason = Some(format!(
+                    "{} exceeded its {}s generator deadline — is it installed and authenticated?",
+                    job.provider_name,
+                    timeout.as_secs()
+                ));
+            }
+            job.hidden
+        };
+        if self.kill(hidden).is_err() {
+            self.handoff_kill_failed(hidden);
+        }
+        true
+    }
+
+    /// A failed watchdog or cancel kill strands the job: no reader EOF arrives
+    /// while the generator keeps running, or after it is already gone. Finalise
+    /// through `handoff_finish` so the client still gets its HandoffError.
+    fn handoff_kill_failed(self: &Arc<Self>, hidden_id: u32) {
+        let mut jobs = self.handoff_jobs.lock().expect("handoff lock");
+        let Some((&request, job)) = jobs.iter_mut().find(|(_, j)| j.hidden == hidden_id) else {
+            return;
+        };
+        if job.fail_reason.is_none() {
+            job.fail_reason = Some(format!(
+                "generator session {hidden_id} could not be stopped; finalising the request as failed"
+            ));
+        }
+        let job = jobs.remove(&request).expect("job present");
+        drop(jobs);
+        self.handoff_finish(request, job);
     }
 
     fn handoff_output(&self, hidden_id: u32, chunk: &[u8]) {
@@ -14942,6 +15046,40 @@ impl Daemon {
         });
     }
 
+    /// A daemon death mid-handoff (crash, update takeover) orphans the prompt file
+    /// the generator was reading; normal retirement removes it in `handoff_finish`.
+    /// Boot sweeps each known workspace's stale prompts so they do not accumulate.
+    pub fn sweep_orphan_handoff_prompts(&self) {
+        let Ok(workspaces) = self.db.list_workspaces() else {
+            return;
+        };
+        let now = std::time::SystemTime::now();
+        for workspace in &workspaces {
+            let dir = Path::new(&workspace.path).join(crate::paths::PROJECT_DIR);
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else { continue };
+                if !(name.starts_with("handoff-prompt-") && name.ends_with(".md")) {
+                    continue;
+                }
+                let stale = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .map(|modified| {
+                        now.duration_since(modified)
+                            .is_ok_and(|age| age >= HANDOFF_PROMPT_STALE_AGE)
+                    })
+                    .unwrap_or(false);
+                if stale {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
     pub fn handoff_cancel(self: &Arc<Self>, request: u32) -> Result<()> {
         let hidden = {
             let mut jobs = self.handoff_jobs.lock().expect("handoff lock");
@@ -14958,13 +15096,21 @@ impl Daemon {
             .get(&hidden)
             .and_then(|s| s.pid);
         let Some(pid) = pid else {
-            return self.kill(hidden);
+            return self.kill(hidden).or_else(|error| {
+                tracing::warn!(
+                    "handoff request {request}: kill on cancel failed, finalising: {error:#}"
+                );
+                self.handoff_kill_failed(hidden);
+                Ok(())
+            });
         };
         let _ = crate::pid::signal_process(pid, crate::pid::Signal::Int);
         let daemon = Arc::clone(self);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(1500));
-            let _ = daemon.kill(hidden);
+            if daemon.kill(hidden).is_err() {
+                daemon.handoff_kill_failed(hidden);
+            }
         });
         Ok(())
     }
@@ -16652,6 +16798,22 @@ impl Daemon {
             .lock()
             .expect("prompt awaiting hook lock")
             .retain(|id| live.contains(id));
+        self.resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .retain(|id, _| live.contains(id));
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .retain(|id, _| live.contains(id));
+        self.pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .retain(|id, _| live.contains(id));
+        self.early_shell_resumes
+            .lock()
+            .expect("early shell resumes lock")
+            .retain(|id, _| live.contains(id));
     }
 
     fn stall_row_for_expired(self: &Arc<Self>, child: u32, gone: &orchestrate::Expired) {
@@ -26844,6 +27006,205 @@ mod handoff_refusal_tests {
     }
 }
 
+#[cfg(test)]
+mod kill_teardown_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_ssh_session(daemon: &Daemon, state: &Path, id: u32) -> Arc<Session> {
+        // Mirrors `run_ssh_connect`'s session construction, the one place a pane
+        // exists without a local process: the SSH stub keeps the test off the network.
+        let project = state.display().to_string();
+        let info = proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Ssh,
+            project_dir: project.clone(),
+            cwd: project.clone(),
+            state: proto::SessionState::Running,
+            title: "ssh".into(),
+            codename: "ssh".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: Some(project.clone()),
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by: None,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        };
+        let session = Arc::new(Session {
+            info: info.clone(),
+            pid: None,
+            custom_cmd: None,
+            state: Mutex::new(proto::SessionState::Running),
+            title: Mutex::new("ssh".into()),
+            project_dir: Mutex::new(project.clone()),
+            detected: Mutex::new(None),
+            running: Mutex::new(None),
+            blocks: None,
+            shell_token_redactor: None,
+            raw_output_bytes: AtomicU64::new(0),
+            shell_token_file: None,
+            shell: None,
+            osc_cwd: Mutex::new(None),
+            osc_title: None,
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
+            cli_title: Mutex::new(CliTitleState::default()),
+            title_source: Mutex::new(TitleSource::Codename),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
+            transient_title_candidates: Mutex::new(Vec::new()),
+            tags: Mutex::new(Vec::new()),
+            osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
+            acp: None,
+            scrollback: Mutex::new(Scrollback::new()),
+            ws_attaches: AtomicU32::new(0),
+            vt: Mutex::new(None),
+            vt_refused: AtomicBool::new(false),
+            last_output: AtomicU64::new(0),
+            status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
+            context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
+            removed: AtomicBool::new(false),
+            backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
+            lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
+            hook_cwd: Mutex::new(None),
+            hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
+            geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
+            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
+            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+            park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
+        });
+        daemon.db.insert_session(&session.info).unwrap();
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(id, session.clone());
+        session
+    }
+
+    fn seed_pane_state(daemon: &Daemon, id: u32, session: &Session) -> String {
+        let command = portable_pty::CommandBuilder::new("claude");
+        crate::launch::claude_pane_env_args(&command, &daemon.claude_settings_path(id)).unwrap();
+        let signal = daemon.tool_boundary_signal_path(id);
+        std::fs::create_dir_all(signal.parent().expect("signal parent")).unwrap();
+        std::fs::write(&signal, b"").unwrap();
+        session
+            .scrollback
+            .lock()
+            .expect("scrollback lock")
+            .push(b"pane output before the kill");
+        daemon.persist_scrollback(id);
+        daemon.mcp_creds.issue(crate::mcp_creds::McpScope {
+            session_id: id,
+            workspace_id: session.info.project_dir.clone(),
+        })
+    }
+
+    #[test]
+    fn kill_releases_pane_files_credential_and_scrollback() {
+        let (daemon, state) = test_daemon();
+        let session = stub_ssh_session(&daemon, state.path(), 7);
+        let token = seed_pane_state(&daemon, 7, &session);
+        let signal = daemon.tool_boundary_signal_path(7);
+        assert!(daemon.claude_settings_path(7).is_file());
+        assert!(signal.is_file());
+        assert!(daemon.scrollback_path(7).is_file());
+        assert!(daemon.mcp_creds.resolve(&token).is_some());
+
+        daemon.kill(7).unwrap();
+
+        assert!(
+            !daemon.claude_settings_path(7).exists(),
+            "a killed pane's Claude hook settings must be released, not kept for the tile's lifetime"
+        );
+        assert!(
+            !signal.exists(),
+            "a killed pane's child-context signal must be released with the pane"
+        );
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a killed pane's persisted scrollback must be released with the pane"
+        );
+        daemon.persist_scrollback(7);
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "the PTY EOF drain must not re-create a killed pane's scrollback"
+        );
+        assert!(
+            daemon.mcp_creds.resolve(&token).is_none(),
+            "a killed pane's MCP bearer token must be refused"
+        );
+        assert!(
+            daemon.list().iter().any(|info| info.id == 7),
+            "kill must keep the Killed tile listed"
+        );
+        assert_eq!(
+            daemon.db.session_final(7).unwrap(),
+            Some((proto::SessionState::Killed, None))
+        );
+    }
+}
+
 #[cfg(all(test, not(target_os = "linux")))]
 mod handoff_platform_refusal_tests {
     use super::*;
@@ -26967,6 +27328,195 @@ mod reader_wake_tests {
     }
 }
 
+#[cfg(test)]
+mod shell_restore_bookkeeping_tests {
+    use super::*;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_child(project: &str, id: u32) -> proto::SessionInfo {
+        proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Claude,
+            project_dir: project.to_string(),
+            cwd: project.to_string(),
+            state: proto::SessionState::Exited,
+            title: "child".into(),
+            codename: "child".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: None,
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by: None,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn expiry_pass_sweeps_shell_restore_bookkeeping_whose_session_is_gone() {
+        let (daemon, state) = test_daemon();
+        // A parent closed or respawned away before its SessionStart hook fired
+        // leaves these entries behind; session ids are never reused, so the
+        // entries would otherwise outlive the run.
+        daemon
+            .pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .insert(
+                11,
+                PendingShellChildren {
+                    old_parent: 3,
+                    provider: proto::AgentKind::Claude,
+                    conversation: "conv-11".into(),
+                    children: vec![stub_child(state.path().to_str().unwrap(), 12)],
+                },
+            );
+        daemon
+            .early_shell_resumes
+            .lock()
+            .expect("early shell resumes lock")
+            .insert(13, (proto::AgentKind::Claude, "conv-13".into()));
+        daemon
+            .resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .insert(14, Instant::now());
+        daemon
+            .wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .insert(15, Instant::now());
+
+        daemon.subagent_expiry_pass(now_ms());
+
+        assert!(
+            daemon
+                .pending_shell_children
+                .lock()
+                .expect("pending shell children lock")
+                .is_empty(),
+            "pending shell children of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .early_shell_resumes
+                .lock()
+                .expect("early shell resumes lock")
+                .is_empty(),
+            "early shell resumes of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .resume_launches
+                .lock()
+                .expect("resume launches lock")
+                .is_empty(),
+            "resume launches of a gone session must be swept"
+        );
+        assert!(
+            daemon
+                .wake_launches
+                .lock()
+                .expect("wake launches lock")
+                .is_empty(),
+            "wake launches of a gone session must be swept"
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogBuf {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogBuf {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn finishing_pending_children_of_a_gone_session_records_a_notice() {
+        let (daemon, state) = test_daemon();
+        daemon
+            .pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .insert(
+                21,
+                PendingShellChildren {
+                    old_parent: 3,
+                    provider: proto::AgentKind::Claude,
+                    conversation: "conv-21".into(),
+                    children: vec![stub_child(state.path().to_str().unwrap(), 22)],
+                },
+            );
+        let reservation = daemon.reserve_shell_restore(21).unwrap();
+
+        crate::test_tracing_capture::ensure_permissive_global_default();
+        let buf = LogBuf::default();
+        let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
+        tracing::subscriber::with_default(subscriber, || {
+            daemon.finish_pending_shell_children(21, reservation);
+        });
+
+        assert!(
+            daemon
+                .pending_shell_children
+                .lock()
+                .expect("pending shell children lock")
+                .is_empty(),
+            "the gone-session path must still consume the pending entry"
+        );
+        let logged = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            logged.contains("21") && logged.contains("1"),
+            "the notice must name the gone session and its deferred child count: {logged}"
+        );
+    }
+}
+
 #[cfg(all(test, unix))]
 mod exit_tail_tests {
     use super::*;
@@ -27031,5 +27581,288 @@ mod exit_tail_tests {
             started.elapsed()
         );
         assert!(tail.contains("Unable to read setting.json"), "{tail}");
+    }
+}
+
+#[cfg(test)]
+mod force_respawn_guard_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn stub_agent_session(
+        daemon: &Daemon,
+        state: &Path,
+        id: u32,
+        spawned_by: Option<u32>,
+        custom_cmd: Option<Vec<String>>,
+    ) -> Arc<Session> {
+        // Mirrors `run_ssh_connect`'s session construction, the one place a pane
+        // exists without a local process: the SSH stub keeps the test off the network.
+        let project = state.display().to_string();
+        let info = proto::SessionInfo {
+            title_source: Default::default(),
+            checkout: None,
+            activity: None,
+            id,
+            agent: proto::AgentKind::Custom,
+            project_dir: project.clone(),
+            cwd: project.clone(),
+            state: proto::SessionState::Running,
+            title: "custom".into(),
+            codename: "custom".into(),
+            detected_agent: None,
+            running_agent: None,
+            hidden: false,
+            ssh_host: None,
+            restore_deferred: None,
+            status: None,
+            status_since_ms: None,
+            context: None,
+            swarm_agent: None,
+            spawned_by,
+            acp: None,
+            live_children: 0,
+            profile_label: None,
+            children_waiting: 0,
+            delegation: None,
+            inbox_unread: 0,
+            tags: Vec::new(),
+            session_origin: None,
+            checkout_root: None,
+            worktree: None,
+            resumable: false,
+            resume_notice: None,
+            compactions: None,
+            task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
+        };
+        let session = Arc::new(Session {
+            info: info.clone(),
+            pid: None,
+            custom_cmd,
+            state: Mutex::new(proto::SessionState::Running),
+            title: Mutex::new("custom".into()),
+            project_dir: Mutex::new(project),
+            detected: Mutex::new(None),
+            running: Mutex::new(None),
+            blocks: None,
+            shell_token_redactor: None,
+            raw_output_bytes: AtomicU64::new(0),
+            shell_token_file: None,
+            shell: None,
+            osc_cwd: Mutex::new(None),
+            osc_title: None,
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
+            cli_title: Mutex::new(CliTitleState::default()),
+            title_source: Mutex::new(TitleSource::Codename),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
+            transient_title_candidates: Mutex::new(Vec::new()),
+            tags: Mutex::new(Vec::new()),
+            osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
+            acp: None,
+            scrollback: Mutex::new(Scrollback::new()),
+            ws_attaches: AtomicU32::new(0),
+            vt: Mutex::new(None),
+            vt_refused: AtomicBool::new(false),
+            last_output: AtomicU64::new(0),
+            status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
+            context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
+            removed: AtomicBool::new(false),
+            backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
+            lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
+            hook_cwd: Mutex::new(None),
+            hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
+            geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
+            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
+            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+            park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
+        });
+        daemon.db.insert_session(&session.info).unwrap();
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(id, session.clone());
+        session
+    }
+
+    #[test]
+    fn force_respawn_of_a_parent_with_a_live_child_names_the_count() {
+        let (daemon, state) = test_daemon();
+        // A replacement whose program does not exist keeps a pre-refusal respawn
+        // failing fast instead of launching a real pane.
+        let parent = stub_agent_session(
+            &daemon,
+            state.path(),
+            7,
+            None,
+            Some(vec!["Z:\\houston-missing-replacement".into()]),
+        );
+        let child = stub_agent_session(&daemon, state.path(), 8, Some(7), None);
+        assert_eq!(daemon.child_counts_of(7).0, 1, "fixture: the child is live");
+
+        let error = daemon
+            .respawn_session_with(7, false, None, None, true, RespawnConversation::Fresh)
+            .expect_err("force-respawn of a parent with a live child must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("1 live child"),
+            "the refusal must name the live-child count: {message}"
+        );
+        assert_eq!(
+            *parent.state.lock().expect("state lock"),
+            proto::SessionState::Running,
+            "the refusal must leave the parent running"
+        );
+        assert!(
+            daemon.list().iter().any(|info| info.id == child.info.id),
+            "the live child must keep running"
+        );
+    }
+}
+
+#[cfg(test)]
+mod handoff_stranding_tests {
+    use super::*;
+
+    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        (daemon, state)
+    }
+
+    fn seed_handoff_job(daemon: &Daemon, request: u32, hidden: u32, prompt_path: &Path) {
+        daemon.handoff_jobs.lock().expect("handoff lock").insert(
+            request,
+            HandoffJob {
+                title_job: None,
+                hidden,
+                source: 1,
+                provider: proto::AgentKind::Custom,
+                provider_name: "custom".into(),
+                buffer: Vec::new(),
+                last_activity: Instant::now(),
+                prompt_path: prompt_path.to_path_buf(),
+                out_dir: prompt_path.parent().unwrap().to_path_buf(),
+                eof: false,
+                exit: None,
+                fail_reason: None,
+            },
+        );
+    }
+
+    fn drain_controls(rx: &mut broadcast::Receiver<Outbound>) -> Vec<String> {
+        let mut texts = Vec::new();
+        while let Ok(outbound) = rx.try_recv() {
+            if let Outbound::Control(json) = outbound {
+                texts.push(json.to_string());
+            }
+        }
+        texts
+    }
+
+    #[test]
+    fn cancelling_a_handoff_whose_generator_is_already_gone_finalises_it() {
+        let (daemon, state) = test_daemon();
+        let prompt = state.path().join("handoff-prompt-7.md");
+        std::fs::write(&prompt, b"prompt").unwrap();
+        seed_handoff_job(&daemon, 7, 42, &prompt);
+        let mut rx = daemon.tx.subscribe();
+
+        let result = daemon.handoff_cancel(7);
+
+        assert!(
+            result.is_ok(),
+            "cancelling a stranded handoff must finalise it, not refuse: {result:?}"
+        );
+        assert!(
+            daemon.handoff_jobs.lock().expect("handoff lock").is_empty(),
+            "the cancelled request must leave the job map"
+        );
+        assert!(
+            !prompt.exists(),
+            "the cancelled request's prompt file must be removed"
+        );
+        let texts = drain_controls(&mut rx);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("handoff_error") && t.contains("canceled")),
+            "the requesting client must receive the HandoffError: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn a_deadline_hit_for_an_unkillable_generator_finalises_the_handoff() {
+        let (daemon, state) = test_daemon();
+        let prompt = state.path().join("handoff-prompt-9.md");
+        std::fs::write(&prompt, b"prompt").unwrap();
+        seed_handoff_job(&daemon, 9, 77, &prompt);
+        let mut rx = daemon.tx.subscribe();
+
+        let fired = daemon.handoff_watchdog_tick(9, Duration::ZERO, Instant::now(), false);
+
+        assert!(fired, "a zero deadline must fire on the first tick");
+        assert!(
+            daemon.handoff_jobs.lock().expect("handoff lock").is_empty(),
+            "the deadline must not leave the job entry behind"
+        );
+        assert!(
+            !prompt.exists(),
+            "the deadline must remove the prompt file with the job"
+        );
+        let texts = drain_controls(&mut rx);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("handoff_error") && t.contains("deadline")),
+            "the requesting client must receive the deadline HandoffError: {texts:?}"
+        );
     }
 }
