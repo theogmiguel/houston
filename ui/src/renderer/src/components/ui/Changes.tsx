@@ -40,7 +40,7 @@ export function GitPrSummaryLabel({ children }: { children: ReactNode }): React.
 }
 
 export function GitChangesSurface({ children, compact, state, reviewing, ...props }: HTMLAttributes<HTMLElement> & { children: ReactNode; compact: boolean; state: string; reviewing: boolean; ref?: React.Ref<HTMLElement> }): React.JSX.Element {
-  return <section {...props} className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden outline-none ${MATERIAL_CLS.shell}`} data-testid="changes-pane" data-compact={compact} data-state={state} data-reviewing={reviewing ? 'true' : undefined} {...materialAttrs('shell')}>{children}</section>
+  return <section {...props} className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)] ${MATERIAL_CLS.shell}`} data-testid="changes-pane" data-compact={compact} data-state={state} data-reviewing={reviewing ? 'true' : undefined} {...materialAttrs('shell')}>{children}</section>
 }
 
 export function GitChangesBody({ children }: { children: ReactNode }): React.JSX.Element {

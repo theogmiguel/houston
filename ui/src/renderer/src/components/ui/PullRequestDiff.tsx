@@ -29,7 +29,7 @@ export function DiffLoadingPanel({ children, ...props }: HTMLAttributes<HTMLDivE
 }
 
 export function PullRequestDiffPanel({ children, ...props }: HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }): React.JSX.Element {
-  return <div {...props} className={`flex flex-col bg-[var(--tool-code-bg)] outline-none ${props.className ?? ''}`}>{children}</div>
+  return <div {...props} className={`flex flex-col bg-[var(--tool-code-bg)] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)] ${props.className ?? ''}`}>{children}</div>
 }
 
 export function PullRequestDiffSpecimen(): React.JSX.Element {
