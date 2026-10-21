@@ -3,7 +3,7 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 #[cfg(target_os = "linux")]
-use targets::{remember_target, take_target};
+use targets::take_target;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub const EVENT_FOCUS_PANE: &str = "native-notification://focus-pane";
@@ -48,6 +48,57 @@ mod targets {
             .expect("notification targets mutex")
             .remove(&notification)
             .and_then(|(session, at)| (at.elapsed() < NOTIFICATION_TARGET_TTL).then_some(session))
+    }
+
+    // A pane's newest Linux notification, passed as `replaces_id` so its next one replaces it.
+    #[cfg(any(target_os = "linux", test))]
+    static LATEST_NOTIFICATIONS: OnceLock<Mutex<HashMap<i64, (u32, Instant)>>> = OnceLock::new();
+
+    #[cfg(any(target_os = "linux", test))]
+    fn latest() -> &'static Mutex<HashMap<i64, (u32, Instant)>> {
+        LATEST_NOTIFICATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    /// The id the session's next notification replaces, or 0 for a new one.
+    #[cfg(any(target_os = "linux", test))]
+    pub(super) fn replaceable(session: i64) -> u32 {
+        latest()
+            .lock()
+            .expect("latest notifications mutex")
+            .get(&session)
+            .filter(|(_, at)| at.elapsed() < NOTIFICATION_TARGET_TTL)
+            .map_or(0, |(notification, _)| *notification)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(super) fn remember_replacement(replaced: u32, notification: u32, session: i64) {
+        if replaced != 0 && replaced != notification {
+            take_target(replaced);
+        }
+        remember_target(notification, session);
+        let now = Instant::now();
+        let mut latest = latest().lock().expect("latest notifications mutex");
+        latest.retain(|_, (_, at)| now.duration_since(*at) < NOTIFICATION_TARGET_TTL);
+        if latest.len() >= NOTIFICATION_TARGET_CAP && !latest.contains_key(&session) {
+            if let Some(oldest) = latest
+                .iter()
+                .min_by_key(|(_, (_, at))| *at)
+                .map(|(session, _)| *session)
+            {
+                latest.remove(&oldest);
+            }
+        }
+        latest.insert(session, (notification, now));
+    }
+
+    /// The server closed this notification and may recycle its id for another app's notice.
+    #[cfg(any(target_os = "linux", test))]
+    pub(super) fn forget(notification: u32) {
+        take_target(notification);
+        latest()
+            .lock()
+            .expect("latest notifications mutex")
+            .retain(|_, (held, _)| *held != notification);
     }
 }
 
@@ -109,12 +160,13 @@ pub async fn native_notify(
         .map_err(|e| format!("Linux notification service: {e}"))?;
         let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
             std::collections::HashMap::new();
+        let replaced = targets::replaceable(session_id);
         let notification: u32 = proxy
             .call(
                 "Notify",
                 &(
                     "Houston",
-                    0u32,
+                    replaced,
                     "",
                     title,
                     body,
@@ -125,7 +177,7 @@ pub async fn native_notify(
             )
             .await
             .map_err(|e| format!("Linux notification delivery: {e}"))?;
-        remember_target(notification, session_id);
+        targets::remember_replacement(replaced, notification, session_id);
         Ok(())
     }
     #[cfg(windows)]
@@ -484,18 +536,33 @@ pub fn start_action_listener(app: AppHandle) {
                 return;
             }
         };
-        let mut actions = match proxy.receive_signal("ActionInvoked").await {
-            Ok(actions) => actions,
+        // One stream keeps the server's order: a click's ActionInvoked precedes its
+        // NotificationClosed, so the click still finds its target.
+        let mut signals = match proxy.receive_all_signals().await {
+            Ok(signals) => signals,
             Err(error) => {
                 eprintln!("houston-tauri: notification action listener: {error}");
                 return;
             }
         };
-        while let Some(message) = actions.next().await {
-            let Ok((notification, _action)) = message.body().deserialize::<(u32, String)>() else {
-                continue;
-            };
-            focus_notification_target(&app, notification);
+        while let Some(message) = signals.next().await {
+            let header = message.header();
+            match header.member().map(|member| member.as_str()) {
+                Some("ActionInvoked") => {
+                    if let Ok((notification, _action)) =
+                        message.body().deserialize::<(u32, String)>()
+                    {
+                        focus_notification_target(&app, notification);
+                    }
+                }
+                Some("NotificationClosed") => {
+                    if let Ok((notification, _reason)) = message.body().deserialize::<(u32, u32)>()
+                    {
+                        targets::forget(notification);
+                    }
+                }
+                _ => {}
+            }
         }
     });
     // Windows wires activation per toast in windows_toasts::show; macOS is refused.
@@ -519,6 +586,59 @@ mod tests {
         assert_eq!(title.chars().count(), NOTIFICATION_TITLE_MAX_CHARS);
         let (_, body) = notification_text("title", &"<".repeat(2001));
         assert_eq!(body, "&lt;".repeat(NOTIFICATION_BODY_MAX_CHARS));
+    }
+
+    #[test]
+    fn a_panes_next_notification_replaces_its_previous_one() {
+        assert_eq!(
+            targets::replaceable(9001),
+            0,
+            "a pane's first notice is new"
+        );
+        targets::remember_replacement(0, 500, 9001);
+        assert_eq!(targets::replaceable(9001), 500);
+        assert_eq!(
+            targets::replaceable(9002),
+            0,
+            "another pane's notice is separate"
+        );
+
+        targets::remember_replacement(500, 501, 9001);
+        assert_eq!(targets::replaceable(9001), 501);
+        assert_eq!(
+            targets::take_target(500),
+            None,
+            "the replaced id no longer opens the pane"
+        );
+        assert_eq!(targets::take_target(501), Some(9001));
+    }
+
+    #[test]
+    fn a_server_that_reuses_the_replaced_id_keeps_the_click_target() {
+        targets::remember_replacement(0, 600, 9101);
+        targets::remember_replacement(600, 600, 9101);
+        assert_eq!(targets::replaceable(9101), 600);
+        assert_eq!(targets::take_target(600), Some(9101));
+    }
+
+    #[test]
+    fn a_closed_notification_is_never_replaced_or_clicked() {
+        targets::remember_replacement(0, 700, 9201);
+        targets::forget(700);
+        assert_eq!(
+            targets::replaceable(9201),
+            0,
+            "a recycled id must not be replaced"
+        );
+        assert_eq!(targets::take_target(700), None);
+    }
+
+    #[test]
+    fn closing_an_older_id_keeps_the_panes_newest_notification() {
+        targets::remember_replacement(0, 800, 9301);
+        targets::remember_replacement(800, 801, 9301);
+        targets::forget(800);
+        assert_eq!(targets::replaceable(9301), 801);
     }
 
     #[test]
