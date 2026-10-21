@@ -1,4 +1,4 @@
-import { RING_ACCENT_INSET_18 } from './shadowChrome'
+import { RING_ACCENT_INSET_18_CLS } from './shadowChrome'
 
 export const PICKER_LABEL_CLS =
   'block [font-size:var(--tr-text-label-size)] leading-[14px] [text-transform:var(--tr-text-label-transform)] ' +
@@ -8,7 +8,7 @@ export const TILE_BASE = 'border text-left transition-[border-color,background-c
 
 export const TILE_SELECTED =
   '[border-color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] ' +
-  `shadow-[${RING_ACCENT_INSET_18}]`
+  RING_ACCENT_INSET_18_CLS
 
 export const TILE_IDLE = 'border-[var(--border)] bg-[var(--card-bg)] hover:border-[var(--text-faint)]'
 

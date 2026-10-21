@@ -396,6 +396,10 @@ tiers on top of the ladder — use a constant, don't hand-roll a shadow:
 | `OVERLAY_GLASS_RAISED_CLS` + `OVERLAY_GLASS_RAISED_ATTRS` | `raised-glass` |
 | `OVERLAY_GLASS_OVERLAY_CLS` + `OVERLAY_GLASS_OVERLAY_ATTRS` | `overlay-glass` |
 
+Smaller recipes (status glows, selected-tile rings, the badge gap ring) are complete literal
+`*_CLS` classes in `shadowChrome.ts`. Tailwind generates no CSS for `shadow-[${CONSTANT}]`, so a
+recipe is never stored as a bare value and interpolated at the call site.
+
 All four add the shared structure the ladder does not carry: `--tr-radius-md`,
 `no-drag` and `select-text`. Floating menus and popovers appear immediately.
 The scrim under the `overlay` rung is a sibling element at the call site, not part of the class.
@@ -964,7 +968,7 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
 | `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
-| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`), and a focus variant whose arbitrary value is interpolated. No exemptions. |
+| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`), and any utility whose arbitrary value is interpolated. No exemptions. |
 | `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
 | `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
 | `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
