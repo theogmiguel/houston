@@ -172,9 +172,10 @@
     "the rail's pin, read and hide actions record an Undo as they run, so their",
     "wrappers in `rail/useRailUndoActions.ts` are boot-path code. The batching,",
     "the notice wording and the restore loop load on the first action from",
-    "`rail/railUndo.ts`, behind one `import()`."
+    "`rail/railUndo.ts`, behind one `import()`.",
+    "Re-cut against 946,051 bytes (one boot chunk) with the same small headroom: three separately measured additions share this chunk \u2014 the rail Undo wrappers, find-in-diff's KEYMAP entry, and content search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
   ],
-  "maxBootBytes": 944350,
+  "maxBootBytes": 946191,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
