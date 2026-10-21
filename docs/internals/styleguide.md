@@ -730,7 +730,7 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Result staged,
+Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Starting, Result staged,
 Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
 Fixing, Not seen, Ready, Stale, Kept, Watching, Verified, Blocked, Merged, Verifying and
 Parked. The dot variant keeps an accessible status

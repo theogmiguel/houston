@@ -888,8 +888,6 @@ function SkillsLibraryBody({
   onOpen,
   onEdit,
   onDelete,
-  onInstall,
-  onCreate,
   search,
   onClearSearch
 }: {
@@ -903,8 +901,6 @@ function SkillsLibraryBody({
   onOpen: (s: Skill) => void
   onEdit: (s: Skill) => void
   onDelete: (s: Skill) => void
-  onInstall: () => void
-  onCreate: () => void
   search: string
   onClearSearch: () => void
 }): React.JSX.Element {
@@ -917,12 +913,6 @@ function SkillsLibraryBody({
         testId="skills-empty"
         title="No skills yet"
         icon={<MascotSurfaceMount mood="wave" fallback={<Icon glyph={IconZap} role="display" />} />}
-        action={
-          <div className="flex items-center gap-[var(--space-2)]">
-            <PanelButton onClick={onInstall}>Install from link</PanelButton>
-            <PanelButton onClick={onCreate}>New skill</PanelButton>
-          </div>
-        }
       >
         A skill is a saved procedure an agent can paste into a terminal and run.
       </PanelEmpty>
@@ -1186,12 +1176,6 @@ export function SkillsView({
             testId="skills-empty"
             title="No skills yet"
             icon={<MascotSurfaceMount mood="wave" fallback={<Icon glyph={IconZap} role="display" />} />}
-            action={
-              <div className="flex items-center gap-[var(--space-1-5)]">
-                <Button variant="secondary" onClick={() => setInstallOpen(true)}>Install from link</Button>
-                <Button variant="primary" icon={IconPlus} onClick={startCreate}>New skill</Button>
-              </div>
-            }
           >
             A skill is a saved procedure an agent can paste into a terminal and run.
           </PanelEmpty>
@@ -1311,8 +1295,6 @@ export function SkillsView({
       onOpen={(s) => setSelectedKey(skillKey(s))}
       onEdit={startEdit}
       onDelete={startDelete}
-      onInstall={() => setInstallOpen(true)}
-      onCreate={startCreate}
       search={search}
       onClearSearch={() => setSearch('')}
     />

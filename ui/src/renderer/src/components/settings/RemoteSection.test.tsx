@@ -196,6 +196,16 @@ describe('RemoteSection', () => {
     expect(heading.lastElementChild?.textContent).toBe('1')
   })
 
+  it('omits the paired-devices count while nothing is paired, letting the empty row speak', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info() })
+    const heading = screen.getByRole('heading', { name: /Paired devices/ })
+    expect(heading.querySelector('.ml-auto')).toBeNull()
+    expect(heading.textContent).not.toContain('0')
+    expect(screen.getByText('No devices paired')).toBeTruthy()
+  })
+
   it('paints Active now text in the success tone and retains the access warning', () => {
     const { emit, asClient } = fakeClient()
     renderSection(asClient)

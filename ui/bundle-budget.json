@@ -144,9 +144,16 @@
     "headroom: the merge queue's rail count of parked entries, its morning notice and",
     "the client's queue verbs must run at first paint, so they live in",
     "`prs/mergeQueueSignals.ts` and `houston/client.ts`; the queue view, its controller",
-    "and its model stay behind the Pull requests page."
+    "and its model stay behind the Pull requests page.",
+    "",
+    "Re-cut against 952,374 bytes (one boot chunk) with the same small headroom:",
+    "the boot skeleton's spinner carries the renderer's own recipe; the class it",
+    "dropped is styled only by the pre-boot page's inline stylesheet, so the",
+    "mounted skeleton rendered no indicator at all. Pane menus label agents from",
+    "the canonical map instead of CSS-capitalizing the raw id, and the map rides",
+    "on the boot path with the menus."
   ],
-  "maxBootBytes": 952250,
+  "maxBootBytes": 952550,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

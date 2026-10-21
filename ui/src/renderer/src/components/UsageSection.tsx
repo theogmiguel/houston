@@ -221,9 +221,9 @@ function UsageMetadata({ summary, asked, timeZone, reading }: {
   return <UsageMetaLine range={usageRangeLabel(summary, asked, timeZone).replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={pricingMetadata(summary)} />
 }
 
-function UsageScanNotices({ summary, error }: { summary: UsageSummaryMsg | null; error: string | null }): React.JSX.Element {
+function UsageScanNotices({ summary, error, onRetry }: { summary: UsageSummaryMsg | null; error: string | null; onRetry: () => void }): React.JSX.Element {
   return <>
-    {error && <Notice tone="danger" data-testid="usage-error">{error}</Notice>}
+    {error && <Notice tone="danger" data-testid="usage-error" action={{ label: 'Try again', onClick: onRetry }}>{error}</Notice>}
     {summary?.pricing.message && <Notice tone="warn">{summary.pricing.message}</Notice>}
   </>
 }
@@ -360,10 +360,16 @@ export function UsageSection({
         </>
       } />
       <UsageMetadata summary={summary} asked={asked} timeZone={timeZone} reading={reading} />
-      <UsageScanNotices summary={summary} error={error} />
+      <UsageScanNotices summary={summary} error={error} onRetry={refresh} />
       <UsageBody reading={reading}>
         {!summary ? (
-          <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
+          error ? (
+            <Card shape="card" tone="block" data-material="inset" data-testid="usage-error-empty">
+              <EmptyState copy="summary" icon={IconChartArea} heading="No usage result available" description="Usage appears here after a transcript scan succeeds." />
+            </Card>
+          ) : (
+            <Text as="p" role="status" size="ui" tone="secondary">Reading transcripts…</Text>
+          )
         ) : noUsage ? (
           <UsageEmpty summary={summary} windowLabel={windowDef.id === '24h' ? '24 hours' : windowDef.label} />
         ) : (

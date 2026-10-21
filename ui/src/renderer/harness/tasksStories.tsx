@@ -545,8 +545,10 @@ export function TasksQueueResultStory(): React.JSX.Element {
 
 export function PaneLifecycleStory(): React.JSX.Element {
   const children = React.useMemo(() => [
-    { ...rosterChild(431, 'reviewer', 'needs-input', null), task: null, title: 'Confirm the target branch' },
-    { ...rosterChild(432, 'validator', 'working', null), task: null, title: 'Waiting after validation', delegation: { ...rosterChild(432, 'validator', 'working', null).delegation!, stalled: true } },
+    // Live ages tick against the wall clock, so their starts must be relative
+    // to it — a frozen NOW renders an age no real session could show.
+    { ...rosterChild(431, 'reviewer', 'needs-input', null), task: null, title: 'Confirm the target branch', delegation: { ...rosterChild(431, 'reviewer', 'needs-input', null).delegation!, started_at: Date.now() - 25 * MINUTE } },
+    { ...rosterChild(432, 'validator', 'working', null), task: null, title: 'Waiting after validation', delegation: { ...rosterChild(432, 'validator', 'working', null).delegation!, stalled: true, started_at: Date.now() - 200 * 60 * MINUTE } },
     { ...rosterChild(433, 'backend', 'working', null), task: null, title: 'Completed the requested change', delegation: { ...rosterChild(433, 'backend', 'working', null).delegation!, state: 'done' as const, result_staged: true, settled_at: NOW - MINUTE } },
     { ...rosterChild(434, 'tests', 'working', null), task: null, title: 'Regression tests passed', delegation: { ...rosterChild(434, 'tests', 'working', null).delegation!, state: 'done' as const, inbox_owed: 1, settled_at: NOW - MINUTE } },
   ], [])
