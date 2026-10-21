@@ -35,6 +35,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
 | | `lock.rs` | The daemon-ownership advisory `flock` |
+| | `fs_retry.rs` | State-file renames and creates that retry Windows sharing violations |
 | | `power_throttling.rs` | Windows EcoQoS opt-out for the daemon and every process it starts |
 | | `server.rs` | WebSocket endpoint: handshake, control dispatch, binary PTY path |
 | | `boot.rs` | The background-loop set: one spawn list, called only by the daemon's own `main` |
@@ -527,6 +528,14 @@ Column evolution is
 `db.rs::add_column_if_missing`, which checks `pragma_table_info` before `ALTER TABLE`, at
 every column a later version added. **There is no `PRAGMA user_version`**: evolution is idempotent per-column
 additions plus two one-shot boot sweeps.
+
+State files outside SQLite (`daemon.json`, run state, scrollback checkpoints, the hook-state
+scope file, the model catalog cache and managed agent CLI configuration) are written through
+`fs_retry`.
+On Windows an antivirus scanner or the search indexer briefly opens a fresh file without
+sharing, so a rename or create that fails with `ERROR_SHARING_VIOLATION` or
+`ERROR_LOCK_VIOLATION` is retried up to five times within 300 ms. `ERROR_ACCESS_DENIED` and
+every other error fail at once, and Unix runs each operation once.
 
 In memory only, by design: live `sessions` and restored `dead` husks; `swarm_activity`
 (transient chip text); and the ephemeral routing maps (`respawned_as`, `handoff_jobs`,

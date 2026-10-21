@@ -5761,7 +5761,7 @@ impl Daemon {
             SEQ.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| {
+        crate::fs_retry::rename(&tmp, path).with_context(|| {
             format!(
                 "renaming {} into place at {}",
                 tmp.display(),

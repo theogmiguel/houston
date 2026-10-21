@@ -78,7 +78,7 @@ fn write_file(state_dir: &Path, name: &str, bytes: &[u8]) -> Result<()> {
         let _ = std::fs::remove_file(&tmp);
         return Err(e).with_context(|| format!("writing {}", tmp.display()));
     }
-    if let Err(e) = std::fs::rename(&tmp, &dest) {
+    if let Err(e) = crate::fs_retry::rename(&tmp, &dest) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e).with_context(|| format!("renaming {} to {}", tmp.display(), dest.display()));
     }

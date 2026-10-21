@@ -554,7 +554,7 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
         supervisor_pid,
         generation: None,
     };
-    fs::write(&cfg_path, serde_json::to_string_pretty(&cfg)?)
+    houston_core::fs_retry::write(&cfg_path, serde_json::to_string_pretty(&cfg)?)
         .with_context(|| format!("writing {}", cfg_path.display()))?;
     #[cfg(unix)]
     fs::set_permissions(&cfg_path, fs::Permissions::from_mode(0o600))?;

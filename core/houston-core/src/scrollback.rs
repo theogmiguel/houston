@@ -249,9 +249,10 @@ impl Scrollback {
         out.extend_from_slice(first);
         out.extend_from_slice(second);
         let tmp = path.with_extension("bin.tmp");
-        std::fs::write(&tmp, out)
+        crate::fs_retry::write(&tmp, out)
             .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| format!("moving {} into place", tmp.display()))
+        crate::fs_retry::rename(&tmp, path)
+            .with_context(|| format!("moving {} into place", tmp.display()))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -442,9 +443,9 @@ mod tests {
             out.extend_from_slice(&self.start.to_le_bytes());
             out.extend_from_slice(&self.buf);
             let tmp = path.with_extension("bin.tmp");
-            std::fs::write(&tmp, out)
+            crate::fs_retry::write(&tmp, out)
                 .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
-            std::fs::rename(&tmp, path)
+            crate::fs_retry::rename(&tmp, path)
                 .with_context(|| format!("moving {} into place", tmp.display()))
         }
 
@@ -501,6 +502,34 @@ mod tests {
                 reference_safe_cut(&text, from)
             );
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_checkpoint_waits_out_a_brief_exclusive_open_of_its_temporary_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut sb = Scrollback::new();
+        sb.push(b"checkpoint");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("1.bin");
+        let tmp = path.with_extension("bin.tmp");
+        std::fs::write(&tmp, b"stale").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&tmp)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            drop(held);
+        });
+        let result = sb.persist(&path);
+        release.join().unwrap();
+        result.unwrap();
+        assert_eq!(
+            Scrollback::load(&path).unwrap().tail_lines(1),
+            ["checkpoint"]
+        );
     }
 
     #[test]
