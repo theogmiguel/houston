@@ -1096,12 +1096,13 @@ struct Deferred {
     text: axum::extract::ws::Utf8Bytes,
     _bytes: tokio::sync::OwnedSemaphorePermit,
     family: bool,
-    session: Option<u32>,
+    sessions: Vec<u32>,
 }
 
 enum Landed {
     Created {
         request: Option<u32>,
+        busy: Vec<u32>,
         result: anyhow::Result<proto::SessionInfo>,
     },
     Spawned {
@@ -1141,33 +1142,38 @@ impl OnLoop {
         self.landing.is_empty() && self.deferred.is_empty()
     }
 
-    fn waits(&self, family: bool, session: Option<u32>) -> bool {
+    fn waits(&self, family: bool, sessions: &[u32]) -> bool {
         let full = self.spawning || self.landing.len() >= ON_LOOP_IN_FLIGHT;
-        (family && full) || session.is_some_and(|session| self.busy.contains(&session))
+        (family && full) || sessions.iter().any(|session| self.busy.contains(session))
     }
 
     /// Returns the request when it can run now. An attach-family request waits for an in-flight
-    /// spawn, and any request naming a busy session waits for it, behind earlier waiters.
+    /// spawn, and any request naming a busy session — through `session`, `parent`, `child`,
+    /// `cwd_from`, `orchestrator_session` or `sessions` — waits behind earlier waiters.
     fn order(
         &mut self,
         text: axum::extract::ws::Utf8Bytes,
         bytes: tokio::sync::OwnedSemaphorePermit,
     ) -> Option<Deferred> {
-        let (family, session) = if self.is_idle() {
-            (false, None)
+        let (family, sessions) = if self.is_idle() {
+            (false, Vec::new())
         } else {
             classify(&text)
         };
+        let behind = self.deferred.iter().any(|earlier| {
+            (family && earlier.family)
+                || earlier
+                    .sessions
+                    .iter()
+                    .any(|earlier| sessions.contains(earlier))
+        });
         let request = Deferred {
             text,
             _bytes: bytes,
             family,
-            session,
+            sessions,
         };
-        let behind = self.deferred.iter().any(|earlier| {
-            (family && earlier.family) || (session.is_some() && earlier.session == session)
-        });
-        if behind || self.waits(family, session) {
+        if behind || self.waits(family, &request.sessions) {
             self.deferred.push_back(request);
             return None;
         }
@@ -1176,7 +1182,7 @@ impl OnLoop {
 
     fn next_ready(&mut self) -> Option<Deferred> {
         let front = self.deferred.front()?;
-        if self.waits(front.family, front.session) {
+        if self.waits(front.family, &front.sessions) {
             return None;
         }
         self.deferred.pop_front()
@@ -1191,7 +1197,7 @@ impl OnLoop {
         frames_wanted: &mut AttachSet,
     ) -> Option<proto::ClientMsg> {
         let daemon = Arc::clone(daemon);
-        let (session, work): (Option<u32>, BoxFuture<'static, Landed>) = match msg {
+        let (busy, work): (Vec<u32>, BoxFuture<'static, Landed>) = match msg {
             proto::ClientMsg::SessionAttach {
                 session,
                 replay_bytes,
@@ -1242,6 +1248,7 @@ impl OnLoop {
                 model,
                 effort,
             } => {
+                let busy: Vec<u32> = cwd_from.iter().copied().collect();
                 let params = CreateParams {
                     agent,
                     project_dir: PathBuf::from(project_dir),
@@ -1258,13 +1265,18 @@ impl OnLoop {
                     effort,
                 };
                 let task = tokio::task::spawn_blocking(move || daemon.create_session(params));
+                let landed_busy = busy.clone();
                 let work = async move {
                     let result = task
                         .await
                         .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")));
-                    Landed::Created { request, result }
+                    Landed::Created {
+                        request,
+                        busy: landed_busy,
+                        result,
+                    }
                 };
-                (None, work.boxed())
+                (busy, work.boxed())
             }
             proto::ClientMsg::SessionRespawn {
                 session,
@@ -1289,6 +1301,7 @@ impl OnLoop {
                         conversation,
                     )
                 });
+                let busy = vec![session];
                 let work = async move {
                     let result = task
                         .await
@@ -1299,10 +1312,11 @@ impl OnLoop {
                         context,
                     }
                 };
-                (Some(session), work.boxed())
+                (busy, work.boxed())
             }
             proto::ClientMsg::SessionWake { session } => {
                 let task = tokio::task::spawn_blocking(move || daemon.wake_session(session));
+                let busy = vec![session];
                 let work = async move {
                     let result = task
                         .await
@@ -1313,12 +1327,12 @@ impl OnLoop {
                         context,
                     }
                 };
-                (Some(session), work.boxed())
+                (busy, work.boxed())
             }
             other => return Some(other),
         };
         self.spawning = true;
-        self.busy.extend(session);
+        self.busy.extend(busy);
         self.landing.push(work);
         None
     }
@@ -1339,8 +1353,15 @@ impl OnLoop {
                 self.busy.remove(&session);
                 land_attach(sink, frames_wanted, session, result, context).await;
             }
-            Landed::Created { request, result } => {
+            Landed::Created {
+                request,
+                busy,
+                result,
+            } => {
                 self.spawning = false;
+                for session in busy {
+                    self.busy.remove(&session);
+                }
                 if let Ok(info) = &result {
                     frames_wanted.insert(info.id);
                 }
@@ -1377,21 +1398,53 @@ impl OnLoop {
     }
 }
 
-/// Whether a request is attach-family and which session it names, read only while
+/// Whether a request is attach-family and every session id it names, read only while
 /// something is in flight.
-fn classify(text: &str) -> (bool, Option<u32>) {
+fn classify(text: &str) -> (bool, Vec<u32>) {
     #[derive(serde::Deserialize)]
     struct Named {
         #[serde(default)]
         session: Option<serde_json::Value>,
+        #[serde(default)]
+        parent: Option<serde_json::Value>,
+        #[serde(default)]
+        child: Option<serde_json::Value>,
+        #[serde(default)]
+        cwd_from: Option<serde_json::Value>,
+        #[serde(default)]
+        orchestrator_session: Option<serde_json::Value>,
+        #[serde(default)]
+        sessions: Vec<serde_json::Value>,
+    }
+    impl Named {
+        fn sessions(self) -> Vec<u32> {
+            let mut found = Vec::new();
+            for value in [
+                self.session,
+                self.parent,
+                self.child,
+                self.cwd_from,
+                self.orchestrator_session,
+            ]
+            .into_iter()
+            .flatten()
+            .chain(self.sessions)
+            {
+                if let Some(session) = value.as_u64().and_then(|s| u32::try_from(s).ok()) {
+                    if !found.contains(&session) {
+                        found.push(session);
+                    }
+                }
+            }
+            found
+        }
     }
     let family = serde_json::from_str::<proto::ClientMsg>(text)
         .is_ok_and(|msg| runs_on_connection_task(&msg));
-    let session = serde_json::from_str::<Named>(text)
-        .ok()
-        .and_then(|named| named.session?.as_u64())
-        .and_then(|session| u32::try_from(session).ok());
-    (family, session)
+    let sessions = serde_json::from_str::<Named>(text)
+        .map(Named::sessions)
+        .unwrap_or_default();
+    (family, sessions)
 }
 
 /// Copies and encodes an attach's snapshot or replay; runs on a blocking thread.

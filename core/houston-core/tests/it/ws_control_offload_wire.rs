@@ -66,7 +66,7 @@ fn control(msg: &proto::ClientMsg) -> Message {
     Message::text(serde_json::to_string(msg).unwrap())
 }
 
-fn create_msg(request: u32, dir: &std::path::Path) -> Message {
+fn create_msg(request: u32, dir: &std::path::Path, cwd_from: Option<u32>) -> Message {
     control(&proto::ClientMsg::SessionCreate {
         request: Some(request),
         agent: proto::AgentKind::Custom,
@@ -74,7 +74,7 @@ fn create_msg(request: u32, dir: &std::path::Path) -> Message {
         cmd: Some(sleeper()),
         cols: Some(80),
         rows: Some(24),
-        cwd_from: None,
+        cwd_from,
         shell_integration: Some(false),
         auto_approve: None,
         acp: None,
@@ -131,7 +131,9 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
 
     daemon.set_startup_test(None, Box::new(|_, _| std::thread::sleep(SPAWN_DELAY)));
     let sent = Instant::now();
-    sink.send(create_msg(1, project.path())).await.unwrap();
+    sink.send(create_msg(1, project.path(), None))
+        .await
+        .unwrap();
     // An attach-family request behind the spawn is answered after it, in request order.
     sink.send(attach_msg(flooding, Some(0))).await.unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -218,6 +220,104 @@ async fn a_slow_spawn_does_not_stall_other_panes_or_control_replies() {
         "session_list took {} ms while a {} ms spawn ran on the same connection",
         probe_rtt.as_millis(),
         SPAWN_DELAY.as_millis()
+    );
+}
+
+/// A request that names a session through `parent` or `child` is the same dependency as one
+/// naming it through `session`: before the spawns ran off the loop a blocking spawn held the
+/// connection, so the request ran after it. A spawn that names a session through `cwd_from`
+/// holds it busy, so both requests must wait for the spawn's reply.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_request_naming_a_busy_session_waits_behind_the_spawn() {
+    tokio::spawn(houston_core::power_throttling::sweep_loop());
+    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let project = tempfile::tempdir().unwrap();
+    let anchor = spawn(&daemon, project.path(), sleeper());
+    let mut sessions = Sessions(daemon.clone(), vec![anchor]);
+
+    let (mut sink, stream) = connect(addr).await.split();
+    let mut events = read_events(stream);
+
+    daemon.set_startup_test(None, Box::new(|_, _| std::thread::sleep(SPAWN_DELAY)));
+    let sent = Instant::now();
+    sink.send(create_msg(1, project.path(), Some(anchor)))
+        .await
+        .unwrap();
+    sink.send(control(&proto::ClientMsg::DelegationResultsList {
+        parent: anchor,
+        before_message_id: None,
+    }))
+    .await
+    .unwrap();
+    sink.send(control(&proto::ClientMsg::ChildInputResolve {
+        child: anchor,
+        id: "offload-order-probe".into(),
+    }))
+    .await
+    .unwrap();
+
+    let mut created = None;
+    let mut results = None;
+    let mut resolved = None;
+    while created.is_none() || results.is_none() || resolved.is_none() {
+        let (at, event) = tokio::time::timeout(EVENT_TIMEOUT, events.recv())
+            .await
+            .expect("the create, delegation or child-input reply never arrived")
+            .unwrap();
+        if let Event::Control(msg) = event {
+            match *msg {
+                proto::ServerMsg::SessionCreateResult {
+                    request: 1,
+                    info,
+                    error,
+                } => {
+                    let info = info.unwrap_or_else(|| panic!("create refused: {error:?}"));
+                    sessions.1.push(info.id);
+                    created = Some(at);
+                }
+                proto::ServerMsg::DelegationResults { parent, .. } if parent == anchor => {
+                    results = Some(at);
+                }
+                proto::ServerMsg::Error { message, .. }
+                    if message.contains("offload-order-probe") =>
+                {
+                    resolved = Some(at);
+                }
+                _ => {}
+            }
+        }
+    }
+    daemon.set_startup_test(None, Box::new(|_, _| {}));
+
+    let created = created.unwrap();
+    let results = results.unwrap();
+    let resolved = resolved.unwrap();
+    eprintln!(
+        "spawn delay {} ms: create reply after {} ms; delegation_results {} ms and \
+         child_input refusal {} ms relative to the create reply",
+        SPAWN_DELAY.as_millis(),
+        (created - sent).as_millis(),
+        results.saturating_duration_since(created).as_millis(),
+        resolved.saturating_duration_since(created).as_millis(),
+    );
+    assert!(
+        created - sent >= SPAWN_DELAY,
+        "the create replied after {} ms, before the injected {} ms spawn delay; the hook did \
+         not run",
+        (created - sent).as_millis(),
+        SPAWN_DELAY.as_millis()
+    );
+    assert!(
+        results >= created,
+        "delegation_results naming parent {anchor} arrived {} ms before the create result it \
+         was sent after",
+        (created - results).as_millis()
+    );
+    assert!(
+        resolved >= created,
+        "the child_input refusal naming child {anchor} arrived {} ms before the create result \
+         it was sent after",
+        (created - resolved).as_millis()
     );
 }
 
