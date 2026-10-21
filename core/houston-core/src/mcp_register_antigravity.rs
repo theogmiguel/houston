@@ -121,7 +121,8 @@ pub fn run(home: &Path) -> Result<String, String> {
             let mut out = serde_json::to_string_pretty(&root)
                 .map_err(|e| format!("serializing {}: {e}", path.display()))?;
             out.push('\n');
-            std::fs::write(&path, out).map_err(|e| format!("writing {}: {e}", path.display()))?;
+            crate::fs_retry::write(&path, out)
+                .map_err(|e| format!("writing {}: {e}", path.display()))?;
             Ok(format!(
                 "registered `{}` in antigravity user scope (flagless `agy` in Houston panes now \
                  connects) — smoke-test pending, see google-antigravity/antigravity-cli#25",

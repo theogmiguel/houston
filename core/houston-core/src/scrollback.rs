@@ -240,6 +240,11 @@ impl Scrollback {
     }
 
     pub fn persist(&self, path: &Path) -> Result<()> {
+        write_snapshot(path, self.snapshot())
+    }
+
+    /// The checkpoint file's bytes, so a caller can release the ring's lock before writing.
+    pub fn snapshot(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(17 + self.buf.len());
         out.extend_from_slice(PERSIST_MAGIC);
         out.push(PERSIST_VERSION);
@@ -248,10 +253,7 @@ impl Scrollback {
         let (first, second) = self.buf.as_slices();
         out.extend_from_slice(first);
         out.extend_from_slice(second);
-        let tmp = path.with_extension("bin.tmp");
-        std::fs::write(&tmp, out)
-            .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| format!("moving {} into place", tmp.display()))
+        out
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -299,6 +301,16 @@ impl Scrollback {
             generation,
         })
     }
+}
+
+/// Writes a `Scrollback::snapshot` to `path` through a temporary file; callers that share a
+/// checkpoint path must serialise their writes.
+pub fn write_snapshot(path: &Path, snapshot: Vec<u8>) -> Result<()> {
+    let tmp = path.with_extension("bin.tmp");
+    crate::fs_retry::write(&tmp, snapshot)
+        .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
+    crate::fs_retry::rename(&tmp, path)
+        .with_context(|| format!("moving {} into place", tmp.display()))
 }
 
 #[cfg(test)]
@@ -442,9 +454,9 @@ mod tests {
             out.extend_from_slice(&self.start.to_le_bytes());
             out.extend_from_slice(&self.buf);
             let tmp = path.with_extension("bin.tmp");
-            std::fs::write(&tmp, out)
+            crate::fs_retry::write(&tmp, out)
                 .with_context(|| format!("persisting scrollback to {}", tmp.display()))?;
-            std::fs::rename(&tmp, path)
+            crate::fs_retry::rename(&tmp, path)
                 .with_context(|| format!("moving {} into place", tmp.display()))
         }
 
@@ -501,6 +513,34 @@ mod tests {
                 reference_safe_cut(&text, from)
             );
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_checkpoint_waits_out_a_brief_exclusive_open_of_its_temporary_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut sb = Scrollback::new();
+        sb.push(b"checkpoint");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("1.bin");
+        let tmp = path.with_extension("bin.tmp");
+        std::fs::write(&tmp, b"stale").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&tmp)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            drop(held);
+        });
+        let result = sb.persist(&path);
+        release.join().unwrap();
+        result.unwrap();
+        assert_eq!(
+            Scrollback::load(&path).unwrap().tail_lines(1),
+            ["checkpoint"]
+        );
     }
 
     #[test]

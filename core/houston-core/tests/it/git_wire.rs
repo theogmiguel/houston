@@ -640,6 +640,50 @@ async fn git_status_and_diff_over_the_wire() {
     assert!(!patch.contains("+world"));
 }
 
+/// A status poll must not refresh a stat-dirty index; doing so holds `index.lock` and an
+/// agent's own `git add` or `git commit` in the same checkout can fail on it.
+#[tokio::test]
+async fn git_status_over_the_wire_leaves_a_stat_dirty_index_unwritten() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let readme = repo.path().join("README.md");
+    let earlier = std::time::SystemTime::now() - Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&readme)
+        .unwrap()
+        .set_modified(earlier)
+        .unwrap();
+    let index = repo.path().join(".git/index");
+    let before = (
+        std::fs::read(&index).unwrap(),
+        std::fs::metadata(&index).unwrap().modified().unwrap(),
+    );
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let dir = repo.path().display().to_string();
+    let status = serde_json::to_string(&proto::ClientMsg::GitStatus {
+        dir: dir.clone(),
+        base: None,
+    })
+    .unwrap();
+    ws.send(Message::text(status)).await.unwrap();
+    let reply = expect_git_status(&mut ws).await;
+    assert_eq!(reply.dir, dir);
+    assert!(reply.files.is_empty(), "{:?}", reply.files);
+
+    let after = (
+        std::fs::read(&index).unwrap(),
+        std::fs::metadata(&index).unwrap().modified().unwrap(),
+    );
+    assert!(
+        before == after,
+        "a status poll rewrote the stat-dirty .git/index"
+    );
+}
+
 #[tokio::test]
 async fn oversized_diff_sets_the_truncation_flag() {
     let (addr, _state) = start_daemon().await;
