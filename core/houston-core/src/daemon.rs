@@ -4324,9 +4324,11 @@ impl Daemon {
             Some(s) => Arc::clone(s),
             None => return Ok(()),
         };
-        if *session.state.lock().expect("state lock") == proto::SessionState::Killed {
-            // Kill released this pane's scrollback file; the EOF drain and the
-            // shutdown checkpoint must not re-create it for the Killed tile.
+        if *session.state.lock().expect("state lock") == proto::SessionState::Killed
+            && !self.is_shutting_down()
+        {
+            // Kill released this pane's scrollback file; the EOF drain must not
+            // re-create it. Shutdown's own kills keep theirs for the restart.
             return Ok(());
         }
         let ring = session.scrollback.lock().expect("scrollback lock");
@@ -13533,7 +13535,9 @@ impl Daemon {
         // entry removed. A killed child's bearer token must stop working immediately.
         self.mcp_creds.revoke_session(id);
         self.mcp_notify.close_session(id);
-        self.remove_persisted_scrollback(id);
+        if !self.is_shutting_down() {
+            self.remove_persisted_scrollback(id);
+        }
         self.frame_taps.forget_session(id);
         self.voice.forget_session(id);
         drop(cleanup);
