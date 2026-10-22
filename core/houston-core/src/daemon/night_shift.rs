@@ -843,8 +843,8 @@ impl Daemon {
         }
     }
 
-    /// A spawn from a run's tree: refused while the run stops and from a
-    /// handoff.
+    /// A spawn from a run's tree: refused while the run stops, from a
+    /// handoff, and at the live pane cap.
     fn night_spawn_admit(&self, caller: u32, handoff: bool) -> Result<()> {
         let Some((run_id, tree)) = self.night_tree_of(caller) else {
             return Ok(());
@@ -861,11 +861,30 @@ impl Daemon {
                  panes cannot hand off (handoff: true); spawn a child pane instead"
             );
         }
+        let live = self.night_live_panes(&tree).len().saturating_sub(1);
+        let (workers, cap) = self.night_pane_cap(tree.routine_id);
+        if live >= cap {
+            bail!(
+                "pane_spawn refused: Night shift run {run_id} has {live} live panes besides its \
+                 orchestrator, at its cap of {cap} ({workers} live workers plus {} gate panes); \
+                 wait for a pane to finish before starting another",
+                crate::night_shift::GATE_PANES
+            );
+        }
         Ok(())
     }
 
+    /// The run's live workers setting and its pane cap.
+    fn night_pane_cap(&self, routine_id: u32) -> (u32, usize) {
+        let workers = self
+            .night_settings(routine_id)
+            .map(|s| s.live_workers)
+            .unwrap_or(4);
+        (workers, (workers + crate::night_shift::GATE_PANES) as usize)
+    }
+
     /// A pane `caller` spawned: recorded in the caller's run. A pane that
-    /// raced a stop is closed again and the spawn refused.
+    /// raced a stop or the cap is closed again and the spawn refused.
     pub(super) fn night_shift_spawned(&self, caller: u32, session: u32) -> Result<()> {
         let Some((run_id, _)) = self.night_tree_of(caller) else {
             return Ok(());
@@ -877,13 +896,22 @@ impl Daemon {
             .lock()
             .expect("night trees")
             .get(&run_id)
-            .map(|t| t.stopping);
+            .cloned();
         let refusal = match current {
             None => Some(format!("Night shift run {run_id} ended during the spawn")),
-            Some(true) => Some(format!(
+            Some(t) if t.stopping => Some(format!(
                 "Night shift run {run_id} began stopping during the spawn"
             )),
-            Some(false) => None,
+            Some(tree) => {
+                let live = self.night_live_panes(&tree).len().saturating_sub(1);
+                let (_, cap) = self.night_pane_cap(tree.routine_id);
+                (live > cap).then(|| {
+                    format!(
+                        "Night shift run {run_id} reached {live} live panes besides its \
+                         orchestrator, over its cap of {cap}"
+                    )
+                })
+            }
         };
         let Some(why) = refusal else {
             return Ok(());
@@ -1821,10 +1849,9 @@ impl Daemon {
             })
     }
 
-    /// A spawn from a run's tree: admitted by `night_spawn_admit`, providers
-    /// without a limit signal are refused
-    /// and a limited one is swapped for the next in the chain. Answers the
-    /// provider to launch and, when it changed, the reply's warning.
+    /// A spawn from a run's tree, once admitted: a provider without a limit
+    /// signal is refused and a limited one swapped for the next in the chain.
+    /// Answers the provider to launch and, when it changed, the warning.
     pub(crate) fn night_shift_spawn_provider(
         &self,
         caller: u32,

@@ -662,6 +662,34 @@ async fn hard_stop_closes_orphaned_grandchild_and_refuses_handoff() {
     assert_eq!(settled.cost.panes, 3, "the crew counts every pane it started");
 }
 
+/// Live workers bound the run's live panes: the workers plus a reviewer and
+/// a QA pane; one more is refused naming the cap and the count.
+#[tokio::test]
+async fn live_worker_cap_refuses_spawn() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|s| s.live_workers = 1);
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let mut first = None;
+    for _ in 0..3 {
+        let (status, body) = r.spawn_child(o, "codex").await;
+        assert_eq!(status, 200, "{body}");
+        first.get_or_insert(body["session_id"].as_u64().unwrap() as u32);
+    }
+    let (status, body) = r.spawn_child(o, "codex").await;
+    assert_ne!(status, 200, "{body}");
+    let text = body.to_string();
+    assert!(
+        text.contains("3 live panes") && text.contains("cap of 3") && text.contains("1 live workers"),
+        "names the count and the cap: {text}"
+    );
+    r.daemon.kill(first.unwrap()).unwrap();
+    wait_until("a worker to exit", || !r.live(first.unwrap())).await;
+    let (status, body) = r.spawn_child(o, "codex").await;
+    assert_eq!(status, 200, "a freed slot admits a spawn: {body}");
+}
+
 /// The report and the orchestrator's turn end settle the run, and its live
 /// worker and the orchestrator are closed with it.
 #[tokio::test]

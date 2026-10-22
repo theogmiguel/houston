@@ -139,7 +139,13 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
             .collect::<Vec<_>>()
             .join(", then ")
     );
-    let _ = writeln!(out, "- Live workers at most: {}", s.live_workers);
+    let _ = writeln!(
+        out,
+        "- Live workers at most: {}, plus one reviewer and one QA pane. Houston refuses a \
+         spawn past {} live panes besides you.",
+        s.live_workers,
+        s.live_workers + super::GATE_PANES
+    );
     let reviewer = s.reviewer.as_ref().unwrap_or(&s.orchestrator);
     let _ = writeln!(out, "- Reviewer: {}", agent_label(reviewer));
     if s.checks.is_empty() {

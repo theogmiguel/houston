@@ -16,6 +16,10 @@ pub const RUN_DIR_ENV: &str = "HOUSTON_NIGHT_RUN_DIR";
 pub const ROUTINE_PROMPT: &str =
     "Night shift: Houston composes this run's brief from the workspace's settings and ledger.";
 
+/// Panes a run may keep live beyond its live workers: one reviewer and one
+/// QA pane, so a gate never waits for a worker slot.
+pub const GATE_PANES: u32 = 2;
+
 /// The ledger verbs, as MCP tools (`night_<verb>`) and `hs-night <verb>`.
 pub const VERBS: [&str; 5] = ["plan", "pr", "lesson", "decision", "report"];
 
