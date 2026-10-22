@@ -295,11 +295,37 @@ mod tests {
         }
     }
 
+    /// Every field at the most `validate` accepts, and a full ledger, still
+    /// fit `ROUTINE_PROMPT_MAX` with the newest entries kept.
     #[test]
     fn bounded_with_full_ledger() {
-        let mut s = super::super::settings::defaults();
-        s.goal = "g".repeat(super::super::settings::TEXT_FIELD_MAX);
-        s.checks = vec!["c".repeat(super::super::settings::TEXT_FIELD_MAX); 20];
+        use super::super::settings::*;
+        let mut s = defaults();
+        s.goal = "g".repeat(TEXT_FIELD_MAX);
+        s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 4];
+        s.competitor_sources = vec!["s".repeat(600); SOURCES_MAX];
+        s.app_check = Some(houston_protocol::NightAppCheck {
+            start_command: "a".repeat(1_000),
+            address: "b".repeat(1_000),
+            smoke_flows: vec!["f".repeat(300); SMOKE_FLOWS_MAX],
+        });
+        s.focus.competitor_gaps = NightFocusLevel::High;
+        s.orchestrator.model = Some("m".repeat(MODEL_MAX));
+        s.workers = vec![
+            NightAgent {
+                provider: AgentKind::Codex,
+                model: Some("m".repeat(MODEL_MAX)),
+            };
+            WORKERS_MAX
+        ];
+        s.reviewer = Some(s.workers[0].clone());
+        validate(
+            &s,
+            &WorkspaceFacts {
+                merge_verify_command: true,
+            },
+        )
+        .expect("every field at its limit is valid");
         let digest: Vec<NightEntry> = (0..houston_protocol::NIGHT_SHIFT_DIGEST_ENTRIES_MAX)
             .map(|i| entry(i, NightEntryKind::Lesson, &format!("lesson {i}")))
             .collect();

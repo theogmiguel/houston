@@ -13,7 +13,15 @@ pub const MAX_CHANGES_PER_PR_MAX: u32 = 20;
 /// A week of continuous panes; anything larger is no safety net.
 pub const SAFETY_CAP_PANE_HOURS_MAX: u32 = 1_000;
 pub const CHECKS_MAX: usize = 20;
+pub const SOURCES_MAX: usize = 10;
+pub const SMOKE_FLOWS_MAX: usize = 20;
+/// The setup offers four; more providers than this is no fallback order.
+pub const WORKERS_MAX: usize = 4;
 pub const TEXT_FIELD_MAX: usize = 2_000;
+pub const MODEL_MAX: usize = 100;
+/// All free text together. With the method and labels it keeps the brief's
+/// fixed part under half of `ROUTINE_PROMPT_MAX`, leaving the rest to the ledger.
+pub const TEXT_TOTAL_MAX: usize = 24_000;
 
 pub fn defaults() -> NightShiftSettings {
     let at = |hour, minute| NightClock { hour, minute };
@@ -166,6 +174,12 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     if s.workers.is_empty() {
         bail!("Night shift needs at least one worker provider");
     }
+    if s.workers.len() > WORKERS_MAX {
+        bail!(
+            "{} worker providers; the limit is {WORKERS_MAX}",
+            s.workers.len()
+        );
+    }
     for w in &s.workers {
         if reports_no_limit(w.provider) {
             bail!(
@@ -212,19 +226,48 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         s.safety_cap_pane_hours,
         SAFETY_CAP_PANE_HOURS_MAX,
     )?;
-    if s.checks.len() > CHECKS_MAX {
-        bail!(
-            "{} checks before hand-back; the limit is {CHECKS_MAX}",
-            s.checks.len()
-        );
+    let smoke_flows = s.app_check.as_ref().map_or(&[][..], |a| &a.smoke_flows[..]);
+    for (name, count, max) in [
+        ("checks before hand-back", s.checks.len(), CHECKS_MAX),
+        ("competitor sources", s.competitor_sources.len(), SOURCES_MAX),
+        ("smoke flows", smoke_flows.len(), SMOKE_FLOWS_MAX),
+    ] {
+        if count > max {
+            bail!("{count} {name}; the limit is {max}");
+        }
     }
-    let texts = std::iter::once(("goal", s.goal.as_str()))
-        .chain(s.checks.iter().map(|c| ("check", c.as_str())))
-        .chain(s.competitor_sources.iter().map(|c| ("source", c.as_str())));
+    let app = s.app_check.as_ref();
+    let texts = [
+        ("goal", s.goal.as_str()),
+        ("App start command", app.map_or("", |a| a.start_command.as_str())),
+        ("App address", app.map_or("", |a| a.address.as_str())),
+    ]
+    .into_iter()
+    .chain(s.checks.iter().map(|c| ("check", c.as_str())))
+    .chain(s.competitor_sources.iter().map(|c| ("source", c.as_str())))
+    .chain(smoke_flows.iter().map(|c| ("smoke flow", c.as_str())));
+    let mut total = 0;
     for (name, text) in texts {
         let len = text.chars().count();
         if len > TEXT_FIELD_MAX {
             bail!("a {name} is {len} characters; the limit is {TEXT_FIELD_MAX}");
+        }
+        total += len;
+    }
+    if total > TEXT_TOTAL_MAX {
+        bail!(
+            "the settings' text fields hold {total} characters together; the limit is \
+             {TEXT_TOTAL_MAX}, so the brief keeps room for the ledger"
+        );
+    }
+    let models = std::iter::once(&s.orchestrator)
+        .chain(&s.workers)
+        .chain(&s.reviewer)
+        .filter_map(|a| a.model.as_deref());
+    for model in models {
+        let len = model.chars().count();
+        if len > MODEL_MAX {
+            bail!("a model name is {len} characters; the limit is {MODEL_MAX}");
         }
     }
     if s.focus.competitor_gaps != NightFocusLevel::Off && s.competitor_sources.is_empty() {
@@ -343,5 +386,36 @@ mod tests {
         assert!(validate(&s, &facts()).is_err());
         s.window.nights = vec![1, 5];
         validate(&s, &facts()).unwrap();
+    }
+
+    /// Every free-text field and list is bounded, each refusal naming the
+    /// field, the value and the limit.
+    #[test]
+    fn every_text_field_and_list_is_bounded() {
+        let app = |start: &str, address: &str, flows: Vec<String>| {
+            Some(houston_protocol::NightAppCheck {
+                start_command: start.into(),
+                address: address.into(),
+                smoke_flows: flows,
+            })
+        };
+        type Edit = Box<dyn Fn(&mut NightShiftSettings)>;
+        let cases: Vec<(&str, Edit)> = vec![
+            ("App start command", Box::new(move |s| s.app_check = app(&"x".repeat(TEXT_FIELD_MAX + 1), "", vec![]))),
+            ("App address", Box::new(move |s| s.app_check = app("", &"x".repeat(TEXT_FIELD_MAX + 1), vec![]))),
+            ("smoke flow", Box::new(move |s| s.app_check = app("", "", vec!["x".repeat(TEXT_FIELD_MAX + 1)]))),
+            ("21 smoke flows", Box::new(move |s| s.app_check = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1]))),
+            ("11 competitor sources", Box::new(|s| s.competitor_sources = vec!["https://x".into(); SOURCES_MAX + 1])),
+            ("5 worker providers", Box::new(|s| s.workers = vec![s.workers[0].clone(); WORKERS_MAX + 1])),
+            ("model name", Box::new(|s| s.orchestrator.model = Some("m".repeat(MODEL_MAX + 1)))),
+            ("together", Box::new(|s| s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 13])),
+        ];
+        for (needle, edit) in cases {
+            let mut s = defaults();
+            edit(&mut s);
+            let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+            assert!(err.contains(needle), "{needle}: {err}");
+            assert!(err.contains("limit"), "{err}");
+        }
     }
 }
