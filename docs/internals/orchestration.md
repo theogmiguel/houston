@@ -61,7 +61,8 @@ that weakens one of them changes this list in the same PR.
 - **No lost signal.** A row is persisted before any door reads it. A crash between a child's
   `pane_submit` and the end of its round cannot leave a result that is neither stored nor
   eligible (`ready_at` is set in the transaction that closes the round). Restart recovery
-  releases reservations and returns unconfirmed pastes to pending.
+  releases reservations and returns unconfirmed pastes to pending until they reach
+  `PASTE_ATTEMPTS_MAX`.
 - **At-least-once, recognisably.** Delivery is never claimed exactly-once. A redelivered row
   keeps its `pane_inbox.id`, carries a new `delivery_id` and says "possibly delivered before";
   a stale confirmation cannot mark a later attempt.
@@ -748,8 +749,10 @@ window. Three refusals hold it back, and the rows stay pending through all of th
   live ancestor inherits the row; only the absence of a live ancestor reaches the operator.
 
 The framing's first line carries the `delivery_id`. For providers whose prompt hooks
-include text, the next prompt hook whose prompt head carries that exact id sets
-`confirmed_at`; payloads without prompt text cannot provide this confirmation.
+include text, the next prompt hook whose framing header carries that exact id sets
+`confirmed_at`; payloads without prompt text cannot provide this confirmation. The header
+is the first prompt line that starts with `--- Houston`, not necessarily the first line:
+Claude Code reports a pasted prompt inside a `<pasted_content>` element.
 A partial paste keeps a durable receipt associated with its row. If the operator submits
 that complete receipt header from the composer, the prompt hook resolves the wait-only row
 before a later wait can deliver it again. An incomplete header provides no such proof.
@@ -952,7 +955,9 @@ restarts produce one state, and it runs **after** restore:
    back, not the empty roster boot started with — a respawned husk keeps its own rows
    addressed to it instead of re-addressing them to the operator on the strength of an
    empty live set. It releases every reservation; puts `paste` rows sent and unconfirmed
-   back to pending (the paste may or may not have landed; the row keeps its attempt count);
+   back to pending (the paste may or may not have landed; the row keeps its attempt count)
+   until the row has spent `PASTE_ATTEMPTS_MAX` attempts, after which the last submitted
+   paste stands as its delivery;
    puts unacked `operator` rows back to unread; leaves `wait` and `stop_hook` rows final and
    untouched; and re-addresses rows whose `to_session` did not survive to the nearest
    live ancestor, or the operator if none remains, with `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one
