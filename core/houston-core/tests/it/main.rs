@@ -68,6 +68,8 @@ mod merge_queue_wire;
 mod metadata_wire;
 mod mvp;
 mod nextest_guard;
+mod night_shift_cli;
+mod night_shift_wire;
 mod no_port_detection_wire;
 mod nonascii_longpath_wire;
 mod orchestration_chaos_wire;

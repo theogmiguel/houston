@@ -99,6 +99,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
         .route("/harness/publish", post(harness_publish))
+        .route("/night/{verb}", post(night_post))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
         .route("/task/get", get(task_get))
@@ -2348,6 +2349,51 @@ async fn dispatch(
                     let message = format!("{error:#}");
                     tracing::warn!("control request failed: {message}");
                     send_error(sink, message, Some(format!("harness_report:{review_id}"))).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftCreate { workspace } => {
+            let msg = daemon.night_shift_create(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftState {
+            workspace,
+            preflight_until_ms,
+        } => {
+            let msg = daemon.night_shift_state(&workspace, preflight_until_ms)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftUpdate {
+            routine_id,
+            settings,
+            expected_revision,
+        } => {
+            let msg = daemon.night_shift_update(routine_id, settings, &expected_revision)?;
+            daemon.broadcast_control(&msg);
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftRunNow {
+            routine_id,
+            until_ms,
+        } => daemon.night_shift_run_now(routine_id, until_ms).map(|_| ()),
+        proto::ClientMsg::NightShiftWrapUp { run_id } => daemon.night_shift_wrap_up_now(run_id),
+        proto::ClientMsg::NightShiftStop { run_id } => daemon.night_shift_stop_now(run_id),
+        proto::ClientMsg::NightShiftDecide { entry_id, choice } => {
+            daemon.night_shift_decide(entry_id, &choice)
+        }
+        proto::ClientMsg::NightShiftQaPassed { entry_id } => daemon.night_shift_qa_passed(entry_id),
+        proto::ClientMsg::NightShiftReport { run_id } => {
+            match daemon.night_shift_report(run_id) {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some(format!("night_shift_report:{run_id}"))).await;
                 }
             }
             Ok(())
@@ -6082,6 +6128,26 @@ struct SubmitBody {
 struct PublishBody {
     #[serde(default)]
     summary: Option<String>,
+}
+
+async fn night_post(
+    State(daemon): State<Arc<Daemon>>,
+    axum::extract::Path(verb): axum::extract::Path<String>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let result =
+        tokio::task::spawn_blocking(move || daemon.night_tool(scope.session_id, &verb, &payload))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("night tool panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
+        Err(e) => orch_err_response(e),
+    }
 }
 
 async fn harness_publish(

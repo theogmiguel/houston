@@ -1,0 +1,86 @@
+//! Night shift: settings, window, brief, preflight and keep-awake. The daemon
+//! side lives in `daemon/night_shift.rs`; the agent door in `mcp_night.rs`.
+pub mod awake;
+pub mod brief;
+pub mod cli;
+pub mod preflight;
+pub mod settings;
+pub mod window;
+
+use std::path::{Path, PathBuf};
+
+/// Set in the orchestrator pane: the directory its `report.md` goes in.
+pub const RUN_DIR_ENV: &str = "HOUSTON_NIGHT_RUN_DIR";
+
+/// The routine row's own prompt; the brief is composed at every start.
+pub const ROUTINE_PROMPT: &str =
+    "Night shift: Houston composes this run's brief from the workspace's settings and ledger.";
+
+/// The ledger verbs, as MCP tools (`night_<verb>`) and `hs-night <verb>`.
+pub const VERBS: [&str; 5] = ["plan", "pr", "lesson", "decision", "report"];
+
+pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
+    state_dir.join("night-shift").join(run_id.to_string())
+}
+
+/// The morning notice: "7 draft PRs, 2 decisions".
+pub fn headline(prs: usize, open_decisions: usize, refused: bool) -> String {
+    if refused {
+        return "Night shift did not start: preflight refused it".into();
+    }
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    format!(
+        "{}, {}",
+        plural(prs, "PR", "PRs"),
+        plural(open_decisions, "decision", "decisions")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headline_counts() {
+        assert_eq!(headline(7, 2, false), "7 PRs, 2 decisions");
+        assert_eq!(headline(1, 1, false), "1 PR, 1 decision");
+        assert_eq!(headline(0, 0, false), "0 PRs, 0 decisions");
+    }
+
+    /// Quota resets are never spent automatically: no Night shift code path
+    /// names one.
+    #[test]
+    fn no_quota_reset_symbol() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let files = [
+            "night_shift/mod.rs",
+            "night_shift/awake.rs",
+            "night_shift/brief.rs",
+            "night_shift/cli.rs",
+            "night_shift/preflight.rs",
+            "night_shift/settings.rs",
+            "night_shift/window.rs",
+            "daemon/night_shift.rs",
+            "mcp_night.rs",
+        ];
+        let needles = [
+            ["quota", "_reset"].concat(),
+            ["reset", "_quota"].concat(),
+            ["usage", "_reset"].concat(),
+            ["reset", "Quota"].concat(),
+            ["quota_auto", "_resume"].concat(),
+        ];
+        for f in files {
+            let body = std::fs::read_to_string(src.join(f)).unwrap_or_else(|e| panic!("{f}: {e}"));
+            let code = body.split("#[cfg(test)]").next().unwrap_or_default();
+            let body = code.to_ascii_lowercase();
+            for n in &needles {
+                assert!(
+                    !body.contains(&n.to_ascii_lowercase()),
+                    "{f} names {n}; Night shift never spends a quota reset"
+                );
+            }
+        }
+    }
+}
