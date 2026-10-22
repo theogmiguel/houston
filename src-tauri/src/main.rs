@@ -21,6 +21,7 @@ mod spike_webview;
 mod system;
 #[cfg(test)]
 mod test_home;
+mod transfer_open;
 mod tray;
 mod watchdog;
 mod webview_render;
@@ -450,6 +451,11 @@ fn main() {
         Arc::clone(&render_overrides),
     ));
 
+    let launch_transfer = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| transfer_open::file_argument(&args, &cwd));
+    builder = builder.manage(transfer_open::LaunchFile::new(launch_transfer));
+
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
     builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
@@ -458,7 +464,8 @@ fn main() {
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
-                .callback(move |app, _argv, _cwd| {
+                .callback(move |app, argv, cwd| {
+                    transfer_open::forward(app, &argv, &cwd);
                     eprintln!(
                         "houston-tauri: rejected a second launch on channel \
                          {channel_label:?} (already owned by this instance); focusing the \
@@ -522,6 +529,9 @@ fn main() {
             dialog::dialog_pick_file,
             dialog::dialog_pick_image,
             dialog::dialog_save_image_url,
+            dialog::dialog_save_transfer,
+            dialog::dialog_pick_transfer,
+            transfer_open::transfer_launch_file,
             shell::shell_open_external,
             shell::shell_show_item_in_folder,
             shell::shell_open_media_file,

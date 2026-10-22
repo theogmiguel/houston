@@ -35,6 +35,10 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+// A prefilled prompt is only typed into a composer that takes input, never pasted
+// regardless: a first-run question such as Claude's folder trust prompt can stay up
+// until the operator reads it, and a paste there would answer it.
+const FIRST_PROMPT_PREFILL_DEADLINE: Duration = Duration::from_secs(15 * 60);
 // A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
 // the margin covers a CLI still finishing its startup when the paste arrived.
 const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
@@ -621,6 +625,9 @@ pub struct Session {
     hook_latest_prompt: Mutex<Option<String>>,
     hook_latest_agent_message: Mutex<Option<String>>,
     sleep_notice: Mutex<Option<String>>,
+    /// When the conversation left in a workspace transfer, and whether this pane
+    /// continues a conversation that had left (see `SessionInfo::transfer_fork`).
+    transfer_mark: Mutex<(Option<u64>, bool)>,
     recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
     limit: Mutex<Option<proto::SessionLimit>>,
@@ -1355,6 +1362,8 @@ impl Session {
             .expect("latest agent message lock")
             .clone();
         info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        (info.transferred_at_ms, info.transfer_fork) =
+            *self.transfer_mark.lock().expect("transfer mark lock");
         if let Some(notice) = self
             .recovery_notice
             .lock()
@@ -1542,6 +1551,7 @@ mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod title_generation;
+mod transfer;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
@@ -1793,6 +1803,7 @@ pub struct Daemon {
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
     first_prompt_confirm_ms: AtomicU64,
+    first_prompt_deadline_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
     claude_mod_turns: Mutex<HashMap<u32, (String, String)>>,
@@ -2620,6 +2631,12 @@ struct SpawnParams {
     /// A first prompt will be pasted once the composer takes input, so its output is
     /// watched for that until the delivery ends.
     pastes_first_prompt: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ProcessEnding {
+    Kill,
+    Transfer,
 }
 
 struct SessionReplacement {
@@ -3604,6 +3621,7 @@ impl Daemon {
             paste_confirmations: Mutex::new(HashMap::new()),
             first_prompts: Mutex::new(HashMap::new()),
             first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
+            first_prompt_deadline_ms: AtomicU64::new(FIRST_PROMPT_DEADLINE.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
             claude_mod_turns: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
@@ -3921,6 +3939,7 @@ impl Daemon {
             }
             dead.values()
                 .filter(|info| info.state != proto::SessionState::Sleeping)
+                .filter(|info| info.transferred_at_ms.is_none())
                 .filter(|info| {
                     info.state != proto::SessionState::Exited || info.spawned_by.is_some()
                 })
@@ -5455,6 +5474,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -5526,6 +5547,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -9088,6 +9110,10 @@ impl Daemon {
                         .session_has_bound_resume_handle(info.id)
                         .unwrap_or(false);
                 info.compactions = self.compactions_of(info);
+                match self.db.session_transfer_mark(info.id) {
+                    Ok(mark) => (info.transferred_at_ms, info.transfer_fork) = mark,
+                    Err(e) => tracing::warn!("reading session {}'s transfer mark: {e}", info.id),
+                }
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
                     0
@@ -10107,6 +10133,7 @@ impl Daemon {
             Ok(())
         };
         let strict_resume = conversation == RespawnConversation::Wake;
+        let keeps_conversation = conversation != RespawnConversation::Fresh;
         let restore_scrollback = conversation == RespawnConversation::Restore;
         if strict_resume && (handle.is_none() || acp.is_some()) {
             bail!("Wake refused for session {old_id}: the exact provider conversation handle is unavailable. Choose fresh explicitly to start a new conversation.");
@@ -10312,6 +10339,11 @@ impl Daemon {
                 info.spawned_by = Some(spawned.id);
             }
         }
+        let spawned = if keeps_conversation && spawned.resume_notice.is_none() {
+            self.carry_transfer_fork(old_id, spawned)
+        } else {
+            spawned
+        };
         if was_dead {
             self.dead.lock().expect("dead lock").remove(&old_id);
             self.dead_geometry
@@ -11875,6 +11907,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
 
         if let Some(cues) = replacement
@@ -11961,6 +11995,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
             hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
@@ -12533,6 +12568,8 @@ impl Daemon {
                 last_agent_message: None,
                 slept_at_ms: None,
                 limit: None,
+                transferred_at_ms: None,
+                transfer_fork: false,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -12592,6 +12629,7 @@ impl Daemon {
                 hook_latest_prompt: Mutex::new(None),
                 hook_latest_agent_message: Mutex::new(None),
                 sleep_notice: Mutex::new(None),
+                transfer_mark: Mutex::new((None, false)),
                 recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
                 limit: Mutex::new(None),
@@ -13544,6 +13582,31 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.end_process_unlocked(id, ProcessEnding::Kill)
+    }
+
+    /// Stops a pane whose conversation left in a workspace transfer. Unlike Kill, the
+    /// pane keeps its conversation handle and ends Exited, so it can be respawned as a
+    /// fork and a return trip can resume it in place.
+    pub(crate) fn stop_for_transfer(&self, id: u32) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
+        self.resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .remove(&id);
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .remove(&id);
+        self.end_process_unlocked(id, ProcessEnding::Transfer)
+    }
+
+    fn end_process_unlocked(&self, id: u32, ending: ProcessEnding) -> Result<()> {
         self.shutdown_preserved
             .lock()
             .expect("shutdown preserved lock")
@@ -13577,11 +13640,16 @@ impl Daemon {
             .lock()
             .expect("operator_ended lock")
             .insert(id);
-        self.forget_resume_handle(id);
+        let ended = match ending {
+            ProcessEnding::Kill => {
+                self.forget_resume_handle(id);
+                proto::SessionState::Killed
+            }
+            ProcessEnding::Transfer => proto::SessionState::Exited,
+        };
         let mut state = session.state.lock().expect("state lock");
-        self.db
-            .update_session_state(id, proto::SessionState::Killed, None)?;
-        *state = proto::SessionState::Killed;
+        self.db.update_session_state(id, ended, None)?;
+        *state = ended;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.broadcast_control(&proto::ServerMsg::SessionState {
             session: id,
@@ -19109,10 +19177,15 @@ impl Daemon {
         }
     }
 
-    /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
-    /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
-    /// has started, and ZCode drops what arrives before its input box has focus.
-    fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
+    /// Waits until the CLI's composer takes input (see `composer_ready.rs`): drawn output
+    /// is not enough, as ConPTY draws before the CLI starts. Past `deadline` the paste goes
+    /// in regardless when `paste_unready`, and otherwise the wait fails.
+    fn first_prompt_wait_ready(
+        &self,
+        session: u32,
+        deadline: Instant,
+        paste_unready: bool,
+    ) -> Result<()> {
         loop {
             let Ok(s) = self.get(session) else {
                 bail!("the pane closed first");
@@ -19128,7 +19201,7 @@ impl Daemon {
             drop(s);
             let late = Instant::now() >= deadline;
             let held = self.immediate_paste_hold_reason(session);
-            if drawn && held.is_none() && (ready || late) {
+            if drawn && held.is_none() && (ready || (late && paste_unready)) {
                 if !ready {
                     tracing::info!(
                         "pane {session}: its composer reported no focus by the deadline; \
@@ -19138,11 +19211,14 @@ impl Daemon {
                 return Ok(());
             }
             if late {
-                bail!(
-                    "{} within {} s",
-                    held.unwrap_or_else(|| "the CLI drew nothing".to_string()),
-                    FIRST_PROMPT_DEADLINE.as_secs()
-                );
+                let why = held.unwrap_or_else(|| {
+                    if drawn {
+                        "its composer never took input".to_string()
+                    } else {
+                        "the CLI drew nothing".to_string()
+                    }
+                });
+                bail!("{why} by the deadline");
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
@@ -19173,7 +19249,17 @@ impl Daemon {
         text: &str,
         submit: bool,
     ) -> Result<FirstPromptOutcome> {
-        self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
+        if submit {
+            let deadline =
+                Duration::from_millis(self.first_prompt_deadline_ms.load(Ordering::Relaxed));
+            self.first_prompt_wait_ready(session, Instant::now() + deadline, true)?;
+        } else {
+            self.first_prompt_wait_ready(
+                session,
+                Instant::now() + FIRST_PROMPT_PREFILL_DEADLINE,
+                false,
+            )?;
+        }
         let agent = self.get(session).map(|s| s.info.agent)?;
         // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
         let confirmable = submit
@@ -19213,7 +19299,7 @@ impl Daemon {
         if self.first_prompt_confirmed_within(session, wait) {
             return Ok(FirstPromptOutcome::Confirmed);
         }
-        self.first_prompt_wait_ready(session, Instant::now() + wait)?;
+        self.first_prompt_wait_ready(session, Instant::now() + wait, true)?;
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
         if self.first_prompt_confirmed_within(session, wait) {
@@ -19257,6 +19343,12 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_first_prompt_confirm_for_test(&self, wait: Duration) {
         self.first_prompt_confirm_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    pub fn set_first_prompt_deadline_for_test(&self, wait: Duration) {
+        self.first_prompt_deadline_ms
             .store(wait.as_millis() as u64, Ordering::Relaxed);
     }
 }
@@ -27287,6 +27379,8 @@ mod kill_teardown_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27344,6 +27438,7 @@ mod kill_teardown_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -27644,6 +27739,8 @@ mod shell_restore_bookkeeping_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         }
     }
 
@@ -27911,6 +28008,8 @@ mod force_respawn_guard_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27968,6 +28067,7 @@ mod force_respawn_guard_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),

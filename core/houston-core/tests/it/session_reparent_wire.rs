@@ -114,6 +114,8 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
     }
@@ -200,6 +202,8 @@ fn reparent_refuses_a_swarm_tied_session() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

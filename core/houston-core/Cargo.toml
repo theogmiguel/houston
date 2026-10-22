@@ -74,6 +74,10 @@ tokio-tungstenite = { version = "0.26", default-features = false, features = ["c
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 time = "0.3"
+# Workspace transfer files: an age passphrase (scrypt) envelope around a gzip tar.
+age = "0.11"
+tar = "0.4"
+flate2 = "1"
 
 [target.'cfg(unix)'.dependencies]
 # Default features only: a CPU (ggml) build, no CUDA/OpenBLAS/CoreML -- GPU is

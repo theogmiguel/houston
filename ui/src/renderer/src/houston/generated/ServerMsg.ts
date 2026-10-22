@@ -93,6 +93,11 @@ import type { TaskTrackerProvider } from "./TaskTrackerProvider";
 import type { TaskTrackerWorkspaceSettings } from "./TaskTrackerWorkspaceSettings";
 import type { TasksAccess } from "./TasksAccess";
 import type { TitleSource } from "./TitleSource";
+import type { TransferExportSummary } from "./TransferExportSummary";
+import type { TransferFileSummary } from "./TransferFileSummary";
+import type { TransferImportResult } from "./TransferImportResult";
+import type { TransferRefusal } from "./TransferRefusal";
+import type { TransferStage } from "./TransferStage";
 import type { UpdatePolicy } from "./UpdatePolicy";
 import type { UpdateState } from "./UpdateState";
 import type { UsageActivityDay } from "./UsageActivityDay";
@@ -205,4 +210,4 @@ insert: string, engine: string, translated: boolean, } | { "type": "voice_model_
 /**
  * Free pages inside the database file: what `storage_reclaim` can return to the disk.
  */
-session_db_free_bytes: number, scrollback_bytes: number, logs_bytes: number, } | { "type": "storage_reclaimed", before_bytes: number, after_bytes: number, refusal?: string | null, } | { "type": "command_history_ignore_globs", globs: Array<string>, } | { "type": "usage_summary", since_ms: number, until_ms: number, read_at_ms: number, buckets: Array<UsageBucket>, sources: Array<UsageSource>, session_counts?: UsageSessionCounts | null, pricing: UsagePricing, untracked_agents: Array<AgentKind>, scan_duration_ms: number, } | { "type": "usage_activity_summary", since_ms: number, until_ms: number, days: Array<UsageActivityDay>, } | { "type": "error", message: string, context: string | null, } | { "type": "browser_tool_call", request_id: bigint, tool: string, args: unknown, session_id: number, workspace_id: string, } | { "type": "remote_state", remote: RemoteInfo, } | { "type": "remote_pairing", url: string, qr_svg: string, expires_at: number, };
+session_db_free_bytes: number, scrollback_bytes: number, logs_bytes: number, } | { "type": "storage_reclaimed", before_bytes: number, after_bytes: number, refusal?: string | null, } | { "type": "command_history_ignore_globs", globs: Array<string>, } | { "type": "usage_summary", since_ms: number, until_ms: number, read_at_ms: number, buckets: Array<UsageBucket>, sources: Array<UsageSource>, session_counts?: UsageSessionCounts | null, pricing: UsagePricing, untracked_agents: Array<AgentKind>, scan_duration_ms: number, } | { "type": "usage_activity_summary", since_ms: number, until_ms: number, days: Array<UsageActivityDay>, } | { "type": "error", message: string, context: string | null, } | { "type": "browser_tool_call", request_id: bigint, tool: string, args: unknown, session_id: number, workspace_id: string, } | { "type": "remote_state", remote: RemoteInfo, } | { "type": "remote_pairing", url: string, qr_svg: string, expires_at: number, } | { "type": "transfer_progress", request: number, stage: TransferStage, } | { "type": "transfer_exported", request: number, summary: TransferExportSummary, } | { "type": "transfer_inspected", request: number, summary: TransferFileSummary, } | { "type": "transfer_imported", request: number, result: TransferImportResult, } | { "type": "transfer_refused", request: number, refusal: TransferRefusal, };

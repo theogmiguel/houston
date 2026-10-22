@@ -425,6 +425,8 @@ async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
     }

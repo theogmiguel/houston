@@ -248,8 +248,11 @@ orphan the first one's layout. Migration moves a bare `tr-layout:<path>` value u
 `loadLayout` clamps `cols` to 1..4 and returns `{ tree: null, cols: 2 }` on a corrupt
 entry rather than crashing the workspace. Removing a workspace cleans both keys.
 
-Layout is therefore per-browser-profile state: never synced, never in the DB, never on the
-wire.
+Layout is therefore per-browser-profile state: never synced and never in the DB. The one
+exception on the wire is a workspace transfer: export sends the workspace's grid entries as
+an opaque string (`layout/transferGrids.ts`) that the daemon stores in the file unread;
+import hands it back with the old-to-new session ids, and the renderer writes the remapped
+grids, with new grid and pane ids and without grid tags, beside the target's own.
 
 `components/LayoutView.tsx` renders it. Panes are absolutely positioned inside one
 container — a CSS-grid layout engine was tried and rejected: a React `insertBefore` on
