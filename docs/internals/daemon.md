@@ -149,6 +149,17 @@ prompts and arbitrary environment variables or command arguments are not recover
 The Codex observer receives a native ID only for a launch that actually resumes it; a
 retained retry handle does not identify a newly launched conversation.
 
+A workspace transfer is the one path that moves a conversation to another folder, and it
+does not go through `resume_check`, which keeps refusing folder changes. Import places the
+transcript bytes, then spawns a new row whose resume handle is bound to the new folder from
+the start; it never rewrites a transcript, since both providers find a session id outside
+the current folder's namespace. Export stops each pane through `ProcessEnding::Transfer`:
+unlike Kill it keeps the resume handle and ends `exited`, so boot restore leaves it alone,
+a Restart resumes a fork (`transfer_fork`), and a return trip resumes it in place. The
+return trip compares each checkout's `TreeState` (HEAD plus a hash per changed or untracked
+path) with the one recorded at export, and removes only the untracked files that export
+recorded.
+
 Before restore, undrained root lifecycle hooks may update conversation metadata across
 long downtime. Recovery does not replay status, permission, input or orchestration effects.
 Provider and cwd bindings prevent a retained handle from crossing agent or folder changes;
