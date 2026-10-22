@@ -12,7 +12,7 @@ verbs (only inside a Night shift run's orchestrator pane):
   pr --number N --title T [--theme T] [--status S] [--visible] [--body B]
      [--checks G] [--review G] [--qa G] [--ci G]   (G: pending|passed|failed)
   lesson --title T [--body B] [--flaky-test NAME]
-  decision --title T [--body B] [--options 'a|b|c']
+  decision --title T [--body B] [--option A]...   (one --option per choice)
   report --summary S [--merge-order 12,15,9]";
 
 pub fn run_cli(args: &[String]) -> i32 {
@@ -28,9 +28,39 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 }
 
-/// The JSON a verb's flags become; the same shape the MCP tool takes.
-pub fn args_json(verb: &str, flags: &std::collections::HashMap<String, String>) -> Result<Value> {
+/// Takes every `--option <text>` out of `args`: the one flag that repeats. A single
+/// separated value would not survive Windows, where `hs-night.cmd` hands `%*` to
+/// cmd.exe and a `|` or `&` in an argument becomes a pipe or a second command.
+fn take_options(args: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+    let (mut rest, mut options) = (Vec::new(), Vec::new());
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--option" => match it.next() {
+                Some(v) if !v.starts_with("--") => options.push(v.trim().to_string()),
+                _ => bail!("--option needs a value, for example --option keep"),
+            },
+            "--options" => bail!(
+                "--options is not accepted: pass each choice as its own --option, \
+                 for example --option keep --option remove"
+            ),
+            _ => rest.push(a.clone()),
+        }
+    }
+    options.retain(|o| !o.is_empty());
+    Ok((rest, options))
+}
+
+/// The JSON a verb's flags and `--option` values become; the same shape the MCP tool takes.
+pub fn args_json(
+    verb: &str,
+    flags: &std::collections::HashMap<String, String>,
+    options: &[String],
+) -> Result<Value> {
     let mut out = Map::new();
+    if !options.is_empty() {
+        out.insert("options".into(), json!(options));
+    }
     for (k, v) in flags {
         let key = k.replace('-', "_");
         let value = match key.as_str() {
@@ -38,11 +68,6 @@ pub fn args_json(verb: &str, flags: &std::collections::HashMap<String, String>) 
                 .parse::<u32>()
                 .map_err(|_| anyhow!("--number {v:?} is not a PR number"))?),
             "deferred" | "visible" => json!(v != "false"),
-            "options" => json!(v
-                .split('|')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()),
             "merge_order" => json!(v
                 .split(',')
                 .map(str::trim)
@@ -63,14 +88,15 @@ pub fn args_json(verb: &str, flags: &std::collections::HashMap<String, String>) 
 }
 
 fn cli(env: &HostEnv, args: &[String]) -> Result<String> {
-    let (positional, flags) = crate::orchestrate::parse_flags(args);
+    let (args, options) = take_options(args)?;
+    let (positional, flags) = crate::orchestrate::parse_flags(&args);
     let Some(verb) = positional.first().map(String::as_str) else {
         bail!("{USAGE}");
     };
     if verb == "help" || flags.contains_key("help") {
         return Ok(USAGE.to_string());
     }
-    let body = args_json(verb, &flags)?;
+    let body = args_json(verb, &flags, &options)?;
     let outside = |var: &str| {
         anyhow!("{var} is not set; hs-night runs only inside a Night shift run's orchestrator pane")
     };
@@ -108,11 +134,48 @@ mod tests {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let v = args_json("pr", &flags).unwrap();
+        let v = args_json("pr", &flags, &[]).unwrap();
         assert_eq!(v["flaky_test"], json!("pty::resize_race"));
         assert_eq!(v["merge_order"], json!([12, 15]));
         assert_eq!(v["visible"], json!(true));
         assert_eq!(v["number"], json!(41));
-        assert!(args_json("merge", &Default::default()).is_err());
+        assert!(args_json("merge", &Default::default(), &[]).is_err());
+    }
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn each_option_is_its_own_argument() {
+        let args = strings(&[
+            "decision",
+            "--title",
+            "Keep the old API?",
+            "--option",
+            "keep",
+            "--option",
+            "remove it",
+        ]);
+        let (rest, options) = take_options(&args).unwrap();
+        assert_eq!(options, ["keep", "remove it"]);
+        let (positional, flags) = crate::orchestrate::parse_flags(&rest);
+        assert_eq!(positional, ["decision"]);
+        let v = args_json("decision", &flags, &options).unwrap();
+        assert_eq!(v["options"], json!(["keep", "remove it"]));
+        assert_eq!(v["title"], json!("Keep the old API?"));
+        assert!(v.get("option").is_none(), "{v}");
+    }
+
+    #[test]
+    fn the_separated_options_form_is_refused_by_name() {
+        let err = take_options(&strings(&["decision", "--options", "keep|remove"]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--option keep --option remove"), "{err}");
+        let err = take_options(&strings(&["decision", "--option"]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--option needs a value"), "{err}");
     }
 }

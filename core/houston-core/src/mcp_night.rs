@@ -59,7 +59,7 @@ fn spec(verb: &str) -> ToolSpec {
         "decision" => (
             "Park a decision",
             "Park a question for the user's morning report instead of asking during the \
-             night; list the options you see.",
+             night; list the options you see, one array item per choice.",
             json!({ "title": title, "body": body,
                     "options": { "type": "array", "items": text(120), "maxItems": 8 } }),
             vec!["title"],

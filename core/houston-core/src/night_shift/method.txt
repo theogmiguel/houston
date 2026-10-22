@@ -41,6 +41,7 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
 ## Tools
 
 The night_* tools are offered only to you. Without MCP, the same verbs are
-`hs-night plan|pr|lesson|decision|report`; run `hs-night --help` for their flags.
+`hs-night plan|pr|lesson|decision|report`; run `hs-night --help` for their flags. Give
+`hs-night decision` one `--option <choice>` per choice.
 Never merge anything yourself, never push to the default branch, and never spend a
 provider's quota reset.

@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 function Night([string[]] $NightArgs) {
     Write-Output ("hs-night " + ($NightArgs -join ' '))
     & hs-night @NightArgs
+    # A native command's failure does not stop the script on its own.
+    if ($LASTEXITCODE -ne 0) { throw "hs-night $($NightArgs[0]) exited $LASTEXITCODE" }
 }
 
 Write-Output "fake orchestrator: run folder $env:HOUSTON_NIGHT_RUN_DIR"
@@ -15,7 +17,7 @@ Night @('plan', '--title', 'Fake: cache the diff', '--theme', 'performance', '--
 Night @('pr', '--number', '1', '--title', 'Fake pull request', '--theme', 'reliability', '--checks', 'passed', '--review', 'passed', '--ci', 'pending', '--visible')
 Night @('lesson', '--title', 'Fake lesson', '--body', 'Recorded by the dev fake orchestrator')
 Night @('lesson', '--title', 'Fake flaky test', '--flaky-test', 'fake::flaky_test')
-Night @('decision', '--title', 'Fake decision: keep the old API?', '--options', 'keep|remove')
+Night @('decision', '--title', 'Fake decision: keep the old API?', '--option', 'keep', '--option', 'remove')
 $report = Join-Path $env:HOUSTON_NIGHT_RUN_DIR 'report.md'
 "# Fake Night shift report`n`nOne fake pull request and one parked decision.`n" | Set-Content -Encoding utf8 -Path $report
 Night @('report', '--summary', 'Fake run: 1 PR, 1 decision', '--merge-order', '1')

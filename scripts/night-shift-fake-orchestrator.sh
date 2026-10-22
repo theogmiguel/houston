@@ -16,7 +16,7 @@ night plan --title 'Fake: cache the diff' --theme performance --deferred
 night pr --number 1 --title 'Fake pull request' --theme reliability --checks passed --review passed --ci pending --visible
 night lesson --title 'Fake lesson' --body 'Recorded by the dev fake orchestrator'
 night lesson --title 'Fake flaky test' --flaky-test fake::flaky_test
-night decision --title 'Fake decision: keep the old API?' --options 'keep|remove'
+night decision --title 'Fake decision: keep the old API?' --option keep --option remove
 printf '# Fake Night shift report\n\nOne fake pull request and one parked decision.\n' > "$HOUSTON_NIGHT_RUN_DIR/report.md"
 night report --summary 'Fake run: 1 PR, 1 decision' --merge-order 1
 echo 'fake orchestrator: waiting for the wrap-up instruction or the hard stop'

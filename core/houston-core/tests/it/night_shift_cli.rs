@@ -60,3 +60,54 @@ async fn cli_door() {
     assert_eq!(entries[0].title, "Cache the diff");
     assert_eq!(entries[0].theme.as_deref(), Some("performance"));
 }
+
+/// Each choice is its own argument, so no shell or `.cmd` wrapper sees a `|`.
+#[tokio::test]
+async fn decision_options_are_repeated_flags() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let token = r.token(run.session_id.unwrap());
+    let url = format!("http://{}/mcp", r.addr);
+    let (code, out, err) = tokio::task::spawn_blocking(move || {
+        let mcp = Some((url.as_str(), token.as_str()));
+        let refused = hs_night(
+            &[
+                "decision",
+                "--title",
+                "Old API?",
+                "--options",
+                "keep|remove",
+            ],
+            mcp,
+        );
+        assert_eq!(refused.0, 2, "{refused:?}");
+        assert!(
+            refused.2.contains("--option keep --option remove"),
+            "{refused:?}"
+        );
+        hs_night(
+            &[
+                "decision",
+                "--title",
+                "Keep the old API?",
+                "--option",
+                "keep",
+                "--option",
+                "remove it",
+            ],
+            mcp,
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(code, 0, "stdout {out} stderr {err}");
+    let entries = r.run(run.run_id).entries;
+    assert_eq!(entries.len(), 1, "the refused form records nothing");
+    assert_eq!(entries[0].kind, proto::NightEntryKind::Decision);
+    assert!(
+        entries[0].body.ends_with("Options: keep | remove it"),
+        "{:?}",
+        entries[0].body
+    );
+}
