@@ -828,6 +828,11 @@ async fn report_settle_closes_live_panes() {
     })
     .await;
     assert_eq!(r.daemon.night_shift_stop_order(run.run_id), [worker, o]);
+    assert_eq!(
+        r.awake.lock().unwrap().last(),
+        Some(&(run.run_id, false)),
+        "keep-awake released when the report settles the run"
+    );
 }
 
 /// The orchestrator's pane exiting settles the run and closes its workers.
@@ -856,6 +861,11 @@ async fn orchestrator_exit_closes_live_panes() {
     let settled = r.run(run.run_id);
     assert_eq!(settled.phase, proto::NightRunPhase::Settled);
     assert_eq!(settled.stop_reason, Some(proto::NightStopReason::PaneExited));
+    assert_eq!(
+        r.awake.lock().unwrap().last(),
+        Some(&(run.run_id, false)),
+        "keep-awake released when the orchestrator exits"
+    );
 }
 
 #[tokio::test]
@@ -1766,6 +1776,85 @@ async fn flaky_failure_rerun_once() {
         !r.daemon.night_shift_ci_failed(o, 99, &log).unwrap(),
         "a PR the run never recorded is not its business"
     );
+}
+
+/// CI news reaches the run through its PR watch, read from a stand-in gh: a
+/// failure on a known flaky test asks for one re-run, and a merge records
+/// the PR's fate on its ledger entry.
+#[tokio::test]
+async fn pr_watch_feeds_ci_and_fate_to_the_run() {
+    use crate::merge_queue_rig::{Rig as GitHub, SERIAL};
+    let _serial = SERIAL.lock().await;
+    let gh = GitHub::new().await;
+    let d = Arc::clone(&gh.daemon);
+    d.set_night_shift_facts_for_test(Some(healthy_facts()));
+    d.set_night_shift_awake_for_test(Some(Arc::new(|_, _| {})));
+    d.set_routine_pane_cmd_for_test(vec!["sh".into(), "-c".into(), "exec cat".into()]);
+    d.night_shift_create(&gh.workspace).unwrap();
+    let read = |d: &Daemon| match d.night_shift_state(&gh.workspace, None).unwrap() {
+        proto::ServerMsg::NightShiftState {
+            routine,
+            settings,
+            revision,
+            runs,
+            ..
+        } => (routine.unwrap(), settings, revision, runs),
+        other => panic!("{other:?}"),
+    };
+    let (routine, mut s, revision, _) = read(&d);
+    s.checks = vec!["true".into()];
+    s.workers = vec![proto::NightAgent {
+        provider: proto::AgentKind::Claude,
+        model: None,
+    }];
+    d.night_shift_update(routine.id, s, &revision).unwrap();
+    let until = houston_core::daemon::now_unix_ms() + 120 * MINUTE;
+    let proto::ServerMsg::NightShiftRunEvent { run } = d.night_shift_run_now(routine.id, until).unwrap()
+    else {
+        panic!("run now answers a run event");
+    };
+    let o = run.session_id.expect("the orchestrator opened");
+    gh.change(12, "tray", "tray.txt", "fix\n");
+    d.night_tool(
+        o,
+        "lesson",
+        &json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+    )
+    .unwrap();
+    d.night_tool(o, "pr", &json!({ "number": 12, "title": "Tray fix" }))
+        .unwrap();
+    let entry = |d: &Daemon| {
+        read(d)
+            .3
+            .into_iter()
+            .find(|r| r.run_id == run.run_id)
+            .unwrap()
+            .entries
+            .into_iter()
+            .find(|e| e.pr_number == Some(12))
+            .unwrap()
+    };
+
+    gh.pr_set(
+        12,
+        "statusCheckRollup",
+        json!([{ "__typename": "CheckRun", "name": "test pty::resize_race",
+                 "status": "COMPLETED", "conclusion": "FAILURE" }]),
+    );
+    gh.read_pass().await;
+    let pr = entry(&d);
+    assert_eq!((pr.gates.reruns, pr.gates.ci), (1, proto::NightGate::Pending));
+    assert!(
+        d.inbox_rows_for_test(o)
+            .iter()
+            .any(|row| row.summary.contains("Night shift: re-run CI on PR #12")),
+        "the orchestrator is asked for one re-run"
+    );
+
+    gh.pr_set(12, "state", json!("MERGED"));
+    gh.pr_set(12, "mergedAt", json!("2026-10-22T06:40:00Z"));
+    gh.read_pass().await;
+    assert_eq!(entry(&d).status.as_deref(), Some("merged"));
 }
 
 #[tokio::test]
