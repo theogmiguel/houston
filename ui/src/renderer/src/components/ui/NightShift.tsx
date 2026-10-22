@@ -56,9 +56,27 @@ const MARK_CLS: Record<WindowMarkKind, string> = {
 
 const pct = (at: number): string => `${Math.min(1, Math.max(0, at)) * 100}%`
 
+/** A label grows away from the nearer edge, so it never runs past the strip. */
+const align = (at: number): string => (at <= 0.25 ? '' : at >= 0.75 ? '-translate-x-full' : '-translate-x-1/2')
+
+function MarkLabels({ marks, row }: { marks: WindowMark[]; row: string }): React.JSX.Element {
+  return (
+    <div data-testid={`window-labels-${row}`} className="relative h-[var(--tr-text-label-leading)]">
+      {marks.map((m, i) => (
+        <span key={`${m.kind}-label-${i}`} className={`absolute whitespace-nowrap ${align(m.at)}`} style={{ left: pct(m.at) }}>
+          {m.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /** The run window as a strip: start, wrap-up and hard stop, how far a live run is, and its interruptions. */
 export function NightWindowStrip({ marks, progress, label }: { marks: WindowMark[]; progress?: number; label: string }): React.JSX.Element {
-  const labelled = marks.filter((m) => m.kind !== 'interruption')
+  // The start and hard stop sit at the ends; the wrap-up gets its own row, since
+  // it is often close to the hard stop.
+  const edges = marks.filter((m) => m.kind === 'start' || m.kind === 'hard-stop')
+  const inner = marks.filter((m) => m.kind === 'wrap-up')
   return (
     <div role="group" aria-label={label} className="grid gap-[var(--space-1)]">
       <div className="relative h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
@@ -76,16 +94,9 @@ export function NightWindowStrip({ marks, progress, label }: { marks: WindowMark
           />
         ))}
       </div>
-      <div className="relative h-[var(--tr-text-label-leading)] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)] tabular-nums">
-        {labelled.map((m, i) => (
-          <span
-            key={`${m.kind}-label-${i}`}
-            className={`absolute whitespace-nowrap ${m.at <= 0.02 ? '' : m.at >= 0.98 ? '-translate-x-full' : '-translate-x-1/2'}`}
-            style={{ left: pct(m.at) }}
-          >
-            {m.label}
-          </span>
-        ))}
+      <div className="grid text-[length:var(--tr-text-label-size)] text-[var(--text-muted)] tabular-nums">
+        <MarkLabels marks={edges} row="edges" />
+        {inner.length > 0 && <MarkLabels marks={inner} row="inner" />}
       </div>
     </div>
   )

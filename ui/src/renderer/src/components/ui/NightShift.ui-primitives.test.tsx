@@ -44,4 +44,17 @@ describe('ui-primitives', () => {
     expect(chip?.getAttribute('role'), 'a labelled span is announced only with a role').toBe('img')
     expect(host.querySelector('[data-testid="window-mark-hard-stop"]')?.getAttribute('role')).toBe('img')
   })
+
+  it('night shift window strip keeps a late wrap-up label off the hard stop label', () => {
+    act(() => root.render(<NightWindowStrip label="w" marks={[
+      { at: 0, label: '23:30', kind: 'start' },
+      { at: 0.906, label: 'Wrap-up 06:45', kind: 'wrap-up' },
+      { at: 1, label: '07:30', kind: 'hard-stop' }
+    ]} />))
+    const row = (name: string): string => host.querySelector(`[data-testid="window-labels-${name}"]`)?.textContent ?? ''
+    expect(row('edges')).toBe('23:3007:30')
+    expect(row('inner')).toBe('Wrap-up 06:45')
+    const wrap = Array.from(host.querySelectorAll('span')).find((s) => s.textContent === 'Wrap-up 06:45')!
+    expect(wrap.className, 'a label near the end grows leftwards, inside the strip').toContain('-translate-x-full')
+  })
 })
