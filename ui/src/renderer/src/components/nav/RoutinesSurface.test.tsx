@@ -65,15 +65,16 @@ function disabledEngines(container: HTMLElement, testId: string): (string | unde
 describe('Routines page', () => {
   const workspaces = Array.from({ length: 7 }, (_, index) => ({ id: `/workspace-${index}`, name: `Workspace ${index}` }))
   const reviews = [0, 1].map((index) => ({ ...routine(index + 10), kind: 'harness_review' as const, workspace_id: workspaces[index].id, last_run_at_ms: NOW - 60_000 }))
-  const client = { subscribe: () => () => {}, harnessState: vi.fn() } as unknown as import('../../houston/client').HoustonClient
+  const client = { subscribe: () => () => {}, harnessState: vi.fn(), nightShiftState: vi.fn() } as unknown as import('../../houston/client').HoustonClient
 
   it('shows one built-in row across seven workspaces and leaves Yours unchanged', () => {
     render(surface({ client, routines: [...reviews, routine(3, 'My review')], workspaces, selectedRoutineId: 3 }))
     expect(screen.getAllByTestId('list-detail-section').map((node) => node.textContent)).toEqual(['Built in', 'Yours'])
     const rows = screen.getAllByTestId('list-detail-item')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     expect(rows[0].textContent).toBe('Weekly reviewOn in 2 of 7 workspaces')
-    expect(rows[1].textContent).toContain('My review')
+    expect(rows[1].textContent).toBe('Night shiftNot set up')
+    expect(rows[2].textContent).toContain('My review')
     expect(screen.queryByRole('button', { name: 'Set up Weekly review' })).toBeNull()
   })
 
@@ -115,8 +116,8 @@ describe('Routines page', () => {
     fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
     rerender(surface({ client, routines: [routine(3)], workspaces }))
     expect(screen.getAllByTestId('list-detail-item')[0].getAttribute('aria-current')).toBe('true')
-    expect(screen.getByText('Not set up')).toBeTruthy()
-    fireEvent.keyDown(screen.getAllByTestId('list-detail-item')[0], { key: 'ArrowDown' })
+    expect(screen.getAllByText('Not set up')).toHaveLength(2)
+    fireEvent.keyDown(screen.getAllByTestId('list-detail-item')[1], { key: 'ArrowDown' })
     expect(await screen.findByRole('heading', { name: 'Routine 3' })).toBeTruthy()
     fireEvent.keyDown(screen.getAllByTestId('list-detail-item')[1], { key: 'ArrowUp' })
     expect(screen.getByRole('heading', { name: 'Weekly review' })).toBeTruthy()
@@ -203,7 +204,7 @@ describe('Routines page', () => {
       return surface({ selectedRoutineId, onRoutineSelect: setSelectedRoutineId })
     }
     render(<Harness />)
-    fireEvent.click(screen.getAllByTestId('list-detail-item')[1])
+    fireEvent.click(screen.getAllByTestId('list-detail-item')[2])
     expect(screen.getByRole('heading', { name: 'Routine 1' })).toBeTruthy()
   })
 

@@ -213,6 +213,7 @@ import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
+import { setNightShiftFocus } from "./nightShiftNav";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -1598,6 +1599,24 @@ export function App(): React.JSX.Element {
               return { ...prev, [msg.run.routine_id]: next };
             });
             break;
+          case "night_shift_notice": {
+            const { workspace, run_id: runId } = msg;
+            pushNotice({
+              code: `night-shift:${runId}`,
+              kind: "info",
+              title: `Night shift: ${msg.headline}`,
+              body: workspace,
+              durationMs: null,
+              action: {
+                label: "Open report",
+                onClick: () => {
+                  setNightShiftFocus({ workspace, runId });
+                  setRailView("routines");
+                },
+              },
+            });
+            break;
+          }
           case "routine_refused":
             setRoutineRefusal({
               id: msg.id ?? null,

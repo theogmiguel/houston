@@ -1,0 +1,60 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NightShiftLive } from './NightShiftLive'
+import { NIGHT_NOW, nightRun } from '../../test/nightShiftFixtures'
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+let host: HTMLDivElement
+let root: Root
+
+beforeEach(() => {
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  root = createRoot(host)
+})
+
+afterEach(() => {
+  act(() => root.unmount())
+  host.remove()
+})
+
+describe('NightShiftLive', () => {
+  it('renders a live run', () => {
+    const onWrapUp = vi.fn()
+    const onStop = vi.fn()
+    const onOpenSession = vi.fn()
+    act(() => root.render(<NightShiftLive run={nightRun()} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop} onOpenSession={onOpenSession}
+      machine={{ memory_free_mib: 12_288, disk_free_mib: 102_400, on_battery: false, keep_awake: 'held' }} />))
+    expect(host.querySelector('[data-testid="night-countdown"]')?.textContent).toBe('4 h 00 min left')
+    expect(host.querySelectorAll('[data-testid="window-mark-interruption"]')).toHaveLength(1)
+    expect(host.querySelector('[data-testid="window-progress"]')).not.toBeNull()
+    expect(host.textContent).toContain('the daemon restarted; the run continued')
+
+    const crew = host.querySelector('[aria-label="Crew"]')!
+    expect(crew.textContent).toContain('Orchestrator · Claude Code')
+    expect(crew.textContent).toContain('worker-1 · ZCode')
+    expect(crew.textContent).toContain('Working')
+
+    const plan = (name: string): string => host.querySelector(`section[aria-label="${name}"]`)?.textContent ?? ''
+    expect(plan('Planned')).toContain('Faster attach')
+    expect(plan('Pull requests')).toContain('#12 Tray fix')
+    expect(plan('Deferred')).toContain('Rewrite the tray')
+    expect(host.textContent).toContain('7.5')
+    expect(host.textContent).toContain('Held')
+
+    const buttons = Array.from(host.querySelectorAll('button'))
+    act(() => buttons.find((b) => b.textContent === 'Wrap up now')!.click())
+    act(() => buttons.find((b) => b.textContent === 'Stop')!.click())
+    act(() => buttons.find((b) => b.textContent === 'Open')!.click())
+    expect(onWrapUp).toHaveBeenCalledOnce()
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onOpenSession).toHaveBeenCalledWith(40)
+
+    act(() => root.render(<NightShiftLive run={nightRun({ phase: 'wrapping_up' })} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop}
+      onOpenSession={onOpenSession} machine={{ memory_free_mib: null, disk_free_mib: null, on_battery: null, keep_awake: 'held' }} />))
+    expect(host.textContent).toContain('Wrap-up: nothing new starts')
+    expect(Array.from(host.querySelectorAll('button')).some((b) => b.textContent === 'Wrap up now')).toBe(false)
+  })
+})

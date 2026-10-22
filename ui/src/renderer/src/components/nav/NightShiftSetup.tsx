@@ -1,0 +1,170 @@
+import { useEffect, useState } from 'react'
+import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { NightFocusLevel } from '../../houston/generated/NightFocusLevel'
+import type { NightShiftSettings } from '../../houston/generated/NightShiftSettings'
+import { Button, Card, Chip, Inline, Notice, NightWindowStrip, Segmented, Select, Text, TextArea, TextInput } from '../ui'
+import { Toggle } from '../ui/settingsPrimitives'
+import { NumberField } from '../ui/NumberField'
+import { engineLabel } from '../engineLabel'
+import {
+  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, WORKER_PROVIDERS, agentLabel, clockLabel, durationLabel, mergeRefusal,
+  minutesBetween, parseClock, settingsProblems, windowMarks
+} from './nightShiftFormat'
+
+const LEVELS: { value: NightFocusLevel; label: string }[] = [
+  { value: 'off', label: 'Off' }, { value: 'low', label: 'Low' }, { value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }
+]
+
+const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter(Boolean)
+
+function ClockField({ label, value, onChange }: { label: string; value: string; onChange: (text: string) => void }): React.JSX.Element {
+  return <TextInput aria-label={label} value={value} size="form" width="compact" onChange={(e) => onChange(e.target.value)} />
+}
+
+/** Routines ▸ Night shift ▸ Setup. Edits a draft; Save sends the whole document. */
+export function NightShiftSetup({ settings, verifyCommand, onSave, saving = false, error = null }: {
+  settings: NightShiftSettings
+  /** Whether the workspace has a merge queue verification command; `null` when unknown. */
+  verifyCommand: boolean | null
+  onSave: (settings: NightShiftSettings) => void
+  saving?: boolean
+  error?: string | null
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(settings)
+  const [clocks, setClocks] = useState(() => ({
+    start: clockLabel(settings.window.start), wrap_up: clockLabel(settings.window.wrap_up), hard_stop: clockLabel(settings.window.hard_stop)
+  }))
+  useEffect(() => {
+    setDraft(settings)
+    setClocks({ start: clockLabel(settings.window.start), wrap_up: clockLabel(settings.window.wrap_up), hard_stop: clockLabel(settings.window.hard_stop) })
+  }, [settings])
+  const set = (patch: Partial<NightShiftSettings>): void => setDraft((d) => ({ ...d, ...patch }))
+  const setClock = (key: 'start' | 'wrap_up' | 'hard_stop', text: string): void => {
+    setClocks((c) => ({ ...c, [key]: text }))
+    const parsed = parseClock(text)
+    if (parsed) setDraft((d) => ({ ...d, window: { ...d.window, [key]: parsed } }))
+  }
+  const toggleNight = (day: number): void => setDraft((d) => {
+    const nights = d.window.nights.includes(day) ? d.window.nights.filter((n) => n !== day) : [...d.window.nights, day].sort()
+    return { ...d, window: { ...d.window, nights } }
+  })
+  const refusal = mergeRefusal(draft, verifyCommand)
+  const clockError = Object.values(clocks).some((c) => !parseClock(c)) ? 'Times are HH:MM, for example 23:30.' : null
+  const problems = [...(clockError ? [clockError] : []), ...settingsProblems(draft), ...(refusal ? [refusal] : [])]
+  const total = minutesBetween(draft.window.start, draft.window.hard_stop)
+  const workerOptions = WORKER_PROVIDERS.map((p) => ({ value: p, label: engineLabel(p) }))
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings)
+
+  return (
+    <div className="grid gap-[var(--space-3)]" data-testid="night-shift-setup">
+      <Card layout="fields" shape="card" role="group" aria-label="Window">
+        <Card.Field label="Night shift">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Toggle aria-label="Night shift on" on={draft.enabled} onChange={(on) => set({ enabled: on })} />
+            <Text size="small" tone="muted">{draft.enabled ? 'Runs on the nights below' : 'Off: runs only with Run now'}</Text>
+          </div>
+        </Card.Field>
+        <Card.Field label="Window">
+          <div className="grid gap-[var(--space-2)]">
+            <Inline wrap gap="small">
+              <Text size="small" tone="muted">Start</Text><ClockField label="Start" value={clocks.start} onChange={(t) => setClock('start', t)} />
+              <Text size="small" tone="muted">Wrap-up</Text><ClockField label="Wrap-up" value={clocks.wrap_up} onChange={(t) => setClock('wrap_up', t)} />
+              <Text size="small" tone="muted">Hard stop</Text><ClockField label="Hard stop" value={clocks.hard_stop} onChange={(t) => setClock('hard_stop', t)} />
+              <Text size="small" tone="muted">{durationLabel(total)}</Text>
+            </Inline>
+            <NightWindowStrip label="Run window" marks={windowMarks(draft.window)} />
+          </div>
+        </Card.Field>
+        <Card.Field label="Nights">
+          <Inline wrap gap="small" role="group" aria-label="Nights">
+            {NIGHTS.map((n) => <Chip key={n.day} variant="choice" label={n.label} selected={draft.window.nights.includes(n.day)} onClick={() => toggleNight(n.day)} />)}
+          </Inline>
+          {draft.window.nights.length === 0 && <Text size="small" tone="muted">No nights selected</Text>}
+        </Card.Field>
+      </Card>
+
+      <Card layout="fields" shape="card" role="group" aria-label="Focus">
+        {FOCUS_AREAS.map((area) => (
+          <Card.Field key={area.key} label={area.label}>
+            <Segmented aria-label={`${area.label} focus`} size="xs" value={draft.focus[area.key]} options={LEVELS}
+              onChange={(level) => set({ focus: { ...draft.focus, [area.key]: level } })} />
+          </Card.Field>
+        ))}
+        <Card.Field label="Goal">
+          <TextArea aria-label="Goal" rows={2} value={draft.goal} placeholder="What a finished night looks like (optional)" onChange={(e) => set({ goal: e.target.value })} />
+        </Card.Field>
+        <Card.Field label="Competitor sources">
+          <TextArea aria-label="Competitor sources" rows={2} value={draft.competitor_sources.join('\n')} placeholder="One repository URL per line"
+            onChange={(e) => set({ competitor_sources: lines(e.target.value) })} />
+        </Card.Field>
+      </Card>
+
+      <Card layout="fields" shape="card" role="group" aria-label="Crew">
+        <Card.Field label="Orchestrator"><Text>{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text></Card.Field>
+        <Card.Field label="Workers, in fallback order">
+          <div className="grid gap-[var(--space-1)]">
+            {draft.workers.map((w, i) => (
+              <div key={i} className="flex items-center gap-[var(--space-2)]">
+                <Select aria-label={`Worker ${i + 1}`} value={w.provider} options={workerOptions}
+                  onChange={(p) => set({ workers: draft.workers.map((x, j) => (j === i ? { provider: p as AgentKind, model: null } : x)) })} />
+                {w.model && <Text size="small" tone="muted">{w.model}</Text>}
+                {draft.workers.length > 1 && <Button variant="ghost" size="sm" onClick={() => set({ workers: draft.workers.filter((_, j) => j !== i) })}>Remove</Button>}
+              </div>
+            ))}
+            {draft.workers.length < 4 && <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => set({ workers: [...draft.workers, { provider: 'claude', model: null }] })}>Add worker</Button>}
+            <Text size="small" tone="muted">{NO_LIMIT_SIGNAL.map(engineLabel).join(', ')} report no usage limit and cannot be workers.</Text>
+          </div>
+        </Card.Field>
+        <Card.Field label="Live workers">
+          <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
+        </Card.Field>
+        <Card.Field label="Reviewer"><Text>{draft.reviewer ? agentLabel(draft.reviewer.provider, draft.reviewer.model) : 'Same as orchestrator'}</Text></Card.Field>
+      </Card>
+
+      <Card layout="fields" shape="card" role="group" aria-label="Output">
+        <Card.Field label="Output">
+          <Segmented aria-label="Output" size="xs" value={draft.output}
+            options={[{ value: 'prs', label: 'Pull requests only' }, { value: 'merge_queue', label: 'Merge queue' }]}
+            onChange={(output) => set({ output })} />
+          {refusal && <Notice tone="warn" data-testid="merge-refusal">{refusal}</Notice>}
+        </Card.Field>
+        <Card.Field label="Changes per PR">
+          <NumberField width="compact" aria-label="Changes per PR" min={1} max={20} value={draft.max_changes_per_pr} onChange={(e) => set({ max_changes_per_pr: Math.max(1, Number(e.target.value) || 1) })} />
+        </Card.Field>
+        <Card.Field label="Themed PRs"><Toggle aria-label="Themed PRs" on={draft.themed} onChange={(themed) => set({ themed })} /></Card.Field>
+        <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
+        <Card.Field label="App check">
+          <div className="grid gap-[var(--space-1)]">
+            <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}
+              onChange={(e) => set({ app_check: e.target.value.trim() || draft.app_check?.address ? { start_command: e.target.value, address: draft.app_check?.address ?? '', smoke_flows: draft.app_check?.smoke_flows ?? [] } : null })} />
+            <TextInput aria-label="App address" placeholder="Address or story" value={draft.app_check?.address ?? ''}
+              onChange={(e) => set({ app_check: { start_command: draft.app_check?.start_command ?? '', address: e.target.value, smoke_flows: draft.app_check?.smoke_flows ?? [] } })} />
+            {!draft.app_check?.start_command.trim() && <Text size="small" tone="muted">App QA is off until a start command is set.</Text>}
+          </div>
+        </Card.Field>
+        <Card.Field label="Hold for my QA"><Toggle aria-label="Hold for my QA" on={draft.hold_for_qa} onChange={(hold_for_qa) => set({ hold_for_qa })} /></Card.Field>
+      </Card>
+
+      <Card layout="fields" shape="card" role="group" aria-label="Before hand-back">
+        <Card.Field label="Checks before hand-back">
+          <TextArea aria-label="Checks before hand-back" rows={3} mono value={draft.checks.join('\n')} placeholder="One command per line; required before the first run"
+            onChange={(e) => set({ checks: lines(e.target.value) })} />
+        </Card.Field>
+        <Card.Field label="Safety cap">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <NumberField width="compact" aria-label="Safety cap in pane-hours" min={1} max={1000} value={draft.safety_cap_pane_hours} onChange={(e) => set({ safety_cap_pane_hours: Math.max(1, Number(e.target.value) || 1) })} />
+            <Text size="small" tone="muted">pane-hours</Text>
+          </div>
+        </Card.Field>
+        <Card.Field label="Questions at night"><Text>Parked for the morning report</Text></Card.Field>
+      </Card>
+
+      {problems.map((p) => <Notice key={p} tone="warn">{p}</Notice>)}
+      {error && <Notice tone="danger">{error}</Notice>}
+      <div className="flex gap-[var(--space-2)]">
+        <Button variant="primary" disabled={!dirty || saving || problems.length > 0} onClick={() => onSave(draft)}>Save</Button>
+        {dirty && <Button variant="ghost" onClick={() => setDraft(settings)}>Discard changes</Button>}
+      </div>
+    </div>
+  )
+}
