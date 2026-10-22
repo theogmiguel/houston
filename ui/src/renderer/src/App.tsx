@@ -213,7 +213,7 @@ import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
-import { setNightShiftFocus } from "./nightShiftNav";
+import { nightNoticeWorkspace, setNightShiftFocus } from "./nightShiftNav";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -1605,7 +1605,7 @@ export function App(): React.JSX.Element {
               code: `night-shift:${runId}`,
               kind: "info",
               title: `Night shift: ${msg.headline}`,
-              body: workspace,
+              body: nightNoticeWorkspace(workspace, workspacesRef.current),
               durationMs: null,
               action: {
                 label: "Open report",

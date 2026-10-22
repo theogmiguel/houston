@@ -150,7 +150,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
     return (
       <NavSurfaceFrame row>
         <PageFrame width="wide" className="flex-1 min-w-0">
-          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane. Set up Weekly review for the workspaces you choose." />
+          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane. Set up Weekly review and Night shift for the workspaces you choose." />
           {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
           <RoutineEditor
             mode={panel.mode}
@@ -181,7 +181,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
     <PageFrame width="wide" className="flex-1 min-w-0">
       <PageHeader
         heading="Routines"
-        description="Prompts that run on a schedule, each in its own pane. Set up Weekly review for the workspaces you choose."
+        description="Prompts that run on a schedule, each in its own pane. Set up Weekly review and Night shift for the workspaces you choose."
         actions={<Button variant="primary" icon={IconPlus} data-testid="routine-create" onClick={() => { onDismissError(); setPanel({ mode: 'create' }) }}>New routine</Button>}
       />
       {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}

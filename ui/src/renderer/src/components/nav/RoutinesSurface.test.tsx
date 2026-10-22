@@ -75,6 +75,7 @@ describe('Routines page', () => {
     expect(rows[0].textContent).toBe('Weekly reviewOn in 2 of 7 workspaces')
     expect(rows[1].textContent).toBe('Night shiftNot set up')
     expect(rows[2].textContent).toContain('My review')
+    expect(document.body.textContent, 'the subtitle names both built-in routines').toContain('Set up Weekly review and Night shift')
     expect(screen.queryByRole('button', { name: 'Set up Weekly review' })).toBeNull()
   })
 

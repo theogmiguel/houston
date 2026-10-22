@@ -6,6 +6,11 @@ export interface NightShiftFocus {
   runId: number
 }
 
+/** A morning notice names its workspace as the app does, not by its path. */
+export function nightNoticeWorkspace(path: string, workspaces: readonly { path: string; name: string }[]): string {
+  return workspaces.find((w) => w.path === path)?.name ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path
+}
+
 let focus: NightShiftFocus | null = null
 const listeners = new Set<() => void>()
 
