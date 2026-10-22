@@ -4697,7 +4697,7 @@ export function App(): React.JSX.Element {
           <WorkspaceTransferHost
             client={readyClient(conn)}
             workspaces={workspaces}
-            profiles={agentProfiles?.profiles ?? []}
+            agentProfiles={agentProfiles}
             onImported={(result, target) => void applyTransferGrids(result, target)}
           />
 

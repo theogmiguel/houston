@@ -263,35 +263,22 @@ export function ImportTransferDialog({ client, targets, profiles, initialWorkspa
   let body: React.ReactNode
   let actions: React.ReactNode
   if (outcome.kind === 'ok' && 'sessions' in outcome.value) {
-    const result = outcome.value
-    const resumed = result.sessions.length + result.updated_in_place.length
-    body = <Stack gap={2}>
-      <DialogDescription>Restored the code state and resumed {resumed === 1 ? '1 pane' : `${resumed} panes`} in <Text mono breakAll tone="primary">{result.workspace}</Text>.</DialogDescription>
-      {result.updated_in_place.length > 0 && <Text as="p" size="small" tone="muted" flush>This file returned work that left this computer: its panes continued where they were.</Text>}
-    </Stack>
+    body = <ImportedView result={outcome.value} />
     actions = <Button variant="primary" onClick={onClose}>Close</Button>
   } else if (outcome.kind === 'refused' || outcome.kind === 'error') {
     body = outcome.kind === 'refused' ? <TransferRefusalView refusal={outcome.refusal} /> : <Notice tone="danger" variant="callout">{outcome.message}</Notice>
     actions = <RefusalActions onBack={() => setOutcome({ kind: 'idle' })} onClose={onClose} />
   } else if (summary) {
-    const needs = profileNeeds(summary)
-    body = <Stack gap={3}>
-      <DialogDescription>
-        Exported from <Text mono breakAll tone="primary">{summary.source_workspace}</Text> on {OS_NAME[summary.source_os] ?? summary.source_os}, {new Date(summary.created_at_ms).toLocaleString()}.
-        {summary.return_trip ? ' It continues work this computer exported; its panes resume in place.' : ''}
-      </DialogDescription>
-      <PaneList panes={summary.panes} skipped={summary.skipped} />
-      <Text as="p" size="small" tone="muted" flush>Written by {summary.cli_versions.map((v) => `${providerName(v.provider)} ${v.version ?? '(version unknown)'}`).join(', ')}.</Text>
-      <FormGrid>
-        <FormGridLabel>Workspace</FormGridLabel>
-        <Select aria-label="Workspace" width="full" value={workspace} options={targets.map((t) => ({ value: t.path, label: `${t.name} · ${t.path}` }))} onChange={setWorkspace} />
-        {needs.map((need) => (
-          <ProfileChoiceRow key={need.key} need={need} profiles={profiles} value={choices[need.key] ?? DEFAULT_ACCOUNT} onChange={(value) => setChoices((prev) => ({ ...prev, [need.key]: value }))} />
-        ))}
-      </FormGrid>
-      {summary.proposed_workspace === null && <Text as="p" size="small" tone="muted" flush>No workspace here has the same git remote{summary.remote_url ? ` (${summary.remote_url})` : ''}; choose the checkout of the same project.</Text>}
-      {running && <Progress stage={outcome.stage} />}
-    </Stack>
+    body = <ImportSummaryView
+      summary={summary}
+      targets={targets}
+      workspace={workspace}
+      onWorkspace={setWorkspace}
+      profiles={profiles}
+      choices={choices}
+      onChoice={(key, value) => setChoices((prev) => ({ ...prev, [key]: value }))}
+      progress={running && <Progress stage={outcome.stage} />}
+    />
     actions = <><Button variant="secondary" onClick={onClose} disabled={running}>Cancel</Button><span className="flex-1" /><Button variant="primary" disabled={running || !workspace} onClick={() => void run()}>Import</Button></>
   } else {
     body = <Stack gap={3}>
@@ -309,6 +296,44 @@ export function ImportTransferDialog({ client, targets, profiles, initialWorkspa
     actions = <><Button variant="secondary" onClick={onClose} disabled={running}>Cancel</Button><span className="flex-1" /><Button variant="primary" disabled={running || !file || !passphrase} onClick={() => void inspect()}>Continue</Button></>
   }
   return <Frame heading="Import transfer" onClose={onClose} frame={frame} actions={actions}>{body}</Frame>
+}
+
+function ImportedView({ result }: { result: TransferImportResult }): React.JSX.Element {
+  const resumed = result.sessions.length + result.updated_in_place.length
+  return <Stack gap={2}>
+    <DialogDescription>Restored the code state and resumed {resumed === 1 ? '1 pane' : `${resumed} panes`} in <Text mono breakAll tone="primary">{result.workspace}</Text>.</DialogDescription>
+    {result.updated_in_place.length > 0 && <Text as="p" size="small" tone="muted" flush>This file returned work that left this computer: its panes continued where they were.</Text>}
+  </Stack>
+}
+
+/** What the file holds, the target workspace and an answer for each missing profile. */
+function ImportSummaryView({ summary, targets, workspace, onWorkspace, profiles, choices, onChoice, progress }: {
+  summary: TransferFileSummary
+  targets: ImportTarget[]
+  workspace: string
+  onWorkspace: (workspace: string) => void
+  profiles: AgentProfile[]
+  choices: Record<string, string>
+  onChoice: (key: string, value: string) => void
+  progress: React.ReactNode
+}): React.JSX.Element {
+  return <Stack gap={3}>
+    <DialogDescription>
+      Exported from <Text mono breakAll tone="primary">{summary.source_workspace}</Text> on {OS_NAME[summary.source_os] ?? summary.source_os}, {new Date(summary.created_at_ms).toLocaleString()}.
+      {summary.return_trip ? ' It continues work this computer exported; its panes resume in place.' : ''}
+    </DialogDescription>
+    <PaneList panes={summary.panes} skipped={summary.skipped} />
+    <Text as="p" size="small" tone="muted" flush>Written by {summary.cli_versions.map((v) => `${providerName(v.provider)} ${v.version ?? '(version unknown)'}`).join(', ')}.</Text>
+    <FormGrid>
+      <FormGridLabel>Workspace</FormGridLabel>
+      <Select aria-label="Workspace" width="full" value={workspace} options={targets.map((t) => ({ value: t.path, label: `${t.name} · ${t.path}` }))} onChange={onWorkspace} />
+      {profileNeeds(summary).map((need) => (
+        <ProfileChoiceRow key={need.key} need={need} profiles={profiles} value={choices[need.key] ?? DEFAULT_ACCOUNT} onChange={(value) => onChoice(need.key, value)} />
+      ))}
+    </FormGrid>
+    {summary.proposed_workspace === null && <Text as="p" size="small" tone="muted" flush>No workspace here has the same git remote{summary.remote_url ? ` (${summary.remote_url})` : ''}; choose the checkout of the same project.</Text>}
+    {progress}
+  </Stack>
 }
 
 function ProfileChoiceRow({ need, profiles, value, onChange }: { need: { provider: AgentKind; label: string }; profiles: AgentProfile[]; value: string; onChange: (value: string) => void }): React.JSX.Element {

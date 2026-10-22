@@ -15,7 +15,7 @@ const importDialog = preloadable(() => import('./WorkspaceTransferDialog').then(
 
 /** Opens the transfer dialogs from the workspace menu and from a transfer file the app
  *  was opened with. */
-export function WorkspaceTransferHost({ client, workspaces, profiles, onImported }: { client: HoustonClient | null; workspaces: Workspace[]; profiles: AgentProfile[]; onImported: (result: TransferImportResult, workspace: string) => void }): React.JSX.Element | null {
+export function WorkspaceTransferHost({ client, workspaces, agentProfiles, onImported }: { client: HoustonClient | null; workspaces: Workspace[]; agentProfiles: { profiles: AgentProfile[] } | null; onImported: (result: TransferImportResult, workspace: string) => void }): React.JSX.Element | null {
   const [open, setOpen] = useState<TransferOpen | null>(null)
   const targets = workspaces.filter((w) => !wslWorkspaceOf(w.path))
   useEffect(() => {
@@ -45,5 +45,5 @@ export function WorkspaceTransferHost({ client, workspaces, profiles, onImported
   const close = (): void => setOpen(null)
   if (open.mode === 'export') return <exportDialog.Slot client={client} workspace={open.workspace} name={open.name} onClose={close} />
   const initialWorkspace = targets.some((t) => t.path === open.workspace) ? open.workspace : undefined
-  return <importDialog.Slot client={client} targets={targets} profiles={profiles} initialWorkspace={initialWorkspace} initialFile={open.file} onImported={onImported} onClose={close} />
+  return <importDialog.Slot client={client} targets={targets} profiles={agentProfiles?.profiles ?? []} initialWorkspace={initialWorkspace} initialFile={open.file} onImported={onImported} onClose={close} />
 }
