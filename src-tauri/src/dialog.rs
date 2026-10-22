@@ -164,6 +164,55 @@ pub async fn dialog_pick_image<R: Runtime>(app: AppHandle<R>) -> Result<Option<P
     Ok(picked)
 }
 
+/// Where to write a workspace transfer file; the daemon writes it, so the path is not
+/// added to the renderer's file allowlist.
+#[tauri::command]
+pub async fn dialog_save_transfer<R: Runtime>(
+    default_name: String,
+    app: AppHandle<R>,
+) -> Result<Option<String>, String> {
+    let picked = await_pick(|cb| {
+        app.dialog()
+            .file()
+            .set_title("Export workspace transfer")
+            .set_file_name(&default_name)
+            .add_filter(
+                "Houston workspace transfer",
+                &[crate::transfer_open::EXTENSION],
+            )
+            .save_file(move |file_path| cb(to_pick_result("dialog_save_transfer", file_path)));
+    })
+    .await?;
+    Ok(picked.map(|path| with_transfer_extension(&path.to_string_lossy())))
+}
+
+/// A transfer file to import; the daemon reads it.
+#[tauri::command]
+pub async fn dialog_pick_transfer<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
+    let picked = await_pick(|cb| {
+        app.dialog()
+            .file()
+            .set_title("Import workspace transfer")
+            .add_filter(
+                "Houston workspace transfer",
+                &[crate::transfer_open::EXTENSION],
+            )
+            .pick_file(move |file_path| cb(to_pick_result("dialog_pick_transfer", file_path)));
+    })
+    .await?;
+    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
+}
+
+/// A save dialog does not always append the filter's extension.
+fn with_transfer_extension(path: &str) -> String {
+    let suffix = format!(".{}", crate::transfer_open::EXTENSION);
+    if path.to_ascii_lowercase().ends_with(&suffix) {
+        path.to_string()
+    } else {
+        format!("{path}{suffix}")
+    }
+}
+
 pub const CHAT_IMAGE_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 pub fn image_default_name(url: &str) -> String {
@@ -261,6 +310,18 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
+
+    #[test]
+    fn a_saved_transfer_file_always_carries_its_extension() {
+        assert_eq!(
+            with_transfer_extension("/tmp/work"),
+            "/tmp/work.houston-transfer"
+        );
+        assert_eq!(
+            with_transfer_extension("/tmp/work.HOUSTON-TRANSFER"),
+            "/tmp/work.HOUSTON-TRANSFER"
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]
