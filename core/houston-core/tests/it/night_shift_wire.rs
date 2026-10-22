@@ -1204,13 +1204,43 @@ async fn spawn_substitutes_next_provider() {
     assert!(text.contains("claude") && text.contains("codex"), "{text}");
 }
 
+/// A stand-in `zcode -p`: `ok` answers; otherwise it fails as a spent quota
+/// does, with the provider error ZCode prints. It records its arguments.
+fn zcode_probe_script(dir: &Path, ok: bool) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(if ok { "zcode-ok" } else { "zcode-spent" });
+    let body = if ok {
+        "echo OK"
+    } else {
+        "echo 'ProviderBusinessError: [1310][Weekly/Monthly Limit Exhausted.]' >&2; exit 1"
+    };
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{}'\n{body}\n",
+            dir.join("probe-args").display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
 #[tokio::test]
 async fn zcode_stall_with_failed_probe_marks_provider() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    r.daemon
+        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), true)));
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 600);
     let o = run.session_id.unwrap();
+    wait_until("the start probe", || {
+        !r.daemon.night_shift_zcode_probing(run.run_id)
+    })
+    .await;
+    assert!(r.run(run.run_id).limited.is_empty(), "an answer is no limit");
     let (status, body) = r.spawn_child(o, "zcode").await;
     assert_eq!(status, 200, "{body}");
     let child = body["session_id"].as_u64().unwrap() as u32;
@@ -1218,15 +1248,58 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         .set_session_status_for_test(child, proto::AgentStatus::Working);
     let t0 = houston_core::daemon::now_unix_ms();
     r.daemon.night_shift_tick_at(t0);
-    r.daemon.set_night_shift_zcode_probe_for_test(Some(true));
     r.daemon.night_shift_tick_at(t0 + 21 * MINUTE);
+    wait_until("the stall probe", || {
+        !r.daemon.night_shift_zcode_probing(run.run_id)
+    })
+    .await;
     assert!(
         r.run(run.run_id).limited.is_empty(),
-        "a passing probe is not a limit"
+        "a stall whose probe answers is not a limit"
     );
-    r.daemon.set_night_shift_zcode_probe_for_test(Some(false));
+    let probes = std::fs::read_to_string(scripts.path().join("probe-args")).unwrap();
+    assert_eq!(probes.lines().count(), 2, "one probe at start, one per stall: {probes}");
+    assert!(probes.contains("-p Reply with the single word OK."), "{probes}");
+
+    r.daemon
+        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
     r.daemon.night_shift_tick_at(t0 + 42 * MINUTE);
-    assert_eq!(r.run(run.run_id).limited, [proto::AgentKind::Zcode]);
+    wait_until("ZCode to be limited", || {
+        r.run(run.run_id).limited == [proto::AgentKind::Zcode]
+    })
+    .await;
+    let note = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("Night shift: zcode limited"))
+        .expect("the orchestrator is told");
+    assert!(note.body.contains("[1310]"), "names the probe's error: {}", note.body);
+    r.daemon.night_shift_tick_at(t0 + 63 * MINUTE);
+    assert_eq!(r.notes(o, "Night shift: zcode limited"), 1, "told once");
+}
+
+#[tokio::test]
+async fn failed_start_probe_limits_zcode_from_the_start() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    r.daemon
+        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    wait_until("ZCode to be limited", || {
+        r.run(run.run_id).limited == [proto::AgentKind::Zcode]
+    })
+    .await;
+    let item = r
+        .run(run.run_id)
+        .preflight
+        .into_iter()
+        .find(|i| i.id == "quota:zcode")
+        .expect("the run warns about the probe");
+    assert_eq!(item.status, proto::PreflightStatus::Warn);
+    assert!(item.detail.contains("[1310]"), "{}", item.detail);
+    let o = run.session_id.unwrap();
     assert_eq!(r.notes(o, "Night shift: zcode limited"), 1);
 }
 

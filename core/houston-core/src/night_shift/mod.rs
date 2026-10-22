@@ -6,6 +6,7 @@ pub mod cli;
 pub mod preflight;
 pub mod settings;
 pub mod window;
+pub mod zcode_probe;
 
 use std::path::{Path, PathBuf};
 
@@ -85,6 +86,7 @@ mod tests {
             "night_shift/preflight.rs",
             "night_shift/settings.rs",
             "night_shift/window.rs",
+            "night_shift/zcode_probe.rs",
             "daemon/night_shift.rs",
             "mcp_night.rs",
         ];

@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::{now_unix_ms, Daemon, RoutineRun};
 use crate::db::{NightEntryWrite, NightMember, NightRunRow};
-use crate::night_shift::{awake, brief, preflight, settings, window};
+use crate::night_shift::{awake, brief, preflight, settings, window, zcode_probe};
 
 type AwakeHook = Arc<dyn Fn(u32, bool) + Send + Sync>;
 
@@ -46,7 +46,9 @@ pub(crate) struct NightShiftCtx {
     zcode_turns: Mutex<HashMap<u32, i64>>,
     facts_for_test: Mutex<Option<preflight::Facts>>,
     awake_for_test: Mutex<Option<AwakeHook>>,
-    zcode_probe_for_test: Mutex<Option<bool>>,
+    /// Runs whose ZCode quota probe is in flight; one at a time per run.
+    zcode_probing: Mutex<std::collections::HashSet<u32>>,
+    zcode_probe_program_for_test: Mutex<Option<std::path::PathBuf>>,
 }
 
 const MINUTE_MS: i64 = 60_000;
@@ -395,8 +397,13 @@ impl Daemon {
     }
 
     #[doc(hidden)]
-    pub fn set_night_shift_zcode_probe_for_test(&self, ok: Option<bool>) {
-        *self.night.zcode_probe_for_test.lock().expect("zcode probe") = ok;
+    /// The program the ZCode quota probe runs instead of `zcode` on PATH.
+    pub fn set_night_shift_zcode_probe_for_test(&self, program: Option<std::path::PathBuf>) {
+        *self
+            .night
+            .zcode_probe_program_for_test
+            .lock()
+            .expect("zcode probe") = program;
     }
 
     fn night_facts(&self, s: &proto::NightShiftSettings) -> preflight::Facts {
@@ -595,7 +602,12 @@ impl Daemon {
             crate::night_shift::RUN_DIR_ENV.to_string(),
             report_dir.display().to_string(),
         )];
-        self.routine_spawn_run_pane(&launch_row, run_id, now, next, &dir, text, env)?;
+        if self
+            .routine_spawn_run_pane(&launch_row, run_id, now, next, &dir, text, env)?
+            .is_some()
+        {
+            self.night_zcode_start_probe(run_id, &s);
+        }
         self.broadcast_night_run(run_id);
         Ok(Some(run_id))
     }
@@ -1807,12 +1819,24 @@ impl Daemon {
         let Some((_, run_id, _)) = self.night_run_of_pane(session) else {
             return;
         };
+        self.night_mark_limited(run_id, provider, why, Some(session));
+    }
+
+    /// Marks `provider` limited for the run and tells the orchestrator once;
+    /// `pane` is the pane that showed the limit, if one did.
+    fn night_mark_limited(
+        self: &Arc<Self>,
+        run_id: u32,
+        provider: proto::AgentKind,
+        why: &str,
+        pane: Option<u32>,
+    ) {
         {
             let _guard = self.night.lock.lock().expect("night lock");
             let Ok(Some(mut row)) = self.db.night_run(run_id) else {
                 return;
             };
-            if row.limited.contains(&provider) {
+            if row.ended_at_ms.is_some() || row.limited.contains(&provider) {
                 return;
             }
             row.limited.push(provider);
@@ -1830,11 +1854,17 @@ impl Daemon {
         self.night_tell_orchestrator(
             run_id,
             &format!("Night shift: {slug} limited"),
-            &format!(
-                "{slug} reported its usage limit ({why}) in pane {session}. For the rest of this \
-                 run Houston starts {slug} spawns with the next worker provider instead: {next}. \
-                 Re-plan the work that pane held."
-            ),
+            &match pane {
+                Some(pane) => format!(
+                    "{slug} reported its usage limit ({why}) in pane {pane}. For the rest of \
+                     this run Houston starts {slug} spawns with the next worker provider \
+                     instead: {next}. Re-plan the work that pane held."
+                ),
+                None => format!(
+                    "{slug} failed its quota probe ({why}). For this run Houston starts {slug} \
+                     spawns with the next worker provider instead: {next}."
+                ),
+            },
         );
         self.broadcast_night_run(run_id);
     }
@@ -2117,27 +2147,119 @@ impl Daemon {
         let Some((pane, minutes)) = stalled else {
             return;
         };
-        if self.night_zcode_probe_ok() {
-            self.night
-                .zcode_turns
-                .lock()
-                .expect("zcode turns")
-                .insert(pane, now_ms);
-            return;
-        }
-        self.night_shift_provider_limited(
-            pane,
-            proto::AgentKind::Zcode,
-            &format!("no turn ended for {minutes} min and its quota probe failed"),
-        );
+        let me = Arc::clone(self);
+        self.night_zcode_probe(run_id, move |outcome| match outcome {
+            zcode_probe::Outcome::Answered => {
+                me.night
+                    .zcode_turns
+                    .lock()
+                    .expect("zcode turns")
+                    .insert(pane, now_unix_ms());
+            }
+            zcode_probe::Outcome::Failed(why) => me.night_shift_provider_limited(
+                pane,
+                proto::AgentKind::Zcode,
+                &format!("no turn ended for {minutes} min and its quota probe failed: {why}"),
+            ),
+        });
     }
 
-    /// Whether ZCode still answers. Without a probe the daemon can run, a
-    /// stall alone is not taken as a limit.
-    fn night_zcode_probe_ok(&self) -> bool {
-        if let Some(ok) = *self.night.zcode_probe_for_test.lock().expect("zcode probe") {
-            return ok;
+    /// At a start whose workers include ZCode: a failed probe marks ZCode
+    /// limited before any pane asks for it, and warns on the run.
+    fn night_zcode_start_probe(self: &Arc<Self>, run_id: u32, s: &proto::NightShiftSettings) {
+        if !s.workers.iter().any(|w| w.provider == proto::AgentKind::Zcode) {
+            return;
         }
-        true
+        let me = Arc::clone(self);
+        self.night_zcode_probe(run_id, move |outcome| {
+            let zcode_probe::Outcome::Failed(why) = outcome else {
+                return;
+            };
+            {
+                let _guard = me.night.lock.lock().expect("night lock");
+                if let Ok(Some(mut row)) = me.db.night_run(run_id) {
+                    row.preflight.push(proto::PreflightItem {
+                        id: "quota:zcode".into(),
+                        status: proto::PreflightStatus::Warn,
+                        label: "ZCode quota".into(),
+                        detail: format!(
+                            "the ZCode quota probe failed ({why}); this run uses the next \
+                             worker provider instead"
+                        ),
+                        limit: None,
+                        actual: None,
+                    });
+                    if let Err(e) = me.db.save_night_run(&row) {
+                        tracing::warn!("recording night run {run_id}'s ZCode probe: {e:#}");
+                    }
+                }
+            }
+            me.night_mark_limited(run_id, proto::AgentKind::Zcode, &why, None);
+        });
+    }
+
+    /// Runs the ZCode quota probe off the caller's thread, at most one per
+    /// run at a time; `done` gets its outcome.
+    fn night_zcode_probe(
+        self: &Arc<Self>,
+        run_id: u32,
+        done: impl FnOnce(zcode_probe::Outcome) + Send + 'static,
+    ) {
+        if !self
+            .night
+            .zcode_probing
+            .lock()
+            .expect("zcode probing")
+            .insert(run_id)
+        {
+            return;
+        }
+        let program = self
+            .night
+            .zcode_probe_program_for_test
+            .lock()
+            .expect("zcode probe")
+            .clone()
+            .or_else(|| crate::exe_path::resolve_in(&self.env(), "zcode"));
+        let cwd = self.state_dir.join("night-shift").join("probe");
+        let me = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-zcode-probe-{run_id}"))
+            .spawn(move || {
+                let outcome = match program {
+                    None => zcode_probe::Outcome::Failed("zcode is not on PATH".into()),
+                    Some(program) => match std::fs::create_dir_all(&cwd) {
+                        Ok(()) => zcode_probe::run(&program, &cwd),
+                        Err(e) => {
+                            zcode_probe::Outcome::Failed(format!("creating {}: {e}", cwd.display()))
+                        }
+                    },
+                };
+                tracing::info!("Night shift run {run_id}: ZCode quota probe {outcome:?}");
+                done(outcome);
+                me.night
+                    .zcode_probing
+                    .lock()
+                    .expect("zcode probing")
+                    .remove(&run_id);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("starting night run {run_id}'s ZCode probe: {e}");
+            self.night
+                .zcode_probing
+                .lock()
+                .expect("zcode probing")
+                .remove(&run_id);
+        }
+    }
+
+    /// Whether a ZCode quota probe of the run is still running.
+    #[doc(hidden)]
+    pub fn night_shift_zcode_probing(&self, run_id: u32) -> bool {
+        self.night
+            .zcode_probing
+            .lock()
+            .expect("zcode probing")
+            .contains(&run_id)
     }
 }
