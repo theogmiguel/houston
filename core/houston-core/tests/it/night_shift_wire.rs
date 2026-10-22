@@ -610,11 +610,11 @@ async fn run_fires_isolated_with_composed_brief() {
         .into_iter()
         .find(|s| s.id == session)
         .unwrap();
-    assert_ne!(Path::new(&pane.project_dir), r.ws.as_path());
+    assert_eq!(Path::new(&pane.project_dir), r.ws.as_path());
     assert!(
-        Path::new(&pane.project_dir).join(".git").is_file(),
+        Path::new(&pane.cwd).join(".git").is_file(),
         "the pane runs in a linked worktree: {}",
-        pane.project_dir
+        pane.cwd
     );
     let row = match r.daemon.routine_list() {
         proto::ServerMsg::Routines { routines, .. } => {
@@ -639,6 +639,46 @@ async fn run_fires_isolated_with_composed_brief() {
         assert!(brief.contains(needle), "the brief names {needle:?}");
     }
     assert!(brief.chars().count() <= proto::ROUTINE_PROMPT_MAX);
+}
+
+/// The run's panes belong to the routine's workspace, as `pane_spawn`
+/// worktree children do, so the renderer places them in its grid; they start
+/// in the run's worktree under the workspace's `.houston/worktrees/`.
+#[tokio::test]
+async fn run_panes_belong_to_the_workspace() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let orchestrator = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(orchestrator, "codex").await;
+    assert_eq!(status, 200, "{body}");
+    let worker = body["session_id"].as_u64().unwrap() as u32;
+    let (status, body) = r.spawn_child(worker, "claude").await;
+    assert_eq!(status, 200, "{body}");
+    let grandchild = body["session_id"].as_u64().unwrap() as u32;
+    let panes = r.daemon.list();
+    let pane = |id: u32| panes.iter().find(|s| s.id == id).unwrap();
+    let run_dir = Path::new(&pane(orchestrator).cwd).to_path_buf();
+    assert!(
+        run_dir.starts_with(r.ws.join(".houston").join("worktrees")),
+        "the run's worktree is the workspace's: {}",
+        run_dir.display()
+    );
+    assert!(run_dir.join(".git").is_file(), "{}", run_dir.display());
+    for id in [orchestrator, worker, grandchild] {
+        assert_eq!(
+            Path::new(&pane(id).project_dir),
+            r.ws.as_path(),
+            "pane {id} belongs to the workspace"
+        );
+        assert_eq!(
+            Path::new(&pane(id).cwd),
+            run_dir.as_path(),
+            "pane {id} starts in the run's worktree"
+        );
+    }
 }
 
 /// A Claude orchestrator's TUI receives `/goal <goal>` as an input of its

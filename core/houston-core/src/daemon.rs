@@ -7421,10 +7421,16 @@ impl Daemon {
         };
         let mut env = vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())];
         env.extend(extra_env);
+        // A Night shift run's worktree lies inside its workspace, and the pane
+        // belongs to that workspace, as a `pane_spawn` worktree child does.
+        let (project_dir, cwd) = match row.workspace_id.as_deref().filter(|_| night) {
+            Some(workspace) => (PathBuf::from(workspace), Some(PathBuf::from(dir))),
+            None => (PathBuf::from(dir), None),
+        };
         let spawned = self.create_session_with_env(
             CreateParams {
                 agent: row.engine,
-                project_dir: PathBuf::from(&dir),
+                project_dir,
                 cmd: Some(cmd),
                 cols: 120,
                 rows: 32,
@@ -7440,7 +7446,7 @@ impl Daemon {
             env,
             Vec::new(),
             None,
-            None,
+            cwd,
             false,
             None,
             pasted.is_some(),

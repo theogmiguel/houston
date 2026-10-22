@@ -136,7 +136,8 @@ it warns when `systemd-inhibit` is missing. A refused run is recorded with its i
 opens no pane, and its notice says why it did not start. A scheduled start missed while the
 machine was off runs once if Houston is back before wrap-up.
 
-A run opens the orchestrator in an isolated worktree with full access. At wrap-up Houston
+A run opens the orchestrator with full access in an isolated worktree under the workspace's
+`.houston/worktrees/`; its panes appear in the workspace's grid. At wrap-up Houston
 tells it once to start nothing new and write the report; **Wrap up now** does the same
 immediately. At the hard stop, at the safety cap, or when you confirm **Stop**, Houston
 closes every pane the run started and then the orchestrator. A run that ends any other way,

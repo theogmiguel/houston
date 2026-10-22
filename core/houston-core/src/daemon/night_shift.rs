@@ -112,6 +112,23 @@ fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
     serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
 }
 
+/// A run's worktree, detached at the workspace's HEAD under its
+/// `.houston/worktrees/` like a `pane_spawn` worktree: the run's panes then keep
+/// the workspace as their own and start inside it.
+fn night_worktree(workspace: &Path, now: i64) -> Result<std::path::PathBuf> {
+    if !crate::git::is_git_repo(workspace) {
+        bail!(
+            "{} is not a git repository, and an isolated run needs one to branch from",
+            workspace.display()
+        );
+    }
+    let dest = crate::worktrees::spawn_path(workspace, &format!("night-shift-{now}"));
+    if let Some(dir) = dest.parent() {
+        crate::worktrees::ensure_ignored(dir)?;
+    }
+    crate::git::worktree_add(workspace, &dest)
+}
+
 /// The report's size, if it is a regular file: a link or a FIFO is refused,
 /// so reading it never follows elsewhere or blocks.
 fn report_file_len(path: &Path) -> Result<u64> {
@@ -610,7 +627,7 @@ impl Daemon {
         }
         let mut run_dir = None;
         if refusal.is_none() {
-            match self.routine_worktree(row, Path::new(&workspace), now) {
+            match night_worktree(Path::new(&workspace), now) {
                 Ok(d) => run_dir = Some(d),
                 Err(e) => {
                     refusal = Some(format!(
