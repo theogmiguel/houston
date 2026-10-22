@@ -204,10 +204,11 @@ mod tests {
     #[test]
     #[ignore = "a helper process for inhibitor_ends_with_a_killed_daemon"]
     fn hold_until_killed() {
-        let Ok(dir) = std::env::var(HOLDER_DIR_ENV) else {
+        let env = crate::host_env::HostEnv::capture();
+        let Some(dir) = env.var(HOLDER_DIR_ENV) else {
             return;
         };
-        let path = format!("{dir}:{}", std::env::var("PATH").unwrap_or_default());
+        let path = format!("{dir}:{}", env.var("PATH").unwrap_or_default());
         let _hold = acquire(Some(&path)).expect("the stand-in inhibitor starts");
         std::fs::write(std::path::Path::new(&dir).join("held"), "").unwrap();
         std::thread::sleep(std::time::Duration::from_secs(60));

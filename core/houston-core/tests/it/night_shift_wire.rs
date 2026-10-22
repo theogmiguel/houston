@@ -1856,7 +1856,7 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
     d.set_night_shift_awake_for_test(Some(Arc::new(|_, _| {})));
     d.set_routine_pane_cmd_for_test(vec!["sh".into(), "-c".into(), "exec cat".into()]);
     d.night_shift_create(&gh.workspace).unwrap();
-    let read = |d: &Daemon| match d.night_shift_state(&gh.workspace, None).unwrap() {
+    let read = |d: &Arc<Daemon>| match d.night_shift_state(&gh.workspace, None).unwrap() {
         proto::ServerMsg::NightShiftState {
             routine,
             settings,
@@ -1889,7 +1889,7 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
     .unwrap();
     d.night_tool(o, "pr", &json!({ "number": 12, "title": "Tray fix" }))
         .unwrap();
-    let entry = |d: &Daemon| {
+    let entry = |d: &Arc<Daemon>| {
         read(d)
             .3
             .into_iter()
