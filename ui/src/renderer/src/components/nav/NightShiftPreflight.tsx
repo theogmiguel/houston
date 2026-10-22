@@ -8,7 +8,7 @@ import { durationLabel } from './nightShiftFormat'
 export const DURATIONS = [20, 60, 120, 240, 480] as const
 type Duration = (typeof DURATIONS)[number]
 
-const STATUS: Record<PreflightItem['status'], 'Ready' | 'Blocked' | 'Stale'> = { ok: 'Ready', warn: 'Stale', block: 'Blocked' }
+const STATUS: Record<PreflightItem['status'], 'Ready' | 'Blocked' | 'Warning'> = { ok: 'Ready', warn: 'Warning', block: 'Blocked' }
 const STATUS_TEXT: Record<PreflightItem['status'], string> = { ok: 'OK', warn: 'Warning', block: 'Blocks the run' }
 
 /** Run now: the duration, every preflight item, and Start only when nothing blocks. */
@@ -47,7 +47,7 @@ export function NightShiftPreflight({ items, onDuration, onStart, onCancel, now 
           </Card>
         </DialogBody>
         <DialogActions>
-          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button variant="ghost" autoFocus onClick={onCancel}>Cancel</Button>
           <Button variant="primary" data-testid="night-preflight-start" disabled={items === null || blocking > 0} onClick={() => onStart(until)}>{startLabel}</Button>
         </DialogActions>
       </DialogPanel>

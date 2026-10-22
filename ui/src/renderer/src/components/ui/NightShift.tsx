@@ -29,7 +29,8 @@ export function GateChip({ label, state, kind }: { label: string; state: GateSta
       data-testid="gate-chip"
       data-gate-kind={kind}
       data-gate-state={state}
-      aria-label={`${text}${kind === 'verdict' ? ' (agent verdict)' : ''}`}
+      role="img"
+      aria-label={`${text}${kind === 'verdict' ? ' (agent verdict)' : ' (fact)'}`}
       className={`inline-flex items-center h-[var(--h-pill)] px-[var(--space-1-5)] rounded-[var(--tr-radius-sm)] border text-[length:var(--tr-text-label-size)] font-medium whitespace-nowrap ${paint}`}
     >
       {text}
@@ -60,7 +61,7 @@ export function NightWindowStrip({ marks, progress, label }: { marks: WindowMark
   const labelled = marks.filter((m) => m.kind !== 'interruption')
   return (
     <div role="group" aria-label={label} className="grid gap-[var(--space-1)]">
-      <div className="relative h-[6px] rounded-[var(--tr-radius-pill)] bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+      <div className="relative h-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
         {progress !== undefined && (
           <div data-testid="window-progress" className="absolute inset-y-0 left-0 bg-[var(--selected-fill)]" style={{ width: pct(progress) }} />
         )}
@@ -68,13 +69,14 @@ export function NightWindowStrip({ marks, progress, label }: { marks: WindowMark
           <span
             key={`${m.kind}-${i}`}
             data-testid={`window-mark-${m.kind}`}
-            aria-label={m.label}
-            className={`absolute inset-y-0 w-[2px] ${MARK_CLS[m.kind]}`}
-            style={{ left: `calc(${pct(m.at)} - 1px)` }}
+            role="img"
+            aria-label={m.kind === 'interruption' ? `Interruption: ${m.label}` : m.label}
+            className={`absolute inset-y-0 w-[var(--space-0-5)] ${MARK_CLS[m.kind]}`}
+            style={{ left: `calc(${pct(m.at)} - var(--space-pixel))` }}
           />
         ))}
       </div>
-      <div className="relative h-[var(--tr-text-label-leading,16px)] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)] tabular-nums">
+      <div className="relative h-[var(--tr-text-label-leading)] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)] tabular-nums">
         {labelled.map((m, i) => (
           <span
             key={`${m.kind}-label-${i}`}

@@ -47,6 +47,10 @@ describe('NightShiftLive', () => {
     const buttons = Array.from(host.querySelectorAll('button'))
     act(() => buttons.find((b) => b.textContent === 'Wrap up now')!.click())
     act(() => buttons.find((b) => b.textContent === 'Stop')!.click())
+    expect(onStop).not.toHaveBeenCalled()
+    expect(host.textContent).toMatch(/Closes \d+ panes? now: Orchestrator \(pane 40\)/)
+    const confirm = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Stop the run')!
+    act(() => confirm.click())
     act(() => buttons.find((b) => b.textContent === 'Open')!.click())
     expect(onWrapUp).toHaveBeenCalledOnce()
     expect(onStop).toHaveBeenCalledOnce()

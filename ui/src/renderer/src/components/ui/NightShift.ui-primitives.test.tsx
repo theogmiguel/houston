@@ -38,7 +38,10 @@ describe('ui-primitives', () => {
       <GateChip label="QA" state="failed" kind="verdict" />
     </>))
     expect((host.querySelector('[data-testid="window-progress"]') as HTMLElement).style.width).toBe('50%')
-    expect((host.querySelector('[data-testid="window-mark-hard-stop"]') as HTMLElement).style.left).toBe('calc(100% - 1px)')
-    expect(host.querySelector('[data-testid="gate-chip"]')?.getAttribute('aria-label')).toBe('QA failed (agent verdict)')
+    expect((host.querySelector('[data-testid="window-mark-hard-stop"]') as HTMLElement).style.left).toBe('calc(100% - var(--space-pixel))')
+    const chip = host.querySelector('[data-testid="gate-chip"]')
+    expect(chip?.getAttribute('aria-label')).toBe('QA failed (agent verdict)')
+    expect(chip?.getAttribute('role'), 'a labelled span is announced only with a role').toBe('img')
+    expect(host.querySelector('[data-testid="window-mark-hard-stop"]')?.getAttribute('role')).toBe('img')
   })
 })

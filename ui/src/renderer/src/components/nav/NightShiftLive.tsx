@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { NightMachine } from '../../houston/generated/NightMachine'
 import type { NightRun } from '../../houston/generated/NightRun'
 import { Button, Card, Inline, NightPlanBoard, NightPlanColumn, NightPlanItem, NightWindowStrip, Readout, SectionHead, Text } from '../ui'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ReadoutGrid } from '../ui/Readout'
 import { StatusLabel } from '../ui/StatusLabel'
 import { engineLabel } from '../engineLabel'
@@ -26,6 +28,8 @@ export function NightShiftLive({ run, machine, now, onWrapUp, onStop, onOpenSess
   const prs = run.entries.filter((e) => e.kind === 'pr')
   const deferred = run.entries.filter((e) => e.kind === 'deferred')
   const decisions = run.entries.filter((e) => e.kind === 'decision')
+  const [confirmStop, setConfirmStop] = useState(false)
+  const crewLabel = (i: number): string => (i === 0 ? 'Orchestrator' : run.crew[i].role ?? 'Worker')
   return (
     <div className="grid gap-[var(--space-3)]" data-testid="night-shift-live">
       <Inline wrap gap="small" className="justify-between">
@@ -35,9 +39,18 @@ export function NightShiftLive({ run, machine, now, onWrapUp, onStop, onOpenSess
         </div>
         <div className="flex gap-[var(--space-2)]">
           {!wrapping && <Button variant="secondary" onClick={onWrapUp}>Wrap up now</Button>}
-          <Button variant="ghost" onClick={onStop}>Stop</Button>
+          <Button variant="ghost" onClick={() => setConfirmStop(true)}>Stop</Button>
         </div>
       </Inline>
+      {confirmStop && (
+        <ConfirmDialog title="Stop this Night shift run?" confirmLabel="Stop the run" onCancel={() => setConfirmStop(false)}
+          onConfirm={() => { setConfirmStop(false); onStop() }}>
+          <Text size="small">
+            {run.crew.length === 0 ? 'The run settles now.' : `Closes ${run.crew.length} ${run.crew.length === 1 ? 'pane' : 'panes'} now: ${run.crew.map((m, i) => `${crewLabel(i)} (pane ${m.session_id})`).join(', ')}.`}
+          </Text>
+          <Text size="small" tone="muted">Work not in a pull request or the ledger is lost; this cannot be undone.</Text>
+        </ConfirmDialog>
+      )}
       <NightWindowStrip label="Run timeline" progress={progress} marks={runMarks(run)} />
       {run.interruptions.length > 0 && <Text size="small" tone="muted">{run.interruptions.map((i) => `${timeOfDay(i.at_ms)}: ${i.detail}`).join(' · ')}</Text>}
 
