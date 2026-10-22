@@ -61,6 +61,42 @@ describe('workspace transfer grids', () => {
     expect(stack.activeIndex).toBe(1)
   })
 
+  it('rebases files stored under the registered path when the file records the canonical one', () => {
+    const registered = '/home/a/link-to-project'
+    localStorage.setItem(`tr-grids:${registered}`, JSON.stringify([{ id: 'g', name: 'Main', nameSource: 'user', tags: [] }]))
+    saveLayout(gridStorageKey(registered, 'g'), {
+      tree: { kind: 'editor', id: 'e', path: `${registered}/src/lib.rs` },
+      cols: 1
+    })
+    const placed = placeTransferGrids(collectTransferGrids(registered), SOURCE, TARGET, [], [])
+    const tree = placed.layouts[0]?.[1].tree
+    expect(tree?.kind === 'editor' ? tree.path : null).toBe(`${TARGET}/src/lib.rs`)
+  })
+
+  it('matches Windows paths whatever their letter case, separators or verbatim prefix', () => {
+    const registered = 'c:/Dev/App'
+    localStorage.setItem(`tr-grids:${registered}`, JSON.stringify([{ id: 'g', name: 'Main', nameSource: 'user', tags: [] }]))
+    const tree: LayoutNode = {
+      kind: 'stack',
+      id: 's',
+      activeIndex: 0,
+      children: [
+        { kind: 'editor', id: 'e1', path: 'C:\\dev\\app\\src\\main.rs' },
+        { kind: 'files', id: 'f1', root: 'c:/Dev/App/docs' },
+        { kind: 'editor', id: 'e2', path: 'C:\\dev\\application\\x.rs' }
+      ]
+    }
+    saveLayout(gridStorageKey(registered, 'g'), { tree, cols: 1 })
+    const placed = placeTransferGrids(collectTransferGrids(registered), '\\\\?\\C:\\dev\\app', 'D:\\work\\app', [], [])
+    const placedTree = placed.layouts[0]?.[1].tree
+    expect(placedTree?.kind).toBe('stack')
+    if (placedTree?.kind !== 'stack') return
+    expect(placedTree.children.map((child) => (child.kind === 'editor' ? child.path : child.kind === 'files' ? child.root : null))).toEqual([
+      'D:\\work\\app\\src\\main.rs',
+      'D:\\work\\app\\docs'
+    ])
+  })
+
   it('ignores a blob it cannot read', () => {
     expect(placeTransferGrids('not json', SOURCE, TARGET, [], [])).toEqual({ grids: [], layouts: [] })
     expect(placeTransferGrids('{"version":2}', SOURCE, TARGET, [], [])).toEqual({ grids: [], layouts: [] })
