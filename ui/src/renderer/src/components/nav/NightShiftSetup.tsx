@@ -7,7 +7,7 @@ import { Toggle } from '../ui/settingsPrimitives'
 import { NumberField } from '../ui/NumberField'
 import { engineLabel } from '../engineLabel'
 import {
-  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, WORKER_PROVIDERS, agentLabel, clockLabel, durationLabel, mergeRefusal,
+  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, agentLabel, clockLabel, durationLabel, mergeRefusal,
   minutesBetween, parseClock, settingsProblems, windowMarks
 } from './nightShiftFormat'
 
@@ -64,6 +64,9 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
   const problems = [...(clockError ? [clockError] : []), ...settingsProblems(draft), ...(refusal ? [refusal] : [])]
   const total = minutesBetween(draft.window.start, draft.window.hard_stop)
   const workerOptions = WORKER_PROVIDERS.map((p) => ({ value: p, label: engineLabel(p) }))
+  // A stored ZCode orchestrator stays visible, with its refusal, until it is changed.
+  const orchestratorOptions = [...new Set([...ORCHESTRATOR_PROVIDERS, draft.orchestrator.provider])]
+    .map((p) => ({ value: p, label: engineLabel(p) }))
   const appCheck = (patch: Partial<NonNullable<NightShiftSettings['app_check']>>): NightShiftSettings['app_check'] => {
     const next = { start_command: '', address: '', smoke_flows: [], ...draft.app_check, ...patch }
     return next.start_command.trim() || next.address.trim() || next.smoke_flows.length > 0 ? next : null
@@ -116,7 +119,7 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
       <Card layout="fields" shape="card" role="group" aria-label="Crew">
         <Card.Field label="Orchestrator">
           <div className="flex items-center gap-[var(--space-2)]">
-            <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={workerOptions}
+            <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={orchestratorOptions}
               onChange={(p) => set({ orchestrator: p === draft.orchestrator.provider ? draft.orchestrator : { provider: p as AgentKind, model: null } })} />
             <Text size="small" tone="muted">{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text>
           </div>

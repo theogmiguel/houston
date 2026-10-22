@@ -27,6 +27,9 @@ export const NIGHTS: { day: number; label: string }[] = [
 /** Providers that never report a usage limit cannot be workers. */
 export const NO_LIMIT_SIGNAL: AgentKind[] = ['cursor', 'antigravity', 'grok']
 export const WORKER_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode', 'zcode']
+/** The orchestrator watches its pull requests' CI; a pull request watch cannot wake ZCode. */
+export const ORCHESTRATOR_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode']
+export const ZCODE_ORCHESTRATOR_REFUSAL = 'ZCode cannot orchestrate: a pull request watch cannot wake it, so the CI stage would be off.'
 
 export function clockLabel(c: NightClock): string {
   return `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`
@@ -112,6 +115,7 @@ export function settingsProblems(s: NightShiftSettings): string[] {
   if (total > 16 * 60) out.push(`The window lasts ${durationLabel(total)}; the limit is 16 h.`)
   if (minutesBetween(s.window.start, s.window.wrap_up) >= total) out.push(`Wrap-up ${clockLabel(s.window.wrap_up)} is not before the hard stop ${clockLabel(s.window.hard_stop)}.`)
   if (s.enabled && s.window.nights.length === 0) out.push('Choose at least one night to turn Night shift on.')
+  if (s.orchestrator.provider === 'zcode') out.push(ZCODE_ORCHESTRATOR_REFUSAL)
   for (const w of s.workers) {
     if (NO_LIMIT_SIGNAL.includes(w.provider)) out.push(`${engineLabel(w.provider)} cannot be a worker: it reports no usage limit.`)
   }

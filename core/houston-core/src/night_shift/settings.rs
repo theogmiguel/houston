@@ -115,6 +115,15 @@ pub fn is_worker_provider(provider: AgentKind) -> bool {
     )
 }
 
+/// The orchestrator watches its PRs' CI, so its provider must be one a pull
+/// request watch can wake (`pr_watch_start`).
+pub fn is_orchestrator_provider(provider: AgentKind) -> bool {
+    matches!(
+        provider,
+        AgentKind::Claude | AgentKind::Codex | AgentKind::Opencode
+    )
+}
+
 pub fn validate_window(w: &NightWindow) -> Result<()> {
     for (name, c) in [
         ("start", w.start),
@@ -195,9 +204,15 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
             );
         }
     }
-    if !is_worker_provider(s.orchestrator.provider) {
+    if s.orchestrator.provider == AgentKind::Zcode {
         bail!(
-            "{} cannot orchestrate Night shift; expected claude, codex, opencode or zcode",
+            "zcode cannot orchestrate Night shift: a pull request watch cannot wake a ZCode \
+             pane, so the run's CI stage would be off; expected claude, codex or opencode"
+        );
+    }
+    if !is_orchestrator_provider(s.orchestrator.provider) {
+        bail!(
+            "{} cannot orchestrate Night shift; expected claude, codex or opencode",
             crate::agent_hooks::provider_slug(s.orchestrator.provider)
         );
     }
@@ -338,6 +353,26 @@ mod tests {
             let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
             assert!(err.contains(name), "{err}");
             assert!(err.contains("reports no usage limit"), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_zcode_orchestrator_is_refused_with_the_reason() {
+        let mut s = defaults();
+        s.orchestrator = NightAgent {
+            provider: AgentKind::Zcode,
+            model: None,
+        };
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(err.contains("zcode cannot orchestrate"), "{err}");
+        assert!(err.contains("cannot wake a ZCode pane"), "{err}");
+        assert!(err.contains("CI stage"), "{err}");
+        for provider in [AgentKind::Claude, AgentKind::Codex, AgentKind::Opencode] {
+            s.orchestrator = NightAgent {
+                provider,
+                model: None,
+            };
+            validate(&s, &facts()).unwrap();
         }
     }
 

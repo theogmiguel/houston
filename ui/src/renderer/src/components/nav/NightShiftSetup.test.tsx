@@ -97,6 +97,19 @@ describe('NightShiftSetup', () => {
     expect(input('Goal').value).toBe('saved elsewhere')
   })
 
+  it('offers no ZCode orchestrator and refuses a stored one by its reason', () => {
+    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={vi.fn()} />))
+    const trigger = host.querySelector('[role="combobox"][aria-label="Orchestrator"]')!
+    act(() => { trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })) })
+    const menu = document.getElementById(trigger.getAttribute('aria-controls')!)!
+    const offered = Array.from(menu.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => o.dataset.value)
+    expect(offered).toEqual(['claude', 'codex', 'opencode'])
+
+    const stored = { ...nightDefaults(), orchestrator: { provider: 'zcode' as const, model: null } }
+    act(() => root.render(<NightShiftSetup settings={stored} revision="r2" verifyCommand onSave={vi.fn()} />))
+    expect(host.textContent).toContain('ZCode cannot orchestrate: a pull request watch cannot wake it')
+  })
+
   it('edits the orchestrator, reviewer and smoke flows', () => {
     const onSave = vi.fn()
     act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={onSave} />))

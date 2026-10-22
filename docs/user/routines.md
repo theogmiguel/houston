@@ -92,7 +92,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Nights | None: it runs only with **Run now** until you choose nights and turn it on |
 | Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, platform parity, docs accuracy and test gaps Off |
 | Goal | Empty; a Claude orchestrator receives it as `/goal <goal>`, typed before its brief |
-| Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator |
+| Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator. The orchestrator is Claude, Codex or OpenCode: a ZCode orchestrator is refused because a pull request watch cannot wake it to follow CI |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
 | Output | Draft pull requests only, grouped by theme, up to 5 changes each, screenshots for visible changes |
