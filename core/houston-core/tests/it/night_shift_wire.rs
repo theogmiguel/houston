@@ -1079,6 +1079,38 @@ async fn ledger_digest_reaches_next_brief() {
     assert!(!brief.contains("Kept plan"));
 }
 
+/// The next brief names earlier PRs with what became of them: merged,
+/// closed unmerged (rejected), or not merged yet.
+#[tokio::test]
+async fn earlier_prs_reach_the_brief_with_their_fate() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let first = r.run_now(routine.id, 120);
+    let o = first.session_id.unwrap();
+    for (number, title) in [(12, "Tray fix"), (13, "Drop the old API"), (14, "Faster diff")] {
+        let (status, body) = r
+            .night(o, "pr", json!({ "number": number, "title": title }))
+            .await;
+        assert_eq!(status, 200, "{body}");
+    }
+    r.daemon.night_shift_stop_now(first.run_id).unwrap();
+    r.daemon.set_night_shift_pr_fates_for_test(Some(
+        [(12, "MERGED"), (13, "CLOSED"), (14, "OPEN")]
+            .into_iter()
+            .map(|(n, s)| (n, s.to_string()))
+            .collect(),
+    ));
+    let second = r.run_now(routine.id, 120);
+    let brief = r.brief(&second);
+    for needle in [
+        "[pr merged] Tray fix (PR #12)",
+        "[rejected] Drop the old API (PR #13)",
+        "[pr not merged yet] Faster diff (PR #14)",
+    ] {
+        assert!(brief.contains(needle), "the brief names {needle:?}:\n{brief}");
+    }
+}
+
 #[tokio::test]
 async fn settle_broadcasts_one_notice() {
     let r = rig().await;

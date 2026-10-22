@@ -19,12 +19,15 @@ pub struct BriefRun<'a> {
     pub hard_stop: &'a str,
 }
 
-/// Entries the next run must know: deferred and rejected work, lessons and
-/// flaky tests.
+/// Entries the next run must know: earlier PRs and their fate, deferred and
+/// rejected work, lessons and flaky tests.
 pub fn belongs_in_digest(e: &NightEntry) -> bool {
     matches!(
         e.kind,
-        NightEntryKind::Deferred | NightEntryKind::Lesson | NightEntryKind::Flaky
+        NightEntryKind::Deferred
+            | NightEntryKind::Lesson
+            | NightEntryKind::Flaky
+            | NightEntryKind::Pr
     ) || is_rejected(e)
 }
 
@@ -62,7 +65,8 @@ fn digest_line(e: &NightEntry) -> String {
             NightEntryKind::Lesson => "lesson",
             NightEntryKind::Flaky => "flaky test",
             NightEntryKind::Plan => "plan",
-            NightEntryKind::Pr => "pr",
+            NightEntryKind::Pr if e.status.as_deref() == Some("merged") => "pr merged",
+            NightEntryKind::Pr => "pr not merged yet",
             NightEntryKind::Decision => "decision",
         }
     };

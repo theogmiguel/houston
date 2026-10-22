@@ -94,6 +94,7 @@ pub(crate) struct NightShiftCtx {
     /// Runs whose ZCode quota probe is in flight; one at a time per run.
     zcode_probing: Mutex<std::collections::HashSet<u32>>,
     zcode_probe_program_for_test: Mutex<Option<std::path::PathBuf>>,
+    pr_fates_for_test: Mutex<Option<HashMap<u32, String>>>,
 }
 
 const MINUTE_MS: i64 = 60_000;
@@ -101,6 +102,8 @@ const MINUTE_MS: i64 = 60_000;
 /// catches a pane spawned while the first ran.
 const NIGHT_SWEEP_PASSES: usize = 3;
 const NIGHT_NO_START_MS: i64 = 365 * 24 * 60 * MINUTE_MS;
+/// Earlier PRs whose fate a start reads from GitHub, one `gh` call each.
+const NIGHT_PR_FATES_PER_START: u32 = 10;
 /// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
@@ -695,6 +698,7 @@ impl Daemon {
         let report_dir = crate::night_shift::run_dir(&self.state_dir, run_id);
         std::fs::create_dir_all(&report_dir)
             .with_context(|| format!("creating {}", report_dir.display()))?;
+        self.night_refresh_pr_fates(row.id, run_id, &night.workspace);
         let digest = self
             .db
             .night_digest(row.id, run_id, proto::NIGHT_SHIFT_DIGEST_ENTRIES_MAX)?;
@@ -739,6 +743,54 @@ impl Daemon {
                 env,
             )?
             .is_some())
+    }
+
+    /// Records whether earlier runs' PRs were merged or closed, so the brief
+    /// carries their fate. Bounded: one `gh pr view` per PR, newest first.
+    fn night_refresh_pr_fates(&self, routine_id: u32, run_id: u32, workspace: &str) {
+        let prs = match self
+            .db
+            .night_prs_unresolved(routine_id, run_id, NIGHT_PR_FATES_PER_START)
+        {
+            Ok(prs) => prs,
+            Err(e) => {
+                tracing::warn!("reading earlier Night shift PRs: {e:#}");
+                return;
+            }
+        };
+        let fates = self
+            .night
+            .pr_fates_for_test
+            .lock()
+            .expect("pr fates")
+            .clone();
+        for entry in prs {
+            let Some(number) = entry.pr_number else {
+                continue;
+            };
+            let state = match &fates {
+                Some(fates) => fates.get(&number).cloned(),
+                None => match crate::gh::pr_detail_read(Path::new(workspace), Some(number)) {
+                    crate::gh::PrRead::Found(v) => v["state"].as_str().map(str::to_string),
+                    _ => None,
+                },
+            };
+            let fate = match state.as_deref() {
+                Some("MERGED") => "merged",
+                Some("CLOSED") => "closed",
+                _ => continue,
+            };
+            if let Err(e) = self.db.set_night_entry_status(entry.id, fate) {
+                tracing::warn!("recording PR #{number}'s fate: {e:#}");
+            }
+        }
+    }
+
+    /// `gh pr view` states (`MERGED`, `CLOSED`, `OPEN`) by PR number, read
+    /// instead of GitHub.
+    #[doc(hidden)]
+    pub fn set_night_shift_pr_fates_for_test(&self, fates: Option<HashMap<u32, String>>) {
+        *self.night.pr_fates_for_test.lock().expect("pr fates") = fates;
     }
 
     /// The dev channel may stand a script in for the orchestrator's CLI: a
@@ -2163,6 +2215,14 @@ impl Daemon {
         if changes.is_empty() || !self.is_night_shift_orchestrator(session) {
             return;
         }
+        for change in changes {
+            let fate = match change {
+                Change::StopMerged => "merged",
+                Change::StopClosed => "closed",
+                _ => continue,
+            };
+            self.night_set_pr_status(session, number, fate);
+        }
         let failed: Vec<String> = changes
             .iter()
             .filter_map(|c| match c {
@@ -2195,6 +2255,24 @@ impl Daemon {
         }
         if let Err(e) = self.night_shift_ci_failed(session, number, &texts) {
             tracing::warn!("Night shift CI pass for PR #{number}: {e:#}");
+        }
+    }
+
+    fn night_set_pr_status(&self, session: u32, number: u32, status: &str) {
+        let Some((_, run_id, _)) = self.night_run_of_pane(session) else {
+            return;
+        };
+        let Ok(entries) = self.db.night_entries(run_id) else {
+            return;
+        };
+        if let Some(e) = entries
+            .into_iter()
+            .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+        {
+            if let Err(err) = self.db.set_night_entry_status(e.id, status) {
+                tracing::warn!("recording PR #{number} as {status}: {err:#}");
+            }
+            self.broadcast_night_run(run_id);
         }
     }
 

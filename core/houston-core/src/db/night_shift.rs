@@ -435,8 +435,37 @@ impl Db {
         )?)
     }
 
-    /// Deferred, rejected, lesson and flaky entries of the routine's runs
-    /// before `before_run`, newest first.
+    /// PRs of the routine's runs before `before_run` whose fate (merged or
+    /// closed) is not recorded yet, newest first.
+    pub fn night_prs_unresolved(
+        &self,
+        routine_id: u32,
+        before_run: u32,
+        limit: u32,
+    ) -> Result<Vec<proto::NightEntry>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{ENTRY_SELECT} WHERE kind = 'pr' AND coalesce(status, '') NOT IN ('merged', 'closed') \
+             AND run_id IN (SELECT run_id FROM night_runs WHERE routine_id = ?1 AND run_id < ?2) \
+             ORDER BY created_at_ms DESC, id DESC LIMIT ?3"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![routine_id, before_run, limit], map_entry)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_night_entry_status(&self, id: u32, status: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE night_entries SET status = ?2 WHERE id = ?1",
+            rusqlite::params![id, status],
+        )?;
+        Ok(())
+    }
+
+    /// Deferred, rejected, lesson and flaky entries, and PRs with their fate,
+    /// of the routine's runs before `before_run`, newest first.
     pub fn night_digest(
         &self,
         routine_id: u32,
@@ -447,7 +476,7 @@ impl Db {
         let mut stmt = conn.prepare(&format!(
             "{ENTRY_SELECT} WHERE run_id IN \
                 (SELECT run_id FROM night_runs WHERE routine_id = ?1 AND run_id < ?2) \
-             AND (kind IN ('deferred', 'lesson', 'flaky') \
+             AND (kind IN ('deferred', 'lesson', 'flaky', 'pr') \
                   OR status IN ('rejected', 'closed') \
                   OR lower(trim(coalesce(choice, ''))) LIKE 'reject%') \
              ORDER BY created_at_ms DESC, id DESC LIMIT ?3"
