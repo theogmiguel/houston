@@ -33,7 +33,9 @@ export function NightShiftView({ client, workspaces, now, onOpenSession, initial
   const live = state?.runs.find((r) => r.phase === 'running' || r.phase === 'wrapping_up') ?? null
   const finished = state?.runs.filter((r) => r.phase === 'settled' || r.phase === 'refused') ?? []
   const shown = finished.find((r) => r.run_id === reportRun) ?? finished[0] ?? null
-  const current: Tab = tab ?? (live ? 'live' : initialRunId !== null && shown ? 'report' : 'setup')
+  const fallback: Tab = live ? 'live' : initialRunId !== null && shown ? 'report' : 'setup'
+  // A run that ended while its live view was open lands on its report.
+  const current: Tab = tab === 'live' && !live ? (shown ? 'report' : 'setup') : tab ?? fallback
   useEffect(() => { if (live) setTab('live') }, [live?.run_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const name = workspaces.find((w) => w.id === workspace)?.name ?? workspace ?? ''
