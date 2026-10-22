@@ -23,6 +23,15 @@ pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
     state_dir.join("night-shift").join(run_id.to_string())
 }
 
+/// The first flaky test name that appears in a failed check's name or log.
+pub fn flaky_match<'a>(flaky: &'a [String], texts: &[String]) -> Option<&'a str> {
+    flaky
+        .iter()
+        .map(|t| t.trim())
+        .filter(|t| t.len() >= 3)
+        .find(|t| texts.iter().any(|line| line.contains(t)))
+}
+
 /// The morning notice: "7 draft PRs, 2 decisions".
 pub fn headline(prs: usize, open_decisions: usize, refused: bool) -> String {
     if refused {
@@ -40,6 +49,17 @@ pub fn headline(prs: usize, open_decisions: usize, refused: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flaky_names_match_inside_log_lines() {
+        let flaky = vec!["pty::resize_race".to_string(), "x".to_string()];
+        let log = vec![
+            "core-checks".to_string(),
+            "test pty::resize_race ... FAILED".to_string(),
+        ];
+        assert_eq!(flaky_match(&flaky, &log), Some("pty::resize_race"));
+        assert_eq!(flaky_match(&flaky, &["x failed".to_string()]), None);
+    }
 
     #[test]
     fn headline_counts() {

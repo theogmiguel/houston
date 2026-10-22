@@ -1162,3 +1162,52 @@ async fn heavy_shares_build_slot() {
         "released after the command: {free}"
     );
 }
+
+// ---- S6 ----
+
+#[tokio::test]
+async fn flaky_failure_rerun_once() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (verb, body) in [
+        (
+            "lesson",
+            json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+        ),
+        (
+            "pr",
+            json!({ "number": 21, "title": "Tray fix", "ci": "pending" }),
+        ),
+    ] {
+        assert_eq!(r.night(o, verb, body).await.0, 200);
+    }
+    let log = vec![
+        "core-checks".to_string(),
+        "test pty::resize_race ... FAILED".to_string(),
+    ];
+    assert!(r.daemon.night_shift_ci_failed(o, 21, &log).unwrap());
+    let pr = |r: &Rig| {
+        r.run(run.run_id)
+            .entries
+            .into_iter()
+            .find(|e| e.pr_number == Some(21))
+            .unwrap()
+    };
+    assert_eq!(pr(&r).gates.reruns, 1);
+    assert_eq!(pr(&r).gates.ci, proto::NightGate::Pending);
+    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
+    assert!(
+        !r.daemon.night_shift_ci_failed(o, 21, &log).unwrap(),
+        "a second failure is not re-run again"
+    );
+    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
+    assert_eq!(r.notes(o, "Night shift: PR #21 failed again"), 1);
+    assert_eq!(pr(&r).gates.reruns, 1);
+    assert_eq!(pr(&r).gates.ci, proto::NightGate::Failed);
+    assert!(
+        !r.daemon.night_shift_ci_failed(o, 99, &log).unwrap(),
+        "a PR the run never recorded is not its business"
+    );
+}

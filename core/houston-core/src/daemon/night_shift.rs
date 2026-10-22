@@ -1612,6 +1612,156 @@ impl Daemon {
         ))
     }
 
+    /// CI news for a PR the run recorded: gates follow it, and a failure on a
+    /// known flaky test asks the orchestrator for one re-run.
+    pub(super) fn night_shift_pr_changes(
+        self: &Arc<Self>,
+        session: u32,
+        repo: &Path,
+        number: u32,
+        changes: &[crate::pull_requests::watch::Change],
+        check_runs: &[(String, Option<u64>)],
+    ) {
+        use crate::pull_requests::watch::Change;
+        if changes.is_empty() || !self.is_night_shift_orchestrator(session) {
+            return;
+        }
+        let failed: Vec<String> = changes
+            .iter()
+            .filter_map(|c| match c {
+                Change::FailedCheck { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        if changes
+            .iter()
+            .any(|c| matches!(c, Change::ChecksPassed { .. }))
+        {
+            self.night_set_ci(session, number, proto::NightGate::Passed);
+        }
+        if failed.is_empty() {
+            return;
+        }
+        let mut texts = Vec::new();
+        for name in &failed {
+            texts.push(name.clone());
+            let run = check_runs
+                .iter()
+                .find(|(n, _)| n == name)
+                .and_then(|(_, id)| *id);
+            if let Some(run_id) = run {
+                match crate::gh::pr_check_log(repo, run_id) {
+                    Ok(log) => texts.extend(log.lines),
+                    Err(e) => tracing::info!("reading CI log {run_id} of PR #{number}: {e:#}"),
+                }
+            }
+        }
+        if let Err(e) = self.night_shift_ci_failed(session, number, &texts) {
+            tracing::warn!("Night shift CI pass for PR #{number}: {e:#}");
+        }
+    }
+
+    fn night_set_ci(&self, session: u32, number: u32, gate: proto::NightGate) {
+        let Some((_, run_id, _)) = self.night_run_of_pane(session) else {
+            return;
+        };
+        let Ok(entries) = self.db.night_entries(run_id) else {
+            return;
+        };
+        if let Some(e) = entries
+            .into_iter()
+            .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+        {
+            let gates = proto::NightGates {
+                ci: gate,
+                ..e.gates
+            };
+            if let Err(err) = self.db.set_night_entry_gates(e.id, &gates) {
+                tracing::warn!("recording the CI gate of PR #{number}: {err:#}");
+            }
+            self.broadcast_night_run(run_id);
+        }
+    }
+
+    /// `texts` are the failed checks' names and log lines. Answers whether a
+    /// re-run was asked for; a test re-runs once per PR.
+    pub fn night_shift_ci_failed(
+        self: &Arc<Self>,
+        session: u32,
+        number: u32,
+        texts: &[String],
+    ) -> Result<bool> {
+        let Some((routine_id, run_id, orchestrator)) = self.night_run_of_pane(session) else {
+            return Ok(false);
+        };
+        let Some(entry) = self
+            .db
+            .night_entries(run_id)?
+            .into_iter()
+            .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+        else {
+            return Ok(false);
+        };
+        let flaky = self.db.night_flaky_tests(routine_id)?;
+        let hit = crate::night_shift::flaky_match(&flaky, texts).map(str::to_string);
+        let mut gates = entry.gates;
+        let rerun = hit.is_some() && gates.reruns == 0;
+        if rerun {
+            gates.reruns += 1;
+            gates.ci = proto::NightGate::Pending;
+        } else {
+            gates.ci = proto::NightGate::Failed;
+        }
+        self.db.set_night_entry_gates(entry.id, &gates)?;
+        let (title, body) = match (hit, rerun) {
+            (Some(test), true) => (
+                format!("Night shift: re-run CI on PR #{number}"),
+                format!(
+                    "CI on PR #{number} failed on {test}, a known flaky test in the ledger. \
+                     Re-run the failed jobs once (gh run rerun RUN_ID --failed); Houston \
+                     recorded the re-run. If it fails again, treat it as a real failure."
+                ),
+            ),
+            (Some(test), false) => (
+                format!("Night shift: PR #{number} failed again"),
+                format!(
+                    "CI on PR #{number} failed on {test} again after its one re-run: hand it \
+                     to a fixer pane as a real failure."
+                ),
+            ),
+            (None, _) => (
+                format!("Night shift: PR #{number} CI failed"),
+                format!(
+                    "CI on PR #{number} failed on no known flaky test: hand the failure to a \
+                     fixer pane."
+                ),
+            ),
+        };
+        let workspace = self
+            .db
+            .night_run(run_id)?
+            .map(|r| r.workspace)
+            .unwrap_or_default();
+        if let Err(e) = self.inbox_write(
+            orchestrator,
+            &workspace,
+            None,
+            None,
+            crate::orchestrate::InboxKind::OperatorNote,
+            &title,
+            &body,
+            Vec::new(),
+            None,
+            None,
+            false,
+            true,
+        ) {
+            tracing::warn!("telling night run {run_id} about PR #{number}: {e:#}");
+        }
+        self.broadcast_night_run(run_id);
+        Ok(rerun)
+    }
+
     fn night_zcode_turn_ended(&self, session: u32) {
         let mut turns = self.night.zcode_turns.lock().expect("zcode turns");
         if let Some(at) = turns.get_mut(&session) {
