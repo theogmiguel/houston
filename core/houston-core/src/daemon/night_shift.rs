@@ -603,7 +603,18 @@ impl Daemon {
             report_dir.display().to_string(),
         )];
         if self
-            .routine_spawn_run_pane(&launch_row, run_id, now, next, &dir, text, env)?
+            .routine_spawn_run_pane(
+                &launch_row,
+                run_id,
+                now,
+                next,
+                &dir,
+                super::RoutinePanePrompt {
+                    prompt: text,
+                    leading: brief::goal_command(&s).into_iter().collect(),
+                },
+                env,
+            )?
             .is_some()
         {
             self.night_zcode_start_probe(run_id, &s);

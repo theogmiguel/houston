@@ -542,7 +542,7 @@ async fn run_fires_isolated_with_composed_brief() {
     );
     let brief = r.brief(&run);
     for needle in [
-        "/goal CI stays green",
+        "Goal (the run's completion condition): CI stays green",
         "test gaps High",
         "zcode (GLM-5.3-Flash), then claude (opus)",
         "`cargo test -p core`",
@@ -553,6 +553,38 @@ async fn run_fires_isolated_with_composed_brief() {
         assert!(brief.contains(needle), "the brief names {needle:?}");
     }
     assert!(brief.chars().count() <= proto::ROUTINE_PROMPT_MAX);
+}
+
+/// A Claude orchestrator's TUI receives `/goal <goal>` as an input of its
+/// own, submitted before the brief is pasted.
+#[tokio::test]
+async fn goal_is_typed_before_the_brief() {
+    let r = rig().await;
+    let typed = r.ws.join("orchestrator-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.goal = "CI stays\ngreen".into());
+    r.run_now(routine.id, 120);
+    let brief_start = "Houston Night shift: you are the orchestrator";
+    wait_until("the brief to be typed", || {
+        std::fs::read_to_string(&typed).is_ok_and(|t| t.contains(brief_start))
+    })
+    .await;
+    let text = std::fs::read_to_string(&typed).unwrap();
+    let goal = text.find("/goal CI stays green").expect("the goal was typed");
+    let brief = text.find(brief_start).unwrap();
+    assert!(goal < brief, "the goal comes first: {text:?}");
+    let between = &text[goal..brief];
+    assert!(
+        between.contains("\x1b[201~\n") && between.contains("\x1b[200~"),
+        "the goal is submitted as its own paste before the brief's: {between:?}"
+    );
 }
 
 #[tokio::test]

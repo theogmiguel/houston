@@ -35,6 +35,9 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+/// Between leading first inputs and the prompt: time for the CLI to take a slash command
+/// before the next paste arrives.
+const FIRST_INPUT_GAP: Duration = Duration::from_secs(2);
 // A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
 // the margin covers a CLI still finishing its startup when the paste arrived.
 const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
@@ -1561,6 +1564,13 @@ fn transcript_link_update(
         native.map(str::to_string).or(old_native.clone()),
     );
     (next != (old_path, old_native)).then_some(next)
+}
+
+/// What a routine run's pane is asked: `prompt` at launch, or, when `leading` inputs
+/// come first (a Claude orchestrator's `/goal`), typed after them into the TUI.
+struct RoutinePanePrompt {
+    prompt: String,
+    leading: Vec<String>,
 }
 
 /// A routine run in flight, keyed by routine id. The pane's session is the
@@ -7308,8 +7318,19 @@ impl Daemon {
         };
         let run_id = self.record_run_start(row, trigger, None, now, next)?;
         self.harness_review_start(row, run_id, Some(dir.as_str()), now);
-        self.routine_spawn_run_pane(row, run_id, now, next, &dir, row.prompt.clone(), Vec::new())
-            .map(|_| ())
+        self.routine_spawn_run_pane(
+            row,
+            run_id,
+            now,
+            next,
+            &dir,
+            RoutinePanePrompt {
+                prompt: row.prompt.clone(),
+                leading: Vec::new(),
+            },
+            Vec::new(),
+        )
+        .map(|_| ())
     }
 
     /// Opens the pane of a recorded run and registers it in flight. `None`
@@ -7322,9 +7343,25 @@ impl Daemon {
         now: i64,
         next: i64,
         dir: &str,
-        prompt: String,
+        prompt: RoutinePanePrompt,
         extra_env: Vec<(String, String)>,
     ) -> Result<Option<u32>> {
+        let RoutinePanePrompt { prompt, leading } = prompt;
+        // Leading inputs are typed into the TUI, so the prompt follows them there.
+        let pasted = if leading.is_empty() {
+            None
+        } else {
+            let (text, file) = crate::launch::prompt_text(
+                &prompt,
+                Some(&init_prompts_dir(Path::new(dir))?),
+                &format!("routine-run-{run_id}"),
+            )?;
+            if let Some((path, contents)) = file {
+                std::fs::write(&path, contents)
+                    .with_context(|| format!("writing prompt file {}", path.display()))?;
+            }
+            Some(text)
+        };
         let night = row.kind == proto::RoutineKind::NightShift;
         let cmd_override = self
             .routine_pane_cmd_override
@@ -7374,7 +7411,7 @@ impl Daemon {
                 auto_approve: false,
                 acp: None,
                 profile: None,
-                prompt: Some(prompt),
+                prompt: pasted.is_none().then_some(prompt),
                 model: None,
                 effort: None,
             },
@@ -7384,7 +7421,7 @@ impl Daemon {
             None,
             false,
             None,
-            false,
+            pasted.is_some(),
             Some(crate::launch::SessionLaunchSelections {
                 provider: row.engine,
                 model: row.model.clone(),
@@ -7405,6 +7442,9 @@ impl Daemon {
                 return Ok(None);
             }
         };
+        if let Some(text) = pasted {
+            self.deliver_first_prompts(session.id, leading, text, None, true);
+        }
         self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
             tracing::warn!("recording routine {}'s pane session: {e:#}", row.id);
@@ -19098,11 +19138,34 @@ impl Daemon {
         sender: Option<u32>,
         submit: bool,
     ) {
+        self.deliver_first_prompts(session, Vec::new(), text, sender, submit);
+    }
+
+    /// `leading` are submitted one by one before `text`, each once the composer takes
+    /// input again (a slash command such as `/goal`); only `text` waits for confirmation.
+    pub(crate) fn deliver_first_prompts(
+        self: &Arc<Self>,
+        session: u32,
+        leading: Vec<String>,
+        text: String,
+        sender: Option<u32>,
+        submit: bool,
+    ) {
         let daemon = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name(format!("first-prompt-{session}"))
             .spawn(move || {
-                let outcome = daemon.first_prompt_deliver(session, &text, submit);
+                let mut outcome = Ok(FirstPromptOutcome::Unconfirmable(String::new()));
+                for input in &leading {
+                    outcome = daemon.first_prompt_deliver(session, input, true, false);
+                    if outcome.is_err() {
+                        break;
+                    }
+                    std::thread::sleep(FIRST_INPUT_GAP);
+                }
+                if outcome.is_ok() {
+                    outcome = daemon.first_prompt_deliver(session, &text, submit, true);
+                }
                 if let Ok(s) = daemon.get(session) {
                     s.composer_watch.store(false, Ordering::Relaxed);
                 }
@@ -19222,11 +19285,13 @@ impl Daemon {
         session: u32,
         text: &str,
         submit: bool,
+        confirm: bool,
     ) -> Result<FirstPromptOutcome> {
         self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
         let agent = self.get(session).map(|s| s.info.agent)?;
         // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
-        let confirmable = submit
+        let confirmable = confirm
+            && submit
             && self.hook_consent(agent)
             && self.hook_config_home().is_ok_and(|home| {
                 crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel())

@@ -84,13 +84,18 @@ fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A Claude orchestrator's first input, before the brief: the goal as its
+/// completion condition.
+pub fn goal_command(s: &NightShiftSettings) -> Option<String> {
+    let goal = one_line(&s.goal);
+    (s.orchestrator.provider == AgentKind::Claude && !goal.is_empty())
+        .then(|| format!("/goal {goal}"))
+}
+
 /// `digest` is newest first; entries that do not fit are counted, not cut.
 pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]) -> String {
     let mut out = String::new();
     let goal = one_line(&s.goal);
-    if s.orchestrator.provider == AgentKind::Claude && !goal.is_empty() {
-        let _ = writeln!(out, "/goal {goal}\n");
-    }
     out.push_str(METHOD);
     out.push_str("\n## This run\n\n");
     let _ = writeln!(out, "- Run: {}", run.run_id);
@@ -345,17 +350,17 @@ mod tests {
     }
 
     #[test]
-    fn goal_prefix_only_for_claude() {
+    fn goal_command_only_for_claude() {
         let mut s = super::super::settings::defaults();
-        s.goal = "ship the tray fix".into();
+        s.goal = "ship the\ntray fix".into();
+        assert_eq!(goal_command(&s).as_deref(), Some("/goal ship the tray fix"));
         let brief = compose(&s, &run(), &[]);
-        assert!(brief.starts_with("/goal ship the tray fix\n"), "{brief}");
-        s.orchestrator.provider = AgentKind::Codex;
-        let brief = compose(&s, &run(), &[]);
-        assert!(!brief.contains("/goal"), "{brief}");
+        assert!(!brief.contains("/goal"), "the brief is a separate input: {brief}");
         assert!(brief.contains("ship the tray fix"));
+        s.orchestrator.provider = AgentKind::Codex;
+        assert_eq!(goal_command(&s), None);
         s.orchestrator.provider = AgentKind::Claude;
         s.goal.clear();
-        assert!(!compose(&s, &run(), &[]).starts_with("/goal"));
+        assert_eq!(goal_command(&s), None);
     }
 }
