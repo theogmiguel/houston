@@ -1,11 +1,12 @@
 //! Keeps the machine awake while a run is in flight: a system-required power
-//! request on Windows, a `systemd-inhibit` child on Linux. Dropping the hold
-//! releases it.
+//! request on Windows, a `systemd-inhibit` child on Linux reading a pipe only
+//! the daemon holds. Dropping the hold, or any daemon exit, releases it.
 use houston_protocol::{PreflightItem, PreflightStatus};
 
 pub const LINUX_INHIBIT_TOOL: &str = "systemd-inhibit";
 
-/// The child that holds the idle and sleep inhibitor until it is killed.
+/// The child that holds the idle and sleep inhibitor until its stdin, the
+/// daemon's end of a pipe, closes.
 pub fn linux_argv() -> Vec<&'static str> {
     vec![
         LINUX_INHIBIT_TOOL,
@@ -13,8 +14,7 @@ pub fn linux_argv() -> Vec<&'static str> {
         "--who=Houston",
         "--why=Night shift run",
         "--mode=block",
-        "sleep",
-        "infinity",
+        "cat",
     ]
 }
 
@@ -123,8 +123,10 @@ pub fn acquire(path: Option<&str>) -> Result<Hold, String> {
     }
     let argv = linux_argv();
     let mut cmd = crate::spawn::command(argv[0]);
+    // The write end stays in the `Child`; std opens it close-on-exec, so no
+    // other child inherits it and the daemon's exit ends the inhibitor.
     cmd.args(&argv[1..])
-        .stdin(std::process::Stdio::null())
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     if let Some(path) = path {
@@ -174,8 +176,7 @@ mod tests {
                 "--who=Houston",
                 "--why=Night shift run",
                 "--mode=block",
-                "sleep",
-                "infinity"
+                "cat"
             ]
         );
         let empty = tempfile::tempdir().unwrap();
@@ -192,5 +193,73 @@ mod tests {
             &tempfile::tempdir().unwrap().path().display().to_string()
         ))
         .is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    const HOLDER_DIR_ENV: &str = "HOUSTON_TEST_AWAKE_HOLDER_DIR";
+
+    /// Run by `inhibitor_ends_with_a_killed_daemon` in a child process: holds
+    /// keep-awake through a stand-in `systemd-inhibit` until it is killed.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "a helper process for inhibitor_ends_with_a_killed_daemon"]
+    fn hold_until_killed() {
+        let Ok(dir) = std::env::var(HOLDER_DIR_ENV) else {
+            return;
+        };
+        let path = format!("{dir}:{}", std::env::var("PATH").unwrap_or_default());
+        let _hold = acquire(Some(&path)).expect("the stand-in inhibitor starts");
+        std::fs::write(std::path::Path::new(&dir).join("held"), "").unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+
+    /// A daemon killed outright (SIGKILL, no drop) still ends its inhibitor.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn inhibitor_ends_with_a_killed_daemon() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join(LINUX_INHIBIT_TOOL);
+        std::fs::write(
+            &tool,
+            format!(
+                "#!/bin/sh\nwhile [ \"${{1#--}}\" != \"$1\" ]; do shift; done\necho $$ > '{}'\nexec \"$@\"\n",
+                dir.path().join("pid").display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut holder = crate::spawn::command(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "night_shift::awake::tests::hold_until_killed",
+                "--ignored",
+            ])
+            .env(HOLDER_DIR_ENV, dir.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !dir.path().join("held").exists() {
+            assert!(std::time::Instant::now() < deadline, "the holder never held");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let pid: u32 = std::fs::read_to_string(dir.path().join("pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(crate::pid::process_is_alive(pid));
+        holder.kill().unwrap();
+        holder.wait().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::pid::process_is_alive(pid) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "inhibitor {pid} outlived the killed daemon"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 }
