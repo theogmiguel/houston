@@ -664,3 +664,180 @@ async fn a_pull_request_github_reports_conflicting_lands_once_a_clean_rebase_is_
     );
     assert_eq!(rig.origin_tip("main"), pushed);
 }
+
+/// GitHub's answer for a pull request with one unresolved review thread.
+fn github_reports_an_unresolved_thread(rig: &Rig, number: u32) {
+    rig.flag(
+        &format!("threads-{number}.json"),
+        r#"{"data":{"repository":{"pullRequest":{"id":"x","reviewThreads":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"t1","isResolved":false,"isOutdated":false,"path":"app.txt","line":1,"comments":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]}}}}}"#,
+    );
+}
+
+fn merge_refusal(rig: &Rig, number: u32) -> String {
+    let head = rig.entry(number).head_sha;
+    let refused = rig
+        .daemon
+        .merge_queue_merge_head(&rig.workspace, number, &head, proto::PrMergeMethod::Squash)
+        .expect_err("the merge is refused");
+    format!("{refused:#}")
+}
+
+#[tokio::test]
+async fn an_unresolved_review_thread_lets_the_next_entry_merge_and_goes_first_once_resolved() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.change(2, "two", "two.txt", "two\n");
+    github_reports_an_unresolved_thread(&rig, 1);
+    rig.settings(true, "git --version");
+    rig.enqueue(1, None);
+    rig.enqueue(2, None);
+
+    let first = rig.entry(1);
+    assert_eq!(first.status, proto::MergeQueueStatus::Blocked, "{first:?}");
+    assert_eq!(first.position, 1, "a blocked entry keeps its rank");
+    let next = rig.entry(2);
+    assert_eq!(
+        next.status,
+        proto::MergeQueueStatus::WaitingForSlot,
+        "{next:?}"
+    );
+    let refused = merge_refusal(&rig, 1);
+    assert!(
+        refused.contains("#2 goes next") && refused.contains("unresolved review thread"),
+        "{refused}"
+    );
+
+    rig.tick().await;
+
+    assert!(
+        rig.entries().iter().all(|e| e.number != 2),
+        "#2 merged past the blocked #1: {:?}",
+        rig.entries()
+    );
+    assert!(rig.calls("pr merge 1").is_empty());
+    assert_eq!(rig.entry(1).position, 1);
+
+    // The thread is resolved on GitHub. The user's Merge reads #1 again before
+    // the read pass does, finds it next, and leaves it to verify first.
+    rig.unflag("threads-1.json");
+    let refused = merge_refusal(&rig, 1);
+    assert!(refused.contains("has not passed verification"), "{refused}");
+    assert_eq!(rig.entry(1).status, proto::MergeQueueStatus::WaitingForSlot);
+    rig.tick().await;
+    assert!(
+        rig.entries().is_empty(),
+        "#1 merged once its thread was resolved: {:?}",
+        rig.entries()
+    );
+    let merges = rig.calls("pr merge");
+    assert!(
+        merges.len() == 2
+            && merges[0].starts_with("pr merge 2")
+            && merges[1].starts_with("pr merge 1"),
+        "{merges:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_dependent_of_a_blocked_entry_waits_while_an_independent_entry_merges() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.change_on(2, "two", "houston/one", "two.txt", "two\n");
+    rig.change(3, "three", "three.txt", "three\n");
+    github_reports_an_unresolved_thread(&rig, 1);
+    rig.settings(true, "git --version");
+    rig.enqueue(1, None);
+    rig.enqueue_after(2, 1, None);
+    rig.enqueue(3, None);
+
+    let dependent = rig.entry(2);
+    assert_eq!(
+        dependent.status,
+        proto::MergeQueueStatus::Blocked,
+        "{dependent:?}"
+    );
+    assert_eq!(
+        dependent.reason.as_deref(),
+        Some("waits for #1, which is blocked")
+    );
+    let refused = merge_refusal(&rig, 2);
+    assert!(
+        refused.contains("#3 goes next") && refused.contains("waits for #1"),
+        "{refused}"
+    );
+
+    rig.tick().await;
+
+    let left: Vec<u32> = rig.entries().iter().map(|e| e.number).collect();
+    assert_eq!(left, [1, 2], "only #3 merged");
+    assert!(rig.calls("pr merge 1").is_empty() && rig.calls("pr merge 2").is_empty());
+    assert_eq!(rig.calls("pr merge 3").len(), 1);
+    assert_eq!(
+        rig.entry(2).reason.as_deref(),
+        Some("waits for #1, which is blocked")
+    );
+}
+
+#[tokio::test]
+async fn an_entry_github_is_still_computing_holds_the_entries_behind_it() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.change(2, "two", "two.txt", "two\n");
+    rig.change(3, "three", "three.txt", "three\n");
+    github_reports_an_unresolved_thread(&rig, 1);
+    rig.pr_set(2, "mergeable", "UNKNOWN".into());
+    rig.pr_set(2, "mergeStateStatus", "UNKNOWN".into());
+    rig.settings(true, "git --version");
+    rig.enqueue(1, None);
+    rig.enqueue(2, None);
+    rig.enqueue(3, None);
+
+    let computing = rig.entry(2);
+    assert_eq!(computing.status, proto::MergeQueueStatus::Blocked);
+    assert!(
+        computing
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("still computing")),
+        "{computing:?}"
+    );
+    let behind = rig.entry(3);
+    assert_eq!(
+        behind.status,
+        proto::MergeQueueStatus::Blocked,
+        "{behind:?}"
+    );
+    assert!(
+        behind
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.starts_with("the queue waits for #2: ")),
+        "{behind:?}"
+    );
+
+    rig.tick().await;
+
+    assert_eq!(rig.entries().len(), 3, "nothing moved: {:?}", rig.entries());
+    assert!(rig.calls("pr merge").is_empty());
+    assert!(rig.entry(3).verification.is_none(), "#3 was not verified");
+    let refused = merge_refusal(&rig, 3);
+    assert!(
+        refused.contains("no entry goes next") && refused.contains("#2"),
+        "{refused}"
+    );
+
+    // GitHub settles: #2 goes, past the blocked #1 and before #3.
+    rig.pr_set(2, "mergeable", "MERGEABLE".into());
+    rig.pr_set(2, "mergeStateStatus", "CLEAN".into());
+    rig.read_pass().await;
+    rig.tick().await;
+    let merges = rig.calls("pr merge");
+    assert!(
+        merges.first().is_some_and(|m| m.starts_with("pr merge 2")),
+        "{merges:?}"
+    );
+    assert!(rig.calls("pr merge 1").is_empty());
+}

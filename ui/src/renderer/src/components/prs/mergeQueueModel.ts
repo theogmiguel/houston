@@ -58,8 +58,18 @@ export function elapsed(ms: number): string {
   return minutes > 0 ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`
 }
 
+/** The entry that goes next, as the daemon picks it: the first ranked entry that is not blocked. */
+export function nextUp(entries: readonly MergeQueueEntry[]): MergeQueueEntry | null {
+  return entries.find((e) => e.position > 0 && e.status !== 'blocked') ?? null
+}
+
+/** The nearest ranked entry ahead of `entry` that goes before it; blocked ones are passed over. */
+export function goesAfter(entries: readonly MergeQueueEntry[], entry: MergeQueueEntry): MergeQueueEntry | null {
+  return entries.filter((e) => e.position > 0 && e.position < entry.position && e.status !== 'blocked').at(-1) ?? null
+}
+
 /** The one line under a row: what blocks it, or where it stands when nothing does. */
-export function entryLine(entry: MergeQueueEntry, previous: MergeQueueEntry | undefined, settings: MergeQueueSettings | null = null, now = Date.now()): string {
+export function entryLine(entry: MergeQueueEntry, previous: MergeQueueEntry | null, next: boolean, settings: MergeQueueSettings | null = null, now = Date.now()): string {
   if (entry.status === 'verifying') {
     const base = entry.base_ref ?? 'its base'
     const running = entry.verifying_since_ms != null ? elapsed(now - entry.verifying_since_ms) : '0s'
@@ -69,11 +79,11 @@ export function entryLine(entry: MergeQueueEntry, previous: MergeQueueEntry | un
   if (entry.status === 'waiting_for_slot') return 'Verifies once the slot on this machine is free'
   if (entry.status === 'fixing') return `Handed to its pane: ${entry.reason ?? 'verification failed'}`
   if (entry.reason) return entry.reason
-  if (entry.position === 1) {
+  if (next) {
     const v = entry.verification
     if (v?.fork_sha) return `Restacked after #${v.stacked_on ?? '?'} · verified on ${v.base_ref}@${shortSha(v.base_sha)}`
     if (v) return `Verified on ${v.base_ref}@${shortSha(v.base_sha)}`
-    return 'First in line, ready to merge'
+    return 'Next in line, ready to merge'
   }
   if (entry.depends_on != null) return `Merges after #${entry.depends_on}, which it depends on`
   return previous ? `Merges after #${previous.number}` : 'Ready to merge'

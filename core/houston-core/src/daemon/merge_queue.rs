@@ -532,7 +532,7 @@ impl Daemon {
         }
     }
 
-    /// The user's merge of the queue head: only the head, pinned to the commit
+    /// The user's merge of the entry that goes next, and only that one, pinned to the commit
     /// the user saw. With a verification command it pushes and merges the
     /// verified commit; without one it merges the head after a fresh read.
     pub fn merge_queue_merge_head(

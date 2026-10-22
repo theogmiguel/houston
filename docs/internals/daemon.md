@@ -615,15 +615,25 @@ so a watch and a queue entry of one pull request cost one read; the queue polls 
 else. A paused read leaves an entry's last answer in place. The gates are computed when a
 snapshot is built, from the stored read and the task backlog, so a task run change
 rebroadcasts the queue of its workspace without calling `gh`. An entry with no read, or whose
-read failed, is Blocked: the gates fail closed. Merging the head re-reads it on a fresh tick,
+read failed, is Blocked: the gates fail closed. Merging an entry re-reads it on a fresh tick,
 refuses a moved head or a failed gate, then calls the SHA-pinned `pr_merge`, or
 `pr_stack_merge` when the stacks preview reports a native stack; that preview read is the one
 merge-time call outside the shared reader.
 
 `merge_queue_loop` advances each queue, woken by every queue change and otherwise once a
-minute (`daemon/merge_queue_runner.rs`). Only the first entry in line moves: parked and fixing
-entries, and entries held behind one, are out of line, so a failure never stalls the queue.
-The constraints:
+minute (`daemon/merge_queue_runner.rs`). Only the entry that goes next moves, and the user's
+Merge accepts only that entry: the first ranked entry that is not blocked
+(`merge_queue::next_up`). Parked and fixing entries, and entries held behind one, are out of
+line. A blocked entry keeps its rank and is passed over, so an unresolved review thread, a
+review decision, a failing check, a draft or a branch-protection refusal never stalls the
+entries behind it; once it clears it goes first again. A dependent of a blocked entry is
+blocked with that reason and never goes before it. A block Houston has no answer for yet
+holds the line instead: no read yet, a failed read (of the pull request, its review threads
+or the task backlog), checks still running, or GitHub still computing whether it can merge.
+Such a block may clear on the next read. Running checks are also what a pushed verified
+commit waits for: passing them would let each later merge discard that verification. The
+entries behind a hold are Blocked with "the queue waits for #N" and the holder's reason, so
+the renderer finds the next entry by the same rule without a wire field. The constraints:
 
 - **One slot.** One verification runs at a time across every workspace of the daemon,
   because a test suite run in parallel with another starves both. Passes take workspaces in
@@ -703,7 +713,7 @@ The constraints:
   restack is pushed first), and an auto-merge repository gets the verified commit
   lease-pushed and `gh pr merge --auto --match-head-commit`. One fresh read must then show
   the request against that commit, or the hand-off is taken back and the entry fails. While
-  GitHub holds the head (`github_json`) the entry is Watching and stays first in line.
+  GitHub holds the head (`github_json`) the entry is Watching and keeps its place in line.
   GitHub merging it runs the after-merge steps above; GitHub removing it, turning its
   auto-merge off or failing a check on it takes the failure path with GitHub's reason. A
   new head takes the hand-off back in the PR watch read pass that first reports it, not on

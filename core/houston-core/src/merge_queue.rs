@@ -86,6 +86,9 @@ pub struct Facts {
     /// The only refusal is a conflict with, or a branch behind, the base: a rebase answers it.
     #[serde(default)]
     pub base_only: bool,
+    /// GitHub answers the refusal on its own given time: checks still run, or it is computing.
+    #[serde(default)]
+    pub settling: bool,
     /// Unresolved review threads among those read; `None` when they could not be read.
     #[serde(default)]
     pub unresolved_threads: Option<u32>,
@@ -120,6 +123,7 @@ impl Facts {
             base_only: detail.merge_disabled_reason.is_some()
                 && detail.merge_disabled_reason
                     == crate::pull_requests::base_refusal(number, detail),
+            settling: crate::pull_requests::settling(number, detail),
             unresolved_threads: detail
                 .threads_message
                 .is_none()
@@ -145,6 +149,7 @@ impl Facts {
             error: Some(error),
             merge_disabled_reason: None,
             base_only: false,
+            settling: false,
             unresolved_threads: None,
             threads_message: None,
             threads_truncated: false,
@@ -467,11 +472,7 @@ pub fn short_sha(sha: &str) -> &str {
     &sha[..sha.len().min(7)]
 }
 
-fn verification_gate(
-    row: &QueueRow,
-    rank: Option<u32>,
-    ctx: &LineContext,
-) -> proto::MergeQueueGate {
+fn verification_gate(row: &QueueRow, next: bool, ctx: &LineContext) -> proto::MergeQueueGate {
     let (state, reason) = if !ctx.command_set() {
         (
             proto::MergeQueueGateState::NotApplicable,
@@ -491,7 +492,7 @@ fn verification_gate(
         )
     } else if let Some(f) = failure_holds(row) {
         (proto::MergeQueueGateState::Failed, f.message.clone())
-    } else if rank == Some(1) {
+    } else if next {
         (
             proto::MergeQueueGateState::Pending,
             "Runs once the verification slot is free".to_string(),
@@ -499,7 +500,7 @@ fn verification_gate(
     } else {
         (
             proto::MergeQueueGateState::Pending,
-            "Runs when it is first in line".to_string(),
+            "Runs when it goes next".to_string(),
         )
     };
     proto::MergeQueueGate {
@@ -509,9 +510,27 @@ fn verification_gate(
     }
 }
 
-/// The workspace's entries as the wire carries them, from rows in queue order. Parked and
-/// fixing entries, and those waiting behind one, are out of line with position 0; the
-/// rest rank from 1, the head. Each carries one status and at most one blocking reason.
+/// A blocked entry the line waits for instead of passing: Houston has no answer
+/// yet, because a read has not happened or failed, or GitHub is still settling.
+fn holds_line(row: &QueueRow, review: &Review) -> bool {
+    matches!(review, Review::Unreadable(_))
+        || row
+            .facts
+            .as_ref()
+            .is_none_or(|f| f.error.is_some() || f.settling || f.unresolved_threads.is_none())
+}
+
+/// Who goes next, decided by the first ranked entry the line does not pass over.
+enum Turn {
+    Open,
+    Taken,
+    /// A blocked entry holds the line until it clears, with its reason.
+    Held(u32, String),
+}
+
+/// The wire's entries, from rows in queue order: parked and fixing entries and those behind
+/// one are out of line (position 0), the rest rank from 1 with one status and reason each.
+/// The first ranked entry not blocked goes next; only a `holds_line` block stops the line.
 pub fn line(
     rows: &[QueueRow],
     reviews: &[Review],
@@ -519,6 +538,8 @@ pub fn line(
 ) -> Vec<proto::MergeQueueEntry> {
     let queued: HashSet<u32> = rows.iter().map(|r| r.number).collect();
     let mut held: std::collections::HashMap<u32, &'static str> = Default::default();
+    let mut blocked: HashSet<u32> = HashSet::new();
+    let mut turn = Turn::Open;
     let mut rank = 0u32;
     let mut entries = Vec::with_capacity(rows.len());
     for (row, review) in rows.iter().zip(reviews) {
@@ -530,6 +551,7 @@ pub fn line(
         let holder = row
             .depends_on
             .and_then(|d| held.get(&d).map(|why| (d, *why)));
+        let mut next = false;
         let (status, reason, position) = if let Some(f) = &failure {
             let (status, why) = if f.handed_to.is_some() {
                 (proto::MergeQueueStatus::Fixing, "being fixed")
@@ -547,6 +569,9 @@ pub fn line(
             )
         } else if let Some(hold) = github_holds(row) {
             rank += 1;
+            if let Turn::Open = turn {
+                turn = Turn::Taken;
+            }
             (
                 proto::MergeQueueStatus::Watching,
                 Some(watching_reason(row, hold)),
@@ -554,39 +579,61 @@ pub fn line(
             )
         } else {
             rank += 1;
-            let dependency = row
-                .depends_on
-                .filter(|d| !queued.contains(d))
-                .map(|d| format!("depends on #{d}, which left the queue without merging"));
-            let blocked = dependency
-                .or_else(|| {
-                    gates
-                        .iter()
-                        .filter(|g| g.state == proto::MergeQueueGateState::Failed)
-                        .find_map(|g| g.reason.clone())
-                })
+            let dependency = row.depends_on.and_then(|d| {
+                if !queued.contains(&d) {
+                    Some(format!(
+                        "depends on #{d}, which left the queue without merging"
+                    ))
+                } else {
+                    blocked
+                        .contains(&d)
+                        .then(|| format!("waits for #{d}, which is blocked"))
+                }
+            });
+            let gate_block = gates
+                .iter()
+                .filter(|g| g.state == proto::MergeQueueGateState::Failed)
+                .find_map(|g| g.reason.clone());
+            let holds = dependency.is_none() && gate_block.is_some() && holds_line(row, review);
+            let own = dependency
+                .or(gate_block)
                 .or_else(|| ctx.refusal.clone().filter(|_| ctx.command_set()));
             let needs_verification = ctx.command_set() && verification_holds(row).is_none();
-            let status = match &blocked {
-                Some(_) => proto::MergeQueueStatus::Blocked,
-                None if ctx.running.is_some_and(|(n, _)| n == row.number) => {
-                    proto::MergeQueueStatus::Verifying
+            let running = ctx.running.is_some_and(|(n, _)| n == row.number);
+            let (status, reason) = match (own, &turn) {
+                (Some(own), _) => {
+                    blocked.insert(row.number);
+                    if holds && matches!(turn, Turn::Open) {
+                        turn = Turn::Held(row.number, own.clone());
+                    }
+                    (proto::MergeQueueStatus::Blocked, Some(own))
                 }
-                None if rank == 1 && ctx.paused.is_some() => proto::MergeQueueStatus::Paused,
-                None if rank == 1 && needs_verification => proto::MergeQueueStatus::WaitingForSlot,
-                None => proto::MergeQueueStatus::Ready,
-            };
-            let reason = match status {
-                proto::MergeQueueStatus::Paused => ctx.paused.clone(),
-                _ => blocked,
+                (None, _) if running => {
+                    if let Turn::Open = turn {
+                        turn = Turn::Taken;
+                    }
+                    (proto::MergeQueueStatus::Verifying, None)
+                }
+                (None, Turn::Held(holder, why)) => (
+                    proto::MergeQueueStatus::Blocked,
+                    Some(format!("the queue waits for #{holder}: {why}")),
+                ),
+                (None, Turn::Taken) => (proto::MergeQueueStatus::Ready, None),
+                (None, Turn::Open) => {
+                    turn = Turn::Taken;
+                    next = true;
+                    match &ctx.paused {
+                        Some(paused) => (proto::MergeQueueStatus::Paused, Some(paused.clone())),
+                        None if needs_verification => {
+                            (proto::MergeQueueStatus::WaitingForSlot, None)
+                        }
+                        None => (proto::MergeQueueStatus::Ready, None),
+                    }
+                }
             };
             (status, reason, rank)
         };
-        gates.push(verification_gate(
-            row,
-            (position > 0).then_some(position),
-            ctx,
-        ));
+        gates.push(verification_gate(row, next, ctx));
         entries.push(proto::MergeQueueEntry {
             number: row.number,
             repository: row.repository.clone(),
@@ -615,6 +662,14 @@ pub fn line(
     entries
 }
 
+/// The entry that goes next: the one the runner works on and the only one the
+/// user's Merge accepts. `None` while a block holds the line.
+pub fn next_up(entries: &[proto::MergeQueueEntry]) -> Option<&proto::MergeQueueEntry> {
+    entries
+        .iter()
+        .find(|e| e.position > 0 && e.status != proto::MergeQueueStatus::Blocked)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,6 +693,7 @@ mod tests {
                 error: None,
                 merge_disabled_reason: None,
                 base_only: false,
+                settling: false,
                 unresolved_threads: Some(0),
                 threads_message: None,
                 threads_truncated: false,
@@ -801,6 +857,129 @@ mod tests {
             &LineContext::default(),
         );
         assert_eq!(waiting[1].reason, None);
+    }
+
+    fn lined(rows: &[QueueRow], ctx: &LineContext) -> Vec<proto::MergeQueueEntry> {
+        line(rows, &vec![Review::NotSlice; rows.len()], ctx)
+    }
+
+    fn next_number(entries: &[proto::MergeQueueEntry]) -> Option<u32> {
+        next_up(entries).map(|e| e.number)
+    }
+
+    #[test]
+    fn a_block_only_a_person_clears_is_passed_over_and_keeps_its_rank() {
+        let passable: [fn(&mut Facts); 4] = [
+            |f| f.unresolved_threads = Some(1),
+            |f| f.merge_disabled_reason = Some("changes were requested on PR #1".into()),
+            |f| f.merge_disabled_reason = Some("PR #1 has 1 failing check: ci".into()),
+            |f| {
+                f.merge_disabled_reason =
+                    Some("GitHub reports PR #1 blocked by branch protection".into())
+            },
+        ];
+        let ctx = LineContext {
+            settings: Some(proto::MergeQueueSettings {
+                merge_when_verified: false,
+                verification_command: "true".into(),
+                time_limit_minutes: 30,
+                paused: false,
+            }),
+            ..Default::default()
+        };
+        for block in passable {
+            let mut first = row(1, 1, None);
+            block(first.facts.as_mut().unwrap());
+            let e = lined(&[first, row(2, 2, None), row(3, 3, None)], &ctx);
+            assert_eq!(e[0].status, proto::MergeQueueStatus::Blocked);
+            assert_eq!((e[0].position, e[1].position), (1, 2));
+            assert_eq!(e[1].status, proto::MergeQueueStatus::WaitingForSlot);
+            assert_eq!(
+                e[1].gates[3].reason.as_deref(),
+                Some("Runs once the verification slot is free")
+            );
+            assert_eq!(e[2].status, proto::MergeQueueStatus::Ready);
+            assert_eq!(next_number(&e), Some(2));
+        }
+        let paused = LineContext {
+            paused: Some("the merge queue of /work is paused".into()),
+            ..Default::default()
+        };
+        let mut first = row(1, 1, None);
+        first.facts.as_mut().unwrap().unresolved_threads = Some(1);
+        let e = lined(&[first, row(2, 2, None)], &paused);
+        assert_eq!(e[1].status, proto::MergeQueueStatus::Paused);
+    }
+
+    #[test]
+    fn a_block_houston_has_no_answer_for_yet_holds_the_line() {
+        let holding: [fn(&mut QueueRow); 4] = [
+            |r| r.facts = None,
+            |r| r.facts = Some(Facts::from_error("HTTP 502".into(), 5)),
+            |r| r.facts.as_mut().unwrap().unresolved_threads = None,
+            |r| {
+                let f = r.facts.as_mut().unwrap();
+                f.merge_disabled_reason = Some("PR #1 is waiting on 1 check: ci".into());
+                f.settling = true;
+            },
+        ];
+        for hold in holding {
+            let mut first = row(1, 1, None);
+            hold(&mut first);
+            let mut blocked = row(2, 2, None);
+            blocked.facts.as_mut().unwrap().unresolved_threads = Some(1);
+            let e = lined(
+                &[first, row(3, 3, None), blocked, row(4, 4, None)],
+                &LineContext::default(),
+            );
+            assert_eq!(next_number(&e), None, "{e:?}");
+            assert!(e[1]
+                .reason
+                .as_deref()
+                .is_some_and(|r| r.starts_with("the queue waits for #1: ")));
+            assert_eq!(
+                e[2].reason.as_deref(),
+                Some("PR #2 has 1 unresolved review thread")
+            );
+            assert_eq!(e[1].position, 2);
+        }
+        // Behind a passed-over block, a transient one still holds what follows it.
+        let mut first = row(1, 1, None);
+        first.facts.as_mut().unwrap().unresolved_threads = Some(1);
+        let e = lined(
+            &[first, unread(2), row(3, 3, None)],
+            &LineContext::default(),
+        );
+        assert_eq!(next_number(&e), None);
+    }
+
+    fn unread(number: u32) -> QueueRow {
+        QueueRow {
+            facts: None,
+            ..row(number, i64::from(number), None)
+        }
+    }
+
+    #[test]
+    fn a_dependent_never_goes_before_a_blocked_dependency() {
+        let mut first = row(1, 1, None);
+        first.facts.as_mut().unwrap().unresolved_threads = Some(1);
+        // Unread, the dependent still does not hold the line: it could not go anyway.
+        let mut dependent = row(2, 2, Some(1));
+        dependent.facts = None;
+        let rows = [first, dependent, row(3, 3, Some(2)), row(4, 4, None)];
+        let e = lined(&rows, &LineContext::default());
+        assert_eq!(e[1].status, proto::MergeQueueStatus::Blocked);
+        assert_eq!(
+            e[1].reason.as_deref(),
+            Some("waits for #1, which is blocked")
+        );
+        assert_eq!(
+            e[2].reason.as_deref(),
+            Some("waits for #2, which is blocked")
+        );
+        assert_eq!((e[1].position, e[2].position), (2, 3));
+        assert_eq!(next_number(&e), Some(4));
     }
 
     #[test]

@@ -8,7 +8,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { PrCheckLogFrame, PrMergeFrame, PrMergeFooter, PrReadinessRow } from '../ui/PrPresentation'
 import { actionDisabledReason } from './prDetailUi'
 import { MergeQueueStanding } from '../ui/MergeQueue'
-import { entryStatus, ordinal, queueEntryFor, shortSha } from '../prs/mergeQueueModel'
+import { entryStatus, goesAfter, nextUp, ordinal, queueEntryFor, shortSha } from '../prs/mergeQueueModel'
 import type { MergeQueueController } from '../prs/useMergeQueue'
 import { requestPrsView } from '../prs/prsView'
 import { ActionMenu } from '../ui/ActionMenu'
@@ -64,13 +64,13 @@ function queueLine(entry: MergeQueueEntry, queue: MergeQueueController, policy: 
   if (policy) return `merges on its own when verification passes on ${entry.base_ref ?? 'its base'}`
   const verified = entry.verification
   if (verified) return `verified on ${verified.base_ref}@${shortSha(verified.base_sha)}; merges ${shortSha(verified.verified_sha)} exactly`
-  if (entry.position === 1) return `merges ${shortSha(headSha)} exactly, by ${method}`
-  return `merges after #${queue.entries[entry.position - 2]?.number ?? entry.depends_on}`
+  if (nextUp(queue.entries)?.number === entry.number) return `merges ${shortSha(headSha)} exactly, by ${method}`
+  return `merges after #${goesAfter(queue.entries, entry)?.number ?? entry.depends_on}`
 }
 
 /** The merge queue's footer: the pull request's place, with Dequeue or "Add to merge queue".
  *  With "merge when verified" on, the queue merges and the overflow keeps a skip-the-queue
- *  merge; with it off, the head's Merge pushes and merges the verified commit. */
+ *  merge; with it off, the next entry's Merge pushes and merges the verified commit. */
 function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestLink; detail: PrDetail; method: PrMergeMethod; queue: MergeQueueController; pr: PrDetailController }): React.JSX.Element | null {
   if (!queue.loaded || queue.unavailable !== null || link.state !== 'open') return null
   const entry = queueEntryFor(queue.entries, link.repository, link.number)
@@ -80,7 +80,7 @@ function PrQueueFooter({ link, detail, method, queue, pr }: { link: PullRequestL
     return <PrMergeFooter consequence={last ? `Not queued; joins after #${last.number}` : 'Not queued'}><Button variant="secondary" size="sm" data-testid="pr-queue-add" disabled={busy} onClick={() => queue.enqueue(link.number)}>Add to merge queue</Button></PrMergeFooter>
   }
   const policy = queue.settings?.merge_when_verified ?? false
-  const head = entry.position === 1
+  const head = nextUp(queue.entries)?.number === entry.number
   const place = entry.position > 0 ? `${ordinal(entry.position)} in merge queue` : 'out of line'
   const line = queueLine(entry, queue, policy, detail.head_sha, method)
   const overflow = [

@@ -369,13 +369,22 @@ pub fn merge_disabled_reason(
                 "GitHub reports PR #{number} unstable — a check may have failed"
             ))
         }
-        _ => {
-            return Some(format!(
-                "GitHub is still computing whether PR #{number} can merge — refresh"
-            ))
-        }
+        _ => return Some(computing_refusal(number)),
     }
     None
+}
+
+fn computing_refusal(number: u32) -> String {
+    format!("GitHub is still computing whether PR #{number} can merge — refresh")
+}
+
+/// The refusal is one GitHub answers on its own given time: checks are still
+/// running, or it has not computed whether the pull request can merge.
+pub fn settling(number: u32, detail: &PrDetail) -> bool {
+    let reason = detail.merge_disabled_reason.as_deref();
+    reason.is_some()
+        && (reason == pending_refusal(number, &detail.checks).as_deref()
+            || reason == Some(computing_refusal(number).as_str()))
 }
 
 /// What a write needs from GitHub's own answer, so the daemon refuses by the
@@ -537,6 +546,10 @@ fn checks_refusal(number: u32, checks: &[PrCheck]) -> Option<String> {
             name_list(&failing)
         ));
     }
+    pending_refusal(number, checks)
+}
+
+fn pending_refusal(number: u32, checks: &[PrCheck]) -> Option<String> {
     let pending: Vec<&str> = checks
         .iter()
         .filter(|c| {
@@ -753,6 +766,46 @@ mod tests {
         )
         .unwrap()
         .contains("unstable"));
+    }
+
+    #[test]
+    fn settling_names_only_the_refusals_github_answers_on_its_own() {
+        let check = |state| PrCheck {
+            name: "ci".into(),
+            state,
+            url: None,
+            duration_ms: None,
+            run_id: None,
+        };
+        let settles = |link: &PullRequestLink, mut d: PrDetail| {
+            d.merge_disabled_reason = reason(link, &d);
+            settling(link.number, &d)
+        };
+        let clean = || detail(PrMergeable::Mergeable, PrMergeState::Clean);
+        let running = PrDetail {
+            checks: vec![check(PrCheckState::Running)],
+            ..clean()
+        };
+        assert!(settles(&link(), running.clone()));
+        assert!(settles(
+            &link(),
+            detail(PrMergeable::Unknown, PrMergeState::Unknown)
+        ));
+        assert!(!settles(&link(), clean()), "nothing refuses");
+        let failing = PrDetail {
+            checks: vec![check(PrCheckState::Running), check(PrCheckState::Failing)],
+            ..clean()
+        };
+        assert!(!settles(&link(), failing));
+        let draft = PullRequestLink {
+            is_draft: true,
+            ..link()
+        };
+        assert!(!settles(&draft, running));
+        assert!(!settles(
+            &link(),
+            detail(PrMergeable::Mergeable, PrMergeState::Blocked)
+        ));
     }
 
     #[test]

@@ -3066,7 +3066,7 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane pr-unwatch                    (stop every PR watch for this pane)
   hs-pane pr-enqueue <PR URL|number> [--depends-on N]
                                          (add it to this workspace's merge queue;
-                                          the user merges the queue head)
+                                          the user merges the entry that goes next)
   hs-pane pr-dequeue <PR URL|number>    (remove it from the merge queue)";
 
 pub fn run_pane_cli(args: &[String]) -> i32 {

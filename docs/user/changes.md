@@ -115,7 +115,8 @@ box or from the command palette (**Add to merge queue** acts on the focused pane
 request, and **Open merge queue** opens the view). The queue needs a GitHub remote; a
 workspace without one, or a pull request from a fork or another repository, is refused.
 
-Entries merge first in, first out. An entry enqueued with `depends_on` waits behind the pull
+Entries merge first in, first out, except that a blocked entry is passed over (see below).
+An entry enqueued with `depends_on` waits behind the pull
 request it depends on. Each row shows its place, one status and one reason. Select a row to
 see its gates:
 
@@ -130,7 +131,15 @@ Houston re-reads queued pull requests once a minute, sharing the read with pull 
 watches. Until a pull request has been read, or when a read fails, it is Blocked. A pull
 request merged or closed outside the queue leaves it.
 
-Only the first entry in line can be merged from the queue. Its **Merge** merges the exact
+The queue works on the entry that goes next: the first one in line that is not Blocked. A
+blocked entry keeps its place while the entries behind it go ahead; once it clears, for
+example when its review threads are resolved or its failing checks are fixed, it goes first
+again. A pull request that depends on a blocked one waits with it. While Houston has no
+answer for an entry yet (it has not been read, a read failed, its checks are still running,
+or GitHub is still computing whether it can merge), the whole queue waits for it, and the
+entries behind it name it as their reason.
+
+Only the entry that goes next can be merged from the queue. Its **Merge** merges the exact
 commit shown, with the repository's allowed merge method (squash when allowed); if the head
 moved, the base moved or a gate fails, the merge is refused and nothing merges. If GitHub
 refuses the method, its message is shown unchanged. To merge any other queued pull request,
@@ -149,9 +158,8 @@ Set the queue up in **Settings ▸ Workspaces ▸ Merge queue**:
 - **Merge when verified**: off by default. It cannot be turned on while the command is empty.
 - **Queue**: shows whether the queue is paused, with **Pause** and **Resume**.
 
-With a command set, Houston verifies the first entry in line once its gates pass; entries
-behind a blocked first entry wait for it. It fetches the base and
-the pull request's branch from the remote, rebases the branch onto the latest base in a
+With a command set, Houston verifies the entry that goes next. It fetches the base and the
+pull request's branch from the remote, rebases the branch onto the latest base in a
 temporary worktree under Houston's state directory, runs the command there at lowered priority,
 and removes the worktree. One verification runs at a time on this machine, across every
 workspace; other entries show **Waiting for a slot**. The head shows **Verifying** with the
@@ -211,7 +219,7 @@ Houston's gates and verification always run first. Then:
   and turns auto-merge on for exactly that commit, with the repository's merge method.
 
 The queue view's policy line names the path, such as **Hands off to GitHub's merge queue**.
-While GitHub holds the pull request it shows **Watching**, stays first in line, and its detail
+While GitHub holds the pull request it shows **Watching**, keeps its place, and its detail
 names the commit GitHub has. When GitHub merges it, Houston fetches, tells the other panes the
 base moved and logs the merge, as for its own merges. When GitHub removes it from its merge
 queue, turns auto-merge off or a check fails, the entry fails with GitHub's reason. **Dequeue**

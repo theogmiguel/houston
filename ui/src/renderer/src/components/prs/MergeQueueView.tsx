@@ -8,7 +8,7 @@ import { MergeQueueDetail, MergeQueueFailure, MergeQueueGates, MergeQueuePolicy,
 import { Notice } from '../ui/Notice'
 import { StatusLabel } from '../ui/StatusLabel'
 import { Tooltip } from '../ui/Tooltip'
-import { clockTime, entryLine, entryStatus, gateItems, handOffPrompt, inLine, loggedToday, logLine, logStatus, ordinal, parked, policyLine, shortSha } from './mergeQueueModel'
+import { clockTime, entryLine, entryStatus, gateItems, goesAfter, handOffPrompt, inLine, loggedToday, logLine, logStatus, nextUp, ordinal, parked, policyLine, shortSha } from './mergeQueueModel'
 import { MergeQueueHandOffPicker } from './MergeQueueHandOffPicker'
 import type { MergeQueueController } from './useMergeQueue'
 
@@ -22,11 +22,12 @@ export type MergeQueueHandOff = (worktree: string, prompt: string, agent: AgentK
 
 function queueItems(entries: readonly MergeQueueEntry[], log: readonly MergeQueueLogEntry[], settings: MergeQueueSettings | null, now: number): QueueItem[] {
   const line = inLine(entries)
-  const row = (section: string) => (entry: MergeQueueEntry, index: number, all: MergeQueueEntry[]): QueueItem => ({
+  const next = nextUp(entries)
+  const row = (section: string) => (entry: MergeQueueEntry): QueueItem => ({
     id: `entry:${entry.number}`,
     section,
     title: <MergeQueueRowTitle rank={entry.position > 0 ? entry.position : null} number={entry.number} heading={entry.title ?? entry.head_ref} />,
-    sub: entryLine(entry, all[index - 1], settings, now),
+    sub: entryLine(entry, goesAfter(entries, entry), entry === next, settings, now),
     right: <StatusLabel status={entryStatus(entry)} size="small" />,
     entry
   })
@@ -50,7 +51,8 @@ interface ViewActions {
 
 function EntryActions({ entry, queue, onHandOff, onPick }: { entry: MergeQueueEntry; onPick: () => void } & ViewActions): React.JSX.Element {
   const busy = queue.busy !== null
-  const dequeue = <Button variant={entry.position === 1 ? 'ghost' : 'secondary'} size="sm" disabled={busy} data-testid="merge-queue-dequeue" onClick={() => queue.dequeue(entry.number)}>Dequeue</Button>
+  const next = nextUp(queue.entries)?.number === entry.number
+  const dequeue = <Button variant={next ? 'ghost' : 'secondary'} size="sm" disabled={busy} data-testid="merge-queue-dequeue" onClick={() => queue.dequeue(entry.number)}>Dequeue</Button>
   if (entry.status === 'parked' || entry.status === 'fixing') {
     return <>
       {onHandOff && entry.worktree && <Button variant="secondary" size="sm" disabled={busy} data-testid="merge-queue-hand-off" onClick={onPick}>Hand to a new pane</Button>}
@@ -59,7 +61,7 @@ function EntryActions({ entry, queue, onHandOff, onPick }: { entry: MergeQueueEn
     </>
   }
   if (entry.status === 'watching') return <Tooltip label="Takes it back from GitHub, then out of the queue">{dequeue}</Tooltip>
-  if (entry.position !== 1 || queue.settings?.merge_when_verified) return dequeue
+  if (!next || queue.settings?.merge_when_verified) return dequeue
   const verified = entry.verification ? `Merges ${shortSha(entry.verification.verified_sha)}, the verified commit, exactly` : undefined
   return <>
     <Tooltip label={entry.reason ?? verified}><Button variant="primary" size="sm" data-testid="merge-queue-merge" disabled={busy || entry.status !== 'ready'} onClick={() => queue.mergeHead(entry.number, entry.head_sha, 'squash')}>Merge</Button></Tooltip>
