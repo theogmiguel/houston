@@ -272,7 +272,19 @@ fn read_manifest_entry(path: &Path, entry: &mut impl Read) -> Result<Manifest> {
             ))
         }
     }
-    serde_json::from_value(value).map_err(|e| damaged(path, e))
+    let manifest: Manifest = serde_json::from_value(value).map_err(|e| damaged(path, e))?;
+    super::paths::validate_manifest(&manifest).map_err(|e| not_houston(path, e))?;
+    Ok(manifest)
+}
+
+/// A file whose contents no Houston export would write: a damaged or crafted file.
+fn not_houston(path: &Path, detail: impl std::fmt::Display) -> anyhow::Error {
+    refuse(
+        Code::NotTransferFile,
+        "The file is damaged or was not made by Houston.",
+        vec![path.display().to_string(), detail.to_string()],
+        vec!["Copy the file from the exporting computer again, then import it.".into()],
+    )
 }
 
 /// The manifest alone, without unpacking the rest.
@@ -302,6 +314,7 @@ pub fn unpack(path: &Path, passphrase: &str, into: &Path) -> Result<Manifest> {
     let mut archive = open(path, passphrase)?;
     let mut manifest = None;
     let mut total = 0u64;
+    let mut seen = std::collections::HashSet::new();
     for entry in archive.entries().map_err(|e| damaged(path, e))? {
         let mut entry = entry.map_err(|e| damaged(path, e))?;
         let name = entry.path().map_err(|e| damaged(path, e))?.into_owned();
@@ -319,11 +332,23 @@ pub fn unpack(path: &Path, passphrase: &str, into: &Path) -> Result<Manifest> {
             continue;
         }
         let relative = safe_relative(&name).ok_or_else(|| {
-            damaged(
+            not_houston(
                 path,
                 format!("entry {} escapes the archive", name.display()),
             )
         })?;
+        let slashed = relative
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+        super::paths::relative(&slashed).map_err(|e| not_houston(path, e))?;
+        if !seen.insert(slashed.to_lowercase()) {
+            bail!(not_houston(
+                path,
+                format!("entry {slashed} appears twice when letter case is ignored")
+            ));
+        }
         if entry.header().entry_type() != tar::EntryType::Regular {
             bail!(damaged(
                 path,
@@ -513,5 +538,140 @@ mod tests {
             "{error:#}"
         );
         assert!(!dir.path().join("escaped").exists());
+    }
+
+    fn pane(
+        provider: houston_protocol::AgentKind,
+        transcript: &str,
+    ) -> crate::transfer::manifest::PaneEntry {
+        crate::transfer::manifest::PaneEntry {
+            source_session: 1,
+            provider,
+            title: "p".into(),
+            checkout: "main".into(),
+            rel_cwd: String::new(),
+            cwd: "/w".into(),
+            conversation: "abc-1".into(),
+            archive_dir: "transcripts/0".into(),
+            transcript: transcript.into(),
+            extra_files: Vec::new(),
+            transcript_sha256: String::new(),
+            launch_selections: None,
+            profile_label: None,
+            origin: None,
+        }
+    }
+
+    fn checkout(untracked: &[&str]) -> crate::transfer::manifest::CheckoutEntry {
+        crate::transfer::manifest::CheckoutEntry {
+            key: "main".into(),
+            worktree: None,
+            path: "/w".into(),
+            branch: Some("main".into()),
+            head: "0".repeat(40),
+            bundle: false,
+            diff: false,
+            untracked: untracked.iter().map(|s| s.to_string()).collect(),
+            archive_dir: "checkouts/0".into(),
+            origin: None,
+        }
+    }
+
+    #[test]
+    fn manifest_paths_outside_their_folder_are_refused_before_anything_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let cases: Vec<(&str, Manifest)> = vec![
+            (
+                "codex config",
+                Manifest {
+                    panes: vec![pane(houston_protocol::AgentKind::Codex, "config.toml")],
+                    checkouts: vec![checkout(&[])],
+                    ..manifest()
+                },
+            ),
+            (
+                "claude escape",
+                Manifest {
+                    panes: vec![pane(houston_protocol::AgentKind::Claude, "../abc-1.jsonl")],
+                    checkouts: vec![checkout(&[])],
+                    ..manifest()
+                },
+            ),
+            (
+                "absolute untracked",
+                Manifest {
+                    checkouts: vec![checkout(&["/etc/passwd"])],
+                    ..manifest()
+                },
+            ),
+            (
+                "drive letter",
+                Manifest {
+                    checkouts: vec![checkout(&["C:/x"])],
+                    ..manifest()
+                },
+            ),
+            (
+                "reserved name",
+                Manifest {
+                    checkouts: vec![checkout(&["src/NUL.txt"])],
+                    ..manifest()
+                },
+            ),
+            (
+                "case duplicate",
+                Manifest {
+                    checkouts: vec![checkout(&["Readme.md", "README.md"])],
+                    ..manifest()
+                },
+            ),
+            (
+                "archive folder",
+                Manifest {
+                    checkouts: vec![crate::transfer::manifest::CheckoutEntry {
+                        archive_dir: "C:/Users".into(),
+                        ..checkout(&[])
+                    }],
+                    ..manifest()
+                },
+            ),
+        ];
+        for (name, crafted) in cases {
+            let file = dir
+                .path()
+                .join(format!("{}.houston-transfer", name.replace(' ', "-")));
+            write(&file, "p", &crafted, &[]).unwrap();
+            let out = dir.path().join(format!("out-{}", name.replace(' ', "-")));
+            let error = unpack(&file, "p", &out).unwrap_err();
+            let refusal = refusal(&error).unwrap_or_else(|| panic!("{name}: {error:#}"));
+            assert_eq!(refusal.code, Code::NotTransferFile, "{name}");
+            assert_eq!(
+                refusal.problem, "The file is damaged or was not made by Houston.",
+                "{name}"
+            );
+            assert!(
+                !out.exists() || std::fs::read_dir(&out).unwrap().next().is_none(),
+                "{name}: nothing is unpacked"
+            );
+        }
+    }
+
+    #[test]
+    fn entries_that_differ_only_in_case_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("case.houston-transfer");
+        let entries = vec![
+            Entry {
+                path: "checkouts/0/untracked/A.txt".into(),
+                source: Source::Bytes(b"1".to_vec()),
+            },
+            Entry {
+                path: "checkouts/0/untracked/a.txt".into(),
+                source: Source::Bytes(b"2".to_vec()),
+            },
+        ];
+        write(&file, "p", &manifest(), &entries).unwrap();
+        let error = unpack(&file, "p", &dir.path().join("out")).unwrap_err();
+        assert!(format!("{error:#}").contains("appears twice"), "{error:#}");
     }
 }

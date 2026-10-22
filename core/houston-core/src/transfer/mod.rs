@@ -5,6 +5,7 @@
 pub mod archive;
 pub mod checkout;
 pub mod manifest;
+pub mod paths;
 pub mod transcripts;
 
 use houston_protocol as proto;
