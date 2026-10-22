@@ -183,6 +183,11 @@ export function removeLeaf(tree: LayoutNode, key: PaneKey): LayoutNode | null {
   return filterTree(tree, (p) => paneKey(p) !== key)
 }
 
+// A saved leaf can still name an earlier session of the conversation.
+export function removeConversationLeaves(tree: LayoutNode, sessions: ReadonlySet<number>): LayoutNode | null {
+  return filterTree(tree, (p) => p.kind !== 'leaf' || !(sessions.has(p.session) || (p.session_origin !== undefined && sessions.has(p.session_origin))))
+}
+
 export function containsPaneKind(tree: LayoutNode | null, kind: PaneNode['kind']): boolean {
   if (!tree) return false
   if (tree.kind === 'split' || tree.kind === 'stack')

@@ -142,6 +142,7 @@ named.
 | **`hooks_seen`** | Per-session flag: at least one hook event has arrived. Stands the spawn-grace watchdog down. | `daemon.rs::Session` |
 | **husk** | A restored session record with no live process. Reaped when idle and childless; its Restart resumes its conversation when it holds a resume handle. | `daemon.rs::dead` |
 | **Sleep** | A manual graceful stop of an idle top-level Claude or Codex pane that retains its conversation, slot, scrollback and hook-fed cues. It remains asleep across restart until explicitly woken or closed. | `SessionState::Sleeping` |
+| **hidden pane** | A sleeping pane the user removed from its grid. Renderer state keyed by session origin, so the entry follows Wake and Start fresh, which put the conversation back in its grid; the daemon still lists the session. Selecting it in the rail shows it without waking it. | `layout/hiddenPanes.ts` |
 | **Wake** | An explicit relaunch of a sleeping pane with its exact resume handle. Failed validation keeps the placeholder and offers a separate fresh start. | `daemon.rs::wake_session` |
 | **resume handle** | The root conversation ID and transcript path reported by Claude, Codex or ZCode hooks after a turn. Carried to the respawned row for exact-ID resume; cleared by Kill, Close, Start fresh, a changed folder or a deleted profile. | `sessions.resume_session_id`, `sessions.resume_transcript_path` |
 | **ACP** | Agent Client Protocol: line-delimited JSON-RPC on the PTY, a second lawful status source. In a pane Houston never answers its permission requests. | `acp.rs` |

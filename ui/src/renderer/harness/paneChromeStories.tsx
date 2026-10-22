@@ -13,6 +13,7 @@ import { prefixLayer } from '../src/prefixLayer'
 import { leaf, stackPane } from '../src/layout/tree'
 import { rememberRailGitFacts } from '../src/components/git/railGitCache'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
+import { HiddenPaneActionsContext } from '../src/layout/hiddenPanes'
 
 const noop = (): void => {}
 const TAGS: TagInfo[] = [
@@ -189,7 +190,8 @@ export function PaneSleepingStory(): React.JSX.Element {
   })
   const sessions = new Map([[sleeping.id, sleeping]])
   const store = React.useMemo(() => createSessionsStore(sessions), [])
-  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={sleeping} branch="feature/session-recovery" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+  const hiddenPaneActions = React.useMemo(() => ({ hide: () => {}, sleepAndHide: () => {} }), [])
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><HiddenPaneActionsContext.Provider value={hiddenPaneActions}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={sleeping} branch="feature/session-recovery" /></div></HiddenPaneActionsContext.Provider></SessionsStoreContext.Provider></TagsContext.Provider>
 }
 
 export function PaneLimitedStory(): React.JSX.Element {

@@ -1,6 +1,6 @@
 import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
-import { Sidebar } from '../src/components/Sidebar'
+import { Sidebar, type HiddenRailPane } from '../src/components/Sidebar'
 import { RailResizeHandle } from '../src/components/RailResizeHandle'
 import { WorkspacesEmpty } from '../src/components/WorkspacesEmpty'
 import { setSettingsOpen } from '../src/settingsNav'
@@ -71,6 +71,7 @@ interface RailProps {
   pinnedGridIds?: string[]
   selectedGridId?: string
   showTags?: boolean
+  hiddenPanes?: HiddenRailPane[]
 }
 
 function RailFixtureStyle({ freezeMenuMotion, freezeCaret }: { freezeMenuMotion: boolean; freezeCaret: boolean }): React.JSX.Element | null {
@@ -115,6 +116,7 @@ function RailFixture({
   pinnedGridIds = [],
   selectedGridId = 'work-in',
   showTags = false,
+  hiddenPanes,
 }: RailProps): React.JSX.Element {
   const ready = React.useRef(false)
   if (!ready.current) {
@@ -155,6 +157,7 @@ function RailFixture({
         onToggleChromeTheme={noop}
         onSelectGrid={noop}
         onFocusPane={(paneId) => document.documentElement.dataset.focusedRailPane = String(paneId)}
+        hiddenPanes={hiddenPanes}
         onAddGrid={noop}
         onNewWorkspaceSession={noop}
         onRenameGrid={noop}
@@ -509,6 +512,19 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
     pinnedGridIds={[]}
     collapsed={[]}
     finishedUnseen={new Set([7])}
+  />,
+  'rail/hidden-pane': () => <RailFixture
+    workspaces={[ws('Houston')]}
+    pinned={[]}
+    selected={path('Houston')}
+    selectedGridId="flicker"
+    sessions={CARD_SESSIONS.filter(({ id }) => id === 6)}
+    gridsByWorkspace={{ [path('Houston')]: [
+      { id: 'flicker', name: 'Fix the sidebar flicker', count: 1, state: 'working', sessionIds: [6], paneTagIds: [] },
+    ] }}
+    pinnedGridIds={[]}
+    collapsed={[]}
+    hiddenPanes={[{ workspace: path('Houston'), session: cardSession({ id: 7, agent: 'claude', project_dir: path('Houston'), title: 'Inspector polish', status: null, state: 'sleeping' }) }]}
   />,
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,

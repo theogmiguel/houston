@@ -30,6 +30,7 @@ import {
   IconArrowDown,
   IconFolder,
   IconFolderPlus,
+  IconEyeOff,
   IconGitPullRequest,
   IconGrid,
   IconMoon,
@@ -148,6 +149,7 @@ import {
   RailTreeTitle,
   RailUpdateDot,
   RailUpdateIconButton,
+  RailHiddenPaneRow,
   RailWorkspaceGroupRow,
 } from "./ui/rail/RailChrome";
 import { preloadable } from "../preloadable";
@@ -416,6 +418,14 @@ export function workspaceColor(index: number): string {
   return WS_COLORS[index % WS_COLORS.length];
 }
 
+export interface HiddenRailPane {
+  workspace: string;
+  session: SessionInfo;
+}
+
+const NO_HIDDEN_PANES: readonly HiddenRailPane[] = [];
+const HIDDEN_PANES_GROUP = "Hidden panes";
+
 interface Props {
   mascotFirstRun?: boolean;
   mascotWorkspacesEmpty?: boolean;
@@ -453,6 +463,8 @@ interface Props {
   onTagDelete?: (tag: number) => void;
   onSelectGrid?: (path: string, gridId: string) => void;
   onFocusPane?: (paneId: number) => void;
+  /** Sleeping panes hidden from their grids; selecting one shows it without waking it. */
+  hiddenPanes?: readonly HiddenRailPane[];
   selectedGridId?: string | null;
 
   onAddGrid?: (path: string) => void;
@@ -854,7 +866,7 @@ function RailTreeHeader({
 
 function RailLabelGroupHeader({ label, kind, groupBy, count, collapsed, onToggle }: {
   label: string;
-  kind: "pinned" | "label";
+  kind: "pinned" | "label" | "hidden";
   groupBy: RailPrefs["groupBy"];
   count: number;
   collapsed: boolean;
@@ -864,6 +876,7 @@ function RailLabelGroupHeader({ label, kind, groupBy, count, collapsed, onToggle
     <RailGroupHeader>
       <RailGroupToggle aria-expanded={!collapsed} onClick={onToggle}>
         {kind === 'pinned' ? <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
+          : kind === 'hidden' ? <Icon glyph={IconEyeOff} role="small" tone="faint" className="flex-none" />
           : groupBy === 'status' ? <RailGroupStatusDot label={label} />
             : <Icon glyph={IconGitPullRequest} role="small" tone="faint" className="flex-none" />}
         <span className="truncate">{label}</span>
@@ -886,6 +899,48 @@ function GridRenameRow({ cardMode, selected, initial, onSubmit, onCancel }: {
       <RenameInput initial={initial} onSubmit={onSubmit} onCancel={onCancel} />
     </RailGridRenameFrame>
   );
+}
+
+// Hidden panes list under their workspace's group, or in a group of their own
+// when the rail is not grouped by workspace or that workspace is filtered out.
+function placeHiddenPanes(
+  panes: readonly HiddenRailPane[] = NO_HIDDEN_PANES,
+  groups: RailTreeModel["groups"],
+): { byWorkspace: Map<string, HiddenRailPane[]>; unlisted: HiddenRailPane[] } {
+  const listed = new Set(groups.flatMap((group) => (group.workspace ? [group.workspace.path] : [])));
+  const byWorkspace = new Map<string, HiddenRailPane[]>();
+  for (const pane of panes.filter((p) => listed.has(p.workspace))) {
+    byWorkspace.set(pane.workspace, [...(byWorkspace.get(pane.workspace) ?? []), pane]);
+  }
+  return { byWorkspace, unlisted: panes.filter((p) => !listed.has(p.workspace)) };
+}
+
+function hiddenInGroup(byWorkspace: ReadonlyMap<string, HiddenRailPane[]>, group: RailTreeModel["groups"][number]): HiddenRailPane[] | undefined {
+  return group.workspace ? byWorkspace.get(group.workspace.path) : undefined;
+}
+
+function hiddenPaneRows(panes: readonly HiddenRailPane[] | undefined, onShow?: (session: number) => void): RailListItem[] {
+  return (panes ?? []).map(({ session }) => ({
+    key: `hidden:${session.id}`,
+    kind: "card",
+    content: <RailHiddenPaneRow name={session.title || session.codename} onShow={() => onShow?.(session.id)} />,
+  }));
+}
+
+function hiddenPanesGroup(
+  panes: readonly HiddenRailPane[],
+  railPrefs: RailPrefs,
+  onToggle: () => void,
+  onShow?: (session: number) => void,
+): RailListItem[] {
+  if (panes.length === 0) return [];
+  const collapsed = railPrefs.collapsedGroups.includes(HIDDEN_PANES_GROUP);
+  const header: RailListItem = {
+    key: "group:hidden-panes",
+    kind: "group",
+    content: <RailLabelGroupHeader label={HIDDEN_PANES_GROUP} kind="hidden" groupBy={railPrefs.groupBy} count={panes.length} collapsed={collapsed} onToggle={onToggle} />,
+  };
+  return collapsed ? [header] : [header, ...hiddenPaneRows(panes, onShow)];
 }
 
 function RailTree({
@@ -916,6 +971,7 @@ function RailTree({
   onRemoveGrid,
   onSelectGrid,
   onFocusPane,
+  hiddenPanes,
   openGridMenu,
   gridMenuOpen,
   setGridRenaming,
@@ -971,6 +1027,7 @@ function RailTree({
   onRemoveGrid?: (path: string, gridId: string) => void;
   onSelectGrid?: (path: string, gridId: string) => void;
   onFocusPane?: (paneId: number) => void;
+  hiddenPanes?: readonly HiddenRailPane[];
   gridMenuOpen: { path: string; gridId: string } | null;
   openGridMenu: (
     e: React.MouseEvent,
@@ -1111,6 +1168,7 @@ function RailTree({
       : [...railPrefs.collapsedGroups, group],
   })
   const items: RailListItem[] = [];
+  const hidden = placeHiddenPanes(hiddenPanes, model.groups);
   const showDropAt = visibleDropSlot(model.displayedWorkspaces, dragPath, wsDropIndex);
   for (const group of model.groups) {
     if (showDropAt !== null && group.kind === 'workspace' && group.wsIndex === showDropAt) {
@@ -1166,8 +1224,10 @@ function RailTree({
       for (const entry of group.cards) {
         items.push({ key: `card:${entryKey(entry)}`, kind: 'card', content: renderCard(entry) });
       }
+      items.push(...hiddenPaneRows(hiddenInGroup(hidden.byWorkspace, group), onFocusPane));
     }
   }
+  items.push(...hiddenPanesGroup(hidden.unlisted, railPrefs, () => toggleGroup(HIDDEN_PANES_GROUP), onFocusPane));
   if (showDropAt !== null && showDropAt >= model.displayedWorkspaces.length) {
     items.push({ key: 'ws-drop', kind: 'drop', content: <WorkspaceDropIndicator /> });
   }
@@ -1244,6 +1304,7 @@ export function Sidebar({
   gridsByWorkspace = NO_GRIDS,
   onSelectGrid,
   onFocusPane,
+  hiddenPanes,
   selectedGridId = null,
   onNewWorkspaceSession,
   onAddGrid,
@@ -1956,6 +2017,7 @@ export function Sidebar({
             onRemoveGrid={removeGridFromRail}
             onSelectGrid={onSelectGrid}
             onFocusPane={onFocusPane}
+            hiddenPanes={hiddenPanes}
             openGridMenu={openGridMenu}
             gridMenuOpen={gridMenu}
             setGridRenaming={setGridRenaming}

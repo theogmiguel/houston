@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 953,289 bytes (one boot chunk; main measured 946,609) with the",
+    "same small headroom: hidden sleeping panes are excluded from grid placement",
+    "from the first roster, so `useHiddenPanes`, `layout/hiddenPanes.ts`, the rail",
+    "rows and the pane-menu entries are boot-path code."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 953500,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

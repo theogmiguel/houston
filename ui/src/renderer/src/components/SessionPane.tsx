@@ -39,6 +39,7 @@ import { clampConversation } from './handoffPacket'
 import { collapseHome } from './recoveryReason'
 import { errorSessionIds } from '../houston/paneOps'
 import { PaneOpsContext, usePaneOpState } from '../houston/paneOpsContext'
+import { canSleep, HiddenPaneActionsContext } from '../layout/hiddenPanes'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './ui/Tooltip'
 import {
@@ -49,6 +50,7 @@ import {
   IconCopy,
   IconEllipsis,
   IconEraser,
+  IconEyeOff,
   IconMaximize,
   IconMinimize,
   IconMoon,
@@ -465,13 +467,16 @@ function SessionLifecycleMenuItems({
   menuItem: PaneContextMenuController['menuItem']
   setMemoryResult: React.Dispatch<React.SetStateAction<SessionMemoryResult | null>>
 }): React.JSX.Element {
+  const hiddenPanes = useContext(HiddenPaneActionsContext)
   return <>
-    {info.spawned_by == null && (info.agent === 'claude' || info.agent === 'codex') && !info.task && !sleeping && live && (
+    {canSleep(info) && !sleeping && live && <>
       <CtxRow glyph={IconMoon} label="Sleep session" disabled={info.status !== 'idle'} disabledReason="Sleep requires this agent to be idle" onClick={menuItem(() => client.send({ type: 'session_sleep', session: info.id }))} />
-    )}
+      {hiddenPanes && <CtxRow glyph={IconEyeOff} label="Sleep and hide" disabled={info.status !== 'idle'} disabledReason="Sleep requires this agent to be idle" onClick={menuItem(() => hiddenPanes.sleepAndHide(info.id))} />}
+    </>}
     {sleeping && <>
       <CtxRow glyph={IconRespawn} label="Wake conversation" onClick={menuItem(() => client.send({ type: 'session_wake', session: info.id }))} />
       <CtxRow glyph={IconRespawn} label="Start fresh conversation" onClick={menuItem(() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true))} />
+      {hiddenPanes && <CtxRow glyph={IconEyeOff} label="Hide pane" onClick={menuItem(() => hiddenPanes.hide(info.id))} />}
     </>}
     {!sleeping && <CtxRow glyph={GLYPH_FOR_VERB['measure-memory']} label="Measure process memory" onClick={menuItem(() => {
       setMemoryResult(null)
@@ -798,6 +803,7 @@ function SessionPaneImpl({
 export const SessionPane = memo(SessionPaneImpl)
 
 function SleepingSessionPlaceholder({ info, onWake, onFresh }: { info: SessionInfo; onWake: () => void; onFresh: () => void }): React.JSX.Element {
+  const hiddenPanes = useContext(HiddenPaneActionsContext)
   const sleptDuration = info.slept_at_ms == null ? null : Math.max(0, Date.now() - info.slept_at_ms)
   return <section aria-label="Sleeping session" className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
     <Inset space="screen" className="w-full"><Card padding="md" layout="sleeping-session">
@@ -807,7 +813,7 @@ function SleepingSessionPlaceholder({ info, onWake, onFresh }: { info: SessionIn
       {info.context && <Text size="small" tone="muted" flush>Context used: {info.context.used_percent ?? 'Unknown'}%</Text>}
       {info.latest_prompt && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last prompt</Text><Card padding="sm" layout="scrolling-copy">{info.latest_prompt}</Card></div>}
       {info.last_agent_message && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last agent message</Text><Card padding="sm" layout="scrolling-copy">{info.last_agent_message}</Card></div>}
-      <Inline wrap className="justify-center"><Button variant="primary" onClick={onWake}>Wake session</Button><Button variant="secondary" onClick={onFresh}>Start fresh session</Button></Inline>
+      <Inline wrap className="justify-center"><Button variant="primary" onClick={onWake}>Wake session</Button><Button variant="secondary" onClick={onFresh}>Start fresh session</Button>{hiddenPanes && <Button variant="secondary" onClick={() => hiddenPanes.hide(info.id)}>Hide pane</Button>}</Inline>
     </Card></Inset>
   </section>
 }

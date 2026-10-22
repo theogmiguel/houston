@@ -296,10 +296,19 @@ pane returns with the refusal shown inside it; a close the daemon does not confi
 ## Sleeping a pane
 
 Sleep is a reversible way to release an idle Claude or Codex CLI while keeping the pane,
-its slot, scrollback and exact conversation handle. Choose Sleep from the pane actions;
-the pane remains visible and does not wake when focused. Choose Wake to resume its exact
-conversation. If the provider no longer has that transcript, Wake explains why and leaves
-the pane resumable; Start fresh remains a separate action.
+its scrollback and exact conversation handle. Choose **Sleep session** from the pane
+actions; the pane stays in its slot as a sleeping placeholder and does not wake when
+focused. Choose Wake to resume its exact conversation. If the provider no longer has that
+transcript, Wake explains why and leaves the pane resumable; Start fresh remains a separate
+action.
+
+To free the space a sleeping pane occupies, choose **Hide pane** from its actions or its
+placeholder; the other panes take the space and the conversation stays asleep. **Sleep and
+hide** does both for an idle pane, and hides it only after Sleep succeeds; a refused Sleep
+leaves the pane visible with the reason. A hidden pane is listed under its workspace in
+the sidebar as sleeping and hidden. Select it there to put its placeholder back in its grid
+without waking it. Waking it from anywhere, or starting it fresh, also brings it back.
+Hidden panes stay hidden after the app or daemon restarts; closing one removes it.
 
 Sleep is refused while the agent is working or waiting for input, while terminal input
 is still being delivered, while orchestration or external child work is active, and for

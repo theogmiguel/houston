@@ -393,6 +393,8 @@ import {
 } from "./windowButtonLayout";
 import { stackCapacity, stackFullMessage } from "./paneCaps";
 import { changedEntries } from "./layout/changedEntries";
+import { HiddenPaneActionsContext, newestOfOrigin, type HiddenPane } from "./layout/hiddenPanes";
+import { useHiddenPanes } from "./useHiddenPanes";
 import { Icon } from "./components/ui/Icon";
 import {
   Button,
@@ -1275,6 +1277,35 @@ export function App(): React.JSX.Element {
   const savedLayoutsRef = useRef(layouts);
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
+  const warmLayoutsRef = useRef<Map<string, LayoutState>>(new Map());
+  const locateSessionGrid = useCallback((session: number): HiddenPane | null => {
+    const found = findSessionGrid(session,
+      new Map(workspacesRef.current.map((workspace) => [workspace.path, gridsFor(workspace.path)])),
+      new Map([...warmLayoutsRef.current, ...layoutsRef.current]));
+    return found && { workspace: found.workspace, gridId: found.gridId };
+  }, [gridsFor]);
+  const hiddenPanes = useHiddenPanes({
+    sessions,
+    client: readyClient(conn),
+    setLayouts,
+    gridsFor,
+    activeGridId,
+    locate: locateSessionGrid,
+    retainMissing: retainMissingSession,
+  });
+  const hiddenPanesRef = useRef(hiddenPanes);
+  hiddenPanesRef.current = hiddenPanes;
+  useEffect(() => {
+    if (activeId !== null && hiddenPanes.isHidden(activeId)) setActiveId(null);
+  }, [activeId, hiddenPanes, setActiveId]);
+  const railHiddenPanes = useMemo(() => [...hiddenPanes.hidden].flatMap(([origin, slot]) => {
+    const session = newestOfOrigin(sessions.values(), origin);
+    return session?.state === "sleeping" ? [{ workspace: slot.workspace, session }] : [];
+  }), [hiddenPanes.hidden, sessions]);
+  const hiddenPaneActions = useMemo(
+    () => ({ hide: hiddenPanes.hide, sleepAndHide: hiddenPanes.sleepAndHide }),
+    [hiddenPanes.hide, hiddenPanes.sleepAndHide],
+  );
   const voiceSettingsRef = useRef(voiceSettings);
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
@@ -1287,6 +1318,13 @@ export function App(): React.JSX.Element {
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
+    // Selecting a hidden pane shows its sleeping placeholder; focus never wakes it.
+    const shown = hiddenPanes.isHidden(session) ? hiddenPanes.show(session) : null;
+    if (shown) {
+      handleSelectGrid(shown.workspace, shown.gridId);
+      setActiveId(session);
+      return;
+    }
     if (ownUserInput(target)) {
       setOpenedAttention((current) => new Map(current).set(session, inputEpisode(target)!));
     }
@@ -1423,6 +1461,7 @@ export function App(): React.JSX.Element {
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            hiddenPanesRef.current.rosterReplaced(msg.sessions);
             setFinishedUnseen((cur) => pruneFinishedUnseen(cur, new Set(msg.sessions.map((s) => s.id))));
             setRosterRevision((revision) => revision + 1);
             setWorkspaces(msg.workspaces);
@@ -1441,6 +1480,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_list":
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            hiddenPanesRef.current.rosterReplaced(msg.sessions);
             setFinishedUnseen((cur) => pruneFinishedUnseen(cur, new Set(msg.sessions.map((s) => s.id))));
             setRosterRevision((revision) => revision + 1);
             break;
@@ -1504,6 +1544,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_removed":
             client.paneOps.sessionRemoved(msg.session);
+            hiddenPanesRef.current.sessionRemoved(msg.session, sessionsRef.current);
             setRemovedSessions((prev) => new Set(prev).add(msg.session));
             setLayouts((prev) => removeSessionFromLayouts(prev, msg.session));
             setSessions((prev) => {
@@ -1879,7 +1920,7 @@ export function App(): React.JSX.Element {
   );
 
   const paneOps = paneOpsOf(conn);
-  const { closingIds, placeable, layoutSessions } = useLayoutPlacement(paneOps, sessions);
+  const { closingIds, placeable, layoutSessions } = useLayoutPlacement(paneOps, sessions, hiddenPanes.isHidden);
 
   const warmLayouts = useMemo(() => {
     const map = new Map<string, LayoutState>();
@@ -1911,6 +1952,7 @@ export function App(): React.JSX.Element {
     retainMissingSession,
     placeable,
   ]);
+  warmLayoutsRef.current = warmLayouts;
   useBrowserLayoutMigration(orderedWorkspaces, warmLayouts);
   const documentLayouts = useMemo(() => new Map([...warmLayouts, ...layouts]), [warmLayouts, layouts]);
   useLayoutDocumentOwners(orderedWorkspaces, documentLayouts);
@@ -3640,6 +3682,7 @@ export function App(): React.JSX.Element {
   return (
     <SessionsStoreContext.Provider value={sessionsStore}>
     <PaneOpsContext.Provider value={paneOps}>
+    <HiddenPaneActionsContext.Provider value={hiddenPaneActions}>
       <SessionEffects
         connection={conn.kind}
         workspaces={workspaces}
@@ -3751,6 +3794,7 @@ export function App(): React.JSX.Element {
               }
               onSelectGrid={handleSelectGrid}
               onFocusPane={focusPane}
+              hiddenPanes={railHiddenPanes}
               onAddGrid={handleAddGrid}
               onNewWorkspaceSession={(path) => {
                 setSelectedWs(path);
@@ -4697,6 +4741,7 @@ export function App(): React.JSX.Element {
       </TagsContext.Provider>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>
+    </HiddenPaneActionsContext.Provider>
     </PaneOpsContext.Provider>
     </SessionsStoreContext.Provider>
   );

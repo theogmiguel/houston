@@ -14,12 +14,13 @@ export function useClosingSessions(ops: PaneOps): ReadonlySet<number> {
 /** What the layout may place and mount: sessions the user asked to close are neither. */
 export function useLayoutPlacement(
   ops: PaneOps,
-  sessions: Map<number, SessionInfo>
+  sessions: Map<number, SessionInfo>,
+  hidden: (id: number) => boolean = () => false
 ): { closingIds: ReadonlySet<number>; placeable: (id: number) => boolean; layoutSessions: Map<number, SessionInfo> } {
   const closingIds = useClosingSessions(ops)
   const placeable = useCallback(
-    (id: number): boolean => sessions.get(id)?.spawned_by == null && !closingIds.has(id),
-    [sessions, closingIds]
+    (id: number): boolean => sessions.get(id)?.spawned_by == null && !closingIds.has(id) && !hidden(id),
+    [sessions, closingIds, hidden]
   )
   const layoutSessions = useMemo(
     () => (closingIds.size === 0 ? sessions : new Map([...sessions].filter(([id]) => !closingIds.has(id)))),

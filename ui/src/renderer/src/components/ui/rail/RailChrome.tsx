@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react'
 import { Button } from '../Button'
 import { ContextMenu } from '../ContextMenu'
 import { Icon } from '../Icon'
-import { IconCheck, IconChevronRight, IconPin } from '../../icons'
+import { IconCheck, IconChevronRight, IconMoon, IconPin } from '../../icons'
 import { Tooltip } from '../Tooltip'
 import type { TagInfo } from '../../../houston/generated/TagInfo'
 import { TagChip } from '../TagChip'
@@ -191,6 +191,17 @@ export function RailActiveTagFilter({ tags, onClear }: { tags: readonly TagInfo[
   </div>
 }
 
+// A sleeping pane hidden from its grid, listed under its workspace until it is shown again.
+export function RailHiddenPaneRow({ name, onShow }: { name: string; onShow: () => void }): React.JSX.Element {
+  return <Tooltip label="Show in its grid without waking it" className="block">
+    <button type="button" data-testid="rail-hidden-pane" aria-label={`Show ${name}, sleeping and hidden`} onClick={onShow} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-sm)] pl-[var(--space-6)] pr-[var(--space-1-5)] text-left [font-size:var(--tr-text-xs)] text-[var(--text-muted)] hover:bg-hover-fill">
+      <Icon glyph={IconMoon} role="small" tone="muted" />
+      <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{name}</span>
+      <span className="flex-none">Sleeping · hidden</span>
+    </button>
+  </Tooltip>
+}
+
 export function RailChromeSpecimen(): React.JSX.Element {
-  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /><RailGridRenameFrame cardMode="detailed" selected>Renaming grid</RailGridRenameFrame></div>
+  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /><RailGridRenameFrame cardMode="detailed" selected>Renaming grid</RailGridRenameFrame><RailHiddenPaneRow name="parser-refactor" onShow={() => {}} /></div>
 }

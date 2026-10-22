@@ -454,6 +454,10 @@ on the session row and metadata validation never drives status.
   GTK window under WebKitGTK. **Enforced by** `check-native-select.sh`.
 - **No raw `lucide-react` imports** outside `components/icons.tsx`. **Enforced by**
   `check-icon-imports.sh`.
+- **Grid reconcile never places a hidden pane.** Layout sync re-adds every top-level
+  session missing from the saved grids, so a hidden pane is excluded through `placeable`
+  rather than by removing its leaf alone; otherwise the next roster update restores it.
+  Only Show, Wake or Start fresh return it to a grid.
 - **`title=` is not a tooltip.** A native `title` on an icon-only button is its accessible
   name; a `Tooltip` gives only `aria-describedby`, so the string must also go to
   `aria-label`. And `<Row title=…>` is a visible heading, not a tooltip. **Enforced by**
