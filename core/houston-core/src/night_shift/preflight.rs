@@ -101,7 +101,9 @@ fn floor_item(id: &str, label: &str, free: Option<u32>, floor: u32, what: &str) 
     }
 }
 
-pub fn evaluate(s: &NightShiftSettings, facts: &Facts) -> Vec<PreflightItem> {
+/// `run` is the clock window the run will cover: the settings' window for a
+/// scheduled start, Run now's for a manual one.
+pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec<PreflightItem> {
     let mut out = Vec::new();
     out.push(if facts.orchestration_enabled {
         item(
@@ -199,7 +201,7 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts) -> Vec<PreflightItem> {
             format!("{} configured", s.checks.len()),
         )
     });
-    out.extend(restart_items(m.reboot_pending, m.active_hours, &s.window));
+    out.extend(restart_items(m.reboot_pending, m.active_hours, run));
     out.extend(super::awake::inhibitor_item(m.inhibitor_available));
     out
 }
@@ -527,17 +529,39 @@ mod tests {
             .collect()
     }
 
+    /// The restart warning judges the window the run will cover: an
+    /// afternoon Run now inside active hours is not warned about the night.
+    #[test]
+    fn restart_window_follows_the_run() {
+        let s = settings();
+        let mut machine = healthy();
+        machine.active_hours = Some((8, 17));
+        let f = facts(machine);
+        let hour = 3_600_000;
+        let run = crate::night_shift::window::run_now(14 * hour, 15 * hour).unwrap();
+        let afternoon = crate::night_shift::window::clock_window(14 * hour, &run, |_| 0);
+        assert_eq!(
+            (afternoon.start.hour, afternoon.wrap_up.hour, afternoon.wrap_up.minute),
+            (14, 14, 15)
+        );
+        let warned = |w: &NightWindow| evaluate(&s, &f, w).iter().any(|i| i.id == "restart_window");
+        assert!(!warned(&afternoon), "14:00–15:00 is inside 08:00–17:00");
+        assert!(warned(&s.window), "the nightly window reaches outside");
+    }
+
     #[test]
     fn thresholds_name_limit_and_actual() {
-        assert!(blocks(&evaluate(&settings(), &facts(healthy()))).is_empty());
+        let s = settings();
+        assert!(blocks(&evaluate(&s, &facts(healthy()), &s.window)).is_empty());
         let items = evaluate(
-            &settings(),
+            &s,
             &facts(MachineFacts {
                 on_battery: Some(true),
                 memory_free_mib: Some(4 * 1024),
                 disk_free_mib: Some(10 * 1024),
                 ..healthy()
             }),
+            &s.window,
         );
         let b = blocks(&items);
         let get = |id: &str| {
@@ -561,7 +585,7 @@ mod tests {
         f.providers.remove(0);
         let mut s = settings();
         s.checks.clear();
-        let items = evaluate(&s, &f);
+        let items = evaluate(&s, &f, &s.window);
         let ids: Vec<&str> = blocks(&items).iter().map(|i| i.id.as_str()).collect();
         assert_eq!(
             ids,

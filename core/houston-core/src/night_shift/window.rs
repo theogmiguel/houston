@@ -44,6 +44,28 @@ pub fn run_now(now_ms: i64, until_ms: i64) -> Result<RunWindow> {
     })
 }
 
+/// A run's instants as the local clock window it covers, for checks that
+/// reason in clock times.
+pub fn clock_window(
+    start_ms: i64,
+    run: &RunWindow,
+    offset: impl Fn(i64) -> i64,
+) -> NightWindow {
+    let clock = |ms: i64| {
+        let minute = (ms + offset(ms)).rem_euclid(DAY_MS) / MINUTE_MS;
+        NightClock {
+            hour: (minute / 60) as u8,
+            minute: (minute % 60) as u8,
+        }
+    };
+    NightWindow {
+        start: clock(start_ms),
+        wrap_up: clock(run.wrap_up_at_ms),
+        hard_stop: clock(run.hard_stop_at_ms),
+        nights: Vec::new(),
+    }
+}
+
 /// The first instant at or after `after_ms` whose local clock reads `c`.
 fn next_local(after_ms: i64, c: NightClock, offset_ms: i64) -> i64 {
     let local = after_ms + offset_ms;

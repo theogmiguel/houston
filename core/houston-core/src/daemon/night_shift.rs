@@ -287,7 +287,15 @@ impl Daemon {
             None => Vec::new(),
         };
         let facts = self.night_facts(&settings);
-        let preflight = preflight_until_ms.map(|_| preflight::evaluate(&settings, &facts));
+        let preflight = match preflight_until_ms {
+            Some(until) => {
+                let now = now_unix_ms();
+                let run = window::run_now(now, until)?;
+                let clocks = window::clock_window(now, &run, window::local_offset_ms);
+                Some(preflight::evaluate(&settings, &facts, &clocks))
+            }
+            None => None,
+        };
         let merge_verify_command = self.night_merge_verify_command(workspace)?;
         let held = !self.night.holds.lock().expect("night holds").is_empty();
         Ok(proto::ServerMsg::NightShiftState {
@@ -577,7 +585,8 @@ impl Daemon {
             return Ok(None);
         }
         let _slot = NightReservation::take(self, row.id, now)?;
-        let mut items = preflight::evaluate(&s, &self.night_facts(&s));
+        let clocks = window::clock_window(now, &win, window::local_offset_ms);
+        let mut items = preflight::evaluate(&s, &self.night_facts(&s), &clocks);
         let mut refusal = None;
         if win.wrap_up_at_ms <= now {
             refusal = Some(format!(
