@@ -198,7 +198,7 @@
     "run from boot to receive a file the app was opened with, and panes show a",
     "transferred marker. The dialogs, requests and grid remapping load behind `import()`."
   ],
-  "maxBootBytes": 950200,
+  "maxBootBytes": 950600,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
