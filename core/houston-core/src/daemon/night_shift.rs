@@ -406,6 +406,20 @@ impl Daemon {
             .expect("zcode probe") = program;
     }
 
+    /// Free memory as preflight and the build slot's floor see it.
+    pub(super) fn night_memory_free_mib(&self) -> Option<u32> {
+        match self
+            .night
+            .facts_for_test
+            .lock()
+            .expect("night facts")
+            .as_ref()
+        {
+            Some(f) => f.machine.memory_free_mib,
+            None => preflight::memory_free_mib(),
+        }
+    }
+
     fn night_facts(&self, s: &proto::NightShiftSettings) -> preflight::Facts {
         if let Some(f) = self
             .night

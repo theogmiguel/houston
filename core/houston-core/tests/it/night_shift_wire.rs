@@ -1402,6 +1402,25 @@ async fn heavy_shares_build_slot() {
     );
 }
 
+/// Below the memory floor nobody gets the build slot, and the waiter is
+/// told why.
+#[tokio::test]
+async fn build_slot_waits_for_the_memory_floor() {
+    let r = rig().await;
+    let mut low = healthy_facts();
+    low.machine.memory_free_mib = Some(1024);
+    r.daemon.set_night_shift_facts_for_test(Some(low));
+    let held = r.daemon.build_slot_request(9_999, "acquire", None).unwrap();
+    let holder = held["holder"].as_str().unwrap_or_default();
+    assert!(
+        holder.contains("1024 MiB free") && holder.contains("4096 MiB floor"),
+        "{held}"
+    );
+    r.daemon.set_night_shift_facts_for_test(Some(healthy_facts()));
+    let free = r.daemon.build_slot_request(9_999, "acquire", None).unwrap();
+    assert!(free["lease"].is_string(), "{free}");
+}
+
 // ---- S6 ----
 
 #[tokio::test]

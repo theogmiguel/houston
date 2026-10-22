@@ -152,6 +152,9 @@ impl Daemon {
     /// Takes the slot for `number` of `workspace`, or `None` while another
     /// verification holds it; that head shows Waiting for a slot meanwhile.
     fn merge_queue_take_slot(&self, workspace: &str, number: u32) -> Option<Slot<'_>> {
+        if crate::build_slot::memory_hold(self.night_memory_free_mib()).is_some() {
+            return None;
+        }
         let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
         let now = now_unix_ms();
         if slot
@@ -195,6 +198,9 @@ impl Daemon {
                     if r.lease.as_ref().is_none_or(|l| !l.expired(now)) {
                         return Ok(serde_json::json!({ "holder": r.holder() }));
                     }
+                }
+                if let Some(hold) = crate::build_slot::memory_hold(self.night_memory_free_mib()) {
+                    return Ok(serde_json::json!({ "holder": hold }));
                 }
                 let id = uuid::Uuid::new_v4().to_string();
                 *slot = Some(Running {

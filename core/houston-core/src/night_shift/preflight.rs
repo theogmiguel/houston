@@ -283,6 +283,10 @@ pub fn active_hours_from_registry(start: Option<u32>, end: Option<u32>) -> Optio
     }
 }
 
+pub fn memory_free_mib() -> Option<u32> {
+    probe::memory_free_mib()
+}
+
 pub fn probe_machine(state_dir: &std::path::Path, path_env: Option<&str>) -> MachineFacts {
     let (reboot_pending, active_hours) = probe::restart();
     MachineFacts {
