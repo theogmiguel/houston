@@ -28,7 +28,11 @@ mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
+mod transfers;
 pub use remote::RemoteDeviceRow;
+pub use transfers::{
+    TransferCheckoutRecord, TransferDirection, TransferRecord, TransferSessionRecord,
+};
 mod tasks;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
@@ -2345,6 +2349,7 @@ impl Db {
         add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
         instructions::init(&conn)?;
         merge_queue::init(&conn)?;
+        transfers::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -2431,7 +2436,7 @@ impl Db {
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
-                    latest_prompt, last_agent_message, slept_at_ms, state, context_json
+                    latest_prompt, last_agent_message, slept_at_ms, state, context_json, transferred_at_ms, transfer_fork
              FROM sessions
              WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
@@ -2463,6 +2468,8 @@ impl Db {
                     r.get::<_, Option<u64>>(17)?,
                     r.get::<_, String>(18)?,
                     r.get::<_, Option<String>>(19)?,
+                    r.get::<_, Option<u64>>(20)?,
+                    r.get::<_, bool>(21)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2470,7 +2477,7 @@ impl Db {
         let mut used: std::collections::HashSet<String> = rows
             .iter()
             .filter_map(
-                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
+                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
                     if codename.is_empty() {
                         (!title.is_empty()).then(|| title.clone())
                     } else {
@@ -2501,6 +2508,8 @@ impl Db {
             slept_at_ms,
             persisted_state,
             context_json,
+            transferred_at_ms,
+            transfer_fork,
         ) in rows
         {
             if codename.is_empty() && !title.is_empty() {
@@ -2570,6 +2579,8 @@ impl Db {
                     last_agent_message,
                     slept_at_ms,
                     limit: None,
+                    transferred_at_ms,
+                    transfer_fork,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -6915,7 +6926,7 @@ mod tests {
         );
     }
 
-    fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
+    pub(super) fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
             title_source: Default::default(),
             checkout: None,
@@ -6956,6 +6967,8 @@ mod tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         }
     }
 

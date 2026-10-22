@@ -621,6 +621,9 @@ pub struct Session {
     hook_latest_prompt: Mutex<Option<String>>,
     hook_latest_agent_message: Mutex<Option<String>>,
     sleep_notice: Mutex<Option<String>>,
+    /// When the conversation left in a workspace transfer, and whether this pane
+    /// continues a conversation that had left (see `SessionInfo::transfer_fork`).
+    transfer_mark: Mutex<(Option<u64>, bool)>,
     recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
     limit: Mutex<Option<proto::SessionLimit>>,
@@ -1355,6 +1358,8 @@ impl Session {
             .expect("latest agent message lock")
             .clone();
         info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        (info.transferred_at_ms, info.transfer_fork) =
+            *self.transfer_mark.lock().expect("transfer mark lock");
         if let Some(notice) = self
             .recovery_notice
             .lock()
@@ -1542,6 +1547,7 @@ mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod title_generation;
+mod transfer;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
@@ -2620,6 +2626,12 @@ struct SpawnParams {
     /// A first prompt will be pasted once the composer takes input, so its output is
     /// watched for that until the delivery ends.
     pastes_first_prompt: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ProcessEnding {
+    Kill,
+    Transfer,
 }
 
 struct SessionReplacement {
@@ -3921,6 +3933,7 @@ impl Daemon {
             }
             dead.values()
                 .filter(|info| info.state != proto::SessionState::Sleeping)
+                .filter(|info| info.transferred_at_ms.is_none())
                 .filter(|info| {
                     info.state != proto::SessionState::Exited || info.spawned_by.is_some()
                 })
@@ -5455,6 +5468,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -5526,6 +5541,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -9088,6 +9104,10 @@ impl Daemon {
                         .session_has_bound_resume_handle(info.id)
                         .unwrap_or(false);
                 info.compactions = self.compactions_of(info);
+                match self.db.session_transfer_mark(info.id) {
+                    Ok(mark) => (info.transferred_at_ms, info.transfer_fork) = mark,
+                    Err(e) => tracing::warn!("reading session {}'s transfer mark: {e}", info.id),
+                }
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
                     0
@@ -10107,6 +10127,7 @@ impl Daemon {
             Ok(())
         };
         let strict_resume = conversation == RespawnConversation::Wake;
+        let keeps_conversation = conversation != RespawnConversation::Fresh;
         let restore_scrollback = conversation == RespawnConversation::Restore;
         if strict_resume && (handle.is_none() || acp.is_some()) {
             bail!("Wake refused for session {old_id}: the exact provider conversation handle is unavailable. Choose fresh explicitly to start a new conversation.");
@@ -10312,6 +10333,11 @@ impl Daemon {
                 info.spawned_by = Some(spawned.id);
             }
         }
+        let spawned = if keeps_conversation && spawned.resume_notice.is_none() {
+            self.carry_transfer_fork(old_id, spawned)
+        } else {
+            spawned
+        };
         if was_dead {
             self.dead.lock().expect("dead lock").remove(&old_id);
             self.dead_geometry
@@ -11875,6 +11901,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
 
         if let Some(cues) = replacement
@@ -11961,6 +11989,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
             hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
@@ -12533,6 +12562,8 @@ impl Daemon {
                 last_agent_message: None,
                 slept_at_ms: None,
                 limit: None,
+                transferred_at_ms: None,
+                transfer_fork: false,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -12592,6 +12623,7 @@ impl Daemon {
                 hook_latest_prompt: Mutex::new(None),
                 hook_latest_agent_message: Mutex::new(None),
                 sleep_notice: Mutex::new(None),
+                transfer_mark: Mutex::new((None, false)),
                 recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
                 limit: Mutex::new(None),
@@ -13544,6 +13576,31 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.end_process_unlocked(id, ProcessEnding::Kill)
+    }
+
+    /// Stops a pane whose conversation left in a workspace transfer. Unlike Kill, the
+    /// pane keeps its conversation handle and ends Exited, so it can be respawned as a
+    /// fork and a return trip can resume it in place.
+    pub(crate) fn stop_for_transfer(&self, id: u32) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
+        self.resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .remove(&id);
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .remove(&id);
+        self.end_process_unlocked(id, ProcessEnding::Transfer)
+    }
+
+    fn end_process_unlocked(&self, id: u32, ending: ProcessEnding) -> Result<()> {
         self.shutdown_preserved
             .lock()
             .expect("shutdown preserved lock")
@@ -13577,11 +13634,16 @@ impl Daemon {
             .lock()
             .expect("operator_ended lock")
             .insert(id);
-        self.forget_resume_handle(id);
+        let ended = match ending {
+            ProcessEnding::Kill => {
+                self.forget_resume_handle(id);
+                proto::SessionState::Killed
+            }
+            ProcessEnding::Transfer => proto::SessionState::Exited,
+        };
         let mut state = session.state.lock().expect("state lock");
-        self.db
-            .update_session_state(id, proto::SessionState::Killed, None)?;
-        *state = proto::SessionState::Killed;
+        self.db.update_session_state(id, ended, None)?;
+        *state = ended;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.broadcast_control(&proto::ServerMsg::SessionState {
             session: id,
@@ -27287,6 +27349,8 @@ mod kill_teardown_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27344,6 +27408,7 @@ mod kill_teardown_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -27644,6 +27709,8 @@ mod shell_restore_bookkeeping_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         }
     }
 
@@ -27911,6 +27978,8 @@ mod force_respawn_guard_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27968,6 +28037,7 @@ mod force_respawn_guard_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),

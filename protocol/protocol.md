@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -31,8 +31,8 @@ and the socket closes.
 **Text frames** are JSON control messages, externally tagged by a `type` field
 in `snake_case` (`{"type":"session_resize","session":7,"cols":120,"rows":40}`).
 Unparseable text is answered with an `error` carrying the first 200 characters
-of the offending payload as `context`. Credential payloads omit their content and
-parser details from the error.
+of the offending payload as `context`. Credential and passphrase payloads omit their
+content and parser details from the error.
 
 **Binary frames** carry PTY bytes and never pass through JSON or base64. All
 multi-byte integers are big-endian.
@@ -142,6 +142,20 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
 | `workspace_list` | — | `workspace_list` (direct) |
 | `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
+
+### Workspace transfer
+
+Each request carries a client-chosen `request: u32` that every reply repeats. Progress is
+`transfer_progress` (direct); the outcome is the success reply, `transfer_refused` with a
+`TransferRefusal`, or an `error` with `context: "transfer:<request>"` for an unexpected failure.
+`passphrase: TransferPassphrase` is a string the daemon uses for one operation and never logs or
+stores.
+
+| Message | Fields | Reply |
+|---|---|---|
+| `transfer_export` | `request`, `workspace` (registered path), `destination` (absolute file path), `passphrase`, `grids` (the renderer's grid entries for the workspace; stored in the file uninterpreted) | `transfer_exported` (direct). Writes the file, records the export, stops each exported pane (state `exited`, conversation kept) and broadcasts `session_updated` with `transferred_at_ms`. Refused while a pane is working, waiting for input or starting, or when the file would exceed 200 MB |
+| `transfer_inspect` | `request`, `path`, `passphrase` | `transfer_inspected` (direct). Reads the manifest only; changes nothing |
+| `transfer_import` | `request`, `path`, `passphrase`, `workspace` (registered path), `profiles: TransferProfileChoice[]` (an answer for each `TransferProfileNeed` with `matched: false`) | `transfer_imported` (direct). Checks everything before the first change, restores code state, places conversations and resumes the panes; a return trip resumes the exported panes in place |
 
 ### Orchestration
 
@@ -554,6 +568,11 @@ every refusal names the setting.
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
+| `transfer_progress` | `request`, `stage: TransferStage` | direct, while a transfer request runs |
+| `transfer_exported` | `request`, `summary: TransferExportSummary` | direct reply to `transfer_export` |
+| `transfer_inspected` | `request`, `summary: TransferFileSummary` | direct reply to `transfer_inspect` |
+| `transfer_imported` | `request`, `result: TransferImportResult` | direct reply to `transfer_import` |
+| `transfer_refused` | `request`, `refusal: TransferRefusal` | direct; the transfer request changed nothing it reports |
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change or a reclaim |
 | `storage_reclaimed` | `before_bytes`, `after_bytes` (database plus WAL), `refusal?` | direct reply to `storage_reclaim`; `refusal` names the blocking condition (live session count, or free and required bytes) or the SQLite failure, and then both sizes are the current size |
@@ -635,7 +654,10 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    absent when its provider reports none),
                    limit?: SessionLimit (v147: runtime-only provider-reported limit; see `session_limit`),
                    task? (v124: the SessionTask this pane is bound to — the newest run recorded
-                   with its id, at a claimed or Started task — so a header chip needs no Tasks tab)
+                   with its id, at a claimed or Started task — so a header chip needs no Tasks tab),
+                   transferred_at_ms? (v150: when the pane's conversation left in a workspace
+                   transfer; its process stopped then), transfer_fork? (v150: the pane resumed a
+                   conversation after it left, so it continues a fork; absent means false)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
@@ -961,6 +983,34 @@ refuse an out-of-range value before the daemon has to. Server-side response boun
 remain daemon constants because clients do not submit them. One definition per
 bound — never a number typed twice.
 
+```
+TransferStage        snake: checking | packing | decrypting | restoring_code | placing_conversations | starting_panes
+TransferRefusalCode  snake: unknown_workspace | not_git_repository | wsl_workspace | busy_panes |
+                     nothing_to_transfer | too_large | passphrase_required | wrong_passphrase |
+                     not_transfer_file | unknown_format | other_operating_system | cli_missing |
+                     cli_too_old | dirty_checkout | missing_commits | branch_diverged |
+                     branch_checked_out | paths_exist | conversation_open | profile_choice_missing |
+                     return_tree_changed | return_forked
+TransferRefusal      code: TransferRefusalCode, problem (what is wrong), items: string[] (the exact
+                     paths or values, at most 20 plus a count), steps: string[] (what removes it)
+TransferPane         session (the pane id on the exporting computer), title, provider: AgentKind,
+                     checkout (`main checkout` or `worktree <slug>`), profile_label?
+TransferSkipped      session, title, reason
+TransferCliVersion   provider: AgentKind, version?
+TransferExportSummary transfer_id, file, bytes, panes: TransferPane[], skipped: TransferSkipped[],
+                     skipped_links: string[] (untracked symbolic links not carried)
+TransferProfileNeed  provider, label, matched (this computer has a profile with that label)
+TransferFileSummary  transfer_id, source_os, source_workspace, remote_url?, created_at_ms,
+                     panes, skipped, cli_versions: TransferCliVersion[], proposed_workspace? (the
+                     registered workspace whose git remote matches), profiles: TransferProfileNeed[],
+                     return_trip (the file continues an export of this computer)
+TransferProfileChoice provider, label, use_profile? (a local profile label; absent is the default account)
+TransferSessionMapping from (pane id in the file), to (pane id here)
+TransferImportResult transfer_id, workspace, source_workspace, sessions: TransferSessionMapping[]
+                     (new panes), updated_in_place: TransferSessionMapping[] (return trip),
+                     grids? (the file's grid entries, unchanged; absent on a return trip)
+```
+
 ## Attach sequencing
 
 Every byte a session produces has a stable stream offset, and every output frame
@@ -1090,7 +1140,8 @@ unparseable payload. Refusals follow two rules:
   refusal carries the limit, the actual value, and what was asked for, and the
   stored state is left exactly as it was — never truncated to fit. Several
   families have a typed refusal instead of `error` so a client can route it
-  without matching English prose: `routine_refused` (`kind`/`limit`/`requested`).
+  without matching English prose: `routine_refused` (`kind`/`limit`/`requested`) and
+  `transfer_refused` (`TransferRefusal`: the problem, the exact items and the steps).
   Two refusals carry a machine-readable prefix on a plain
   `error` — `live_children_confirmation_required:` and `USAGE_WINDOW_REFUSED`
   (`usage_window_refused:`); the sentence after the marker is shown verbatim.
@@ -1400,6 +1451,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **A workspace moves to another computer in an encrypted file.** New `transfer_export`, `transfer_inspect` and `transfer_import`, answered by `transfer_progress`, `transfer_exported`, `transfer_inspected`, `transfer_imported` and `transfer_refused`, with `TransferPassphrase`, `TransferStage`, `TransferRefusalCode`, `TransferRefusal`, `TransferPane`, `TransferSkipped`, `TransferCliVersion`, `TransferExportSummary`, `TransferProfileNeed`, `TransferFileSummary`, `TransferProfileChoice`, `TransferSessionMapping` and `TransferImportResult`. `SessionInfo` gains `transferred_at_ms?` and `transfer_fork?`. Existing messages are unchanged |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

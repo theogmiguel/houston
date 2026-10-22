@@ -90,6 +90,7 @@ pub mod storage;
 pub mod supervisor;
 pub mod task_trackers;
 pub mod tasks_cli;
+pub mod transfer;
 pub mod updates;
 pub mod usage;
 pub mod voice;
