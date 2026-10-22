@@ -272,6 +272,37 @@ impl Db {
         Ok(())
     }
 
+    /// Removes a transfer's rows, for an import that was undone.
+    pub fn transfer_forget(&self, id: &str, direction: TransferDirection) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let direction = direction.as_str();
+        for table in [
+            "workspace_transfer_sessions",
+            "workspace_transfer_checkouts",
+        ] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE transfer_id = ?1 AND direction = ?2"),
+                params![id, direction],
+            )?;
+        }
+        tx.execute(
+            "DELETE FROM workspace_transfers WHERE id = ?1 AND direction = ?2",
+            params![id, direction],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_session_transferred(&self, id: u32, at_ms: u64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET transferred_at_ms = ?2 WHERE id = ?1",
+            params![id, at_ms as i64],
+        )?;
+        Ok(())
+    }
+
     pub fn clear_session_transferred(&self, id: u32) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
@@ -325,5 +356,43 @@ mod tests {
         db.clear_session_transferred(7).unwrap();
         db.set_session_transfer_fork(7).unwrap();
         assert_eq!(db.session_transfer_mark(7).unwrap(), (None, true));
+        db.set_session_transferred(7, 42).unwrap();
+        assert_eq!(db.session_transfer_mark(7).unwrap(), (Some(42), true));
+    }
+
+    #[test]
+    fn an_undone_import_forgets_its_rows_and_keeps_the_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("t.db")).unwrap();
+        let record = |direction| TransferRecord {
+            id: "t1".into(),
+            direction,
+            workspace: "/w".into(),
+            created_at_ms: 42,
+            checkouts: vec![TransferCheckoutRecord {
+                key: "main".into(),
+                path: "/w".into(),
+                tree_state: None,
+                untracked: Vec::new(),
+            }],
+            sessions: vec![TransferSessionRecord {
+                local_session: 9,
+                source_session: 7,
+                conversation: "c".into(),
+                transcript_path: "/t".into(),
+                transcript_sha256: "s".into(),
+            }],
+        };
+        db.transfer_record(&record(TransferDirection::Export))
+            .unwrap();
+        db.transfer_record(&record(TransferDirection::Import))
+            .unwrap();
+        assert!(db.transfer_conversation_origin("c").unwrap().is_some());
+        db.transfer_forget("t1", TransferDirection::Import).unwrap();
+        assert!(db.transfer_conversation_origin("c").unwrap().is_none());
+        assert!(db.transfer_checkout_origin("/w", "main").unwrap().is_none());
+        let export = db.transfer_export("t1").unwrap().expect("the export stays");
+        assert_eq!(export.sessions.len(), 1);
+        assert_eq!(export.checkouts.len(), 1);
     }
 }

@@ -9,7 +9,8 @@ use std::path::{Component, Path, PathBuf};
 /// Claude Code's folder name for a working directory: every character other than an
 /// ASCII letter or digit becomes `-`.
 pub fn claude_project_folder(cwd: &Path) -> String {
-    cwd.to_string_lossy()
+    super::paths::plain(cwd)
+        .to_string_lossy()
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()
@@ -113,26 +114,51 @@ pub fn join(root: &Path, relative: &str) -> PathBuf {
         .fold(root.to_path_buf(), |p, c| p.join(c))
 }
 
-/// Copies `relatives` from `from` to `to`, replacing what is there.
-pub fn copy_files(from: &Path, to: &Path, relatives: &[String]) -> Result<()> {
-    for relative in relatives {
-        let dest = join(to, relative);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
-        }
-        let staged = dest.with_extension("houston-transfer-part");
-        std::fs::copy(join(from, relative), &staged)
-            .with_context(|| format!("writing {}", staged.display()))?;
-        std::fs::rename(&staged, &dest)
-            .with_context(|| format!("moving {} into place", dest.display()))?;
+/// Copies `relative` from `from` to `to`, replacing what is there, and returns where.
+pub fn copy_file(from: &Path, to: &Path, relative: &str) -> Result<PathBuf> {
+    let dest = super::paths::inside(to, relative)?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
     }
-    Ok(())
+    let staged = dest.with_extension("houston-transfer-part");
+    std::fs::copy(join(from, relative), &staged)
+        .with_context(|| format!("writing {}", staged.display()))?;
+    std::fs::rename(&staged, &dest)
+        .with_context(|| format!("moving {} into place", dest.display()))?;
+    Ok(dest)
+}
+
+/// The paths among `relatives` under `to` that exist with other bytes than the carried
+/// copy under `from`: writing there would replace another version of the conversation.
+pub fn differing(from: &Path, to: &Path, relatives: &[String]) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for relative in relatives {
+        let dest = super::paths::inside(to, relative)?;
+        match std::fs::read(&dest) {
+            Ok(bytes) => {
+                if bytes != std::fs::read(join(from, relative))? {
+                    out.push(dest);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("reading {}", dest.display())),
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_folder_names_ignore_the_verbatim_prefix() {
+        assert_eq!(
+            claude_project_folder(Path::new(r"\\?\C:\dev\houston")),
+            "C--dev-houston"
+        );
+    }
 
     #[test]
     fn claude_folder_names_replace_every_separator() {

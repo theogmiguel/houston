@@ -344,11 +344,21 @@ impl Computer {
         file: &Path,
         grids: &str,
     ) -> Result<proto::TransferExportSummary, proto::TransferRefusal> {
+        self.export_to(file, grids, false).await
+    }
+
+    async fn export_to(
+        &mut self,
+        file: &Path,
+        grids: &str,
+        overwrite: bool,
+    ) -> Result<proto::TransferExportSummary, proto::TransferRefusal> {
         let request = self.request();
         self.send(proto::ClientMsg::TransferExport {
             request,
             workspace: self.workspace.display().to_string(),
             destination: file.display().to_string(),
+            overwrite,
             passphrase: proto::TransferPassphrase::new(PASSPHRASE),
             grids: grids.to_string(),
         })
@@ -778,40 +788,50 @@ async fn refusals_name_what_is_wrong_and_the_steps_that_remove_it() {
     )
     .await;
 
-    // A commit the other computer lacks: pushed after B cloned, then built on locally.
-    write(
-        &a.workspace.join("pushed.txt"),
-        "pushed
-",
+    // Staged content that differs from the working copy would be lost.
+    write(&a.workspace.join("README.md"), "staged on A\n");
+    git(&a.workspace, &["add", "README.md"]);
+    write(&a.workspace.join("README.md"), "staged on A, then edited\n");
+    let refusal = a.export(&file, "{}").await.unwrap_err();
+    assert_eq!(refusal.code, Code::PartiallyStaged);
+    assert_eq!(
+        refusal.items,
+        vec![format!("README.md (in {})", a.workspace.display())]
     );
+    assert!(
+        a.info(busy.id).state.is_live(),
+        "a refused export stops nothing"
+    );
+    git(&a.workspace, &["reset", "-q", "--hard"]);
+
+    // A commit the other computer lacks: pushed after B cloned, then built on locally.
+    write(&a.workspace.join("pushed.txt"), "pushed\n");
     git(&a.workspace, &["add", "."]);
     git(&a.workspace, &["commit", "-q", "-m", "pushed later"]);
     git(&a.workspace, &["push", "-q", "origin", "HEAD:main"]);
     let pushed = git(&a.workspace, &["rev-parse", "HEAD"]);
-    write(
-        &a.workspace.join("local.txt"),
-        "local
-",
-    );
+    write(&a.workspace.join("local.txt"), "local\n");
     git(&a.workspace, &["add", "."]);
     git(&a.workspace, &["commit", "-q", "-m", "local"]);
-    write(
-        &a.workspace.join("build.log"),
-        "A's log
-",
-    );
+    write(&a.workspace.join("build.log"), "A's log\n");
     a.export(&file, "{}").await.expect("export");
-    // B ignores a build.log of its own where the transfer carries an untracked one.
+    let exported = std::fs::read(&file).unwrap();
+    let refusal = a.export(&file, "{}").await.unwrap_err();
+    assert_eq!(refusal.code, Code::DestinationExists);
+    assert_eq!(refusal.items, vec![file.display().to_string()]);
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        exported,
+        "the existing file stays"
+    );
+    // B ignores a build.log of its own where the transfer carries an untracked one, and
+    // a local.txt of its own where the transfer's commits add one.
     write(
         &b.workspace.join(".git/info/exclude"),
-        "build.log
-",
+        "build.log\nlocal.txt\n",
     );
-    write(
-        &b.workspace.join("build.log"),
-        "B's log
-",
-    );
+    write(&b.workspace.join("build.log"), "B's log\n");
+    write(&b.workspace.join("local.txt"), "B's own settings\n");
 
     let refusal = b.inspect(&file, "not the passphrase").await.unwrap_err();
     assert_eq!(refusal.code, Code::WrongPassphrase);
@@ -836,11 +856,7 @@ async fn refusals_name_what_is_wrong_and_the_steps_that_remove_it() {
     );
     git(&b.workspace, &["fetch", "-q", "origin"]);
 
-    write(
-        &b.workspace.join("README.md"),
-        "dirty on B
-",
-    );
+    write(&b.workspace.join("README.md"), "dirty on B\n");
     let refusal = b.import(&file).await.unwrap_err();
     assert_eq!(refusal.code, Code::DirtyCheckout);
     assert_eq!(refusal.items, vec!["README.md".to_string()]);
@@ -862,13 +878,20 @@ async fn refusals_name_what_is_wrong_and_the_steps_that_remove_it() {
 
     let refusal = b.import(&file).await.unwrap_err();
     assert_eq!(refusal.code, Code::PathsExist);
-    assert_eq!(refusal.items, vec!["build.log".to_string()]);
+    assert_eq!(
+        refusal.items,
+        vec!["build.log".to_string(), "local.txt".to_string()]
+    );
     assert_eq!(
         std::fs::read_to_string(b.workspace.join("build.log")).unwrap(),
-        "B's log
-"
+        "B's log\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(b.workspace.join("local.txt")).unwrap(),
+        "B's own settings\n"
     );
     std::fs::remove_file(b.workspace.join("build.log")).unwrap();
+    std::fs::remove_file(b.workspace.join("local.txt")).unwrap();
 
     let imported = b.import(&file).await.expect("import after every fix");
     assert_eq!(imported.sessions.len(), 1);
@@ -878,8 +901,7 @@ async fn refusals_name_what_is_wrong_and_the_steps_that_remove_it() {
     );
     assert_eq!(
         std::fs::read_to_string(b.workspace.join("build.log")).unwrap(),
-        "A's log
-"
+        "A's log\n"
     );
     let refusal = b.import(&file).await.unwrap_err();
     assert_eq!(refusal.code, Code::ConversationOpen, "{refusal:?}");
@@ -939,4 +961,87 @@ async fn a_changed_tree_on_the_exporting_computer_blocks_the_return_trip() {
         refusal.steps[1].contains("another workspace"),
         "{refusal:?}"
     );
+}
+
+/// B as it was before an import: on main at `head`, clean, without the file's branches,
+/// worktree, panes or record.
+fn assert_untouched(b: &Computer, head: &str) {
+    assert_eq!(git(&b.workspace, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&b.workspace, &["branch", "--show-current"]), "main");
+    assert_eq!(
+        git(
+            &b.workspace,
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        ""
+    );
+    assert_eq!(
+        git(&b.workspace, &["branch", "--list", "feature", "houston/wt"]),
+        ""
+    );
+    assert!(!b.workspace.join(".houston/worktrees/wt").exists());
+    assert!(b.daemon.list().is_empty(), "{:?}", b.daemon.list());
+}
+
+#[tokio::test]
+async fn an_import_that_fails_partway_is_undone() {
+    let _serial = SERIAL.lock().await;
+    let world = tempfile::tempdir().unwrap();
+    let origin = origin(world.path());
+    let mut a = Computer::new(&origin, "2.1.307", "0.142.3").await;
+    let mut b = Computer::new(&origin, "2.1.307", "0.142.3").await;
+    let tree = work_on_a(&a);
+    a.claude_pane(&a.workspace).await;
+    let (_, codex_id, _) = a.codex_pane(&tree).await;
+    let file = world.path().join("t.houston-transfer");
+    a.export(&file, "{}").await.expect("export");
+    let head = git(&b.workspace, &["rev-parse", "HEAD"]);
+
+    // Another version of the Codex conversation, found once the code is restored.
+    let rollout = b.codex.join(format!(
+        "sessions/2026/10/21/rollout-2026-10-21T00-00-00-{codex_id}.jsonl"
+    ));
+    write(&rollout, "{\"turn\":\"another version on B\"}\n");
+    let refusal = b.import(&file).await.unwrap_err();
+    assert_eq!(refusal.code, Code::PathsExist, "{refusal:?}");
+    assert!(
+        refusal.items[0].contains(&codex_id)
+            && refusal.items[0].contains("no pane on this computer holds it"),
+        "{refusal:?}"
+    );
+    assert!(
+        refusal
+            .items
+            .contains(&"Houston undid the changes this import had made.".to_string()),
+        "{refusal:?}"
+    );
+    assert_untouched(&b, &head);
+    assert_eq!(
+        std::fs::read_to_string(&rollout).unwrap(),
+        "{\"turn\":\"another version on B\"}\n"
+    );
+    std::fs::remove_file(&rollout).unwrap();
+
+    // A worktree folder the import cannot write to stops it after the main checkout moved.
+    use std::os::unix::fs::PermissionsExt;
+    let worktrees = b.workspace.join(".houston/worktrees");
+    write(&worktrees.join(".gitignore"), "*\n");
+    std::fs::set_permissions(&worktrees, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let refused = b.import(&file).await;
+    std::fs::set_permissions(&worktrees, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let refusal = refused.unwrap_err();
+    assert_eq!(refusal.code, Code::ImportUndone, "{refusal:?}");
+    assert!(
+        refusal
+            .problem
+            .starts_with("Import stopped and was undone:"),
+        "{refusal:?}"
+    );
+    assert_untouched(&b, &head);
+
+    let imported = b
+        .import(&file)
+        .await
+        .expect("import once the causes are gone");
+    assert_eq!(imported.sessions.len(), 2, "{imported:?}");
 }

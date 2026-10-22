@@ -381,10 +381,16 @@ pub fn untracked_collisions(
         .collect())
 }
 
-/// Copies untracked files from `source` into `dir`, never over an existing file.
-pub fn write_untracked(dir: &Path, source: &Path, relatives: &[String]) -> Result<()> {
+/// Copies untracked files from `source` into `dir`, never over an existing file. Each
+/// file is added to `written` before it is created, so a failure still lists it.
+pub fn write_untracked(
+    dir: &Path,
+    source: &Path,
+    relatives: &[String],
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
     for relative in relatives {
-        let dest = path_of(dir, relative);
+        let dest = super::paths::inside(dir, relative)?;
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating {}", parent.display()))?;
@@ -396,9 +402,192 @@ pub fn write_untracked(dir: &Path, source: &Path, relatives: &[String]) -> Resul
             .create_new(true)
             .open(&dest)
             .with_context(|| format!("creating {}", dest.display()))?;
+        written.push(dest.clone());
         std::io::copy(&mut from, &mut to).with_context(|| format!("writing {}", dest.display()))?;
     }
     Ok(())
+}
+
+/// A return trip's local changes, set aside so an undone import can put them back.
+pub struct SavedChanges {
+    diff: Option<PathBuf>,
+    files: PathBuf,
+    untracked: Vec<String>,
+}
+
+pub fn save_changes(dir: &Path, into: &Path, untracked: &[String]) -> Result<SavedChanges> {
+    std::fs::create_dir_all(into).with_context(|| format!("creating {}", into.display()))?;
+    let diff = into.join("tracked.diff");
+    git(
+        dir,
+        &[
+            "diff",
+            "--binary",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            &format!("--output={}", diff.display()),
+            "HEAD",
+        ],
+    )?;
+    let files = into.join("untracked");
+    let mut kept = Vec::new();
+    for relative in untracked {
+        let from = path_of(dir, relative);
+        if from.is_file() {
+            let to = path_of(&files, relative);
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&from, &to).with_context(|| format!("saving {}", from.display()))?;
+            kept.push(relative.clone());
+        }
+    }
+    Ok(SavedChanges {
+        diff: (std::fs::metadata(&diff)?.len() > 0).then_some(diff),
+        files,
+        untracked: kept,
+    })
+}
+
+pub fn put_back(dir: &Path, saved: &SavedChanges) -> Result<()> {
+    if let Some(diff) = &saved.diff {
+        apply_diff(dir, diff)?;
+    }
+    for relative in &saved.untracked {
+        let to = path_of(dir, relative);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(path_of(&saved.files, relative), &to)
+            .with_context(|| format!("restoring {}", to.display()))?;
+    }
+    Ok(())
+}
+
+/// Whether `diff` applies to the tree of commit `head`, checked in a scratch index so
+/// neither the working tree nor the checkout's index changes. `None` when it applies.
+pub fn diff_apply_error(dir: &Path, head: &str, diff: &Path) -> Result<Option<String>> {
+    let scratch = tempfile::tempdir().context("creating a scratch index folder")?;
+    let index = scratch.path().join("index");
+    let run = |args: &[&str]| -> Result<GitOutput> {
+        let mut command = crate::git::command();
+        command
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_INDEX_FILE", &index)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let out = crate::spawn::output_within(command, GIT_TIMEOUT)?
+            .with_context(|| format!("git {args:?} did not finish"))?;
+        Ok(GitOutput {
+            code: out.status.code(),
+            stdout: out.stdout,
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        })
+    };
+    let read = run(&["read-tree", head])?;
+    if read.code != Some(0) {
+        bail!(
+            "git read-tree {head} in {} failed: {}",
+            dir.display(),
+            read.stderr
+        );
+    }
+    let check = run(&[
+        "apply",
+        "--check",
+        "--cached",
+        "--binary",
+        &diff.display().to_string(),
+    ])?;
+    Ok((check.code != Some(0)).then_some(check.stderr))
+}
+
+/// Paths commits between `from` and `to` add, `/`-separated.
+pub fn added_between(dir: &Path, from: &str, to: &str) -> Result<Vec<String>> {
+    Ok(nul_list(&git(
+        dir,
+        &[
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "--diff-filter=A",
+            "-z",
+            from,
+            to,
+        ],
+    )?))
+}
+
+/// Paths a diff made by `capture` creates.
+pub fn created_by_diff(dir: &Path, diff: &Path) -> Result<Vec<String>> {
+    let summary = git_text(dir, &["apply", "--summary", &diff.display().to_string()])?;
+    Ok(summary
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("create mode "))
+        .filter_map(|rest| rest.split_once(' ').map(|(_, path)| path.to_string()))
+        .collect())
+}
+
+/// Files whose staged content differs from the working copy. A transfer carries the
+/// working copy only, so the staged version would be lost.
+pub fn partially_staged(dir: &Path) -> Result<Vec<String>> {
+    let staged: std::collections::HashSet<String> = nul_list(&git(
+        dir,
+        &["diff", "--cached", "--name-only", "--no-renames", "-z"],
+    )?)
+    .into_iter()
+    .collect();
+    Ok(
+        nul_list(&git(dir, &["diff", "--name-only", "--no-renames", "-z"])?)
+            .into_iter()
+            .filter(|path| staged.contains(path))
+            .collect(),
+    )
+}
+
+/// Where a checkout stood before import changed it: its branch (or detached) and HEAD.
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub branch: Option<String>,
+    pub head: String,
+}
+
+pub fn position(dir: &Path) -> Result<Position> {
+    Ok(Position {
+        branch: branch(dir)?,
+        head: head(dir)?,
+    })
+}
+
+/// Puts a checkout back where `position` recorded it, discarding tracked changes import
+/// made. Untracked files import wrote are the caller's to remove.
+pub fn restore_position(dir: &Path, position: &Position) -> Result<()> {
+    git(dir, &["reset", "--quiet", "--hard"])?;
+    match &position.branch {
+        Some(name) => {
+            git(dir, &["checkout", "--quiet", "-f", name])?;
+        }
+        None => {
+            git(
+                dir,
+                &["checkout", "--quiet", "-f", "--detach", &position.head],
+            )?;
+        }
+    }
+    git(dir, &["reset", "--quiet", "--hard", &position.head]).map(drop)
+}
+
+/// Points `branch` back at `tip`, or deletes it when import created it.
+pub fn restore_branch(dir: &Path, branch: &str, tip: Option<&str>) -> Result<()> {
+    let reference = format!("refs/heads/{branch}");
+    match tip {
+        Some(tip) => git(dir, &["update-ref", &reference, tip]).map(drop),
+        None => git(dir, &["update-ref", "-d", &reference]).map(drop),
+    }
 }
 
 /// Return trip: discards the exported tracked changes and removes exactly the untracked
@@ -521,7 +710,13 @@ mod tests {
         assert!(branch_fast_forwards(clone.path(), "feature", &captured.head).unwrap());
         move_to(clone.path(), Some("feature"), &captured.head).unwrap();
         apply_diff(clone.path(), captured.diff.as_deref().unwrap()).unwrap();
-        write_untracked(clone.path(), source.path(), &captured.untracked).unwrap();
+        write_untracked(
+            clone.path(),
+            source.path(),
+            &captured.untracked,
+            &mut Vec::new(),
+        )
+        .unwrap();
 
         assert_eq!(tree_state(clone.path()).unwrap(), captured.state);
         assert_eq!(branch(clone.path()).unwrap().as_deref(), Some("feature"));
@@ -577,5 +772,126 @@ mod tests {
         );
         assert!(!dir.path().join("exported.txt").exists());
         assert!(dir.path().join("mine.txt").exists());
+    }
+
+    #[test]
+    fn partially_staged_files_are_named() {
+        let dir = repo();
+        std::fs::write(dir.path().join("a.txt"), "staged\n").unwrap();
+        run(dir.path(), &["add", "a.txt"]);
+        assert!(
+            partially_staged(dir.path()).unwrap().is_empty(),
+            "fully staged is fine"
+        );
+        std::fs::write(dir.path().join("a.txt"), "staged then edited\n").unwrap();
+        assert_eq!(
+            partially_staged(dir.path()).unwrap(),
+            vec!["a.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn paths_added_by_commits_and_by_the_diff_are_listed() {
+        let dir = repo();
+        let base = head(dir.path()).unwrap();
+        std::fs::write(dir.path().join("new.txt"), "x\n").unwrap();
+        run(dir.path(), &["add", "."]);
+        run(dir.path(), &["commit", "-qm", "add new"]);
+        let tip = head(dir.path()).unwrap();
+        assert_eq!(
+            added_between(dir.path(), &base, &tip).unwrap(),
+            vec!["new.txt".to_string()]
+        );
+        std::fs::write(dir.path().join("fresh file.txt"), "y\n").unwrap();
+        run(dir.path(), &["add", "-N", "fresh file.txt"]);
+        let scratch = tempfile::tempdir().unwrap();
+        let captured = capture(dir.path(), scratch.path()).unwrap();
+        let diff = captured.diff.expect("an intent-to-add file is in the diff");
+        assert_eq!(
+            created_by_diff(dir.path(), &diff).unwrap(),
+            vec!["fresh file.txt".to_string()]
+        );
+        assert_eq!(diff_apply_error(dir.path(), &tip, &diff).unwrap(), None);
+        std::fs::write(dir.path().join("a.txt"), "changed\n").unwrap();
+        let scratch2 = tempfile::tempdir().unwrap();
+        let conflicting = capture(dir.path(), scratch2.path()).unwrap().diff.unwrap();
+        run(dir.path(), &["commit", "-qam", "change a"]);
+        std::fs::write(dir.path().join("a.txt"), "elsewhere\n").unwrap();
+        run(dir.path(), &["commit", "-qam", "change a again"]);
+        let moved = head(dir.path()).unwrap();
+        assert!(diff_apply_error(dir.path(), &moved, &conflicting)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn a_position_is_restored_with_its_branch() {
+        let dir = repo();
+        let before = position(dir.path()).unwrap();
+        run(dir.path(), &["checkout", "-q", "-b", "other"]);
+        std::fs::write(dir.path().join("a.txt"), "other\n").unwrap();
+        run(dir.path(), &["commit", "-qam", "other"]);
+        restore_position(dir.path(), &before).unwrap();
+        assert_eq!(branch(dir.path()).unwrap().as_deref(), Some("main"));
+        assert_eq!(head(dir.path()).unwrap(), before.head);
+        restore_branch(dir.path(), "other", None).unwrap();
+        assert_eq!(branch_tip(dir.path(), "other").unwrap(), None);
+    }
+
+    /// The default on Windows: checked-out files carry CRLF, and the diff and its
+    /// application must agree byte for byte with what the exporting checkout held.
+    #[cfg(windows)]
+    #[test]
+    fn a_crlf_working_tree_round_trips_with_autocrlf() {
+        let origin = crate::fixture_dirs::tempdir_outside_git();
+        run(origin.path(), &["init", "-q", "-b", "main"]);
+        run(origin.path(), &["config", "core.autocrlf", "true"]);
+        std::fs::write(origin.path().join("a.txt"), "one\ntwo\n").unwrap();
+        run(origin.path(), &["add", "."]);
+        run(origin.path(), &["commit", "-qm", "one"]);
+        let clone = || {
+            let dir = crate::fixture_dirs::tempdir_outside_git();
+            run(
+                dir.path(),
+                &[
+                    "clone",
+                    "-q",
+                    "-c",
+                    "core.autocrlf=true",
+                    &origin.path().display().to_string(),
+                    ".",
+                ],
+            );
+            dir
+        };
+        let source = clone();
+        let target = clone();
+        // An edit as a Windows editor saves it in this checkout: CRLF throughout.
+        std::fs::write(
+            source.path().join("a.txt"),
+            "one\r\ntwo edited\r\nthree\r\n",
+        )
+        .unwrap();
+        std::fs::write(source.path().join("b.txt"), "untracked\r\n").unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let captured = capture(source.path(), scratch.path()).unwrap();
+        let diff = captured.diff.as_deref().unwrap();
+        assert_eq!(
+            diff_apply_error(target.path(), &captured.head, diff).unwrap(),
+            None
+        );
+        apply_diff(target.path(), diff).unwrap();
+        write_untracked(
+            target.path(),
+            source.path(),
+            &captured.untracked,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(target.path().join("a.txt")).unwrap(),
+            std::fs::read(source.path().join("a.txt")).unwrap()
+        );
+        assert_eq!(tree_state(target.path()).unwrap(), captured.state);
     }
 }

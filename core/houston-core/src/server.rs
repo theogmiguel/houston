@@ -4444,12 +4444,20 @@ async fn dispatch(
             request,
             workspace,
             destination,
+            overwrite,
             passphrase,
             grids,
         } => {
             transfer_reply(daemon, sink, request, move |daemon, progress| {
                 daemon
-                    .transfer_export(&workspace, &destination, &passphrase, grids, progress)
+                    .transfer_export(
+                        &workspace,
+                        &destination,
+                        overwrite,
+                        &passphrase,
+                        grids,
+                        progress,
+                    )
                     .map(|summary| proto::ServerMsg::TransferExported { request, summary })
             })
             .await

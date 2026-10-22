@@ -2847,6 +2847,8 @@ pub enum TransferRefusalCode {
     NothingToTransfer,
     TooLarge,
     DestinationExists,
+    PartiallyStaged,
+    TransferRunning,
     PassphraseRequired,
     WrongPassphrase,
     NotTransferFile,
@@ -2858,11 +2860,13 @@ pub enum TransferRefusalCode {
     MissingCommits,
     BranchDiverged,
     BranchCheckedOut,
+    ChangesDoNotApply,
     PathsExist,
     ConversationOpen,
     ProfileChoiceMissing,
     ReturnTreeChanged,
     ReturnForked,
+    ImportUndone,
 }
 
 /// A refusal states what is wrong (`problem`), the exact paths or values involved
@@ -5401,6 +5405,10 @@ pub enum ClientMsg {
         request: u32,
         workspace: String,
         destination: String,
+        /// The save dialog confirmed replacing `destination`; otherwise an existing file
+        /// there is refused.
+        #[serde(default)]
+        overwrite: bool,
         passphrase: TransferPassphrase,
         grids: String,
     },

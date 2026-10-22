@@ -6711,7 +6711,7 @@ impl Db {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -6926,7 +6926,7 @@ mod tests {
         );
     }
 
-    pub(super) fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
+    pub(crate) fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
             title_source: Default::default(),
             checkout: None,

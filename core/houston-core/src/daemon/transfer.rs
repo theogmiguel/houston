@@ -31,11 +31,7 @@ struct Candidate {
 
 /// A path as the user knows it: Windows' verbatim prefix removed.
 fn display_path(path: &Path) -> String {
-    let text = path.display().to_string();
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) if !rest.starts_with("UNC\\") => rest.to_string(),
-        _ => text,
-    }
+    crate::transfer::paths::plain(path).display().to_string()
 }
 
 /// A Windows path into a WSL distro's file system.
@@ -48,7 +44,121 @@ fn is_wsl_path(path: &str) -> bool {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    crate::transfer::paths::canonical(path)
+}
+
+/// One transfer at a time per workspace, keyed by state directory too so that daemons
+/// sharing a process do not see each other's.
+static RUNNING: std::sync::LazyLock<std::sync::Mutex<HashSet<(PathBuf, PathBuf)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+struct RunningTransfer((PathBuf, PathBuf));
+
+impl Drop for RunningTransfer {
+    fn drop(&mut self) {
+        RUNNING
+            .lock()
+            .expect("running transfers lock")
+            .remove(&self.0);
+    }
+}
+
+fn begin_transfer(state_dir: &Path, root: &Path, name: &str) -> Result<RunningTransfer> {
+    let key = (state_dir.to_path_buf(), root.to_path_buf());
+    if !RUNNING
+        .lock()
+        .expect("running transfers lock")
+        .insert(key.clone())
+    {
+        return Err(refuse(
+            Code::TransferRunning,
+            format!("A transfer is already running for {name}."),
+            vec![display_path(root)],
+            vec!["Wait for it to finish, then try again.".into()],
+        ));
+    }
+    Ok(RunningTransfer(key))
+}
+
+/// A scratch folder for one transfer. It holds unencrypted code and conversations, so
+/// only its owner may read it; a crash leaves it for `sweep_transfer_scratch`.
+fn scratch_dir(state_dir: &Path, purpose: &str) -> Result<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(SCRATCH_PREFIX);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder
+        .tempdir_in(state_dir)
+        .with_context(|| format!("creating a scratch folder for the {purpose}"))
+}
+
+const SCRATCH_PREFIX: &str = "transfer-";
+
+fn sweep_scratch(state_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(state_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with(SCRATCH_PREFIX) && entry.file_type().is_ok_and(|t| t.is_dir()) {
+            if let Err(e) = std::fs::remove_dir_all(entry.path()) {
+                tracing::warn!(
+                    "removing stale transfer scratch {}: {e}",
+                    entry.path().display()
+                );
+            }
+        }
+    }
+}
+
+/// What makes a live pane too busy to stop for an export.
+fn busy_word(info: &proto::SessionInfo) -> Option<&'static str> {
+    if !info.state.is_live() {
+        return None;
+    }
+    match info.status {
+        Some(proto::AgentStatus::Working) => Some("working"),
+        Some(proto::AgentStatus::NeedsInput) => Some("waiting for input"),
+        Some(proto::AgentStatus::Spawning) => Some("starting"),
+        Some(proto::AgentStatus::Idle) => None,
+        None | Some(proto::AgentStatus::Unavailable) => {
+            (info.agent != proto::AgentKind::Shell).then_some("status unknown")
+        }
+    }
+}
+
+/// A turn that began before its pane was stopped: the status the pane last reported.
+fn interrupted_word(info: &proto::SessionInfo) -> Option<&'static str> {
+    match info.status {
+        Some(proto::AgentStatus::Working) => Some("working"),
+        Some(proto::AgentStatus::NeedsInput) => Some("waiting for input"),
+        Some(proto::AgentStatus::Spawning) => Some("starting"),
+        _ => None,
+    }
+}
+
+/// Adds to a failed export that its panes were stopped and stay unmarked.
+fn with_stopped(error: anyhow::Error, stopped: &[String]) -> anyhow::Error {
+    if stopped.is_empty() {
+        return error;
+    }
+    let note = format!(
+        "Stopped for this export and not marked as transferred: {}",
+        stopped.join(", ")
+    );
+    let step = "Restart those panes to continue on this computer.".to_string();
+    match crate::transfer::refusal(&error) {
+        Some(refusal) => {
+            let mut refusal = refusal.clone();
+            refusal.items.push(note);
+            refusal.steps.push(step);
+            anyhow::Error::new(crate::transfer::Refused(refusal))
+        }
+        None => error.context(format!("{note}. {step}")),
+    }
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -131,6 +241,77 @@ struct CheckoutPlan<'a> {
 enum PanePlan {
     New,
     InPlace(TransferSessionRecord),
+}
+
+/// What an import changed, in order. Each step is logged before its change is made, so
+/// a failure halfway through a step still undoes it.
+#[derive(Default)]
+struct ImportUndo {
+    steps: Vec<UndoStep>,
+}
+
+enum UndoStep {
+    /// A checkout left `position`; a return trip also set its local changes aside.
+    Moved {
+        dir: PathBuf,
+        position: checkout::Position,
+        saved: Option<checkout::SavedChanges>,
+    },
+    /// The branch pointed at `tip`, or did not exist.
+    Branch {
+        repo: PathBuf,
+        branch: String,
+        tip: Option<String>,
+    },
+    Worktree {
+        repo: PathBuf,
+        path: PathBuf,
+    },
+    Created(PathBuf),
+    Replaced {
+        path: PathBuf,
+        backup: PathBuf,
+    },
+    Recorded(String),
+    /// A pane whose transfer mark was cleared.
+    Unmarked {
+        session: u32,
+        at_ms: u64,
+    },
+    /// A return trip's pane, resumed in place.
+    Resumed {
+        session: u32,
+        at_ms: u64,
+    },
+    Spawned(u32),
+}
+
+/// The refusal for a failed import whose changes `undo_import` reversed.
+fn undone(error: anyhow::Error, changed: bool, failures: Vec<String>) -> anyhow::Error {
+    let mut refusal = match crate::transfer::refusal(&error) {
+        Some(refusal) => refusal.clone(),
+        None => proto::TransferRefusal {
+            code: Code::ImportUndone,
+            problem: format!("Import stopped and was undone: {error:#}"),
+            items: Vec::new(),
+            steps: vec!["Remove the cause named above, then import again.".into()],
+        },
+    };
+    if failures.is_empty() {
+        if changed && refusal.code != Code::ImportUndone {
+            refusal
+                .items
+                .push("Houston undid the changes this import had made.".into());
+        }
+    } else {
+        refusal
+            .items
+            .extend(failures.into_iter().map(|f| format!("not undone: {f}")));
+        refusal
+            .steps
+            .push("Put the listed items back by hand before importing again.".into());
+    }
+    anyhow::Error::new(crate::transfer::Refused(refusal))
 }
 
 impl Daemon {
@@ -327,10 +508,12 @@ impl Daemon {
         crate::cli_probe::probe_in(&self.env(), binary).version
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn transfer_export(
         self: &Arc<Self>,
         workspace: &str,
         destination: &str,
+        overwrite: bool,
         passphrase: &proto::TransferPassphrase,
         grids: String,
         progress: Progress,
@@ -343,7 +526,19 @@ impl Daemon {
                 destination.display()
             );
         }
+        if destination.exists() && !overwrite {
+            return Err(refuse(
+                Code::DestinationExists,
+                format!(
+                    "A file already exists at {}, and replacing it was not confirmed.",
+                    display_path(&destination)
+                ),
+                vec![display_path(&destination)],
+                vec!["Export again and choose another name, or pick that file in the save dialog and confirm replacing it.".into()],
+            ));
+        }
         let (workspace, root) = self.transfer_workspace(workspace)?;
+        let _running = begin_transfer(self.state_dir(), &root, &workspace.name)?;
         progress(proto::TransferStage::Checking);
         let outside = self.outside_worktrees(&root);
         let panes: Vec<proto::SessionInfo> = self
@@ -353,30 +548,10 @@ impl Daemon {
             .collect();
         let busy: Vec<String> = panes
             .iter()
-            .filter(|info| info.state.is_live())
-            .filter_map(|info| {
-                let word = match info.status? {
-                    proto::AgentStatus::Working => "working",
-                    proto::AgentStatus::NeedsInput => "waiting for input",
-                    proto::AgentStatus::Spawning => "starting",
-                    _ => return None,
-                };
-                Some(format!("{}: {word}", pane_label(info)))
-            })
+            .filter_map(|info| busy_word(info).map(|word| format!("{}: {word}", pane_label(info))))
             .collect();
         if !busy.is_empty() {
-            return Err(refuse(
-                Code::BusyPanes,
-                format!(
-                    "{} in {} still busy, and a transfer stops every exported pane.",
-                    count(busy.len(), "pane", "panes"),
-                    workspace.name
-                ),
-                busy,
-                vec![
-                    "Let each listed pane finish its turn, or answer it, then export again.".into(),
-                ],
-            ));
+            return Err(Self::busy_refusal(&workspace.name, busy));
         }
         let mut candidates = Vec::new();
         let mut skipped = Vec::new();
@@ -391,28 +566,159 @@ impl Daemon {
             }
         }
         if candidates.is_empty() {
+            return Err(Self::nothing_refusal(&workspace.name, &skipped));
+        }
+        let mut partial = Vec::new();
+        let mut roots: Vec<&PathBuf> = Vec::new();
+        for c in &candidates {
+            if !roots.contains(&&c.checkout_root) {
+                roots.push(&c.checkout_root);
+            }
+        }
+        for tree in roots {
+            for path in checkout::partially_staged(tree)? {
+                partial.push(format!("{path} (in {})", display_path(tree)));
+            }
+        }
+        if !partial.is_empty() {
             return Err(refuse(
-                Code::NothingToTransfer,
-                format!(
-                    "{} has no Claude or Codex pane with a recorded conversation to transfer.",
-                    workspace.name
-                ),
-                skipped
-                    .iter()
-                    .map(|s| format!("{} (pane {}): {}", s.title, s.session, s.reason))
-                    .collect(),
-                vec!["Start or resume a Claude or Codex pane in this workspace, let it finish a turn, then export again.".into()],
+                Code::PartiallyStaged,
+                "Some files have staged changes that differ from the working copy, and a transfer carries only the working copy.",
+                partial,
+                vec!["Stage or unstage these files completely, then export again.".into()],
+            ));
+        }
+
+        // Stop before capturing, so no turn can change the code or conversation while it
+        // is read. A pane that does not stop stays out of the file.
+        let mut stopped = Vec::new();
+        let mut kept = Vec::new();
+        for c in candidates {
+            if !c.info.state.is_live() {
+                kept.push(c);
+                continue;
+            }
+            match self.stop_for_transfer(c.info.id) {
+                Ok(()) => {
+                    stopped.push(pane_label(&c.info));
+                    kept.push(c);
+                }
+                Err(e) => skipped.push(proto::TransferSkipped {
+                    session: c.info.id,
+                    title: c.info.title.clone(),
+                    reason: format!("not transferred: it could not be stopped ({e:#})"),
+                }),
+            }
+        }
+        let candidates = kept;
+        let after = self.list();
+        let interrupted: Vec<String> = candidates
+            .iter()
+            .filter_map(|c| {
+                let info = after.iter().find(|info| info.id == c.info.id)?;
+                interrupted_word(info).map(|word| format!("{}: {word}", pane_label(info)))
+            })
+            .collect();
+        if !interrupted.is_empty() {
+            return Err(with_stopped(
+                Self::busy_refusal(&workspace.name, interrupted),
+                &stopped,
+            ));
+        }
+        if candidates.is_empty() {
+            return Err(with_stopped(
+                Self::nothing_refusal(&workspace.name, &skipped),
+                &stopped,
             ));
         }
 
         progress(proto::TransferStage::Packing);
-        let transfer_id = uuid::Uuid::new_v4().to_string();
-        let scratch = tempfile::Builder::new()
-            .prefix("transfer-")
-            .tempdir_in(self.state_dir())
-            .context("creating a scratch folder for the export")?;
-        let mut checkout_order: Vec<(String, PathBuf, Option<String>)> = Vec::new();
+        let packed = self.pack_export(
+            &workspace,
+            &root,
+            &candidates,
+            &skipped,
+            &destination,
+            passphrase,
+            grids,
+        );
+        let (manifest, written, checkout_records, session_records) = match packed {
+            Ok(packed) => packed,
+            Err(error) => return Err(with_stopped(error, &stopped)),
+        };
+        self.db.transfer_record(&TransferRecord {
+            id: manifest.transfer_id.clone(),
+            direction: TransferDirection::Export,
+            workspace: display_path(&root),
+            created_at_ms: manifest.created_at_ms,
+            checkouts: checkout_records,
+            sessions: session_records,
+        })?;
         for c in &candidates {
+            self.set_transfer_mark(c.info.id, Some(manifest.created_at_ms), None);
+        }
+        tracing::info!(
+            "exported transfer {} of {} ({} panes, {written} bytes)",
+            manifest.transfer_id,
+            display_path(&root),
+            candidates.len()
+        );
+        Ok(proto::TransferExportSummary {
+            transfer_id: manifest.transfer_id.clone(),
+            file: display_path(&destination),
+            bytes: written,
+            panes: manifest.panes.iter().map(transfer_pane).collect(),
+            skipped,
+            skipped_links: manifest.skipped_links.clone(),
+        })
+    }
+
+    fn busy_refusal(workspace: &str, busy: Vec<String>) -> anyhow::Error {
+        refuse(
+            Code::BusyPanes,
+            format!(
+                "{} in {workspace} {} still busy, and a transfer stops every exported pane.",
+                count(busy.len(), "pane", "panes"),
+                if busy.len() == 1 { "is" } else { "are" },
+            ),
+            busy,
+            vec!["Let each listed pane finish its turn, or answer it, then export again. A pane whose status is unknown reports no status; turn its status hooks on in Settings ▸ Agents ▸ CLIs, or close the pane.".into()],
+        )
+    }
+
+    fn nothing_refusal(workspace: &str, skipped: &[proto::TransferSkipped]) -> anyhow::Error {
+        refuse(
+            Code::NothingToTransfer,
+            format!("{workspace} has no Claude or Codex pane with a recorded conversation to transfer."),
+            skipped
+                .iter()
+                .map(|s| format!("{} (pane {}): {}", s.title, s.session, s.reason))
+                .collect(),
+            vec!["Start or resume a Claude or Codex pane in this workspace, let it finish a turn, then export again.".into()],
+        )
+    }
+
+    /// Captures the code and conversations and writes the encrypted file.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn pack_export(
+        &self,
+        workspace: &proto::Workspace,
+        root: &Path,
+        candidates: &[Candidate],
+        skipped: &[proto::TransferSkipped],
+        destination: &Path,
+        passphrase: &proto::TransferPassphrase,
+        grids: String,
+    ) -> Result<(
+        Manifest,
+        u64,
+        Vec<TransferCheckoutRecord>,
+        Vec<TransferSessionRecord>,
+    )> {
+        let transfer_id = uuid::Uuid::new_v4().to_string();
+        let scratch = scratch_dir(self.state_dir(), "export")?;
+        let mut checkout_order: Vec<(String, PathBuf, Option<String>)> = Vec::new();
+        for c in candidates {
             if !checkout_order
                 .iter()
                 .any(|(key, _, _)| *key == c.checkout_key)
@@ -514,22 +820,21 @@ impl Daemon {
             });
         }
         let mut providers: Vec<proto::AgentKind> = Vec::new();
-        for c in &candidates {
+        for c in candidates {
             if !providers.contains(&c.info.agent) {
                 providers.push(c.info.agent);
             }
         }
-        let created_at_ms = now_ms();
         let manifest = Manifest {
             format: FORMAT_VERSION,
             transfer_id: transfer_id.clone(),
-            created_at_ms,
+            created_at_ms: now_ms(),
             source_os: std::env::consts::OS.to_string(),
             houston_version: env!("CARGO_PKG_VERSION").to_string(),
             workspace: WorkspaceEntry {
-                path: display_path(&root),
+                path: display_path(root),
                 name: workspace.name.clone(),
-                remote_url: crate::git::remote_url(&root),
+                remote_url: crate::git::remote_url(root),
             },
             cli_versions: providers
                 .iter()
@@ -540,8 +845,8 @@ impl Daemon {
                 .collect(),
             checkouts,
             panes: pane_entries,
-            skipped: skipped.clone(),
-            skipped_links: skipped_links.clone(),
+            skipped: skipped.to_vec(),
+            skipped_links,
             grids,
         };
         let file_name = destination
@@ -549,51 +854,24 @@ impl Daemon {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let partial = destination.with_file_name(format!(".{file_name}.{transfer_id}.partial"));
-        let written = archive::write(&partial, passphrase.expose(), &manifest, &entries);
-        let written = match written {
+        let written = match archive::write(&partial, passphrase.expose(), &manifest, &entries) {
             Ok(written) => written,
             Err(error) => {
                 let _ = std::fs::remove_file(&partial);
                 return Err(error);
             }
         };
-        if let Err(error) = std::fs::rename(&partial, &destination) {
+        if let Err(error) = std::fs::rename(&partial, destination) {
             let _ = std::fs::remove_file(&partial);
             return Err(error)
                 .with_context(|| format!("moving the transfer file to {}", destination.display()));
         }
-        self.db.transfer_record(&TransferRecord {
-            id: transfer_id.clone(),
-            direction: TransferDirection::Export,
-            workspace: display_path(&root),
-            created_at_ms,
-            checkouts: checkout_records,
-            sessions: session_records,
-        })?;
-        for c in &candidates {
-            if c.info.state.is_live() {
-                if let Err(e) = self.stop_for_transfer(c.info.id) {
-                    tracing::warn!(
-                        "stopping pane {} after exporting its conversation: {e:#}",
-                        c.info.id
-                    );
-                }
-            }
-            self.set_transfer_mark(c.info.id, Some(created_at_ms), None);
-        }
-        tracing::info!(
-            "exported transfer {transfer_id} of {} ({} panes, {written} bytes)",
-            display_path(&root),
-            candidates.len()
-        );
-        Ok(proto::TransferExportSummary {
-            transfer_id,
-            file: destination.display().to_string(),
-            bytes: written,
-            panes: manifest.panes.iter().map(transfer_pane).collect(),
-            skipped,
-            skipped_links,
-        })
+        Ok((manifest, written, checkout_records, session_records))
+    }
+
+    /// Removes scratch folders a crashed transfer left in the state directory.
+    pub(crate) fn sweep_transfer_scratch(&self) {
+        sweep_scratch(self.state_dir());
     }
 
     /// Updates a pane's transfer mark in memory and tells clients. The database row is
@@ -1011,6 +1289,23 @@ impl Daemon {
                 ));
             }
         }
+        let diff = plan.source.join("tracked.diff");
+        if entry.diff {
+            if let Some(error) = checkout::diff_apply_error(repo, &entry.head, &diff)? {
+                return Err(refuse(
+                    Code::ChangesDoNotApply,
+                    format!(
+                        "The uncommitted changes the file carries for {target} do not apply to commit {} on this computer.",
+                        crate::transfer::manifest::short(&entry.head)
+                    ),
+                    error.lines().map(str::to_string).collect(),
+                    vec![
+                        "Export again on the other computer, then import the new file.".into(),
+                        "If the refusal repeats, commit the changes there and transfer again.".into(),
+                    ],
+                ));
+            }
+        }
         if plan.root.exists() {
             let ignore: &[String] = match &plan.mode {
                 CheckoutMode::ReturnTrip {
@@ -1018,21 +1313,46 @@ impl Daemon {
                 } => exported_untracked,
                 _ => &[],
             };
-            let collisions = checkout::untracked_collisions(&plan.root, &entry.untracked, ignore)?;
+            // Checking out the file's commits and applying its changes would replace
+            // ignored files (a local .env) at the paths they add, so those count too.
+            let mut carried = entry.untracked.clone();
+            let current = checkout::head(&plan.root)?;
+            if current != entry.head {
+                carried.extend(checkout::added_between(&plan.root, &current, &entry.head)?);
+            }
+            if entry.diff {
+                carried.extend(checkout::created_by_diff(repo, &diff)?);
+            }
+            carried.sort();
+            carried.dedup();
+            let collisions = checkout::untracked_collisions(&plan.root, &carried, ignore)?;
             if !collisions.is_empty() {
                 return Err(refuse(
                     Code::PathsExist,
-                    format!("Files the transfer carries already exist in {target}, and import does not overwrite them."),
+                    format!("Files the transfer carries or adds already exist in {target}, and import does not overwrite them."),
                     collisions,
-                    vec![format!("Move or delete the listed files in {target}, then import again.")],
+                    vec![format!("Move or delete the listed files in {target}, ignored files included, then import again.")],
                 ));
             }
         }
         Ok(())
     }
 
-    fn apply_checkout_plan(&self, repo: &Path, plan: &CheckoutPlan) -> Result<()> {
+    fn apply_checkout_plan(
+        &self,
+        repo: &Path,
+        plan: &CheckoutPlan,
+        saved_dir: &Path,
+        undo: &mut ImportUndo,
+    ) -> Result<()> {
         let entry = plan.entry;
+        if let Some(branch) = &entry.branch {
+            undo.steps.push(UndoStep::Branch {
+                repo: repo.to_path_buf(),
+                branch: branch.clone(),
+                tip: checkout::branch_tip(repo, branch)?,
+            });
+        }
         match &plan.mode {
             CheckoutMode::NewWorktree => {
                 let slug = entry
@@ -1043,22 +1363,47 @@ impl Daemon {
                     .branch
                     .as_deref()
                     .context("a transferred worktree is on a branch")?;
+                undo.steps.push(UndoStep::Worktree {
+                    repo: repo.to_path_buf(),
+                    path: crate::worktrees::spawn_path(repo, slug),
+                });
                 self.create_transfer_worktree(repo, slug, branch, &entry.head)?;
             }
             CheckoutMode::ReturnTrip {
                 exported_untracked, ..
             } => {
+                let position = checkout::position(&plan.root)?;
+                let saved = checkout::save_changes(&plan.root, saved_dir, exported_untracked)?;
+                undo.steps.push(UndoStep::Moved {
+                    dir: plan.root.clone(),
+                    position,
+                    saved: Some(saved),
+                });
                 checkout::restore_exported_state(&plan.root, exported_untracked)?;
                 checkout::move_to(&plan.root, entry.branch.as_deref(), &entry.head)?;
             }
             CheckoutMode::Existing => {
+                undo.steps.push(UndoStep::Moved {
+                    dir: plan.root.clone(),
+                    position: checkout::position(&plan.root)?,
+                    saved: None,
+                });
                 checkout::move_to(&plan.root, entry.branch.as_deref(), &entry.head)?;
             }
         }
         if entry.diff {
             checkout::apply_diff(&plan.root, &plan.source.join("tracked.diff"))?;
         }
-        checkout::write_untracked(&plan.root, &plan.source.join("untracked"), &entry.untracked)
+        let mut written = Vec::new();
+        let result = checkout::write_untracked(
+            &plan.root,
+            &plan.source.join("untracked"),
+            &entry.untracked,
+            &mut written,
+        );
+        undo.steps
+            .extend(written.into_iter().map(UndoStep::Created));
+        result
     }
 
     /// Creates `.houston/worktrees/<slug>` on `branch` at `head` (the branch is created
@@ -1113,12 +1458,10 @@ impl Daemon {
         progress: Progress,
     ) -> Result<proto::TransferImportResult> {
         Self::require_passphrase(passphrase)?;
-        let (_, root) = self.transfer_workspace(workspace)?;
+        let (workspace, root) = self.transfer_workspace(workspace)?;
+        let _running = begin_transfer(self.state_dir(), &root, &workspace.name)?;
         progress(proto::TransferStage::Decrypting);
-        let scratch = tempfile::Builder::new()
-            .prefix("transfer-")
-            .tempdir_in(self.state_dir())
-            .context("creating a scratch folder for the import")?;
+        let scratch = scratch_dir(self.state_dir(), "import")?;
         let manifest = archive::unpack(Path::new(path), passphrase.expose(), scratch.path())?;
         progress(proto::TransferStage::Checking);
         self.check_transfer_environment(&manifest)?;
@@ -1195,24 +1538,77 @@ impl Daemon {
             self.check_checkout_plan(&root, plan)?;
         }
 
+        let mut undo = ImportUndo::default();
+        let applied = self.apply_import(
+            &manifest,
+            &root,
+            scratch.path(),
+            &checkout_plans,
+            pane_plans.into_iter().zip(profiles).collect(),
+            progress,
+            &mut undo,
+        );
+        let (sessions, updated_in_place) = match applied {
+            Ok(applied) => applied,
+            Err(error) => {
+                tracing::warn!(
+                    "import of transfer {} into {} failed, undoing it: {error:#}",
+                    manifest.transfer_id,
+                    display_path(&root)
+                );
+                let changed = !undo.steps.is_empty();
+                let failures = self.undo_import(undo);
+                return Err(undone(error, changed, failures));
+            }
+        };
+        tracing::info!(
+            "imported transfer {} into {} ({} new panes, {} resumed in place)",
+            manifest.transfer_id,
+            display_path(&root),
+            sessions.len(),
+            updated_in_place.len()
+        );
+        Ok(proto::TransferImportResult {
+            transfer_id: manifest.transfer_id.clone(),
+            workspace: display_path(&root),
+            source_workspace: manifest.workspace.path.clone(),
+            sessions,
+            updated_in_place,
+            grids: returning.is_none().then(|| manifest.grids.clone()),
+        })
+    }
+
+    /// Every change of an import, each logged in `undo` before it is made.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn apply_import(
+        self: &Arc<Self>,
+        manifest: &Manifest,
+        root: &Path,
+        scratch: &Path,
+        checkout_plans: &[CheckoutPlan],
+        panes: Vec<(PanePlan, ProfileSpawnEnvList)>,
+        progress: Progress,
+        undo: &mut ImportUndo,
+    ) -> Result<(
+        Vec<proto::TransferSessionMapping>,
+        Vec<proto::TransferSessionMapping>,
+    )> {
         progress(proto::TransferStage::RestoringCode);
-        for plan in &checkout_plans {
-            self.apply_checkout_plan(&root, plan).with_context(|| {
-                format!("restoring the code state of {}", display_path(&plan.root))
-            })?;
+        for (n, plan) in checkout_plans.iter().enumerate() {
+            self.apply_checkout_plan(root, plan, &scratch.join(format!("saved-{n}")), undo)
+                .with_context(|| {
+                    format!("restoring the code state of {}", display_path(&plan.root))
+                })?;
         }
 
         progress(proto::TransferStage::PlacingConversations);
-        let mut sessions = Vec::new();
-        let mut updated_in_place = Vec::new();
-        let mut session_records = Vec::new();
-        let mut placed = Vec::new();
-        for ((pane, plan), (env, label)) in manifest.panes.iter().zip(pane_plans).zip(profiles) {
-            let source = scratch.path().join(&pane.archive_dir);
+        let mut placements = Vec::new();
+        for (pane, (plan, (env, label))) in manifest.panes.iter().zip(panes) {
+            let source = scratch.join(&pane.archive_dir);
             let files: Vec<String> = std::iter::once(pane.transcript.clone())
                 .chain(pane.extra_files.iter().cloned())
                 .collect();
-            match plan {
+            let (place_root, placed) = match plan {
                 PanePlan::InPlace(record) => {
                     let transcript = PathBuf::from(&record.transcript_path);
                     let place_root = match pane.provider {
@@ -1221,16 +1617,11 @@ impl Daemon {
                             .context("a recorded transcript has a folder")?
                             .to_path_buf(),
                         _ => {
-                            let collected = transcripts::collect(
-                                pane.provider,
-                                &transcript,
-                                &pane.conversation,
-                            )?;
-                            collected.root
+                            transcripts::collect(pane.provider, &transcript, &pane.conversation)?
+                                .root
                         }
                     };
-                    transcripts::copy_files(&source, &place_root, &files)?;
-                    placed.push((pane, Placed::InPlace(record)));
+                    (place_root, Placed::InPlace(record))
                 }
                 PanePlan::New => {
                     let checkout_root = checkout_plans
@@ -1248,40 +1639,120 @@ impl Daemon {
                         .split('/')
                         .filter(|part| !part.is_empty())
                         .fold(checkout_root, |p, part| p.join(part));
-                    let cwd = if cwd.is_dir() { cwd } else { root.clone() };
+                    let cwd = if cwd.is_dir() {
+                        cwd
+                    } else {
+                        root.to_path_buf()
+                    };
                     let provider_dir = self.transfer_provider_dir(pane.provider, &env)?;
                     let place_root = transcripts::place_root(pane.provider, &provider_dir, &cwd);
-                    transcripts::copy_files(&source, &place_root, &files)?;
                     let transcript = transcripts::join(&place_root, &pane.transcript);
-                    placed.push((
-                        pane,
+                    (
+                        place_root,
                         Placed::New {
                             cwd,
                             transcript,
                             env,
                             label,
                         },
-                    ));
+                    )
                 }
+            };
+            placements.push((pane, source, files, place_root, placed));
+        }
+        let mut clashes = Vec::new();
+        for (pane, source, files, place_root, placed) in &placements {
+            if matches!(placed, Placed::InPlace(_)) {
+                continue;
+            }
+            for path in transcripts::differing(source, place_root, files)? {
+                clashes.push(format!(
+                    "{} (conversation {}, {})",
+                    display_path(&path),
+                    pane.conversation,
+                    self.conversation_holder(&pane.conversation)
+                ));
+            }
+        }
+        if !clashes.is_empty() {
+            return Err(refuse(
+                Code::PathsExist,
+                "Another version of a transferred conversation already exists on this computer, and import does not overwrite it.",
+                clashes,
+                vec![
+                    "Keep that version: import the file on another computer.".into(),
+                    "Or close the listed pane and move the listed files out of the way, then import again.".into(),
+                ],
+            ));
+        }
+        let backups = scratch.join("replaced");
+        std::fs::create_dir_all(&backups)
+            .with_context(|| format!("creating {}", backups.display()))?;
+        for (_, source, files, place_root, _) in &placements {
+            for relative in files {
+                let dest = crate::transfer::paths::inside(place_root, relative)?;
+                if std::fs::symlink_metadata(&dest).is_ok() {
+                    let backup = backups.join(undo.steps.len().to_string());
+                    std::fs::copy(&dest, &backup)
+                        .with_context(|| format!("keeping a copy of {}", dest.display()))?;
+                    undo.steps.push(UndoStep::Replaced { path: dest, backup });
+                } else {
+                    undo.steps.push(UndoStep::Created(dest));
+                }
+                transcripts::copy_file(source, place_root, relative)?;
             }
         }
 
+        // Recorded before any pane starts, so a crash while starting them still leaves
+        // the return trip's record.
+        let mut record = TransferRecord {
+            id: manifest.transfer_id.clone(),
+            direction: TransferDirection::Import,
+            workspace: display_path(root),
+            created_at_ms: now_ms(),
+            checkouts: checkout_plans
+                .iter()
+                .map(|plan| TransferCheckoutRecord {
+                    key: plan.entry.key.clone(),
+                    path: display_path(&canonical(&plan.root)),
+                    tree_state: None,
+                    untracked: plan.entry.untracked.clone(),
+                })
+                .collect(),
+            sessions: Vec::new(),
+        };
+        undo.steps
+            .push(UndoStep::Recorded(manifest.transfer_id.clone()));
+        self.db.transfer_record(&record)?;
+
         progress(proto::TransferStage::StartingPanes);
-        for (pane, placed) in placed {
+        let mut sessions = Vec::new();
+        let mut updated_in_place = Vec::new();
+        for (pane, _, _, _, placed) in placements {
             match placed {
-                Placed::InPlace(record) => {
-                    self.db.clear_session_transferred(record.local_session)?;
-                    self.set_transfer_mark(record.local_session, None, None);
-                    let info = self.respawn(record.local_session, true, None, None, false)?;
+                Placed::InPlace(old) => {
+                    let (at, _) = self.db.session_transfer_mark(old.local_session)?;
+                    let at = at.unwrap_or(manifest.created_at_ms);
+                    undo.steps.push(UndoStep::Unmarked {
+                        session: old.local_session,
+                        at_ms: at,
+                    });
+                    self.db.clear_session_transferred(old.local_session)?;
+                    self.set_transfer_mark(old.local_session, None, None);
+                    let info = self.respawn(old.local_session, true, None, None, false)?;
+                    undo.steps.push(UndoStep::Resumed {
+                        session: info.id,
+                        at_ms: at,
+                    });
                     updated_in_place.push(proto::TransferSessionMapping {
                         from: pane.source_session,
                         to: info.id,
                     });
-                    session_records.push(TransferSessionRecord {
+                    record.sessions.push(TransferSessionRecord {
                         local_session: info.id,
                         source_session: pane.source_session,
                         conversation: pane.conversation.clone(),
-                        transcript_path: record.transcript_path.clone(),
+                        transcript_path: old.transcript_path.clone(),
                         transcript_sha256: pane.transcript_sha256.clone(),
                     });
                 }
@@ -1299,7 +1770,7 @@ impl Daemon {
                         )
                     });
                     let info = self.spawn_transferred_pane(
-                        &root,
+                        root,
                         cwd,
                         pane,
                         &transcript,
@@ -1307,11 +1778,12 @@ impl Daemon {
                         label,
                         note,
                     )?;
+                    undo.steps.push(UndoStep::Spawned(info.id));
                     sessions.push(proto::TransferSessionMapping {
                         from: pane.source_session,
                         to: info.id,
                     });
-                    session_records.push(TransferSessionRecord {
+                    record.sessions.push(TransferSessionRecord {
                         local_session: info.id,
                         source_session: pane.source_session,
                         conversation: pane.conversation.clone(),
@@ -1320,38 +1792,101 @@ impl Daemon {
                     });
                 }
             }
+            self.db.transfer_record(&record)?;
         }
-        self.db.transfer_record(&TransferRecord {
-            id: manifest.transfer_id.clone(),
-            direction: TransferDirection::Import,
-            workspace: display_path(&root),
-            created_at_ms: now_ms(),
-            checkouts: checkout_plans
-                .iter()
-                .map(|plan| TransferCheckoutRecord {
-                    key: plan.entry.key.clone(),
-                    path: display_path(&canonical(&plan.root)),
-                    tree_state: None,
-                    untracked: plan.entry.untracked.clone(),
-                })
-                .collect(),
-            sessions: session_records,
-        })?;
-        tracing::info!(
-            "imported transfer {} into {} ({} new panes, {} resumed in place)",
-            manifest.transfer_id,
-            display_path(&root),
-            sessions.len(),
-            updated_in_place.len()
-        );
-        Ok(proto::TransferImportResult {
-            transfer_id: manifest.transfer_id.clone(),
-            workspace: display_path(&root),
-            source_workspace: manifest.workspace.path.clone(),
-            sessions,
-            updated_in_place,
-            grids: returning.is_none().then(|| manifest.grids.clone()),
-        })
+        Ok((sessions, updated_in_place))
+    }
+
+    /// The pane that holds `conversation` on this computer, for a refusal.
+    fn conversation_holder(&self, conversation: &str) -> String {
+        let holders = self
+            .db
+            .sessions_naming_conversation(conversation)
+            .unwrap_or_default();
+        let listed = self.list();
+        let dead = self.dead.lock().expect("dead lock");
+        let names: Vec<String> = holders
+            .iter()
+            .filter_map(|id| {
+                listed
+                    .iter()
+                    .find(|info| info.id == *id)
+                    .or_else(|| dead.get(id))
+                    .map(pane_label)
+            })
+            .collect();
+        if names.is_empty() {
+            "no pane on this computer holds it".to_string()
+        } else {
+            format!("held by {}", names.join(", "))
+        }
+    }
+
+    /// Reverses `undo` from the last change to the first and returns what failed.
+    fn undo_import(&self, undo: ImportUndo) -> Vec<String> {
+        let mut failures = Vec::new();
+        for step in undo.steps.into_iter().rev() {
+            let result = match &step {
+                UndoStep::Spawned(id) => self
+                    .close(*id)
+                    .or_else(|_| self.kill(*id).and_then(|()| self.close(*id)))
+                    .with_context(|| format!("closing pane {id}")),
+                UndoStep::Resumed { session, at_ms } => {
+                    let stopped = self
+                        .stop_for_transfer(*session)
+                        .with_context(|| format!("stopping pane {session}"));
+                    self.set_transfer_mark(*session, Some(*at_ms), None);
+                    stopped.and(self.db.set_session_transferred(*session, *at_ms))
+                }
+                UndoStep::Unmarked { session, at_ms } => {
+                    self.set_transfer_mark(*session, Some(*at_ms), None);
+                    self.db.set_session_transferred(*session, *at_ms)
+                }
+                UndoStep::Recorded(id) => self.db.transfer_forget(id, TransferDirection::Import),
+                UndoStep::Created(path) => match std::fs::remove_file(path) {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                        Err(e).with_context(|| format!("removing {}", display_path(path)))
+                    }
+                    _ => Ok(()),
+                },
+                UndoStep::Replaced { path, backup } => std::fs::rename(backup, path)
+                    .with_context(|| format!("restoring {}", display_path(path))),
+                UndoStep::Worktree { repo, path } => {
+                    let recorded = canonical(path);
+                    let removed = if path.exists() {
+                        crate::worktrees::remove(repo, path, true)
+                    } else {
+                        Ok(())
+                    };
+                    removed
+                        .and(
+                            self.db
+                                .managed_worktree_delete(&recorded.display().to_string()),
+                        )
+                        .with_context(|| format!("removing worktree {}", display_path(path)))
+                }
+                UndoStep::Branch { repo, branch, tip } => {
+                    checkout::restore_branch(repo, branch, tip.as_deref())
+                        .with_context(|| format!("resetting branch {branch}"))
+                }
+                UndoStep::Moved {
+                    dir,
+                    position,
+                    saved,
+                } => checkout::restore_position(dir, position)
+                    .and_then(|()| {
+                        saved
+                            .as_ref()
+                            .map_or(Ok(()), |s| checkout::put_back(dir, s))
+                    })
+                    .with_context(|| format!("putting {} back", display_path(dir))),
+            };
+            if let Err(e) = result {
+                tracing::warn!("undoing a transfer import: {e:#}");
+                failures.push(format!("{e:#}"));
+            }
+        }
+        failures
     }
 
     /// Where a returning pane goes: back into its exported pane, unless that pane
@@ -1519,5 +2054,71 @@ mod tests {
             r"C:\dev\houston"
         );
         assert_eq!(display_path(Path::new("/home/dev/p")), "/home/dev/p");
+    }
+
+    #[test]
+    fn a_second_transfer_of_one_workspace_is_refused_until_the_first_ends() {
+        let state = Path::new("/state");
+        let root = Path::new("/work/app");
+        let first = begin_transfer(state, root, "app").unwrap();
+        let Err(refused) = begin_transfer(state, root, "app") else {
+            panic!("a second transfer of one workspace starts");
+        };
+        assert_eq!(
+            crate::transfer::refusal(&refused).map(|r| r.code),
+            Some(Code::TransferRunning)
+        );
+        assert!(begin_transfer(Path::new("/other-state"), root, "app").is_ok());
+        assert!(begin_transfer(state, Path::new("/work/other"), "other").is_ok());
+        drop(first);
+        assert!(begin_transfer(state, root, "app").is_ok());
+    }
+
+    #[test]
+    fn a_live_agent_pane_without_a_status_is_busy() {
+        let mut info = crate::db::tests::info(1, proto::SessionState::Running);
+        info.agent = proto::AgentKind::Claude;
+        info.status = None;
+        assert_eq!(busy_word(&info), Some("status unknown"));
+        info.status = Some(proto::AgentStatus::Idle);
+        assert_eq!(busy_word(&info), None);
+        info.status = Some(proto::AgentStatus::Working);
+        assert_eq!(busy_word(&info), Some("working"));
+        info.agent = proto::AgentKind::Shell;
+        info.status = None;
+        assert_eq!(busy_word(&info), None, "a shell reports no status");
+        info.agent = proto::AgentKind::Claude;
+        info.state = proto::SessionState::Exited;
+        info.status = Some(proto::AgentStatus::Working);
+        assert_eq!(
+            busy_word(&info),
+            None,
+            "an exited pane is not running a turn"
+        );
+        assert_eq!(
+            interrupted_word(&info),
+            Some("working"),
+            "a pane stopped mid-turn is named after the stop"
+        );
+    }
+
+    #[test]
+    fn scratch_folders_are_private_and_swept() {
+        let state = tempfile::tempdir().unwrap();
+        let scratch = scratch_dir(state.path(), "test").unwrap().keep();
+        std::fs::write(scratch.join("bundle"), "plaintext").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&scratch).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+        std::fs::create_dir(state.path().join("worktrees")).unwrap();
+        sweep_scratch(state.path());
+        assert!(!scratch.exists());
+        assert!(
+            state.path().join("worktrees").is_dir(),
+            "other folders stay"
+        );
     }
 }

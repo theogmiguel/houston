@@ -153,9 +153,9 @@ stores.
 
 | Message | Fields | Reply |
 |---|---|---|
-| `transfer_export` | `request`, `workspace` (registered path), `destination` (absolute file path), `passphrase`, `grids` (the renderer's grid entries for the workspace; stored in the file uninterpreted) | `transfer_exported` (direct). Writes the file, records the export, stops each exported pane (state `exited`, conversation kept) and broadcasts `session_updated` with `transferred_at_ms`. Refused while a pane is working, waiting for input or starting, or when the file would exceed 200 MB |
+| `transfer_export` | `request`, `workspace` (registered path), `destination` (absolute file path), `overwrite?` (default `false`: replace an existing file at `destination`, which the user confirmed), `passphrase`, `grids` (the renderer's grid entries for the workspace; stored in the file uninterpreted) | `transfer_exported` (direct). Stops each exported pane (state `exited`, conversation kept) before reading the code and conversations, writes the file, records the export and broadcasts `session_updated` with `transferred_at_ms`. A pane that does not stop is listed in `skipped`. Refused while a pane is working, waiting for input, starting or reports no status, while a file has staged content that differs from its working copy, when `destination` exists and `overwrite` is false, when the file would exceed 200 MB, or while another transfer of the workspace runs |
 | `transfer_inspect` | `request`, `path`, `passphrase` | `transfer_inspected` (direct). Reads the manifest only; changes nothing |
-| `transfer_import` | `request`, `path`, `passphrase`, `workspace` (registered path), `profiles: TransferProfileChoice[]` (an answer for each `TransferProfileNeed` with `matched: false`) | `transfer_imported` (direct). Checks everything before the first change, restores code state, places conversations and resumes the panes; a return trip resumes the exported panes in place |
+| `transfer_import` | `request`, `path`, `passphrase`, `workspace` (registered path), `profiles: TransferProfileChoice[]` (an answer for each `TransferProfileNeed` with `matched: false`) | `transfer_imported` (direct). Checks commits, branches, existing files and whether the carried changes apply before the first change, then restores code state, places conversations and resumes the panes; a return trip resumes the exported panes in place. A failure after the first change undoes every change and is refused; `import_undone` names a failure that is not otherwise a refusal |
 
 ### Orchestration
 
@@ -986,11 +986,12 @@ bound — never a number typed twice.
 ```
 TransferStage        snake: checking | packing | decrypting | restoring_code | placing_conversations | starting_panes
 TransferRefusalCode  snake: unknown_workspace | not_git_repository | wsl_workspace | busy_panes |
-                     nothing_to_transfer | too_large | passphrase_required | wrong_passphrase |
-                     not_transfer_file | unknown_format | other_operating_system | cli_missing |
-                     cli_too_old | dirty_checkout | missing_commits | branch_diverged |
-                     branch_checked_out | paths_exist | conversation_open | profile_choice_missing |
-                     return_tree_changed | return_forked
+                     nothing_to_transfer | too_large | destination_exists | partially_staged |
+                     transfer_running | passphrase_required | wrong_passphrase | not_transfer_file |
+                     unknown_format | other_operating_system | cli_missing | cli_too_old |
+                     dirty_checkout | missing_commits | branch_diverged | branch_checked_out |
+                     changes_do_not_apply | paths_exist | conversation_open | profile_choice_missing |
+                     return_tree_changed | return_forked | import_undone
 TransferRefusal      code: TransferRefusalCode, problem (what is wrong), items: string[] (the exact
                      paths or values, at most 20 plus a count), steps: string[] (what removes it)
 TransferPane         session (the pane id on the exporting computer), title, provider: AgentKind,

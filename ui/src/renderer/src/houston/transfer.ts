@@ -56,7 +56,7 @@ function request<T>(
 
 export function exportTransfer(
   client: HoustonClient,
-  args: { workspace: string; destination: string; passphrase: string; grids: string },
+  args: { workspace: string; destination: string; overwrite: boolean; passphrase: string; grids: string },
   onStage?: (stage: TransferStage) => void
 ): Promise<TransferReply<TransferExportSummary>> {
   return request(
@@ -112,7 +112,13 @@ async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promi
   return invoke<T>(cmd, args)
 }
 
-/** Where to save an export, or null when cancelled or outside the desktop app. */
+/** `path` ending in the transfer extension. A save dialog does not always add it. */
+export function withTransferExtension(path: string): string {
+  return path.toLowerCase().endsWith(`.${TRANSFER_EXTENSION}`) ? path : `${path}.${TRANSFER_EXTENSION}`
+}
+
+/** Where to save an export, as the save dialog confirmed it, or null when cancelled or
+ *  outside the desktop app. */
 export async function pickTransferDestination(defaultName: string): Promise<string | null> {
   if (!isTauri()) return null
   return invoke<string | null>('dialog_save_transfer', { defaultName })

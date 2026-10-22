@@ -19,6 +19,7 @@ import {
   pickTransferFile,
   transferFileName,
   TRANSFER_STAGE_LABEL,
+  withTransferExtension,
   type TransferReply
 } from '../houston/transfer'
 import { wslWorkspaceOf } from '../houston/environments'
@@ -154,12 +155,16 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
   const ready = passphrase !== '' && passphrase === confirm && outcome.kind !== 'running'
   const run = async (): Promise<void> => {
     if (!ready) return
-    const destination = await pickTransferDestination(transferFileName(name))
-    if (!destination) return
+    const picked = await pickTransferDestination(transferFileName(name))
+    if (!picked) return
+    const destination = withTransferExtension(picked)
     setOutcome({ kind: 'running', stage: null })
-    const reply = await exportTransfer(client, { workspace, destination, passphrase, grids: collectTransferGrids(workspace) }, (stage) => setOutcome({ kind: 'running', stage }))
-    setPassphrase('')
-    setConfirm('')
+    // The save dialog confirmed replacing `picked` only; a name it never saw is not replaced.
+    const reply = await exportTransfer(client, { workspace, destination, overwrite: destination === picked, passphrase, grids: collectTransferGrids(workspace) }, (stage) => setOutcome({ kind: 'running', stage }))
+    if (reply.kind === 'ok') {
+      setPassphrase('')
+      setConfirm('')
+    }
     setOutcome(reply)
   }
   let body: React.ReactNode

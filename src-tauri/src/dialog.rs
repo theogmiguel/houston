@@ -164,8 +164,9 @@ pub async fn dialog_pick_image<R: Runtime>(app: AppHandle<R>) -> Result<Option<P
     Ok(picked)
 }
 
-/// Where to write a workspace transfer file; the daemon writes it, so the path is not
-/// added to the renderer's file allowlist.
+/// Where to write a workspace transfer file, exactly as the dialog confirmed it (the
+/// renderer appends a missing extension and tells the daemon whether replacing is
+/// confirmed). The daemon writes it, so the path is not added to the file allowlist.
 #[tauri::command]
 pub async fn dialog_save_transfer<R: Runtime>(
     default_name: String,
@@ -183,7 +184,7 @@ pub async fn dialog_save_transfer<R: Runtime>(
             .save_file(move |file_path| cb(to_pick_result("dialog_save_transfer", file_path)));
     })
     .await?;
-    Ok(picked.map(|path| with_transfer_extension(&path.to_string_lossy())))
+    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
 }
 
 /// A transfer file to import; the daemon reads it.
@@ -201,16 +202,6 @@ pub async fn dialog_pick_transfer<R: Runtime>(app: AppHandle<R>) -> Result<Optio
     })
     .await?;
     Ok(picked.map(|path| path.to_string_lossy().into_owned()))
-}
-
-/// A save dialog does not always append the filter's extension.
-fn with_transfer_extension(path: &str) -> String {
-    let suffix = format!(".{}", crate::transfer_open::EXTENSION);
-    if path.to_ascii_lowercase().ends_with(&suffix) {
-        path.to_string()
-    } else {
-        format!("{path}{suffix}")
-    }
 }
 
 pub const CHAT_IMAGE_MAX_BYTES: u64 = 32 * 1024 * 1024;
@@ -310,18 +301,6 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
-
-    #[test]
-    fn a_saved_transfer_file_always_carries_its_extension() {
-        assert_eq!(
-            with_transfer_extension("/tmp/work"),
-            "/tmp/work.houston-transfer"
-        );
-        assert_eq!(
-            with_transfer_extension("/tmp/work.HOUSTON-TRANSFER"),
-            "/tmp/work.HOUSTON-TRANSFER"
-        );
-    }
 
     #[cfg(unix)]
     #[tokio::test]
