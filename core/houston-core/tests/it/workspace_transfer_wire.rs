@@ -1,5 +1,5 @@
 #![cfg(unix)]
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
+#![allow(clippy::disallowed_methods)] // runs git and the fake CLIs with std::process::Command
 
 //! Workspace transfer over the wire between two daemons, each with its own state
 //! directory, provider homes and clone of one origin: two computers in one process.
@@ -48,18 +48,8 @@ fn shim_dir() {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let inherited = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", format!("{}:{inherited}", directory.display()));
-        std::env::set_var("SHELL", "/bin/sh");
-        for key in [
-            "CLAUDE_CONFIG_DIR",
-            "CODEX_HOME",
-            "HOUSTON_RESTORE_BUDGET",
-            "HOUSTON_SAFE_MODE",
-            "HOUSTON_DISABLE_AUTO_RESTORE",
-        ] {
-            std::env::remove_var(key);
-        }
+        // For the whole test process: every test here runs the fake CLIs.
+        std::mem::forget(common::prepend_path(&directory));
         directory
     });
 }
@@ -137,6 +127,7 @@ impl Computer {
         let workspace = base.join("project");
         let env = common::base_env()
             .with("HOME", Some(base.join("home")))
+            .with("SHELL", Some("/bin/sh"))
             .with("CLAUDE_CONFIG_DIR", Some(&claude))
             .with("CODEX_HOME", Some(&codex))
             .with("TRANSFER_ARGV_DIR", Some(&argv))
