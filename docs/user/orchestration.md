@@ -22,6 +22,9 @@ other on names and arguments:
   and the `pane_instruction_*` controls.
 - A command-line tool, `hs-pane`, with one subcommand per verb above (plus a CLI-only
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
+- `hs-pane heavy -- <command>`, which runs a heavy command such as a full build or test
+  suite only while it holds the daemon's one build slot, the slot the merge queue verifies
+  in. It prints whom it waited for and how long, and exits with the command's exit code.
 
 An orchestrator sees the management verbs and `pane_spawn` while spawning is allowed.
 Management remains available for retained children when spawning is disabled, so the
