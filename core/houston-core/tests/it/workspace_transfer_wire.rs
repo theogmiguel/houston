@@ -484,6 +484,12 @@ async fn a_workspace_moves_to_another_computer_and_returns_in_place() {
     let (claude_a, claude_id, claude_transcript_a) = a.claude_pane(&a.workspace).await;
     let (codex_a, codex_id, _) = a.codex_pane(&tree).await;
     let shell = a.pane(proto::AgentKind::Shell, &a.workspace);
+    // The Changes panel makes its worktrees in Houston's state directory, outside the workspace.
+    let (side, _) = a
+        .daemon
+        .git_worktree_create(&a.workspace, "side", None)
+        .unwrap();
+    let (changes_pane, _, _) = a.claude_pane(&side.path.canonicalize().unwrap()).await;
     let a_head = git(&a.workspace, &["rev-parse", "HEAD"]);
     let tree_head = git(&tree, &["rev-parse", "HEAD"]);
 
@@ -498,6 +504,18 @@ async fn a_workspace_moves_to_another_computer_and_returns_in_place() {
             .any(|s| s.session == shell.id && s.reason == "shell pane"),
         "{:?}",
         exported.skipped
+    );
+    assert!(
+        exported.skipped.iter().any(|s| s.session == changes_pane.id
+            && s.reason
+                == "worktree created from the Changes panel lives outside the workspace; \
+                    this version moves only .houston/worktrees worktrees"),
+        "a pane in a Changes-panel worktree is listed, never dropped: {:?}",
+        exported.skipped
+    );
+    assert!(
+        a.info(changes_pane.id).state.is_live(),
+        "a skipped pane keeps running"
     );
     for pane in [claude_a.id, codex_a.id] {
         let info = a.info(pane);

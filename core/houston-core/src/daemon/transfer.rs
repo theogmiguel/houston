@@ -14,6 +14,7 @@ use proto::TransferRefusalCode as Code;
 
 const MAIN_KEY: &str = "main";
 const WORKTREE_KEY_PREFIX: &str = "worktree:";
+const CHANGES_WORKTREE_SKIPPED: &str = "worktree created from the Changes panel lives outside the workspace; this version moves only .houston/worktrees worktrees";
 
 pub(crate) type Progress<'a> = &'a (dyn Fn(proto::TransferStage) + Send + Sync);
 
@@ -184,9 +185,34 @@ impl Daemon {
         Ok(())
     }
 
-    fn in_workspace(info: &proto::SessionInfo, root: &Path) -> bool {
-        same_path(Path::new(&info.project_dir), root)
-            || canonical(Path::new(&info.cwd)).starts_with(root)
+    fn in_workspace(info: &proto::SessionInfo, root: &Path, outside: &[PathBuf]) -> bool {
+        let cwd = canonical(Path::new(&info.cwd));
+        let project = canonical(Path::new(&info.project_dir));
+        project == root
+            || cwd.starts_with(root)
+            || outside
+                .iter()
+                .any(|tree| cwd.starts_with(tree) || project.starts_with(tree))
+    }
+
+    /// Managed worktrees of the workspace's repository that live outside it: the ones the
+    /// Changes panel creates in Houston's state directory.
+    fn outside_worktrees(&self, root: &Path) -> Vec<PathBuf> {
+        let Some(common) = crate::git::checkout_facts(root).common_dir else {
+            return Vec::new();
+        };
+        let common = canonical(&root.join(common));
+        self.db
+            .managed_worktrees()
+            .unwrap_or_else(|e| {
+                tracing::warn!("listing managed worktrees for a transfer export: {e:#}");
+                Vec::new()
+            })
+            .into_iter()
+            .filter(|row| canonical(&root.join(&row.repo_common_dir)) == common)
+            .map(|row| canonical(Path::new(&row.path)))
+            .filter(|path| !path.starts_with(root))
+            .collect()
     }
 
     /// The pane as a transfer candidate, or why it stays behind.
@@ -194,6 +220,7 @@ impl Daemon {
         &self,
         info: &proto::SessionInfo,
         root: &Path,
+        outside: &[PathBuf],
     ) -> std::result::Result<Candidate, String> {
         if info.spawned_by.is_some() {
             return Err(
@@ -211,6 +238,10 @@ impl Daemon {
                     "{other:?} pane; only Claude and Codex panes transfer"
                 ))
             }
+        }
+        let folder = canonical(Path::new(&info.cwd));
+        if outside.iter().any(|tree| folder.starts_with(tree)) {
+            return Err(CHANGES_WORKTREE_SKIPPED.into());
         }
         if info.transferred_at_ms.is_some() {
             return Err("its conversation already left in an earlier transfer".into());
@@ -314,10 +345,11 @@ impl Daemon {
         }
         let (workspace, root) = self.transfer_workspace(workspace)?;
         progress(proto::TransferStage::Checking);
+        let outside = self.outside_worktrees(&root);
         let panes: Vec<proto::SessionInfo> = self
             .list()
             .into_iter()
-            .filter(|info| !info.hidden && Self::in_workspace(info, &root))
+            .filter(|info| !info.hidden && Self::in_workspace(info, &root, &outside))
             .collect();
         let busy: Vec<String> = panes
             .iter()
@@ -349,7 +381,7 @@ impl Daemon {
         let mut candidates = Vec::new();
         let mut skipped = Vec::new();
         for info in &panes {
-            match self.transfer_candidate(info, &root) {
+            match self.transfer_candidate(info, &root, &outside) {
                 Ok(candidate) => candidates.push(candidate),
                 Err(reason) => skipped.push(proto::TransferSkipped {
                     session: info.id,

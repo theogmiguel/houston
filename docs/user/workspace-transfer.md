@@ -42,7 +42,8 @@ the passphrase can read them.
 Export includes Claude Code and Codex panes, including panes in Houston worktrees under
 `.houston/worktrees/`. It leaves out shell panes, other providers, orchestrated child panes
 and panes without a recorded conversation, and lists each with the reason. Worktrees that
-the Changes panel creates outside the workspace folder are not carried.
+the Changes panel creates live outside the workspace folder and are not carried in this
+version: a pane running in one is listed as left out, and keeps running.
 
 The file may be at most 200 MB after compression. A larger export is refused and lists the
 largest files; push long unpushed history to the remote, or commit, ignore or delete large
