@@ -550,6 +550,40 @@ async fn generic_routine_verbs_refuse_night_shift() {
     );
 }
 
+/// A second start that arrives while the first is still starting (here,
+/// from inside the first pane's registration) is refused, not run beside it.
+#[tokio::test]
+async fn a_start_racing_another_is_refused() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let weak = Arc::downgrade(&r.daemon);
+    let second: Arc<Mutex<Option<String>>> = Arc::default();
+    let seen = Arc::clone(&second);
+    let id = routine.id;
+    r.daemon
+        .set_routine_pane_registration_hook_for_test(Some(Box::new(move |_| {
+            let Some(daemon) = weak.upgrade() else { return };
+            if seen.lock().unwrap().is_some() {
+                return;
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let until = houston_core::daemon::now_unix_ms() + 60 * MINUTE;
+                let _ = tx.send(format!("{:?}", daemon.night_shift_run_now(id, until)));
+            });
+            let answer = rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap_or_else(|_| "still starting".into());
+            *seen.lock().unwrap() = Some(answer);
+        })));
+    let first = r.run_now(routine.id, 120);
+    assert_eq!(first.phase, proto::NightRunPhase::Running);
+    let answer = second.lock().unwrap().clone().unwrap();
+    assert!(answer.contains("already has a run in flight or starting"), "{answer}");
+    assert_eq!(r.state().runs.len(), 1, "one run");
+    assert!(r.in_flight(routine.id));
+}
+
 // ---- S2 ----
 
 #[tokio::test]

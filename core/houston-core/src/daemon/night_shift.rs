@@ -33,6 +33,51 @@ struct RunTree {
     members: Vec<NightMember>,
 }
 
+/// A routine's slot in `routine_runs`, held from before preflight until the
+/// run's pane registers; dropped unregistered, it frees the slot again.
+struct NightReservation<'a> {
+    daemon: &'a Daemon,
+    routine_id: u32,
+}
+
+/// The run id a reservation holds the slot with; real run ids start at 1.
+const RESERVED_RUN: u32 = 0;
+
+impl<'a> NightReservation<'a> {
+    fn take(daemon: &'a Daemon, routine_id: u32, now: i64) -> Result<Self> {
+        let mut running = daemon.routine_runs.lock().expect("routine run lock");
+        if running.contains_key(&routine_id) {
+            bail!(
+                "Night shift routine {routine_id} already has a run in flight or starting; \
+                 stop it before starting another"
+            );
+        }
+        running.insert(
+            routine_id,
+            RoutineRun {
+                run_id: RESERVED_RUN,
+                session_id: None,
+                started_at_ms: now,
+                denied: false,
+                night: true,
+            },
+        );
+        Ok(Self { daemon, routine_id })
+    }
+}
+
+impl Drop for NightReservation<'_> {
+    fn drop(&mut self) {
+        let mut running = self.daemon.routine_runs.lock().expect("routine run lock");
+        if running
+            .get(&self.routine_id)
+            .is_some_and(|r| r.run_id == RESERVED_RUN)
+        {
+            running.remove(&self.routine_id);
+        }
+    }
+}
+
 /// What a run keeps in memory; the rest is in `night_runs`.
 #[derive(Default)]
 pub(crate) struct NightShiftCtx {
@@ -461,17 +506,6 @@ impl Daemon {
     ) -> Result<proto::ServerMsg> {
         let row = self.night_routine(routine_id)?;
         window::run_now(now_unix_ms(), until_ms)?;
-        let in_flight = self
-            .routine_runs
-            .lock()
-            .expect("routine run lock")
-            .contains_key(&routine_id);
-        if in_flight {
-            bail!(
-                "Night shift routine {routine_id} already has a run in flight; stop it before \
-                 starting another"
-            );
-        }
         let run_id = self
             .night_shift_fire(&row, proto::RoutineTrigger::Manual, Some(until_ms))?
             .ok_or_else(|| anyhow!("the Night shift run did not start"))?;
@@ -520,6 +554,7 @@ impl Daemon {
             );
             return Ok(None);
         }
+        let _slot = NightReservation::take(self, row.id, now)?;
         let mut items = preflight::evaluate(&s, &self.night_facts(&s));
         let mut refusal = None;
         if win.wrap_up_at_ms <= now {
