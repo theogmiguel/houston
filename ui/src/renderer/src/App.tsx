@@ -2865,24 +2865,21 @@ export function App(): React.JSX.Element {
   // leave the grid they landed in, so each pane appears once.
   const applyTransferGrids = useCallback(async (result: TransferImportResult, target: string): Promise<void> => {
     if (!result.grids) return;
-    const { placeTransferGrids } = await import('./layout/transferGrids');
+    const { placeTransferGrids, vacateMovedPanes } = await import('./layout/transferGrids');
     const existing = gridsByWsRef.current.get(target) ?? loadGrids(target);
-    const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, existing);
+    const vacated = vacateMovedPanes(target, existing, result.sessions.map((m) => m.to));
+    const kept = existing.filter((grid) => !vacated.emptied.includes(grid.id));
+    const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, kept);
     if (placed.grids.length === 0) return;
-    const moved = result.sessions.map((m) => m.to);
-    const updates = new Map<string, LayoutState>();
-    for (const grid of existing) {
-      const key = gridStorageKey(target, grid.id);
-      const state = loadLayout(key);
-      const tree = moved.reduce<LayoutNode | null>((t, id) => (t ? removeLeaf(t, id) : t), state.tree);
-      if (tree !== state.tree) updates.set(key, { ...state, tree });
-    }
-    for (const [key, state] of placed.layouts) updates.set(key, state);
+    const updates = new Map<string, LayoutState>([...vacated.layouts, ...placed.layouts]);
     for (const [key, state] of updates) saveLayout(key, state);
-    const grids = appendGrids(target, placed.grids);
+    // Appended first, so removing the emptied grids never leaves the workspace without one.
+    let grids = appendGrids(target, placed.grids);
+    for (const id of vacated.emptied) grids = removeGrid(target, id);
     setLayouts((prev) => {
       const next = new Map(prev);
       for (const [key, state] of updates) next.set(key, state);
+      for (const id of vacated.emptied) next.delete(gridStorageKey(target, id));
       return next;
     });
     setGridsByWs((prev) => new Map(prev).set(target, grids));

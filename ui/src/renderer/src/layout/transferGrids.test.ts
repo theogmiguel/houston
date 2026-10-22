@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { collectTransferGrids, placeTransferGrids } from './transferGrids'
+import { collectTransferGrids, placeTransferGrids, vacateMovedPanes } from './transferGrids'
 import { gridStorageKey, preorderSessions, saveLayout, type GridMeta, type LayoutNode } from './tree'
 
 const SOURCE = '/home/a/project'
@@ -95,6 +95,18 @@ describe('workspace transfer grids', () => {
       'D:\\work\\app\\src\\main.rs',
       'D:\\work\\app\\docs'
     ])
+  })
+
+  it('empties only the grids that held nothing but the panes the import moves', () => {
+    const only: LayoutNode = { kind: 'leaf', session: 40, id: 'p40' }
+    const shared: LayoutNode = { kind: 'split', dir: 'row', weights: [1, 1], children: [{ kind: 'leaf', session: 41, id: 'p41' }, { kind: 'leaf', session: 7, id: 'p7' }] }
+    saveLayout(gridStorageKey(TARGET, 'g-only'), { tree: only, cols: 1 })
+    saveLayout(gridStorageKey(TARGET, 'g-shared'), { tree: shared, cols: 2 })
+    saveLayout(gridStorageKey(TARGET, 'g-empty'), { tree: null, cols: 1 })
+    const grids: GridMeta[] = ['g-only', 'g-shared', 'g-empty'].map((id) => ({ id, name: id, nameSource: 'user', tags: [] }))
+    const vacated = vacateMovedPanes(TARGET, grids, [40, 41])
+    expect(vacated.emptied).toEqual(['g-only'])
+    expect(vacated.layouts.map(([key, state]) => [key, preorderSessions(state.tree)])).toEqual([[gridStorageKey(TARGET, 'g-shared'), [7]]])
   })
 
   it('ignores a blob it cannot read', () => {

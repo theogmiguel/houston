@@ -6,6 +6,7 @@ import {
   loadLayout,
   newGridId,
   newPaneId,
+  removeLeaf,
   type GridMeta,
   type LayoutNode,
   type LayoutState,
@@ -124,6 +125,27 @@ function remapTree(node: LayoutNode, sessions: Map<number, number>, sources: rea
     return { ...node, id: newPaneId(), children, activeIndex: Math.min(node.activeIndex, children.length - 1) }
   }
   return remapPane(node, sessions, sources, target)
+}
+
+export interface VacatedGrids {
+  layouts: Array<[string, LayoutState]>
+  /** Grids that held only panes the import moves into its own grids. */
+  emptied: string[]
+}
+
+/** The target's grids without the panes the import moves into its imported grids. A
+ *  new pane first lands in the selected grid; one that held nothing else is emptied. */
+export function vacateMovedPanes(target: string, existing: readonly GridMeta[], moved: readonly number[]): VacatedGrids {
+  const out: VacatedGrids = { layouts: [], emptied: [] }
+  for (const grid of existing) {
+    const key = gridStorageKey(target, grid.id)
+    const state = loadLayout(key)
+    const tree = moved.reduce<LayoutNode | null>((t, id) => (t ? removeLeaf(t, id) : t), state.tree)
+    if (tree === state.tree) continue
+    if (tree === null) out.emptied.push(grid.id)
+    else out.layouts.push([key, { ...state, tree }])
+  }
+  return out
 }
 
 export interface PlacedGrids {
