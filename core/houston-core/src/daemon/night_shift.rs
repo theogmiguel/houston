@@ -55,6 +55,7 @@ const MINUTE_MS: i64 = 60_000;
 /// Sweeps of a settling run's tree: one closes what is live, a second
 /// catches a pane spawned while the first ran.
 const NIGHT_SWEEP_PASSES: usize = 3;
+const NIGHT_NO_START_MS: i64 = 365 * 24 * 60 * MINUTE_MS;
 
 fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
     serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
@@ -507,8 +508,18 @@ impl Daemon {
                 window::scheduled(due, &s.window)
             }
         };
-        let next =
-            window::next_start(win.hard_stop_at_ms, &s.window).unwrap_or(win.hard_stop_at_ms);
+        // With no night ahead the routine is off in its settings; its clock
+        // moves a year out rather than to a time already due.
+        let next = window::next_start(win.hard_stop_at_ms.max(now), &s.window)
+            .unwrap_or(now + NIGHT_NO_START_MS);
+        if trigger == proto::RoutineTrigger::Schedule && until_ms.is_none() && !s.enabled {
+            self.db.set_routine_next_run_at(row.id, next)?;
+            tracing::info!(
+                "Night shift routine {} came due while its settings are off; nothing started",
+                row.id
+            );
+            return Ok(None);
+        }
         let mut items = preflight::evaluate(&s, &self.night_facts(&s));
         let mut refusal = None;
         if win.wrap_up_at_ms <= now {

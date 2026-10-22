@@ -505,6 +505,51 @@ async fn delete_removes_settings() {
     assert!(r.state().routine.is_none());
 }
 
+/// The generic routine verbs would desynchronise the routine row from its
+/// settings, so they refuse; a scheduled fire while the settings are off
+/// starts nothing and moves the clock past now.
+#[tokio::test]
+async fn generic_routine_verbs_refuse_night_shift() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let revision = match r.daemon.routine_list() {
+        proto::ServerMsg::Routines { routines, .. } => {
+            routines
+                .into_iter()
+                .find(|x| x.id == routine.id)
+                .unwrap()
+                .revision
+        }
+        _ => unreachable!(),
+    };
+    let err = r
+        .daemon
+        .routine_update_for_test(
+            routine.id,
+            &revision,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("night_shift_update"), "{err}");
+    let err = r.daemon.routine_run_now(routine.id).unwrap_err().to_string();
+    assert!(err.contains("night_shift_run_now"), "{err}");
+
+    r.daemon.routine_fire(routine.id).unwrap();
+    assert!(r.state().runs.is_empty(), "nothing started");
+    let next = r.state().routine.unwrap().next_run_at_ms;
+    assert!(
+        next > houston_core::daemon::now_unix_ms() + 300 * 24 * 60 * MINUTE,
+        "the clock moved past now: {next}"
+    );
+}
+
 // ---- S2 ----
 
 #[tokio::test]

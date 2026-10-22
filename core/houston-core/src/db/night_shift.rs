@@ -254,6 +254,16 @@ impl Db {
             .optional()?)
     }
 
+    /// Moves a routine's next scheduled run without recording a run.
+    pub fn set_routine_next_run_at(&self, routine_id: u32, at_ms: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE routines SET next_run_at_ms = ?2 WHERE id = ?1",
+            rusqlite::params![routine_id, at_ms],
+        )?;
+        Ok(())
+    }
+
     pub fn night_shift_settings_exist(&self, routine_id: u32) -> Result<bool> {
         Ok(self.night_shift_settings_json(routine_id)?.is_some())
     }

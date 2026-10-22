@@ -6945,6 +6945,7 @@ impl Daemon {
                 None,
             ));
         };
+        Self::refuse_night_shift_routine(&row, "routine_update", "night_shift_update")?;
         if row.revision != expected_revision {
             return Ok(Self::routine_refused(
                 Some(id),
@@ -7138,8 +7139,29 @@ impl Daemon {
         self.routine_fire_with_trigger(id, proto::RoutineTrigger::Schedule)
     }
 
+    /// Night shift keeps its routine row in step with its settings and its own
+    /// window, so the generic verbs that would change one without the other refuse.
+    fn refuse_night_shift_routine(
+        row: &crate::db::RoutineRow,
+        verb: &str,
+        instead: &str,
+    ) -> Result<()> {
+        if row.kind == proto::RoutineKind::NightShift {
+            bail!(
+                "{verb} refused: routine {} ({:?}) is a Night shift routine; use {instead} \
+                 (Routines ▸ Night shift)",
+                row.id,
+                row.name
+            );
+        }
+        Ok(())
+    }
+
     /// Run now: exactly the scheduler's path, with the trigger written down.
     pub fn routine_run_now(self: &Arc<Self>, id: u32) -> Result<proto::ServerMsg> {
+        if let Some(row) = self.db.routine(id)? {
+            Self::refuse_night_shift_routine(&row, "routine_run_now", "night_shift_run_now")?;
+        }
         let in_flight = self
             .routine_runs
             .lock()
