@@ -97,6 +97,34 @@ describe('NightShiftSetup', () => {
     expect(input('Goal').value).toBe('saved elsewhere')
   })
 
+  it('confirms a save once the daemon answers with the saved settings', () => {
+    const onSave = vi.fn()
+    const render = (settings: ReturnType<typeof nightDefaults>, revision: string, error: string | null = null): void =>
+      act(() => root.render(<NightShiftSetup settings={settings} revision={revision} verifyCommand onSave={onSave} error={error} />))
+    render(nightDefaults(), 'r')
+    const goal = host.querySelector('[aria-label="Goal"]') as HTMLTextAreaElement
+    const type = (value: string): void => {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(goal), 'value')!.set!
+      act(() => { setter.call(goal, value); goal.dispatchEvent(new Event('input', { bubbles: true })) })
+    }
+    const status = (): string => host.querySelector('[role="status"]')?.textContent ?? ''
+    type('CI is green')
+    expect(status()).toBe('')
+    click(button('Save'))
+    expect(status()).toContain('Saving')
+    expect(button('Save')?.disabled).toBe(true)
+    render({ ...nightDefaults(), goal: 'CI is green' }, 'r2')
+    expect(status()).toContain('Saved')
+    expect(host.querySelector('[aria-label="Saved"]')).not.toBeNull()
+    type('CI is green, docs too')
+    expect(status()).toBe('')
+
+    click(button('Save'))
+    render({ ...nightDefaults(), goal: 'CI is green' }, 'r2', 'stale revision')
+    expect(status(), 'a refused save is not confirmed').toBe('')
+    expect(button('Save')?.disabled).toBe(false)
+  })
+
   it('offers no ZCode orchestrator and refuses a stored one by its reason', () => {
     act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={vi.fn()} />))
     const trigger = host.querySelector('[role="combobox"][aria-label="Orchestrator"]')!

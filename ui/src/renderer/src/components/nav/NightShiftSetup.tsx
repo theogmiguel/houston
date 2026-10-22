@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { NightFocusLevel } from '../../houston/generated/NightFocusLevel'
 import type { NightShiftSettings } from '../../houston/generated/NightShiftSettings'
-import { Button, Card, Chip, Inline, Notice, NightWindowStrip, Segmented, Select, Text, TextArea, TextInput } from '../ui'
+import { Button, Card, Chip, Inline, Notice, NightWindowStrip, SaveStateMark, Segmented, Select, Text, TextArea, TextInput } from '../ui'
 import { Toggle } from '../ui/settingsPrimitives'
 import { NumberField } from '../ui/NumberField'
 import { engineLabel } from '../engineLabel'
@@ -39,6 +39,9 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
   const [draft, setDraft] = useState(settings)
   const [clocks, setClocks] = useState(() => clocksOf(settings))
   const dirty = JSON.stringify(draft) !== JSON.stringify(base.settings)
+  // The draft Save sent, until the daemon answers with it; then Saved shows until the next edit.
+  const [sent, setSent] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
   const reset = (): void => {
     setBase({ settings, revision })
     setDraft(settings)
@@ -48,7 +51,13 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
   // concurrent change makes Save refuse as stale instead of overwriting it.
   useEffect(() => {
     if (revision !== base.revision && (!dirty || JSON.stringify(draft) === JSON.stringify(settings))) reset()
+    if (sent !== null && JSON.stringify(settings) === sent) {
+      setSent(null)
+      setSaved(true)
+    }
   }, [revision]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (error) setSent(null) }, [error])
+  useEffect(() => { if (dirty) setSaved(false) }, [dirty])
   const set = (patch: Partial<NightShiftSettings>): void => setDraft((d) => ({ ...d, ...patch }))
   const setClock = (key: 'start' | 'wrap_up' | 'hard_stop', text: string): void => {
     setClocks((c) => ({ ...c, [key]: text }))
@@ -190,9 +199,14 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
 
       {problems.map((p) => <Notice key={p} tone="warn">{p}</Notice>)}
       {error && <Notice tone="danger">{error}</Notice>}
-      <div className="flex gap-[var(--space-2)]">
-        <Button variant="primary" disabled={!dirty || saving || problems.length > 0} onClick={() => onSave(draft, base.revision)}>Save</Button>
-        {dirty && <Button variant="ghost" onClick={reset}>Discard changes</Button>}
+      <div className="flex items-center gap-[var(--space-2)]">
+        <Button variant="primary" disabled={!dirty || saving || sent !== null || problems.length > 0}
+          onClick={() => { setSent(JSON.stringify(draft)); onSave(draft, base.revision) }}>Save</Button>
+        {dirty && <Button variant="ghost" onClick={() => { setSent(null); reset() }}>Discard changes</Button>}
+        <span role="status" className="inline-flex items-center gap-[var(--space-1)]">
+          {sent !== null && <><SaveStateMark saving /><Text size="small" tone="muted" aria-hidden="true">Saving…</Text></>}
+          {saved && !dirty && sent === null && <><SaveStateMark saving={false} /><Text size="small" tone="muted" aria-hidden="true">Saved</Text></>}
+        </span>
       </div>
     </div>
   )
