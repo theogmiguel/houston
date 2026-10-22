@@ -87,6 +87,11 @@ function PaneList({ panes, skipped }: { panes: TransferPane[]; skipped: Transfer
   )
 }
 
+/** The footer of every refusal or failure: Back returns to the form with what was entered. */
+function RefusalActions({ onBack, onClose }: { onBack: () => void; onClose: () => void }): React.JSX.Element {
+  return <><Button variant="secondary" onClick={onClose}>Close</Button><span className="flex-1" /><Button variant="primary" onClick={onBack}>Back</Button></>
+}
+
 function Progress({ stage }: { stage: TransferStage | null }): React.JSX.Element {
   return <Inline gap="small"><Spinner label="Working" /><Text size="small" tone="muted">{stage ? TRANSFER_STAGE_LABEL[stage] : 'Starting'}</Text></Inline>
 }
@@ -181,9 +186,10 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
     body = <TransferRefusalView refusal={outcome.refusal} />
     actions = wslWorkspaceOf(workspace)
       ? <Button variant="primary" onClick={onClose}>Close</Button>
-      : <><Button variant="secondary" onClick={onClose}>Close</Button><span className="flex-1" /><Button variant="primary" onClick={() => setOutcome({ kind: 'idle' })}>Try again</Button></>
+      : <RefusalActions onBack={() => setOutcome({ kind: 'idle' })} onClose={onClose} />
   } else if (outcome.kind === 'error') {
     body = <Notice tone="danger" variant="callout">{outcome.message}</Notice>
+    actions = <RefusalActions onBack={() => setOutcome({ kind: 'idle' })} onClose={onClose} />
   } else {
     body = <Stack gap={3}>
       <DialogDescription>Saves this workspace's Claude and Codex conversations and its code state in one encrypted file, so the work continues on another computer.</DialogDescription>
@@ -266,7 +272,7 @@ export function ImportTransferDialog({ client, targets, profiles, initialWorkspa
     actions = <Button variant="primary" onClick={onClose}>Close</Button>
   } else if (outcome.kind === 'refused' || outcome.kind === 'error') {
     body = outcome.kind === 'refused' ? <TransferRefusalView refusal={outcome.refusal} /> : <Notice tone="danger" variant="callout">{outcome.message}</Notice>
-    actions = <><Button variant="secondary" onClick={onClose}>Close</Button><span className="flex-1" /><Button variant="primary" onClick={() => setOutcome({ kind: 'idle' })}>Back</Button></>
+    actions = <RefusalActions onBack={() => setOutcome({ kind: 'idle' })} onClose={onClose} />
   } else if (summary) {
     const needs = profileNeeds(summary)
     body = <Stack gap={3}>

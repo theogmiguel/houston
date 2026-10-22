@@ -7,7 +7,16 @@ import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { TransferFileSummary } from '../houston/generated/TransferFileSummary'
 import { ExportTransferDialog, ImportTransferDialog, TransferRefusalView } from './WorkspaceTransferDialog'
 
-afterEach(cleanup)
+const { picked } = vi.hoisted(() => ({ picked: vi.fn<() => Promise<string | null>>() }))
+vi.mock('../houston/transfer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../houston/transfer')>()),
+  pickTransferDestination: picked
+}))
+
+afterEach(() => {
+  cleanup()
+  picked.mockReset()
+})
 
 function fakeClient() {
   const handlers = new Set<(msg: ServerMsg) => void>()
@@ -84,5 +93,68 @@ describe('workspace transfer dialogs', () => {
     await emit({ type: 'transfer_imported', request: imported.request, result })
     expect(onImported).toHaveBeenCalledWith(result, '/home/b/project')
     expect(screen.getByText(/resumed 1 pane/)).toBeTruthy()
+  })
+
+  it('export adds the extension and replaces only the file the save dialog confirmed', async () => {
+    const { client, sent } = fakeClient()
+    picked.mockResolvedValueOnce('/tmp/w')
+    render(<ExportTransferDialog client={client} workspace="/w" name="w" onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'secret' } })
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    await vi.waitFor(() => expect(sent.some((msg) => msg.type === 'transfer_export')).toBe(true))
+    expect(sent[0]).toMatchObject({ destination: '/tmp/w.houston-transfer', overwrite: false })
+  })
+
+  it('export refusal: Back returns to the form with the passphrase, Close closes', async () => {
+    const { client, sent, emit } = fakeClient()
+    const onClose = vi.fn()
+    picked.mockResolvedValue('/tmp/w.houston-transfer')
+    render(<ExportTransferDialog client={client} workspace="/w" name="w" onClose={onClose} />)
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'secret' } })
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    await vi.waitFor(() => expect(sent.some((msg) => msg.type === 'transfer_export')).toBe(true))
+    const request = sent[0].type === 'transfer_export' ? sent[0].request : -1
+    expect(sent[0]).toMatchObject({ overwrite: true })
+    await emit({ type: 'transfer_refused', request, refusal: { code: 'busy_panes', problem: '1 pane is still busy.', items: ['api (pane 4): working'], steps: ['Let it finish.'] } })
+    expect(screen.getByText('1 pane is still busy.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect((screen.getByLabelText('Passphrase') as HTMLInputElement).value).toBe('secret')
+    expect((screen.getByLabelText('Repeat') as HTMLInputElement).value).toBe('secret')
+    expect((screen.getByRole('button', { name: 'Export' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    await vi.waitFor(() => expect(sent.filter((msg) => msg.type === 'transfer_export')).toHaveLength(2))
+    const again = sent[1].type === 'transfer_export' ? sent[1].request : -1
+    await emit({ type: 'transfer_refused', request: again, refusal: { code: 'busy_panes', problem: 'Still busy.', items: [], steps: [] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('import refusal: Back keeps the file, passphrase and profile choices, Close closes', async () => {
+    const { client, sent, emit } = fakeClient()
+    const onClose = vi.fn()
+    const targets = [{ path: '/home/b/project', name: 'project' }]
+    render(<ImportTransferDialog client={client} targets={targets} profiles={[]} initialFile="/tmp/t.houston-transfer" onImported={() => {}} onClose={onClose} />)
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    const inspect = sent.find((msg) => msg.type === 'transfer_inspect')
+    if (inspect?.type !== 'transfer_inspect') throw new Error('no inspect request')
+    await emit({ type: 'transfer_inspected', request: inspect.request, summary })
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    const first = sent.filter((msg) => msg.type === 'transfer_import')
+    expect(first).toHaveLength(1)
+    if (first[0].type !== 'transfer_import') return
+    await emit({ type: 'transfer_refused', request: first[0].request, refusal: { code: 'dirty_checkout', problem: '/home/b/project has uncommitted changes.', items: ['README.md'], steps: ['Commit them.'] } })
+    expect(screen.getByText('/home/b/project has uncommitted changes.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    const second = sent.filter((msg) => msg.type === 'transfer_import')
+    expect(second).toHaveLength(2)
+    expect(second[1]).toMatchObject({ path: '/tmp/t.houston-transfer', passphrase: 'secret', workspace: '/home/b/project', profiles: first[0].profiles })
+    if (second[1].type !== 'transfer_import') return
+    await emit({ type: 'transfer_refused', request: second[1].request, refusal: { code: 'dirty_checkout', problem: 'Still dirty.', items: [], steps: [] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
