@@ -924,6 +924,14 @@ async fn restart_resumes_or_settles() {
 
     // Same daemon, run forgotten as a restart forgets it: the pane is live
     // and the hard stop is ahead, so the run continues.
+    let held = r
+        .daemon
+        .hold_instruction_for_test(session, "continue the plan")
+        .unwrap();
+    assert_eq!(
+        r.daemon.instruction_state_for_test(&held),
+        Some(proto::InstructionState::HeldAfterRecovery)
+    );
     r.daemon.forget_routine_runs_for_test();
     r.daemon.set_night_shift_awake_for_test(None);
     let log = Arc::clone(&r.awake);
@@ -938,6 +946,11 @@ async fn restart_resumes_or_settles() {
     assert_eq!(resumed.session_id, Some(session));
     assert_eq!(resumed.interruptions.len(), 1);
     assert!(resumed.interruptions[0].resumed);
+    assert_ne!(
+        r.daemon.instruction_state_for_test(&held),
+        Some(proto::InstructionState::HeldAfterRecovery),
+        "the held instruction of the orchestrator resumed"
+    );
     assert_eq!(
         r.awake.lock().unwrap().last(),
         Some(&(run.run_id, true)),

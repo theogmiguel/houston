@@ -317,6 +317,43 @@ impl Daemon {
         *self.night.awake_for_test.lock().expect("night awake hook") = hook;
     }
 
+    /// An operator instruction to `target` left held, as a daemon restart
+    /// leaves an undelivered one. Answers its id.
+    #[doc(hidden)]
+    pub fn hold_instruction_for_test(&self, target: u32, body: &str) -> Result<String> {
+        let context = self.instruction_context(target)?;
+        let now = super::now_ms();
+        let row = self.db.instruction_accept(
+            target,
+            &context,
+            proto::InstructionMode::Queue,
+            body,
+            &crate::db::MessageReceipt {
+                caller: 0,
+                key: None,
+                operation: "pane_prompt",
+                digest: String::new(),
+            },
+            now,
+        )?;
+        self.db.instruction_set_state(
+            &row.info.id,
+            proto::InstructionState::HeldAfterRecovery,
+            Some("daemon restarted"),
+            now,
+        )?;
+        Ok(row.info.id)
+    }
+
+    #[doc(hidden)]
+    pub fn instruction_state_for_test(&self, id: &str) -> Option<proto::InstructionState> {
+        self.db
+            .instruction_row(id)
+            .ok()
+            .flatten()
+            .map(|r| r.info.state)
+    }
+
     /// Forgets every run in flight, as a daemon restart does.
     #[doc(hidden)]
     pub fn forget_routine_runs_for_test(&self) {
