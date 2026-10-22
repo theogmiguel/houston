@@ -2084,3 +2084,101 @@ async fn orchestrator_pane_can_reach_hs_night() {
     assert_eq!(Path::new(parts[1]), r.report_dir(&run).as_path(), "{text}");
     assert!(parts[2].ends_with("hs-night"), "{text}");
 }
+
+/// On the dev channel the stand-in orchestrator fires no hooks, so its pasted
+/// first prompt is not awaited: no "not confirmed as submitted" failure ends
+/// the run, though the orchestrator's hooks are installed. The orchestrator is
+/// ZCode, whose prompt is pasted: settings saved before ZCode was refused as
+/// orchestrator still hold it.
+#[tokio::test]
+async fn dev_fake_orchestrator_prompt_is_not_awaited() {
+    shim_dir();
+    let state = houston_core::fixture_dirs::tempdir_outside_git();
+    let dev = state.path().join(".houston-dev");
+    std::fs::create_dir_all(&dev).unwrap();
+    let typed = state.path().join("fake-input");
+    let fake = format!(
+        "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+        typed.display()
+    );
+    let env = shim_env().with("HOUSTON_NIGHT_SHIFT_DEV_CMD", Some(fake));
+    let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
+        common::TOKEN.to_string(),
+        dev.join("test.db"),
+        env,
+    ))
+    .unwrap();
+    let ws = std::fs::canonicalize(state.path()).unwrap().join("project");
+    std::fs::create_dir_all(&ws).unwrap();
+    git(&ws, &["init", "-q"]);
+    git(&ws, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let ws_str = ws.display().to_string();
+    daemon.workspace_add(&ws_str).unwrap();
+    daemon.set_night_shift_facts_for_test(Some(healthy_facts()));
+    daemon.set_night_shift_awake_for_test(Some(Arc::new(|_, _| {})));
+    let rows = daemon.agent_hooks_set(proto::AgentKind::Zcode, true);
+    assert!(
+        rows.iter()
+            .any(|r| r.provider == proto::AgentKind::Zcode && r.installed),
+        "{rows:?}"
+    );
+    daemon.set_first_prompt_confirm_for_test(Duration::from_millis(200));
+    daemon.night_shift_create(&ws_str).unwrap();
+    let (routine, mut settings, revision) = match daemon.night_shift_state(&ws_str, None).unwrap() {
+        proto::ServerMsg::NightShiftState {
+            routine,
+            settings,
+            revision,
+            ..
+        } => (routine.unwrap(), settings, revision),
+        other => panic!("{other:?}"),
+    };
+    settings.checks = vec!["true".into()];
+    daemon
+        .night_shift_update(routine.id, settings, &revision)
+        .unwrap();
+    let db = rusqlite::Connection::open(dev.join("test.db")).unwrap();
+    let json: String = db
+        .query_row(
+            "SELECT json FROM night_shift_settings WHERE routine_id = ?1",
+            [routine.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut stored: Value = serde_json::from_str(&json).unwrap();
+    stored["orchestrator"] = json!({ "provider": "zcode", "model": null });
+    db.execute(
+        "UPDATE night_shift_settings SET json = ?1 WHERE routine_id = ?2",
+        rusqlite::params![stored.to_string(), routine.id],
+    )
+    .unwrap();
+    let until = houston_core::daemon::now_unix_ms() + 120 * MINUTE;
+    let run_id = match daemon.night_shift_run_now(routine.id, until).unwrap() {
+        proto::ServerMsg::NightShiftRunEvent { run } => run.run_id,
+        other => panic!("{other:?}"),
+    };
+    let run = || match daemon.night_shift_state(&ws_str, None).unwrap() {
+        proto::ServerMsg::NightShiftState { runs, .. } => {
+            runs.into_iter().find(|r| r.run_id == run_id).unwrap()
+        }
+        other => panic!("{other:?}"),
+    };
+    let brief_start = "Houston Night shift: you are the orchestrator";
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let input = std::fs::read_to_string(&typed).unwrap_or_default();
+        if input.contains(brief_start) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the brief was never pasted; the pane received {input:?}; run {:?}",
+            run()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Twice the confirmation wait, and more: an awaited prompt would have failed by now.
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    let after = run();
+    assert_eq!(after.phase, proto::NightRunPhase::Running, "{after:?}");
+}

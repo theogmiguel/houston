@@ -7369,29 +7369,36 @@ impl Daemon {
         extra_env: Vec<(String, String)>,
     ) -> Result<Option<u32>> {
         let RoutinePanePrompt { prompt, leading } = prompt;
-        // Leading inputs are typed into the TUI, so the prompt follows them there.
-        let pasted = if leading.is_empty() {
-            None
-        } else {
-            let (text, file) = crate::launch::prompt_text(
-                &prompt,
-                Some(&init_prompts_dir(Path::new(dir))?),
-                &format!("routine-run-{run_id}"),
-            )?;
-            if let Some((path, contents)) = file {
-                std::fs::write(&path, contents)
-                    .with_context(|| format!("writing prompt file {}", path.display()))?;
-            }
-            Some(text)
-        };
         let night = row.kind == proto::RoutineKind::NightShift;
-        let cmd_override = self
+        let test_cmd = self
             .routine_pane_cmd_override
             .lock()
             .expect("routine pane cmd lock")
-            .clone()
-            .or_else(|| night.then(|| self.night_shift_dev_cmd()).flatten());
-        let (cmd, approval) = match cmd_override {
+            .clone();
+        let dev_cmd = test_cmd
+            .is_none()
+            .then(|| night.then(|| self.night_shift_dev_cmd()).flatten())
+            .flatten();
+        // The dev channel's stand-in fires no hooks, so no UserPromptSubmit could
+        // confirm a pasted prompt; it is pasted here, unconfirmed.
+        let unconfirmed = dev_cmd.is_some();
+        // Leading inputs are typed into the TUI, so the prompt follows them there.
+        let pasted =
+            if leading.is_empty() && !(unconfirmed && !crate::launch::prompt_in_argv(row.engine)) {
+                None
+            } else {
+                let (text, file) = crate::launch::prompt_text(
+                    &prompt,
+                    Some(&init_prompts_dir(Path::new(dir))?),
+                    &format!("routine-run-{run_id}"),
+                )?;
+                if let Some((path, contents)) = file {
+                    std::fs::write(&path, contents)
+                        .with_context(|| format!("writing prompt file {}", path.display()))?;
+                }
+                Some(text)
+            };
+        let (cmd, approval) = match test_cmd.or(dev_cmd) {
             Some(cmd) => {
                 let approval = match row.permission_mode {
                     proto::ChatPermissionMode::AcceptEdits => crate::launch::ApprovalMode::Auto,
@@ -7471,7 +7478,7 @@ impl Daemon {
             }
         };
         if let Some(text) = pasted {
-            self.deliver_first_prompts(session.id, leading, text, None, true);
+            self.deliver_first_prompts(session.id, leading, text, None, true, !unconfirmed);
         }
         self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
@@ -19169,11 +19176,12 @@ impl Daemon {
         sender: Option<u32>,
         submit: bool,
     ) {
-        self.deliver_first_prompts(session, Vec::new(), text, sender, submit);
+        self.deliver_first_prompts(session, Vec::new(), text, sender, submit, true);
     }
 
     /// `leading` are submitted one by one before `text`, each once the composer takes
-    /// input again (a slash command such as `/goal`); only `text` waits for confirmation.
+    /// input again (a slash command such as `/goal`); only `text` waits for confirmation,
+    /// and only with `confirm`.
     pub(crate) fn deliver_first_prompts(
         self: &Arc<Self>,
         session: u32,
@@ -19181,6 +19189,7 @@ impl Daemon {
         text: String,
         sender: Option<u32>,
         submit: bool,
+        confirm: bool,
     ) {
         let daemon = Arc::clone(self);
         let spawned = std::thread::Builder::new()
@@ -19195,7 +19204,7 @@ impl Daemon {
                     std::thread::sleep(FIRST_INPUT_GAP);
                 }
                 if outcome.is_ok() {
-                    outcome = daemon.first_prompt_deliver(session, &text, submit, true);
+                    outcome = daemon.first_prompt_deliver(session, &text, submit, confirm);
                 }
                 if let Ok(s) = daemon.get(session) {
                     s.composer_watch.store(false, Ordering::Relaxed);

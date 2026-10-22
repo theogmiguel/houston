@@ -319,7 +319,8 @@ up, add a check (for example `true`), save, choose **Run now** with 20 minutes a
 The fake records plan, PR, lesson, flaky test and decision entries through `hs-night`,
 writes `report.md` and publishes it, then waits. The live view shows the entries; **Wrap up
 now** pastes the wrap-up instruction into its pane; **Stop** closes it and opens the morning
-report. Preflight still checks the real providers' CLIs and hooks.
+report. Preflight still checks the real providers' CLIs and hooks. The fake fires no hooks, so Houston
+pastes its first prompt without waiting for a hook to confirm it.
 
 `HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and
 `TR_BENCH_WRITE_BURST_MS` are bench-harness-only knobs
