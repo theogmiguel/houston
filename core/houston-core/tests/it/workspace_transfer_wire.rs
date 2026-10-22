@@ -19,8 +19,9 @@ static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 const PASSPHRASE: &str = "correct horse battery staple";
 
-/// Records argv per pane and reports a version; prints the mode sequences of a composer
-/// that takes pasted input, then echoes stdin like an idle CLI.
+/// Records argv per pane and reports a version; with FAKE_TRUST set, first asks a
+/// question as a first run in a new folder does and records the answer. Then prints the
+/// mode sequences of a composer that takes pasted input and echoes stdin like an idle CLI.
 const FAKE_CLI: &str = r#"#!/bin/sh
 case "$(basename "$0")" in
   claude) version="$FAKE_CLAUDE_VERSION" ;;
@@ -35,6 +36,11 @@ out="$TRANSFER_ARGV_DIR/$HOUSTON_SESSION"
 for arg in "$@"; do printf '%s\n' "$arg" >> "$out.tmp"; done
 printf 'cwd:%s\n' "$PWD" >> "$out.tmp"
 mv "$out.tmp" "$out"
+if [ -n "$FAKE_TRUST" ]; then
+  printf 'Trust this folder? '
+  read -r answer
+  printf '%s' "$answer" > "$out.trust"
+fi
 printf '\033[?2004h\033[?25h> '
 exec cat
 "#;
@@ -113,6 +119,15 @@ struct Computer {
 
 impl Computer {
     async fn new(origin: &Path, claude_version: &str, codex_version: &str) -> Self {
+        Self::with_env(origin, claude_version, codex_version, &[]).await
+    }
+
+    async fn with_env(
+        origin: &Path,
+        claude_version: &str,
+        codex_version: &str,
+        extra: &[(&str, &str)],
+    ) -> Self {
         shim_dir();
         let root = tempfile::tempdir().unwrap();
         let base = root.path().canonicalize().unwrap();
@@ -137,6 +152,9 @@ impl Computer {
             .with("GIT_AUTHOR_EMAIL", Some("transfer@test"))
             .with("GIT_COMMITTER_NAME", Some("Transfer Test"))
             .with("GIT_COMMITTER_EMAIL", Some("transfer@test"));
+        let env = extra
+            .iter()
+            .fold(env, |env, (key, value)| env.with(key, Some(*value)));
         let daemon = Daemon::new(DaemonConfig::new(
             common::TOKEN.to_string(),
             state.join("test.db"),
@@ -288,6 +306,15 @@ impl Computer {
         )
         .await;
         (pane, id, transcript)
+    }
+
+    async fn type_into(&mut self, session: u32, bytes: &[u8]) {
+        self.ws
+            .send(Message::Binary(
+                proto::encode_stdin_frame(session, bytes).into(),
+            ))
+            .await
+            .unwrap();
     }
 
     async fn send(&mut self, msg: proto::ClientMsg) {
@@ -1035,4 +1062,32 @@ async fn an_import_that_fails_partway_is_undone() {
         .await
         .expect("import once the causes are gone");
     assert_eq!(imported.sessions.len(), 2, "{imported:?}");
+}
+
+/// A CLI that asks a first-run question in a new folder takes the moved note only once
+/// its composer is up, however long the question stays unanswered.
+#[tokio::test]
+async fn the_moved_note_waits_for_a_first_run_question() {
+    let _serial = SERIAL.lock().await;
+    let world = tempfile::tempdir().unwrap();
+    let origin = origin(world.path());
+    let mut a = Computer::new(&origin, "2.1.307", "0.142.3").await;
+    let mut b = Computer::with_env(&origin, "2.1.307", "0.142.3", &[("FAKE_TRUST", "1")]).await;
+    b.daemon
+        .set_first_prompt_deadline_for_test(Duration::from_millis(300));
+    let (claude_a, _, _) = a.claude_pane(&a.workspace).await;
+    let file = world.path().join("t.houston-transfer");
+    a.export(&file, "{}").await.expect("export");
+    let imported = b.import(&file).await.expect("import");
+    let pane = mapped(&imported.sessions, claude_a.id);
+    b.screen_contains(pane, "Trust this folder?").await;
+    // Past the deadline a submitted prompt would be pasted regardless; a prefill waits.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    b.type_into(pane, b"y\r").await;
+    b.screen_contains(pane, "this project moved from").await;
+    assert_eq!(
+        std::fs::read_to_string(b.argv.join(format!("{pane}.trust"))).unwrap(),
+        "y",
+        "the note never answers the question"
+    );
 }

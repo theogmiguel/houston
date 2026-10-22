@@ -35,6 +35,10 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+// A prefilled prompt is only typed into a composer that takes input, never pasted
+// regardless: a first-run question such as Claude's folder trust prompt can stay up
+// until the operator reads it, and a paste there would answer it.
+const FIRST_PROMPT_PREFILL_DEADLINE: Duration = Duration::from_secs(15 * 60);
 // A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
 // the margin covers a CLI still finishing its startup when the paste arrived.
 const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
@@ -1799,6 +1803,7 @@ pub struct Daemon {
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
     first_prompt_confirm_ms: AtomicU64,
+    first_prompt_deadline_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
     claude_mod_turns: Mutex<HashMap<u32, (String, String)>>,
@@ -3616,6 +3621,7 @@ impl Daemon {
             paste_confirmations: Mutex::new(HashMap::new()),
             first_prompts: Mutex::new(HashMap::new()),
             first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
+            first_prompt_deadline_ms: AtomicU64::new(FIRST_PROMPT_DEADLINE.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
             claude_mod_turns: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
@@ -19174,7 +19180,14 @@ impl Daemon {
     /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
     /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
     /// has started, and ZCode drops what arrives before its input box has focus.
-    fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
+    /// Waits until the pane's composer takes input. Past `deadline` the paste goes in
+    /// regardless when `paste_unready`; otherwise the wait fails there.
+    fn first_prompt_wait_ready(
+        &self,
+        session: u32,
+        deadline: Instant,
+        paste_unready: bool,
+    ) -> Result<()> {
         loop {
             let Ok(s) = self.get(session) else {
                 bail!("the pane closed first");
@@ -19190,7 +19203,7 @@ impl Daemon {
             drop(s);
             let late = Instant::now() >= deadline;
             let held = self.immediate_paste_hold_reason(session);
-            if drawn && held.is_none() && (ready || late) {
+            if drawn && held.is_none() && (ready || (late && paste_unready)) {
                 if !ready {
                     tracing::info!(
                         "pane {session}: its composer reported no focus by the deadline; \
@@ -19200,11 +19213,14 @@ impl Daemon {
                 return Ok(());
             }
             if late {
-                bail!(
-                    "{} within {} s",
-                    held.unwrap_or_else(|| "the CLI drew nothing".to_string()),
-                    FIRST_PROMPT_DEADLINE.as_secs()
-                );
+                let why = held.unwrap_or_else(|| {
+                    if drawn {
+                        "its composer never took input".to_string()
+                    } else {
+                        "the CLI drew nothing".to_string()
+                    }
+                });
+                bail!("{why} by the deadline");
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
@@ -19235,7 +19251,17 @@ impl Daemon {
         text: &str,
         submit: bool,
     ) -> Result<FirstPromptOutcome> {
-        self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
+        if submit {
+            let deadline =
+                Duration::from_millis(self.first_prompt_deadline_ms.load(Ordering::Relaxed));
+            self.first_prompt_wait_ready(session, Instant::now() + deadline, true)?;
+        } else {
+            self.first_prompt_wait_ready(
+                session,
+                Instant::now() + FIRST_PROMPT_PREFILL_DEADLINE,
+                false,
+            )?;
+        }
         let agent = self.get(session).map(|s| s.info.agent)?;
         // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
         let confirmable = submit
@@ -19275,7 +19301,7 @@ impl Daemon {
         if self.first_prompt_confirmed_within(session, wait) {
             return Ok(FirstPromptOutcome::Confirmed);
         }
-        self.first_prompt_wait_ready(session, Instant::now() + wait)?;
+        self.first_prompt_wait_ready(session, Instant::now() + wait, true)?;
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
         if self.first_prompt_confirmed_within(session, wait) {
@@ -19319,6 +19345,12 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_first_prompt_confirm_for_test(&self, wait: Duration) {
         self.first_prompt_confirm_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    pub fn set_first_prompt_deadline_for_test(&self, wait: Duration) {
+        self.first_prompt_deadline_ms
             .store(wait.as_millis() as u64, Ordering::Relaxed);
     }
 }
