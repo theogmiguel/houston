@@ -1211,3 +1211,28 @@ async fn flaky_failure_rerun_once() {
         "a PR the run never recorded is not its business"
     );
 }
+
+#[tokio::test]
+async fn orchestrator_pane_can_reach_hs_night() {
+    let r = rig().await;
+    let out = r.ws.join("night-env.txt");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "printf '%s|%s|%s' \"$HOUSTON_MCP_URL\" \"$HOUSTON_NIGHT_RUN_DIR\" \"$(command -v hs-night)\" > '{}'; exec cat",
+            out.display()
+        ),
+    ]);
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 60);
+    wait_until("the pane to write its environment", || {
+        std::fs::read_to_string(&out).is_ok_and(|s| s.matches('|').count() == 2)
+    })
+    .await;
+    let text = std::fs::read_to_string(&out).unwrap();
+    let parts: Vec<&str> = text.split('|').collect();
+    assert!(parts[0].starts_with("http://"), "{text}");
+    assert_eq!(Path::new(parts[1]), r.report_dir(&run).as_path(), "{text}");
+    assert!(parts[2].ends_with("hs-night"), "{text}");
+}

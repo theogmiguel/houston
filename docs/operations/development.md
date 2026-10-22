@@ -275,6 +275,7 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
 | `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
 | `HOUSTON_UPDATE_MANIFEST_URL=<url>` | Replaces the update-manifest URL (`latest.json`) the daemon checks. |
 | `HOUSTON_MODEL_CATALOG_URL=<url>` | Replaces the model-catalog download URL. |
+| `HOUSTON_NIGHT_SHIFT_DEV_CMD=<cmd>` | Dev channel only: a Night shift run starts this instead of the orchestrator's CLI, so a run spends no provider quota. On Windows it is the path of a PowerShell script; elsewhere a `sh -c` command. Ignored on every other channel. |
 
 The watchdog accepts `TR_WATCHDOG`, `TR_WATCHDOG_RECOVER` and
 `TR_WATCHDOG_SELFTEST_WEDGE_MS` for compatibility.
@@ -301,6 +302,24 @@ the variables to a local server; Cargo does not override a variable already in t
 environment. `common::hermetic_command` forwards them across `env_clear`, so a spawn that
 clears its environment must do the same. A daemon launched by `dev.sh` from a built binary
 is unaffected and checks the real endpoints.
+
+To watch a Night shift run end to end, set the variable to the fake orchestrator before the
+development script starts the daemon, then restart it with `--fresh`:
+
+```
+# Windows (PowerShell)
+$env:HOUSTON_NIGHT_SHIFT_DEV_CMD = "$PWD\scripts\night-shift-fake-orchestrator.ps1"
+.\scripts\dev.ps1 --fresh
+# Linux
+HOUSTON_NIGHT_SHIFT_DEV_CMD="bash $PWD/scripts/night-shift-fake-orchestrator.sh" ./scripts/dev.sh --fresh
+```
+
+In the app, add a scratch Git repository as a workspace, open Routines ▸ Night shift, set it
+up, add a check (for example `true`), save, choose **Run now** with 20 minutes and **Start**.
+The fake records plan, PR, lesson, flaky test and decision entries through `hs-night`,
+writes `report.md` and publishes it, then waits. The live view shows the entries; **Wrap up
+now** pastes the wrap-up instruction into its pane; **Stop** closes it and opens the morning
+report. Preflight still checks the real providers' CLIs and hooks.
 
 `HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and
 `TR_BENCH_WRITE_BURST_MS` are bench-harness-only knobs

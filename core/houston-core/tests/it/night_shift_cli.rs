@@ -8,7 +8,10 @@ use std::process::Command;
 fn hs_night(args: &[&str], mcp: Option<(&str, &str)>) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_houston-core"));
     cmd.arg("hs-night").args(args).env_clear();
-    cmd.env("PATH", crate::common::base_env().var("PATH").unwrap_or_default());
+    cmd.env(
+        "PATH",
+        crate::common::base_env().var("PATH").unwrap_or_default(),
+    );
     if let Some((url, token)) = mcp {
         cmd.env("HOUSTON_MCP_URL", url)
             .env("HOUSTON_MCP_TOKEN", token);

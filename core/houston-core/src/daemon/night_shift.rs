@@ -544,7 +544,9 @@ impl Daemon {
         Ok(Some(run_id))
     }
 
-    /// The dev channel may stand a command in for the orchestrator's CLI.
+    /// The dev channel may stand a script in for the orchestrator's CLI: a
+    /// PowerShell script path on Windows, a `sh -c` command elsewhere. The
+    /// launch appends the brief as arguments, which both forms ignore.
     pub(super) fn night_shift_dev_cmd(&self) -> Option<Vec<String>> {
         let channel = crate::paths::channel_of_state_dir(&self.state_dir);
         if channel.as_deref() != Some("dev") {
@@ -560,7 +562,7 @@ impl Daemon {
                 "-NoProfile".into(),
                 "-ExecutionPolicy".into(),
                 "Bypass".into(),
-                "-Command".into(),
+                "-File".into(),
                 cmd,
             ]
         } else {
