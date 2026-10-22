@@ -1135,6 +1135,21 @@ async fn launch_failure_is_a_refused_run() {
     r.daemon
         .set_routine_pane_cmd_for_test(vec!["/nonexistent/orchestrator".into()]);
     let routine = r.ready(|_| {});
+    // A round trip first: broadcasts reach the socket once its task has run.
+    use futures_util::SinkExt as _;
+    let ask = proto::ClientMsg::NightShiftState {
+        workspace: r.ws_str(),
+        preflight_until_ms: None,
+    };
+    ws.send(tokio_tungstenite::tungstenite::Message::text(
+        serde_json::to_string(&ask).unwrap(),
+    ))
+    .await
+    .unwrap();
+    while !matches!(
+        common::next_control(&mut ws).await,
+        proto::ServerMsg::NightShiftState { .. }
+    ) {}
     let run = r.run_now(routine.id, 120);
     assert_eq!(run.phase, proto::NightRunPhase::Refused);
     let detail = run.stop_detail.clone().unwrap_or_default();
@@ -1408,6 +1423,7 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     r.daemon.night_shift_tick_at(t0 + 42 * MINUTE);
     wait_until("ZCode to be limited", || {
         r.run(run.run_id).limited == [proto::AgentKind::Zcode]
+            && r.notes(o, "Night shift: zcode limited") == 1
     })
     .await;
     let note = r
@@ -1442,7 +1458,10 @@ async fn failed_start_probe_limits_zcode_from_the_start() {
     assert_eq!(item.status, proto::PreflightStatus::Warn);
     assert!(item.detail.contains("[1310]"), "{}", item.detail);
     let o = run.session_id.unwrap();
-    assert_eq!(r.notes(o, "Night shift: zcode limited"), 1);
+    wait_until("the orchestrator to be told", || {
+        r.notes(o, "Night shift: zcode limited") == 1
+    })
+    .await;
 }
 
 #[tokio::test]
