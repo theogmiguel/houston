@@ -19177,11 +19177,9 @@ impl Daemon {
         }
     }
 
-    /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
-    /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
-    /// has started, and ZCode drops what arrives before its input box has focus.
-    /// Waits until the pane's composer takes input. Past `deadline` the paste goes in
-    /// regardless when `paste_unready`; otherwise the wait fails there.
+    /// Waits until the CLI's composer takes input (see `composer_ready.rs`): drawn output
+    /// is not enough, as ConPTY draws before the CLI starts. Past `deadline` the paste goes
+    /// in regardless when `paste_unready`, and otherwise the wait fails.
     fn first_prompt_wait_ready(
         &self,
         session: u32,
