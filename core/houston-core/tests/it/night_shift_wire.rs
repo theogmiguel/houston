@@ -595,6 +595,7 @@ async fn wrap_up_is_delivered_once() {
 async fn hard_stop_kills_descendants_then_orchestrator() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     let orchestrator = run.session_id.unwrap();
@@ -631,6 +632,7 @@ async fn hard_stop_kills_descendants_then_orchestrator() {
 async fn hard_stop_closes_orphaned_grandchild_and_refuses_handoff() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     let orchestrator = run.session_id.unwrap();
@@ -668,6 +670,7 @@ async fn hard_stop_closes_orphaned_grandchild_and_refuses_handoff() {
 async fn live_worker_cap_refuses_spawn() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 1).unwrap();
     let routine = r.ready(|s| s.live_workers = 1);
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
@@ -709,6 +712,10 @@ async fn report_settle_closes_live_panes() {
     wait_until("the run to settle", || !r.in_flight(routine.id)).await;
     wait_until("the worker to close", || !r.live(worker)).await;
     wait_until("the orchestrator to close", || !r.live(o)).await;
+    wait_until("the sweep to finish", || {
+        !r.daemon.night_shift_stop_order(run.run_id).is_empty()
+    })
+    .await;
     assert_eq!(r.daemon.night_shift_stop_order(run.run_id), [worker, o]);
 }
 

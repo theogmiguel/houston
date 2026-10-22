@@ -1150,6 +1150,7 @@ impl Daemon {
                 }
             }
         }
+        self.night_sweep(run.run_id);
         self.settle_run(run.run_id, routine_id, proto::RoutineOutcome::Ok, None);
     }
 
@@ -1224,7 +1225,24 @@ impl Daemon {
     /// Called for every settled routine run; closes the Night shift side,
     /// whichever way the run ended: every pane it started is closed.
     pub(super) fn night_shift_settled(&self, run_id: u32) {
-        self.night_sweep(run_id);
+        // A settle from a hook or a pane exit runs on that pane's own thread,
+        // which closing the pane would wait on.
+        let tracked = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .contains_key(&run_id);
+        if tracked {
+            if let Some(me) = self.self_weak.lock().expect("self_weak lock").upgrade() {
+                let spawned = std::thread::Builder::new()
+                    .name(format!("night-sweep-{run_id}"))
+                    .spawn(move || me.night_sweep(run_id));
+                if let Err(e) = spawned {
+                    tracing::warn!("sweeping night run {run_id}'s panes: {e}");
+                }
+            }
+        }
         let row = {
             let _guard = self.night.lock.lock().expect("night lock");
             let Ok(Some(mut row)) = self.db.night_run(run_id) else {
