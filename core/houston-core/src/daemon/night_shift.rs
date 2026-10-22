@@ -579,7 +579,43 @@ impl Daemon {
             );
             return Ok(Some(run_id));
         }
-        self.db.create_night_run(&night)?;
+        let dir = run_dir
+            .expect("a run that was not refused has its worktree")
+            .to_string_lossy()
+            .into_owned();
+        // Past the run record, every failure is a refused run naming it.
+        let launched = self.db.create_night_run(&night).and_then(|()| {
+            self.night_launch(row, &s, &night, &win, &dir, now, next)
+        });
+        match launched {
+            Ok(true) => self.night_zcode_start_probe(run_id, &s),
+            Ok(false) => {}
+            Err(e) => self.settle_run(
+                run_id,
+                row.id,
+                proto::RoutineOutcome::EngineRefused,
+                Some(format!("{e:#}")),
+            ),
+        }
+        self.broadcast_night_run(run_id);
+        Ok(Some(run_id))
+    }
+
+    /// Writes the brief and opens the orchestrator's pane; `false` when the
+    /// launch was refused and the run already settled.
+    #[allow(clippy::too_many_arguments)]
+    fn night_launch(
+        self: &Arc<Self>,
+        row: &crate::db::RoutineRow,
+        s: &proto::NightShiftSettings,
+        night: &NightRunRow,
+        win: &window::RunWindow,
+        dir: &str,
+        now: i64,
+        next: i64,
+    ) -> Result<bool> {
+        let run_id = night.run_id;
+        let report_dir = crate::night_shift::run_dir(&self.state_dir, run_id);
         std::fs::create_dir_all(&report_dir)
             .with_context(|| format!("creating {}", report_dir.display()))?;
         let digest = self
@@ -590,24 +626,20 @@ impl Daemon {
             win.hard_stop_at_ms,
             window::local_offset_ms,
         );
-        let report_path = night.report_path.clone();
         let text = brief::compose(
-            &s,
+            s,
             &brief::BriefRun {
                 run_id,
-                report_path: &report_path,
+                report_path: &night.report_path,
                 wrap_up: &wrap_label,
                 hard_stop: &stop_label,
             },
             &digest,
         );
+        crate::routines::validate_prompt(&text).context("the composed brief")?;
         let brief_path = report_dir.join("brief.md");
         std::fs::write(&brief_path, &text)
             .with_context(|| format!("writing {}", brief_path.display()))?;
-        let dir = run_dir
-            .expect("a run that was not refused has its worktree")
-            .to_string_lossy()
-            .into_owned();
         let mut launch_row = row.clone();
         launch_row.engine = s.orchestrator.provider;
         launch_row.model = s.orchestrator.model.clone();
@@ -616,25 +648,20 @@ impl Daemon {
             crate::night_shift::RUN_DIR_ENV.to_string(),
             report_dir.display().to_string(),
         )];
-        if self
+        Ok(self
             .routine_spawn_run_pane(
                 &launch_row,
                 run_id,
                 now,
                 next,
-                &dir,
+                dir,
                 super::RoutinePanePrompt {
                     prompt: text,
-                    leading: brief::goal_command(&s).into_iter().collect(),
+                    leading: brief::goal_command(s).into_iter().collect(),
                 },
                 env,
             )?
-            .is_some()
-        {
-            self.night_zcode_start_probe(run_id, &s);
-        }
-        self.broadcast_night_run(run_id);
-        Ok(Some(run_id))
+            .is_some())
     }
 
     /// The dev channel may stand a script in for the orchestrator's CLI: a
@@ -1296,6 +1323,15 @@ impl Daemon {
             }
             let now = now_unix_ms();
             row.ended_at_ms = Some(row.ended_at_ms.unwrap_or(now));
+            // A launch the routine path refused is a refused run, with its reason.
+            if let Ok(Some(run)) = self.db.routine_run(run_id) {
+                if run.status == proto::RoutineRunStatus::EngineRefused
+                    && row.phase != proto::NightRunPhase::Refused
+                {
+                    row.phase = proto::NightRunPhase::Refused;
+                    row.stop_detail = row.stop_detail.take().or(run.error);
+                }
+            }
             if row.phase != proto::NightRunPhase::Refused {
                 row.phase = proto::NightRunPhase::Settled;
                 if row.stop_reason.is_none() {
@@ -1337,7 +1373,8 @@ impl Daemon {
             headline: crate::night_shift::headline(
                 prs,
                 open,
-                row.phase == proto::NightRunPhase::Refused,
+                (row.phase == proto::NightRunPhase::Refused)
+                    .then(|| row.stop_detail.as_deref().unwrap_or("it was refused")),
             ),
         });
     }

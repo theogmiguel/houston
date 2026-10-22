@@ -21,6 +21,13 @@ afterEach(() => {
 })
 
 describe('NightShiftReport', () => {
+  it('headlines a refused run with its reason', () => {
+    const run = nightRun({ phase: 'refused', ended_at_ms: NIGHT_NOW, stop_detail: 'missed: the machine was not running Houston before wrap-up (12 min late)' })
+    act(() => root.render(<NightShiftReport run={run} report={null} holdForQa={false} onDecide={() => {}} onQaPassed={() => {}} onLoadReport={() => {}} />))
+    const head = host.querySelector('[data-testid="night-headline"]')?.textContent
+    expect(head).toBe('Night shift did not start: missed: the machine was not running Houston before wrap-up (12 min late)')
+  })
+
   it('renders the morning report', () => {
     const onDecide = vi.fn()
     const onQaPassed = vi.fn()

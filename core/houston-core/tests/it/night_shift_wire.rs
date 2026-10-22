@@ -1047,6 +1047,37 @@ async fn blocking_preflight_refuses_run() {
     assert_eq!(runs[0].status, proto::RoutineRunStatus::EngineRefused);
 }
 
+/// A pane that cannot be opened leaves a refused run naming why, not a run
+/// shown in flight or settled as if its pane had exited.
+#[tokio::test]
+async fn launch_failure_is_a_refused_run() {
+    let r = rig().await;
+    let mut ws = common::connect_and_hello(r.addr, common::TOKEN).await;
+    r.daemon
+        .set_routine_pane_cmd_for_test(vec!["/nonexistent/orchestrator".into()]);
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    assert_eq!(run.phase, proto::NightRunPhase::Refused);
+    let detail = run.stop_detail.clone().unwrap_or_default();
+    assert!(detail.contains("/nonexistent/orchestrator"), "{detail}");
+    assert!(!r.in_flight(routine.id));
+    assert_eq!(*r.awake.lock().unwrap(), [], "nothing was held");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    let mut headline = None;
+    while headline.is_none() && tokio::time::Instant::now() < deadline {
+        if let Ok(proto::ServerMsg::NightShiftNotice { headline: h, .. }) =
+            tokio::time::timeout(Duration::from_millis(500), common::next_control(&mut ws)).await
+        {
+            headline = Some(h);
+        }
+    }
+    let headline = headline.expect("one notice");
+    assert!(
+        headline.starts_with("Night shift did not start: ") && headline.contains("nonexistent"),
+        "{headline}"
+    );
+}
+
 #[tokio::test]
 async fn keep_awake_held_for_run() {
     let r = rig().await;
