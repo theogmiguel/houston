@@ -8,7 +8,7 @@ import { durationLabel } from './nightShiftFormat'
 export const DURATIONS = [20, 60, 120, 240, 480] as const
 type Duration = (typeof DURATIONS)[number]
 
-const STATUS: Record<PreflightItem['status'], 'Ready' | 'Blocked' | 'Warning'> = { ok: 'Ready', warn: 'Warning', block: 'Blocked' }
+const STATUS: Record<PreflightItem['status'], 'Ready' | 'Blocking' | 'Warning'> = { ok: 'Ready', warn: 'Warning', block: 'Blocking' }
 const STATUS_TEXT: Record<PreflightItem['status'], string> = { ok: 'OK', warn: 'Warning', block: 'Blocks the run' }
 
 /** Run now: the duration, every preflight item, and Start only when nothing blocks. */
@@ -41,7 +41,7 @@ export function NightShiftPreflight({ items, onDuration, onStart, onCancel, now 
           <Card aria-label="Preflight">
             {items === null ? <Card.Row heading={<Text role="status" tone="muted">Running preflight…</Text>} /> : items.map((item) => (
               <Card.Row key={item.id} heading={item.label}
-                meta={<span data-testid={`preflight-${item.id}`}>{item.detail}{item.limit && item.actual ? ` (limit ${item.limit}, actual ${item.actual})` : ''}</span>}
+                meta={<span data-testid={`preflight-${item.id}`}>{item.detail}</span>}
                 status={<StatusLabel status={STATUS[item.status]} size="small">{STATUS_TEXT[item.status]}</StatusLabel>} />
             ))}
           </Card>

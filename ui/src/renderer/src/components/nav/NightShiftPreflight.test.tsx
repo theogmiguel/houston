@@ -31,7 +31,7 @@ describe('NightShiftPreflight', () => {
     const onDuration = vi.fn()
     const items = [
       item('orchestration', 'ok'),
-      item('memory', 'block', { limit: '6144 MiB', actual: '4096 MiB' }),
+      item('memory', 'block', { detail: '4.0 GiB memory free; a run needs at least 6.0 GiB', limit: '6144 MiB', actual: '4096 MiB' }),
       item('on_battery', 'block'),
       item('restart_pending', 'warn')
     ]
@@ -40,7 +40,11 @@ describe('NightShiftPreflight', () => {
     const start = host.querySelector<HTMLButtonElement>('[data-testid="night-preflight-start"]')!
     expect(start.textContent).toBe('Fix 2 items to start')
     expect(start.disabled).toBe(true)
-    expect(host.querySelector('[data-testid="preflight-memory"]')?.textContent).toContain('limit 6144 MiB, actual 4096 MiB')
+    // The detail names the limit and the value once, in words.
+    expect(host.querySelector('[data-testid="preflight-memory"]')?.textContent).toBe('4.0 GiB memory free; a run needs at least 6.0 GiB')
+    const dot = (label: string): string | null => host.querySelector(`[aria-label="${label}"] [aria-hidden="true"]`)?.getAttribute('style') ?? null
+    expect(dot('Blocks the run')).toContain('var(--stop)')
+    expect(dot('Warning')).toContain('var(--warn)')
     expect(host.textContent).toContain('restart_pending detail')
 
     const twenty = Array.from(host.querySelectorAll('[role="radio"]')).find((b) => b.textContent === '20 min') as HTMLElement

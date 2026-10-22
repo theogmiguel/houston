@@ -33,7 +33,8 @@ export const STATUS_LABELS = [
   'Merged',
   'Verifying',
   'Parked',
-  'Warning'
+  'Warning',
+  'Blocking'
 ] as const
 
 export type StatusLabelValue = (typeof STATUS_LABELS)[number]
@@ -73,7 +74,9 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Merged: 'var(--ok)',
   Verifying: 'var(--info)',
   Parked: 'var(--stop)',
-  Warning: 'var(--warn)'
+  Warning: 'var(--warn)',
+  /** Stops an action from starting, unlike a Warning. */
+  Blocking: 'var(--stop)'
 }
 
 const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
@@ -82,6 +85,7 @@ const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
   Connected: 'text-[var(--ok)]',
   Running: 'text-[var(--info)]',
   'Waiting for a slot': 'text-[var(--warn)]',
+  Blocking: 'text-[var(--stop)]',
   Paused: 'text-[var(--text-muted)]',
   Idle: 'text-[var(--text-muted)]'
 }

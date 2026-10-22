@@ -89,7 +89,11 @@ fn floor_item(id: &str, label: &str, free: Option<u32>, floor: u32, what: &str) 
                 id,
                 PreflightStatus::Ok,
                 label,
-                format!("{} {what} free", gib(free)),
+                format!(
+                    "{} {what} free; a run needs at least {}",
+                    gib(free),
+                    gib(floor)
+                ),
             )
         },
         None => item(
@@ -556,7 +560,16 @@ mod tests {
     #[test]
     fn thresholds_name_limit_and_actual() {
         let s = settings();
-        assert!(blocks(&evaluate(&s, &facts(healthy()), &s.window)).is_empty());
+        let ok = evaluate(&s, &facts(healthy()), &s.window);
+        assert!(blocks(&ok).is_empty());
+        let memory = ok.iter().find(|i| i.id == "memory").unwrap();
+        assert!(
+            memory
+                .detail
+                .ends_with("memory free; a run needs at least 6.0 GiB"),
+            "the detail names the value and the floor once: {}",
+            memory.detail
+        );
         let items = evaluate(
             &s,
             &facts(MachineFacts {
