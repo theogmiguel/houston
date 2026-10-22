@@ -35,9 +35,17 @@ the passphrase can read them.
 ## Exporting
 
 1. Wait until every pane in the workspace has finished its turn. Export is refused while a
-   pane is working, waiting for input or starting, and the message names each pane.
+   pane is working, waiting for input or starting, and the message names each pane. A
+   Claude Code or Codex pane that reports no status counts as busy: turn its status hooks
+   on in **Settings ▸ Agents ▸ CLIs**, or close the pane.
 2. Open the workspace's menu in the rail and choose **Export transfer…**.
-3. Enter a passphrase twice, select **Export** and choose where to save the file.
+3. Enter a passphrase twice, select **Export** and choose where to save the file. Houston
+   adds the `.houston-transfer` extension when the name lacks it, and replaces an existing
+   file only when you confirmed replacing that file in the save dialog.
+
+Export is also refused while a file has staged content that differs from its working copy:
+the transfer carries the working copy only. Stage or unstage such a file completely first.
+Only one transfer of a workspace runs at a time.
 
 Export includes Claude Code and Codex panes, including panes in Houston worktrees under
 `.houston/worktrees/`. It leaves out shell panes, other providers, orchestrated child panes
@@ -49,8 +57,10 @@ The file may be at most 200 MB after compression. A larger export is refused and
 largest files; push long unpushed history to the remote, or commit, ignore or delete large
 untracked files, then export again.
 
-After a successful export, the exported agents stop on this computer and their panes show
-**Transferred** with the time. Restarting such a pane is possible: it continues a separate
+Export stops the exported agents before it reads the code and conversations, so nothing
+changes while they are packed. After a successful export, their panes show **Transferred**
+with the time. If an export fails after stopping them, the panes stay stopped without the
+mark; restart them to continue on this computer. Restarting such a pane is possible: it continues a separate
 fork of the conversation and shows **Fork**.
 
 ## Importing
@@ -83,8 +93,8 @@ Workspaces inside a WSL environment cannot be exported or imported in this versi
 
 ## Refusals
 
-Import checks everything before it changes anything. Each refusal names the problem, the
-exact paths or values, and the steps that remove it. Import is refused when:
+Import checks everything it can before it changes anything. Each refusal names the problem,
+the exact paths or values, and the steps that remove it. Import is refused when:
 
 - the passphrase is wrong or the file is damaged;
 - the file was written by a newer Houston with a format this version cannot read;
@@ -96,9 +106,18 @@ exact paths or values, and the steps that remove it. Import is refused when:
   again);
 - the recorded branch exists here with commits the file does not have, or is checked out
   in another folder;
-- an untracked file in the transfer already exists here, including an ignored one; import
-  never overwrites it;
-- a conversation in the file is already open in a pane on this computer.
+- an untracked file in the transfer, or a file that its commits or uncommitted changes add,
+  already exists here, including an ignored one such as a local `.env`; import never
+  overwrites it;
+- the carried uncommitted changes do not apply to their commit on this computer;
+- a conversation in the file is already open in a pane on this computer, or another version
+  of it exists in the provider's folder here;
+- another transfer of the same workspace is running.
+
+If import fails after it has started changing the workspace, it undoes every change: the
+checkout returns to its branch and commit, created branches, worktrees and files are
+removed, replaced conversations are put back and started panes are closed. The message
+says the import was undone and names anything that could not be put back.
 
 ## Returning to the first computer
 

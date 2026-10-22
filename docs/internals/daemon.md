@@ -160,6 +160,15 @@ return trip compares each checkout's `TreeState` (HEAD plus a hash per changed o
 path) with the one recorded at export, and removes only the untracked files that export
 recorded.
 
+Export stops the panes before it captures anything, then re-reads their status: a turn
+that started between the busy check and the stop refuses the export instead of being
+packed half-done. Import runs every check that needs no change first, including
+`git apply --check` against a scratch index and the paths that the carried commits and
+diff would add over ignored files. Each later change is logged before it is made, and a
+failure reverses the log; the import record is written before any pane starts, so a crash
+while starting panes still leaves a return trip possible. Scratch folders hold plaintext
+code and conversations, so they are owner-only on Linux and swept at boot.
+
 Before restore, undrained root lifecycle hooks may update conversation metadata across
 long downtime. Recovery does not replay status, permission, input or orchestration effects.
 Provider and cwd bindings prevent a retained handle from crossing agent or folder changes;
