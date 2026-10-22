@@ -681,6 +681,57 @@ async fn run_panes_belong_to_the_workspace() {
     }
 }
 
+/// A Run now with no enabled routine wakes the parked scheduler, so the run
+/// is charged from its start; its cost counts the orchestrator and every
+/// recorded crew pane, and a stop charges the time since the last tick.
+#[tokio::test]
+async fn cost_counts_the_orchestrator_and_its_crew() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|_| {});
+    tokio::spawn(Arc::clone(&r.daemon).routine_fire_loop());
+    // The settings save left a wake behind; once it is spent the scheduler
+    // parks, since no routine is enabled.
+    let ticks = || r.daemon.idle_tick_counts_for_test().0;
+    wait_until("the scheduler to spend the settings wake", || ticks() >= 2).await;
+    let mut parked = ticks();
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if ticks() == parked {
+            break;
+        }
+        parked = ticks();
+    }
+    let run = r.run_now(routine.id, 120);
+    let orchestrator = run.session_id.unwrap();
+    assert_eq!(r.run(run.run_id).cost.panes, 1, "the orchestrator counts");
+    wait_until("the scheduler to charge the run", || {
+        r.run(run.run_id).cost.pane_hours > 0.0
+    })
+    .await;
+    let (status, body) = r.spawn_child(orchestrator, "codex").await;
+    assert_eq!(status, 200, "{body}");
+    let cost = r.run(run.run_id).cost;
+    assert_eq!(cost.panes, 2, "a spawned worker counts at once: {cost:?}");
+    let before = cost.pane_hours;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+    let cost = r.run(run.run_id).cost;
+    assert_eq!(cost.panes, 2, "{cost:?}");
+    assert!(
+        cost.pane_hours > before,
+        "the stop charges the last interval: {cost:?}"
+    );
+    for provider in [proto::AgentKind::Claude, proto::AgentKind::Codex] {
+        let line = cost
+            .per_provider
+            .iter()
+            .find(|l| l.provider == provider)
+            .unwrap_or_else(|| panic!("a {provider:?} line: {cost:?}"));
+        assert_eq!(line.panes, 1, "{cost:?}");
+    }
+}
+
 /// A Claude orchestrator's TUI receives `/goal <goal>` as an input of its
 /// own, submitted before the brief is pasted.
 #[tokio::test]

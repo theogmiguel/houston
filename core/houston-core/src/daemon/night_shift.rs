@@ -129,6 +129,33 @@ fn night_worktree(workspace: &Path, now: i64) -> Result<std::path::PathBuf> {
     crate::git::worktree_add(workspace, &dest)
 }
 
+/// The run's pane count is its recorded crew, the orchestrator included,
+/// whether or not a tick has charged them time yet.
+fn count_crew(row: &mut NightRunRow) {
+    row.cost.panes = row.crew.len() as u32;
+    for m in &row.crew {
+        if !row
+            .cost
+            .per_provider
+            .iter()
+            .any(|l| l.provider == m.provider)
+        {
+            row.cost.per_provider.push(proto::NightCostLine {
+                provider: m.provider,
+                panes: 0,
+                pane_hours: 0.0,
+            });
+        }
+    }
+    for line in &mut row.cost.per_provider {
+        line.panes = row
+            .crew
+            .iter()
+            .filter(|m| m.provider == line.provider)
+            .count() as u32;
+    }
+}
+
 /// The report's size, if it is a regular file: a link or a FIFO is refused,
 /// so reading it never follows elsewhere or blocks.
 fn report_file_len(path: &Path) -> Result<u64> {
@@ -848,6 +875,7 @@ impl Daemon {
             row.crew
                 .insert(0, self.night_member(session, row.started_at_ms));
         }
+        count_crew(&mut row);
         self.night.trees.lock().expect("night trees").insert(
             run_id,
             RunTree {
@@ -1062,6 +1090,7 @@ impl Daemon {
                 row.crew.push(m);
             }
         }
+        count_crew(&mut row);
         if let Err(e) = self.db.save_night_run(&row) {
             tracing::warn!("recording night run {run_id}'s crew: {e:#}");
         }
@@ -1250,14 +1279,7 @@ impl Daemon {
                 }),
             }
         }
-        row.cost.panes = row.crew.len() as u32;
-        for line in &mut row.cost.per_provider {
-            line.panes = row
-                .crew
-                .iter()
-                .filter(|m| m.provider == line.provider)
-                .count() as u32;
-        }
+        count_crew(&mut row);
         if let Err(e) = self.db.save_night_run(&row) {
             tracing::warn!("recording night run {}'s cost: {e:#}", row.run_id);
         }
@@ -1362,6 +1384,10 @@ impl Daemon {
             }
         };
         let Some(run) = taken else { return };
+        // The time since the last tick is the run's too.
+        if let Ok(Some(row)) = self.db.night_run(run.run_id) {
+            self.night_account(&row, now_unix_ms());
+        }
         {
             let _guard = self.night.lock.lock().expect("night lock");
             if let Ok(Some(mut row)) = self.db.night_run(run.run_id) {

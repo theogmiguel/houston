@@ -7498,6 +7498,9 @@ impl Daemon {
                 night,
             },
         );
+        // A run in flight needs ticks (its cap, and a Night shift run's clock and
+        // cost), and a scheduler parked with no enabled routine would not tick.
+        self.routine_wake.notify_one();
         if night {
             self.night_shift_pane_opened(run_id, session.id);
         }
