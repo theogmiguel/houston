@@ -3,8 +3,7 @@ import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
-import { WorkspaceTransferHost } from './components/WorkspaceTransferDialog';
-import { placeTransferGrids } from './layout/transferGrids';
+import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
 import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
@@ -2862,8 +2861,9 @@ export function App(): React.JSX.Element {
 
   // Imported grids join the target workspace's own; panes auto-placed before the reply
   // leave the grid they landed in, so each pane appears once.
-  const applyTransferGrids = useCallback((result: TransferImportResult, target: string): void => {
+  const applyTransferGrids = useCallback(async (result: TransferImportResult, target: string): Promise<void> => {
     if (!result.grids) return;
+    const { placeTransferGrids } = await import('./layout/transferGrids');
     const existing = gridsByWsRef.current.get(target) ?? loadGrids(target);
     const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, existing);
     if (placed.grids.length === 0) return;
@@ -4698,7 +4698,7 @@ export function App(): React.JSX.Element {
             client={readyClient(conn)}
             workspaces={workspaces}
             profiles={agentProfiles?.profiles ?? []}
-            onImported={applyTransferGrids}
+            onImported={(result, target) => void applyTransferGrids(result, target)}
           />
 
           <UpdateInstallHost

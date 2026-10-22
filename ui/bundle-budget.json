@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 950,007 bytes (one boot chunk) with the same small headroom:",
+    "the workspace transfer listeners (`WorkspaceTransferHost.tsx`, `houston/transferOpen.ts`)",
+    "run from boot to receive a file the app was opened with, and panes show a",
+    "transferred marker. The dialogs, requests and grid remapping load behind `import()`."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 950200,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

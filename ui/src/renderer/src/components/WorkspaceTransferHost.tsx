@@ -1,0 +1,40 @@
+import { useEffect, useState } from 'react'
+import type { HoustonClient } from '../houston/client'
+import { wslWorkspaceOf } from '../houston/environments'
+import type { AgentProfile } from '../houston/generated/AgentProfile'
+import type { TransferImportResult } from '../houston/generated/TransferImportResult'
+import type { Workspace } from '../houston/generated/Workspace'
+import { listenTransferOpen, takeLaunchTransferFile, TRANSFER_EVENT, type TransferOpen } from '../houston/transferOpen'
+import { preloadable } from '../preloadable'
+
+// The dialogs load on first use; only the listeners are part of the boot bundle.
+const exportDialog = preloadable(() => import('./WorkspaceTransferDialog').then((module) => module.ExportTransferDialog))
+const importDialog = preloadable(() => import('./WorkspaceTransferDialog').then((module) => module.ImportTransferDialog))
+
+/** Opens the transfer dialogs from the workspace menu and from a transfer file the app
+ *  was opened with. */
+export function WorkspaceTransferHost({ client, workspaces, profiles, onImported }: { client: HoustonClient | null; workspaces: Workspace[]; profiles: AgentProfile[]; onImported: (result: TransferImportResult, workspace: string) => void }): React.JSX.Element | null {
+  const [open, setOpen] = useState<TransferOpen | null>(null)
+  const targets = workspaces.filter((w) => !wslWorkspaceOf(w.path))
+  useEffect(() => {
+    const show = (event: Event): void => setOpen((event as CustomEvent<TransferOpen>).detail)
+    window.addEventListener(TRANSFER_EVENT, show)
+    let stop: (() => void) | null = null
+    let disposed = false
+    void takeLaunchTransferFile().then((file) => { if (file && !disposed) setOpen({ mode: 'import', file }) })
+    void listenTransferOpen((file) => setOpen({ mode: 'import', file })).then((unlisten) => {
+      if (disposed) unlisten()
+      else stop = unlisten
+    })
+    return () => {
+      disposed = true
+      window.removeEventListener(TRANSFER_EVENT, show)
+      stop?.()
+    }
+  }, [])
+  if (!open || !client) return null
+  const close = (): void => setOpen(null)
+  if (open.mode === 'export') return <exportDialog.Slot client={client} workspace={open.workspace} name={open.name} onClose={close} />
+  const initialWorkspace = targets.some((t) => t.path === open.workspace) ? open.workspace : undefined
+  return <importDialog.Slot client={client} targets={targets} profiles={profiles} initialWorkspace={initialWorkspace} initialFile={open.file} onImported={onImported} onClose={close} />
+}

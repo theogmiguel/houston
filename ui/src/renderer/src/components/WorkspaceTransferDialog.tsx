@@ -15,18 +15,13 @@ import {
   exportTransfer,
   importTransfer,
   inspectTransfer,
-  listenTransferOpen,
   pickTransferDestination,
   pickTransferFile,
-  takeLaunchTransferFile,
   transferFileName,
-  TRANSFER_EVENT,
   TRANSFER_STAGE_LABEL,
-  type TransferOpen,
   type TransferReply
 } from '../houston/transfer'
 import { wslWorkspaceOf } from '../houston/environments'
-import type { Workspace } from '../houston/generated/Workspace'
 import { collectTransferGrids } from '../layout/transferGrids'
 import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { useFocusTrap } from './dialogFocus'
@@ -315,32 +310,4 @@ function ProfileChoiceRow({ need, profiles, value, onChange }: { need: { provide
     <FormGridLabel>{label}</FormGridLabel>
     <Select aria-label={label} width="full" value={value} options={options} onChange={onChange} />
   </>
-}
-
-/** Opens the transfer dialogs from the workspace menu and from a transfer file the app
- *  was opened with. */
-export function WorkspaceTransferHost({ client, workspaces, profiles, onImported }: { client: HoustonClient | null; workspaces: Workspace[]; profiles: AgentProfile[]; onImported: (result: TransferImportResult, workspace: string) => void }): React.JSX.Element | null {
-  const [open, setOpen] = useState<TransferOpen | null>(null)
-  const targets = workspaces.filter((w) => !wslWorkspaceOf(w.path))
-  useEffect(() => {
-    const show = (event: Event): void => setOpen((event as CustomEvent<TransferOpen>).detail)
-    window.addEventListener(TRANSFER_EVENT, show)
-    let stop: (() => void) | null = null
-    let disposed = false
-    void takeLaunchTransferFile().then((file) => { if (file && !disposed) setOpen({ mode: 'import', file }) })
-    void listenTransferOpen((file) => setOpen({ mode: 'import', file })).then((unlisten) => {
-      if (disposed) unlisten()
-      else stop = unlisten
-    })
-    return () => {
-      disposed = true
-      window.removeEventListener(TRANSFER_EVENT, show)
-      stop?.()
-    }
-  }, [])
-  if (!open || !client) return null
-  const close = (): void => setOpen(null)
-  if (open.mode === 'export') return <ExportTransferDialog client={client} workspace={open.workspace} name={open.name} onClose={close} />
-  const initialWorkspace = targets.some((t) => t.path === open.workspace) ? open.workspace : undefined
-  return <ImportTransferDialog client={client} targets={targets} profiles={profiles} initialWorkspace={initialWorkspace} initialFile={open.file} onImported={onImported} onClose={close} />
 }

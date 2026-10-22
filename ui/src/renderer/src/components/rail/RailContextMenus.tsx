@@ -5,7 +5,7 @@ import { closeWorkspaceShortcut, effectiveLabel, renameWorkspaceShortcut } from 
 import { gridStorageKey } from "../../layout/tree";
 import { RAIL_VIEW_LABEL, type RailView } from "../../railView";
 import { showItemInFolder } from "../../houston/bridge";
-import { openWorkspaceTransfer } from "../../houston/transfer";
+import { openWorkspaceTransfer } from "../../houston/transferOpen";
 import {
   IconArrowUpRight,
   IconChevronRight,
