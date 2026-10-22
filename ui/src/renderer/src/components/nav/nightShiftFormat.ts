@@ -123,6 +123,27 @@ export function settingsProblems(s: NightShiftSettings): string[] {
   return out
 }
 
+/** What spawns of a limited provider become, as the daemon picks it: the next
+ * unlimited worker after it in the chain, or null when every one is limited. */
+export function substituteFor(provider: AgentKind, workers: AgentKind[], limited: AgentKind[]): AgentKind | null {
+  const start = Math.max(0, workers.indexOf(provider))
+  for (let i = 0; i < workers.length; i++) {
+    const next = workers[(start + i) % workers.length]
+    if (!limited.includes(next)) return next
+  }
+  return null
+}
+
+/** One limited provider's consequence, in the present (live) or past (report). */
+export function limitNote(provider: AgentKind, workers: AgentKind[], limited: AgentKind[], past = false): string {
+  const name = engineLabel(provider)
+  const next = substituteFor(provider, workers, limited)
+  if (next) return past ? `Later ${name} spawns used ${engineLabel(next)}.` : `${name} spawns use ${engineLabel(next)}.`
+  return past
+    ? `Later ${name} spawns were refused: no other worker provider was available.`
+    : `${name} spawns are refused: no other worker provider is available.`
+}
+
 /** The options a parked decision listed, from its body's last line. */
 export function decisionOptions(entry: NightEntry): string[] {
   const line = entry.body.split('\n').reverse().find((l) => l.startsWith('Options: '))

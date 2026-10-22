@@ -1796,6 +1796,49 @@ async fn failed_start_probe_limits_zcode_from_the_start() {
         r.notes(o, "Night shift: zcode limited") == 1
     })
     .await;
+    let body = |r: &Rig| {
+        r.daemon
+            .inbox_rows_for_test(o)
+            .into_iter()
+            .find(|row| row.summary.contains("zcode limited"))
+            .unwrap()
+            .body
+    };
+    assert!(
+        body(&r).contains("starts zcode spawns with claude instead"),
+        "{}",
+        body(&r)
+    );
+}
+
+/// With no other worker provider, the note says spawns are refused rather
+/// than naming a substitute that does not exist.
+#[tokio::test]
+async fn a_limit_with_no_other_worker_says_spawns_are_refused() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    r.daemon
+        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    let routine = r.ready(|s| s.workers.truncate(1));
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    wait_until("the orchestrator to be told", || {
+        r.notes(o, "Night shift: zcode limited") == 1
+    })
+    .await;
+    let row = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("zcode limited"))
+        .unwrap();
+    assert!(
+        row.body
+            .contains("No other worker provider is available, so Houston refuses zcode spawns"),
+        "{}",
+        row.body
+    );
+    assert!(!row.body.contains("next worker provider"), "{}", row.body);
 }
 
 #[tokio::test]

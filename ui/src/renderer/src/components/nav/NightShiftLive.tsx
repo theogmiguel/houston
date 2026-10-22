@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { NightMachine } from '../../houston/generated/NightMachine'
 import type { NightRun } from '../../houston/generated/NightRun'
 import { Button, Card, Inline, NightPlanBoard, NightPlanColumn, NightPlanItem, NightWindowStrip, Readout, SectionHead, Text } from '../ui'
@@ -6,16 +7,18 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ReadoutGrid } from '../ui/Readout'
 import { StatusLabel } from '../ui/StatusLabel'
 import { engineLabel } from '../engineLabel'
-import { countdownLabel, runMarks, timeOfDay } from './nightShiftFormat'
+import { countdownLabel, limitNote, runMarks, timeOfDay } from './nightShiftFormat'
 
 const STATUS: Record<string, 'Working' | 'Idle' | 'Needs input' | 'Limited'> = {
   working: 'Working', idle: 'Idle', 'needs-input': 'Needs input'
 }
 
 /** A run in flight: countdown, window, tiles, crew, machine and the plan board. */
-export function NightShiftLive({ run, machine, now, onWrapUp, onStop, onOpenSession }: {
+export function NightShiftLive({ run, machine, workers, now, onWrapUp, onStop, onOpenSession }: {
   run: NightRun
   machine: NightMachine
+  /** The worker chain, in fallback order, that substitution follows. */
+  workers: AgentKind[]
   now: number
   onWrapUp: () => void
   onStop: () => void
@@ -72,7 +75,7 @@ export function NightShiftLive({ run, machine, now, onWrapUp, onStop, onOpenSess
               action={<Button variant="muted-link" size="sm" onClick={() => onOpenSession(m.session_id)}>Open</Button>} />
           ))}
         </Card>
-        {run.limited.length > 0 && <Text size="small" tone="muted">Limited this run: {run.limited.map(engineLabel).join(', ')}; new spawns use the next worker provider.</Text>}
+        {run.limited.length > 0 && <Text size="small" tone="muted">Limited this run: {run.limited.map(engineLabel).join(', ')}. {run.limited.map((p) => limitNote(p, workers, run.limited)).join(' ')}</Text>}
       </section>
 
       <section className="grid gap-[var(--space-1-5)]" aria-label="Machine">

@@ -2160,24 +2160,25 @@ impl Daemon {
             }
         }
         let slug = crate::agent_hooks::provider_slug(provider);
-        let next = self
-            .night_substitute(run_id, provider)
-            .ok()
-            .map(|p| crate::agent_hooks::provider_slug(p).to_string())
-            .unwrap_or_else(|| "none: every worker provider is limited".into());
+        let then = match self.night_substitute(run_id, provider) {
+            Ok(next) => format!(
+                "For the rest of this run Houston starts {slug} spawns with {} instead.",
+                crate::agent_hooks::provider_slug(next)
+            ),
+            Err(_) => format!(
+                "No other worker provider is available, so Houston refuses {slug} spawns for \
+                 the rest of this run."
+            ),
+        };
         self.night_tell_orchestrator(
             run_id,
             &format!("Night shift: {slug} limited"),
             &match pane {
                 Some(pane) => format!(
-                    "{slug} reported its usage limit ({why}) in pane {pane}. For the rest of \
-                     this run Houston starts {slug} spawns with the next worker provider \
-                     instead: {next}. Re-plan the work that pane held."
+                    "{slug} reported its usage limit ({why}) in pane {pane}. {then} Re-plan \
+                     the work that pane held."
                 ),
-                None => format!(
-                    "{slug} failed its quota probe ({why}). For this run Houston starts {slug} \
-                     spawns with the next worker provider instead: {next}."
-                ),
+                None => format!("{slug} failed its quota probe ({why}). {then}"),
             },
         );
         self.broadcast_night_run(run_id);

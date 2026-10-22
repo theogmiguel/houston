@@ -25,7 +25,7 @@ describe('NightShiftLive', () => {
     const onWrapUp = vi.fn()
     const onStop = vi.fn()
     const onOpenSession = vi.fn()
-    act(() => root.render(<NightShiftLive run={nightRun()} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop} onOpenSession={onOpenSession}
+    act(() => root.render(<NightShiftLive run={nightRun()} workers={['zcode', 'claude']} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop} onOpenSession={onOpenSession}
       machine={{ memory_free_mib: 12_288, disk_free_mib: 102_400, on_battery: false, keep_awake: 'held' }} />))
     expect(host.querySelector('[data-testid="night-countdown"]')?.textContent).toBe('4 h 00 min left')
     expect(host.querySelectorAll('[data-testid="window-mark-interruption"]')).toHaveLength(1)
@@ -56,9 +56,20 @@ describe('NightShiftLive', () => {
     expect(onStop).toHaveBeenCalledOnce()
     expect(onOpenSession).toHaveBeenCalledWith(40)
 
-    act(() => root.render(<NightShiftLive run={nightRun({ phase: 'wrapping_up' })} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop}
+    act(() => root.render(<NightShiftLive run={nightRun({ phase: 'wrapping_up' })} workers={['zcode', 'claude']} now={NIGHT_NOW} onWrapUp={onWrapUp} onStop={onStop}
       onOpenSession={onOpenSession} machine={{ memory_free_mib: null, disk_free_mib: null, on_battery: null, keep_awake: 'held' }} />))
     expect(host.textContent).toContain('Wrap-up: nothing new starts')
     expect(Array.from(host.querySelectorAll('button')).some((b) => b.textContent === 'Wrap up now')).toBe(false)
+  })
+
+  it('names what spawns of a limited provider become', () => {
+    const machine = { memory_free_mib: null, disk_free_mib: null, on_battery: null, keep_awake: 'held' as const }
+    const render = (workers: ('zcode' | 'claude')[]): void => act(() => root.render(<NightShiftLive run={nightRun({ limited: ['zcode'] })}
+      workers={workers} now={NIGHT_NOW} onWrapUp={vi.fn()} onStop={vi.fn()} onOpenSession={vi.fn()} machine={machine} />))
+    render(['zcode', 'claude'])
+    expect(host.textContent).toContain('Limited this run: ZCode. ZCode spawns use Claude Code.')
+    render(['zcode'])
+    expect(host.textContent).toContain('ZCode spawns are refused: no other worker provider is available.')
+    expect(host.textContent).not.toContain('next worker provider')
   })
 })

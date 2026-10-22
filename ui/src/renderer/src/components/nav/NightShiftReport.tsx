@@ -1,3 +1,4 @@
+import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { NightEntry } from '../../houston/generated/NightEntry'
 import type { NightRun } from '../../houston/generated/NightRun'
 import type { NightShiftReportText } from '../../houston/useNightShift'
@@ -5,7 +6,7 @@ import { MarkdownPreview } from '../MarkdownPreview'
 import { Button, Card, GateChip, Inline, Notice, Readout, SectionHead, Text } from '../ui'
 import { ReadoutGrid } from '../ui/Readout'
 import { engineLabel } from '../engineLabel'
-import { STOP_REASON, decisionOptions, decisionText, headline, prShelves, timeOfDay } from './nightShiftFormat'
+import { STOP_REASON, decisionOptions, decisionText, headline, limitNote, prShelves, timeOfDay } from './nightShiftFormat'
 
 function Gates({ entry }: { entry: NightEntry }): React.JSX.Element {
   const g = entry.gates
@@ -32,9 +33,11 @@ function Decision({ entry, onDecide }: { entry: NightEntry; onDecide: (choice: s
 }
 
 /** The morning report: headline, decisions, PRs by theme with their gates, merge order, events and cost. */
-export function NightShiftReport({ run, report, holdForQa, onDecide, onQaPassed, onLoadReport }: {
+export function NightShiftReport({ run, report, workers, holdForQa, onDecide, onQaPassed, onLoadReport }: {
   run: NightRun
   report: NightShiftReportText | null
+  /** The worker chain, in fallback order, that substitution followed. */
+  workers: AgentKind[]
   /** Merge queue output with Hold for my QA: visible PRs wait for the user. */
   holdForQa: boolean
   onDecide: (entryId: number, choice: string) => void
@@ -96,7 +99,7 @@ export function NightShiftReport({ run, report, holdForQa, onDecide, onQaPassed,
         <SectionHead title="Events" variant="sentence" tone="muted" />
         <Card>
           {run.interruptions.map((i, k) => <Card.Row key={`i${k}`} heading={`Interrupted at ${timeOfDay(i.at_ms)}`} meta={i.detail} />)}
-          {run.limited.map((p) => <Card.Row key={`l${p}`} heading={`${engineLabel(p)} limited`} meta="Later spawns used the next worker provider." />)}
+          {run.limited.map((p) => <Card.Row key={`l${p}`} heading={`${engineLabel(p)} limited`} meta={limitNote(p, workers, run.limited, true)} />)}
           {lessons.map((e) => <Card.Row key={e.id} heading={e.title} meta={e.kind === 'flaky' ? 'Known flaky test' : e.kind === 'deferred' ? 'Deferred to a later run' : 'Lesson'} />)}
           {run.interruptions.length + run.limited.length + lessons.length === 0 && <Card.Row heading={<Text tone="muted">No interruptions or limits.</Text>} />}
         </Card>

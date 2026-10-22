@@ -23,7 +23,7 @@ afterEach(() => {
 describe('NightShiftReport', () => {
   it('headlines a refused run with its reason', () => {
     const run = nightRun({ phase: 'refused', ended_at_ms: NIGHT_NOW, stop_detail: 'missed: the machine was not running Houston before wrap-up (12 min late)' })
-    act(() => root.render(<NightShiftReport run={run} report={null} holdForQa={false} onDecide={() => {}} onQaPassed={() => {}} onLoadReport={() => {}} />))
+    act(() => root.render(<NightShiftReport run={run} report={null} workers={['zcode', 'claude']} holdForQa={false} onDecide={() => {}} onQaPassed={() => {}} onLoadReport={() => {}} />))
     const head = host.querySelector('[data-testid="night-headline"]')?.textContent
     expect(head).toBe('Night shift did not start: missed: the machine was not running Houston before wrap-up (12 min late)')
   })
@@ -44,7 +44,7 @@ describe('NightShiftReport', () => {
         nightEntry({ id: 5, kind: 'flaky', title: 'pty::resize_race' })
       ]
     })
-    act(() => root.render(<NightShiftReport run={run} report={null} holdForQa onDecide={onDecide} onQaPassed={onQaPassed} onLoadReport={() => {}} />))
+    act(() => root.render(<NightShiftReport run={run} report={null} workers={['zcode', 'claude']} holdForQa onDecide={onDecide} onQaPassed={onQaPassed} onLoadReport={() => {}} />))
     expect(host.querySelector('[data-testid="night-headline"]')?.textContent).toBe('2 PRs, 1 decision')
     expect(host.textContent).toContain('Report published')
 
@@ -76,6 +76,7 @@ describe('NightShiftReport', () => {
     const events = host.querySelector('section[aria-label="Events"]')!.textContent
     expect(events).toContain('Interrupted at')
     expect(events).toContain('Claude Code limited')
+    expect(events).toContain('Later Claude Code spawns used ZCode.')
     expect(events).toContain('Known flaky test')
     expect(host.querySelector('section[aria-label="Cost"]')?.textContent).toContain('7.5')
   })

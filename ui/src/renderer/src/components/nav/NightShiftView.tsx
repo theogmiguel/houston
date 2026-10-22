@@ -39,6 +39,7 @@ export function NightShiftView({ client, workspaces, now, onOpenSession, initial
   useEffect(() => { if (live) setTab('live') }, [live?.run_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const name = workspaces.find((w) => w.id === workspace)?.name ?? workspace ?? ''
+  const workers = state?.settings.workers.map((w) => w.provider) ?? []
   const header = (
     <PageHeader heading="Night shift" description={`An orchestrator works on ${name || 'a workspace'} for a window and leaves a morning report.`}
       actions={state?.routine ? <Button variant="secondary" disabled={!!live} onClick={() => setDialog(true)}>Run now</Button> : undefined} />
@@ -72,13 +73,13 @@ export function NightShiftView({ client, workspaces, now, onOpenSession, initial
       ]} />
       {error && current !== 'setup' && <Notice tone="danger">{error}</Notice>}
       {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} error={error} onSave={actions.save} />}
-      {current === 'live' && live && <NightShiftLive run={live} machine={state.machine} now={now}
+      {current === 'live' && live && <NightShiftLive run={live} machine={state.machine} workers={workers} now={now}
         onWrapUp={() => actions.wrapUp(live.run_id)} onStop={() => actions.stop(live.run_id)} onOpenSession={onOpenSession} />}
       {current === 'report' && shown && <>
         {finished.length > 1 && <Select aria-label="Run" value={String(shown.run_id)}
           options={finished.map((r) => ({ value: String(r.run_id), label: `Run ${r.run_id} · ${new Date(r.started_at_ms).toLocaleDateString()} ${timeOfDay(r.started_at_ms)}` }))}
           onChange={(v) => setReportRun(Number(v))} />}
-        <NightShiftReport run={shown} report={report} holdForQa={state.settings.output === 'merge_queue' && state.settings.hold_for_qa}
+        <NightShiftReport run={shown} report={report} workers={workers} holdForQa={state.settings.output === 'merge_queue' && state.settings.hold_for_qa}
           onDecide={actions.decide} onQaPassed={actions.qaPassed} onLoadReport={() => actions.loadReport(shown.run_id)} />
       </>}
       {dialog && <NightShiftPreflight items={preflight} now={now} onDuration={actions.preflight} onCancel={() => setDialog(false)}
