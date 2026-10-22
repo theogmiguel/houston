@@ -229,7 +229,11 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     let smoke_flows = s.app_check.as_ref().map_or(&[][..], |a| &a.smoke_flows[..]);
     for (name, count, max) in [
         ("checks before hand-back", s.checks.len(), CHECKS_MAX),
-        ("competitor sources", s.competitor_sources.len(), SOURCES_MAX),
+        (
+            "competitor sources",
+            s.competitor_sources.len(),
+            SOURCES_MAX,
+        ),
         ("smoke flows", smoke_flows.len(), SMOKE_FLOWS_MAX),
     ] {
         if count > max {
@@ -239,7 +243,10 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     let app = s.app_check.as_ref();
     let texts = [
         ("goal", s.goal.as_str()),
-        ("App start command", app.map_or("", |a| a.start_command.as_str())),
+        (
+            "App start command",
+            app.map_or("", |a| a.start_command.as_str()),
+        ),
         ("App address", app.map_or("", |a| a.address.as_str())),
     ]
     .into_iter()
@@ -401,14 +408,40 @@ mod tests {
         };
         type Edit = Box<dyn Fn(&mut NightShiftSettings)>;
         let cases: Vec<(&str, Edit)> = vec![
-            ("App start command", Box::new(move |s| s.app_check = app(&"x".repeat(TEXT_FIELD_MAX + 1), "", vec![]))),
-            ("App address", Box::new(move |s| s.app_check = app("", &"x".repeat(TEXT_FIELD_MAX + 1), vec![]))),
-            ("smoke flow", Box::new(move |s| s.app_check = app("", "", vec!["x".repeat(TEXT_FIELD_MAX + 1)]))),
-            ("21 smoke flows", Box::new(move |s| s.app_check = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1]))),
-            ("11 competitor sources", Box::new(|s| s.competitor_sources = vec!["https://x".into(); SOURCES_MAX + 1])),
-            ("5 worker providers", Box::new(|s| s.workers = vec![s.workers[0].clone(); WORKERS_MAX + 1])),
-            ("model name", Box::new(|s| s.orchestrator.model = Some("m".repeat(MODEL_MAX + 1)))),
-            ("together", Box::new(|s| s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 13])),
+            (
+                "App start command",
+                Box::new(move |s| s.app_check = app(&"x".repeat(TEXT_FIELD_MAX + 1), "", vec![])),
+            ),
+            (
+                "App address",
+                Box::new(move |s| s.app_check = app("", &"x".repeat(TEXT_FIELD_MAX + 1), vec![])),
+            ),
+            (
+                "smoke flow",
+                Box::new(move |s| s.app_check = app("", "", vec!["x".repeat(TEXT_FIELD_MAX + 1)])),
+            ),
+            (
+                "21 smoke flows",
+                Box::new(move |s| {
+                    s.app_check = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1])
+                }),
+            ),
+            (
+                "11 competitor sources",
+                Box::new(|s| s.competitor_sources = vec!["https://x".into(); SOURCES_MAX + 1]),
+            ),
+            (
+                "5 worker providers",
+                Box::new(|s| s.workers = vec![s.workers[0].clone(); WORKERS_MAX + 1]),
+            ),
+            (
+                "model name",
+                Box::new(|s| s.orchestrator.model = Some("m".repeat(MODEL_MAX + 1))),
+            ),
+            (
+                "together",
+                Box::new(|s| s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 13]),
+            ),
         ];
         for (needle, edit) in cases {
             let mut s = defaults();

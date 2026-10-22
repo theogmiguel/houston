@@ -160,7 +160,10 @@ mod tests {
         assert_eq!(memory_hold(None), None);
         assert_eq!(memory_hold(Some(MEMORY_FLOOR_MIB)), None);
         let held = memory_hold(Some(1024)).unwrap();
-        assert!(held.contains("1024 MiB free") && held.contains("4096 MiB floor"), "{held}");
+        assert!(
+            held.contains("1024 MiB free") && held.contains("4096 MiB floor"),
+            "{held}"
+        );
     }
 
     /// The command stops once its lease may have lapsed, and a renewed one
@@ -184,8 +187,14 @@ mod tests {
             Duration::from_millis(300),
         )
         .unwrap_err();
-        assert!(started.elapsed() < Duration::from_secs(10), "stopped promptly");
-        assert!(format!("{err:#}").contains("sleep 30 was stopped"), "{err:#}");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "stopped promptly"
+        );
+        assert!(
+            format!("{err:#}").contains("sleep 30 was stopped"),
+            "{err:#}"
+        );
 
         let renew = |v: serde_json::Value| -> Result<serde_json::Value> {
             Ok(match v["action"].as_str() {

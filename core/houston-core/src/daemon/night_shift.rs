@@ -664,9 +664,10 @@ impl Daemon {
             .to_string_lossy()
             .into_owned();
         // Past the run record, every failure is a refused run naming it.
-        let launched = self.db.create_night_run(&night).and_then(|()| {
-            self.night_launch(row, &s, &night, &win, &dir, now, next)
-        });
+        let launched = self
+            .db
+            .create_night_run(&night)
+            .and_then(|()| self.night_launch(row, &s, &night, &win, &dir, now, next));
         match launched {
             Ok(true) => self.night_zcode_start_probe(run_id, &s),
             Ok(false) => {}
@@ -827,7 +828,8 @@ impl Daemon {
         row.session_id = Some(session);
         let origin = self.night_origin_of(session);
         if !row.crew.iter().any(|m| m.origin == origin) {
-            row.crew.insert(0, self.night_member(session, row.started_at_ms));
+            row.crew
+                .insert(0, self.night_member(session, row.started_at_ms));
         }
         self.night.trees.lock().expect("night trees").insert(
             run_id,
@@ -1022,7 +1024,13 @@ impl Daemon {
 
     fn night_add_members(&self, run_id: u32, new: Vec<NightMember>) {
         let _guard = self.night.lock.lock().expect("night lock");
-        if let Some(tree) = self.night.trees.lock().expect("night trees").get_mut(&run_id) {
+        if let Some(tree) = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get_mut(&run_id)
+        {
             for m in &new {
                 if !tree.members.iter().any(|t| t.origin == m.origin) {
                     tree.members.push(m.clone());
@@ -2030,7 +2038,9 @@ impl Daemon {
                             started_at_ms: r
                                 .crew
                                 .iter()
-                                .find(|m| m.session == id || m.origin == info.session_origin.unwrap_or(id))
+                                .find(|m| {
+                                    m.session == id || m.origin == info.session_origin.unwrap_or(id)
+                                })
                                 .map(|m| m.first_seen_ms)
                                 .unwrap_or(r.started_at_ms),
                             limited,
@@ -2454,7 +2464,11 @@ impl Daemon {
     /// At a start whose workers include ZCode: a failed probe marks ZCode
     /// limited before any pane asks for it, and warns on the run.
     fn night_zcode_start_probe(self: &Arc<Self>, run_id: u32, s: &proto::NightShiftSettings) {
-        if !s.workers.iter().any(|w| w.provider == proto::AgentKind::Zcode) {
+        if !s
+            .workers
+            .iter()
+            .any(|w| w.provider == proto::AgentKind::Zcode)
+        {
             return;
         }
         let me = Arc::clone(self);

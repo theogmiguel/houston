@@ -538,7 +538,11 @@ async fn generic_routine_verbs_refuse_night_shift() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("night_shift_update"), "{err}");
-    let err = r.daemon.routine_run_now(routine.id).unwrap_err().to_string();
+    let err = r
+        .daemon
+        .routine_run_now(routine.id)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("night_shift_run_now"), "{err}");
 
     r.daemon.routine_fire(routine.id).unwrap();
@@ -579,7 +583,10 @@ async fn a_start_racing_another_is_refused() {
     let first = r.run_now(routine.id, 120);
     assert_eq!(first.phase, proto::NightRunPhase::Running);
     let answer = second.lock().unwrap().clone().unwrap();
-    assert!(answer.contains("already has a run in flight or starting"), "{answer}");
+    assert!(
+        answer.contains("already has a run in flight or starting"),
+        "{answer}"
+    );
     assert_eq!(r.state().runs.len(), 1, "one run");
     assert!(r.in_flight(routine.id));
 }
@@ -656,7 +663,9 @@ async fn goal_is_typed_before_the_brief() {
     })
     .await;
     let text = std::fs::read_to_string(&typed).unwrap();
-    let goal = text.find("/goal CI stays green").expect("the goal was typed");
+    let goal = text
+        .find("/goal CI stays green")
+        .expect("the goal was typed");
     let brief = text.find(brief_start).unwrap();
     assert!(goal < brief, "the goal comes first: {text:?}");
     let between = &text[goal..brief];
@@ -772,7 +781,10 @@ async fn hard_stop_closes_orphaned_grandchild_and_refuses_handoff() {
     assert_eq!(order, [grandchild, orchestrator]);
     wait_until("the grandchild to close", || !r.live(grandchild)).await;
     let settled = r.run(run.run_id);
-    assert_eq!(settled.cost.panes, 3, "the crew counts every pane it started");
+    assert_eq!(
+        settled.cost.panes, 3,
+        "the crew counts every pane it started"
+    );
 }
 
 /// Live workers bound the run's live panes: the workers plus a reviewer and
@@ -795,7 +807,9 @@ async fn live_worker_cap_refuses_spawn() {
     assert_ne!(status, 200, "{body}");
     let text = body.to_string();
     assert!(
-        text.contains("3 live panes") && text.contains("cap of 3") && text.contains("1 live workers"),
+        text.contains("3 live panes")
+            && text.contains("cap of 3")
+            && text.contains("1 live workers"),
         "names the count and the cap: {text}"
     );
     r.daemon.kill(first.unwrap()).unwrap();
@@ -860,7 +874,10 @@ async fn orchestrator_exit_closes_live_panes() {
     wait_until("the worker to close", || !r.live(worker)).await;
     let settled = r.run(run.run_id);
     assert_eq!(settled.phase, proto::NightRunPhase::Settled);
-    assert_eq!(settled.stop_reason, Some(proto::NightStopReason::PaneExited));
+    assert_eq!(
+        settled.stop_reason,
+        Some(proto::NightStopReason::PaneExited)
+    );
     assert_eq!(
         r.awake.lock().unwrap().last(),
         Some(&(run.run_id, false)),
@@ -921,7 +938,10 @@ async fn a_tick_gap_is_not_charged_as_pane_hours() {
     r.daemon.routine_tick_at(run.started_at_ms + MINUTE);
     r.daemon.routine_tick_at(run.started_at_ms + 121 * MINUTE);
     let after = r.run(run.run_id);
-    assert!(r.in_flight(routine.id), "two hours asleep do not trip the cap");
+    assert!(
+        r.in_flight(routine.id),
+        "two hours asleep do not trip the cap"
+    );
     assert!(
         after.cost.pane_hours < 3.0 / 60.0,
         "charged {} pane-hours",
@@ -1037,7 +1057,11 @@ async fn report_must_be_a_regular_file() {
     assert!(r.daemon.night_shift_report(run.run_id).is_err());
 
     std::fs::remove_file(&report).unwrap();
-    assert!(Command::new("mkfifo").arg(&report).status().unwrap().success());
+    assert!(Command::new("mkfifo")
+        .arg(&report)
+        .status()
+        .unwrap()
+        .success());
     let daemon = Arc::clone(&r.daemon);
     let id = run.run_id;
     let read = tokio::time::timeout(
@@ -1097,7 +1121,11 @@ async fn earlier_prs_reach_the_brief_with_their_fate() {
     let routine = r.ready(|_| {});
     let first = r.run_now(routine.id, 120);
     let o = first.session_id.unwrap();
-    for (number, title) in [(12, "Tray fix"), (13, "Drop the old API"), (14, "Faster diff")] {
+    for (number, title) in [
+        (12, "Tray fix"),
+        (13, "Drop the old API"),
+        (14, "Faster diff"),
+    ] {
         let (status, body) = r
             .night(o, "pr", json!({ "number": number, "title": title }))
             .await;
@@ -1117,7 +1145,10 @@ async fn earlier_prs_reach_the_brief_with_their_fate() {
         "[rejected] Drop the old API (PR #13)",
         "[pr not merged yet] Faster diff (PR #14)",
     ] {
-        assert!(brief.contains(needle), "the brief names {needle:?}:\n{brief}");
+        assert!(
+            brief.contains(needle),
+            "the brief names {needle:?}:\n{brief}"
+        );
     }
 }
 
@@ -1219,7 +1250,11 @@ async fn enqueue_from_a_run_follows_output_and_hold() {
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
     let (status, body) = r
-        .night(o, "pr", json!({ "number": 12, "title": "Tray fix", "visible": true }))
+        .night(
+            o,
+            "pr",
+            json!({ "number": 12, "title": "Tray fix", "visible": true }),
+        )
         .await;
     assert_eq!(status, 200, "{body}");
     let err = r
@@ -1237,11 +1272,20 @@ async fn enqueue_from_a_run_follows_output_and_hold() {
 
     // QA passed enqueues first: a failed enqueue leaves the PR held to retry.
     let entry = r.run(run.run_id).entries[0].clone();
-    let err = format!("{:#}", r.daemon.night_shift_qa_passed(entry.id).unwrap_err());
+    let err = format!(
+        "{:#}",
+        r.daemon.night_shift_qa_passed(entry.id).unwrap_err()
+    );
     assert!(err.contains("stays held"), "{err}");
     assert!(!r.run(run.run_id).entries[0].qa_passed, "not marked");
-    let again = format!("{:#}", r.daemon.night_shift_qa_passed(entry.id).unwrap_err());
-    assert!(!again.contains("already marked"), "a retry is allowed: {again}");
+    let again = format!(
+        "{:#}",
+        r.daemon.night_shift_qa_passed(entry.id).unwrap_err()
+    );
+    assert!(
+        !again.contains("already marked"),
+        "a retry is allowed: {again}"
+    );
 }
 
 // ---- S4 ----
@@ -1395,7 +1439,10 @@ async fn restart_resumes_or_settles() {
     // nothing: the run continues to its hard stop.
     r.daemon.forget_routine_runs_for_test();
     r.daemon.night_shift_recover_at(run.wrap_up_at_ms + MINUTE);
-    assert!(r.in_flight(routine.id), "an adopted run continues past wrap-up");
+    assert!(
+        r.in_flight(routine.id),
+        "an adopted run continues past wrap-up"
+    );
     let adopted = r.run(run.run_id);
     assert_eq!(adopted.interruptions.len(), 2);
     assert!(adopted.interruptions[1].resumed);
@@ -1410,7 +1457,10 @@ async fn restart_resumes_or_settles() {
     assert_ne!(successor, session);
     r.daemon
         .night_shift_recover_at(run.started_at_ms + 20 * MINUTE);
-    assert!(r.in_flight(routine.id), "a respawned orchestrator continues");
+    assert!(
+        r.in_flight(routine.id),
+        "a respawned orchestrator continues"
+    );
     assert_eq!(r.run(run.run_id).session_id, Some(successor));
 
     // ...and after wrap-up its run settles, with the interruption recorded.
@@ -1576,7 +1626,10 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         !r.daemon.night_shift_zcode_probing(run.run_id)
     })
     .await;
-    assert!(r.run(run.run_id).limited.is_empty(), "an answer is no limit");
+    assert!(
+        r.run(run.run_id).limited.is_empty(),
+        "an answer is no limit"
+    );
     let (status, body) = r.spawn_child(o, "zcode").await;
     assert_eq!(status, 200, "{body}");
     let child = body["session_id"].as_u64().unwrap() as u32;
@@ -1594,8 +1647,15 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         "a stall whose probe answers is not a limit"
     );
     let probes = std::fs::read_to_string(scripts.path().join("probe-args")).unwrap();
-    assert_eq!(probes.lines().count(), 2, "one probe at start, one per stall: {probes}");
-    assert!(probes.contains("-p Reply with the single word OK."), "{probes}");
+    assert_eq!(
+        probes.lines().count(),
+        2,
+        "one probe at start, one per stall: {probes}"
+    );
+    assert!(
+        probes.contains("-p Reply with the single word OK."),
+        "{probes}"
+    );
 
     r.daemon
         .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
@@ -1611,7 +1671,11 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         .into_iter()
         .find(|row| row.summary.contains("Night shift: zcode limited"))
         .expect("the orchestrator is told");
-    assert!(note.body.contains("[1310]"), "names the probe's error: {}", note.body);
+    assert!(
+        note.body.contains("[1310]"),
+        "names the probe's error: {}",
+        note.body
+    );
     r.daemon.night_shift_tick_at(t0 + 63 * MINUTE);
     assert_eq!(r.notes(o, "Night shift: zcode limited"), 1, "told once");
 }
@@ -1724,7 +1788,8 @@ async fn build_slot_waits_for_the_memory_floor() {
         holder.contains("1024 MiB free") && holder.contains("4096 MiB floor"),
         "{held}"
     );
-    r.daemon.set_night_shift_facts_for_test(Some(healthy_facts()));
+    r.daemon
+        .set_night_shift_facts_for_test(Some(healthy_facts()));
     let free = r.daemon.build_slot_request(9_999, "acquire", None).unwrap();
     assert!(free["lease"].is_string(), "{free}");
 }
@@ -1809,7 +1874,8 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
     }];
     d.night_shift_update(routine.id, s, &revision).unwrap();
     let until = houston_core::daemon::now_unix_ms() + 120 * MINUTE;
-    let proto::ServerMsg::NightShiftRunEvent { run } = d.night_shift_run_now(routine.id, until).unwrap()
+    let proto::ServerMsg::NightShiftRunEvent { run } =
+        d.night_shift_run_now(routine.id, until).unwrap()
     else {
         panic!("run now answers a run event");
     };
@@ -1843,7 +1909,10 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
     );
     gh.read_pass().await;
     let pr = entry(&d);
-    assert_eq!((pr.gates.reruns, pr.gates.ci), (1, proto::NightGate::Pending));
+    assert_eq!(
+        (pr.gates.reruns, pr.gates.ci),
+        (1, proto::NightGate::Pending)
+    );
     assert!(
         d.inbox_rows_for_test(o)
             .iter()

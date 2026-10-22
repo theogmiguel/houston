@@ -541,7 +541,11 @@ mod tests {
         let run = crate::night_shift::window::run_now(14 * hour, 15 * hour).unwrap();
         let afternoon = crate::night_shift::window::clock_window(14 * hour, &run, |_| 0);
         assert_eq!(
-            (afternoon.start.hour, afternoon.wrap_up.hour, afternoon.wrap_up.minute),
+            (
+                afternoon.start.hour,
+                afternoon.wrap_up.hour,
+                afternoon.wrap_up.minute
+            ),
             (14, 14, 15)
         );
         let warned = |w: &NightWindow| evaluate(&s, &f, w).iter().any(|i| i.id == "restart_window");

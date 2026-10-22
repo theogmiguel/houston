@@ -46,11 +46,7 @@ pub fn run_now(now_ms: i64, until_ms: i64) -> Result<RunWindow> {
 
 /// A run's instants as the local clock window it covers, for checks that
 /// reason in clock times.
-pub fn clock_window(
-    start_ms: i64,
-    run: &RunWindow,
-    offset: impl Fn(i64) -> i64,
-) -> NightWindow {
+pub fn clock_window(start_ms: i64, run: &RunWindow, offset: impl Fn(i64) -> i64) -> NightWindow {
     let clock = |ms: i64| {
         let minute = (ms + offset(ms)).rem_euclid(DAY_MS) / MINUTE_MS;
         NightClock {

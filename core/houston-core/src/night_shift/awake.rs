@@ -242,7 +242,10 @@ mod tests {
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         while !dir.path().join("held").exists() {
-            assert!(std::time::Instant::now() < deadline, "the holder never held");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the holder never held"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         let pid: u32 = std::fs::read_to_string(dir.path().join("pid"))

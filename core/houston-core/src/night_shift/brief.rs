@@ -385,7 +385,10 @@ mod tests {
         s.goal = "ship the\ntray fix".into();
         assert_eq!(goal_command(&s).as_deref(), Some("/goal ship the tray fix"));
         let brief = compose(&s, &run(), &[]);
-        assert!(!brief.contains("/goal"), "the brief is a separate input: {brief}");
+        assert!(
+            !brief.contains("/goal"),
+            "the brief is a separate input: {brief}"
+        );
         assert!(brief.contains("ship the tray fix"));
         s.orchestrator.provider = AgentKind::Codex;
         assert_eq!(goal_command(&s), None);

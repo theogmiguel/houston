@@ -42,7 +42,10 @@ pub fn classify(exited_ok: Option<bool>, stdout: &str, stderr: &str) -> Outcome 
         Some(false) => {
             let lines = || stderr.lines().chain(stdout.lines()).map(str::trim);
             let reason = lines()
-                .find_map(|l| l.split_once("ProviderBusinessError:").map(|(_, r)| r.trim()))
+                .find_map(|l| {
+                    l.split_once("ProviderBusinessError:")
+                        .map(|(_, r)| r.trim())
+                })
                 .or_else(|| lines().find(|l| !l.is_empty()))
                 .unwrap_or("zcode -p exited with an error and printed nothing");
             Outcome::Failed(reason.chars().take(REASON_MAX).collect())
@@ -94,7 +97,9 @@ mod tests {
             classify(Some(false), "", "\nnot logged in\n"),
             Outcome::Failed("not logged in".into())
         );
-        assert!(matches!(classify(Some(false), "", ""), Outcome::Failed(w) if w.contains("printed nothing")));
+        assert!(
+            matches!(classify(Some(false), "", ""), Outcome::Failed(w) if w.contains("printed nothing"))
+        );
     }
 
     #[cfg(unix)]
@@ -114,6 +119,9 @@ mod tests {
             Outcome::Failed("[1310][limit]".into())
         );
         let args = std::fs::read_to_string(dir.path().join("args")).unwrap();
-        assert!(args.contains("--disallowed-tools Bash Edit Write"), "{args}");
+        assert!(
+            args.contains("--disallowed-tools Bash Edit Write"),
+            "{args}"
+        );
     }
 }
