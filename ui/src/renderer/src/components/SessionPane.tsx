@@ -869,6 +869,18 @@ function PaneLimitDetail({ limit }: { limit: SessionInfo['limit'] }): React.JSX.
   return <Tooltip label={label}><span data-testid="pane-limit" aria-label={label} className="flex-none"><StatusLabel variant="detail" status="Limited" /></span></Tooltip>
 }
 
+// A transferred pane's conversation continues on another computer; respawning it here forks it.
+function PaneTransferDetail({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  if (info.transferred_at_ms != null) {
+    const at = new Date(info.transferred_at_ms)
+    const label = `Transferred to another computer on ${at.toLocaleString()}. Its agent stopped here; restarting it continues a fork of the conversation.`
+    return <Tooltip label={label}><span data-testid="pane-transferred" aria-label={label} className="flex-none"><StatusLabel variant="detail" status="Ended" tone="done">Transferred {at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</StatusLabel></span></Tooltip>
+  }
+  if (!info.transfer_fork) return null
+  const label = 'Fork of a transferred conversation: the copy on the other computer continues separately.'
+  return <Tooltip label={label}><span data-testid="pane-transfer-fork" aria-label={label} className="flex-none"><StatusLabel variant="detail" status="Differs" tone="waiting">Fork</StatusLabel></span></Tooltip>
+}
+
 function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element | null {
   if (!(info.inbox_unread > 0)) return null
   const label = `${info.inbox_unread} unread inbox messages`
@@ -884,6 +896,7 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
 }): React.JSX.Element {
   return (<PaneHeadActions>
           {live && <PaneLimitDetail limit={info.limit} />}
+          <PaneTransferDetail info={info} />
           <ContextIndicator context={info.context} />
           {ended && (
             <PaneStateChip data-testid="pane-state" className="[@container_(max-width:490px)]:hidden" state={info.state}>

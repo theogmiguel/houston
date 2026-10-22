@@ -754,7 +754,7 @@ export const DEFAULT_GRID_ID = 'g-default'
 const DEFAULT_GRID_NAME = 'Grid 1'
 
 let gridSeq = 0
-function newGridId(): string {
+export function newGridId(): string {
   return `g${Date.now()}-${++gridSeq}`
 }
 
@@ -846,6 +846,13 @@ export function loadGrids(path: string): GridMeta[] {
   } catch {
   }
   return migrateLegacyLayout(path)
+}
+
+/** Appends grids that arrived from elsewhere (a workspace transfer) to `path`'s list. */
+export function appendGrids(path: string, grids: GridMeta[]): GridMeta[] {
+  const next = [...loadGrids(path), ...grids]
+  saveGrids(path, next)
+  return next
 }
 
 export function addGrid(path: string, name: string): GridMeta[] {

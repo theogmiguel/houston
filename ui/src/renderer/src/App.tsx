@@ -3,6 +3,9 @@ import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
+import { WorkspaceTransferHost } from './components/WorkspaceTransferDialog';
+import { placeTransferGrids } from './layout/transferGrids';
+import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
@@ -256,6 +259,7 @@ import { useCheckoutFacts } from "./useCheckoutFacts";
 import { isBackgroundAdmissionRefusal } from "./houston/controlAdmission";
 import {
   addGrid,
+  appendGrids,
   autoNameGrid,
   findEditorByPath,
   findPane,
@@ -2856,6 +2860,33 @@ export function App(): React.JSX.Element {
     [conn, workspaces],
   );
 
+  // Imported grids join the target workspace's own; panes auto-placed before the reply
+  // leave the grid they landed in, so each pane appears once.
+  const applyTransferGrids = useCallback((result: TransferImportResult, target: string): void => {
+    if (!result.grids) return;
+    const existing = gridsByWsRef.current.get(target) ?? loadGrids(target);
+    const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, existing);
+    if (placed.grids.length === 0) return;
+    const moved = result.sessions.map((m) => m.to);
+    const updates = new Map<string, LayoutState>();
+    for (const grid of existing) {
+      const key = gridStorageKey(target, grid.id);
+      const state = loadLayout(key);
+      const tree = moved.reduce<LayoutNode | null>((t, id) => (t ? removeLeaf(t, id) : t), state.tree);
+      if (tree !== state.tree) updates.set(key, { ...state, tree });
+    }
+    for (const [key, state] of placed.layouts) updates.set(key, state);
+    for (const [key, state] of updates) saveLayout(key, state);
+    const grids = appendGrids(target, placed.grids);
+    setLayouts((prev) => {
+      const next = new Map(prev);
+      for (const [key, state] of updates) next.set(key, state);
+      return next;
+    });
+    setGridsByWs((prev) => new Map(prev).set(target, grids));
+    setSelectedGridByWs((prev) => new Map(prev).set(target, placed.grids[0].id));
+  }, []);
+
   const dropWorkspaceLocalState = useCallback((path: string): void => {
     setWsColors((prev) => {
       if (!(path in prev)) return prev;
@@ -4662,6 +4693,13 @@ export function App(): React.JSX.Element {
           </AnimOut>
 
           <ConnectPhoneHost client={readyClient(conn)} />
+
+          <WorkspaceTransferHost
+            client={readyClient(conn)}
+            workspaces={workspaces}
+            profiles={agentProfiles?.profiles ?? []}
+            onImported={applyTransferGrids}
+          />
 
           <UpdateInstallHost
             update={update}
