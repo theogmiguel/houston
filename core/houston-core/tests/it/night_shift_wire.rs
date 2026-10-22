@@ -1332,7 +1332,8 @@ async fn keep_awake_held_for_run() {
     assert_eq!(r.run(run.run_id).keep_awake, proto::NightKeepAwake::Off);
 }
 
-/// Restarts reopen the database in a second daemon, as a daemon start does.
+/// A restart forgets the runs in flight; recovery finds each orchestrator,
+/// the same pane (adopted) or its respawn (a new id with the same origin).
 #[tokio::test]
 async fn restart_resumes_or_settles() {
     let r = rig().await;
@@ -1380,16 +1381,39 @@ async fn restart_resumes_or_settles() {
         "keep-awake re-acquired"
     );
 
-    // Past wrap-up the run settles, with the interruption recorded.
+    // Past wrap-up an adopted orchestrator, still the same live pane, lost
+    // nothing: the run continues to its hard stop.
     r.daemon.forget_routine_runs_for_test();
     r.daemon.night_shift_recover_at(run.wrap_up_at_ms + MINUTE);
+    assert!(r.in_flight(routine.id), "an adopted run continues past wrap-up");
+    let adopted = r.run(run.run_id);
+    assert_eq!(adopted.interruptions.len(), 2);
+    assert!(adopted.interruptions[1].resumed);
+
+    // A respawned orchestrator is found by its origin before wrap-up...
+    let respawn = |old: u32| {
+        r.daemon.forget_routine_runs_for_test();
+        r.daemon.kill(old).unwrap();
+        r.daemon.respawn(old, false, None, None, true).unwrap().id
+    };
+    let successor = respawn(session);
+    assert_ne!(successor, session);
+    r.daemon
+        .night_shift_recover_at(run.started_at_ms + 20 * MINUTE);
+    assert!(r.in_flight(routine.id), "a respawned orchestrator continues");
+    assert_eq!(r.run(run.run_id).session_id, Some(successor));
+
+    // ...and after wrap-up its run settles, with the interruption recorded.
+    let last = respawn(successor);
+    r.daemon
+        .night_shift_recover_at(run.wrap_up_at_ms + 2 * MINUTE);
     let settled = r.run(run.run_id);
     assert_eq!(settled.phase, proto::NightRunPhase::Settled);
     assert_eq!(settled.stop_reason, Some(proto::NightStopReason::Restart));
-    assert_eq!(settled.interruptions.len(), 2);
-    assert!(!settled.interruptions[1].resumed);
+    assert_eq!(settled.interruptions.len(), 4);
+    assert!(!settled.interruptions[3].resumed);
     assert!(!r.in_flight(routine.id));
-    wait_until("the late pane to close", || !r.live(session)).await;
+    wait_until("the late pane to close", || !r.live(last)).await;
 }
 
 #[tokio::test]

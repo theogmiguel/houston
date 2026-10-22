@@ -1537,16 +1537,23 @@ impl Daemon {
                 .ok()
                 .flatten()
                 .unwrap_or(row.started_at_ms);
-            let resumable = now_ms < row.hard_stop_at_ms
-                && now_ms < row.wrap_up_at_ms
-                && !row.wrap_up_sent
-                && orchestrator.is_some();
-            let detail = if resumable {
+            // An adopted orchestrator (the same pane, still live) lost nothing and
+            // continues until the hard stop; a respawned one only before wrap-up.
+            let adopted = orchestrator.is_some() && orchestrator == row.session_id;
+            let resumable = orchestrator.is_some()
+                && now_ms < row.hard_stop_at_ms
+                && (adopted || (now_ms < row.wrap_up_at_ms && !row.wrap_up_sent));
+            let detail = if resumable && adopted {
+                "the daemon restarted with the orchestrator still running; the run continued"
+                    .to_string()
+            } else if resumable {
                 "the daemon restarted; the run continued".to_string()
             } else if orchestrator.is_none() {
                 "the daemon restarted and the orchestrator pane did not come back".to_string()
             } else {
-                "the daemon came back after wrap-up; the run was settled".to_string()
+                "the daemon came back after wrap-up and the orchestrator had to be respawned; \
+                 the run was settled"
+                    .to_string()
             };
             row.interruptions.push(proto::NightInterruption {
                 at_ms,
