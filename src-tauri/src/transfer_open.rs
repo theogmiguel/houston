@@ -8,13 +8,20 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 pub const EVENT: &str = "transfer-open";
 pub const EXTENSION: &str = "houston-transfer";
 
+/// Whether a launch argument names a transfer file: what the system passes when the user
+/// opens one with the app.
+pub fn is_transfer_path(arg: &str) -> bool {
+    !arg.starts_with('-')
+        && Path::new(arg)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(EXTENSION))
+}
+
 /// The transfer file among a launch's arguments, resolved against the launch's `cwd`.
 pub fn file_argument(args: &[String], cwd: &Path) -> Option<String> {
     args.iter().skip(1).find_map(|arg| {
+        let named = is_transfer_path(arg);
         let path = Path::new(arg);
-        let named = path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(EXTENSION));
         let path = if path.is_absolute() {
             path.to_path_buf()
         } else {

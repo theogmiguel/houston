@@ -98,6 +98,11 @@ pub fn reject_unrecognized_args(args: &[String]) -> Result<(), UnrecognizedArgEr
             i += 1;
             continue;
         }
+        // Opening a transfer file with the app passes its path; `transfer_open` reads it.
+        if crate::transfer_open::is_transfer_path(arg) {
+            i += 1;
+            continue;
+        }
         return Err(UnrecognizedArgError { token: arg.clone() });
     }
     Ok(())
@@ -1533,6 +1538,25 @@ mod tests {
             sup_sid, own_sid,
             "a supervisor sharing this process's session dies with it"
         );
+    }
+
+    #[test]
+    fn a_transfer_file_the_system_opens_with_the_app_is_accepted() {
+        let args = |rest: &[&str]| {
+            std::iter::once("houston-tauri")
+                .chain(rest.iter().copied())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        for accepted in [
+            args(&[r"C:\Users\me\Downloads\work.houston-transfer"]),
+            args(&["--channel", "dev", "/home/me/work.HOUSTON-TRANSFER"]),
+        ] {
+            assert_eq!(reject_unrecognized_args(&accepted), Ok(()), "{accepted:?}");
+        }
+        for refused in [args(&["work.txt"]), args(&["--work.houston-transfer"])] {
+            assert!(reject_unrecognized_args(&refused).is_err(), "{refused:?}");
+        }
     }
 
     #[test]
