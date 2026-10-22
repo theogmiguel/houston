@@ -10,6 +10,7 @@ pub mod blocks;
 pub mod boot;
 pub mod browser_relay;
 pub mod browser_servers;
+pub mod build_slot;
 pub mod checkout_watch;
 pub mod checkpoints;
 pub mod claude_hooks;

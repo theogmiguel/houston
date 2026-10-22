@@ -98,6 +98,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
+        .route("/orchestrate/build-slot", post(orch_build_slot))
         .route("/harness/publish", post(harness_publish))
         .route("/night/{verb}", post(night_post))
         .route("/task/next", get(task_next))
@@ -6083,6 +6084,33 @@ async fn orch_pr_enqueue(
             axum::Json(crate::mcp_orchestration::enqueue_result(&entry)),
         )
             .into_response(),
+        Err(e) => orch_error(StatusCode::CONFLICT, e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct BuildSlotBody {
+    action: String,
+    #[serde(default)]
+    lease: Option<String>,
+}
+
+async fn orch_build_slot(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<BuildSlotBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.build_slot_request(scope.session_id, &body.action, body.lease.as_deref())
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("build slot request panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
         Err(e) => orch_error(StatusCode::CONFLICT, e),
     }
 }

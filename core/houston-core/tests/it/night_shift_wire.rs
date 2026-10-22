@@ -1095,3 +1095,70 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     assert_eq!(r.run(run.run_id).limited, [proto::AgentKind::Zcode]);
     assert_eq!(r.notes(o, "Night shift: zcode limited"), 1);
 }
+
+#[tokio::test]
+async fn heavy_shares_build_slot() {
+    let r = rig().await;
+    let pane = r
+        .daemon
+        .create_session(houston_core::daemon::CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: r.ws.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "sleep 60".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap()
+        .id;
+    r.daemon.hold_build_slot_for_test(true);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_houston-core"))
+        .args(["hs-pane", "heavy", "--", "sh", "-c", "echo RAN; sleep 2"])
+        .env_clear()
+        .env("PATH", common::base_env().var("PATH").unwrap_or_default())
+        .env("HOUSTON_SESSION", pane.to_string())
+        .env("HOUSTON_MCP_URL", format!("http://{}/mcp", r.addr))
+        .env("HOUSTON_MCP_TOKEN", r.token(pane))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "the command waits while the verification holds the slot"
+    );
+    r.daemon.hold_build_slot_for_test(false);
+    wait_until("hs-pane heavy to take the slot", || {
+        r.daemon
+            .build_slot_holder()
+            .is_some_and(|h| h.contains(&format!("hs-pane heavy in pane {pane}")))
+    })
+    .await;
+    let out = tokio::task::spawn_blocking(move || child.wait_with_output().unwrap())
+        .await
+        .unwrap();
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(out.status.code(), Some(0), "{stdout} {stderr}");
+    assert!(stdout.contains("RAN"), "{stdout}");
+    assert!(
+        stderr.contains("waiting for the build slot, held by the merge queue verifying PR #7"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("waited "), "prints the wait: {stderr}");
+    let free = r.daemon.build_slot_request(9_999, "acquire", None).unwrap();
+    assert!(
+        free["lease"].is_string(),
+        "released after the command: {free}"
+    );
+}
