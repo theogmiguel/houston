@@ -20004,7 +20004,8 @@ impl Daemon {
                 brief,
                 request.state_doc.as_ref(),
             )?;
-            let (kind, substituted) = self.night_shift_spawn_provider(caller, request.kind)?;
+            let (kind, substituted) =
+                self.night_shift_spawn_provider(caller, request.kind, request.handoff)?;
             if kind != request.kind {
                 request.kind = kind;
                 request.model = None;
@@ -20041,6 +20042,7 @@ impl Daemon {
                     worktree,
                 )
             }?;
+            self.night_shift_spawned(caller, session.id)?;
             let warning = if isolated {
                 crate::launch::worktree_trust_warning(session.agent)
             } else {

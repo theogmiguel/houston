@@ -605,9 +605,8 @@ async fn hard_stop_kills_descendants_then_orchestrator() {
         children.push(body["session_id"].as_u64().unwrap() as u32);
     }
     let (status, body) = r.spawn_child(children[0], "opencode").await;
-    if status == 200 {
-        children.push(body["session_id"].as_u64().unwrap() as u32);
-    }
+    assert_eq!(status, 200, "a worker spawns a grandchild: {body}");
+    children.push(body["session_id"].as_u64().unwrap() as u32);
     r.daemon.routine_tick_at(run.hard_stop_at_ms + 1_000);
     let order = r.daemon.night_shift_stop_order(run.run_id);
     assert_eq!(order.last(), Some(&orchestrator), "{order:?}");
@@ -624,6 +623,93 @@ async fn hard_stop_kills_descendants_then_orchestrator() {
     assert_eq!(settled.phase, proto::NightRunPhase::Settled);
     assert_eq!(settled.stop_reason, Some(proto::NightStopReason::HardStop));
     assert!(!r.in_flight(routine.id));
+}
+
+/// A grandchild whose parent worker already exited is still the run's: the
+/// hard stop closes it, and a handoff from the run is refused.
+#[tokio::test]
+async fn hard_stop_closes_orphaned_grandchild_and_refuses_handoff() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let orchestrator = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(orchestrator, "codex").await;
+    assert_eq!(status, 200, "{body}");
+    let worker = body["session_id"].as_u64().unwrap() as u32;
+    let (status, body) = r.spawn_child(worker, "claude").await;
+    assert_eq!(status, 200, "{body}");
+    let grandchild = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon.kill(worker).unwrap();
+    wait_until("the worker to exit", || !r.live(worker)).await;
+    assert!(r.live(grandchild));
+
+    let (status, body) = http_json(
+        r.addr,
+        "/orchestrate/spawn",
+        &r.token(orchestrator),
+        json!({ "kind": "claude", "prompt": "carry on", "handoff": true }),
+    )
+    .await;
+    assert_ne!(status, 200, "a run's pane cannot hand off: {body}");
+    assert!(body.to_string().contains("handoff"), "{body}");
+
+    r.daemon.routine_tick_at(run.hard_stop_at_ms + 1_000);
+    let order = r.daemon.night_shift_stop_order(run.run_id);
+    assert_eq!(order, [grandchild, orchestrator]);
+    wait_until("the grandchild to close", || !r.live(grandchild)).await;
+    let settled = r.run(run.run_id);
+    assert_eq!(settled.cost.panes, 3, "the crew counts every pane it started");
+}
+
+/// The report and the orchestrator's turn end settle the run, and its live
+/// worker and the orchestrator are closed with it.
+#[tokio::test]
+async fn report_settle_closes_live_panes() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(o, "codex").await;
+    assert_eq!(status, 200, "{body}");
+    let worker = body["session_id"].as_u64().unwrap() as u32;
+    std::fs::write(&run.report_path, "# Morning\n").unwrap();
+    let (status, body) = r.night(o, "report", json!({ "summary": "done" })).await;
+    assert_eq!(status, 200, "{body}");
+    r.turn_end(o).await;
+    wait_until("the run to settle", || !r.in_flight(routine.id)).await;
+    wait_until("the worker to close", || !r.live(worker)).await;
+    wait_until("the orchestrator to close", || !r.live(o)).await;
+    assert_eq!(r.daemon.night_shift_stop_order(run.run_id), [worker, o]);
+}
+
+/// The orchestrator's pane exiting settles the run and closes its workers.
+#[tokio::test]
+async fn orchestrator_exit_closes_live_panes() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let quit = r.ws.join("orchestrator-quit");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "echo ORCHESTRATOR-UP; while [ ! -f '{}' ]; do sleep 0.1; done",
+            quit.display()
+        ),
+    ]);
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(o, "codex").await;
+    assert_eq!(status, 200, "{body}");
+    let worker = body["session_id"].as_u64().unwrap() as u32;
+    std::fs::write(&quit, "").unwrap();
+    wait_until("the run to settle", || !r.in_flight(routine.id)).await;
+    wait_until("the worker to close", || !r.live(worker)).await;
+    let settled = r.run(run.run_id);
+    assert_eq!(settled.phase, proto::NightRunPhase::Settled);
+    assert_eq!(settled.stop_reason, Some(proto::NightStopReason::PaneExited));
 }
 
 #[tokio::test]

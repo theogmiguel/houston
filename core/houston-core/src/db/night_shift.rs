@@ -57,7 +57,24 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_night_entries_run ON night_entries(run_id, id);",
     )?;
+    super::add_column_if_missing(
+        conn,
+        "night_runs",
+        "crew_json",
+        "crew_json TEXT NOT NULL DEFAULT '[]'",
+    )?;
     Ok(())
+}
+
+/// A pane of a run's tree, recorded when it is spawned and kept after it
+/// exits: membership does not depend on live parent links.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NightMember {
+    pub session: u32,
+    /// The pane's first id; a respawn keeps it.
+    pub origin: u32,
+    pub provider: proto::AgentKind,
+    pub first_seen_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,12 +101,14 @@ pub struct NightRunRow {
     pub preflight: Vec<proto::PreflightItem>,
     pub keep_awake: proto::NightKeepAwake,
     pub merge_order: Vec<u32>,
+    /// Every pane the run started, the orchestrator first.
+    pub crew: Vec<NightMember>,
 }
 
 const RUN_SELECT: &str = "SELECT run_id, routine_id, workspace, trigger, phase, session_id, \
     started_at_ms, wrap_up_at_ms, hard_stop_at_ms, ended_at_ms, report_path, report_published, \
     summary, wrap_up_sent, stop_reason, stop_detail, interruptions_json, cost_json, \
-    limited_json, preflight_json, keep_awake, merge_order_json FROM night_runs";
+    limited_json, preflight_json, keep_awake, merge_order_json, crew_json FROM night_runs";
 
 fn bad(col: usize, what: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, what.into())
@@ -149,6 +168,7 @@ fn map_run(r: &rusqlite::Row) -> rusqlite::Result<NightRunRow> {
         preflight: json_col(r, 19, run_id)?,
         keep_awake: wire_col(r, 20, run_id)?,
         merge_order: json_col(r, 21, run_id)?,
+        crew: json_col(r, 22, run_id)?,
     })
 }
 
@@ -270,7 +290,7 @@ impl Db {
              hard_stop_at_ms = ?5, ended_at_ms = ?6, report_published = ?7, summary = ?8, \
              wrap_up_sent = ?9, stop_reason = ?10, stop_detail = ?11, interruptions_json = ?12, \
              cost_json = ?13, limited_json = ?14, preflight_json = ?15, keep_awake = ?16, \
-             merge_order_json = ?17 WHERE run_id = ?1",
+             merge_order_json = ?17, crew_json = ?18 WHERE run_id = ?1",
             rusqlite::params![
                 row.run_id,
                 wire_name(&row.phase)?,
@@ -289,6 +309,7 @@ impl Db {
                 serde_json::to_string(&row.preflight)?,
                 wire_name(&row.keep_awake)?,
                 serde_json::to_string(&row.merge_order)?,
+                serde_json::to_string(&row.crew)?,
             ],
         )
         .with_context(|| format!("saving night run {}", row.run_id))?;

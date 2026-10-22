@@ -11,16 +11,26 @@ use houston_protocol as proto;
 use serde_json::{json, Value};
 
 use super::{now_unix_ms, Daemon, RoutineRun};
-use crate::db::{NightEntryWrite, NightRunRow};
+use crate::db::{NightEntryWrite, NightMember, NightRunRow};
 use crate::night_shift::{awake, brief, preflight, settings, window};
 
 type AwakeHook = Arc<dyn Fn(u32, bool) + Send + Sync>;
-/// Every pane seen in a run's tree, with provider and first sighting.
-type CrewSeen = HashMap<u32, (proto::AgentKind, i64)>;
 
 enum HoldSlot {
     Real(#[allow(dead_code)] awake::Hold),
     Test,
+}
+
+/// A run's panes, from its first pane until the last one is closed. It
+/// outlives the run's slot in `routine_runs`, so a stopping run still
+/// refuses spawns and is swept whole.
+#[derive(Clone)]
+struct RunTree {
+    routine_id: u32,
+    orchestrator: u32,
+    stopping: bool,
+    /// Every pane the run started, the orchestrator first; see `NightMember`.
+    members: Vec<NightMember>,
 }
 
 /// What a run keeps in memory; the rest is in `night_runs`.
@@ -30,8 +40,7 @@ pub(crate) struct NightShiftCtx {
     lock: Mutex<()>,
     holds: Mutex<HashMap<u32, HoldSlot>>,
     last_tick: Mutex<HashMap<u32, i64>>,
-    /// Per run: every pane seen in its tree, with provider and first sighting.
-    crew: Mutex<HashMap<u32, CrewSeen>>,
+    trees: Mutex<HashMap<u32, RunTree>>,
     stop_order: Mutex<HashMap<u32, Vec<u32>>>,
     /// Per ZCode pane of a run: when it last ended a turn (or was first seen).
     zcode_turns: Mutex<HashMap<u32, i64>>,
@@ -41,6 +50,9 @@ pub(crate) struct NightShiftCtx {
 }
 
 const MINUTE_MS: i64 = 60_000;
+/// Sweeps of a settling run's tree: one closes what is live, a second
+/// catches a pane spawned while the first ran.
+const NIGHT_SWEEP_PASSES: usize = 3;
 
 fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
     serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
@@ -525,6 +537,7 @@ impl Daemon {
             preflight: std::mem::take(&mut items),
             keep_awake: proto::NightKeepAwake::Off,
             merge_order: Vec::new(),
+            crew: Vec::new(),
         };
         if let Some(why) = refusal {
             night.phase = proto::NightRunPhase::Refused;
@@ -613,6 +626,19 @@ impl Daemon {
             return;
         };
         row.session_id = Some(session);
+        let origin = self.night_origin_of(session);
+        if !row.crew.iter().any(|m| m.origin == origin) {
+            row.crew.insert(0, self.night_member(session, row.started_at_ms));
+        }
+        self.night.trees.lock().expect("night trees").insert(
+            run_id,
+            RunTree {
+                routine_id: row.routine_id,
+                orchestrator: session,
+                stopping: false,
+                members: row.crew.clone(),
+            },
+        );
         row.keep_awake = self.night_awake_acquire(run_id);
         if row.keep_awake == proto::NightKeepAwake::Unavailable
             && !row.preflight.iter().any(|i| i.id == "inhibit_unavailable")
@@ -696,17 +722,176 @@ impl Daemon {
     }
 
     /// The live Night shift run whose tree holds `session`, as (routine, run,
-    /// orchestrator).
+    /// orchestrator). A stopping run is not live.
     pub(crate) fn night_run_of_pane(&self, session: u32) -> Option<(u32, u32, u32)> {
-        for (routine_id, run) in self.night_runs_live() {
-            let Some(orchestrator) = run.session_id else {
-                continue;
-            };
-            if orchestrator == session || self.descendants_of(orchestrator).contains(&session) {
-                return Some((routine_id, run.run_id, orchestrator));
+        self.night_tree_of(session)
+            .filter(|(_, tree)| !tree.stopping)
+            .map(|(run, tree)| (tree.routine_id, run, tree.orchestrator))
+    }
+
+    /// The pane's first id: a respawned pane keeps its run membership.
+    fn night_origin_of(&self, session: u32) -> u32 {
+        self.get(session)
+            .ok()
+            .and_then(|s| s.info.session_origin)
+            .unwrap_or(session)
+    }
+
+    fn night_member(&self, session: u32, now_ms: i64) -> NightMember {
+        NightMember {
+            session,
+            origin: self.night_origin_of(session),
+            provider: self
+                .get(session)
+                .map(|s| s.info.agent)
+                .unwrap_or(proto::AgentKind::Custom),
+            first_seen_ms: now_ms,
+        }
+    }
+
+    /// The run, stopping or not, whose recorded panes include `session`.
+    fn night_tree_of(&self, session: u32) -> Option<(u32, RunTree)> {
+        let origin = self.night_origin_of(session);
+        self.night
+            .trees
+            .lock()
+            .expect("night trees")
+            .iter()
+            .find(|(_, t)| {
+                t.orchestrator == session
+                    || t.members
+                        .iter()
+                        .any(|m| m.session == session || m.origin == origin)
+            })
+            .map(|(run, t)| (*run, t.clone()))
+    }
+
+    /// The tree's live panes, newest first and the orchestrator last. A pane
+    /// spawned outside `pane_spawn` under a live member counts too.
+    fn night_live_panes(&self, tree: &RunTree) -> Vec<u32> {
+        let origins: std::collections::HashSet<u32> =
+            tree.members.iter().map(|m| m.origin).collect();
+        let mut panes: Vec<u32> = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            sessions
+                .values()
+                .filter(|s| s.state.lock().expect("state lock").is_live())
+                .filter(|s| {
+                    s.info.id == tree.orchestrator
+                        || origins.contains(&s.info.session_origin.unwrap_or(s.info.id))
+                })
+                .map(|s| s.info.id)
+                .collect()
+        };
+        let roots = panes.clone();
+        for root in roots {
+            panes.extend(self.descendants_of(root));
+        }
+        panes.sort_unstable_by(|a, b| b.cmp(a));
+        panes.dedup();
+        if let Some(at) = panes.iter().position(|p| *p == tree.orchestrator) {
+            let orchestrator = panes.remove(at);
+            panes.push(orchestrator);
+        }
+        panes
+    }
+
+    /// Records live panes the run's tree does not list yet; answers the
+    /// run's live panes.
+    fn night_note_members(&self, run_id: u32, now_ms: i64) -> Vec<u32> {
+        let Some(tree) = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let panes = self.night_live_panes(&tree);
+        let new: Vec<NightMember> = panes
+            .iter()
+            .map(|p| self.night_member(*p, now_ms))
+            .filter(|m| !tree.members.iter().any(|t| t.origin == m.origin))
+            .collect();
+        if !new.is_empty() {
+            self.night_add_members(run_id, new);
+        }
+        panes
+    }
+
+    fn night_add_members(&self, run_id: u32, new: Vec<NightMember>) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        if let Some(tree) = self.night.trees.lock().expect("night trees").get_mut(&run_id) {
+            for m in &new {
+                if !tree.members.iter().any(|t| t.origin == m.origin) {
+                    tree.members.push(m.clone());
+                }
             }
         }
-        None
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        for m in new {
+            if !row.crew.iter().any(|t| t.origin == m.origin) {
+                row.crew.push(m);
+            }
+        }
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording night run {run_id}'s crew: {e:#}");
+        }
+    }
+
+    /// A spawn from a run's tree: refused while the run stops and from a
+    /// handoff.
+    fn night_spawn_admit(&self, caller: u32, handoff: bool) -> Result<()> {
+        let Some((run_id, tree)) = self.night_tree_of(caller) else {
+            return Ok(());
+        };
+        if tree.stopping {
+            bail!(
+                "pane_spawn refused: Night shift run {run_id} is stopping and closes every \
+                 pane it started"
+            );
+        }
+        if handoff {
+            bail!(
+                "pane_spawn refused: pane {caller} belongs to Night shift run {run_id}, whose \
+                 panes cannot hand off (handoff: true); spawn a child pane instead"
+            );
+        }
+        Ok(())
+    }
+
+    /// A pane `caller` spawned: recorded in the caller's run. A pane that
+    /// raced a stop is closed again and the spawn refused.
+    pub(super) fn night_shift_spawned(&self, caller: u32, session: u32) -> Result<()> {
+        let Some((run_id, _)) = self.night_tree_of(caller) else {
+            return Ok(());
+        };
+        self.night_add_members(run_id, vec![self.night_member(session, now_unix_ms())]);
+        let current = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .map(|t| t.stopping);
+        let refusal = match current {
+            None => Some(format!("Night shift run {run_id} ended during the spawn")),
+            Some(true) => Some(format!(
+                "Night shift run {run_id} began stopping during the spawn"
+            )),
+            Some(false) => None,
+        };
+        let Some(why) = refusal else {
+            return Ok(());
+        };
+        if let Err(e) = self.kill(session) {
+            tracing::warn!("closing pane {session} of night run {run_id}: {e:#}");
+        }
+        bail!("pane_spawn refused: {why}; pane {session} was closed again")
     }
 
     pub(crate) fn is_night_shift_orchestrator(&self, session: u32) -> bool {
@@ -777,11 +962,10 @@ impl Daemon {
     /// Adds the panes' time since the last tick to the run's cost; answers
     /// the run's pane-hours so far.
     fn night_account(&self, row: &NightRunRow, now_ms: i64) -> f64 {
-        let Some(orchestrator) = row.session_id else {
+        if row.session_id.is_none() {
             return row.cost.pane_hours;
-        };
-        let mut panes = vec![orchestrator];
-        panes.extend(self.descendants_of(orchestrator));
+        }
+        let panes = self.night_note_members(row.run_id, now_ms);
         let since = {
             let mut ticks = self.night.last_tick.lock().expect("night ticks");
             let last = ticks
@@ -794,34 +978,33 @@ impl Daemon {
             return 0.0;
         };
         let hours = since as f64 / 3_600_000.0;
-        {
-            let mut crew = self.night.crew.lock().expect("night crew");
-            let seen = crew.entry(row.run_id).or_default();
-            for id in &panes {
-                let provider = self
-                    .get(*id)
-                    .map(|s| s.info.agent)
-                    .unwrap_or(proto::AgentKind::Custom);
-                seen.entry(*id).or_insert((provider, now_ms));
-                row.cost.pane_hours += hours;
-                match row
-                    .cost
-                    .per_provider
-                    .iter_mut()
-                    .find(|l| l.provider == provider)
-                {
-                    Some(line) => line.pane_hours += hours,
-                    None => row.cost.per_provider.push(proto::NightCostLine {
-                        provider,
-                        panes: 0,
-                        pane_hours: hours,
-                    }),
-                }
+        for id in &panes {
+            let provider = self
+                .get(*id)
+                .map(|s| s.info.agent)
+                .unwrap_or(proto::AgentKind::Custom);
+            row.cost.pane_hours += hours;
+            match row
+                .cost
+                .per_provider
+                .iter_mut()
+                .find(|l| l.provider == provider)
+            {
+                Some(line) => line.pane_hours += hours,
+                None => row.cost.per_provider.push(proto::NightCostLine {
+                    provider,
+                    panes: 0,
+                    pane_hours: hours,
+                }),
             }
-            row.cost.panes = seen.len() as u32;
-            for line in &mut row.cost.per_provider {
-                line.panes = seen.values().filter(|(p, _)| *p == line.provider).count() as u32;
-            }
+        }
+        row.cost.panes = row.crew.len() as u32;
+        for line in &mut row.cost.per_provider {
+            line.panes = row
+                .crew
+                .iter()
+                .filter(|m| m.provider == line.provider)
+                .count() as u32;
         }
         if let Err(e) = self.db.save_night_run(&row) {
             tracing::warn!("recording night run {}'s cost: {e:#}", row.run_id);
@@ -898,7 +1081,7 @@ impl Daemon {
         self.broadcast_night_run(run_id);
     }
 
-    /// Closes the run's descendants, then its orchestrator, and settles it.
+    /// Closes the run's panes, the orchestrator last, and settles it.
     fn night_shift_stop_run(
         self: &Arc<Self>,
         routine_id: u32,
@@ -906,6 +1089,15 @@ impl Daemon {
         reason: proto::NightStopReason,
         detail: Option<String>,
     ) {
+        if let Some(tree) = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get_mut(&run.run_id)
+        {
+            tree.stopping = true;
+        }
         let taken = {
             let mut running = self.routine_runs.lock().expect("routine run lock");
             if running
@@ -930,28 +1122,47 @@ impl Daemon {
                 }
             }
         }
-        let mut order = Vec::new();
-        if let Some(orchestrator) = run.session_id {
-            for child in self.descendants_of(orchestrator).into_iter().rev() {
-                if let Err(e) = self.kill(child) {
-                    tracing::warn!("closing night run {}'s pane {child}: {e:#}", run.run_id);
+        self.settle_run(run.run_id, routine_id, proto::RoutineOutcome::Ok, None);
+    }
+
+    /// Closes every live pane of the run's tree, newest first and the
+    /// orchestrator last, then forgets the tree. A pane spawned while the
+    /// sweep ran is closed by the next pass or by `night_shift_spawned`.
+    fn night_sweep(&self, run_id: u32) {
+        let mut closed = Vec::new();
+        for _ in 0..NIGHT_SWEEP_PASSES {
+            let tree = {
+                let mut trees = self.night.trees.lock().expect("night trees");
+                let Some(tree) = trees.get_mut(&run_id) else {
+                    break;
+                };
+                tree.stopping = true;
+                tree.clone()
+            };
+            let panes = self.night_live_panes(&tree);
+            if panes.is_empty() {
+                break;
+            }
+            for pane in panes {
+                match self.kill(pane) {
+                    Ok(()) => closed.push(pane),
+                    Err(e) => tracing::warn!("closing night run {run_id}'s pane {pane}: {e:#}"),
                 }
-                order.push(child);
             }
-            if let Err(e) = self.kill(orchestrator) {
-                tracing::warn!("closing night run {}'s orchestrator: {e:#}", run.run_id);
-            }
-            order.push(orchestrator);
         }
+        self.night
+            .trees
+            .lock()
+            .expect("night trees")
+            .remove(&run_id);
         self.night
             .stop_order
             .lock()
             .expect("night stop order")
-            .insert(run.run_id, order);
-        self.settle_run(run.run_id, routine_id, proto::RoutineOutcome::Ok, None);
+            .insert(run_id, closed);
     }
 
-    /// The panes a hard stop closed, in order.
+    /// The panes the run's settle closed, in order.
     #[doc(hidden)]
     pub fn night_shift_stop_order(&self, run_id: u32) -> Vec<u32> {
         self.night
@@ -982,8 +1193,10 @@ impl Daemon {
             .ok_or_else(|| anyhow!("Night shift run {run_id} is not in flight"))
     }
 
-    /// Called for every settled routine run; closes the Night shift side.
+    /// Called for every settled routine run; closes the Night shift side,
+    /// whichever way the run ended: every pane it started is closed.
     pub(super) fn night_shift_settled(&self, run_id: u32) {
+        self.night_sweep(run_id);
         let row = {
             let _guard = self.night.lock.lock().expect("night lock");
             let Ok(Some(mut row)) = self.db.night_run(run_id) else {
@@ -1014,14 +1227,11 @@ impl Daemon {
             .lock()
             .expect("night ticks")
             .remove(&run_id);
-        let crew = self.night.crew.lock().expect("night crew").remove(&run_id);
-        if let Some(crew) = crew {
-            self.night
-                .zcode_turns
-                .lock()
-                .expect("zcode turns")
-                .retain(|session, _| !crew.contains_key(session));
-        }
+        self.night
+            .zcode_turns
+            .lock()
+            .expect("zcode turns")
+            .retain(|session, _| !row.crew.iter().any(|m| m.session == *session));
         self.broadcast_night_run(run_id);
         let entries = self.db.night_entries(run_id).unwrap_or_default();
         let prs = entries
@@ -1098,12 +1308,15 @@ impl Daemon {
                 if let Err(e) = self.db.save_night_run(&row) {
                     tracing::warn!("recording night run {}'s interruption: {e:#}", row.run_id);
                 }
-                if let Some(o) = orchestrator {
-                    for child in self.descendants_of(o).into_iter().rev() {
-                        let _ = self.kill(child);
-                    }
-                    let _ = self.kill(o);
-                }
+                self.night.trees.lock().expect("night trees").insert(
+                    row.run_id,
+                    RunTree {
+                        routine_id: row.routine_id,
+                        orchestrator: orchestrator.or(row.session_id).unwrap_or(0),
+                        stopping: true,
+                        members: row.crew.clone(),
+                    },
+                );
                 self.settle_run(
                     row.run_id,
                     row.routine_id,
@@ -1129,12 +1342,10 @@ impl Daemon {
                     night: true,
                 },
             );
-            let mut panes = vec![session];
-            panes.extend(self.descendants_of(session));
-            for pane in panes {
+            self.night_shift_pane_opened(row.run_id, session);
+            for pane in self.night_note_members(row.run_id, now_ms) {
                 self.night_resume_held(pane);
             }
-            self.night_shift_pane_opened(row.run_id, session);
             self.night
                 .last_tick
                 .lock()
@@ -1470,18 +1681,17 @@ impl Daemon {
     pub(super) fn night_run_to_wire(&self, r: NightRunRow) -> Result<proto::NightRun> {
         let entries = self.db.night_entries(r.run_id)?;
         let live = r.ended_at_ms.is_none();
-        let crew = match (live, r.session_id) {
-            (true, Some(orchestrator)) => {
-                let seen = self
-                    .night
-                    .crew
-                    .lock()
-                    .expect("night crew")
-                    .get(&r.run_id)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut ids = vec![orchestrator];
-                ids.extend(self.descendants_of(orchestrator));
+        let tree = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&r.run_id)
+            .cloned();
+        let crew = match (live, tree) {
+            (true, Some(tree)) => {
+                let mut ids = self.night_live_panes(&tree);
+                ids.rotate_right(1);
                 ids.into_iter()
                     .filter_map(|id| {
                         let s = self.get(id).ok()?;
@@ -1492,9 +1702,11 @@ impl Daemon {
                             provider: info.agent,
                             role: self.delegation_of(id).and_then(|d| d.role),
                             status: info.status,
-                            started_at_ms: seen
-                                .get(&id)
-                                .map(|(_, t)| *t)
+                            started_at_ms: r
+                                .crew
+                                .iter()
+                                .find(|m| m.session == id || m.origin == info.session_origin.unwrap_or(id))
+                                .map(|m| m.first_seen_ms)
                                 .unwrap_or(r.started_at_ms),
                             limited,
                         })
@@ -1609,14 +1821,17 @@ impl Daemon {
             })
     }
 
-    /// A spawn from a run's tree: providers without a limit signal are refused
+    /// A spawn from a run's tree: admitted by `night_spawn_admit`, providers
+    /// without a limit signal are refused
     /// and a limited one is swapped for the next in the chain. Answers the
     /// provider to launch and, when it changed, the reply's warning.
     pub(crate) fn night_shift_spawn_provider(
         &self,
         caller: u32,
         requested: proto::AgentKind,
+        handoff: bool,
     ) -> Result<(proto::AgentKind, Option<proto::PaneSpawnWarning>)> {
+        self.night_spawn_admit(caller, handoff)?;
         let Some((_, run_id, _)) = self.night_run_of_pane(caller) else {
             return Ok((requested, None));
         };
@@ -1817,11 +2032,17 @@ impl Daemon {
         if row.limited.contains(&proto::AgentKind::Zcode) {
             return;
         }
-        let Some(orchestrator) = row.session_id else {
+        let Some(tree) = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .cloned()
+        else {
             return;
         };
-        let mut panes = vec![orchestrator];
-        panes.extend(self.descendants_of(orchestrator));
+        let panes = self.night_live_panes(&tree);
         let stall = i64::from(proto::NIGHT_SHIFT_ZCODE_STALL_MINUTES) * MINUTE_MS;
         let mut stalled = None;
         {

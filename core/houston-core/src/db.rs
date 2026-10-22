@@ -25,7 +25,7 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
-pub use night_shift::{NightEntryWrite, NightRunRow};
+pub use night_shift::{NightEntryWrite, NightMember, NightRunRow};
 mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
