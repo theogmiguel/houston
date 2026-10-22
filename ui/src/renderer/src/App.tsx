@@ -508,6 +508,7 @@ type RosterPatchMsg = Extract<
       | "delegation_changed"
       | "session_tags_set"
       | "session_resumable"
+      | "session_updated"
       | "agent_running";
   }
 >;
@@ -522,6 +523,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "session_updated",
   "agent_running",
 ]);
 
@@ -529,16 +531,30 @@ function isRosterPatch(msg: ServerMsg): msg is RosterPatchMsg {
   return ROSTER_PATCH_TYPES.has(msg.type);
 }
 
+// `session_updated` carries a daemon snapshot without the roster-only fields
+// (task, delegation, inbox counts), so only its lifecycle fields replace ours.
+function sessionLifecycleFields(info: SessionInfo): Partial<SessionInfo> {
+  return {
+    state: info.state,
+    slept_at_ms: info.slept_at_ms ?? null,
+    sleep_notice: info.sleep_notice ?? null,
+    resume_notice: info.resume_notice ?? null,
+    latest_prompt: info.latest_prompt ?? null,
+    last_agent_message: info.last_agent_message ?? null,
+    context: info.context ?? null,
+  };
+}
+
 function patchRosterFields(
   prev: Map<number, SessionInfo>,
   msg: RosterPatchMsg,
 ): Map<number, SessionInfo> {
   const isCheckout = msg.type === "session_checkout";
-  const id = isCheckout || msg.type === "session_activity" ? msg.id : msg.session;
+  const id = msg.type === "session_updated" ? msg.info.id : isCheckout || msg.type === "session_activity" ? msg.id : msg.session;
   const cur = prev.get(id);
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
-    msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
+    msg.type === "session_updated" ? sessionLifecycleFields(msg.info) : msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
       ? { checkout: msg.checkout ?? null, checkout_root: msg.checkout_root ?? null, worktree: msg.worktree ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title, title_source: msg.title_source }
