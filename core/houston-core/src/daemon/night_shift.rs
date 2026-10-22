@@ -101,6 +101,9 @@ const MINUTE_MS: i64 = 60_000;
 /// catches a pane spawned while the first ran.
 const NIGHT_SWEEP_PASSES: usize = 3;
 const NIGHT_NO_START_MS: i64 = 365 * 24 * 60 * MINUTE_MS;
+/// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
+/// is a suspended machine or a stalled daemon, and is charged as four ticks.
+const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
 
 fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
     serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
@@ -1115,7 +1118,7 @@ impl Daemon {
             let last = ticks
                 .insert(row.run_id, now_ms)
                 .unwrap_or(row.started_at_ms);
-            (now_ms - last).max(0)
+            (now_ms - last).clamp(0, NIGHT_ACCOUNT_STEP_MAX_MS)
         };
         let _guard = self.night.lock.lock().expect("night lock");
         let Ok(Some(mut row)) = self.db.night_run(row.run_id) else {

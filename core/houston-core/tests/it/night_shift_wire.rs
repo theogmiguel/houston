@@ -880,19 +880,43 @@ async fn safety_cap_stops_run() {
     let r = rig().await;
     let routine = r.ready(|s| s.safety_cap_pane_hours = 1);
     let run = r.run_now(routine.id, 240);
-    r.daemon.routine_tick_at(run.started_at_ms + 30 * MINUTE);
+    for minute in 1..=30 {
+        r.daemon
+            .routine_tick_at(run.started_at_ms + minute * MINUTE);
+    }
     assert!(r.in_flight(routine.id), "half a pane-hour is under the cap");
-    r.daemon.routine_tick_at(run.started_at_ms + 61 * MINUTE);
+    for minute in 31..=61 {
+        r.daemon
+            .routine_tick_at(run.started_at_ms + minute * MINUTE);
+    }
     let stopped = r.run(run.run_id);
     assert_eq!(stopped.stop_reason, Some(proto::NightStopReason::SafetyCap));
     let detail = stopped.stop_detail.unwrap();
     assert!(detail.contains("1 pane-hour safety cap"), "{detail}");
     assert!(
-        detail.contains("1.02 pane-hours"),
+        detail.starts_with("1.0") && detail.contains(" pane-hours reached"),
         "names the value: {detail}"
     );
-    assert!(stopped.cost.pane_hours >= 1.0);
+    assert!((1.0..1.05).contains(&stopped.cost.pane_hours));
     assert!(!r.in_flight(routine.id));
+}
+
+/// A gap between ticks (a suspended machine, a stalled daemon) is charged
+/// as a few ticks, not as hours of every pane's time.
+#[tokio::test]
+async fn a_tick_gap_is_not_charged_as_pane_hours() {
+    let r = rig().await;
+    let routine = r.ready(|s| s.safety_cap_pane_hours = 1);
+    let run = r.run_now(routine.id, 600);
+    r.daemon.routine_tick_at(run.started_at_ms + MINUTE);
+    r.daemon.routine_tick_at(run.started_at_ms + 121 * MINUTE);
+    let after = r.run(run.run_id);
+    assert!(r.in_flight(routine.id), "two hours asleep do not trip the cap");
+    assert!(
+        after.cost.pane_hours < 3.0 / 60.0,
+        "charged {} pane-hours",
+        after.cost.pane_hours
+    );
 }
 
 // ---- S3 ----
