@@ -317,20 +317,23 @@ failure not given a typed refusal comes back as `error`.
 
 ### Night shift
 
-A workspace has at most one Night shift routine. It is listed, paused and
-deleted with the `routine_*` messages; its settings and runs use these.
+A workspace has at most one Night shift routine. It is listed with `routine_list` and
+deleted with `routine_delete`; `routine_update` and `routine_run_now` refuse it, naming
+`night_shift_update` and `night_shift_run_now`, so the routine row and its settings stay one
+value. Its settings and runs use these messages. Every refusal of one is an `error` with
+`context: "night_shift"` (`night_shift_report:<run_id>` for `night_shift_report`).
 
 | Message | Fields | Reply |
 |---|---|---|
 | `night_shift_create` | `workspace` | `night_shift_state` (direct) for the existing routine, or for a new paused one with the default settings; `routines` (bcast) when created; `error` when the workspace is not a git repository |
 | `night_shift_state` | `workspace`, `preflight_until_ms?` (also run preflight for a start lasting until then) | `night_shift_state` (direct) |
 | `night_shift_update` | `routine_id`, `settings: NightShiftSettings`, `expected_revision` | `night_shift_state` (bcast); `error` naming both revisions when stale, naming each missing setting for `merge_queue` output without a verification command or an App check, naming a worker provider that reports no usage limit, and naming the values and the limit for a wrap-up not before the hard stop or a window over `NIGHT_SHIFT_WINDOW_MAX_MINUTES` |
-| `night_shift_run_now` | `routine_id`, `until_ms` (the hard stop; wrap-up is `NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES` before it, or 75 % of a run under one hour) | `night_shift_run_event` (bcast); a blocking preflight records a `refused` run carrying every item and opens no pane |
+| `night_shift_run_now` | `routine_id`, `until_ms` (the hard stop; wrap-up is `NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES` before it, or 75 % of a run under one hour) | `night_shift_run_event` (bcast); a blocking preflight, or any failure to launch, records a `refused` run carrying every item and its reason and opens no pane; `error` while the routine has a run in flight or starting |
 | `night_shift_wrap_up` | `run_id` | as reaching wrap-up now: one wrap-up instruction to the orchestrator |
-| `night_shift_stop` | `run_id` | as reaching the hard stop now: descendants, then the orchestrator, are closed and the run settles |
+| `night_shift_stop` | `run_id` | as reaching the hard stop now: every pane the run started, then the orchestrator, is closed and the run settles |
 | `night_shift_decide` | `entry_id`, `choice` | `night_shift_run_event` (bcast); `error` for a second answer, naming the first |
-| `night_shift_qa_passed` | `entry_id` | `night_shift_run_event` (bcast); with merge queue output the PR is enqueued |
-| `night_shift_report` | `run_id` | `night_shift_report` (direct); `error` when the run has no `report.md` |
+| `night_shift_qa_passed` | `entry_id` | `night_shift_run_event` (bcast) once the PR is enqueued (after the nearest earlier PR of the run's `merge_order` that is queued) and then marked; `error` unless the output is `merge_queue`, Hold for my QA is on and the PR is visible, and when the enqueue fails, which leaves the PR held |
+| `night_shift_report` | `run_id` | `night_shift_report` (direct); `error` when the run has no `report.md` or it is not a regular file |
 
 ### Tasks
 
@@ -541,9 +544,9 @@ every refusal names the setting.
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
 | `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]`, `engine_refusals: RoutineEngineRefusal[]` | direct reply to `harness_state` |
-| `night_shift_state` | `workspace`, `routine?: Routine`, `settings: NightShiftSettings` (the defaults when there is no routine), `revision`, `runs: NightRun[]` (newest first, at most `NIGHT_SHIFT_RUNS_PAGE`), `preflight?: PreflightItem[]`, `machine: NightMachine` | direct reply to `night_shift_state` and `night_shift_create`; bcast after `night_shift_update` |
+| `night_shift_state` | `workspace`, `routine?: Routine`, `settings: NightShiftSettings` (the defaults when there is no routine), `revision`, `runs: NightRun[]` (newest first, at most `NIGHT_SHIFT_RUNS_PAGE`), `preflight?: PreflightItem[]` (the restart items judge the window of a start lasting until `preflight_until_ms`), `machine: NightMachine`, `merge_verify_command` (whether the workspace's merge queue has a verification command) | direct reply to `night_shift_state` and `night_shift_create`; bcast after `night_shift_update` |
 | `night_shift_run_event` | `run: NightRun` | bcast — a run started, was refused, wrapped up, wrote its ledger or settled |
-| `night_shift_notice` | `workspace`, `run_id`, `headline` (PR and open decision counts) | bcast — once per settled run |
+| `night_shift_notice` | `workspace`, `run_id`, `headline` (PR and open decision counts, or why a refused run did not start) | bcast — once per settled run |
 | `night_shift_report` | `run_id`, `markdown`, `truncated` | direct reply to `night_shift_report` |
 | `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
@@ -1451,6 +1454,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **Night shift runs an orchestrator for a window and leaves a morning report.** `RoutineKind` gains `night_shift`. New `night_shift_create`, `night_shift_state`, `night_shift_update`, `night_shift_run_now`, `night_shift_wrap_up`, `night_shift_stop`, `night_shift_decide`, `night_shift_qa_passed` and `night_shift_report`, answered by `night_shift_state` (with `revision`, `machine: NightMachine` and `merge_verify_command`), `night_shift_run_event`, `night_shift_notice` and `night_shift_report`. New types: `NightShiftSettings`, `NightWindow`, `NightClock`, `NightFocus`, `NightFocusLevel`, `NightAgent`, `NightAppCheck`, `NightOutput`, `NightQuestions`, `NightRun`, `NightRunPhase`, `NightStopReason`, `NightEntry`, `NightEntryKind`, `NightGates`, `NightGate`, `NightInterruption`, `NightCost`, `NightCostLine`, `NightCrewMember`, `NightKeepAwake`, `NightMachine`, `PreflightItem` and `PreflightStatus`. Refusals carry `context: "night_shift"`; `routine_update` and `routine_run_now` refuse a Night shift routine |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

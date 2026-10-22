@@ -91,20 +91,32 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Window: start, wrap-up, hard stop | 23:30, 06:45, 07:30 (local time, at most 16 hours) |
 | Nights | None: it runs only with **Run now** until you choose nights and turn it on |
 | Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, platform parity, docs accuracy and test gaps Off |
-| Goal | Empty; with a Claude orchestrator a goal is sent as `/goal` |
-| Orchestrator, reviewer | Claude (Opus); the reviewer is the orchestrator's provider |
+| Goal | Empty; a Claude orchestrator receives it as `/goal <goal>`, typed before its brief |
+| Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
-| Live workers | 4 |
+| Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
 | Output | Draft pull requests only, grouped by theme, up to 5 changes each, screenshots for visible changes |
-| App check | None; App QA is off until a start command is set |
+| App check: start command, address or story, smoke flows | None; App QA is off until a start command is set |
 | Checks before hand-back | None; at least one is required before a run starts |
 | Safety cap | 60 pane-hours |
 | Questions at night | Parked for the morning report |
 
-Change the settings in the **Setup** view and choose **Save**. **Merge queue** output hands
-ready pull requests to the workspace's merge queue; it is refused until the workspace has a
-merge queue verification command and Night shift has an App check. With **Hold for my QA**
-on, visible changes stay out of the queue until you choose **Mark QA passed** in the report.
+Change the settings in the **Setup** view and choose **Save**. Unsaved edits survive
+updates from elsewhere; if the settings changed in another window meanwhile, **Save** is
+refused and **Discard changes** loads the current ones. The routine is changed and started
+only here: the generic routine edit and Run now refuse a Night shift routine.
+
+**Merge queue** output hands ready pull requests to the workspace's merge queue; it is
+refused until the workspace has a merge queue verification command and Night shift has an
+App check. With **Pull requests only**, the run's panes cannot add a pull request to the
+queue. With **Hold for my QA** on, a visible change stays out of the queue until you choose
+**Mark QA passed** in the report, which adds it after the earlier pull requests of the
+suggested merge order that are queued; if adding it fails, it stays held and you can mark
+it again.
+
+The run's panes also count against the orchestration caps in Settings ▸ Agents ▸
+Orchestration: the child panes per agent must allow the live workers plus two, and workers
+start their own children only when the nesting depth allows it.
 
 ### Running
 
@@ -118,27 +130,38 @@ item blocks:
 - less than 6 GiB of memory or 20 GiB of disk is free;
 - no check before hand-back is configured.
 
-On Windows, preflight warns when a restart is pending or when the window reaches outside
-Windows Update active hours. On Linux it warns when `systemd-inhibit` is missing. A refused
-run is recorded with its items and opens no pane. A scheduled start missed while the machine
-was off runs once if Houston is back before wrap-up.
+On Windows, preflight warns when a restart is pending or when the run's own window (Run
+now's duration, or the nightly window) reaches outside Windows Update active hours. On Linux
+it warns when `systemd-inhibit` is missing. A refused run is recorded with its items and
+opens no pane, and its notice says why it did not start. A scheduled start missed while the
+machine was off runs once if Houston is back before wrap-up.
 
 A run opens the orchestrator in an isolated worktree with full access. At wrap-up Houston
 tells it once to start nothing new and write the report; **Wrap up now** does the same
-immediately. At the hard stop, at the safety cap, or when you choose **Stop**, Houston closes
-the orchestrator's panes and then the orchestrator. While a run is in flight Houston keeps
-the machine awake (a system-required power request on Windows, an idle and sleep inhibitor
-on Linux) and releases it when the run ends.
+immediately. At the hard stop, at the safety cap, or when you confirm **Stop**, Houston
+closes every pane the run started and then the orchestrator. A run that ends any other way,
+by publishing its report or by its orchestrator exiting, closes them too. The run's panes
+cannot hand off a pane outside it. While a run is in flight Houston keeps the machine awake
+(a system-required power request on Windows, an idle and sleep inhibitor on Linux) and
+releases it when the run ends or the daemon exits. Pane-hours count time while Houston
+runs; a gap while the machine slept is not charged.
 
 The **Live run** view shows the time left, the timeline with any interruptions, the crew
 and their status, the machine's free memory and disk and the plan board. When a worker's
 provider reports its usage limit, later spawns in the run use the next worker provider and
 the orchestrator is told once. Houston never spends a provider's quota reset.
 
-If the daemon restarts during a run, the run continues when the daemon is back before
-wrap-up and the orchestrator pane is restored: held instructions resume, keep-awake is taken
-again and the interruption is recorded. Otherwise the run ends with the interruption
-recorded.
+ZCode reports no usage limit, so Houston probes it: when a run whose workers include ZCode
+starts, and when a ZCode pane has been Working for 20 minutes without ending a turn, it runs
+one `zcode -p` request with the prompt "Reply with the single word OK." and no tools. A
+failed probe (a spent quota, a signed-out CLI, or no answer within 90 seconds) marks ZCode
+limited for the run; at the start it is also recorded as a warning on the run. Each probe
+sends that one prompt to your ZCode provider.
+
+If the daemon restarts during a run, the run continues when the orchestrator pane is still
+running (a Linux daemon handover keeps it), or when the daemon is back before wrap-up and
+the orchestrator pane was restored: held instructions resume, keep-awake is taken again and
+the interruption is recorded. Otherwise the run ends with the interruption recorded.
 
 ### Morning report
 
@@ -150,8 +173,10 @@ what ran; review and QA are agents' verdicts. A pull request whose CI failed on 
 ledger lists as flaky is re-run once.
 
 Every run's ledger (plans, pull requests, deferred and rejected work, lessons and flaky tests)
-is kept in Houston's database, and the next run's brief includes the deferred and rejected
-entries, lessons and flaky tests so it does not repeat them. The orchestrator writes the
+is kept in Houston's database, and the next run's brief includes earlier pull requests and
+what became of them (merged, closed, or not merged yet), deferred and rejected entries,
+lessons and flaky tests, so it does not repeat them. Houston learns a pull request's fate
+from its watch during the run, or with `gh pr view` when the next run starts. The orchestrator writes the
 report to `<state directory>/night-shift/<run>/report.md`, beside the `brief.md` it was given.
 
 The orchestrator sends its prompts, the repository files it reads and its tool output to its

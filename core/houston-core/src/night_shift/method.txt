@@ -15,9 +15,9 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
    (title, theme, why). Record each one you drop for later with night_plan and deferred, so
    no later run repeats the work. Skip everything the ledger below says was rejected.
 3. Build. Give each plan entry to a worker pane started with pane_spawn and a worktree, never
-   more live workers than the cap below. Workers run their checks through
-   `hs-pane heavy -- <command>`, which waits for the machine-wide build slot. Workers hand
-   back with pane_submit.
+   more live workers than the cap below; Houston refuses spawns past it. Workers run their
+   checks through `hs-pane heavy -- <command>`, which waits for this Houston's build slot
+   and for free memory. Workers hand back with pane_submit.
 4. Gates. A change passes, in this order: the checks below run by Houston-started panes (a
    fact), a read-only reviewer pane (a verdict), and for a change the user can see, App QA
    by a separate QA pane that drives the app headless and attaches captures (a verdict).

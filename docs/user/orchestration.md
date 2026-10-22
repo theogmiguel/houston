@@ -24,7 +24,11 @@ other on names and arguments:
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
 - `hs-pane heavy -- <command>`, which runs a heavy command such as a full build or test
   suite only while it holds the daemon's one build slot, the slot the merge queue verifies
-  in. It prints whom it waited for and how long, and exits with the command's exit code.
+  in. Each daemon has its own slot, so the dev and release channels and each WSL distro
+  do not share one. Nothing takes the slot while less than 4 GiB of memory is free. It
+  prints whom or what it waited for and how long, and exits with the command's exit code;
+  if it cannot renew its lease for a minute, it stops the command and exits with an error,
+  so the command never runs beside a build that took the freed slot.
 
 An orchestrator sees the management verbs and `pane_spawn` while spawning is allowed.
 Management remains available for retained children when spawning is disabled, so the
@@ -217,7 +221,10 @@ An agent cannot merge. When its pull request is ready to land, it calls
 `pane_pr_enqueue{pr, depends_on?}` (`hs-pane pr-enqueue PR [--depends-on N]`) to add it to its
 workspace's merge queue, optionally behind another queued pull request. The reply names the
 entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
-removes it. When the agent's branch is built on another queued pull request's branch, it
+removes it. A pane of a Night shift run follows that run's output settings: with pull
+requests only it cannot enqueue, and with Hold for my QA a visible change waits for you (see
+[Night shift](routines.md#night-shift)). When the agent's branch is built on another queued
+pull request's branch, it
 names that one in `depends_on`: Houston restacks the branch onto the base after the other one
 merges. You merge the queue head from the Pull requests page, or Houston merges it once it
 is verified if the workspace's policy allows; see [Merge queue](changes.md#merge-queue). When
