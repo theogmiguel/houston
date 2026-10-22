@@ -5944,6 +5944,10 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         preflight: Option<Vec<PreflightItem>>,
         machine: NightMachine,
+        /// Whether the workspace's merge queue has a verification command,
+        /// which merge queue output needs.
+        #[serde(default)]
+        merge_verify_command: bool,
     },
     /// One run changed (started, wrap-up, ledger, settled); broadcast.
     NightShiftRunEvent {
@@ -7493,6 +7497,7 @@ mod tests {
                     on_battery: Some(false),
                     keep_awake: NightKeepAwake::Off,
                 },
+                merge_verify_command: true,
             },
             ServerMsg::NightShiftRunEvent { run },
             ServerMsg::NightShiftNotice {

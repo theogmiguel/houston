@@ -17,27 +17,38 @@ const LEVELS: { value: NightFocusLevel; label: string }[] = [
 
 const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter(Boolean)
 
+const clocksOf = (s: NightShiftSettings): Record<'start' | 'wrap_up' | 'hard_stop', string> => ({
+  start: clockLabel(s.window.start), wrap_up: clockLabel(s.window.wrap_up), hard_stop: clockLabel(s.window.hard_stop)
+})
+
 function ClockField({ label, value, onChange }: { label: string; value: string; onChange: (text: string) => void }): React.JSX.Element {
   return <TextInput aria-label={label} value={value} size="form" width="compact" onChange={(e) => onChange(e.target.value)} />
 }
 
-/** Routines ▸ Night shift ▸ Setup. Edits a draft; Save sends the whole document. */
-export function NightShiftSetup({ settings, verifyCommand, onSave, saving = false, error = null }: {
+/** Routines ▸ Night shift ▸ Setup. Edits a draft; Save sends the whole document against the revision it was read at. */
+export function NightShiftSetup({ settings, revision, verifyCommand, onSave, saving = false, error = null }: {
   settings: NightShiftSettings
-  /** Whether the workspace has a merge queue verification command; `null` when unknown. */
-  verifyCommand: boolean | null
-  onSave: (settings: NightShiftSettings) => void
+  revision: string
+  /** Whether the workspace has a merge queue verification command. */
+  verifyCommand: boolean
+  onSave: (settings: NightShiftSettings, revision: string) => void
   saving?: boolean
   error?: string | null
 }): React.JSX.Element {
+  const [base, setBase] = useState({ settings, revision })
   const [draft, setDraft] = useState(settings)
-  const [clocks, setClocks] = useState(() => ({
-    start: clockLabel(settings.window.start), wrap_up: clockLabel(settings.window.wrap_up), hard_stop: clockLabel(settings.window.hard_stop)
-  }))
-  useEffect(() => {
+  const [clocks, setClocks] = useState(() => clocksOf(settings))
+  const dirty = JSON.stringify(draft) !== JSON.stringify(base.settings)
+  const reset = (): void => {
+    setBase({ settings, revision })
     setDraft(settings)
-    setClocks({ start: clockLabel(settings.window.start), wrap_up: clockLabel(settings.window.wrap_up), hard_stop: clockLabel(settings.window.hard_stop) })
-  }, [settings])
+    setClocks(clocksOf(settings))
+  }
+  // A new revision replaces a clean form; an edited one keeps its edit and base revision, so a
+  // concurrent change makes Save refuse as stale instead of overwriting it.
+  useEffect(() => {
+    if (revision !== base.revision && (!dirty || JSON.stringify(draft) === JSON.stringify(settings))) reset()
+  }, [revision]) // eslint-disable-line react-hooks/exhaustive-deps
   const set = (patch: Partial<NightShiftSettings>): void => setDraft((d) => ({ ...d, ...patch }))
   const setClock = (key: 'start' | 'wrap_up' | 'hard_stop', text: string): void => {
     setClocks((c) => ({ ...c, [key]: text }))
@@ -53,7 +64,10 @@ export function NightShiftSetup({ settings, verifyCommand, onSave, saving = fals
   const problems = [...(clockError ? [clockError] : []), ...settingsProblems(draft), ...(refusal ? [refusal] : [])]
   const total = minutesBetween(draft.window.start, draft.window.hard_stop)
   const workerOptions = WORKER_PROVIDERS.map((p) => ({ value: p, label: engineLabel(p) }))
-  const dirty = JSON.stringify(draft) !== JSON.stringify(settings)
+  const appCheck = (patch: Partial<NonNullable<NightShiftSettings['app_check']>>): NightShiftSettings['app_check'] => {
+    const next = { start_command: '', address: '', smoke_flows: [], ...draft.app_check, ...patch }
+    return next.start_command.trim() || next.address.trim() || next.smoke_flows.length > 0 ? next : null
+  }
 
   return (
     <div className="grid gap-[var(--space-3)]" data-testid="night-shift-setup">
@@ -100,7 +114,13 @@ export function NightShiftSetup({ settings, verifyCommand, onSave, saving = fals
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Crew">
-        <Card.Field label="Orchestrator"><Text>{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text></Card.Field>
+        <Card.Field label="Orchestrator">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={workerOptions}
+              onChange={(p) => set({ orchestrator: p === draft.orchestrator.provider ? draft.orchestrator : { provider: p as AgentKind, model: null } })} />
+            <Text size="small" tone="muted">{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text>
+          </div>
+        </Card.Field>
         <Card.Field label="Workers, in fallback order">
           <div className="grid gap-[var(--space-1)]">
             {draft.workers.map((w, i) => (
@@ -118,7 +138,11 @@ export function NightShiftSetup({ settings, verifyCommand, onSave, saving = fals
         <Card.Field label="Live workers">
           <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
         </Card.Field>
-        <Card.Field label="Reviewer"><Text>{draft.reviewer ? agentLabel(draft.reviewer.provider, draft.reviewer.model) : 'Same as orchestrator'}</Text></Card.Field>
+        <Card.Field label="Reviewer">
+          <Select aria-label="Reviewer" value={draft.reviewer?.provider ?? 'same'}
+            options={[{ value: 'same', label: 'Same as orchestrator' }, ...workerOptions]}
+            onChange={(p) => set({ reviewer: p === 'same' ? null : { provider: p as AgentKind, model: null } })} />
+        </Card.Field>
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Output">
@@ -136,9 +160,11 @@ export function NightShiftSetup({ settings, verifyCommand, onSave, saving = fals
         <Card.Field label="App check">
           <div className="grid gap-[var(--space-1)]">
             <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}
-              onChange={(e) => set({ app_check: e.target.value.trim() || draft.app_check?.address ? { start_command: e.target.value, address: draft.app_check?.address ?? '', smoke_flows: draft.app_check?.smoke_flows ?? [] } : null })} />
+              onChange={(e) => set({ app_check: appCheck({ start_command: e.target.value }) })} />
             <TextInput aria-label="App address" placeholder="Address or story" value={draft.app_check?.address ?? ''}
-              onChange={(e) => set({ app_check: { start_command: draft.app_check?.start_command ?? '', address: e.target.value, smoke_flows: draft.app_check?.smoke_flows ?? [] } })} />
+              onChange={(e) => set({ app_check: appCheck({ address: e.target.value }) })} />
+            <TextArea aria-label="Smoke flows" rows={2} value={draft.app_check?.smoke_flows.join('\n') ?? ''} placeholder="One smoke flow per line"
+              onChange={(e) => set({ app_check: appCheck({ smoke_flows: lines(e.target.value) }) })} />
             {!draft.app_check?.start_command.trim() && <Text size="small" tone="muted">App QA is off until a start command is set.</Text>}
           </div>
         </Card.Field>
@@ -162,8 +188,8 @@ export function NightShiftSetup({ settings, verifyCommand, onSave, saving = fals
       {problems.map((p) => <Notice key={p} tone="warn">{p}</Notice>)}
       {error && <Notice tone="danger">{error}</Notice>}
       <div className="flex gap-[var(--space-2)]">
-        <Button variant="primary" disabled={!dirty || saving || problems.length > 0} onClick={() => onSave(draft)}>Save</Button>
-        {dirty && <Button variant="ghost" onClick={() => setDraft(settings)}>Discard changes</Button>}
+        <Button variant="primary" disabled={!dirty || saving || problems.length > 0} onClick={() => onSave(draft, base.revision)}>Save</Button>
+        {dirty && <Button variant="ghost" onClick={reset}>Discard changes</Button>}
       </div>
     </div>
   )

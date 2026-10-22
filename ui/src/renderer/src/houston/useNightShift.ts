@@ -13,6 +13,8 @@ export interface NightShiftState {
   revision: string
   runs: NightRun[]
   machine: NightMachine
+  /** Whether the workspace's merge queue has a verification command. */
+  mergeVerifyCommand: boolean
 }
 
 export interface NightShiftReportText {
@@ -23,7 +25,8 @@ export interface NightShiftReportText {
 
 export interface NightShiftActions {
   create: () => void
-  save: (settings: NightShiftSettings) => void
+  /** `revision` is the one the edit started from, so a concurrent change is refused. */
+  save: (settings: NightShiftSettings, revision: string) => void
   preflight: (untilMs: number) => void
   runNow: (untilMs: number) => void
   wrapUp: (runId: number) => void
@@ -52,7 +55,6 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
   const [preflight, setPreflight] = useState<PreflightItem[] | null>(null)
   const [report, setReport] = useState<NightShiftReportText | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const pending = useRef(false)
   const stateRef = useRef<NightShiftState | null>(null)
   stateRef.current = state
 
@@ -64,20 +66,21 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
     if (!client || !workspace) return
     const offState = client.subscribe('night_shift_state', (msg) => {
       if (msg.workspace !== workspace) return
-      pending.current = false
-      setState({
+      // A refresh with the same revision keeps the settings object, so an open
+      // Setup form is not reset by unrelated routine broadcasts.
+      setState((current) => ({
         workspace: msg.workspace,
         routine: msg.routine ?? null,
-        settings: msg.settings,
+        settings: current?.workspace === msg.workspace && current.revision === msg.revision ? current.settings : msg.settings,
         revision: msg.revision,
         runs: msg.runs,
-        machine: msg.machine
-      })
+        machine: msg.machine,
+        mergeVerifyCommand: msg.merge_verify_command
+      }))
       if (msg.preflight) setPreflight(msg.preflight)
     })
     const offRun = client.subscribe('night_shift_run_event', (msg) => {
       if (msg.run.workspace !== workspace) return
-      pending.current = false
       setState((current) => (current ? { ...current, runs: upsertRun(current.runs, msg.run) } : current))
     })
     const offRoutines = client.subscribe('routines', () => client.nightShiftState(workspace))
@@ -85,10 +88,8 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
       setReport({ runId: msg.run_id, markdown: msg.markdown, truncated: msg.truncated })
     })
     const offError = client.subscribe('error', (msg) => {
-      if (msg.context?.startsWith('night_shift_report:') || pending.current) {
-        pending.current = false
-        setError(msg.message)
-      }
+      // Night shift refusals carry their context and reach only the connection that asked.
+      if (msg.context === 'night_shift' || msg.context?.startsWith('night_shift_report:')) setError(msg.message)
     })
     client.nightShiftState(workspace)
     return () => {
@@ -102,7 +103,6 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
 
   const send = useCallback((f: (c: HoustonClient) => void) => {
     if (!client) return
-    pending.current = true
     setError(null)
     f(client)
   }, [client])
@@ -110,9 +110,9 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
   const routineId = state?.routine?.id ?? null
   const actions: NightShiftActions = {
     create: () => { if (workspace) send((c) => c.nightShiftCreate(workspace)) },
-    save: (settings) => {
-      const current = stateRef.current
-      if (current?.routine) send((c) => c.nightShiftUpdate(current.routine!.id, settings, current.revision))
+    save: (settings, revision) => {
+      const routine = stateRef.current?.routine
+      if (routine) send((c) => c.nightShiftUpdate(routine.id, settings, revision))
     },
     preflight: (untilMs) => { if (workspace) { setPreflight(null); client?.nightShiftState(workspace, untilMs) } },
     runNow: (untilMs) => { if (routineId !== null) send((c) => c.nightShiftRunNow(routineId, untilMs)) },

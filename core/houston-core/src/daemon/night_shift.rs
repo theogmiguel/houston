@@ -218,6 +218,7 @@ impl Daemon {
         };
         let facts = self.night_facts(&settings);
         let preflight = preflight_until_ms.map(|_| preflight::evaluate(&settings, &facts));
+        let merge_verify_command = self.night_merge_verify_command(workspace)?;
         let held = !self.night.holds.lock().expect("night holds").is_empty();
         Ok(proto::ServerMsg::NightShiftState {
             workspace: workspace.to_string(),
@@ -236,7 +237,17 @@ impl Daemon {
                     proto::NightKeepAwake::Off
                 },
             },
+            merge_verify_command,
         })
+    }
+
+    fn night_merge_verify_command(&self, workspace: &str) -> Result<bool> {
+        Ok(!self
+            .db
+            .merge_queue_settings(workspace)?
+            .verification_command
+            .trim()
+            .is_empty())
     }
 
     pub fn night_shift_update(
@@ -259,12 +270,7 @@ impl Daemon {
             );
         }
         let facts = settings::WorkspaceFacts {
-            merge_verify_command: !self
-                .db
-                .merge_queue_settings(&workspace)?
-                .verification_command
-                .trim()
-                .is_empty(),
+            merge_verify_command: self.night_merge_verify_command(&workspace)?,
         };
         settings::validate(&next, &facts)?;
         Self::check_routine_launch(

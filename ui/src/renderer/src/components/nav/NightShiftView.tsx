@@ -71,7 +71,7 @@ export function NightShiftView({ client, workspaces, now, onOpenSession, initial
         { value: 'report', label: 'Morning report', disabled: !shown, disabledReason: 'No finished run yet' }
       ]} />
       {error && current !== 'setup' && <Notice tone="danger">{error}</Notice>}
-      {current === 'setup' && <NightShiftSetup settings={state.settings} verifyCommand={null} error={error} onSave={actions.save} />}
+      {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} error={error} onSave={actions.save} />}
       {current === 'live' && live && <NightShiftLive run={live} machine={state.machine} now={now}
         onWrapUp={() => actions.wrapUp(live.run_id)} onStop={() => actions.stop(live.run_id)} onOpenSession={onOpenSession} />}
       {current === 'report' && shown && <>

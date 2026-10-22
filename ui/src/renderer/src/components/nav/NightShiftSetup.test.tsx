@@ -34,7 +34,7 @@ const button = (text: string): HTMLButtonElement | undefined =>
 describe('NightShiftSetup', () => {
   it('renders defaults and merge refusal', () => {
     const onSave = vi.fn()
-    act(() => root.render(<NightShiftSetup settings={nightDefaults()} verifyCommand={false} onSave={onSave} />))
+    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand={false} onSave={onSave} />))
     const value = (label: string): string => (host.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement).value
     expect([value('Start'), value('Wrap-up'), value('Hard stop')]).toEqual(['23:30', '06:45', '07:30'])
     expect(host.textContent).toContain('8 h')
@@ -63,8 +63,45 @@ describe('NightShiftSetup', () => {
     click(Array.from(host.querySelectorAll('[role="radiogroup"][aria-label="Output"] [role="radio"]')).find((b) => b.textContent === 'Pull requests only'))
     expect(host.querySelector('[data-testid="merge-refusal"]')).toBeNull()
     click(button('Save'))
-    const saved = onSave.mock.calls[0][0]
+    const [saved, revision] = onSave.mock.calls[0]
     expect(saved.window.nights).toEqual([3, 5])
     expect(saved.focus.test_gaps).toBe('high')
+    expect(revision).toBe('r')
+  })
+
+  it('keeps an edit across refreshes and saves it against the revision it was read at', () => {
+    const onSave = vi.fn()
+    const render = (revision: string, goal = ''): void =>
+      act(() => root.render(<NightShiftSetup settings={{ ...nightDefaults(), goal }} revision={revision} verifyCommand onSave={onSave} />))
+    render('r')
+    const input = (label: string): HTMLInputElement | HTMLTextAreaElement =>
+      host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLTextAreaElement
+    const type = (label: string, value: string): void => {
+      const el = input(label)
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!
+      act(() => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })) })
+    }
+    type('Goal', 'CI is green')
+    type('Wrap-up', '05:00')
+    render('r')
+    expect(input('Goal').value).toBe('CI is green')
+    render('r2', 'from another window')
+    expect(input('Goal').value).toBe('CI is green')
+    click(button('Save'))
+    expect(onSave.mock.calls[0][1]).toBe('r')
+
+    click(button('Discard changes'))
+    expect(input('Goal').value).toBe('from another window')
+    expect(input('Wrap-up').value).toBe('06:45')
+    render('r3', 'saved elsewhere')
+    expect(input('Goal').value).toBe('saved elsewhere')
+  })
+
+  it('edits the orchestrator, reviewer and smoke flows', () => {
+    const onSave = vi.fn()
+    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={onSave} />))
+    for (const label of ['Orchestrator', 'Reviewer', 'Smoke flows']) {
+      expect(host.querySelector(`[aria-label="${label}"]`), label).not.toBeNull()
+    }
   })
 })

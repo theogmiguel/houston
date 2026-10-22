@@ -1595,7 +1595,7 @@ async fn handle_control(
         return;
     }
 
-    let context = session_error_context(&msg);
+    let context = request_error_context(&msg);
     if runs_on_connection_task(&msg) {
         let Some(msg) = on_loop.start(daemon, msg, context.clone(), frames_wanted) else {
             return;
@@ -1680,9 +1680,9 @@ fn control_admission_refusal(text: &str) -> (String, String) {
     }
 }
 
-/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), so a
-/// client can attribute the failure to its pane.
-fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
+/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), and
+/// Night shift requests carry `night_shift`, so a client can attribute the failure.
+fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
     match msg {
         proto::ClientMsg::SessionClose { session, .. }
         | proto::ClientMsg::SessionRespawn { session, .. }
@@ -1690,6 +1690,14 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::SessionAttach { session, .. }
         | proto::ClientMsg::SessionResize { session, .. }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
+        proto::ClientMsg::NightShiftCreate { .. }
+        | proto::ClientMsg::NightShiftState { .. }
+        | proto::ClientMsg::NightShiftUpdate { .. }
+        | proto::ClientMsg::NightShiftRunNow { .. }
+        | proto::ClientMsg::NightShiftWrapUp { .. }
+        | proto::ClientMsg::NightShiftStop { .. }
+        | proto::ClientMsg::NightShiftDecide { .. }
+        | proto::ClientMsg::NightShiftQaPassed { .. } => Some("night_shift".into()),
         _ => None,
     }
 }
