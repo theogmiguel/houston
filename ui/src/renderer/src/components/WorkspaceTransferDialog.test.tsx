@@ -95,6 +95,19 @@ describe('workspace transfer dialogs', () => {
     expect(screen.getByText(/resumed 1 pane/)).toBeTruthy()
   })
 
+  it("import keeps the workspace it was opened from, even when another one has the file's remote", async () => {
+    const { client, sent, emit } = fakeClient()
+    const targets = [{ path: '/home/b/other', name: 'other' }, { path: '/home/b/project', name: 'project' }]
+    render(<ImportTransferDialog client={client} targets={targets} profiles={[]} initialWorkspace="/home/b/other" initialFile="/tmp/t.houston-transfer" onImported={() => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    const inspect = sent.find((msg) => msg.type === 'transfer_inspect')
+    if (inspect?.type !== 'transfer_inspect') throw new Error('no inspect request')
+    await emit({ type: 'transfer_inspected', request: inspect.request, summary })
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    expect(sent.find((msg) => msg.type === 'transfer_import')).toMatchObject({ workspace: '/home/b/other' })
+  })
+
   it('export adds the extension and replaces only the file the save dialog confirmed', async () => {
     const { client, sent } = fakeClient()
     picked.mockResolvedValueOnce('/tmp/w')

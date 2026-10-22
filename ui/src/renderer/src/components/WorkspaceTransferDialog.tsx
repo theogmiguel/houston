@@ -238,7 +238,7 @@ export function ImportTransferDialog({ client, targets, profiles, initialWorkspa
     const reply = await inspectTransfer(client, { path: file, passphrase })
     if (reply.kind === 'ok') {
       setSummary(reply.value)
-      if (reply.value.proposed_workspace && targets.some((t) => t.path === reply.value.proposed_workspace)) setWorkspace(reply.value.proposed_workspace)
+      setWorkspace((current) => targetAfterInspect(reply.value, targets, initialWorkspace, current))
       setOutcome({ kind: 'idle' })
     } else {
       setOutcome(reply)
@@ -296,6 +296,14 @@ export function ImportTransferDialog({ client, targets, profiles, initialWorkspa
     actions = <><Button variant="secondary" onClick={onClose} disabled={running}>Cancel</Button><span className="flex-1" /><Button variant="primary" disabled={running || !file || !passphrase} onClick={() => void inspect()}>Continue</Button></>
   }
   return <Frame heading="Import transfer" onClose={onClose} frame={frame} actions={actions}>{body}</Frame>
+}
+
+/** The import's target once the file is read: a workspace the user opened the import
+ *  from stays; otherwise the registered workspace with the file's remote is proposed. */
+function targetAfterInspect(summary: TransferFileSummary, targets: ImportTarget[], chosen: string | undefined, current: string): string {
+  if (chosen) return current
+  const proposed = summary.proposed_workspace
+  return proposed && targets.some((t) => t.path === proposed) ? proposed : current
 }
 
 function ImportedView({ result }: { result: TransferImportResult }): React.JSX.Element {

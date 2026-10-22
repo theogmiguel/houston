@@ -70,8 +70,9 @@ fork of the conversation and shows **Fork**.
    the file.
 3. Enter the passphrase. Houston shows the panes, the panes that were left out, the source
    operating system and the CLI versions that wrote the conversations.
-4. Confirm the workspace. Houston proposes the registered workspace whose git remote matches
-   the exported one; you can choose another checkout of the same project.
+4. Confirm the workspace. An import started from a workspace's menu targets that workspace.
+   An import of a file opened with Houston proposes the registered workspace whose git remote
+   matches the exported one. Either way, you can choose another checkout of the same project.
 5. If a pane used an agent profile that this computer does not have, choose a local profile
    or the default account for it.
 6. Select **Import**.
