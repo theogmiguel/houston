@@ -1009,6 +1009,37 @@ async fn report_publish_bounds_and_settles() {
     assert!(markdown.contains("Two PRs."));
 }
 
+/// The report is a regular file: a link is not followed and a FIFO never
+/// blocks the reader.
+#[tokio::test]
+async fn report_must_be_a_regular_file() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let report = PathBuf::from(&run.report_path);
+    let elsewhere = r.ws.join("elsewhere.md");
+    std::fs::write(&elsewhere, "not the report").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &report).unwrap();
+    let (status, body) = r.night(o, "report", json!({ "summary": "done" })).await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("not a regular file"), "{body}");
+    assert!(r.daemon.night_shift_report(run.run_id).is_err());
+
+    std::fs::remove_file(&report).unwrap();
+    assert!(Command::new("mkfifo").arg(&report).status().unwrap().success());
+    let daemon = Arc::clone(&r.daemon);
+    let id = run.run_id;
+    let read = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::task::spawn_blocking(move || daemon.night_shift_report(id).map(|_| ())),
+    )
+    .await
+    .expect("reading a FIFO report does not block")
+    .unwrap();
+    assert!(read.is_err());
+}
+
 #[tokio::test]
 async fn ledger_digest_reaches_next_brief() {
     let r = rig().await;

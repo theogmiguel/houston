@@ -2395,7 +2395,11 @@ async fn dispatch(
         }
         proto::ClientMsg::NightShiftQaPassed { entry_id } => daemon.night_shift_qa_passed(entry_id),
         proto::ClientMsg::NightShiftReport { run_id } => {
-            match daemon.night_shift_report(run_id) {
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || reader.night_shift_report(run_id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the report failed: {e}")));
+            match read {
                 Ok(msg) => {
                     let _ = send_msg(sink, &msg).await;
                 }

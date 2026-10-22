@@ -109,6 +109,25 @@ fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
     serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
 }
 
+/// The report's size, if it is a regular file: a link or a FIFO is refused,
+/// so reading it never follows elsewhere or blocks.
+fn report_file_len(path: &Path) -> Result<u64> {
+    let meta = std::fs::symlink_metadata(path).map_err(|_| {
+        anyhow!(
+            "{} does not exist; write the report there first",
+            path.display()
+        )
+    })?;
+    if !meta.file_type().is_file() {
+        bail!(
+            "{} is not a regular file ({:?}); write the report as a plain file",
+            path.display(),
+            meta.file_type()
+        );
+    }
+    Ok(meta.len())
+}
+
 fn text_arg<'a>(args: &'a Value, key: &str, max: usize) -> Result<Option<&'a str>> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -1741,14 +1760,7 @@ impl Daemon {
             .night_run(run_id)?
             .ok_or_else(|| anyhow!("night run {run_id} vanished"))?;
         let path = Path::new(&row.report_path);
-        let size = std::fs::metadata(path)
-            .map_err(|_| {
-                anyhow!(
-                    "night_report refused: {} does not exist; write the report there first",
-                    path.display()
-                )
-            })?
-            .len();
+        let size = report_file_len(path).map_err(|e| anyhow!("night_report refused: {e}"))?;
         if size > proto::NIGHT_SHIFT_REPORT_MAX_BYTES {
             bail!(
                 "night_report refused: {} is {size} bytes, over the {} byte cap (256 KiB)",
@@ -1892,6 +1904,8 @@ impl Daemon {
             .db
             .night_run(run_id)?
             .ok_or_else(|| anyhow!("no Night shift run {run_id}"))?;
+        report_file_len(Path::new(&row.report_path))
+            .with_context(|| format!("run {run_id} has no readable report"))?;
         let file = std::fs::File::open(&row.report_path)
             .with_context(|| format!("run {run_id} has no report at {}", row.report_path))?;
         let cap = proto::NIGHT_SHIFT_REPORT_MAX_BYTES;
