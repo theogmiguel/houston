@@ -4,6 +4,7 @@ import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
+import { useSessionUpdates } from './useSessionUpdates';
 import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
@@ -918,6 +919,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  useSessionUpdates(readyClient(conn), setSessions);
   const openMergeQueue = useCallback((): void => {
     requestPrsView({ view: "queue" });
     setSettings(false);
