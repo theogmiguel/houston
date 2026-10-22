@@ -1089,6 +1089,64 @@ async fn decision_answered_once() {
     assert!(decided.decided_at_ms.is_some());
 }
 
+/// The run's panes cannot put a PR in the merge queue with pull requests
+/// only output, nor a visible PR held for the user's QA.
+#[tokio::test]
+async fn enqueue_from_a_run_follows_output_and_hold() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let err = r
+        .daemon
+        .merge_queue_enqueue_from_pane(o, "12", None)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("pull requests only"), "{err}");
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+
+    r.daemon
+        .merge_queue_settings_set(&r.ws_str(), false, "true", 30)
+        .unwrap();
+    let st = r.state();
+    let mut s = st.settings;
+    s.output = proto::NightOutput::MergeQueue;
+    s.app_check = Some(proto::NightAppCheck {
+        start_command: "bun run dev".into(),
+        address: "http://127.0.0.1:5173".into(),
+        smoke_flows: vec![],
+    });
+    r.daemon
+        .night_shift_update(routine.id, s, &st.revision)
+        .unwrap();
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r
+        .night(o, "pr", json!({ "number": 12, "title": "Tray fix", "visible": true }))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let err = r
+        .daemon
+        .merge_queue_enqueue_from_pane(o, "12", None)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("held for the user's QA"), "{err}");
+    let err = r
+        .daemon
+        .merge_queue_enqueue_from_pane(o, "14", None)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("not in Night shift run"), "{err}");
+
+    // QA passed enqueues first: a failed enqueue leaves the PR held to retry.
+    let entry = r.run(run.run_id).entries[0].clone();
+    let err = format!("{:#}", r.daemon.night_shift_qa_passed(entry.id).unwrap_err());
+    assert!(err.contains("stays held"), "{err}");
+    assert!(!r.run(run.run_id).entries[0].qa_passed, "not marked");
+    let again = format!("{:#}", r.daemon.night_shift_qa_passed(entry.id).unwrap_err());
+    assert!(!again.contains("already marked"), "a retry is allowed: {again}");
+}
+
 // ---- S4 ----
 
 #[tokio::test]

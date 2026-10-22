@@ -1800,7 +1800,7 @@ impl Daemon {
             .pr_number
             .filter(|_| entry.kind == proto::NightEntryKind::Pr)
             .ok_or_else(|| anyhow!("ledger entry {entry_id} is not a pull request"))?;
-        if !self.db.set_night_entry_qa_passed(entry_id)? {
+        if entry.qa_passed {
             bail!("PR #{number} is already marked QA passed");
         }
         let run = self
@@ -1808,12 +1808,80 @@ impl Daemon {
             .night_run(entry.run_id)?
             .ok_or_else(|| anyhow!("night run {} vanished", entry.run_id))?;
         let s = self.night_settings(run.routine_id)?;
-        if s.output == proto::NightOutput::MergeQueue {
-            self.merge_queue_enqueue(&run.workspace, &number.to_string(), None, None)
-                .with_context(|| format!("PR #{number} is QA passed but was not enqueued"))?;
+        if s.output != proto::NightOutput::MergeQueue || !s.hold_for_qa || !entry.visible {
+            bail!(
+                "PR #{number} is not held for your QA: QA passed releases a visible change \
+                 to the merge queue when the output is Merge queue and Hold for my QA is on \
+                 (output {}, Hold for my QA {}, visible {})",
+                crate::db::wire_name(&s.output).unwrap_or_default(),
+                if s.hold_for_qa { "on" } else { "off" },
+                entry.visible
+            );
         }
+        // Enqueue first: a failed enqueue leaves the PR held, so marking it can be retried.
+        let depends_on = self.night_merge_predecessor(&run, number)?;
+        self.merge_queue_enqueue(&run.workspace, &number.to_string(), depends_on, None)
+            .with_context(|| {
+                format!("PR #{number} was not enqueued and stays held; mark it QA passed again")
+            })?;
+        self.db.set_night_entry_qa_passed(entry_id)?;
         self.broadcast_night_run(entry.run_id);
         Ok(())
+    }
+
+    /// The PR before `number` in the run's merge order that is in the queue
+    /// now; the queue lands `number` after it.
+    fn night_merge_predecessor(&self, run: &NightRunRow, number: u32) -> Result<Option<u32>> {
+        let Some(at) = run.merge_order.iter().position(|n| *n == number) else {
+            return Ok(None);
+        };
+        let workspace = self.merge_queue_workspace(&run.workspace)?;
+        let queued: Vec<u32> = self
+            .db
+            .merge_queue_entries(&workspace)?
+            .iter()
+            .map(|e| e.number)
+            .collect();
+        Ok(run.merge_order[..at]
+            .iter()
+            .rev()
+            .find(|n| queued.contains(n))
+            .copied())
+    }
+
+    /// `pane_pr_enqueue` from a run's panes: refused with pull requests only
+    /// output, and for a visible PR held for the user's QA.
+    pub(super) fn night_shift_enqueue_gate(&self, caller: u32, target: &str) -> Result<()> {
+        let Some((run_id, tree)) = self.night_tree_of(caller) else {
+            return Ok(());
+        };
+        let s = self.night_settings(tree.routine_id)?;
+        if s.output == proto::NightOutput::Prs {
+            bail!(
+                "pane_pr_enqueue refused: Night shift run {run_id} outputs pull requests only \
+                 (Routines ▸ Night shift ▸ Output); Night shift never merges, the user does"
+            );
+        }
+        if !s.hold_for_qa {
+            return Ok(());
+        }
+        let number = super::tasks::pr_watch_number(target)?;
+        let entry = self
+            .db
+            .night_entries(run_id)?
+            .into_iter()
+            .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number));
+        match entry {
+            None => bail!(
+                "pane_pr_enqueue refused: PR #{number} is not in Night shift run {run_id}'s \
+                 ledger; Hold for my QA is on, so record it with night_pr (with visible) first"
+            ),
+            Some(e) if e.visible && !e.qa_passed => bail!(
+                "pane_pr_enqueue refused: PR #{number} is a visible change held for the user's \
+                 QA (Hold for my QA is on); it joins the queue when they mark it QA passed"
+            ),
+            Some(_) => Ok(()),
+        }
     }
 
     pub fn night_shift_report(&self, run_id: u32) -> Result<proto::ServerMsg> {
