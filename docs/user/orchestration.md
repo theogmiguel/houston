@@ -216,7 +216,7 @@ workspace's merge queue, optionally behind another queued pull request. The repl
 entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
 removes it. When the agent's branch is built on another queued pull request's branch, it
 names that one in `depends_on`: Houston restacks the branch onto the base after the other one
-merges. You merge the queue head from the Pull requests page, or Houston merges it once it
+merges. You merge the entry that goes next from the Pull requests page, or Houston merges it once it
 is verified if the workspace's policy allows; see [Merge queue](changes.md#merge-queue). When
 the queue cannot verify or merge the pull request, the pane that enqueued it gets one message
 with the conflicting files or the failing output: fix the branch and push, and the new head
