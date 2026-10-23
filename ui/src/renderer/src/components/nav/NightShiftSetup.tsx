@@ -126,61 +126,11 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Crew">
-        <Card.Field label="Orchestrator">
-          <div className="flex items-center gap-[var(--space-2)]">
-            <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={orchestratorOptions}
-              onChange={(p) => set({ orchestrator: p === draft.orchestrator.provider ? draft.orchestrator : { provider: p as AgentKind, model: null } })} />
-            <Text size="small" tone="muted">{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text>
-          </div>
-        </Card.Field>
-        <Card.Field label="Workers, in fallback order">
-          <div className="grid gap-[var(--space-1)]">
-            {draft.workers.map((w, i) => (
-              <div key={i} className="flex items-center gap-[var(--space-2)]">
-                <Select aria-label={`Worker ${i + 1}`} value={w.provider} options={workerOptions}
-                  onChange={(p) => set({ workers: draft.workers.map((x, j) => (j === i ? { provider: p as AgentKind, model: null } : x)) })} />
-                {w.model && <Text size="small" tone="muted">{w.model}</Text>}
-                {draft.workers.length > 1 && <Button variant="ghost" size="sm" onClick={() => set({ workers: draft.workers.filter((_, j) => j !== i) })}>Remove</Button>}
-              </div>
-            ))}
-            {draft.workers.length < 4 && <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => set({ workers: [...draft.workers, { provider: 'claude', model: null }] })}>Add worker</Button>}
-            <Text size="small" tone="muted">{NO_LIMIT_SIGNAL.map(engineLabel).join(', ')} report no usage limit and cannot be workers.</Text>
-          </div>
-        </Card.Field>
-        <Card.Field label="Live workers">
-          <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
-        </Card.Field>
-        <Card.Field label="Reviewer">
-          <Select aria-label="Reviewer" value={draft.reviewer?.provider ?? 'same'}
-            options={[{ value: 'same', label: 'Same as orchestrator' }, ...workerOptions]}
-            onChange={(p) => set({ reviewer: p === 'same' ? null : { provider: p as AgentKind, model: null } })} />
-        </Card.Field>
+        <CrewFields draft={draft} set={set} workerOptions={workerOptions} orchestratorOptions={orchestratorOptions} />
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Output">
-        <Card.Field label="Output">
-          <Segmented aria-label="Output" size="xs" value={draft.output}
-            options={[{ value: 'prs', label: 'Pull requests only' }, { value: 'merge_queue', label: 'Merge queue' }]}
-            onChange={(output) => set({ output })} />
-          {refusal && <Notice tone="warn" data-testid="merge-refusal">{refusal}</Notice>}
-        </Card.Field>
-        <Card.Field label="Changes per PR">
-          <NumberField width="compact" aria-label="Changes per PR" min={1} max={20} value={draft.max_changes_per_pr} onChange={(e) => set({ max_changes_per_pr: Math.max(1, Number(e.target.value) || 1) })} />
-        </Card.Field>
-        <Card.Field label="Themed PRs"><Toggle aria-label="Themed PRs" on={draft.themed} onChange={(themed) => set({ themed })} /></Card.Field>
-        <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
-        <Card.Field label="App check">
-          <div className="grid gap-[var(--space-1)]">
-            <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}
-              onChange={(e) => set({ app_check: appCheck({ start_command: e.target.value }) })} />
-            <TextInput aria-label="App address" placeholder="Address or story" value={draft.app_check?.address ?? ''}
-              onChange={(e) => set({ app_check: appCheck({ address: e.target.value }) })} />
-            <TextArea aria-label="Smoke flows" rows={2} value={draft.app_check?.smoke_flows.join('\n') ?? ''} placeholder="One smoke flow per line"
-              onChange={(e) => set({ app_check: appCheck({ smoke_flows: lines(e.target.value) }) })} />
-            {!draft.app_check?.start_command.trim() && <Text size="small" tone="muted">App QA is off until a start command is set.</Text>}
-          </div>
-        </Card.Field>
-        <Card.Field label="Hold for my QA"><Toggle aria-label="Hold for my QA" on={draft.hold_for_qa} onChange={(hold_for_qa) => set({ hold_for_qa })} /></Card.Field>
+        <OutputFields draft={draft} set={set} refusal={refusal} appCheck={appCheck} />
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Before hand-back">
@@ -198,16 +148,107 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
       </Card>
 
       {problems.map((p) => <Notice key={p} tone="warn">{p}</Notice>)}
-      {error && <Notice tone="danger">{error}</Notice>}
-      <div className="flex items-center gap-[var(--space-2)]">
-        <Button variant="primary" disabled={!dirty || saving || sent !== null || problems.length > 0}
-          onClick={() => { setSent(JSON.stringify(draft)); onSave(draft, base.revision) }}>Save</Button>
-        {dirty && <Button variant="ghost" onClick={() => { setSent(null); reset() }}>Discard changes</Button>}
-        <span role="status" className="inline-flex items-center gap-[var(--space-1)]">
-          {sent !== null && <><SaveStateMark saving /><Text size="small" tone="muted" aria-hidden="true">Saving…</Text></>}
-          {saved && !dirty && sent === null && <><SaveStateMark saving={false} /><Text size="small" tone="muted" aria-hidden="true">Saved</Text></>}
-        </span>
-      </div>
+      <SaveRow draft={draft} baseRevision={base.revision} onSave={onSave} saving={saving} dirty={dirty} sent={sent} saved={saved}
+        problems={problems} error={error} onSend={setSent} onDiscard={() => { setSent(null); reset() }} />
     </div>
   )
+}
+
+function CrewFields({ draft, set, workerOptions, orchestratorOptions }: {
+  draft: NightShiftSettings
+  set: (patch: Partial<NightShiftSettings>) => void
+  workerOptions: { value: AgentKind; label: string }[]
+  orchestratorOptions: { value: AgentKind; label: string }[]
+}): React.JSX.Element {
+  return <>
+    <Card.Field label="Orchestrator">
+      <div className="flex items-center gap-[var(--space-2)]">
+        <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={orchestratorOptions}
+          onChange={(p) => set({ orchestrator: p === draft.orchestrator.provider ? draft.orchestrator : { provider: p as AgentKind, model: null } })} />
+        <Text size="small" tone="muted">{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text>
+      </div>
+    </Card.Field>
+    <Card.Field label="Workers, in fallback order">
+      <div className="grid gap-[var(--space-1)]">
+        {draft.workers.map((w, i) => (
+          <div key={i} className="flex items-center gap-[var(--space-2)]">
+            <Select aria-label={`Worker ${i + 1}`} value={w.provider} options={workerOptions}
+              onChange={(p) => set({ workers: draft.workers.map((x, j) => (j === i ? { provider: p as AgentKind, model: null } : x)) })} />
+            {w.model && <Text size="small" tone="muted">{w.model}</Text>}
+            {draft.workers.length > 1 && <Button variant="ghost" size="sm" onClick={() => set({ workers: draft.workers.filter((_, j) => j !== i) })}>Remove</Button>}
+          </div>
+        ))}
+        {draft.workers.length < 4 && <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => set({ workers: [...draft.workers, { provider: 'claude', model: null }] })}>Add worker</Button>}
+        <Text size="small" tone="muted">{NO_LIMIT_SIGNAL.map(engineLabel).join(', ')} report no usage limit and cannot be workers.</Text>
+      </div>
+    </Card.Field>
+    <Card.Field label="Live workers">
+      <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
+    </Card.Field>
+    <Card.Field label="Reviewer">
+      <Select aria-label="Reviewer" value={draft.reviewer?.provider ?? 'same'}
+        options={[{ value: 'same', label: 'Same as orchestrator' }, ...workerOptions]}
+        onChange={(p) => set({ reviewer: p === 'same' ? null : { provider: p as AgentKind, model: null } })} />
+    </Card.Field>
+  </>
+}
+
+function OutputFields({ draft, set, refusal, appCheck }: {
+  draft: NightShiftSettings
+  set: (patch: Partial<NightShiftSettings>) => void
+  refusal: string | null
+  appCheck: (patch: Partial<NonNullable<NightShiftSettings['app_check']>>) => NightShiftSettings['app_check']
+}): React.JSX.Element {
+  return <>
+    <Card.Field label="Output">
+      <Segmented aria-label="Output" size="xs" value={draft.output}
+        options={[{ value: 'prs', label: 'Pull requests only' }, { value: 'merge_queue', label: 'Merge queue' }]}
+        onChange={(output) => set({ output })} />
+      {refusal && <Notice tone="warn" data-testid="merge-refusal">{refusal}</Notice>}
+    </Card.Field>
+    <Card.Field label="Changes per PR">
+      <NumberField width="compact" aria-label="Changes per PR" min={1} max={20} value={draft.max_changes_per_pr} onChange={(e) => set({ max_changes_per_pr: Math.max(1, Number(e.target.value) || 1) })} />
+    </Card.Field>
+    <Card.Field label="Themed PRs"><Toggle aria-label="Themed PRs" on={draft.themed} onChange={(themed) => set({ themed })} /></Card.Field>
+    <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
+    <Card.Field label="App check">
+      <div className="grid gap-[var(--space-1)]">
+        <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}
+          onChange={(e) => set({ app_check: appCheck({ start_command: e.target.value }) })} />
+        <TextInput aria-label="App address" placeholder="Address or story" value={draft.app_check?.address ?? ''}
+          onChange={(e) => set({ app_check: appCheck({ address: e.target.value }) })} />
+        <TextArea aria-label="Smoke flows" rows={2} value={draft.app_check?.smoke_flows.join('\n') ?? ''} placeholder="One smoke flow per line"
+          onChange={(e) => set({ app_check: appCheck({ smoke_flows: lines(e.target.value) }) })} />
+        {!draft.app_check?.start_command.trim() && <Text size="small" tone="muted">App QA is off until a start command is set.</Text>}
+      </div>
+    </Card.Field>
+    <Card.Field label="Hold for my QA"><Toggle aria-label="Hold for my QA" on={draft.hold_for_qa} onChange={(hold_for_qa) => set({ hold_for_qa })} /></Card.Field>
+  </>
+}
+
+function SaveRow({ draft, baseRevision, onSave, saving, dirty, sent, saved, problems, error, onSend, onDiscard }: {
+  draft: NightShiftSettings
+  baseRevision: string
+  onSave: (settings: NightShiftSettings, revision: string) => void
+  saving: boolean
+  dirty: boolean
+  sent: string | null
+  saved: boolean
+  problems: string[]
+  error: string | null
+  onSend: (serialized: string) => void
+  onDiscard: () => void
+}): React.JSX.Element {
+  return <>
+    {error && <Notice tone="danger">{error}</Notice>}
+    <div className="flex items-center gap-[var(--space-2)]">
+      <Button variant="primary" disabled={!dirty || saving || sent !== null || problems.length > 0}
+        onClick={() => { onSend(JSON.stringify(draft)); onSave(draft, baseRevision) }}>Save</Button>
+      {dirty && <Button variant="ghost" onClick={onDiscard}>Discard changes</Button>}
+      <span role="status" className="inline-flex items-center gap-[var(--space-1)]">
+        {sent !== null && <><SaveStateMark saving /><Text size="small" tone="muted" aria-hidden="true">Saving…</Text></>}
+        {saved && !dirty && sent === null && <><SaveStateMark saving={false} /><Text size="small" tone="muted" aria-hidden="true">Saved</Text></>}
+      </span>
+    </div>
+  </>
 }

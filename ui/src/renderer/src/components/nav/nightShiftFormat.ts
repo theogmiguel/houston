@@ -181,3 +181,29 @@ export function prShelves(run: NightRun): { theme: string; prs: NightEntry[] }[]
   }
   return [...shelves.entries()].map(([theme, prs]) => ({ theme, prs }))
 }
+
+/** The runs a view splits off one workspace's state, and the run a report shows. */
+export function nightRunSections(
+  runs: NightRun[] | undefined,
+  reportRun: number | null
+): { live: NightRun | null; finished: NightRun[]; shown: NightRun | null } {
+  const list = runs ?? []
+  const live = list.find((r) => r.phase === 'running' || r.phase === 'wrapping_up') ?? null
+  const finished = list.filter((r) => r.phase === 'settled' || r.phase === 'refused')
+  const shown = finished.find((r) => r.run_id === reportRun) ?? finished[0] ?? null
+  return { live, finished, shown }
+}
+
+export type NightTab = 'setup' | 'live' | 'report'
+
+/** A run that ended while its live view was open lands on its report; otherwise the
+ * tab stands, or falls back to the run in flight, a requested report, setup. */
+export function resolveNightTab(
+  tab: NightTab | null,
+  live: NightRun | null,
+  shown: NightRun | null,
+  initialRunId: number | null
+): NightTab {
+  const fallback: NightTab = live ? 'live' : initialRunId !== null && shown ? 'report' : 'setup'
+  return tab === 'live' && !live ? (shown ? 'report' : 'setup') : tab ?? fallback
+}

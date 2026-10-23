@@ -213,7 +213,7 @@ import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
-import { nightNoticeWorkspace, setNightShiftFocus } from "./nightShiftNav";
+import { handleNightShiftNotice, setNightShiftFocus } from "./nightShiftNav";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -1402,6 +1402,10 @@ export function App(): React.JSX.Element {
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
         if (voice.handleMessage(msg)) return;
+        handleNightShiftNotice(msg, pushNotice, workspacesRef.current, (workspace, runId) => {
+          setNightShiftFocus({ workspace, runId });
+          setRailView("routines");
+        });
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1599,24 +1603,6 @@ export function App(): React.JSX.Element {
               return { ...prev, [msg.run.routine_id]: next };
             });
             break;
-          case "night_shift_notice": {
-            const { workspace, run_id: runId } = msg;
-            pushNotice({
-              code: `night-shift:${runId}`,
-              kind: "info",
-              title: `Night shift: ${msg.headline}`,
-              body: nightNoticeWorkspace(workspace, workspacesRef.current),
-              durationMs: null,
-              action: {
-                label: "Open report",
-                onClick: () => {
-                  setNightShiftFocus({ workspace, runId });
-                  setRailView("routines");
-                },
-              },
-            });
-            break;
-          }
           case "routine_refused":
             setRoutineRefusal({
               id: msg.id ?? null,
