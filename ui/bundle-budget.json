@@ -196,9 +196,15 @@
     "Re-cut against 947,750 bytes (one boot chunk, Windows build) with the same small",
     "headroom: Night shift's morning notice is handled in App's connection handlers and",
     "its client verbs and environment routes are boot-path code; the Night shift view,",
-    "its hook and its primitives stay behind one `lazy()` in the Routines page."
+    "its hook and its primitives stay behind one `lazy()` in the Routines page.",
+    "",
+    "Re-cut against 948,250 bytes (one boot chunk, Windows build) with the same small",
+    "headroom: the morning notice handler names its workspace the way the app does —",
+    "nightShiftNav.ts holds the workspace-naming helpers and the notice wire helper,",
+    "boot-path code beside App's connection handlers, not behind the Routines page's",
+    "`lazy()`."
   ],
-  "maxBootBytes": 947950,
+  "maxBootBytes": 948450,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
