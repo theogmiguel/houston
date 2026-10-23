@@ -2085,11 +2085,9 @@ async fn orchestrator_pane_can_reach_hs_night() {
     assert!(parts[2].ends_with("hs-night"), "{text}");
 }
 
-/// On the dev channel the stand-in orchestrator fires no hooks, so its pasted
-/// first prompt is not awaited: no "not confirmed as submitted" failure ends
-/// the run, though the orchestrator's hooks are installed. The orchestrator is
-/// ZCode, whose prompt is pasted: settings saved before ZCode was refused as
-/// orchestrator still hold it.
+/// The dev stand-in fires no hooks, so its pasted first prompt is not awaited
+/// (no "not confirmed as submitted" failure ends the run). The orchestrator is
+/// ZCode: settings saved before ZCode was refused as orchestrator still hold it.
 #[tokio::test]
 async fn dev_fake_orchestrator_prompt_is_not_awaited() {
     shim_dir();
