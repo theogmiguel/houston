@@ -374,9 +374,11 @@ mod tests {
             brief.find("pty_resize_race").unwrap() < brief.find("rewrite the tray").unwrap(),
             "newest first"
         );
+        // include_str! embeds the checkout's line endings; CI's Windows runners
+        // check out CRLF, so accept either terminator per line.
         assert!(METHOD
-            .chars()
-            .all(|c| c == '\n' || (' '..='~').contains(&c)));
+            .lines()
+            .all(|line| line.chars().all(|c| (' '..='~').contains(&c))));
     }
 
     #[test]
