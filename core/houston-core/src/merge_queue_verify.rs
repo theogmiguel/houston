@@ -176,6 +176,38 @@ fn git(dir: &Path, args: &[&str], timeout: Duration) -> Result<std::process::Out
         })
 }
 
+/// `-c` pairs naming a committer for the rebase when git config has none: the head
+/// commit's author. Nothing is written; a configured identity is left as it is.
+fn committer_fallback(dir: &Path, head_sha: &str) -> Vec<String> {
+    let missing: Vec<&str> = ["user.name", "user.email"]
+        .into_iter()
+        .filter(|key| {
+            git_ok(dir, &["config", "--get", key], GIT_LOCAL_TIMEOUT)
+                .map_or(true, |value| value.is_empty())
+        })
+        .collect();
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    let Ok(author) = git_ok(
+        dir,
+        &["log", "-1", "--format=%an%x00%ae", head_sha],
+        GIT_LOCAL_TIMEOUT,
+    ) else {
+        return Vec::new();
+    };
+    let Some((name, email)) = author.split_once('\0') else {
+        return Vec::new();
+    };
+    missing
+        .into_iter()
+        .flat_map(|key| {
+            let value = if key == "user.name" { name } else { email };
+            ["-c".to_string(), format!("{key}={value}")]
+        })
+        .collect()
+}
+
 fn git_ok(dir: &Path, args: &[&str], timeout: Duration) -> Result<String> {
     let out = git(dir, args, timeout)?;
     if !out.status.success() {
@@ -318,13 +350,15 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
         Replay::Plain => None,
     };
     let scratch = Scratch::create(repo, request.scratch, head_sha)?;
-    let mut args = vec![
+    let identity = committer_fallback(&scratch.path, head_sha);
+    let mut args: Vec<&str> = identity.iter().map(String::as_str).collect();
+    args.extend([
         "-c",
         "rebase.autoSquash=false",
         "-c",
         "rebase.autoStash=false",
         "rebase",
-    ];
+    ]);
     if let Some(fork) = &fork_sha {
         args.extend(["--onto", base_sha.as_str(), fork.as_str()]);
     } else {
@@ -347,7 +381,10 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
         if files.is_empty() {
             bail!(
                 "rebasing {head_ref} onto {base_ref} at {base_sha} failed: {}",
-                String::from_utf8_lossy(&rebase.stderr).trim()
+                String::from_utf8_lossy(&rebase.stderr)
+                    .replace("\r\n", "\n")
+                    .replace('\r', "\n")
+                    .trim()
             );
         }
         return Ok(Outcome::Conflict {

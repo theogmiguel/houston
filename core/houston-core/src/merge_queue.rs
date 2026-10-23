@@ -83,6 +83,9 @@ pub struct Facts {
     pub error: Option<String>,
     #[serde(default)]
     pub merge_disabled_reason: Option<String>,
+    /// The only refusal is a conflict with, or a branch behind, the base: a rebase answers it.
+    #[serde(default)]
+    pub base_only: bool,
     /// Unresolved review threads among those read; `None` when they could not be read.
     #[serde(default)]
     pub unresolved_threads: Option<u32>,
@@ -108,12 +111,15 @@ pub struct Facts {
 }
 
 impl Facts {
-    pub fn from_read(detail: &proto::PrDetail, now_ms: i64) -> Self {
+    pub fn from_read(number: u32, detail: &proto::PrDetail, now_ms: i64) -> Self {
         let unresolved = detail.threads.iter().filter(|t| !t.resolved).count();
         Facts {
             read_at_ms: now_ms,
             error: None,
             merge_disabled_reason: detail.merge_disabled_reason.clone(),
+            base_only: detail.merge_disabled_reason.is_some()
+                && detail.merge_disabled_reason
+                    == crate::pull_requests::base_refusal(number, detail),
             unresolved_threads: detail
                 .threads_message
                 .is_none()
@@ -138,6 +144,7 @@ impl Facts {
             read_at_ms: now_ms,
             error: Some(error),
             merge_disabled_reason: None,
+            base_only: false,
             unresolved_threads: None,
             threads_message: None,
             threads_truncated: false,
@@ -316,6 +323,22 @@ pub fn check_enqueue(
         cursor = next;
     }
     Ok(())
+}
+
+/// A conflict with, or a branch behind, the base waits for the verification's rebase:
+/// a clean rebase is pushed and answers it, a real conflict fails the verification.
+fn rebase_answers_mergeable(gates: &mut [proto::MergeQueueGate], row: &QueueRow) {
+    let base = row.base_ref.as_deref().unwrap_or("its base");
+    for g in gates.iter_mut().filter(|g| {
+        g.kind == proto::MergeQueueGateKind::Mergeable
+            && g.state == proto::MergeQueueGateState::Failed
+    }) {
+        g.state = proto::MergeQueueGateState::Pending;
+        g.reason = g
+            .reason
+            .take()
+            .map(|r| format!("{r}; verification rebases it onto {base}"));
+    }
 }
 
 fn gate(
@@ -500,6 +523,9 @@ pub fn line(
     let mut entries = Vec::with_capacity(rows.len());
     for (row, review) in rows.iter().zip(reviews) {
         let mut gates = gates(row, review);
+        if ctx.command_set() && row.facts.as_ref().is_some_and(|f| f.base_only) {
+            rebase_answers_mergeable(&mut gates, row);
+        }
         let failure = failure_holds(row).cloned();
         let holder = row
             .depends_on
@@ -533,7 +559,12 @@ pub fn line(
                 .filter(|d| !queued.contains(d))
                 .map(|d| format!("depends on #{d}, which left the queue without merging"));
             let blocked = dependency
-                .or_else(|| gates.iter().find_map(|g| g.reason.clone()))
+                .or_else(|| {
+                    gates
+                        .iter()
+                        .filter(|g| g.state == proto::MergeQueueGateState::Failed)
+                        .find_map(|g| g.reason.clone())
+                })
                 .or_else(|| ctx.refusal.clone().filter(|_| ctx.command_set()));
             let needs_verification = ctx.command_set() && verification_holds(row).is_none();
             let status = match &blocked {
@@ -606,6 +637,7 @@ mod tests {
                 read_at_ms: 1,
                 error: None,
                 merge_disabled_reason: None,
+                base_only: false,
                 unresolved_threads: Some(0),
                 threads_message: None,
                 threads_truncated: false,
