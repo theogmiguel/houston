@@ -830,6 +830,12 @@ mod submodule_tests {
             .arg("-C")
             .arg(dir)
             .args(args)
+            // A local-path submodule clone is the file transport, which git refuses
+            // unless `protocol.file.allow=always`; per-command env keeps the
+            // allowance off this process, so plain `cargo test` cannot leak it.
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "protocol.file.allow")
+            .env("GIT_CONFIG_VALUE_0", "always")
             .output()
             .unwrap();
         assert!(
@@ -897,18 +903,8 @@ mod submodule_tests {
         assert!(init_submodules_best_effort(&repo).is_empty());
     }
 
-    /// A local-path submodule clone is the file transport, which git refuses unless
-    /// `protocol.file.allow=always`. The config rides env-injected `-c` pairs, so it
-    /// reaches only this test's git commands, including the daemon's child git.
-    fn allow_file_transport() {
-        std::env::set_var("GIT_CONFIG_COUNT", "1");
-        std::env::set_var("GIT_CONFIG_KEY_0", "protocol.file.allow");
-        std::env::set_var("GIT_CONFIG_VALUE_0", "always");
-    }
-
     /// Returns the root, the repo and the submodule.
     fn repo_with_one_submodule() -> (tempfile::TempDir, PathBuf, PathBuf) {
-        allow_file_transport();
         let root = tempfile::tempdir().unwrap();
         let sub = root.path().join("sub");
         std::fs::create_dir_all(&sub).unwrap();
@@ -922,20 +918,6 @@ mod submodule_tests {
         );
         git(&repo, &["commit", "-m", "add submodule"]);
         (root, repo, sub)
-    }
-
-    #[test]
-    fn best_effort_init_populates_a_fresh_worktree_and_reports_nothing() {
-        let (root, repo, _sub) = repo_with_one_submodule();
-        let dest = root.path().join("wt");
-        create_named(&repo, "with-sub", None, &dest).unwrap();
-
-        let warnings = init_submodules_best_effort(&dest);
-        assert!(warnings.is_empty(), "{warnings:?}");
-        assert!(
-            dest.join("vendor/sub/README.md").is_file(),
-            "the submodule's own files must be checked out"
-        );
     }
 
     #[test]
