@@ -47,6 +47,7 @@ import type { AgentAccountIdentity } from "./houston/generated/AgentAccountIdent
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
+import { useDesktopPresence } from "./houston/useDesktopPresence";
 import {
   clearVoiceIndicators,
   insertVoiceText,
@@ -1812,6 +1813,7 @@ export function App(): React.JSX.Element {
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
   useRemoteGridPublish(readyClient(conn));
+  useDesktopPresence(readyClient(conn));
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);

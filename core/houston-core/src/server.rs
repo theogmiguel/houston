@@ -4439,6 +4439,10 @@ async fn dispatch(
             }
             Ok(())
         }
+        proto::ClientMsg::DesktopPresence { active } => {
+            daemon.remote_desktop_presence(conn_id, active);
+            Ok(())
+        }
     }
 }
 

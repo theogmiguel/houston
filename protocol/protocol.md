@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -399,6 +399,7 @@ every refusal names the setting.
 | `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
 | `remote_device_set_tier` | `id`, `tier: RemoteTier` | `remote_state` (bcast) with the device's new `tier`; an unknown id is an `error` with `context: "remote"`. Applies from the device's next HTTP request |
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
+| `desktop_presence` | `active: bool` | none. The renderer sends `true` while someone uses its window (at most every 30 s) and `false` on blur or hiding. Phone notifications that come due wait until `DESKTOP_AWAY_SECS` (180) after the last `true`; `false`, or closing the reporting connection, sends them at once. A daemon with no report never holds a notification |
 
 ### Host and usage
 
@@ -1400,6 +1401,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **Phone notifications wait while the desktop is in use.** New `desktop_presence {active}` client message with no reply; while a recent `true` report stands, due ntfy notifications are held and are sent once on `false`, on the reporter's disconnect, or when the report lapses after `DESKTOP_AWAY_SECS`. No existing message changes |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

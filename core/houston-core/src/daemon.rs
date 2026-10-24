@@ -17777,6 +17777,7 @@ impl Daemon {
         };
         self.voice_release_monitor(conn);
         self.browser_relay.forget(conn);
+        self.remote.forget_presence(conn);
         if remaining == 0 {
             if let Err(e) = self.checkpoint_scrollback() {
                 tracing::warn!("checkpoint on last client detach: {e:#}");

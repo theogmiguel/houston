@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 946,824 bytes (one boot chunk) with the same small headroom:",
+    "desktop presence must start with every connection so phone notifications",
+    "wait while the window is in use; App carries only the effect that loads",
+    "`houston/desktopPresence.ts` behind one `import()`."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

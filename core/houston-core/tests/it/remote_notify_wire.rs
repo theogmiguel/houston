@@ -5,13 +5,15 @@ use crate::common;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::routing::post;
-use common::start_daemon_with_handle;
+use common::{connect_and_hello, start_daemon_with_handle, WsStream, TOKEN};
+use futures_util::SinkExt;
 use houston_core::daemon::{CreateParams, Daemon};
 use houston_core::remote::ConfigPatch;
 use houston_protocol as proto;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio_tungstenite::tungstenite::Message;
 
 /// Every test shares one in-process credential store; the host keyring is never touched.
 fn use_mock_keychain() {
@@ -83,8 +85,17 @@ async fn notifying_daemon(
     delay_secs: u32,
     extra: ConfigPatch,
 ) -> (Arc<Daemon>, tempfile::TempDir) {
+    let (_addr, daemon, state) = notifying_daemon_at(ntfy, delay_secs, extra).await;
+    (daemon, state)
+}
+
+async fn notifying_daemon_at(
+    ntfy: SocketAddr,
+    delay_secs: u32,
+    extra: ConfigPatch,
+) -> (SocketAddr, Arc<Daemon>, tempfile::TempDir) {
     use_mock_keychain();
-    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (addr, state, daemon) = start_daemon_with_handle().await;
     tokio::spawn(daemon.clone().remote_loops());
     daemon
         .remote_configure(ConfigPatch {
@@ -96,7 +107,7 @@ async fn notifying_daemon(
             ..extra
         })
         .unwrap();
-    (daemon, state)
+    (addr, daemon, state)
 }
 
 fn pane(daemon: &Arc<Daemon>) -> (proto::SessionInfo, tempfile::TempDir) {
@@ -391,4 +402,105 @@ async fn pending_finished_notification_obeys_the_current_policy_and_topic() {
     wait_for_posts(&inbox, 1).await;
     assert_eq!(inbox.lock().unwrap()[0].path, "/new-topic");
     daemon.close(info.id).unwrap();
+}
+
+async fn report_presence(ws: &mut WsStream, daemon: &Daemon, active: bool) {
+    let msg = proto::ClientMsg::DesktopPresence { active };
+    ws.send(Message::text(serde_json::to_string(&msg).unwrap()))
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while daemon.remote_presence_held_for_test() != active {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "presence {active} never applied"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test]
+async fn an_active_desktop_holds_phone_notifications_until_it_goes_away() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (addr, daemon, _state) = notifying_daemon_at(
+        ntfy,
+        0,
+        ConfigPatch {
+            notify_finished: Some(true),
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    report_presence(&mut ws, &daemon, true).await;
+    let (finished, _dir) = pane(&daemon);
+    let (waiting, _dir2) = pane(&daemon);
+    daemon.handle_hook(finished.id, "UserPromptSubmit", None);
+    daemon.handle_hook(finished.id, "Stop", None);
+    daemon.handle_hook(waiting.id, "UserPromptSubmit", None);
+    daemon.handle_hook(waiting.id, "PermissionRequest", None);
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(
+        inbox.lock().unwrap().is_empty(),
+        "nothing goes to the phone while the desktop is in use: {:?}",
+        inbox.lock().unwrap()
+    );
+    assert_eq!(daemon.remote_pending_notifications_for_test(), 2);
+
+    report_presence(&mut ws, &daemon, false).await;
+    wait_for_posts(&inbox, 2).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let mut bodies: Vec<String> = inbox
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| p.body.clone())
+        .collect();
+    bodies.sort();
+    assert_eq!(
+        bodies,
+        vec!["An agent finished its turn", "An agent needs your input"],
+        "each held notification flushes exactly once"
+    );
+    daemon.kill(finished.id).ok();
+    daemon.kill(waiting.id).ok();
+}
+
+#[tokio::test]
+async fn closing_the_desktop_connection_releases_held_notifications() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (addr, daemon, _state) = notifying_daemon_at(ntfy, 0, ConfigPatch::default()).await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    report_presence(&mut ws, &daemon, true).await;
+    let (info, _dir) = pane(&daemon);
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "PermissionRequest", None);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(inbox.lock().unwrap().is_empty());
+
+    drop(ws);
+    wait_for_posts(&inbox, 1).await;
+    assert!(!daemon.remote_presence_held_for_test());
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn an_answer_while_held_sends_nothing_when_the_desktop_leaves() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (addr, daemon, _state) = notifying_daemon_at(ntfy, 0, ConfigPatch::default()).await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    report_presence(&mut ws, &daemon, true).await;
+    let (info, _dir) = pane(&daemon);
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "PermissionRequest", None);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    report_presence(&mut ws, &daemon, false).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(
+        inbox.lock().unwrap().is_empty(),
+        "answered at the desk: {:?}",
+        inbox.lock().unwrap()
+    );
+    daemon.kill(info.id).ok();
 }

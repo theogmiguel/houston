@@ -210,6 +210,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   remote_device_revoke: 'local',
   remote_device_set_tier: 'local',
   remote_grids_publish: 'local',
+  desktop_presence: 'local',
   slack_get: 'local',
   slack_connect: 'local',
   slack_disconnect: 'local',
