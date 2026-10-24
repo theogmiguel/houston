@@ -3504,9 +3504,32 @@ impl Db {
         if n == 0 {
             anyhow::bail!("no workspace row with path {from:?} to relocate");
         }
+        // Rows a removed workspace left at `to` give way: usage adds up, and on any
+        // other key collision `from`'s row replaces the leftover.
+        tx.execute(
+            "INSERT INTO usage_daily_rollup
+                (day, workspace_path, provider, model, uncached_input, cached_input,
+                 cache_creation, output, reasoning, cost_usd)
+             SELECT day, ?1, provider, model, uncached_input, cached_input,
+                    cache_creation, output, reasoning, cost_usd
+             FROM usage_daily_rollup WHERE workspace_path = ?2
+             ON CONFLICT(day, workspace_path, provider, model) DO UPDATE SET
+                uncached_input = uncached_input + excluded.uncached_input,
+                cached_input = cached_input + excluded.cached_input,
+                cache_creation = cache_creation + excluded.cache_creation,
+                output = output + excluded.output,
+                reasoning = reasoning + excluded.reasoning,
+                cost_usd = cost_usd + excluded.cost_usd",
+            rusqlite::params![from, to],
+        )
+        .with_context(|| format!("merging usage_daily_rollup rows left at {to:?}"))?;
+        tx.execute(
+            "DELETE FROM usage_daily_rollup WHERE workspace_path = ?1",
+            [to],
+        )?;
         for (table, column) in WORKSPACE_KEY_COLUMNS {
             tx.execute(
-                &format!("UPDATE {table} SET {column} = ?2 WHERE {column} = ?1"),
+                &format!("UPDATE OR REPLACE {table} SET {column} = ?2 WHERE {column} = ?1"),
                 rusqlite::params![from, to],
             )
             .with_context(|| format!("relocating {table}.{column} from {from:?} to {to:?}"))?;
@@ -3528,14 +3551,14 @@ impl Db {
         }
         for (old, new, common_dir) in worktrees {
             tx.execute(
-                "UPDATE managed_worktrees SET path = ?2, repo_common_dir = ?3 WHERE path = ?1",
+                "UPDATE OR REPLACE managed_worktrees SET path = ?2, repo_common_dir = ?3 WHERE path = ?1",
                 rusqlite::params![old, new, common_dir],
             )
             .with_context(|| format!("relocating managed worktree {old:?} to {new:?}"))?;
         }
         for prefix in WORKSPACE_SETTING_PREFIXES {
             tx.execute(
-                "UPDATE settings SET key = ?2 WHERE key = ?1",
+                "UPDATE OR REPLACE settings SET key = ?2 WHERE key = ?1",
                 rusqlite::params![format!("{prefix}{from}"), format!("{prefix}{to}")],
             )
             .with_context(|| format!("relocating setting {prefix}{from:?}"))?;
@@ -7433,18 +7456,73 @@ mod tests {
     }
 
     #[test]
+    fn relocation_merges_rows_a_removed_workspace_left_at_the_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        relocation_fixture(&db, "/a/proj");
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO usage_daily_rollup VALUES
+                     ('2026-10-24', '/a/proj', 'claude', 'm', 1, 2, 3, 4, 5, 0.5),
+                     ('2026-10-24', '/b/proj', 'claude', 'm', 10, 20, 30, 40, 50, 1.0),
+                     ('2026-10-23', '/b/proj', 'codex', 'm', 7, 0, 0, 0, 0, 0.0);
+                 INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('/b/proj', 1);
+                 INSERT INTO settings (key, value) VALUES ('workspace_actions:/b/proj', '[\"stale\"]');",
+            )
+            .unwrap();
+        db.relocate_workspace("/a/proj", "/b/proj", "proj", &[])
+            .unwrap();
+
+        let conn = db.conn.lock().unwrap();
+        let rollup: Vec<(String, i64, i64, f64)> = conn
+            .prepare(
+                "SELECT day, uncached_input, reasoning, cost_usd FROM usage_daily_rollup
+                 WHERE workspace_path = '/b/proj' ORDER BY day",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rollup,
+            vec![
+                ("2026-10-23".to_owned(), 7, 0, 0.0),
+                ("2026-10-24".to_owned(), 11, 55, 1.5),
+            ]
+        );
+        let next: i64 = conn
+            .query_row(
+                "SELECT next_number FROM backlog_task_counters WHERE workspace = '/b/proj'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(next, 3, "the relocated workspace's counter wins");
+        let actions: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'workspace_actions:/b/proj'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(actions, "[]");
+    }
+
+    #[test]
     fn a_relocation_failing_part_way_leaves_every_row_at_the_old_path() {
         let tmp = tempfile::tempdir().unwrap();
         let db = Db::open(&tmp.path().join("t.db")).unwrap();
         relocation_fixture(&db, "/a/proj");
-        // A stale counter already keyed at the destination: the last key column
-        // collides after every earlier table has been rewritten.
+        // The last key column fails after every earlier table has been rewritten.
         db.conn
             .lock()
             .unwrap()
-            .execute(
-                "INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('/b/proj', 1)",
-                [],
+            .execute_batch(
+                "CREATE TRIGGER fail_counter BEFORE UPDATE ON backlog_task_counters
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
             )
             .unwrap();
         let err = db
