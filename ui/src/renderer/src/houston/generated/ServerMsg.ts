@@ -67,6 +67,7 @@ import type { SessionPolicy } from "./SessionPolicy";
 import type { SessionPrWatches } from "./SessionPrWatches";
 import type { SessionProcsEntry } from "./SessionProcsEntry";
 import type { SessionState } from "./SessionState";
+import type { SessionView } from "./SessionView";
 import type { SessionWorktree } from "./SessionWorktree";
 import type { SkillPushRecord } from "./SkillPushRecord";
 import type { SkillToolState } from "./SkillToolState";
@@ -109,7 +110,7 @@ import type { VoiceState } from "./VoiceState";
 import type { Workspace } from "./Workspace";
 import type { WorkspaceAction } from "./WorkspaceAction";
 
-export type ServerMsg = { "type": "generated_titles", enabled: boolean, } | { "type": "hello_ok", protocol: number, sessions: Array<SessionInfo>, workspaces: Array<Workspace>, tags: Array<TagInfo>, recovery?: RecoverySummary | null, safe_mode: SafeModeSummary, snapshot_attach: boolean, snapshot_format_version: number, } | { "type": "session_create_result", request: number, info: SessionInfo | null, error: string | null, } | { "type": "session_created", info: SessionInfo, } | { "type": "session_state", session: number, state: SessionState, exit_code: number | null, } | { "type": "session_updated", info: SessionInfo, } | { "type": "session_memory", session: number, bytes?: number | null, measured_at_ms?: number | null, unavailable_reason?: string | null, } | { "type": "session_list", sessions: Array<SessionInfo>, } | { "type": "pr_watch_list", watches: Array<SessionPrWatches>, } | { "type": "session_removed", session: number, } | { "type": "thread_events", session: number, events: Array<ThreadEvent>, } | { "type": "thread_history", session: number,
+export type ServerMsg = { "type": "generated_titles", enabled: boolean, } | { "type": "default_view", view: SessionView, } | { "type": "hello_ok", protocol: number, sessions: Array<SessionInfo>, workspaces: Array<Workspace>, tags: Array<TagInfo>, recovery?: RecoverySummary | null, safe_mode: SafeModeSummary, snapshot_attach: boolean, snapshot_format_version: number, } | { "type": "session_create_result", request: number, info: SessionInfo | null, error: string | null, } | { "type": "session_created", info: SessionInfo, } | { "type": "session_state", session: number, state: SessionState, exit_code: number | null, } | { "type": "session_updated", info: SessionInfo, } | { "type": "session_memory", session: number, bytes?: number | null, measured_at_ms?: number | null, unavailable_reason?: string | null, } | { "type": "session_list", sessions: Array<SessionInfo>, } | { "type": "pr_watch_list", watches: Array<SessionPrWatches>, } | { "type": "session_removed", session: number, } | { "type": "thread_events", session: number, events: Array<ThreadEvent>, } | { "type": "thread_history", session: number,
 /**
  * The request's `before_seq`, so a client matches the reply to its request.
  */

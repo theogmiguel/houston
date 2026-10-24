@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 150;
+pub const PROTOCOL_VERSION: u32 = 152;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -4073,6 +4073,17 @@ pub enum ClientMsg {
     ThreadStop {
         session: u32,
     },
+    /// Moves a Claude session's conversation to the other view through an exact-ID
+    /// respawn; refused while the agent works, naming its status.
+    SessionSetView {
+        session: u32,
+        view: SessionView,
+    },
+    /// The view new Claude sessions open in from the new-session flows.
+    DefaultViewGet {},
+    DefaultViewSet {
+        view: SessionView,
+    },
     ThreadHistory {
         session: u32,
         #[serde(default)]
@@ -5317,6 +5328,9 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     GeneratedTitles {
         enabled: bool,
+    },
+    DefaultView {
+        view: SessionView,
     },
 
     HelloOk {
@@ -7556,6 +7570,35 @@ mod tests {
         })
         .unwrap();
         assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
+    }
+
+    #[test]
+    fn view_switch_messages_keep_their_wire_shape() {
+        let switch: ClientMsg =
+            serde_json::from_str(r#"{"type":"session_set_view","session":4,"view":"terminal"}"#)
+                .unwrap();
+        assert!(matches!(
+            switch,
+            ClientMsg::SessionSetView {
+                session: 4,
+                view: SessionView::Terminal
+            }
+        ));
+        let set: ClientMsg =
+            serde_json::from_str(r#"{"type":"default_view_set","view":"thread"}"#).unwrap();
+        assert!(matches!(
+            set,
+            ClientMsg::DefaultViewSet {
+                view: SessionView::Thread
+            }
+        ));
+        assert_eq!(
+            serde_json::to_string(&ServerMsg::DefaultView {
+                view: SessionView::Terminal
+            })
+            .unwrap(),
+            r#"{"type":"default_view","view":"terminal"}"#
+        );
     }
 
     #[test]
