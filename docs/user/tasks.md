@@ -114,7 +114,8 @@ The task moves to **In progress** and the detail shows the run: its attempt, pro
 branch and pane. Starting again after a stop, or **Resume** after a restart interrupted the
 pane, reuses the same branch and worktree as the next attempt; nothing is force-pushed.
 If the local branch was deleted after it was pushed, the next start continues the pushed
-branch and tracks it.
+branch and tracks it, unless the base branch already contains its changes, for example
+after a squash merge; then the start begins a fresh branch from the base.
 
 Settings ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
 brief is delivered. **Send** (the default) submits the brief as the pane's first prompt.

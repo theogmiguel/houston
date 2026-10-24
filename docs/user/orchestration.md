@@ -236,8 +236,9 @@ For an isolated checkout on Linux or Windows, set `worktree` to a new directory 
 in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records it under
 `.houston/worktrees/SLUG`, using branch `houston/SLUG` unless an explicit `branch` is
 supplied. An explicit `branch` that exists on exactly one remote but not locally continues
-that remote branch and tracks it, as `git switch` would; on two remotes, Houston does not
-guess and starts a new branch. Existing local branches and occupied paths are refused. If creation or provider
+that remote branch and tracks it, as `git switch` would, unless the base already contains
+its changes. When two remotes hold it, or remote names overlap so the ref is ambiguous,
+Houston does not guess and starts a new branch. Existing local branches and occupied paths are refused. If creation or provider
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 

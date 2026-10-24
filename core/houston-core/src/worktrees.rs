@@ -174,9 +174,9 @@ pub fn create_on_branch(
     add_worktree(repo, &branch, &base, dest)
 }
 
-/// A branch the caller named that exists on exactly one remote and not locally
-/// continues that remote branch and tracks it, as `git switch <branch>` does;
-/// otherwise it is a fresh branch off `base`, never guessing between remotes.
+/// A named branch only one remote has continues that branch and tracks it, as `git
+/// switch` does, unless `base` already holds its changes (a merged PR's stale remote
+/// ref); otherwise it is a fresh branch off `base`, never guessing between remotes.
 pub fn create_on_named_branch(
     repo: &Path,
     branch: &str,
@@ -190,7 +190,7 @@ pub fn create_on_named_branch(
     } else {
         sole_remote_branch(repo, branch)
     };
-    let Some(remote) = remote else {
+    let Some(remote) = remote.filter(|r| !integrated_into_base(repo, r, base)) else {
         return create_on_branch(repo, branch, base, dest);
     };
     let tree = create_on_branch(repo, branch, Some(&remote), dest)?;
@@ -202,17 +202,47 @@ pub fn create_on_named_branch(
     Ok(tree)
 }
 
-/// `refs/remotes/<remote>/<branch>` when exactly one remote has `branch`.
+/// `refs/remotes/<remote>/<branch>` when exactly one remote has `branch` and no other
+/// remote's name could claim that ref (remotes `a` and `a/b` both read `a/b/c`).
 fn sole_remote_branch(repo: &Path, branch: &str) -> Option<String> {
     let remotes = run_git(repo, &["remote"]).ok()?;
-    let mut found = remotes
+    let remotes: Vec<&str> = remotes
         .lines()
         .map(str::trim)
         .filter(|name| !name.is_empty())
-        .map(|name| format!("refs/remotes/{name}/{branch}"))
-        .filter(|reference| ref_exists(repo, reference));
-    let first = found.next()?;
-    found.next().is_none().then_some(first)
+        .collect();
+    let mut found = remotes
+        .iter()
+        .map(|name| format!("{name}/{branch}"))
+        .filter(|short| ref_exists(repo, &format!("refs/remotes/{short}")));
+    let short = found.next()?;
+    if found.next().is_some() {
+        return None;
+    }
+    let claimants = remotes
+        .iter()
+        .filter(|name| short.starts_with(&format!("{name}/")))
+        .count();
+    (claimants == 1).then(|| format!("refs/remotes/{short}"))
+}
+
+/// Whether `base` (or the default base) already has `remote`'s changes. An answer Git
+/// cannot give counts as integrated: a fresh branch loses nothing the remote keeps.
+fn integrated_into_base(repo: &Path, remote: &str, base: Option<&str>) -> bool {
+    let base = match base {
+        Some(b) => b.to_string(),
+        None => crate::git::default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
+    };
+    let Some(common_dir) = crate::git::checkout_facts(repo).common_dir else {
+        return true;
+    };
+    match crate::conflict_prediction::is_integrated(Path::new(&common_dir), remote, &base) {
+        Ok(integrated) => integrated,
+        Err(e) => {
+            tracing::warn!("worktree starts fresh off {base:?}, not from {remote}: {e}");
+            true
+        }
+    }
 }
 
 fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Worktree> {
@@ -626,6 +656,53 @@ mod tests {
 
         let dest = root.path().join("wt");
         create_task(&repo, "feat/both", None, &dest).unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_restart_after_a_squash_merge_starts_fresh_off_the_base() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        remote_with_branch(root.path(), &repo, "origin", "houston/hou-1-fix");
+        let dest = root.path().join("wt");
+        create_task(&repo, "houston/hou-1-fix", None, &dest).unwrap();
+        git(&repo, &["merge", "--squash", "origin/houston/hou-1-fix"]);
+        git(&repo, &["commit", "-m", "squashed"]);
+        git(&repo, &["push", "origin", "main"]);
+        git(&repo, &["fetch", "origin"]);
+        git(&repo, &["worktree", "remove", dest.to_str().unwrap()]);
+        git(&repo, &["branch", "-D", "houston/hou-1-fix"]);
+
+        create_task(&repo, "houston/hou-1-fix", None, &dest).unwrap();
+
+        assert_eq!(
+            git_out(&dest, &["rev-parse", "HEAD"]),
+            git_out(&repo, &["rev-parse", "origin/main"])
+        );
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_ref_two_remote_names_could_claim_is_not_guessed() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let main = git_out(&repo, &["rev-parse", "main"]);
+        remote_with_branch(root.path(), &repo, "a", "b/c");
+        // Current Git refuses `remote add` for overlapping names; config still allows them.
+        let other = root.path().join("a.git");
+        git(
+            &repo,
+            &["config", "remote.a/b.url", other.to_str().unwrap()],
+        );
+
+        let dest = root.path().join("wt");
+        create_task(&repo, "b/c", None, &dest).unwrap();
 
         assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
         assert_eq!(crate::git::sync(&dest).upstream, None);
