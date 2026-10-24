@@ -78,6 +78,8 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
   const reviews = sortRoutines(routines).filter((routine) => routine.kind === 'harness_review')
   const { selectedId, selectRoutine } = useRoutineSelection(routines, selectedRoutineId, onRoutineSelect)
   const nightFocus = useNightShiftFocus()
+  // Without a notice to follow, Night shift opens on the workspace whose run is live.
+  const nightLive = routines.find((routine) => routine.kind === 'night_shift' && running.includes(routine.id))?.workspace_id ?? null
   useEffect(() => {
     if (nightFocus && selectedId !== NIGHT_SELECTION) selectRoutine(NIGHT_SELECTION)
   }, [nightFocus]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -201,7 +203,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
           if (item.id === NIGHT_SELECTION) return <Suspense fallback={<p role="status">Loading Night shift…</p>}>
             <NightShiftView key={nightFocus ? `${nightFocus.workspace}:${nightFocus.runId}` : 'night'}
               client={client} workspaces={workspaces} now={now} onOpenSession={props.onOpenSession}
-              initialWorkspace={nightFocus?.workspace ?? null} initialRunId={nightFocus?.runId ?? null} />
+              initialWorkspace={nightFocus?.workspace ?? nightLive} initialRunId={nightFocus?.runId ?? null} />
           </Suspense>
           if (item.id === REVIEW_SELECTION) return <WeeklyReviewWorkspaces reviews={reviews} workspaces={workspaces} connected={!!client}
             onSetup={(workspace) => { onDismissError(); setPanel({ mode: 'review-setup', workspace }) }} renderReview={detail} />

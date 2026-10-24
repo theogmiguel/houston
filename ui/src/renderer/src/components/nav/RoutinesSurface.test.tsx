@@ -79,6 +79,15 @@ describe('Routines page', () => {
     expect(screen.queryByRole('button', { name: 'Set up Weekly review' })).toBeNull()
   })
 
+  it('opens Night shift on the workspace whose run is live', async () => {
+    const nightShiftState = vi.fn()
+    const live = { ...routine(20), kind: 'night_shift' as const, workspace_id: workspaces[3].id }
+    render(surface({ client: { ...client, nightShiftState } as unknown as typeof client, routines: [{ ...live, id: 21, workspace_id: workspaces[0].id }, live], workspaces, running: [live.id], selectedRoutineId: live.id }))
+    await vi.waitFor(() => expect(nightShiftState).toHaveBeenCalled())
+    expect(nightShiftState).toHaveBeenCalledWith('/workspace-3')
+    expect(nightShiftState).not.toHaveBeenCalledWith('/workspace-0')
+  })
+
   it('shows Running on the Weekly review row while any workspace review runs', () => {
     const { rerender } = render(surface({ client, routines: reviews, workspaces, running: [], selectedRoutineId: 10 }))
     expect(within(screen.getAllByTestId('list-detail-item')[0]).queryByText('Running')).toBeNull()
