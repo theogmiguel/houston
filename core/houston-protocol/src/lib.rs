@@ -7500,6 +7500,7 @@ mod tests {
                     keep_awake: NightKeepAwake::Off,
                 },
                 merge_verify_command: true,
+                child_cap: 6,
             },
             ServerMsg::NightShiftRunEvent { run },
             ServerMsg::NightShiftNotice {
