@@ -759,9 +759,10 @@ on whether a client is attached — and 2 s or 5 s with a dead one. Health requi
 than a watcher that started and a directory that lists: a delivery canary writes one
 reserved `houston-canary.probe` into the channel's drop directory every 30 s and requires
 the watcher's event counter to advance within 15 s. The probe's own event wakes the loop,
-so a live watcher clears it at once. A watcher that goes silent after starting, or a drop
-directory that vanished, is held at the dead rungs — drops still arrive, but at poll
-latency — until a probe is delivered again. The canary never restarts the watcher or
+so a live watcher clears it at once. Its create and remove events each wake one more mail
+tick, so an idle daemon runs about three ticks per probe period instead of one. A watcher
+that goes silent after starting, or a drop directory that vanished, is held at the dead
+rungs — drops still arrive, but at poll latency — until a probe is delivered again. The canary never restarts the watcher or
 recreates the directory; the probe is invisible to the drop pass and never becomes an
 inbox row.
 
