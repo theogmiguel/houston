@@ -36,6 +36,8 @@ export class ThreadSessionStore {
   private early: ThreadEvent[] = []
   private lastStoredSeq = -1
   private superseded: string[] = []
+  // Set once the reader loads an earlier page: trimming would take back what they asked for.
+  private keepEarlier = false
 
   constructor(private readonly send: (msg: ThreadClientMsg) => boolean, readonly session: number) {}
 
@@ -107,6 +109,7 @@ export class ThreadSessionStore {
     }
     const first = this.snapshot.events[0]?.seq ?? Number.POSITIVE_INFINITY
     const older = msg.events.filter((event) => event.seq < first)
+    this.keepEarlier = true
     this.set({ ...this.snapshot, events: [...older, ...this.snapshot.events], hasMore: msg.has_more, loadingEarlier: false, failure: null })
   }
 
@@ -119,8 +122,15 @@ export class ThreadSessionStore {
     const events = this.merge(this.snapshot.events, msg.events)
     if (events === this.snapshot.events) return
     const overflow = events.length - THREAD_RETAINED_EVENTS
-    if (overflow > THREAD_HISTORY_PAGE) this.set({ ...this.snapshot, events: events.slice(overflow), hasMore: true })
+    if (!this.keepEarlier && overflow > THREAD_HISTORY_PAGE) this.set({ ...this.snapshot, events: events.slice(overflow), hasMore: true })
     else this.set({ ...this.snapshot, events })
+  }
+
+  /** The reader is back on the newest rows: earlier pages may go again, down to the retention cap. */
+  followLatest(): void {
+    this.keepEarlier = false
+    const overflow = this.snapshot.events.length - THREAD_RETAINED_EVENTS
+    if (overflow > 0) this.set({ ...this.snapshot, events: this.snapshot.events.slice(overflow), hasMore: true })
   }
 
   /** Appends live events without stored duplicates, and drops the deltas a stored message supersedes. */
@@ -253,6 +263,7 @@ export interface ThreadView extends ThreadSnapshot {
   loadEarlier: () => void
   retry: () => void
   answer: (requestId: string, allow: boolean) => void
+  followLatest: () => void
 }
 
 export function useThread(client: HoustonClient, session: number, connected: boolean): ThreadView {
@@ -270,5 +281,5 @@ export function useThread(client: HoustonClient, session: number, connected: boo
   const answer = useCallback((requestId: string, allow: boolean) => {
     if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
   }, [client, session, store])
-  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer }
+  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest() }
 }

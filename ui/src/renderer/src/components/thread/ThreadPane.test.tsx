@@ -206,15 +206,13 @@ describe('ThreadPane', () => {
     expect(container.querySelector('[data-testid="thread-stop"]')).toBeNull()
   })
 
-  it('accepts input in a thread without a process, and refuses it once the session is removed or asleep', () => {
-    for (const state of ['exited', 'interrupted'] as const) {
-      mount({ state })
-      expect(input().disabled).toBe(false)
-    }
-    for (const state of ['killed', 'sleeping'] as const) {
+  it('takes input only while the session runs, and names the state otherwise', () => {
+    mount({ state: 'running', status: 'idle' })
+    expect(input().disabled).toBe(false)
+    for (const state of ['exited', 'interrupted', 'killed', 'sleeping'] as const) {
       mount({ state })
       expect(input().disabled).toBe(true)
-      expect(input().placeholder).toBe(`This session is ${state}`)
+      expect(input().placeholder).toBe(`This session is ${state}; restart it to continue`)
     }
   })
 
@@ -298,6 +296,19 @@ describe('ThreadPane', () => {
     act(() => (container.querySelector('[data-testid="thread-image-load"]') as HTMLButtonElement).click())
     expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain('https://example.com/leak?d=secret')
   }, MARKDOWN_CHUNK_TIMEOUT_MS)
+
+  it('keeps an earlier page and the window on it while live events stream in', () => {
+    mount()
+    history(Array.from({ length: 1000 }, (_, i) => ev(i + 1001, user(`m${i + 1001}`))), true)
+    for (let i = 0; i < 6; i++) click('thread-show-earlier')
+    history(Array.from({ length: 200 }, (_, i) => ev(i + 801, user(`m${i + 801}`))), true, 1001)
+    const before = rows('user')
+    expect(before).toContain('m1000')
+    live(Array.from({ length: 300 }, (_, i) => ev(i + 2001, user(`live${i}`))))
+    expect(rows('user')).toEqual(before)
+    click('thread-jump-latest')
+    expect(rows('user').at(-1)).toBe('live299')
+  })
 
   it('renders a bounded window of a long history and shows an earlier page in the click that loads it', () => {
     mount()
