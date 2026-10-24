@@ -1,5 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ServerMsg } from './houston/generated/ServerMsg'
+import type { HoustonClient } from './houston/client'
+import { pickDirectories } from './houston/bridge'
 import { gridStorageKey, loadGrids, type GridMeta, type LayoutState } from './layout/tree'
 
 type Set<T> = Dispatch<SetStateAction<T>>
@@ -76,4 +78,22 @@ export function relocatedNotice(msg: Extract<ServerMsg, { type: 'workspace_reloc
     title: `Workspace now at ${msg.to}`,
     body: [`${plural(sessions, 'session')} and ${plural(worktrees, 'worktree')} followed.`, ...notes].join(' ')
   }
+}
+
+/** Locate moved folder…: pick the new folder, resolving a WSL pick to its in-distro path. */
+export async function locateMovedFolder(
+  client: HoustonClient,
+  path: string,
+  pushError: (message: string) => void
+): Promise<void> {
+  const pick = (await pickDirectories())?.[0]
+  if (pick === undefined) return
+  const resolved = pick.startsWith('\\\\')
+    ? await (await import('./houston/workspacePick')).resolveWorkspacePick(pick)
+    : { wire: pick, path: pick }
+  if ('refusal' in resolved) {
+    pushError(resolved.refusal)
+    return
+  }
+  client.relocateWorkspace(path, resolved.wire)
 }

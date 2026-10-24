@@ -2915,19 +2915,8 @@ export function App(): React.JSX.Element {
 
   const locateWorkspace = useCallback(async (path: string): Promise<void> => {
     if (conn.kind !== "ready") return;
-    const picked = await pickDirectories();
-    const pick = picked?.[0];
-    if (pick === undefined) return;
-    const resolved = pick.startsWith("\\\\")
-      ? await (await import("./houston/workspacePick")).resolveWorkspacePick(pick)
-      : { wire: pick, path: pick };
-    if ("refusal" in resolved) {
-      pushError(resolved.refusal);
-      return;
-    }
-    // Loaded first, so the reply moves the layouts before the panes' reparents arrive.
-    await import("./workspaceRelocate");
-    conn.client.relocateWorkspace(path, resolved.wire);
+    // Loading it first lets the reply move the layouts before the panes' reparents arrive.
+    await (await import("./workspaceRelocate")).locateMovedFolder(conn.client, path, pushError);
   }, [conn, pushError]);
 
   const confirmRemoveWorkspace = useCallback(() => {
