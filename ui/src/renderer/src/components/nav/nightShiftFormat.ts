@@ -157,7 +157,7 @@ export function settingsProblems(s: NightShiftSettings): string[] {
     if (NO_LIMIT_SIGNAL.includes(w.provider)) out.push(`${engineLabel(w.provider)} cannot be a worker: it reports no usage limit.`)
   }
   if (s.focus.ui_polish !== 'off' && !s.screenshots) out.push(UI_POLISH_SCREENSHOTS)
-  if (s.focus.competitor_gaps !== 'off' && s.competitor_sources.length === 0) out.push('Competitor gaps needs at least one competitor source.')
+  if (s.focus.competitor_gaps !== 'off' && s.competitors.length === 0) out.push('Competitor gaps needs at least one competitor.')
   return out
 }
 

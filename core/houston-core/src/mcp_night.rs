@@ -91,6 +91,14 @@ fn spec(verb: &str) -> ToolSpec {
             json!({ "title": title, "body": body, "flaky_test": text(200) }),
             vec!["title"],
         ),
+        "studied" => (
+            "Record what was studied",
+            "Record what this run studied of a competitor: its name as the brief lists it \
+             (owner/repo, or the app's name) and the release tag or app version. The next \
+             run's brief passes it on, so only newer material is read.",
+            json!({ "competitor": title, "version": text(80), "body": body }),
+            vec!["competitor", "version"],
+        ),
         "decision" => (
             "Park a decision",
             "Park a question for the user's morning report instead of asking during the \

@@ -6,6 +6,9 @@ use rusqlite::{Connection, OptionalExtension};
 
 use super::{from_wire, wire_name, Db};
 
+/// Every `night_entries.kind`, as the table's CHECK lists them.
+const KINDS: &str = "'plan','pr','lesson','decision','deferred','flaky','studied'";
+
 pub(super) fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS night_shift_settings (
@@ -42,7 +45,7 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS night_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id INTEGER NOT NULL,
-            kind TEXT NOT NULL CHECK(kind IN ('plan','pr','lesson','decision','deferred','flaky')),
+            kind TEXT NOT NULL CHECK(kind IN ('plan','pr','lesson','decision','deferred','flaky','studied')),
             title TEXT NOT NULL,
             theme TEXT,
             status TEXT,
@@ -69,6 +72,48 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "detail_json",
         "detail_json TEXT NOT NULL DEFAULT '{}'",
     )?;
+    widen_entry_kinds(conn)
+}
+
+/// A table made before a kind existed still CHECKs the old list; SQLite
+/// cannot alter a CHECK, so the table is rebuilt with its rows.
+fn widen_entry_kinds(conn: &Connection) -> Result<()> {
+    let sql: String = conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'night_entries'",
+        [],
+        |r| r.get(0),
+    )?;
+    if sql.contains("'studied'") {
+        return Ok(());
+    }
+    let cols = "id, run_id, kind, title, theme, status, pr_number, visible, qa_passed, body, \
+                created_at_ms, decided_at_ms, choice, gates_json, detail_json";
+    conn.execute_batch(&format!(
+        "BEGIN;
+        CREATE TABLE night_entries_widened (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ({KINDS})),
+            title TEXT NOT NULL,
+            theme TEXT,
+            status TEXT,
+            pr_number INTEGER,
+            visible INT NOT NULL DEFAULT 0,
+            qa_passed INT NOT NULL DEFAULT 0,
+            body TEXT NOT NULL DEFAULT '',
+            created_at_ms INTEGER NOT NULL,
+            decided_at_ms INTEGER,
+            choice TEXT,
+            gates_json TEXT NOT NULL DEFAULT '{{}}',
+            detail_json TEXT NOT NULL DEFAULT '{{}}'
+        );
+        INSERT INTO night_entries_widened ({cols}) SELECT {cols} FROM night_entries;
+        DROP TABLE night_entries;
+        ALTER TABLE night_entries_widened RENAME TO night_entries;
+        CREATE INDEX IF NOT EXISTS idx_night_entries_run ON night_entries(run_id, id);
+        COMMIT;"
+    ))
+    .context("widening night_entries.kind")?;
     Ok(())
 }
 

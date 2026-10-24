@@ -113,6 +113,31 @@ pub struct NightAppQa {
     pub smoke_flows: Vec<String>,
 }
 
+/// What a run studies for Competitor gaps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum NightCompetitor {
+    /// A GitHub repository, `owner/repo`, cloned read-only.
+    Repo { repo: String },
+    /// An app installed on this computer, analysed with REA.
+    App {
+        name: String,
+        version: String,
+        path: String,
+    },
+}
+
+/// An app installed on this computer, as Setup offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightInstalledApp {
+    pub name: String,
+    /// Empty when the app reports none.
+    pub version: String,
+    pub path: String,
+}
+
 /// A command every change passes, and where Houston found it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -144,6 +169,13 @@ pub struct NightDetected {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub start_command: Option<NightCheck>,
+    /// Apps installed on this computer, by name.
+    #[serde(default)]
+    pub apps: Vec<NightInstalledApp>,
+    /// Why `apps` is empty on this platform, when it cannot list them.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub apps_note: Option<String>,
 }
 
 /// How finished changes become pull requests. A change is one plan entry.
@@ -180,7 +212,7 @@ pub struct NightShiftSettings {
     /// Where the run should go, in the user's words: a priority within the
     /// focus areas, not a completion condition. Empty for none.
     pub direction: String,
-    pub competitor_sources: Vec<String>,
+    pub competitors: Vec<NightCompetitor>,
     pub orchestrator: NightAgent,
     /// The worker providers in fallback order.
     pub workers: Vec<NightAgent>,
@@ -304,6 +336,9 @@ pub enum NightEntryKind {
     Decision,
     Deferred,
     Flaky,
+    /// What a run studied of a competitor: title the competitor, status the
+    /// release tag or app version.
+    Studied,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

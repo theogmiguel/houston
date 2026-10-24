@@ -90,6 +90,7 @@ fn healthy_facts() -> Facts {
             provider,
             hooks_on: true,
             cli_present: true,
+            rea: Some(true),
         })
         .collect(),
         machine: MachineFacts {
@@ -2386,4 +2387,36 @@ async fn verdicts_come_from_an_independent_pane() {
         .await;
     assert_ne!(status, 200);
     assert!(body.to_string().contains("needs fault"), "{body}");
+}
+
+/// What a run studied of a competitor reaches the next brief, the newest per
+/// competitor, and a name the settings do not list is refused.
+#[tokio::test]
+async fn studied_reaches_the_next_brief() {
+    let r = rig().await;
+    let routine = r.ready(|s| {
+        s.focus.competitor_gaps = proto::NightFocusLevel::Normal;
+        s.competitors = vec![proto::NightCompetitor::Repo {
+            repo: "pingdotgg/t3code".into(),
+        }];
+    });
+    let first = r.run_now(routine.id, 120);
+    let o = first.session_id.unwrap();
+    let (status, body) = r
+        .night(o, "studied", json!({ "competitor": "someone/else", "version": "v1" }))
+        .await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("pingdotgg/t3code"), "names the competitors: {body}");
+    for version in ["v0.8.0", "v0.9.0"] {
+        let (status, body) = r
+            .night(o, "studied", json!({ "competitor": "PingDotGG/t3code", "version": version }))
+            .await;
+        assert_eq!(status, 200, "{body}");
+    }
+    r.daemon.night_shift_stop_now(first.run_id).unwrap();
+    let second = r.run_now(routine.id, 120);
+    let brief = r.brief(&second);
+    assert!(brief.contains("- [studied] pingdotgg/t3code at v0.9.0"), "{brief}");
+    assert!(!brief.contains("v0.8.0"), "{brief}");
+    assert!(brief.contains("clone https://github.com/pingdotgg/t3code read-only"), "{brief}");
 }

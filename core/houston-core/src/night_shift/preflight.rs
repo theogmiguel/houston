@@ -24,6 +24,9 @@ pub struct ProviderFacts {
     pub provider: AgentKind,
     pub hooks_on: bool,
     pub cli_present: bool,
+    /// Whether its MCP configuration has a server named `rea`; `None` when
+    /// Houston cannot read that configuration.
+    pub rea: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +208,7 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
             format!("{} configured", s.checks.len()),
         )
     });
+    out.extend(rea_items(s, facts));
     if s.app_qa.enabled && s.app_qa.start_command.trim().is_empty() {
         out.push(item(
             "app_qa_start_missing",
@@ -216,6 +220,54 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
     out.extend(restart_items(m.reboot_pending, m.active_hours, run));
     out.extend(super::awake::inhibitor_item(m.inhibitor_available));
     out
+}
+
+/// An installed-app competitor is analysed with REA by the scouts, which run
+/// on the worker providers: each needs it.
+fn rea_items(s: &NightShiftSettings, facts: &Facts) -> Vec<PreflightItem> {
+    let apps = s
+        .competitors
+        .iter()
+        .any(|c| matches!(c, houston_protocol::NightCompetitor::App { .. }));
+    if !apps || s.focus.competitor_gaps == houston_protocol::NightFocusLevel::Off {
+        return Vec::new();
+    }
+    let mut seen = Vec::new();
+    s.workers
+        .iter()
+        .map(|w| w.provider)
+        .filter(|p| {
+            let fresh = !seen.contains(p);
+            seen.push(*p);
+            fresh
+        })
+        .filter_map(|provider| {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let rea = facts
+                .providers
+                .iter()
+                .find(|f| f.provider == provider)
+                .and_then(|f| f.rea);
+            let detail = match rea {
+                Some(true) => return None,
+                Some(false) => format!(
+                    "an installed-app competitor is analysed with REA, but {slug} has no MCP \
+                     server named rea; add one for {slug} or remove the app competitor"
+                ),
+                None => format!(
+                    "an installed-app competitor is analysed with REA, and Houston cannot read \
+                     {slug}'s MCP configuration to confirm it has REA; use another worker \
+                     provider or remove the app competitor"
+                ),
+            };
+            Some(item(
+                format!("rea_missing:{slug}"),
+                PreflightStatus::Block,
+                "REA for app competitors",
+                detail,
+            ))
+        })
+        .collect()
 }
 
 /// Windows restarts for updates outside its active hours; a window reaching
@@ -511,6 +563,7 @@ mod tests {
                     provider,
                     hooks_on: true,
                     cli_present: true,
+                    rea: Some(provider == AgentKind::Claude),
                 })
                 .collect(),
             machine,
@@ -624,6 +677,29 @@ mod tests {
                 "checks_missing"
             ]
         );
+    }
+
+    #[test]
+    fn app_competitors_need_rea() {
+        let mut s = settings();
+        s.focus.competitor_gaps = houston_protocol::NightFocusLevel::Normal;
+        s.competitors = vec![houston_protocol::NightCompetitor::App {
+            name: "Orca".into(),
+            version: "1.4.238".into(),
+            path: "/opt/orca/orca".into(),
+        }];
+        let mut f = facts(healthy());
+        let items = evaluate(&s, &f, &s.window);
+        let ids: Vec<&str> = blocks(&items).iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["rea_missing:zcode"], "Claude has REA; ZCode does not");
+        assert!(blocks(&items)[0].detail.contains("no MCP server named rea"));
+        f.providers[1].rea = None;
+        let items = evaluate(&s, &f, &s.window);
+        assert!(blocks(&items)[0].detail.contains("cannot read zcode's MCP configuration"));
+        s.competitors = vec![houston_protocol::NightCompetitor::Repo {
+            repo: "a/b".into(),
+        }];
+        assert!(blocks(&evaluate(&s, &f, &s.window)).is_empty(), "a repository needs no REA");
     }
 
     #[test]

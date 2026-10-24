@@ -15,6 +15,7 @@ verbs (only inside a Night shift run's orchestrator pane):
      (G: pending|passed|failed; Houston records checks, ci and verify itself)
   lesson --title T [--body B] [--flaky-test NAME]
   decision --title T [--body B] [--option A]...   (one --option per choice)
+  studied --competitor NAME --version TAG [--body B]
   report --summary S [--merge-order 12,15,9]
 
 verifier (a run pane that neither orchestrates nor built the change):

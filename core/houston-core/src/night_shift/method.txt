@@ -8,9 +8,11 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
 
 1. Survey. For each focus area that is not Off, start a scout pane (pane_spawn with a worker
    provider from the chain below) that researches the area read-only and reports candidate
-   changes with evidence. High focus gets more scouts than Low. For competitor gaps, clone
-   each source read-only outside the repository and read only releases newer than the last
-   one the ledger says was studied. Check every claim against the code yourself.
+   changes with evidence. High focus gets more scouts than Low. For competitor gaps, scouts
+   study each competitor below as it says (a repository's releases newer than its studied
+   tag, an installed app's changes since its studied version, with REA), report features
+   and behaviour, never copied code, and you record what was studied with night_studied.
+   Check every claim against the code yourself.
 2. Plan. Rank the candidates by value and risk. Record each one you take with night_plan:
    title, theme, why, and its claims: each an observable claim with a concrete value (what
    must be true after the change, for example "a restart keeps all 3 pending hook events")
@@ -52,7 +54,7 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
 
 The night_* tools are offered only to you, except night_verdict, which only the run's other
 panes get: tell the verifier to use it. Without MCP, the same verbs are
-`hs-night plan|pr|lesson|decision|report|verdict`; run `hs-night --help` for their flags.
+`hs-night plan|pr|lesson|decision|studied|report|verdict`; run `hs-night --help` for their flags.
 Give `hs-night decision` one `--option <choice>` per choice and `hs-night plan` one
 `--claim <claim> --proof <test>` pair per claim.
 Never merge anything yourself, never push to the default branch, and never spend a

@@ -3,7 +3,8 @@
 use std::fmt::Write as _;
 
 use houston_protocol::{
-    NightAgent, NightEntry, NightEntryKind, NightFocus, NightFocusLevel, NightOutput,
+    NightAgent, NightCompetitor, NightEntry, NightEntryKind, NightFocus, NightFocusLevel,
+    NightOutput,
     NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
 };
 
@@ -28,6 +29,7 @@ pub fn belongs_in_digest(e: &NightEntry) -> bool {
             | NightEntryKind::Lesson
             | NightEntryKind::Flaky
             | NightEntryKind::Pr
+            | NightEntryKind::Studied
     ) || is_rejected(e)
 }
 
@@ -105,9 +107,15 @@ fn digest_line(e: &NightEntry) -> String {
             NightEntryKind::Pr if e.status.as_deref() == Some("merged") => "pr merged",
             NightEntryKind::Pr => "pr not merged yet",
             NightEntryKind::Decision => "decision",
+            NightEntryKind::Studied => "studied",
         }
     };
     let mut line = format!("- [{tag}] {}", one_line(&e.title));
+    if e.kind == NightEntryKind::Studied {
+        if let Some(version) = &e.status {
+            let _ = write!(line, " at {}", one_line(version));
+        }
+    }
     if let Some(n) = e.pr_number {
         let _ = write!(line, " (PR #{n})");
     }
@@ -189,16 +197,33 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
     if !off.is_empty() {
         let _ = writeln!(out, "- Off, not scouted: {}.", off.join(", "));
     }
-    if !s.competitor_sources.is_empty() {
-        let _ = writeln!(
-            out,
-            "- Competitor sources: {}",
-            s.competitor_sources
-                .iter()
-                .map(|x| one_line(x))
-                .collect::<Vec<_>>()
-                .join(", ")
+    if s.focus.competitor_gaps != NightFocusLevel::Off && !s.competitors.is_empty() {
+        out.push_str(
+            "- Competitors. Study only what is newer than the ledger's [studied] entry for each, \
+             record what you studied with night_studied, and bring back features and behaviour, \
+             never copied code:\n",
         );
+        for c in &s.competitors {
+            let _ = match c {
+                NightCompetitor::Repo { repo } => writeln!(
+                    out,
+                    "  - {repo}: clone https://github.com/{repo} read-only outside the repository \
+                     and read the releases after the studied tag."
+                ),
+                NightCompetitor::App {
+                    name,
+                    version,
+                    path,
+                } => writeln!(
+                    out,
+                    "  - {} {} installed at {}: analyse it with REA, only what changed since the \
+                     studied version.",
+                    one_line(name),
+                    if version.is_empty() { "(version not reported)" } else { version.as_str() },
+                    one_line(path)
+                ),
+            };
+        }
     }
     let _ = writeln!(
         out,
@@ -299,7 +324,13 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
     let mut used = 0usize;
     let mut omitted = 0usize;
     let mut any = false;
-    for e in digest.iter().filter(|e| belongs_in_digest(e)) {
+    // Only the newest studied entry per competitor: the next run reads what is newer.
+    let mut studied = std::collections::HashSet::new();
+    let digest = digest.iter().filter(|e| {
+        belongs_in_digest(e)
+            && (e.kind != NightEntryKind::Studied || studied.insert(e.title.to_ascii_lowercase()))
+    });
+    for e in digest {
         let line = digest_line(e);
         let len = line.chars().count();
         if omitted == 0 && used + len <= budget {
@@ -382,7 +413,14 @@ mod tests {
             };
             4
         ];
-        s.competitor_sources = vec!["s".repeat(600); SOURCES_MAX];
+        s.competitors = vec![
+            NightCompetitor::App {
+                name: "n".repeat(200),
+                version: "v".repeat(100),
+                path: "p".repeat(300),
+            };
+            COMPETITORS_MAX
+        ];
         s.app_qa = houston_protocol::NightAppQa {
             enabled: true,
             start_command: "a".repeat(1_000),
@@ -475,6 +513,32 @@ mod tests {
         assert!(brief.contains("checks that change's claims plus these smoke flows: open a workspace"), "{brief}");
         s.app_qa.address = "http://127.0.0.1:5173".into();
         assert!(compose(&s, &run(), &[]).contains("opens `http://127.0.0.1:5173`"));
+    }
+
+    #[test]
+    fn competitors_and_the_newest_studied_entry_reach_the_brief() {
+        let mut s = super::super::settings::defaults();
+        s.focus.competitor_gaps = NightFocusLevel::Normal;
+        s.competitors = vec![
+            NightCompetitor::Repo {
+                repo: "pingdotgg/t3code".into(),
+            },
+            NightCompetitor::App {
+                name: "Orca".into(),
+                version: String::new(),
+                path: "/opt/orca/orca".into(),
+            },
+        ];
+        let studied = |id: u32, version: &str| NightEntry {
+            status: Some(version.into()),
+            body: String::new(),
+            ..entry(id, NightEntryKind::Studied, "pingdotgg/t3code")
+        };
+        let brief = compose(&s, &run(), &[studied(2, "v0.9.0"), studied(1, "v0.8.0")]);
+        assert!(brief.contains("clone https://github.com/pingdotgg/t3code read-only"), "{brief}");
+        assert!(brief.contains("Orca (version not reported) installed at /opt/orca/orca: analyse it with REA"), "{brief}");
+        assert!(brief.contains("- [studied] pingdotgg/t3code at v0.9.0"), "{brief}");
+        assert!(!brief.contains("v0.8.0"), "only the newest studied entry: {brief}");
     }
 
     #[test]

@@ -817,7 +817,7 @@ RoutineEngineRefusal engine: AgentKind, permission_mode: ChatPermissionMode, rea
                    (a pair `routine_create`/`routine_update` refuse whatever the model;
                    pickers show the engine disabled with `reason`)
 NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, window: NightWindow, focus: NightFocus, direction,
-                   competitor_sources, orchestrator: NightAgent, workers: NightAgent[] (fallback
+                   competitors: NightCompetitor[], orchestrator: NightAgent, workers: NightAgent[] (fallback
                    order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
                    output: prs | merge_queue, pr_size: {kind: one} | {kind: related,
                    max_changes: 2..20}, screenshots,
@@ -826,12 +826,14 @@ NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, win
 NightCheck         command, source (`ci.yml · core-checks`, `package.json`, `AGENTS.md` or
                    `added by you`)
 NightDetected      checks: NightCheck[] (found in the workspace, runnable on this machine),
-                   start_command?: NightCheck
+                   start_command?: NightCheck, apps: {name, version, path}[], apps_note? (why
+                   this platform lists no apps)
 NightWindow        start, wrap_up, hard_stop: NightClock{hour, minute} (local), nights: u8[]
                    (1 = Sunday … 7 = Saturday)
 NightFocus         reliability, performance, ui_polish, competitor_gaps, docs_accuracy,
                    test_gaps: off | low | normal | high
 NightAgent         provider: AgentKind, model?
+NightCompetitor    {kind: repo, repo (owner/repo)} | {kind: app, name, version, path}
 NightAppQa         enabled, start_command, source, address (empty: each change opens what it
                    touches), smoke_flows: string[]
 PreflightItem      id, status: ok | warn | block, label, detail, limit?, actual?
@@ -843,7 +845,8 @@ NightRun           run_id, routine_id, workspace, trigger: RoutineTrigger,
                    interruptions: NightInterruption[], cost: NightCost, limited: AgentKind[],
                    preflight: PreflightItem[], keep_awake: off | held | unavailable,
                    merge_order: u32[], entries: NightEntry[], crew: NightCrewMember[]
-NightEntry         id, run_id, kind: plan | pr | lesson | decision | deferred | flaky, title,
+NightEntry         id, run_id, kind: plan | pr | lesson | decision | deferred | flaky | studied,
+                   title,
                    theme?, status?, pr_number?, visible, qa_passed, body, gates: NightGates,
                    created_at_ms, decided_at_ms?, choice?, detail: NightEntryDetail
 NightGates         checks, review, qa, ci, verify: none | pending | passed | failed, reruns

@@ -19,7 +19,7 @@ pub const CHECKS_MAX: usize = 20;
 pub const SOURCE_MAX: usize = 120;
 /// The source of a check the user typed.
 pub const ADDED_BY_YOU: &str = "added by you";
-pub const SOURCES_MAX: usize = 10;
+pub const COMPETITORS_MAX: usize = 10;
 pub const SMOKE_FLOWS_MAX: usize = 20;
 /// The setup offers four; more providers than this is no fallback order.
 pub const WORKERS_MAX: usize = 4;
@@ -49,7 +49,7 @@ pub fn defaults() -> NightShiftSettings {
             test_gaps: NightFocusLevel::Off,
         },
         direction: String::new(),
-        competitor_sources: Vec::new(),
+        competitors: Vec::new(),
         orchestrator: NightAgent {
             provider: AgentKind::Claude,
             model: Some("opus".into()),
@@ -107,6 +107,16 @@ fn upgrade_v1(doc: &mut Value) {
         }
     }
     o.insert("verification".into(), json!("light"));
+    let sources = o.remove("competitor_sources").unwrap_or(Value::Null);
+    let competitors: Vec<Value> = sources
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter_map(github_repo)
+        .map(|repo| json!({ "kind": "repo", "repo": repo }))
+        .collect();
+    o.insert("competitors".into(), json!(competitors));
     let app = o.remove("app_check").unwrap_or(Value::Null);
     let text = |key: &str| app.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
     let start = text("start_command");
@@ -132,6 +142,39 @@ fn upgrade_v1(doc: &mut Value) {
         },
     );
     o.insert("v".into(), json!(2));
+}
+
+/// `owner/repo` from a GitHub repository as people write it: `owner/repo`,
+/// `github.com/owner/repo` or its URL, with or without `.git`.
+pub fn github_repo(text: &str) -> Option<String> {
+    let t = text.trim().trim_end_matches('/');
+    let t = t
+        .strip_prefix("https://")
+        .or_else(|| t.strip_prefix("http://"))
+        .unwrap_or(t);
+    let t = t.strip_prefix("www.").unwrap_or(t);
+    let t = t.strip_prefix("github.com/").unwrap_or(t);
+    let t = t.strip_suffix(".git").unwrap_or(t);
+    let (owner, repo) = t.split_once('/')?;
+    let owner_ok = !owner.is_empty()
+        && owner.len() <= 39
+        && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let repo_ok = !repo.is_empty()
+        && repo.len() <= 100
+        && repo != "."
+        && repo != ".."
+        && repo
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    (owner_ok && repo_ok).then(|| format!("{owner}/{repo}"))
+}
+
+/// The name a competitor goes by in the brief and the ledger.
+pub fn competitor_name(c: &houston_protocol::NightCompetitor) -> &str {
+    match c {
+        houston_protocol::NightCompetitor::Repo { repo } => repo,
+        houston_protocol::NightCompetitor::App { name, .. } => name,
+    }
 }
 
 /// A content hash of the document; every update must echo it.
@@ -303,11 +346,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     let smoke_flows = &s.app_qa.smoke_flows[..];
     for (name, count, max) in [
         ("checks before hand-back", s.checks.len(), CHECKS_MAX),
-        (
-            "competitor sources",
-            s.competitor_sources.len(),
-            SOURCES_MAX,
-        ),
+        ("competitors", s.competitors.len(), COMPETITORS_MAX),
         ("smoke flows", smoke_flows.len(), SMOKE_FLOWS_MAX),
     ] {
         if count > max {
@@ -322,7 +361,18 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     ]
     .into_iter()
     .chain(s.checks.iter().map(|c| ("check", c.command.as_str())))
-    .chain(s.competitor_sources.iter().map(|c| ("source", c.as_str())))
+    .chain(s.competitors.iter().flat_map(|c| match c {
+        houston_protocol::NightCompetitor::Repo { repo } => vec![("competitor", repo.as_str())],
+        houston_protocol::NightCompetitor::App {
+            name,
+            version,
+            path,
+        } => vec![
+            ("competitor", name.as_str()),
+            ("competitor version", version.as_str()),
+            ("competitor path", path.as_str()),
+        ],
+    }))
     .chain(smoke_flows.iter().map(|c| ("smoke flow", c.as_str())));
     let mut total = 0;
     for (name, text) in texts {
@@ -365,8 +415,29 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
              screenshots on or turn UI and UX polish off"
         );
     }
-    if s.focus.competitor_gaps != NightFocusLevel::Off && s.competitor_sources.is_empty() {
-        bail!("competitor gaps is on but no competitor source is listed; add one or turn it off");
+    for (at, c) in s.competitors.iter().enumerate() {
+        match c {
+            houston_protocol::NightCompetitor::Repo { repo } => {
+                if github_repo(repo).as_deref() != Some(repo.as_str()) {
+                    bail!(
+                        "competitor {} {repo:?} is not a GitHub repository; expected owner/repo",
+                        at + 1
+                    );
+                }
+            }
+            houston_protocol::NightCompetitor::App { name, path, .. } => {
+                if name.trim().is_empty() || path.trim().is_empty() {
+                    bail!(
+                        "competitor {} is an installed app without a name or path; choose it \
+                         from the apps found on this computer",
+                        at + 1
+                    );
+                }
+            }
+        }
+    }
+    if s.focus.competitor_gaps != NightFocusLevel::Off && s.competitors.is_empty() {
+        bail!("competitor gaps is on but no competitor is listed; add one or turn it off");
     }
     if s.output == NightOutput::MergeQueue {
         let mut missing = Vec::new();
@@ -452,11 +523,50 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(none.app_qa, houston_protocol::NightAppQa::default());
+        assert_eq!(
+            s.competitors,
+            [houston_protocol::NightCompetitor::Repo {
+                repo: "pingdotgg/t3code".into()
+            }],
+            "a URL becomes an entry; free text is dropped"
+        );
         let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
             .unwrap();
         assert_eq!(one.pr_size, NightPrSize::One);
         let v2 = serde_json::to_string(&defaults()).unwrap();
         assert_eq!(parse(&v2).unwrap(), defaults());
+    }
+
+    #[test]
+    fn competitor_entries_are_validated() {
+        for (text, want) in [
+            ("pingdotgg/t3code", Some("pingdotgg/t3code")),
+            ("https://github.com/stablyai/orca.git", Some("stablyai/orca")),
+            ("github.com/AgentSystemLabs/nebula/", Some("AgentSystemLabs/nebula")),
+            ("https://gitlab.com/a/b", None),
+            ("owner/repo/tree/main", None),
+            ("just words", None),
+            ("../etc", None),
+        ] {
+            assert_eq!(github_repo(text).as_deref(), want, "{text}");
+        }
+        let mut s = defaults();
+        s.competitors = vec![houston_protocol::NightCompetitor::Repo {
+            repo: "https://github.com/a/b".into(),
+        }];
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(err.contains("competitor 1") && err.contains("owner/repo"), "{err}");
+        s.competitors = vec![houston_protocol::NightCompetitor::App {
+            name: "Orca".into(),
+            version: String::new(),
+            path: String::new(),
+        }];
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(err.contains("without a name or path"), "{err}");
+        s.competitors.clear();
+        s.focus.competitor_gaps = NightFocusLevel::Normal;
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(err.contains("no competitor is listed"), "{err}");
     }
 
     #[test]
@@ -612,8 +722,13 @@ mod tests {
                 }),
             ),
             (
-                "11 competitor sources",
-                Box::new(|s| s.competitor_sources = vec!["https://x".into(); SOURCES_MAX + 1]),
+                "11 competitors",
+                Box::new(|s| {
+                    s.competitors = vec![
+                        houston_protocol::NightCompetitor::Repo { repo: "a/b".into() };
+                        COMPETITORS_MAX + 1
+                    ]
+                }),
             ),
             (
                 "5 worker providers",

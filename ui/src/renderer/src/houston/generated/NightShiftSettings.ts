@@ -2,6 +2,7 @@
 import type { NightAgent } from "./NightAgent";
 import type { NightAppQa } from "./NightAppQa";
 import type { NightCheck } from "./NightCheck";
+import type { NightCompetitor } from "./NightCompetitor";
 import type { NightFocus } from "./NightFocus";
 import type { NightOutput } from "./NightOutput";
 import type { NightPrSize } from "./NightPrSize";
@@ -17,7 +18,7 @@ export type NightShiftSettings = { v: number, enabled: boolean, window: NightWin
  * Where the run should go, in the user's words: a priority within the
  * focus areas, not a completion condition. Empty for none.
  */
-direction: string, competitor_sources: Array<string>, orchestrator: NightAgent,
+direction: string, competitors: Array<NightCompetitor>, orchestrator: NightAgent,
 /**
  * The worker providers in fallback order.
  */

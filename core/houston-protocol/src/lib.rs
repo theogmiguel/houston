@@ -7352,7 +7352,16 @@ mod tests {
                 test_gaps: NightFocusLevel::Off,
             },
             direction: "faster attach".into(),
-            competitor_sources: vec!["https://example.invalid/repo".into()],
+            competitors: vec![
+                NightCompetitor::Repo {
+                    repo: "pingdotgg/t3code".into(),
+                },
+                NightCompetitor::App {
+                    name: "Orca".into(),
+                    version: "1.4.238".into(),
+                    path: "/opt/orca/orca".into(),
+                },
+            ],
             orchestrator: NightAgent {
                 provider: AgentKind::Claude,
                 model: Some("opus".into()),
@@ -7539,6 +7548,12 @@ mod tests {
                         command: "node ui/harness/shot.mjs <story> <out.png>".into(),
                         source: "ui/harness/shot.mjs".into(),
                     }),
+                    apps: vec![NightInstalledApp {
+                        name: "Orca".into(),
+                        version: String::new(),
+                        path: "/opt/orca/orca".into(),
+                    }],
+                    apps_note: None,
                 },
             },
             ServerMsg::NightShiftRunEvent { run },

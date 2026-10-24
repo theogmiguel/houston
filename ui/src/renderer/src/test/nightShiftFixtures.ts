@@ -12,7 +12,7 @@ export function nightDefaults(): NightShiftSettings {
     window: { start: { hour: 23, minute: 30 }, wrap_up: { hour: 6, minute: 45 }, hard_stop: { hour: 7, minute: 30 }, nights: [] },
     focus: { reliability: 'normal', performance: 'normal', ui_polish: 'off', competitor_gaps: 'off', docs_accuracy: 'off', test_gaps: 'off' },
     direction: '',
-    competitor_sources: [],
+    competitors: [],
     orchestrator: { provider: 'claude', model: 'opus' },
     workers: [{ provider: 'zcode', model: 'GLM-5.3-Flash' }, { provider: 'claude', model: 'opus' }],
     live_workers: 4,

@@ -118,9 +118,9 @@ export function NightShiftSetup({ settings, revision, verifyCommand, childCap = 
         <Card.Field label="Direction">
           <TextArea aria-label="Direction" rows={2} value={draft.direction} placeholder="e.g. Make it feel faster and stop it crashing in long sessions" onChange={(e) => set({ direction: e.target.value })} />
         </Card.Field>
-        <Card.Field label="Competitor sources">
-          <TextArea aria-label="Competitor sources" rows={2} value={draft.competitor_sources.join('\n')} placeholder="One repository URL per line"
-            onChange={(e) => set({ competitor_sources: lines(e.target.value) })} />
+        <Card.Field label="Competitors">
+          <TextArea aria-label="Competitors" rows={2} value={draft.competitors.map((c) => (c.kind === 'repo' ? c.repo : c.name)).join('\n')} placeholder="One owner/repo per line"
+            onChange={(e) => set({ competitors: lines(e.target.value).map((repo) => ({ kind: 'repo' as const, repo })) })} />
         </Card.Field>
       </Card>
 

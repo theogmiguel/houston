@@ -113,6 +113,17 @@ updates from elsewhere; if the settings changed in another window meanwhile, **S
 refused and **Discard changes** loads the current ones. The routine is changed and started
 only here: the generic routine edit and Run now refuse a Night shift routine.
 
+Competitor gaps studies the competitors you add. Each is a GitHub repository (`owner/repo`;
+a pasted github.com URL is accepted), which a scout clones read-only, reading the releases
+after the one studied last; or an app installed on this computer, chosen from the apps
+Houston finds (the uninstall registry on Windows, desktop entries on Linux), which a scout
+analyses with REA. Each run records what it studied, a release tag or an app version, and
+the next run's brief passes it on so only newer material is read. Findings are features and
+behaviour, never copied code. An app competitor needs an MCP server named `rea` for every
+worker provider; preflight blocks with `rea_missing:<provider>` for one without it, or whose
+MCP configuration Houston cannot read (ZCode). Make sure the app's licence allows analysing
+it.
+
 While UI and UX polish is on, screenshots stay on: its changes are visible, and Houston
 refuses the settings with screenshots off.
 

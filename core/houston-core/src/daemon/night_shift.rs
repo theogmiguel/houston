@@ -412,9 +412,12 @@ impl Daemon {
     fn night_detect(&self, workspace: &str) -> proto::NightDetected {
         let env = self.env();
         let runnable = |program: &str| crate::exe_path::resolve_in(&env, program).is_some();
+        let (apps, apps_note) = crate::night_shift::apps::installed();
         proto::NightDetected {
             checks: crate::night_shift::detect::checks(Path::new(workspace), &runnable),
             start_command: crate::night_shift::detect::start_command(Path::new(workspace)),
+            apps,
+            apps_note,
         }
     }
 
@@ -672,6 +675,15 @@ impl Daemon {
             return f;
         }
         let hooks = self.agent_hooks_state();
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env()).ok();
+        let rea = |provider: proto::AgentKind| {
+            let home = home.as_ref()?;
+            crate::mcp::tool_config_path(provider, home)?;
+            let tool = crate::mcp::read_tool(provider, home);
+            tool.error
+                .is_none()
+                .then(|| tool.servers.iter().any(|s| s.name.eq_ignore_ascii_case("rea")))
+        };
         let providers = preflight::providers_of(s)
             .into_iter()
             .map(|provider| preflight::ProviderFacts {
@@ -681,6 +693,7 @@ impl Daemon {
                     .any(|h| h.provider == provider && h.enabled && h.installed),
                 cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
                     || self.cli_presence(provider).present,
+                rea: rea(provider),
             })
             .collect();
         let path = self.env().var("PATH");
@@ -1963,6 +1976,44 @@ impl Daemon {
                     None => note,
                 }
             }
+            "studied" => {
+                self.night_entry_room(run)?;
+                let competitor = required(args, "competitor", title_max)?.trim();
+                let version = required(args, "version", 80)?.trim();
+                let routine = self
+                    .night_runs_live()
+                    .into_iter()
+                    .find(|(_, r)| r.run_id == run)
+                    .map(|(id, _)| id)
+                    .ok_or_else(|| anyhow!("night run {run} is not in flight"))?;
+                let names: Vec<String> = self
+                    .night_settings(routine)?
+                    .competitors
+                    .iter()
+                    .map(|c| settings::competitor_name(c).to_string())
+                    .collect();
+                let Some(name) = names.iter().find(|n| n.eq_ignore_ascii_case(competitor)) else {
+                    bail!(
+                        "night_studied refused: {competitor:?} is not one of this workspace's \
+                         competitors ({})",
+                        names.join(", ")
+                    );
+                };
+                let id = self.db.insert_night_entry(&NightEntryWrite {
+                    run_id: run,
+                    kind: proto::NightEntryKind::Studied,
+                    title: name,
+                    theme: None,
+                    status: Some(version),
+                    pr_number: None,
+                    visible: false,
+                    body: text_arg(args, "body", body_max)?.unwrap_or_default(),
+                    gates: proto::NightGates::default(),
+                    detail: &proto::NightEntryDetail::default(),
+                    now_ms: now,
+                })?;
+                format!("recorded studied entry {id}: {name} at {version}")
+            }
             "plan" | "lesson" | "decision" => {
                 self.night_entry_room(run)?;
                 let title = required(args, "title", title_max)?;
@@ -2035,8 +2086,8 @@ impl Daemon {
                 )
             }
             other => bail!(
-                "night_{other} is not a Night shift tool; expected plan, pr, lesson, decision \
-                 or report"
+                "night_{other} is not a Night shift tool; expected plan, pr, lesson, decision, \
+                 studied, report or verdict"
             ),
         };
         self.broadcast_night_run(run);

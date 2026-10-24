@@ -1,5 +1,6 @@
 //! Night shift: settings, window, brief, preflight and keep-awake. The daemon
 //! side lives in `daemon/night_shift.rs`; the agent door in `mcp_night.rs`.
+pub mod apps;
 pub mod awake;
 pub mod brief;
 pub mod cli;
@@ -24,7 +25,9 @@ pub const GATE_PANES: u32 = 2;
 
 /// The ledger verbs, as MCP tools (`night_<verb>`) and `hs-night <verb>`.
 /// `verdict` is the verifier's; the others are the orchestrator's.
-pub const VERBS: [&str; 6] = ["plan", "pr", "lesson", "decision", "report", "verdict"];
+pub const VERBS: [&str; 7] = [
+    "plan", "pr", "lesson", "decision", "studied", "report", "verdict",
+];
 
 pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
     state_dir.join("night-shift").join(run_id.to_string())
@@ -87,6 +90,7 @@ mod tests {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let files = [
             "night_shift/mod.rs",
+            "night_shift/apps.rs",
             "night_shift/detect.rs",
             "night_shift/awake.rs",
             "night_shift/brief.rs",
