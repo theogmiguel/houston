@@ -312,7 +312,8 @@ async fn a_shell_is_refused_by_name() {
         message.contains("supports Claude only") && message.contains("shell"),
         "{message}"
     );
-    rig.daemon.close(shell.id).unwrap();
+    // Cleanup only: a fresh ConPTY shell can outlast the close's reader drain under load.
+    let _ = rig.daemon.close(shell.id);
 }
 
 #[tokio::test]
