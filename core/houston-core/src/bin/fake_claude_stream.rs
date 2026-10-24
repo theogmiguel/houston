@@ -21,7 +21,9 @@ fn main() {
             .append(true)
             .open(log)
             .expect("opening the fake claude log");
-        writeln!(file, "{record}").expect("writing the fake claude log");
+        // One write per record, so a test reading the log never sees half a line.
+        file.write_all(format!("{record}\n").as_bytes())
+            .expect("writing the fake claude log");
     }
     let conversation = args
         .windows(2)
@@ -241,7 +243,10 @@ fn delta(message: &str, text: &str) {
 }
 
 fn sleeper(pidfile: &str) -> ! {
-    std::fs::write(pidfile, std::process::id().to_string()).expect("writing the sleeper pid");
+    // Renamed into place, so a test that sees the file reads the whole pid.
+    let partial = format!("{pidfile}.partial");
+    std::fs::write(&partial, std::process::id().to_string()).expect("writing the sleeper pid");
+    std::fs::rename(&partial, pidfile).expect("publishing the sleeper pid");
     loop {
         std::thread::sleep(Duration::from_secs(1));
     }
