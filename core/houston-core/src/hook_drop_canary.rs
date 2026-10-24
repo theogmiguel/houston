@@ -3,7 +3,7 @@
 //! ladder's watcher-dead rungs. Cadence and health inputs: docs/internals/daemon.md.
 
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::fs_watch::MailWatchState;
 
@@ -29,29 +29,29 @@ struct Outstanding {
     /// own create event cannot be folded into the baseline. Any advance since,
     /// the probe's or a real drop's, is delivery evidence.
     baseline: u64,
-    written_ms: u64,
+    written_at: Instant,
 }
 
 #[derive(Debug)]
 pub struct CanaryState {
     outstanding: Option<Outstanding>,
     /// `None` until the first round, which writes a probe at once.
-    last_write_ms: Option<u64>,
+    last_write: Option<Instant>,
     unhealthy: bool,
     warned: bool,
-    every_ms: u64,
-    deadline_ms: u64,
+    every: Duration,
+    deadline: Duration,
 }
 
 impl Default for CanaryState {
     fn default() -> Self {
         Self {
             outstanding: None,
-            last_write_ms: None,
+            last_write: None,
             unhealthy: false,
             warned: false,
-            every_ms: PROBE_EVERY_MS,
-            deadline_ms: PROBE_DEADLINE_MS,
+            every: Duration::from_millis(PROBE_EVERY_MS),
+            deadline: Duration::from_millis(PROBE_DEADLINE_MS),
         }
     }
 }
@@ -60,16 +60,18 @@ impl CanaryState {
     /// Also makes the next round write a probe regardless of the cadence.
     #[doc(hidden)]
     pub fn set_timing_for_test(&mut self, every: Duration, deadline: Duration) {
-        self.every_ms = every.as_millis() as u64;
-        self.deadline_ms = deadline.as_millis() as u64;
-        self.last_write_ms = None;
+        self.every = every;
+        self.deadline = deadline;
+        self.last_write = None;
     }
 }
 
 /// One canary round: judge any outstanding probe, then write the next one when
 /// due. Returns whether hook-drop event delivery is healthy; `false` selects
-/// the swarm-mail ladder's watcher-dead rungs.
-pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms: u64) -> bool {
+/// the swarm-mail ladder's watcher-dead rungs. `now` must come from a
+/// monotonic clock: a wall-clock step back would hold the cadence and the
+/// deadline until the clock caught up.
+pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now: Instant) -> bool {
     if !watch.healthy() {
         // The watcher never started: the health conjunction that consumes this
         // verdict is already false, and no probe was ever written to clean up.
@@ -87,14 +89,14 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
             }
             state.unhealthy = false;
             state.warned = false;
-        } else if now_ms.saturating_sub(outstanding.written_ms) >= state.deadline_ms {
+        } else if now.saturating_duration_since(outstanding.written_at) >= state.deadline {
             let _ = std::fs::remove_file(dir.join(PROBE_NAME));
             if !state.warned {
                 tracing::warn!(
                     "hook-drop canary: no watcher event within {}ms of the delivery probe in {} — \
                      hook-drop delivery degraded to polling; holding the ladder's watcher-dead \
                      rungs until a probe is delivered",
-                    state.deadline_ms,
+                    state.deadline.as_millis(),
                     dir.display()
                 );
                 state.warned = true;
@@ -105,16 +107,16 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
         }
     }
     let due = state
-        .last_write_ms
-        .is_none_or(|last| now_ms.saturating_sub(last) >= state.every_ms);
+        .last_write
+        .is_none_or(|last| now.saturating_duration_since(last) >= state.every);
     if due && state.outstanding.is_none() {
-        state.last_write_ms = Some(now_ms);
+        state.last_write = Some(now);
         let baseline = watch.events();
-        match write_probe(dir, now_ms) {
+        match write_probe(dir, crate::hook_drop::now_ms()) {
             Ok(()) => {
                 state.outstanding = Some(Outstanding {
                     baseline,
-                    written_ms: now_ms,
+                    written_at: now,
                 });
             }
             Err(error) => {
@@ -173,6 +175,13 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         panic!("timed out waiting for: {what}");
+    }
+
+    /// A fixed logical timeline: `at(ms)` is `ms` after the test's own base,
+    /// so round lengths stay exact no matter how long a real step takes.
+    fn timeline() -> impl Fn(u64) -> Instant {
+        let base = Instant::now();
+        move |ms: u64| base + Duration::from_millis(ms)
     }
 
     fn wait_delivered(state: &CanaryState, watch: &MailWatchState, what: &str) {
@@ -280,12 +289,13 @@ mod tests {
     fn a_delivered_probe_is_consumed_and_reports_healthy() {
         let (tmp, watch, _watcher) = watched_dir();
         let mut state = CanaryState::default();
+        let at = timeline();
 
         assert!(check(
             &mut state,
             &hook_drop::drop_dir(tmp.path()),
             &watch,
-            1_000
+            at(1_000)
         ));
         wait_delivered(&state, &watch, "the probe's own create event");
         assert!(
@@ -297,7 +307,7 @@ mod tests {
             &mut state,
             &hook_drop::drop_dir(tmp.path()),
             &watch,
-            2_000
+            at(2_000)
         ));
         assert!(
             !probe_path(&tmp).exists(),
@@ -314,13 +324,14 @@ mod tests {
         let (tmp, watch, _watcher) = watched_dir();
         let dir = hook_drop::drop_dir(tmp.path());
         let mut state = CanaryState::default();
+        let at = timeline();
         let before = watch.events();
 
-        assert!(check(&mut state, &dir, &watch, 1_000));
+        assert!(check(&mut state, &dir, &watch, at(1_000)));
         wait_for(|| watch.events() > before, "the probe's create event");
         std::thread::sleep(Duration::from_millis(100));
         assert!(
-            check(&mut state, &dir, &watch, 1_000 + PROBE_DEADLINE_MS),
+            check(&mut state, &dir, &watch, at(1_000 + PROBE_DEADLINE_MS)),
             "an event delivered before the write returned is delivery, not a miss"
         );
     }
@@ -333,12 +344,13 @@ mod tests {
     fn a_missed_probe_latches_unhealthy_until_a_probe_is_delivered() {
         let (tmp, watch, watcher) = watched_dir();
         let mut state = CanaryState::default();
+        let at = timeline();
         let dir = hook_drop::drop_dir(tmp.path());
 
-        assert!(check(&mut state, &dir, &watch, 1_000));
+        assert!(check(&mut state, &dir, &watch, at(1_000)));
         wait_delivered(&state, &watch, "the first probe's create event");
         assert!(
-            check(&mut state, &dir, &watch, 2_000),
+            check(&mut state, &dir, &watch, at(2_000)),
             "first probe delivered"
         );
 
@@ -346,24 +358,24 @@ mod tests {
         wait_for_quiet_for_test(&watch);
 
         assert!(
-            check(&mut state, &dir, &watch, 31_000),
+            check(&mut state, &dir, &watch, at(31_000)),
             "a fresh probe is not judged before its deadline"
         );
         assert!(probe_path(&tmp).exists());
         assert!(
-            !check(&mut state, &dir, &watch, 31_000 + 15_000),
+            !check(&mut state, &dir, &watch, at(31_000 + 15_000)),
             "the deadline with a flat event counter is a miss"
         );
         assert!(!probe_path(&tmp).exists(), "the missed probe is removed");
         assert!(
-            !check(&mut state, &dir, &watch, 31_000 + 16_000),
+            !check(&mut state, &dir, &watch, at(31_000 + 16_000)),
             "the miss latches until a probe is delivered"
         );
 
         let restarted = crate::fs_watch::start_watcher(&dir, std::sync::Arc::clone(&watch))
             .expect("restarted watcher must start");
         assert!(
-            !check(&mut state, &dir, &watch, 61_000),
+            !check(&mut state, &dir, &watch, at(61_000)),
             "writing the next probe does not lift the latch by itself"
         );
         assert!(probe_path(&tmp).exists());
@@ -372,7 +384,7 @@ mod tests {
         let buf = LogBuf::default();
         let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
         let recovered = tracing::subscriber::with_default(subscriber, || {
-            check(&mut state, &dir, &watch, 61_100)
+            check(&mut state, &dir, &watch, at(61_100))
         });
         assert!(recovered, "delivery recovered");
         let logged = buf.text();
@@ -390,10 +402,11 @@ mod tests {
         drop(watcher);
         wait_for_quiet_for_test(&watch);
         let mut state = CanaryState::default();
+        let at = timeline();
         let dir = hook_drop::drop_dir(tmp.path());
 
         assert!(
-            check(&mut state, &dir, &watch, 31_000),
+            check(&mut state, &dir, &watch, at(31_000)),
             "the first probe is written"
         );
         crate::test_tracing_capture::ensure_permissive_global_default();
@@ -401,7 +414,7 @@ mod tests {
         let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
         tracing::subscriber::with_default(subscriber, || {
             for round in 0..3u64 {
-                let now = 31_000 * (round + 2);
+                let now = at(31_000 * (round + 2));
                 assert!(!check(&mut state, &dir, &watch, now), "round {round}");
                 let entries = std::fs::read_dir(&dir).unwrap().count();
                 assert!(
@@ -432,8 +445,9 @@ mod tests {
         let buf = LogBuf::default();
         let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
         let mut state = CanaryState::default();
+        let at = timeline();
         let healthy = tracing::subscriber::with_default(subscriber, || {
-            check(&mut state, &gone, &watch, 1_000)
+            check(&mut state, &gone, &watch, at(1_000))
         });
 
         assert!(!healthy, "a failed probe write must read as unhealthy");
@@ -455,16 +469,22 @@ mod tests {
         let (tmp, watch, _watcher) = watched_dir();
         let dir = hook_drop::drop_dir(tmp.path());
         let mut state = CanaryState::default();
+        let at = timeline();
 
-        assert!(check(&mut state, &dir, &watch, 1_000));
+        assert!(check(&mut state, &dir, &watch, at(1_000)));
         assert!(probe_path(&tmp).exists(), "the first round writes a probe");
         wait_delivered(&state, &watch, "the probe's create event");
-        assert!(check(&mut state, &dir, &watch, 1_100));
+        assert!(check(&mut state, &dir, &watch, at(1_100)));
         assert!(!probe_path(&tmp).exists());
 
-        assert!(check(&mut state, &dir, &watch, 1_000 + PROBE_EVERY_MS - 1));
+        assert!(check(
+            &mut state,
+            &dir,
+            &watch,
+            at(1_000 + PROBE_EVERY_MS - 1)
+        ));
         assert!(!probe_path(&tmp).exists(), "no probe before the period");
-        assert!(check(&mut state, &dir, &watch, 1_000 + PROBE_EVERY_MS));
+        assert!(check(&mut state, &dir, &watch, at(1_000 + PROBE_EVERY_MS)));
         assert!(probe_path(&tmp).exists(), "one probe per period");
     }
 
@@ -475,8 +495,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let watch = MailWatchState::new(std::sync::Arc::new(tokio::sync::Notify::new()));
         let mut state = CanaryState::default();
+        let at = timeline();
 
-        assert!(!check(&mut state, &dir, &watch, 1_000));
+        assert!(!check(&mut state, &dir, &watch, at(1_000)));
         assert!(!probe_path(&tmp).exists());
     }
 }

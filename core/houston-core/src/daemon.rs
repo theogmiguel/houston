@@ -17192,7 +17192,7 @@ impl Daemon {
             &mut canary,
             &dir,
             &self.hook_drop_watch,
-            crate::hook_drop::now_ms(),
+            std::time::Instant::now(),
         )
     }
 
