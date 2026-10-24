@@ -25275,6 +25275,8 @@ mod pr_watch_stall_tests {
                     head_sha: "abc".into(),
                     failed_checks: Default::default(),
                     passed: false,
+                    checks_awaited_since_ms: None,
+                    no_checks_woken: false,
                     comments_through: 1,
                     comment_ids: Default::default(),
                     conflicting: false,
