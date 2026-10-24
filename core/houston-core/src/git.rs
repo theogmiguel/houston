@@ -641,6 +641,25 @@ fn head_file(dir: &Path) -> Option<std::path::PathBuf> {
     None
 }
 
+/// The operation paused in `dir`'s checkout, from the markers git leaves in its own git
+/// dir: a few `exists` calls, no subprocess. A rebase is checked first because its
+/// replay of each commit can also leave `CHERRY_PICK_HEAD`.
+pub fn paused_operation(dir: &Path) -> Option<proto::GitOperation> {
+    let git_dir = head_file(dir)?.parent()?.to_path_buf();
+    let apply = git_dir.join("rebase-apply");
+    // `git am` shares `rebase-apply/`; its `applying` marker tells the two apart.
+    let rebase_apply = apply.is_dir() && !apply.join("applying").exists();
+    if git_dir.join("rebase-merge").is_dir() || rebase_apply {
+        Some(proto::GitOperation::Rebase)
+    } else if git_dir.join("MERGE_HEAD").is_file() {
+        Some(proto::GitOperation::Merge)
+    } else if git_dir.join("CHERRY_PICK_HEAD").is_file() {
+        Some(proto::GitOperation::CherryPick)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct SyncStatus {
     pub branch: Option<String>,
@@ -1898,6 +1917,20 @@ mod tests {
             "it must NOT resolve to the parent repo's HEAD"
         );
         assert_eq!(branch(&wt).as_deref(), Some("wtbranch"));
+    }
+
+    #[test]
+    fn a_paused_am_is_not_reported_as_a_rebase() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let apply = tmp.path().join(".git").join("rebase-apply");
+        fs::create_dir(&apply).unwrap();
+        assert_eq!(
+            paused_operation(tmp.path()),
+            Some(proto::GitOperation::Rebase)
+        );
+        fs::write(apply.join("applying"), "").unwrap();
+        assert_eq!(paused_operation(tmp.path()), None);
     }
 
     #[test]
