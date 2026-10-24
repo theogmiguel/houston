@@ -25,6 +25,9 @@ const MAX_FILES_PER_PARTNER: usize = 5;
 /// verdict is kept until a head moves, and a branch left undecided this tick is not
 /// compared until a later one.
 const MAX_INTEGRATION_CHECKS_PER_TICK: usize = 8;
+/// Per-call merge-tree object quarantines live here in the state dir, each deleted with
+/// its call, so their throwaway objects never reach a repository's store.
+const MERGE_TREE_SCRATCH: &str = "merge-tree";
 
 #[derive(Default)]
 pub(super) struct ConflictState {
@@ -84,6 +87,7 @@ impl Daemon {
             self.note_conflict_refusal(&reachable, &why);
             return;
         }
+        cp::sweep_quarantines(&self.merge_tree_scratch());
         let mut repos: BTreeMap<&str, Vec<&ManagedWorktreeRow>> = BTreeMap::new();
         for row in &rows {
             repos
@@ -137,7 +141,12 @@ impl Daemon {
 
         let mut fresh = Vec::new();
         for pair in due {
-            let verdict = cp::merge_tree(&pair.git_dir, &pair.ours.head, &pair.theirs.head);
+            let verdict = cp::merge_tree(
+                &self.merge_tree_scratch(),
+                &pair.git_dir,
+                &pair.ours.head,
+                &pair.theirs.head,
+            );
             self.conflict_prediction
                 .lock()
                 .expect("conflict lock")
@@ -194,6 +203,10 @@ impl Daemon {
             .git
             .get_or_insert(support)
             .clone()
+    }
+
+    fn merge_tree_scratch(&self) -> PathBuf {
+        self.state_dir().join(MERGE_TREE_SCRATCH)
     }
 
     /// Each orchestrator with managed worktrees learns once per daemon why it gets no
@@ -286,7 +299,12 @@ impl Daemon {
                     None if budget == 0 => return false,
                     None => {
                         budget -= 1;
-                        match cp::is_integrated(&pair.git_dir, &side.head, base_head) {
+                        match cp::is_integrated(
+                            &self.merge_tree_scratch(),
+                            &pair.git_dir,
+                            &side.head,
+                            base_head,
+                        ) {
                             Ok(known_verdict) => {
                                 known.insert(key, known_verdict);
                                 known_verdict
