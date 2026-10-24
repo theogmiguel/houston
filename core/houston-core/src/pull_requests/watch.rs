@@ -207,16 +207,21 @@ pub fn evaluate(
             .unwrap_or(state.comments_through),
     );
 
-    let conflicting = detail.mergeable == proto::PrMergeable::Conflicting;
-    if conflicting && !state.conflicting {
-        changes.push(Change::Conflict {
-            base: detail
-                .base_ref
-                .clone()
-                .unwrap_or_else(|| "the base branch".into()),
-        });
+    // GitHub answers Unknown while it recomputes mergeability after a push; only a clean
+    // answer moves the flag, so a conflict that persists across that window wakes once.
+    match detail.mergeable {
+        proto::PrMergeable::Conflicting if !state.conflicting => {
+            state.conflicting = true;
+            changes.push(Change::Conflict {
+                base: detail
+                    .base_ref
+                    .clone()
+                    .unwrap_or_else(|| "the base branch".into()),
+            });
+        }
+        proto::PrMergeable::Mergeable => state.conflicting = false,
+        proto::PrMergeable::Conflicting | proto::PrMergeable::Unknown => {}
     }
-    state.conflicting = conflicting;
 
     if !changes.is_empty() && changes.iter().all(|c| matches!(c, Change::NewComment(_))) {
         state.comment_only_wakes = state.comment_only_wakes.saturating_add(1);
@@ -566,6 +571,25 @@ pub(crate) mod tests {
             [Change::Conflict {
                 base: "main".into()
             }]
+        );
+    }
+
+    #[test]
+    fn unknown_mergeability_after_a_push_keeps_the_conflict() {
+        let link = link(proto::PullRequestState::Open);
+        let mut conflicting = detail("abc");
+        conflicting.mergeable = proto::PrMergeable::Conflicting;
+        let first = evaluate(settled(), &link, &conflicting, None, None);
+        assert_eq!(first.changes.len(), 1);
+        let mut computing = conflicting.clone();
+        computing.mergeable = proto::PrMergeable::Unknown;
+        let unknown = evaluate(first.state.unwrap(), &link, &computing, None, None);
+        assert!(unknown.state.as_ref().unwrap().conflicting);
+        let again = evaluate(unknown.state.unwrap(), &link, &conflicting, None, None);
+        assert!(
+            again.changes.is_empty(),
+            "a still-computing answer never re-arms the conflict wake: {:?}",
+            again.changes
         );
     }
 
