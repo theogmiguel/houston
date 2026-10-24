@@ -1363,6 +1363,7 @@ impl ToolRole {
                     | "pane_message"
                     | "pane_wait"
                     | "workspace_info"
+                    | crate::thread_session::PERMISSION_TOOL
             ),
             ToolRole::Operator => tool == "pane_reply" || !PANE_TOOL_NAMES.contains(&tool),
             ToolRole::Orchestrator {

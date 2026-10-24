@@ -2575,6 +2575,7 @@ impl Db {
                     slept_at_ms,
                     limit: None,
                     view: threads::parse_view(view),
+                    permission_mode: None,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -2779,6 +2780,15 @@ impl Db {
             ],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn set_session_launch_selections(
+        &self,
+        id: u32,
+        launch: &crate::launch::SessionLaunchSelections,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        Self::set_session_launch_selections_on(&conn, id, Some(launch))
     }
 
     pub(crate) fn session_launch_selections(
@@ -6964,6 +6974,7 @@ mod tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         }
     }
 

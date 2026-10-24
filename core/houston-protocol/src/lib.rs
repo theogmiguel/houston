@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 150;
+pub const PROTOCOL_VERSION: u32 = 151;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1644,6 +1644,58 @@ pub enum ThreadEventKind {
     Notice {
         text: String,
     },
+    /// Claude asks to run a tool. Houston holds the request until `thread_approve`
+    /// answers it, or denies it when the process stops.
+    ApprovalRequest {
+        request_id: String,
+        tool_use_id: String,
+        tool_name: String,
+        input: String,
+        truncated: bool,
+    },
+    ApprovalResolved {
+        request_id: String,
+        decision: ApprovalDecision,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reason: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    Allowed,
+    Denied,
+    /// Claude ended the call before anyone answered; the tool did not run.
+    Withdrawn,
+}
+
+/// The Claude permission mode a thread session runs with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadPermissionMode {
+    /// Every prompt becomes an approval card.
+    #[default]
+    Default,
+    AcceptEdits,
+    Plan,
+    Auto,
+    Bypass,
+}
+
+impl ThreadPermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::AcceptEdits => "accept_edits",
+            Self::Plan => "plan",
+            Self::Auto => "auto",
+            Self::Bypass => "bypass",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2458,6 +2510,10 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(as = "Option<SessionView>", optional))]
     pub view: SessionView,
+    /// Set for thread sessions only.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub permission_mode: Option<ThreadPermissionMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4072,6 +4128,20 @@ pub enum ClientMsg {
     },
     ThreadStop {
         session: u32,
+    },
+    /// Answers a held `approval_request`; `message` tells Claude why on a denial.
+    ThreadApprove {
+        session: u32,
+        request_id: String,
+        allow: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        message: Option<String>,
+    },
+    /// Refused while a turn runs; restarts an idle thread's process with `--resume`.
+    ThreadSetPermissionMode {
+        session: u32,
+        mode: ThreadPermissionMode,
     },
     ThreadHistory {
         session: u32,
@@ -7597,5 +7667,45 @@ mod tests {
             events,
             r#"{"type":"thread_events","session":3,"events":[{"seq":7,"at_ms":1,"kind":{"type":"turn_end","outcome":"interrupted","error":null}}]}"#
         );
+    }
+
+    #[test]
+    fn approval_messages_keep_their_wire_shape() {
+        let approve: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_approve","session":3,"request_id":"r1","allow":false,"message":"no"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            approve,
+            ClientMsg::ThreadApprove { session: 3, ref request_id, allow: false, message: Some(ref m) }
+                if request_id == "r1" && m == "no"
+        ));
+        let mode: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_set_permission_mode","session":3,"mode":"accept_edits"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            mode,
+            ClientMsg::ThreadSetPermissionMode {
+                session: 3,
+                mode: ThreadPermissionMode::AcceptEdits
+            }
+        ));
+        let resolved = serde_json::to_string(&ThreadEventKind::ApprovalResolved {
+            request_id: "r1".into(),
+            decision: ApprovalDecision::Withdrawn,
+            reason: None,
+        })
+        .unwrap();
+        assert_eq!(
+            resolved,
+            r#"{"type":"approval_resolved","request_id":"r1","decision":"withdrawn","reason":null}"#
+        );
+        let info: SessionInfo = serde_json::from_value(serde_json::json!({
+            "id": 1, "agent": "claude", "project_dir": "/p", "cwd": "/p", "state": "running",
+            "title": "t", "codename": "c", "hidden": false
+        }))
+        .unwrap();
+        assert_eq!(info.permission_mode, None, "older daemons omit the field");
     }
 }

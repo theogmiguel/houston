@@ -1694,6 +1694,8 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::SessionResize { session, .. }
         | proto::ClientMsg::ThreadSend { session, .. }
         | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadApprove { session, .. }
+        | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
         | proto::ClientMsg::ThreadHistory { session, .. }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
         _ => None,
@@ -1942,6 +1944,29 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || d.thread_stop(session))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("thread stop panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadApprove {
+            session,
+            request_id,
+            allow,
+            message,
+        } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || {
+                d.thread_approve(session, &request_id, allow, message)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("thread approve panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadSetPermissionMode { session, mode } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_set_permission_mode(session, mode))
+                .await
+                .unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!(
+                        "thread permission mode change panicked: {e}"
+                    ))
+                })
         }
         proto::ClientMsg::ThreadHistory {
             session,

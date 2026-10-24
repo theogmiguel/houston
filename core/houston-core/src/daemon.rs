@@ -1389,6 +1389,9 @@ impl Session {
         }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info.limit = self.limit.lock().expect("limit lock").clone();
+        if let Backend::Thread(handle) = &self.backend {
+            info.permission_mode = Some(handle.permission_mode());
+        }
         info
     }
 
@@ -3779,6 +3782,9 @@ impl Daemon {
         daemon
             .mcp_tools
             .register(Arc::new(crate::mcp_tasks::TasksTools::new(&daemon)));
+        daemon.mcp_tools.register(Arc::new(
+            crate::mcp_thread_permission::ThreadPermissionTools::new(&daemon),
+        ));
         if let Some(adopted) = adopted {
             for (session, reader) in adopted {
                 let id = session.info.id;
@@ -8669,7 +8675,7 @@ impl Daemon {
                 return;
             }
             // Provider tool hooks can map to lifecycle effects outside the status table.
-            if event != "ACP" {
+            if event != "ACP" && !event.starts_with("thread_") {
                 session.lifecycle_hook_seen.store(true, Ordering::Release);
             }
             let mut current = session.status.lock().expect("status lock");
@@ -11830,6 +11836,7 @@ impl Daemon {
                 slept_at_ms: None,
                 limit: None,
                 view,
+                permission_mode: None,
             };
             if let Some(cues) = replacement
                 .as_ref()
@@ -12067,6 +12074,7 @@ impl Daemon {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
 
         if let Some(cues) = replacement
@@ -12726,6 +12734,7 @@ impl Daemon {
                 slept_at_ms: None,
                 limit: None,
                 view: Default::default(),
+                permission_mode: None,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -27518,6 +27527,7 @@ mod kill_teardown_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27876,6 +27886,7 @@ mod shell_restore_bookkeeping_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         }
     }
 
@@ -28144,6 +28155,7 @@ mod force_respawn_guard_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),

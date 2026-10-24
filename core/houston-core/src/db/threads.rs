@@ -93,6 +93,24 @@ impl Db {
         Ok(kind.len() as u64)
     }
 
+    /// Permission requests in the history that never got a resolution: their process ended
+    /// with a daemon that stopped before it could record one.
+    pub fn thread_unresolved_approvals(&self, session: u32) -> Result<Vec<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT json_extract(kind, '$.request_id') FROM thread_events
+             WHERE session_id = ?1 AND json_extract(kind, '$.type') = 'approval_request'
+               AND json_extract(kind, '$.request_id') NOT IN (
+                 SELECT json_extract(kind, '$.request_id') FROM thread_events
+                 WHERE session_id = ?1 AND json_extract(kind, '$.type') = 'approval_resolved')
+             ORDER BY seq",
+        )?;
+        let ids = stmt
+            .query_map([session], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(ids)
+    }
+
     /// Stored events and their JSON bytes.
     pub fn thread_usage(&self, session: u32) -> Result<(u64, u64)> {
         let conn = self.conn.lock().expect("db lock");

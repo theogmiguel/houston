@@ -1,4 +1,4 @@
-# Wire protocol v150
+# Wire protocol v151
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -107,6 +107,8 @@ failure not given a typed refusal comes back as `error`.
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
 | `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. Sent at once during a turn; Claude queues it |
 | `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
+| `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v151: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones |
+| `thread_set_permission_mode` | `session`, `mode: ThreadPermissionMode` | v151: `session_updated` (bcast) with the new `permission_mode`; records it for Restart and restore and restarts a running process with the mode's flags and `--resume`. Refused while the session is working or waiting for input, naming the status; `auto` is refused for a model that cannot run it. Refused by name for a terminal session |
 | `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v150: `thread_history` (direct), oldest first, echoing `before_seq`. A refusal is an `error` with `context: "session:<id>"` whose message starts `thread_history refused for session <id>` and names the cause: a terminal session, an unknown session or a limit outside the range |
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct); an unknown or removed session gets no reply and no `error` |
 | `session_list` | — | `session_list` (direct) |
@@ -645,7 +647,8 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    limit?: SessionLimit (v147: runtime-only provider-reported limit; see `session_limit`),
                    task? (v124: the SessionTask this pane is bound to — the newest run recorded
                    with its id, at a claimed or Started task — so a header chip needs no Tasks tab),
-                   view: SessionView (v150: default `terminal`)
+                   view: SessionView (v150: default `terminal`),
+                   permission_mode?: ThreadPermissionMode (v151: thread sessions only)
 SessionView        terminal | thread
 ThreadEvent        seq (per session, increasing, never reused), at_ms (epoch ms), kind: ThreadEventKind
 ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, text} (live only,
@@ -654,10 +657,18 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
                    tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
                    `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
-                   turn_end{outcome: TurnOutcome, error?} | notice{text}.
+                   turn_end{outcome: TurnOutcome, error?} | notice{text} |
+                   approval_request{request_id, tool_use_id, tool_name, input, truncated} (v151:
+                   Claude asks to run a tool; Houston holds the call) |
+                   approval_resolved{request_id, decision: ApprovalDecision, reason?} (v151;
+                   `reason` is the denial message or why nobody answered).
                    Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
                    `truncated` says a cap applied
 TurnOutcome        completed | interrupted | error
+ApprovalDecision   allowed | denied | withdrawn (Claude ended the call, or Houston restarted,
+                   before an answer; the tool did not run)
+ThreadPermissionMode default | accept_edits | plan | auto | bypass (Claude's `--permission-mode`
+                   default, acceptEdits, plan, auto, and `--dangerously-skip-permissions`)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
@@ -1422,6 +1433,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 151 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |
 | 150 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct, echoing `before_seq`), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |

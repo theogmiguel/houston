@@ -4,8 +4,8 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    ThreadEvent, ThreadEventKind, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadPermissionMode, TurnOutcome,
+    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -29,6 +29,9 @@ pub const THREAD_FLAGS: [&str; 7] = [
     "--include-partial-messages",
 ];
 
+/// Houston's MCP tool that answers a thread's permission prompts (`--permission-prompt-tool`).
+pub const PERMISSION_TOOL: &str = "thread_permission";
+
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
 /// One stdout line above this is skipped whole: a single tool result can be megabytes,
@@ -49,6 +52,44 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn turn_ended(&self, session: u32, outcome: TurnOutcome);
     /// The process ended on its own; no turn can still be running.
     fn process_ended(&self, session: u32);
+    /// Whether Houston now holds at least one unanswered permission request.
+    fn approvals_pending(&self, session: u32, pending: bool);
+}
+
+/// What `thread_approve` tells a held permission request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApprovalAnswer {
+    Allow,
+    Deny(String),
+}
+
+struct PendingApproval {
+    answer: tokio::sync::oneshot::Sender<ApprovalAnswer>,
+}
+
+/// The `--permission-mode` / bypass arguments of a mode; `Default` passes none.
+pub fn permission_mode_args(mode: ThreadPermissionMode) -> Vec<&'static str> {
+    match mode {
+        ThreadPermissionMode::Default => Vec::new(),
+        ThreadPermissionMode::AcceptEdits => vec!["--permission-mode", "acceptEdits"],
+        ThreadPermissionMode::Plan => vec!["--permission-mode", "plan"],
+        ThreadPermissionMode::Auto => vec!["--permission-mode", "auto"],
+        ThreadPermissionMode::Bypass => vec!["--dangerously-skip-permissions"],
+    }
+}
+
+fn parse_permission_mode(value: &str) -> Result<ThreadPermissionMode> {
+    Ok(match value {
+        "default" | "manual" => ThreadPermissionMode::Default,
+        "acceptEdits" => ThreadPermissionMode::AcceptEdits,
+        "plan" => ThreadPermissionMode::Plan,
+        "auto" => ThreadPermissionMode::Auto,
+        "bypassPermissions" => ThreadPermissionMode::Bypass,
+        other => bail!(
+            "thread launch: --permission-mode {other:?} is not a thread permission mode \
+             (expected default, acceptEdits, plan, auto or bypassPermissions)"
+        ),
+    })
 }
 
 /// The launch a thread restarts from: the session's assembled Claude command without its
@@ -59,6 +100,8 @@ pub struct ThreadLaunch {
     pub args: Vec<OsString>,
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
+    /// Taken out of `args`: a mode change restarts the process with other flags.
+    pub permission_mode: ThreadPermissionMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,7 +113,8 @@ pub enum Conversation {
 }
 
 impl ThreadLaunch {
-    /// Splits `--session-id <id>` and `--resume <id>` out of an assembled command.
+    /// Splits `--session-id <id>`, `--resume <id>` and the permission flags out of an
+    /// assembled command.
     pub fn from_command(
         cmd: &portable_pty::CommandBuilder,
     ) -> Result<(Self, Option<Conversation>)> {
@@ -81,8 +125,30 @@ impl ThreadLaunch {
             .ok_or_else(|| anyhow!("thread launch has an empty argv (expected the claude path)"))?;
         let mut args = Vec::new();
         let mut conversation = None;
+        let mut permission_mode = ThreadPermissionMode::Default;
         let mut rest = argv[1..].iter();
         while let Some(arg) = rest.next() {
+            match arg.to_str() {
+                Some("--dangerously-skip-permissions") => {
+                    permission_mode = ThreadPermissionMode::Bypass;
+                    continue;
+                }
+                Some("--permission-mode") => {
+                    let value = rest
+                        .next()
+                        .and_then(|value| value.to_str())
+                        .ok_or_else(|| {
+                            anyhow!("thread launch: --permission-mode must be followed by a mode")
+                        })?;
+                    permission_mode = parse_permission_mode(value)?;
+                    continue;
+                }
+                Some(flag) if flag.starts_with("--permission-mode=") => {
+                    permission_mode = parse_permission_mode(&flag["--permission-mode=".len()..])?;
+                    continue;
+                }
+                _ => {}
+            }
             let kind = match arg.to_str() {
                 Some("--session-id") => Some(false),
                 Some("--resume") => Some(true),
@@ -116,14 +182,27 @@ impl ThreadLaunch {
                 args,
                 env,
                 cwd: cmd.get_cwd().map(PathBuf::from),
+                permission_mode,
             },
             conversation,
         ))
     }
 
-    fn command(&self, conversation: Option<&Conversation>) -> std::process::Command {
+    fn command(
+        &self,
+        conversation: Option<&Conversation>,
+        permission_mode: ThreadPermissionMode,
+    ) -> std::process::Command {
         let mut command = crate::spawn::command(&self.program);
         command.args(&self.args);
+        command.args(permission_mode_args(permission_mode));
+        // Without Houston's MCP server the tool does not exist and Claude would refuse to start.
+        if self.args.iter().any(|arg| arg == "--mcp-config") {
+            command.args([
+                "--permission-prompt-tool".to_string(),
+                format!("mcp__{}__{PERMISSION_TOOL}", crate::mcp_server::SERVER_NAME),
+            ]);
+        }
         match conversation {
             Some(Conversation::New(id)) => {
                 command.args(["--session-id", id]);
@@ -594,13 +673,14 @@ impl ThreadProcess {
     fn spawn(
         launch: &ThreadLaunch,
         conversation: Option<&Conversation>,
+        permission_mode: ThreadPermissionMode,
         generation: u64,
     ) -> Result<(
         Arc<Self>,
         std::process::ChildStdout,
         std::process::ChildStderr,
     )> {
-        let mut command = launch.command(conversation);
+        let mut command = launch.command(conversation, permission_mode);
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -693,6 +773,7 @@ impl ThreadProcess {
 struct HandleState {
     process: Option<Arc<ThreadProcess>>,
     conversation: Option<Conversation>,
+    permission_mode: ThreadPermissionMode,
     generation: u64,
     open_turns: u32,
     closed: bool,
@@ -742,6 +823,7 @@ pub struct ThreadHandle {
     next_seq: Mutex<u64>,
     outbox: Arc<Outbox>,
     closed: (Mutex<bool>, Condvar),
+    approvals: Mutex<HashMap<String, PendingApproval>>,
 }
 
 impl ThreadHandle {
@@ -755,6 +837,7 @@ impl ThreadHandle {
         host: Arc<dyn ThreadHost>,
     ) -> Result<Arc<Self>> {
         let outbox = Arc::new(Outbox::default());
+        let permission_mode = launch.permission_mode;
         let handle = Arc::new(Self {
             session,
             launch,
@@ -762,6 +845,7 @@ impl ThreadHandle {
             state: Mutex::new(HandleState {
                 process: None,
                 conversation,
+                permission_mode,
                 generation: 0,
                 open_turns: 0,
                 closed: false,
@@ -770,6 +854,7 @@ impl ThreadHandle {
             next_seq: Mutex::new(next_seq.max(1)),
             outbox: Arc::clone(&outbox),
             closed: (Mutex::new(false), Condvar::new()),
+            approvals: Mutex::new(HashMap::new()),
         });
         std::thread::Builder::new()
             .name(format!("thread-events-{session}"))
@@ -805,6 +890,171 @@ impl ThreadHandle {
 
     pub fn is_closed(&self) -> bool {
         *self.closed.0.lock().expect("thread closed lock")
+    }
+
+    pub fn permission_mode(&self) -> ThreadPermissionMode {
+        self.state
+            .lock()
+            .expect("thread state lock")
+            .permission_mode
+    }
+
+    /// Records the new mode and, when a process runs, restarts it with the mode's flags
+    /// and `--resume`. The caller refuses this while a turn runs.
+    pub fn set_permission_mode(self: &Arc<Self>, mode: ThreadPermissionMode) -> Result<()> {
+        let previous = {
+            let mut state = self.state.lock().expect("thread state lock");
+            if state.closed {
+                bail!(
+                    "session {} is closed; its permission mode cannot change",
+                    self.session
+                );
+            }
+            state.permission_mode = mode;
+            state.open_turns = 0;
+            state.process.take()
+        };
+        let Some(previous) = previous else {
+            return Ok(());
+        };
+        previous.stopping.store(true, Ordering::Release);
+        previous.end_tree(true);
+        let mut state = self.state.lock().expect("thread state lock");
+        if state.closed || state.process.is_some() {
+            return Ok(());
+        }
+        self.ensure_process(&mut state).map(|_| ())
+    }
+
+    /// Holds one permission prompt for the user: records it and returns its id and the
+    /// receiver its answer arrives on.
+    pub fn request_approval(
+        &self,
+        tool_name: &str,
+        tool_use_id: &str,
+        input: &Value,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        if self.is_closed() || !self.is_running() {
+            bail!(
+                "session {} has no running Claude process; nothing can be approved",
+                self.session
+            );
+        }
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (answer, receiver) = tokio::sync::oneshot::channel();
+        let (input, truncated) = cap_text(input.to_string(), THREAD_TOOL_INPUT_MAX_BYTES);
+        let first = {
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            approvals.insert(request_id.clone(), PendingApproval { answer });
+            approvals.len() == 1
+        };
+        if first {
+            self.host.approvals_pending(self.session, true);
+        }
+        self.emit(vec![ThreadEventKind::ApprovalRequest {
+            request_id: request_id.clone(),
+            tool_use_id: tool_use_id.to_string(),
+            tool_name: tool_name.to_string(),
+            input,
+            truncated,
+        }]);
+        Ok((request_id, receiver))
+    }
+
+    /// Answers a held request. Errors name the request and the ones still pending.
+    pub fn answer_approval(&self, request_id: &str, answer: ApprovalAnswer) -> Result<()> {
+        let (pending, left) = {
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            let pending = approvals.remove(request_id);
+            let left: Vec<String> = approvals.keys().cloned().collect();
+            (pending, left)
+        };
+        let Some(pending) = pending else {
+            bail!(
+                "thread_approve refused for session {}: no pending permission request \
+                 {request_id:?} (pending: {left:?})",
+                self.session
+            );
+        };
+        let (decision, reason) = match &answer {
+            ApprovalAnswer::Allow => (ApprovalDecision::Allowed, None),
+            ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
+        };
+        // A dropped receiver means Claude ended the call first; the tool does not run either way.
+        let _ = pending.answer.send(answer);
+        self.emit(vec![ThreadEventKind::ApprovalResolved {
+            request_id: request_id.to_string(),
+            decision,
+            reason,
+        }]);
+        if left.is_empty() {
+            self.host.approvals_pending(self.session, false);
+        }
+        Ok(())
+    }
+
+    /// Claude ended a call nobody answered (it timed out or its process went away).
+    pub fn withdraw_approval(&self, request_id: &str) {
+        let (removed, empty) = {
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            (approvals.remove(request_id).is_some(), approvals.is_empty())
+        };
+        if !removed {
+            return;
+        }
+        self.emit(vec![ThreadEventKind::ApprovalResolved {
+            request_id: request_id.to_string(),
+            decision: ApprovalDecision::Withdrawn,
+            reason: Some("Claude stopped waiting for an answer; the tool did not run.".into()),
+        }]);
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+    }
+
+    /// Records requests a previous daemon held and never resolved; nothing can answer them.
+    pub fn settle_orphaned_approvals(&self, request_ids: Vec<String>) {
+        self.emit(
+            request_ids
+                .into_iter()
+                .map(|request_id| ThreadEventKind::ApprovalResolved {
+                    request_id,
+                    decision: ApprovalDecision::Withdrawn,
+                    reason: Some(
+                        "Houston restarted before anyone answered; the tool did not run.".into(),
+                    ),
+                })
+                .collect(),
+        );
+    }
+
+    /// Denies every held request with `reason`, before the process they belong to ends.
+    /// `report` is false on close: its callers may hold daemon locks the status path takes.
+    fn deny_pending(&self, reason: &str, report: bool) {
+        let pending: Vec<(String, PendingApproval)> = self
+            .approvals
+            .lock()
+            .expect("thread approvals lock")
+            .drain()
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+        let mut events = Vec::with_capacity(pending.len());
+        for (request_id, approval) in pending {
+            let _ = approval
+                .answer
+                .send(ApprovalAnswer::Deny(reason.to_string()));
+            events.push(ThreadEventKind::ApprovalResolved {
+                request_id,
+                decision: ApprovalDecision::Denied,
+                reason: Some(reason.to_string()),
+            });
+        }
+        self.emit(events);
+        if report {
+            self.host.approvals_pending(self.session, false);
+        }
     }
 
     /// Records `text` and delivers it as one stream-json user message, starting a process
@@ -855,6 +1105,7 @@ impl ThreadHandle {
         let Some(process) = process else {
             return false;
         };
+        self.deny_pending("Stopped in Houston before anyone answered.", true);
         process.stopping.store(true, Ordering::Release);
         process.end_tree(true);
         let mut events: Vec<ThreadEventKind> = partial.into_iter().collect();
@@ -875,6 +1126,7 @@ impl ThreadHandle {
             state.closed = true;
             state.process.take()
         };
+        self.deny_pending("The session ended before anyone answered.", false);
         if let Some(process) = process {
             process.stopping.store(true, Ordering::Release);
             process.end_tree(false);
@@ -898,8 +1150,12 @@ impl ThreadHandle {
             return Ok(Arc::clone(process));
         }
         state.generation += 1;
-        let (process, stdout, stderr) =
-            ThreadProcess::spawn(&self.launch, state.conversation.as_ref(), state.generation)?;
+        let (process, stdout, stderr) = ThreadProcess::spawn(
+            &self.launch,
+            state.conversation.as_ref(),
+            state.permission_mode,
+            state.generation,
+        )?;
         let tail = Arc::clone(&process.stderr);
         let stderr_reader = std::thread::Builder::new()
             .name(format!("thread-stderr-{}", self.session))
@@ -988,6 +1244,7 @@ impl ThreadHandle {
             state.process = None;
             (std::mem::take(&mut state.open_turns), state.take_partial())
         };
+        self.deny_pending("Claude exited before anyone answered.", true);
         let code = process.end_tree(false);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
@@ -1239,6 +1496,51 @@ mod tests {
         assert_eq!(line, b"last");
         line.clear();
         assert_eq!(read_bounded_line(&mut reader, &mut line, 10).unwrap(), None);
+    }
+
+    #[test]
+    fn launch_splits_out_the_permission_flags_and_adds_the_prompt_tool() {
+        let mut cmd = portable_pty::CommandBuilder::new("claude");
+        cmd.args(["--permission-mode", "plan", "--mcp-config", "{}"]);
+        let (launch, _) = ThreadLaunch::from_command(&cmd).unwrap();
+        assert_eq!(launch.permission_mode, ThreadPermissionMode::Plan);
+        let argv = |mode| -> Vec<String> {
+            launch
+                .command(None, mode)
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        let accept = argv(ThreadPermissionMode::AcceptEdits);
+        assert_eq!(
+            accept[..4],
+            ["--mcp-config", "{}", "--permission-mode", "acceptEdits"]
+        );
+        assert!(accept.windows(2).any(|pair| pair
+            == [
+                "--permission-prompt-tool",
+                "mcp__houston__thread_permission"
+            ]));
+        assert!(
+            argv(ThreadPermissionMode::Bypass).contains(&"--dangerously-skip-permissions".into())
+        );
+
+        let mut bypass = portable_pty::CommandBuilder::new("claude");
+        bypass.arg("--dangerously-skip-permissions");
+        let (launch, _) = ThreadLaunch::from_command(&bypass).unwrap();
+        assert_eq!(launch.permission_mode, ThreadPermissionMode::Bypass);
+        assert!(
+            !launch
+                .command(None, ThreadPermissionMode::Default)
+                .get_args()
+                .any(|arg| arg == "--permission-prompt-tool"),
+            "without Houston's MCP server there is no tool to name"
+        );
+
+        let mut odd = portable_pty::CommandBuilder::new("claude");
+        odd.args(["--permission-mode", "dontAsk"]);
+        let error = ThreadLaunch::from_command(&odd).err().unwrap().to_string();
+        assert!(error.contains("\"dontAsk\""), "{error}");
     }
 
     #[test]

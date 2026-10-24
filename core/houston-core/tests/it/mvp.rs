@@ -426,6 +426,7 @@ async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         })
         .unwrap();
     }
