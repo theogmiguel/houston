@@ -736,6 +736,7 @@ impl Rig {
                 input,
                 tool_use_id,
                 truncated,
+                ..
             } => {
                 assert_eq!(tool_name, "Bash");
                 assert!(tool_use_id.starts_with("toolu_ask_"), "{tool_use_id}");
@@ -992,4 +993,215 @@ async fn changing_the_permission_mode_restarts_an_idle_thread_with_resume() {
     );
     assert_eq!(rig.launches().len(), 2, "a refused change restarts nothing");
     rig.approve(id, &pending, true, None).await;
+}
+
+fn hook(rig: &Rig, event: &str, session: u32, tool: &str, tool_use_id: &str) {
+    let drop = houston_core::hook_drop::HookDrop {
+        v: houston_core::hook_drop::DROP_V,
+        event: event.to_string(),
+        session,
+        tool_name: Some(tool.to_string()),
+        tool_use_id: Some(tool_use_id.to_string()),
+        ..Default::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(rig._state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+}
+
+#[tokio::test]
+async fn a_mode_change_is_refused_while_a_turn_is_open() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.say(id, "slow:1500").await;
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"bypass"}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("thread_set_permission_mode refused")
+            && message.contains("a turn is open"),
+        "{message}"
+    );
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.kind, ThreadEventKind::AssistantMessage { text, .. } if text == "slow")
+        ),
+        "the turn the change would have killed finished: {events:?}"
+    );
+    assert_eq!(rig.launches().len(), 1, "no restart");
+}
+
+#[tokio::test]
+async fn tool_activity_and_late_permission_hooks_leave_approval_status_alone() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask(id, "touch held.txt").await;
+    hook(&rig, "PostToolUse", id, "Read", "toolu_other_read");
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "another tool's activity does not hide a held request"
+    );
+
+    rig.approve(id, &held, true, None).await;
+    wait_until("the answer to resume the turn", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Working)
+    })
+    .await;
+    hook(&rig, "PermissionRequest", id, "Bash", "toolu_late");
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::Working),
+        "Claude's own permission hook never asks for input in a thread"
+    );
+}
+
+#[tokio::test]
+async fn ask_user_question_is_answered_with_a_reply_instruction() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let events = rig.turn(id, "ask:AskUserQuestion:red or blue").await;
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e.kind, ThreadEventKind::ApprovalRequest { .. })),
+        "{events:?}"
+    );
+    let (is_error, output) = tool_result(&events);
+    assert!(is_error);
+    assert_eq!(
+        output,
+        "Ask the question in your reply; this thread cannot show choices yet."
+    );
+}
+
+#[tokio::test]
+async fn the_permission_mode_follows_what_claude_reports() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"plan"}))
+        .await;
+    wait_until("the plan restart", || rig.launches().len() == 2).await;
+    assert_eq!(
+        arg_after(&rig.launches()[1].1, "--permission-mode").as_deref(),
+        Some("plan")
+    );
+
+    rig.turn(id, "mode:default").await;
+    wait_until("the reported mode", || {
+        rig.daemon
+            .list()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.permission_mode)
+            == Some(proto::ThreadPermissionMode::Default)
+    })
+    .await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_approval_mode(id).unwrap().as_deref(),
+        Some("default")
+    );
+
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    rig.turn(id, "replay:warm").await;
+    let restarted = rig.launches().last().unwrap().1.clone();
+    assert!(
+        !restarted.iter().any(|arg| arg == "--permission-mode"),
+        "a restart after leaving plan mode does not return to it: {restarted:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_daemon_shutdown_withdraws_a_held_request() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask(id, "make deploy").await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || daemon.manage_shutdown().map(|_| ()))
+        .await
+        .unwrap()
+        .map_err(|failure| format!("{failure:?}"))
+        .unwrap();
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let (history, _) = db.thread_events_page(id, None, 500).unwrap();
+    let (decision, reason) = resolution(&history, &held);
+    assert_eq!(decision, proto::ApprovalDecision::Withdrawn);
+    assert!(reason.unwrap().contains("Houston restarted"));
+}
+
+#[tokio::test]
+async fn a_truncated_request_reports_its_full_size_and_requests_are_capped() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let big = "y".repeat(proto::THREAD_APPROVAL_INPUT_MAX_BYTES + 100);
+    rig.say(id, &format!("ask:Bash:{big}")).await;
+    let (events, _) = rig
+        .events_until(id, |e| {
+            matches!(e.kind, ThreadEventKind::ApprovalRequest { .. })
+        })
+        .await;
+    match &events.last().unwrap().kind {
+        ThreadEventKind::ApprovalRequest {
+            input,
+            truncated,
+            input_bytes,
+            ..
+        } => {
+            assert!(*truncated);
+            assert_eq!(input.len(), proto::THREAD_APPROVAL_INPUT_MAX_BYTES);
+            assert!(*input_bytes as usize > proto::THREAD_APPROVAL_INPUT_MAX_BYTES + 100);
+        }
+        other => panic!("expected an approval request, got {other:?}"),
+    }
+
+    let token = rig
+        .daemon
+        .mcp_creds
+        .issue(houston_core::mcp_creds::McpScope {
+            session_id: id,
+            workspace_id: rig.project.path().display().to_string(),
+        });
+    let held: Vec<_> = (1..houston_core::thread_session::APPROVALS_PENDING_MAX)
+        .map(|at| {
+            let request = reqwest::Client::new()
+                .post(format!("http://{}/mcp", rig.addr))
+                .bearer_auth(token.clone())
+                .json(
+                    &json!({"jsonrpc":"2.0","id":at,"method":"tools/call","params":{
+                    "name":"thread_permission",
+                    "arguments":{"tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t"}}}),
+                );
+            tokio::spawn(async move { request.send().await })
+        })
+        .collect();
+    wait_until("the requests to be held", || {
+        rig.daemon.list().iter().any(|s| s.id == id) && held.iter().all(|call| !call.is_finished())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        held.iter().all(|call| !call.is_finished()),
+        "held, not answered"
+    );
+    let refused = rig
+        .mcp(
+            id,
+            json!({"jsonrpc":"2.0","id":99,"method":"tools/call","params":{
+                "name":"thread_permission",
+                "arguments":{"tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t"}}}),
+        )
+        .await;
+    let text = refused["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("limit is 16") && text.contains("APPROVALS_PENDING_MAX"),
+        "{text}"
+    );
 }

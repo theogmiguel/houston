@@ -5,7 +5,7 @@ use std::sync::{Arc, Weak};
 
 use serde_json::{json, Value};
 
-use crate::daemon::Daemon;
+use crate::daemon::{Daemon, PermissionPrompt};
 use crate::mcp_creds::McpScope;
 use crate::mcp_server::{Annotations, BoxFuture, ToolError, ToolOutput, ToolProvider, ToolSpec};
 use crate::thread_session::{ApprovalAnswer, PERMISSION_TOOL};
@@ -98,17 +98,25 @@ impl ToolProvider for ThreadPermissionTools {
                 .ok_or_else(|| ToolError("the Houston daemon is shutting down".into()))?;
             let session = scope.session_id;
             let args = args.clone();
-            let (receiver, guard, input) = tokio::task::spawn_blocking(move || {
+            let (prompt, input) = tokio::task::spawn_blocking(move || {
                 daemon.thread_permission_request(session, &args)
             })
             .await
             .map_err(|e| ToolError(format!("permission request task panicked: {e}")))??;
-            // Dropping this future (Claude cancelled or disconnected) drops the guard,
-            // which records the request as withdrawn.
-            let answer = receiver.await.unwrap_or_else(|_| {
-                ApprovalAnswer::Deny("Houston lost this permission request; try again.".into())
-            });
-            drop(guard);
+            let answer = match prompt {
+                PermissionPrompt::Answered(answer) => answer,
+                // Dropping this future (Claude cancelled or disconnected) drops the guard,
+                // which records the request as withdrawn.
+                PermissionPrompt::Held(receiver, guard) => {
+                    let answer = receiver.await.unwrap_or_else(|_| {
+                        ApprovalAnswer::Deny(
+                            "Houston lost this permission request; try again.".into(),
+                        )
+                    });
+                    drop(guard);
+                    answer
+                }
+            };
             Ok(ToolOutput::text(decision(answer, input).to_string()))
         })
     }

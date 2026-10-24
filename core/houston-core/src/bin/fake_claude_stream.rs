@@ -86,6 +86,15 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
             "delta":{"type":"text_delta","text":"working"}},"parent_tool_use_id":null,"api_message_id":"msg_hang"}),
         );
+    } else if let Some(ms) = text.strip_prefix("slow:") {
+        std::thread::sleep(Duration::from_millis(ms.parse().expect("slow:<ms>")));
+        emit_value(
+            json!({"type":"assistant","message":{"id":"msg_slow","content":[{"type":"text","text":"slow"}]},"parent_tool_use_id":null}),
+        );
+        result(conversation);
+    } else if let Some(mode) = text.strip_prefix("mode:") {
+        emit_value(json!({"type":"system","subtype":"status","permissionMode":mode}));
+        result(conversation);
     } else if text == "crash" {
         emit_value(
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,

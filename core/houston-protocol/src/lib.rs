@@ -1591,6 +1591,8 @@ pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
 pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
+/// Larger than a tool card's cap: the user approves this input, so it should be readable.
+pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
 
 /// One entry of a thread's timeline. `seq` increases per session and is never
 /// reused, so a client merges history and live events by it.
@@ -1652,6 +1654,10 @@ pub enum ThreadEventKind {
         tool_name: String,
         input: String,
         truncated: bool,
+        /// The whole input's size, so a truncated card can say how much it hides.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        input_bytes: u64,
     },
     ApprovalResolved {
         request_id: String,

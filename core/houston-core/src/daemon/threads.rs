@@ -90,7 +90,30 @@ impl ThreadHost for DaemonThreadHost {
         };
         daemon.apply_agent_event(session, THREAD_APPROVAL_SOURCE, event, false, false, None);
     }
+
+    fn permission_mode_reported(&self, session: u32, mode: proto::ThreadPermissionMode) {
+        if let Some(daemon) = self.daemon.upgrade() {
+            if let Err(error) = daemon.persist_thread_permission_mode(session, mode) {
+                tracing::warn!("recording session {session}'s permission mode: {error:#}");
+            }
+            daemon.broadcast_thread_info(session);
+        }
+    }
 }
+
+/// How `thread_permission` answers a prompt: at once, or after the user decides.
+pub(crate) enum PermissionPrompt {
+    Answered(ApprovalAnswer),
+    Held(
+        tokio::sync::oneshot::Receiver<ApprovalAnswer>,
+        ApprovalGuard,
+    ),
+}
+
+/// Claude's question tool needs answers the card cannot collect yet, so it is refused
+/// with a message that sends the question into Claude's reply.
+const ASK_USER_QUESTION: &str = "AskUserQuestion";
+const ASK_IN_REPLY: &str = "Ask the question in your reply; this thread cannot show choices yet.";
 
 /// The status source of a permission request Houston itself holds for a thread.
 const THREAD_APPROVAL_SOURCE: &str = "thread_approval";
@@ -221,37 +244,66 @@ impl Daemon {
                 status_name(status)
             );
         }
-        let mut selections = self.db.session_launch_selections(id)?;
-        if let Some(selections) = selections.as_mut() {
-            if mode == proto::ThreadPermissionMode::Auto
-                && selections.model.as_deref().is_some_and(|model| {
+        if mode == proto::ThreadPermissionMode::Auto {
+            if let Some(model) = self
+                .db
+                .session_launch_selections(id)?
+                .and_then(|selections| selections.model)
+                .filter(|model| {
                     crate::launch::model_blocks_auto_mode(proto::AgentKind::Claude, model)
                 })
             {
                 bail!(
-                    "thread_set_permission_mode refused for session {id}: model {:?} cannot \
-                     run in auto mode; choose another mode",
-                    selections.model.as_deref().unwrap_or_default()
+                    "thread_set_permission_mode refused for session {id}: model {model:?} \
+                     cannot run in auto mode; choose another mode"
                 );
             }
-            selections.approval = crate::launch::ApprovalMode::from_thread(mode);
         }
-        let previous = handle.permission_mode();
-        if previous == mode {
+        if handle.permission_mode() == mode {
             return Ok(());
         }
-        let approval = crate::launch::ApprovalMode::from_thread(mode);
-        match &selections {
-            Some(selections) => self.db.set_session_launch_selections(id, selections)?,
-            None => self.db.session_set_approval_mode(id, approval.as_str())?,
-        }
         handle.set_permission_mode(mode)?;
+        self.persist_thread_permission_mode(id, mode)
+            .with_context(|| {
+                format!(
+                    "session {id} now runs in mode {} but Restart would not keep it",
+                    mode.as_str()
+                )
+            })?;
+        self.broadcast_thread_info(id);
+        Ok(())
+    }
+
+    /// Records a thread's mode where Restart and restore read it.
+    fn persist_thread_permission_mode(
+        &self,
+        id: u32,
+        mode: proto::ThreadPermissionMode,
+    ) -> Result<()> {
+        let approval = crate::launch::ApprovalMode::from_thread(mode);
+        match self.db.session_launch_selections(id)? {
+            Some(mut selections) => {
+                selections.approval = approval;
+                self.db.set_session_launch_selections(id, &selections)
+            }
+            None => self.db.session_set_approval_mode(id, approval.as_str()),
+        }
+    }
+
+    fn broadcast_thread_info(&self, id: u32) {
         if let Ok(session) = self.get(id) {
             let mut info = session.snapshot_info();
             info.compactions = self.compactions_of(&info);
             self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
         }
-        Ok(())
+    }
+
+    /// True while Houston holds a permission request of this thread: its status is
+    /// NeedsInput and no tool activity may override it.
+    pub(super) fn thread_approvals_pending(&self, id: u32) -> bool {
+        self.get(id).is_ok_and(|session| {
+            matches!(&session.backend, Backend::Thread(handle) if handle.has_pending_approvals())
+        })
     }
 
     /// Holds Claude's permission prompt for a thread session until the user answers it.
@@ -259,11 +311,7 @@ impl Daemon {
         &self,
         id: u32,
         args: &serde_json::Value,
-    ) -> Result<(
-        tokio::sync::oneshot::Receiver<ApprovalAnswer>,
-        ApprovalGuard,
-        serde_json::Value,
-    )> {
+    ) -> Result<(PermissionPrompt, serde_json::Value)> {
         let handle = match self.get(id).map(|session| match &session.backend {
             Backend::Thread(handle) => Some(Arc::clone(handle)),
             _ => None,
@@ -301,8 +349,17 @@ impl Daemon {
             .get("tool_use_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
+        if tool_name == ASK_USER_QUESTION {
+            return Ok((
+                PermissionPrompt::Answered(ApprovalAnswer::Deny(ASK_IN_REPLY.into())),
+                input,
+            ));
+        }
         let (request_id, receiver) = handle.request_approval(tool_name, tool_use_id, &input)?;
-        Ok((receiver, ApprovalGuard { handle, request_id }, input))
+        Ok((
+            PermissionPrompt::Held(receiver, ApprovalGuard { handle, request_id }),
+            input,
+        ))
     }
 
     pub fn thread_history(

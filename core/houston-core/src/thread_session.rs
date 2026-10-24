@@ -5,7 +5,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
     ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadPermissionMode, TurnOutcome,
-    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_TOOL_INPUT_MAX_BYTES,
+    THREAD_TOOL_OUTPUT_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -31,6 +32,12 @@ pub const THREAD_FLAGS: [&str; 7] = [
 
 /// Houston's MCP tool that answers a thread's permission prompts (`--permission-prompt-tool`).
 pub const PERMISSION_TOOL: &str = "thread_permission";
+/// Held requests per session; each holds an MCP call open, so a loop cannot pile them up.
+pub const APPROVALS_PENDING_MAX: usize = 16;
+/// A tool name or tool use id above this is cut; real ones are a few dozen bytes.
+const APPROVAL_NAME_MAX_BYTES: usize = 256;
+/// The longest deny message Claude is told.
+pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4 * 1024;
 
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
@@ -54,6 +61,8 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn process_ended(&self, session: u32);
     /// Whether Houston now holds at least one unanswered permission request.
     fn approvals_pending(&self, session: u32, pending: bool);
+    /// The stream reported a permission mode other than the recorded one.
+    fn permission_mode_reported(&self, session: u32, mode: ThreadPermissionMode);
 }
 
 /// What `thread_approve` tells a held permission request.
@@ -245,6 +254,7 @@ pub struct Mapped {
     pub events: Vec<ThreadEventKind>,
     pub turn_end: Option<TurnOutcome>,
     pub conversation: Option<String>,
+    pub permission_mode: Option<ThreadPermissionMode>,
 }
 
 /// Maps stream-json lines to thread events. One per process: block indices restart with it.
@@ -293,6 +303,11 @@ impl StreamMapper {
                         .and_then(Value::as_str)
                         .map(str::to_string);
                 }
+                // `init` opens every turn and `status` follows a change such as ExitPlanMode.
+                out.permission_mode = value
+                    .get("permissionMode")
+                    .and_then(Value::as_str)
+                    .and_then(|mode| parse_permission_mode(mode).ok());
             }
             other => tracing::debug!("thread stream event {other:?} ignored"),
         }
@@ -899,14 +914,39 @@ impl ThreadHandle {
             .permission_mode
     }
 
+    pub fn has_pending_approvals(&self) -> bool {
+        !self
+            .approvals
+            .lock()
+            .expect("thread approvals lock")
+            .is_empty()
+    }
+
     /// Records the new mode and, when a process runs, restarts it with the mode's flags
-    /// and `--resume`. The caller refuses this while a turn runs.
+    /// and `--resume`. Refused while a turn is open or a request waits: the restart would
+    /// end them.
     pub fn set_permission_mode(self: &Arc<Self>, mode: ThreadPermissionMode) -> Result<()> {
         let previous = {
             let mut state = self.state.lock().expect("thread state lock");
             if state.closed {
                 bail!(
                     "session {} is closed; its permission mode cannot change",
+                    self.session
+                );
+            }
+            if state.open_turns > 0 {
+                bail!(
+                    "thread_set_permission_mode refused for session {}: a turn is open ({} \
+                     message(s) without a turn end); change the mode once it ends or after Stop",
+                    self.session,
+                    state.open_turns
+                );
+            }
+            let waiting = self.approvals.lock().expect("thread approvals lock").len();
+            if waiting > 0 {
+                bail!(
+                    "thread_set_permission_mode refused for session {}: {waiting} permission \
+                     request(s) wait for an answer; answer them first",
                     self.session
                 );
             }
@@ -942,9 +982,20 @@ impl ThreadHandle {
         }
         let request_id = uuid::Uuid::new_v4().to_string();
         let (answer, receiver) = tokio::sync::oneshot::channel();
-        let (input, truncated) = cap_text(input.to_string(), THREAD_TOOL_INPUT_MAX_BYTES);
+        let input = input.to_string();
+        let input_bytes = input.len() as u64;
+        let (input, truncated) = cap_text(input, THREAD_APPROVAL_INPUT_MAX_BYTES);
         let first = {
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            if approvals.len() >= APPROVALS_PENDING_MAX {
+                bail!(
+                    "{PERMISSION_TOOL} refused for session {}: {} permission requests already \
+                     wait for an answer, the limit is {APPROVALS_PENDING_MAX} \
+                     (APPROVALS_PENDING_MAX)",
+                    self.session,
+                    approvals.len()
+                );
+            }
             approvals.insert(request_id.clone(), PendingApproval { answer });
             approvals.len() == 1
         };
@@ -953,10 +1004,11 @@ impl ThreadHandle {
         }
         self.emit(vec![ThreadEventKind::ApprovalRequest {
             request_id: request_id.clone(),
-            tool_use_id: tool_use_id.to_string(),
-            tool_name: tool_name.to_string(),
+            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
             input,
             truncated,
+            input_bytes,
         }]);
         Ok((request_id, receiver))
     }
@@ -975,6 +1027,12 @@ impl ThreadHandle {
                  {request_id:?} (pending: {left:?})",
                 self.session
             );
+        };
+        let answer = match answer {
+            ApprovalAnswer::Deny(message) => {
+                ApprovalAnswer::Deny(cap_text(message, APPROVAL_MESSAGE_MAX_BYTES).0)
+            }
+            allow => allow,
         };
         let (decision, reason) = match &answer {
             ApprovalAnswer::Allow => (ApprovalDecision::Allowed, None),
@@ -1028,9 +1086,23 @@ impl ThreadHandle {
         );
     }
 
+    /// A recovery stop or daemon shutdown is about to close the thread: its held requests
+    /// were never answered, so they are withdrawn rather than denied by the user.
+    pub fn withdraw_for_restart(&self) {
+        self.resolve_pending(
+            ApprovalDecision::Withdrawn,
+            "Houston restarted before anyone answered; the tool did not run.",
+            false,
+        );
+    }
+
     /// Denies every held request with `reason`, before the process they belong to ends.
     /// `report` is false on close: its callers may hold daemon locks the status path takes.
     fn deny_pending(&self, reason: &str, report: bool) {
+        self.resolve_pending(ApprovalDecision::Denied, reason, report);
+    }
+
+    fn resolve_pending(&self, decision: ApprovalDecision, reason: &str, report: bool) {
         let pending: Vec<(String, PendingApproval)> = self
             .approvals
             .lock()
@@ -1047,7 +1119,7 @@ impl ThreadHandle {
                 .send(ApprovalAnswer::Deny(reason.to_string()));
             events.push(ThreadEventKind::ApprovalResolved {
                 request_id,
-                decision: ApprovalDecision::Denied,
+                decision,
                 reason: Some(reason.to_string()),
             });
         }
@@ -1199,6 +1271,7 @@ impl ThreadHandle {
 
     fn on_line(&self, generation: u64, mapper: &mut StreamMapper, line: &str) {
         let mapped = mapper.map_line(line);
+        let mut reported_mode = None;
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
@@ -1220,8 +1293,17 @@ impl ThreadHandle {
             if mapped.turn_end.is_some() {
                 state.open_turns = state.open_turns.saturating_sub(1);
             }
+            if let Some(mode) = mapped.permission_mode {
+                if mode != state.permission_mode {
+                    state.permission_mode = mode;
+                    reported_mode = Some(mode);
+                }
+            }
             state.track_partial(&mapped.events);
             self.emit(mapped.events);
+        }
+        if let Some(mode) = reported_mode {
+            self.host.permission_mode_reported(self.session, mode);
         }
         if let Some(outcome) = mapped.turn_end {
             self.host.turn_ended(self.session, outcome);
@@ -1496,6 +1578,21 @@ mod tests {
         assert_eq!(line, b"last");
         line.clear();
         assert_eq!(read_bounded_line(&mut reader, &mut line, 10).unwrap(), None);
+    }
+
+    #[test]
+    fn system_events_report_the_permission_mode() {
+        let mut mapper = StreamMapper::default();
+        let init = mapper.map_line(
+            r#"{"type":"system","subtype":"init","session_id":"s","permissionMode":"plan"}"#,
+        );
+        assert_eq!(init.permission_mode, Some(ThreadPermissionMode::Plan));
+        let status =
+            mapper.map_line(r#"{"type":"system","subtype":"status","permissionMode":"default"}"#);
+        assert_eq!(status.permission_mode, Some(ThreadPermissionMode::Default));
+        let unknown =
+            mapper.map_line(r#"{"type":"system","subtype":"status","permissionMode":"dontAsk"}"#);
+        assert_eq!(unknown.permission_mode, None);
     }
 
     #[test]

@@ -1569,6 +1569,7 @@ mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod threads;
+pub(crate) use threads::PermissionPrompt;
 mod title_generation;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
@@ -4923,6 +4924,9 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if let Backend::Thread(handle) = &session.backend {
+            handle.withdraw_for_restart();
+        }
         let previous = *session.state.lock().expect("state lock");
         let preserve = previous.is_live();
         if preserve {
@@ -16499,6 +16503,10 @@ impl Daemon {
             if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
+            // A thread's prompt goes to Houston's prompt tool, which owns its status.
+            if self.session_view(d.session) == proto::SessionView::Thread {
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
             let pending = episodes.entry(d.session).or_default();
             let (key, _) = pending.open_with_fingerprint(
@@ -16619,6 +16627,16 @@ impl Daemon {
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
 
+        if ev == Some(crate::agent_events::AgentEvent::NeedsInput)
+            && d.event == "Notification"
+            && d.notification_type.as_deref() == Some("permission_prompt")
+            && self.session_view(d.session) == proto::SessionView::Thread
+        {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
         if ev == Some(crate::agent_events::AgentEvent::NeedsInput) && d.event == "Notification" {
             if let Some(kind) = d.notification_type.as_deref() {
                 if !Self::notification_is_a_block(kind) {
@@ -16709,7 +16727,8 @@ impl Daemon {
             .lock()
             .expect("episodes lock")
             .get(&d.session)
-            .is_some_and(|episodes| episodes.open_count() > 0);
+            .is_some_and(|episodes| episodes.open_count() > 0)
+            || self.thread_approvals_pending(d.session);
         if !blocked {
             self.apply_agent_event(
                 d.session,
