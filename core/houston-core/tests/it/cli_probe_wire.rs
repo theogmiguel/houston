@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::common;
@@ -72,9 +72,11 @@ impl FakeCli {
 
     /// PATH holding only this CLI (and, on Windows, System32 for `cmd.exe` and `ping`).
     fn env(&self) -> houston_core::host_env::HostEnv {
-        let mut dirs: Vec<PathBuf> = vec![self.dir.path().to_path_buf()];
-        #[cfg(windows)]
-        dirs.push(Path::new(&common::process_var("SystemRoot").unwrap()).join("System32"));
+        let dirs: Vec<PathBuf> = vec![
+            self.dir.path().to_path_buf(),
+            #[cfg(windows)]
+            PathBuf::from(common::process_var("SystemRoot").unwrap()).join("System32"),
+        ];
         let path = std::env::join_paths(dirs).unwrap();
         common::base_env().with("PATH", Some(path))
     }
