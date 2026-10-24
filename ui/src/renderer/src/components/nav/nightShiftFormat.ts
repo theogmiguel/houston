@@ -95,10 +95,6 @@ export function countdownLabel(untilMs: number, now: number): string {
   return h > 0 ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`
 }
 
-export function agentLabel(provider: AgentKind, model?: string | null): string {
-  return model ? `${engineLabel(provider)} ${model}` : engineLabel(provider)
-}
-
 /** What blocks merge queue output, by setting name; empty when it may be chosen. */
 export function mergeRefusal(s: NightShiftSettings, verifyCommand: boolean | null): string | null {
   if (s.output !== 'merge_queue') return null

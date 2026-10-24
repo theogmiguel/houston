@@ -7,7 +7,7 @@ import { Toggle } from '../ui/settingsPrimitives'
 import { NumberField } from '../ui/NumberField'
 import { engineLabel } from '../engineLabel'
 import {
-  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, agentLabel, clockLabel, durationLabel, mergeRefusal,
+  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, clockLabel, durationLabel, mergeRefusal,
   minutesBetween, parseClock, settingsProblems, windowMarks
 } from './nightShiftFormat'
 
@@ -165,7 +165,7 @@ function CrewFields({ draft, set, workerOptions, orchestratorOptions }: {
       <div className="flex items-center gap-[var(--space-2)]">
         <Select aria-label="Orchestrator" value={draft.orchestrator.provider} options={orchestratorOptions}
           onChange={(p) => set({ orchestrator: p === draft.orchestrator.provider ? draft.orchestrator : { provider: p as AgentKind, model: null } })} />
-        <Text size="small" tone="muted">{agentLabel(draft.orchestrator.provider, draft.orchestrator.model)}</Text>
+        {draft.orchestrator.model && <Text size="small" tone="muted">{draft.orchestrator.model}</Text>}
       </div>
     </Card.Field>
     <Card.Field label="Workers, in fallback order">

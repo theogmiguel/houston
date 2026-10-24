@@ -31,6 +31,10 @@ const click = (el: Element | null | undefined): void => {
 const button = (text: string): HTMLButtonElement | undefined =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)
 
+/** A crew picker's row: the select and any model hint beside it. */
+const pickerRow = (label: string): string | null | undefined =>
+  host.querySelector(`[aria-label="${label}"]`)?.parentElement?.closest('[class~="gap-[var(--space-2)]"]')?.textContent
+
 describe('NightShiftSetup', () => {
   it('renders defaults and merge refusal', () => {
     const onSave = vi.fn()
@@ -43,7 +47,7 @@ describe('NightShiftSetup', () => {
     expect(checked('Performance focus')).toBe('Normal')
     expect(checked('UI and UX polish focus')).toBe('Off')
     expect(checked('Output')).toBe('Pull requests only')
-    expect(host.textContent).toContain('Claude Code opus')
+    expect(pickerRow('Orchestrator')).toBe('Claude Codeopus')
     expect(host.textContent).toContain('Same as orchestrator')
     expect(host.querySelector('[data-testid="window-mark-wrap-up"]')).not.toBeNull()
 
@@ -136,6 +140,13 @@ describe('NightShiftSetup', () => {
     const stored = { ...nightDefaults(), orchestrator: { provider: 'zcode' as const, model: null } }
     act(() => root.render(<NightShiftSetup settings={stored} revision="r2" verifyCommand onSave={vi.fn()} />))
     expect(host.textContent).toContain('ZCode cannot orchestrate: a pull request watch cannot wake it')
+  })
+
+  it('names OpenCode properly and adds no model hint that repeats the provider', () => {
+    const settings = { ...nightDefaults(), orchestrator: { provider: 'opencode' as const, model: null }, workers: [{ provider: 'zcode' as const, model: null }] }
+    act(() => root.render(<NightShiftSetup settings={settings} revision="r" verifyCommand onSave={vi.fn()} />))
+    expect(pickerRow('Orchestrator')).toBe('OpenCode')
+    expect(pickerRow('Worker 1')).toBe('ZCode')
   })
 
   it('edits the orchestrator, reviewer and smoke flows', () => {
