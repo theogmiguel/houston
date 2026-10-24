@@ -27,6 +27,7 @@ mod context_wire;
 mod control_admission_wire;
 mod daemon_adoption_wire;
 mod db_write_ordering_wire;
+mod diagnostics_wire;
 mod env_hygiene_wire;
 mod exited_root_restore;
 mod generated_titles;

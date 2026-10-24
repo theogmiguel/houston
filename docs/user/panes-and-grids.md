@@ -285,6 +285,18 @@ size before and after. It runs only when you click it, only while every pane is 
 asleep, and only when the disk has at least twice as much free space as the database and
 its write-ahead log occupy; otherwise it names the condition that blocked it.
 
+## Diagnostics for a bug report
+
+**Settings ▸ Daemon ▸ Logs ▸ Save diagnostics file** writes a text file for a bug report
+under the current channel's state directory, in `diagnostics/`, and **Show folder** opens
+that folder. The file lists the app and daemon versions, the channel and platform, each
+session's id, agent, state and status, the hook health of each agent CLI, and the most
+recent daemon log lines. It never contains terminal output, pane titles or working
+directories. Recognised secret shapes, such as tokens, keys, passwords in URLs and
+`NAME_TOKEN=` assignments, are redacted, and your home directory is shown as `~`. The file
+is at most 1 MiB; older log lines are left out first. Houston keeps the five newest files
+and sends none of them anywhere: read the file before you attach it to an issue.
+
 ## Killing a pane
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.

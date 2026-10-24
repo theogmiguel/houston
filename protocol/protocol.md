@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -406,6 +406,7 @@ every refusal names the setting.
 |---|---|---|
 | `host_info_get` | — | `host_info` (direct), never a broadcast — a point-in-time snapshot the client re-polls (~30 s is the recommended cadence) |
 | `storage_reclaim` | — | `storage_reclaimed` (direct), then `host_info` (bcast) after a reclaim. Checkpoints the WAL (`TRUNCATE`), runs `VACUUM` and checkpoints again, off the connection task. Refused, with nothing changed, while any session is live or when the free space on the state directory's volume is below twice the combined size of the database and its WAL. Never automatic |
+| `diagnostics_collect` | `app_version` (the renderer's version, recorded beside the daemon's) | `diagnostics_collected` (direct). Off the connection task, the daemon writes `<state_dir>/diagnostics/houston-diagnostics-<UTC stamp>.txt` and keeps the five newest such files. The file holds versions, channel, platform, a roster of session id, agent, state and status (no titles, paths or output), hook health and the newest daemon log lines; control characters are stripped, every line passes the secret redactor and the home directory reads `~`. At most 1 MiB, dropping the oldest log lines first. Nothing is uploaded |
 | `restore_budget_set` | `budget` (`0..=RESTORE_BUDGET_MAX`) | `host_info` (bcast); out of range is an `error` naming ceiling and value |
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
@@ -557,6 +558,7 @@ every refusal names the setting.
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change or a reclaim |
 | `storage_reclaimed` | `before_bytes`, `after_bytes` (database plus WAL), `refusal?` | direct reply to `storage_reclaim`; `refusal` names the blocking condition (live session count, or free and required bytes) or the SQLite failure, and then both sizes are the current size |
+| `diagnostics_collected` | `path?`, `bytes`, `error?` | direct reply to `diagnostics_collect`: the absolute path and size of the file written, or `error` naming the path that could not be created or written |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only. A request refused by the control handler limits (16 per connection, 64 per process) carries `context: "control_admission:<type>[:<dir|request>]"` naming its message type and its `dir` or `request` id, and never replies otherwise. A failed `session_close`, `session_respawn`, `session_wake`, `session_attach`, `session_resize` or `session_visibility` carries `context: "session:<id>"` naming the session it asked about |
@@ -1400,6 +1402,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **A redacted diagnostics file for bug reports.** New `diagnostics_collect {app_version}`, answered by `diagnostics_collected {path?, bytes, error?}`. The daemon writes the file under `<state_dir>/diagnostics/`, keeps the five newest, and caps each at 1 MiB; it holds no terminal output, titles or working directories, and every line passes the secret redactor. No existing message changes |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

@@ -17556,6 +17556,50 @@ impl Daemon {
             })
     }
 
+    /// Blocking: reads the log tail and writes the file. Callers run it off the connection loop.
+    pub fn collect_diagnostics(&self, app_version: &str) -> proto::ServerMsg {
+        let generated = ::time::OffsetDateTime::now_utc();
+        let sessions = self.list();
+        let hooks = self.agent_hooks_state();
+        let log_lines = crate::diagnostics::read_log_tail(
+            &self.state_dir.join("logs"),
+            crate::diagnostics::FILE_MAX_BYTES as u64,
+        );
+        let home = crate::home_dir::home_dir();
+        let text = crate::diagnostics::compose(&crate::diagnostics::Inputs {
+            generated,
+            app_version,
+            daemon_version: env!("CARGO_PKG_VERSION"),
+            build_commit: build_commit(),
+            channel: self.channel().unwrap_or("release"),
+            uptime: self.started.elapsed(),
+            sessions: &sessions,
+            hooks: &hooks,
+            log_lines: &log_lines,
+            home: home.as_deref(),
+        });
+        let dir = self.state_dir.join("diagnostics");
+        match crate::diagnostics::write(&dir, generated, &text) {
+            Ok(path) => {
+                tracing::info!(
+                    "diagnostics: wrote {} ({} bytes)",
+                    path.display(),
+                    text.len()
+                );
+                proto::ServerMsg::DiagnosticsCollected {
+                    path: Some(path.display().to_string()),
+                    bytes: text.len() as u64,
+                    error: None,
+                }
+            }
+            Err(e) => proto::ServerMsg::DiagnosticsCollected {
+                path: None,
+                bytes: 0,
+                error: Some(format!("{e:#}")),
+            },
+        }
+    }
+
     /// Blocking: runs VACUUM on the session database. Callers run it off the connection loop.
     pub fn reclaim_storage(&self) -> proto::ServerMsg {
         let before_bytes = crate::storage::db_footprint(&self.db_path);
