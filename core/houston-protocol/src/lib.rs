@@ -7408,11 +7408,32 @@ mod tests {
                 review: NightGate::Passed,
                 qa: NightGate::Pending,
                 ci: NightGate::Failed,
+                verify: NightGate::Passed,
                 reruns: 1,
             },
             created_at_ms: 5,
             decided_at_ms: None,
             choice: None,
+            detail: NightEntryDetail {
+                claims: Vec::new(),
+                plans: vec![8],
+                head_sha: Some("abc123".into()),
+                built_by: vec![12],
+                checks_run: vec![NightCheckRun {
+                    command: "cargo fmt --check".into(),
+                    passed: false,
+                    code: Some(1),
+                    tail: "Diff in src/lib.rs".into(),
+                }],
+                verdicts: vec![NightVerdict {
+                    plan: 8,
+                    claim: 0,
+                    passed: true,
+                    evidence: "core/tests/attach.rs:42 passed".into(),
+                    fault: None,
+                    verifier: 13,
+                }],
+            },
         };
         let run = NightRun {
             run_id: 3,

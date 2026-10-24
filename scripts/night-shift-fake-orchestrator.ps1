@@ -12,9 +12,9 @@ function Night([string[]] $NightArgs) {
 
 Write-Output "fake orchestrator: run folder $env:HOUSTON_NIGHT_RUN_DIR"
 Start-Sleep -Seconds 5
-Night @('plan', '--title', 'Fake: tighten the attach path', '--theme', 'reliability')
+Night @('plan', '--title', 'Fake: tighten the attach path', '--theme', 'reliability', '--claim', 'attach replays in under 50 ms', '--proof', 'fake::attach_budget')
 Night @('plan', '--title', 'Fake: cache the diff', '--theme', 'performance', '--deferred')
-Night @('pr', '--number', '1', '--title', 'Fake pull request', '--theme', 'reliability', '--checks', 'passed', '--review', 'passed', '--ci', 'pending', '--visible')
+Night @('pr', '--number', '1', '--title', 'Fake pull request', '--theme', 'reliability', '--head', 'HEAD', '--review', 'passed', '--visible')
 Night @('lesson', '--title', 'Fake lesson', '--body', 'Recorded by the dev fake orchestrator')
 Night @('lesson', '--title', 'Fake flaky test', '--flaky-test', 'fake::flaky_test')
 Night @('decision', '--title', 'Fake decision: keep the old API?', '--option', 'keep', '--option', 'remove')

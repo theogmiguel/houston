@@ -29,6 +29,10 @@ pub const NIGHT_SHIFT_ENTRY_TITLE_MAX: usize = 200;
 pub const NIGHT_SHIFT_ENTRY_BODY_MAX: usize = 4_000;
 /// Ledger entries one run may record.
 pub const NIGHT_SHIFT_ENTRIES_PER_RUN_MAX: u32 = 500;
+/// Claims one plan entry may carry; more is several changes.
+pub const NIGHT_SHIFT_CLAIMS_MAX: usize = 12;
+/// One claim, proof, evidence or fault text.
+pub const NIGHT_SHIFT_CLAIM_TEXT_MAX: usize = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -304,8 +308,9 @@ pub enum NightGate {
     Failed,
 }
 
-/// A PR's gates. `checks` and `ci` are facts Houston or CI observed; `review`
-/// and `qa` are agents' verdicts.
+/// A PR's gates. `checks`, `ci` and `verify` are facts Houston or CI
+/// observed (Houston ran the checks; the verifier's per-claim verdicts);
+/// `review` and `qa` are agents' verdicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightGates {
@@ -317,10 +322,84 @@ pub struct NightGates {
     pub qa: NightGate,
     #[serde(default)]
     pub ci: NightGate,
+    /// Every claim of the PR's plan entries has a passing verdict (passed),
+    /// or one has a failing one (failed).
+    #[serde(default)]
+    pub verify: NightGate,
     /// CI re-runs Houston asked for after a known flaky failure.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reruns: u32,
+}
+
+/// What a planned change must make true, with a concrete value, and the
+/// specific test that proves it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightClaim {
+    pub claim: String,
+    pub proof: String,
+}
+
+/// One check Houston ran on a pull request's head.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightCheckRun {
+    pub command: String,
+    pub passed: bool,
+    /// Absent when the command timed out or could not start.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub code: Option<i32>,
+    /// The output's last lines, for a failure.
+    pub tail: String,
+}
+
+/// The independent verifier's verdict on one claim of a plan entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightVerdict {
+    /// The plan entry's id.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub plan: u32,
+    /// The claim's index in that entry's claims.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub claim: u32,
+    pub passed: bool,
+    /// `file:line` of the proof that ran, and what it showed.
+    pub evidence: String,
+    /// With Standard depth: the fault injected and the test failing on it.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub fault: Option<String>,
+    /// The pane that verified.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub verifier: u32,
+}
+
+/// What a plan or pull request entry carries beyond its row.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightEntryDetail {
+    /// A plan entry's claims.
+    #[serde(default)]
+    pub claims: Vec<NightClaim>,
+    /// A pull request's plan entries.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
+    pub plans: Vec<u32>,
+    /// The commit Houston ran the checks on.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub head_sha: Option<String>,
+    /// Panes that built the change; none of them may verify it.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
+    pub built_by: Vec<u32>,
+    #[serde(default)]
+    pub checks_run: Vec<NightCheckRun>,
+    #[serde(default)]
+    pub verdicts: Vec<NightVerdict>,
 }
 
 /// One row of the run ledger.
@@ -350,6 +429,8 @@ pub struct NightEntry {
     pub decided_at_ms: Option<i64>,
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub choice: Option<String>,
+    #[serde(default)]
+    pub detail: NightEntryDetail,
 }
 
 /// A pane of a live run, the orchestrator first.

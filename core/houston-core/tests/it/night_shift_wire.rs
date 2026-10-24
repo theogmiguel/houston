@@ -1078,8 +1078,10 @@ async fn night_tools_only_for_orchestrator() {
     let (status, body) = r.spawn_child(orchestrator, "codex").await;
     assert_eq!(status, 200, "{body}");
     let worker = body["session_id"].as_u64().unwrap() as u32;
+    assert!(!names.contains(&"night_verdict".to_string()), "{names:?}");
     let names = tool_names(r.addr, &r.token(worker)).await;
-    assert!(!names.iter().any(|n| n.starts_with("night_")), "{names:?}");
+    let night: Vec<&String> = names.iter().filter(|n| n.starts_with("night_")).collect();
+    assert_eq!(night, ["night_verdict"], "a run pane only verifies");
     let (status, body) = r.night(worker, "plan", json!({ "title": "sneak" })).await;
     assert_ne!(status, 200);
     assert!(
@@ -1090,7 +1092,9 @@ async fn night_tools_only_for_orchestrator() {
         .night(
             orchestrator,
             "plan",
-            json!({ "title": "Faster attach", "theme": "perf" }),
+            json!({ "title": "Faster attach", "theme": "perf", "claims": [
+                { "claim": "attach replays in under 50 ms", "proof": "attach::replay_budget" }
+            ] }),
         )
         .await;
     assert_eq!(status, 200, "{body}");
@@ -1198,7 +1202,10 @@ async fn ledger_digest_reaches_next_brief() {
             "plan",
             json!({ "title": "Rewrite the tray", "deferred": true }),
         ),
-        ("plan", json!({ "title": "Kept plan" })),
+        (
+            "plan",
+            json!({ "title": "Kept plan", "claims": [{ "claim": "c", "proof": "p" }] }),
+        ),
         ("lesson", json!({ "title": "Use nextest for core tests" })),
         (
             "lesson",
@@ -1240,7 +1247,11 @@ async fn earlier_prs_reach_the_brief_with_their_fate() {
         (14, "Faster diff"),
     ] {
         let (status, body) = r
-            .night(o, "pr", json!({ "number": number, "title": title }))
+            .night(
+                o,
+                "pr",
+                json!({ "number": number, "title": title, "head": "HEAD" }),
+            )
             .await;
         assert_eq!(status, 200, "{body}");
     }
@@ -1273,8 +1284,8 @@ async fn settle_broadcasts_one_notice() {
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
     for body in [
-        json!({ "number": 12, "title": "Tray fix", "theme": "reliability" }),
-        json!({ "number": 13, "title": "Faster diff", "theme": "performance" }),
+        json!({ "number": 12, "title": "Tray fix", "theme": "reliability", "head": "HEAD" }),
+        json!({ "number": 13, "title": "Faster diff", "theme": "performance", "head": "HEAD" }),
     ] {
         assert_eq!(r.night(o, "pr", body).await.0, 200);
     }
@@ -1369,7 +1380,7 @@ async fn enqueue_from_a_run_follows_output_and_hold() {
         .night(
             o,
             "pr",
-            json!({ "number": 12, "title": "Tray fix", "visible": true }),
+            json!({ "number": 12, "title": "Tray fix", "visible": true, "head": "HEAD" }),
         )
         .await;
     assert_eq!(status, 200, "{body}");
@@ -1968,7 +1979,7 @@ async fn flaky_failure_rerun_once() {
         ),
         (
             "pr",
-            json!({ "number": 21, "title": "Tray fix", "ci": "pending" }),
+            json!({ "number": 21, "title": "Tray fix", "head": "HEAD" }),
         ),
     ] {
         assert_eq!(r.night(o, verb, body).await.0, 200);
@@ -2046,7 +2057,11 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
         &json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
     )
     .unwrap();
-    d.night_tool(o, "pr", &json!({ "number": 12, "title": "Tray fix" }))
+    d.night_tool(
+        o,
+        "pr",
+        &json!({ "number": 12, "title": "Tray fix", "head": "HEAD" }),
+    )
         .unwrap();
     let entry = |d: &Arc<Daemon>| {
         read(d)
@@ -2204,4 +2219,169 @@ async fn dev_fake_orchestrator_prompt_is_not_awaited() {
     tokio::time::sleep(Duration::from_millis(1_500)).await;
     let after = run();
     assert_eq!(after.phase, proto::NightRunPhase::Running, "{after:?}");
+}
+
+// ---- verification method ----
+
+fn pr_entry(r: &Rig, run_id: u32, number: u32) -> proto::NightEntry {
+    r.run(run_id)
+        .entries
+        .into_iter()
+        .find(|e| e.pr_number == Some(number))
+        .expect("the PR is in the ledger")
+}
+
+/// Houston runs the checks itself at the head `night_pr` names, in a scratch
+/// worktree it removes, and the Checks gate follows the result.
+#[tokio::test]
+async fn houston_runs_the_checks_on_the_pr_head() {
+    let r = rig().await;
+    git(&r.ws, &["checkout", "-q", "-b", "fix"]);
+    std::fs::write(r.ws.join("marker"), "fixed\n").unwrap();
+    git(&r.ws, &["add", "marker"]);
+    git(&r.ws, &["commit", "-q", "-m", "fix"]);
+    git(&r.ws, &["checkout", "-q", "-"]);
+    let routine = r.ready(|s| s.checks = vec![check("test -f marker"), check("true")]);
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (number, head) in [(5, "fix"), (6, "HEAD")] {
+        let (status, body) = r
+            .night(o, "pr", json!({ "number": number, "title": "x", "head": head }))
+            .await;
+        assert_eq!(status, 200, "{body}");
+        assert!(body["note"].as_str().unwrap().contains("Houston runs the checks"), "{body}");
+    }
+    wait_until("both PRs' checks to finish", || {
+        [5, 6]
+            .iter()
+            .all(|n| pr_entry(&r, run.run_id, *n).gates.checks != proto::NightGate::Pending)
+    })
+    .await;
+    let fixed = pr_entry(&r, run.run_id, 5);
+    assert_eq!(fixed.gates.checks, proto::NightGate::Passed, "{:?}", fixed.detail);
+    assert_eq!(fixed.detail.checks_run.len(), 2);
+    let unfixed = pr_entry(&r, run.run_id, 6);
+    assert_eq!(unfixed.gates.checks, proto::NightGate::Failed);
+    let failed = &unfixed.detail.checks_run[0];
+    assert_eq!((failed.command.as_str(), failed.passed), ("test -f marker", false));
+    assert!(unfixed.detail.checks_run[1].passed, "a failure does not skip the rest");
+    assert_eq!(r.notes(o, "Night shift: checks failed on PR #6"), 1);
+    assert_eq!(r.notes(o, "Night shift: checks failed on PR #5"), 0);
+    assert!(
+        !r.report_dir(&run).join("checks-pr5").exists(),
+        "the scratch worktree is removed"
+    );
+}
+
+#[tokio::test]
+async fn the_orchestrator_cannot_set_checks_or_ci() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for key in ["checks", "ci"] {
+        let mut body = json!({ "number": 9, "title": "x", "head": "HEAD" });
+        body[key] = json!("passed");
+        let (status, body) = r.night(o, "pr", body).await;
+        assert_ne!(status, 200, "{body}");
+        assert!(
+            body.to_string().contains(&format!("{key} is a fact Houston records")),
+            "{body}"
+        );
+    }
+    let (status, body) = r.night(o, "pr", json!({ "number": 9, "title": "x" })).await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("head is required"), "{body}");
+    let (status, body) = r
+        .night(o, "pr", json!({ "number": 9, "title": "x", "head": "no-such-branch" }))
+        .await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("no-such-branch"), "{body}");
+}
+
+/// Planned changes carry claims; only a pane that neither orchestrates nor
+/// built the change records verdicts, each with file:line, and the Verify
+/// gate follows them.
+#[tokio::test]
+async fn verdicts_come_from_an_independent_pane() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r.night(o, "plan", json!({ "title": "Keep hooks" })).await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("claims is required"), "{body}");
+    let claims = json!([
+        { "claim": "a restart keeps all 3 pending hook events", "proof": "hooks::restart_keeps_pending" },
+        { "claim": "a duplicate event is applied once", "proof": "hooks::dedupe" }
+    ]);
+    let (status, body) = r
+        .night(o, "plan", json!({ "title": "Keep hooks", "claims": claims }))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let plan = r.run(run.run_id).entries[0].clone();
+    assert_eq!(plan.detail.claims.len(), 2);
+    let mut panes = Vec::new();
+    for _ in 0..2 {
+        let (status, body) = r.spawn_child(o, "codex").await;
+        assert_eq!(status, 200, "{body}");
+        panes.push(body["session_id"].as_u64().unwrap() as u32);
+    }
+    let (builder, verifier) = (panes[0], panes[1]);
+    let (status, body) = r
+        .night(
+            o,
+            "pr",
+            json!({ "number": 7, "title": "Keep hooks", "head": "HEAD",
+                    "plans": [plan.id], "built_by": [builder] }),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let verdict = |claim: u32, passed: bool, evidence: &str| {
+        json!({ "pr": 7, "verdicts": [
+            { "plan": plan.id, "claim": claim, "passed": passed, "evidence": evidence }
+        ] })
+    };
+    let ok = verdict(0, true, "core/tests/hooks.rs:41 passed");
+    for (pane, needle) in [
+        (o, "is the run's orchestrator"),
+        (builder, "built PR #7"),
+    ] {
+        let (status, body) = r.night(pane, "verdict", ok.clone()).await;
+        assert_ne!(status, 200, "{body}");
+        assert!(body.to_string().contains(needle), "{body}");
+    }
+    let (status, body) = r
+        .night(verifier, "verdict", verdict(0, true, "it passed"))
+        .await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("names no file:line"), "{body}");
+    let (status, body) = r.night(verifier, "verdict", verdict(2, true, "a.rs:1")).await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("has 2 claims"), "{body}");
+
+    assert_eq!(r.night(verifier, "verdict", ok).await.0, 200);
+    assert_eq!(pr_entry(&r, run.run_id, 7).gates.verify, proto::NightGate::Pending);
+    let second = verdict(1, true, "core/tests/hooks.rs:77 passed");
+    assert_eq!(r.night(verifier, "verdict", second).await.0, 200);
+    let pr = pr_entry(&r, run.run_id, 7);
+    assert_eq!(pr.gates.verify, proto::NightGate::Passed);
+    assert!(pr.detail.verdicts.iter().all(|v| v.verifier == verifier));
+    let failed = verdict(1, false, "core/tests/hooks.rs:77 asserts nothing");
+    assert_eq!(r.night(verifier, "verdict", failed).await.0, 200);
+    assert_eq!(pr_entry(&r, run.run_id, 7).gates.verify, proto::NightGate::Failed);
+    assert_eq!(r.notes(o, "Night shift: PR #7 failed verification"), 1);
+
+    let st = r.state();
+    let mut s = st.settings;
+    s.verification = proto::NightVerification::Standard;
+    r.daemon
+        .night_shift_update(routine.id, s, &st.revision)
+        .unwrap();
+    let (status, body) = r
+        .night(verifier, "verdict", verdict(1, true, "core/tests/hooks.rs:77"))
+        .await;
+    assert_ne!(status, 200);
+    assert!(body.to_string().contains("needs fault"), "{body}");
 }

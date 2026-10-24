@@ -220,9 +220,12 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
     let reviewer = s.reviewer.as_ref().unwrap_or(&s.orchestrator);
     let _ = writeln!(out, "- Reviewer: {}", agent_label(reviewer));
     if s.checks.is_empty() {
-        out.push_str("- Checks before hand-back: none configured.\n");
+        out.push_str("- Checks: none configured.\n");
     } else {
-        out.push_str("- Checks before hand-back:\n");
+        out.push_str(
+            "- Checks: Houston runs these on each pull request's head when night_pr names it \
+             and records the Checks gate; workers run them first with hs-pane heavy:\n",
+        );
         for c in &s.checks {
             let _ = writeln!(
                 out,
@@ -356,6 +359,7 @@ mod tests {
             created_at_ms: i64::from(id),
             decided_at_ms: None,
             choice: None,
+            detail: Default::default(),
         }
     }
 

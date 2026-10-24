@@ -11,22 +11,32 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
    changes with evidence. High focus gets more scouts than Low. For competitor gaps, clone
    each source read-only outside the repository and read only releases newer than the last
    one the ledger says was studied. Check every claim against the code yourself.
-2. Plan. Rank the candidates by value and risk. Record each one you take with night_plan
-   (title, theme, why). Record each one you drop for later with night_plan and deferred, so
-   no later run repeats the work. Skip everything the ledger below says was rejected.
-3. Build. Give each plan entry to a worker pane started with pane_spawn and a worktree, never
-   more live workers than the cap below; Houston refuses spawns past it. Workers run their
-   checks through `hs-pane heavy -- <command>`, which waits for this Houston's build slot
-   and for free memory. Workers hand back with pane_submit.
-4. Gates. A change passes, in this order: the checks below run by Houston-started panes (a
-   fact), a read-only reviewer pane (a verdict), and for a change the user can see, App QA
-   by a separate QA pane that drives the app headless and attaches captures (a verdict).
-   A QA failure goes back to its worker at most twice; after that, park it with its branch
-   kept and record a night_decision.
-5. Pull requests. Group finished changes by theme, up to the per-PR cap below, one branch
-   per PR. Open each PR, then record it with night_pr (number, title, theme, gates, visible).
-   Watch it with pane_pr_watch. When CI fails, read the failing test: a test the ledger lists
-   as flaky is re-run once; any other failure goes back to a fixer pane.
+2. Plan. Rank the candidates by value and risk. Record each one you take with night_plan:
+   title, theme, why, and its claims: each an observable claim with a concrete value (what
+   must be true after the change, for example "a restart keeps all 3 pending hook events")
+   and the specific test that proves it. Claims come before the build. Record each one you
+   drop for later with night_plan and deferred, so no later run repeats the work. Skip
+   everything the ledger below says was rejected.
+3. Build. Give each plan entry with its claims to a worker pane started with pane_spawn and a
+   worktree, never more live workers than the cap below; Houston refuses spawns past it. The
+   worker writes the tests from the claims, never from the code, then implements. A test is
+   never weakened or deleted to get green: the change is parked instead, with its branch
+   kept. Workers run the checks through `hs-pane heavy -- <command>`, which waits for this
+   Houston's build slot and for free memory, and hand back with pane_submit.
+4. Gates, in this order. Checks: open the pull request and record it with night_pr, naming
+   its head, its plan entries and the panes that built it; Houston runs the checks below on
+   that head and records the result (a fact; you cannot set it). Verify: start a verifier
+   pane that neither built the change nor wrote its brief; it re-runs every proof on the
+   pull request's branch and records a verdict per claim with night_verdict, with the
+   file:line of each proof (a fact Houston derives from them). Review: a read-only reviewer
+   pane (a verdict). App QA, for a change the user can see when App QA is on: a separate QA
+   pane drives the app headless and attaches captures (a verdict). A failed gate goes back
+   to a fixer pane at most twice; after that, park it with its branch kept and record a
+   night_decision.
+5. Pull requests. Size them as the output line below says, one branch per pull request.
+   Record review and qa verdicts with night_pr as they come. Houston watches every recorded
+   pull request's CI. When CI fails, read the failing test: a test the ledger lists as flaky
+   is re-run once; any other failure goes back to a fixer pane.
 6. Lessons. Whenever something cost you time that the next run should know, record it with
    night_lesson. A test that failed and then passed without a change is recorded with
    night_lesson and its flaky test name.
@@ -40,8 +50,10 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
 
 ## Tools
 
-The night_* tools are offered only to you. Without MCP, the same verbs are
-`hs-night plan|pr|lesson|decision|report`; run `hs-night --help` for their flags. Give
-`hs-night decision` one `--option <choice>` per choice.
+The night_* tools are offered only to you, except night_verdict, which only the run's other
+panes get: tell the verifier to use it. Without MCP, the same verbs are
+`hs-night plan|pr|lesson|decision|report|verdict`; run `hs-night --help` for their flags.
+Give `hs-night decision` one `--option <choice>` per choice and `hs-night plan` one
+`--claim <claim> --proof <test>` pair per claim.
 Never merge anything yourself, never push to the default branch, and never spend a
 provider's quota reset.

@@ -39,12 +39,18 @@ pub(super) struct Running {
     pub started_at_ms: i64,
     /// Set when `hs-pane heavy` holds the slot instead of a verification.
     pub lease: Option<crate::build_slot::Lease>,
+    /// Night shift running a pull request's checks instead of a verification.
+    pub night: bool,
 }
 
 impl Running {
     fn holder(&self) -> String {
         match &self.lease {
             Some(l) => format!("hs-pane heavy in pane {}", l.session),
+            None if self.night => format!(
+                "Night shift running the checks of PR #{} of {}",
+                self.number, self.workspace
+            ),
             None => format!(
                 "the merge queue verifying PR #{} of {}",
                 self.number, self.workspace
@@ -54,7 +60,7 @@ impl Running {
 }
 
 /// Frees the slot however a verification ends.
-struct Slot<'a>(&'a Daemon);
+pub(super) struct Slot<'a>(&'a Daemon);
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
@@ -168,11 +174,36 @@ impl Daemon {
             number,
             started_at_ms: now,
             lease: None,
+            night: false,
         });
         *self
             .merge_queue_cursor
             .lock()
             .expect("merge queue cursor lock") = Some(workspace.to_string());
+        Some(Slot(self))
+    }
+
+    /// The slot for Night shift's checks of `number`, or `None` while another
+    /// build holds it or memory is below the floor.
+    pub(super) fn night_take_build_slot(&self, workspace: &str, number: u32) -> Option<Slot<'_>> {
+        if crate::build_slot::memory_hold(self.night_memory_free_mib()).is_some() {
+            return None;
+        }
+        let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
+        let now = now_unix_ms();
+        if slot
+            .as_ref()
+            .is_some_and(|r| r.lease.as_ref().is_none_or(|l| !l.expired(now)))
+        {
+            return None;
+        }
+        *slot = Some(Running {
+            workspace: workspace.to_string(),
+            number,
+            started_at_ms: now,
+            lease: None,
+            night: true,
+        });
         Some(Slot(self))
     }
 
@@ -212,6 +243,7 @@ impl Daemon {
                         id: id.clone(),
                         expires_at_ms,
                     }),
+                    night: false,
                 });
                 Ok(serde_json::json!({ "lease": id }))
             }
@@ -252,6 +284,7 @@ impl Daemon {
             number: 7,
             started_at_ms: now_unix_ms(),
             lease: None,
+            night: false,
         });
     }
 

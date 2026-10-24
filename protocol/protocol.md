@@ -843,9 +843,13 @@ NightRun           run_id, routine_id, workspace, trigger: RoutineTrigger,
                    merge_order: u32[], entries: NightEntry[], crew: NightCrewMember[]
 NightEntry         id, run_id, kind: plan | pr | lesson | decision | deferred | flaky, title,
                    theme?, status?, pr_number?, visible, qa_passed, body, gates: NightGates,
-                   created_at_ms, decided_at_ms?, choice?
-NightGates         checks, review, qa, ci: none | pending | passed | failed, reruns
-                   (checks and ci are facts; review and qa are agents' verdicts)
+                   created_at_ms, decided_at_ms?, choice?, detail: NightEntryDetail
+NightGates         checks, review, qa, ci, verify: none | pending | passed | failed, reruns
+                   (checks, ci and verify are facts Houston records; review and qa are
+                   agents' verdicts)
+NightEntryDetail   claims: {claim, proof}[] (plan), plans: u32[], head_sha?, built_by: u32[],
+                   checks_run: {command, passed, code?, tail}[], verdicts: {plan, claim,
+                   passed, evidence, fault?, verifier}[] (pull request)
 NightInterruption  at_ms, resumed_at_ms, detail, resumed
 NightCost          pane_hours, panes, per_provider: {provider, panes, pane_hours}[]
 NightCrewMember    session_id, provider, role?, status?, started_at_ms, limited

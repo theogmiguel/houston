@@ -8,12 +8,18 @@ use crate::host_env::HostEnv;
 const USAGE: &str = "usage: hs-night <verb> [flags]
 
 verbs (only inside a Night shift run's orchestrator pane):
-  plan --title T [--theme T] [--body B] [--deferred] [--status S]
-  pr --number N --title T [--theme T] [--status S] [--visible] [--body B]
-     [--checks G] [--review G] [--qa G] [--ci G]   (G: pending|passed|failed)
+  plan --title T [--theme T] [--body B] [--status S]
+       (--claim C --proof P)...   (one pair per claim; or --deferred without claims)
+  pr --number N --title T [--head BRANCH] [--plans 3,4] [--built-by 12,13]
+     [--theme T] [--status S] [--visible] [--body B] [--review G] [--qa G]
+     (G: pending|passed|failed; Houston records checks, ci and verify itself)
   lesson --title T [--body B] [--flaky-test NAME]
   decision --title T [--body B] [--option A]...   (one --option per choice)
-  report --summary S [--merge-order 12,15,9]";
+  report --summary S [--merge-order 12,15,9]
+
+verifier (a run pane that neither orchestrates nor built the change):
+  verdict --pr N --plan ID --index I (--passed | --failed) --evidence FILE:LINE...
+          [--fault F]   (--fault is required with Standard verification depth)";
 
 pub fn run_cli(args: &[String]) -> i32 {
     match cli(&HostEnv::capture(), args) {
@@ -26,6 +32,36 @@ pub fn run_cli(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// Takes every `--claim` and `--proof` out of `args`, paired in order.
+fn take_claims(args: Vec<String>) -> Result<(Vec<String>, Vec<Value>)> {
+    let (mut rest, mut claims, mut proofs) = (Vec::new(), Vec::new(), Vec::new());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--claim" | "--proof" => match it.next() {
+                Some(v) if !v.starts_with("--") => {
+                    if a == "--claim" { claims.push(v) } else { proofs.push(v) }
+                }
+                _ => bail!("{a} needs a value"),
+            },
+            _ => rest.push(a),
+        }
+    }
+    if claims.len() != proofs.len() {
+        bail!(
+            "{} --claim and {} --proof: give each claim its proof, as --claim C --proof P",
+            claims.len(),
+            proofs.len()
+        );
+    }
+    let pairs = claims
+        .into_iter()
+        .zip(proofs)
+        .map(|(claim, proof)| json!({ "claim": claim, "proof": proof }))
+        .collect();
+    Ok((rest, pairs))
 }
 
 /// Takes every `--option <text>` out of `args`: the one flag that repeats. A single
@@ -61,6 +97,17 @@ pub fn args_json(
     if !options.is_empty() {
         out.insert("options".into(), json!(options));
     }
+    let list = |v: &str, what: &str| {
+        v.split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.trim_start_matches('#')
+                    .parse::<u32>()
+                    .map_err(|_| anyhow!("{what} item {s:?} is not a number"))
+            })
+            .collect::<Result<Vec<_>>>()
+    };
     for (k, v) in flags {
         let key = k.replace('-', "_");
         let value = match key.as_str() {
@@ -68,6 +115,12 @@ pub fn args_json(
                 .parse::<u32>()
                 .map_err(|_| anyhow!("--number {v:?} is not a PR number"))?),
             "deferred" | "visible" => json!(v != "false"),
+            "plans" | "built_by" => json!(list(v, &format!("--{k}"))?),
+            "pr" | "plan" | "index" => json!(v
+                .parse::<u32>()
+                .map_err(|_| anyhow!("--{k} {v:?} is not a number"))?),
+            "passed" => json!(v != "false"),
+            "failed" => json!(v != "false"),
             "merge_order" => json!(v
                 .split(',')
                 .map(str::trim)
@@ -87,8 +140,27 @@ pub fn args_json(
     Ok(Value::Object(out))
 }
 
+/// The CLI's one verdict per call, as the tool's `{pr, verdicts: [..]}`.
+fn verdict_body(flat: Value) -> Result<Value> {
+    let passed = match (flat.get("passed"), flat.get("failed")) {
+        (Some(_), Some(_)) => bail!("give --passed or --failed, not both"),
+        (Some(p), None) => p.clone(),
+        (None, Some(f)) => json!(!f.as_bool().unwrap_or(true)),
+        (None, None) => bail!("give --passed or --failed"),
+    };
+    let mut verdict = json!({
+        "plan": flat["plan"], "claim": flat["index"], "passed": passed,
+        "evidence": flat["evidence"],
+    });
+    if let Some(f) = flat.get("fault") {
+        verdict["fault"] = f.clone();
+    }
+    Ok(json!({ "pr": flat["pr"], "verdicts": [verdict] }))
+}
+
 fn cli(env: &HostEnv, args: &[String]) -> Result<String> {
     let (args, options) = take_options(args)?;
+    let (args, claims) = take_claims(args)?;
     let (positional, flags) = crate::orchestrate::parse_flags(&args);
     let Some(verb) = positional.first().map(String::as_str) else {
         bail!("{USAGE}");
@@ -96,7 +168,13 @@ fn cli(env: &HostEnv, args: &[String]) -> Result<String> {
     if verb == "help" || flags.contains_key("help") {
         return Ok(USAGE.to_string());
     }
-    let body = args_json(verb, &flags, &options)?;
+    let mut body = args_json(verb, &flags, &options)?;
+    if !claims.is_empty() {
+        body["claims"] = json!(claims);
+    }
+    if verb == "verdict" {
+        body = verdict_body(body)?;
+    }
     let outside = |var: &str| {
         anyhow!("{var} is not set; hs-night runs only inside a Night shift run's orchestrator pane")
     };
@@ -165,6 +243,33 @@ mod tests {
         assert_eq!(v["options"], json!(["keep", "remove it"]));
         assert_eq!(v["title"], json!("Keep the old API?"));
         assert!(v.get("option").is_none(), "{v}");
+    }
+
+    #[test]
+    fn claims_pair_with_proofs_and_a_verdict_nests() {
+        let args = strings(&[
+            "plan", "--title", "Keep hooks", "--claim", "3 events survive", "--proof",
+            "hooks::restart", "--claim", "applied once", "--proof", "hooks::dedupe",
+        ]);
+        let (rest, claims) = take_claims(args).unwrap();
+        assert_eq!(rest, ["plan", "--title", "Keep hooks"]);
+        assert_eq!(claims[1], json!({ "claim": "applied once", "proof": "hooks::dedupe" }));
+        let err = take_claims(strings(&["plan", "--claim", "x"])).unwrap_err().to_string();
+        assert!(err.contains("1 --claim and 0 --proof"), "{err}");
+
+        let (positional, flags) = crate::orchestrate::parse_flags(&strings(&[
+            "verdict", "--pr", "7", "--plan", "3", "--index", "0", "--failed", "--evidence",
+            "a.rs:4 asserts nothing", "--built-by", "12,13",
+        ]));
+        assert_eq!(positional, ["verdict"]);
+        let flat = args_json("verdict", &flags, &[]).unwrap();
+        assert_eq!(flat["built_by"], json!([12, 13]));
+        let v = verdict_body(flat).unwrap();
+        assert_eq!(v["pr"], json!(7));
+        assert_eq!(
+            v["verdicts"][0],
+            json!({ "plan": 3, "claim": 0, "passed": false, "evidence": "a.rs:4 asserts nothing" })
+        );
     }
 
     #[test]

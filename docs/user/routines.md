@@ -181,9 +181,19 @@ the interruption is recorded. Otherwise the run ends with the interruption recor
 When a run ends, Houston shows one notice such as "7 PRs, 2 open decisions"; **Open report** opens
 the **Morning report**. It lists the parked decisions with answer buttons (an answer is
 final), pull requests grouped by theme with their gates, the suggested merge order, events
-such as interruptions and limits, and the cost in pane-hours per provider. Checks and CI are
-what ran; review and QA are agents' verdicts. A pull request whose CI failed on a test the
-ledger lists as flaky is re-run once.
+such as interruptions and limits, and the cost in pane-hours per provider. Checks, CI and
+Verify are facts: Houston runs the checks itself on each pull request's head in a scratch
+worktree (inside the build slot the merge queue and `hs-pane heavy` share), CI comes from the
+pull request watch, and Verify follows the verifier's verdicts. Review and QA are agents'
+verdicts. Under each pull request the report lists any failed check and every claim of its
+planned changes with the verifier's verdict and evidence. A pull request whose CI failed on a
+test the ledger lists as flaky is re-run once.
+
+Every change follows the same method: before building, its plan entry lists claims (what must
+be true, with a concrete value) and the specific test proving each; the worker writes the
+tests from the claims and never weakens or deletes one to get green; an independent verifier
+pane, neither the worker nor the orchestrator, re-runs every proof on the pull request's
+branch and records a verdict per claim.
 
 Every run's ledger (plans, pull requests, deferred and rejected work, lessons and flaky tests)
 is kept in Houston's database, and the next run's brief includes earlier pull requests and

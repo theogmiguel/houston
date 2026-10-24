@@ -1,6 +1,7 @@
 //! `night_plan`, `night_pr`, `night_lesson`, `night_decision`, `night_report`:
 //! offered only to the orchestrator pane of a Night shift run in flight, since
-//! they write that run's ledger.
+//! they write that run's ledger. `night_verdict` is offered to the run's other
+//! panes: the verifier is never the orchestrator.
 use std::sync::{Arc, Weak};
 
 use serde_json::{json, Value};
@@ -25,6 +26,14 @@ fn gate() -> Value {
     json!({ "type": "string", "enum": ["pending", "passed", "failed"] })
 }
 
+fn ids() -> Value {
+    json!({ "type": "array", "items": { "type": "integer", "minimum": 1 } })
+}
+
+fn claim() -> Value {
+    json!({ "type": "string", "maxLength": houston_protocol::NIGHT_SHIFT_CLAIM_TEXT_MAX })
+}
+
 fn spec(verb: &str) -> ToolSpec {
     let text = |max: usize| json!({ "type": "string", "maxLength": max });
     let title = text(houston_protocol::NIGHT_SHIFT_ENTRY_TITLE_MAX);
@@ -32,22 +41,48 @@ fn spec(verb: &str) -> ToolSpec {
     let (label, description, properties, required) = match verb {
         "plan" => (
             "Record a plan entry",
-            "Record one change this Night shift run takes on, or with `deferred` one it leaves \
-             for a later run. Later runs see deferred entries in their brief.",
+            "Record one change this Night shift run takes on, with its claims: each an \
+             observable claim with a concrete value and the specific test that proves it, \
+             written before the build. With `deferred`, record one it leaves for a later run \
+             (no claims needed); later runs see deferred entries in their brief.",
             json!({ "title": title, "theme": text(80), "body": body,
-                    "deferred": { "type": "boolean" }, "status": text(40) }),
+                    "deferred": { "type": "boolean" }, "status": text(40),
+                    "claims": { "type": "array",
+                        "maxItems": houston_protocol::NIGHT_SHIFT_CLAIMS_MAX,
+                        "items": { "type": "object",
+                            "properties": { "claim": claim(), "proof": claim() },
+                            "required": ["claim", "proof"], "additionalProperties": false } } }),
             vec!["title"],
         ),
         "pr" => (
             "Record a pull request",
-            "Record or update a PR this run opened, keyed by its number: theme, gates \
-             (checks and ci are facts; review and qa are agents' verdicts) and whether the \
-             change is visible in the app.",
+            "Record or update a PR this run opened, keyed by its number: `head` (its branch or \
+             commit; Houston runs the checks there and records the Checks gate), the plan \
+             entries it carries, the panes that built it, theme, the review and qa verdicts \
+             and whether the change is visible in the app. Checks, CI and verify are facts \
+             Houston records; they cannot be set here.",
             json!({ "number": { "type": "integer", "minimum": 1 }, "title": title,
+                    "head": text(200), "plans": ids(), "built_by": ids(),
                     "theme": text(80), "status": text(40), "visible": { "type": "boolean" },
-                    "body": body, "checks": gate(), "review": gate(), "qa": gate(),
-                    "ci": gate() }),
+                    "body": body, "review": gate(), "qa": gate() }),
             vec!["number", "title"],
+        ),
+        "verdict" => (
+            "Record verification verdicts",
+            "As the run's verifier (not the orchestrator, not a pane that built the change), \
+             record a verdict per claim after re-running its proof on the pull request's \
+             branch: the plan entry, the claim's index (from 0), whether it holds, and evidence \
+             naming file:line of the proof. With Standard depth, also the fault you injected \
+             and the test failing on it.",
+            json!({ "pr": { "type": "integer", "minimum": 1 },
+                    "verdicts": { "type": "array", "minItems": 1, "items": { "type": "object",
+                        "properties": { "plan": { "type": "integer" },
+                            "claim": { "type": "integer", "minimum": 0 },
+                            "passed": { "type": "boolean" }, "evidence": claim(),
+                            "fault": claim() },
+                        "required": ["plan", "claim", "passed", "evidence"],
+                        "additionalProperties": false } } }),
+            vec!["pr", "verdicts"],
         ),
         "lesson" => (
             "Record a lesson",
@@ -100,7 +135,11 @@ fn all() -> Vec<ToolSpec> {
 impl ToolProvider for NightTools {
     fn tools(&self, scope: &McpScope) -> Vec<ToolSpec> {
         match self.daemon.upgrade() {
-            Some(d) if d.is_night_shift_orchestrator(scope.session_id) => all(),
+            Some(d) if d.is_night_shift_orchestrator(scope.session_id) => all()
+                .into_iter()
+                .filter(|t| t.name != "night_verdict")
+                .collect(),
+            Some(d) if d.night_run_of_pane(scope.session_id).is_some() => vec![spec("verdict")],
             _ => Vec::new(),
         }
     }

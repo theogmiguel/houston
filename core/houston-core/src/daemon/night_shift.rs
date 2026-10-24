@@ -104,6 +104,13 @@ const NIGHT_SWEEP_PASSES: usize = 3;
 const NIGHT_NO_START_MS: i64 = 365 * 24 * 60 * MINUTE_MS;
 /// Earlier PRs whose fate a start reads from GitHub, one `gh` call each.
 const NIGHT_PR_FATES_PER_START: u32 = 10;
+/// One check on a pull request's head; a hung command fails rather than
+/// holding the build slot all night.
+const NIGHT_CHECK_LIMIT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+/// How often the checks of a pull request ask for the build slot again.
+const NIGHT_SLOT_POLL: std::time::Duration = std::time::Duration::from_secs(5);
+/// What a failure note to the orchestrator quotes of each failed check.
+const NIGHT_CHECK_NOTE_CHARS: usize = 1_500;
 /// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
@@ -200,6 +207,99 @@ fn bool_arg(args: &Value, key: &str) -> Result<Option<bool>> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(other) => bail!("{key} must be true or false; got {other}"),
+    }
+}
+
+fn ids_arg(args: &Value, key: &str) -> Result<Option<Vec<u32>>> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or_else(|| anyhow!("{key} holds ids; got {v}"))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some),
+        Some(other) => bail!("{key} must be a list of ids; got {other}"),
+    }
+}
+
+/// One claim text: required, one line's worth.
+fn claim_text(v: &Value, key: &str, at: usize) -> Result<String> {
+    let max = proto::NIGHT_SHIFT_CLAIM_TEXT_MAX;
+    let text = v
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| anyhow!("claims[{at}].{key} is required"))?;
+    let len = text.chars().count();
+    if len > max {
+        bail!("claims[{at}].{key} is {len} characters; the limit is {max}");
+    }
+    Ok(text.to_string())
+}
+
+fn claims_arg(args: &Value) -> Result<Vec<proto::NightClaim>> {
+    let items = match args.get("claims") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(items)) => items,
+        Some(other) => bail!("claims must be a list of {{claim, proof}}; got {other}"),
+    };
+    if items.len() > proto::NIGHT_SHIFT_CLAIMS_MAX {
+        bail!(
+            "{} claims; the limit is {} per planned change, so split it",
+            items.len(),
+            proto::NIGHT_SHIFT_CLAIMS_MAX
+        );
+    }
+    items
+        .iter()
+        .enumerate()
+        .map(|(at, v)| {
+            Ok(proto::NightClaim {
+                claim: claim_text(v, "claim", at)?,
+                proof: claim_text(v, "proof", at)?,
+            })
+        })
+        .collect()
+}
+
+/// `file:line` somewhere in the text.
+fn has_file_line(text: &str) -> bool {
+    text.split_whitespace().any(|w| {
+        let w = w.trim_matches(|c: char| matches!(c, ',' | ';' | '(' | ')' | '.'));
+        w.rsplit_once(':').is_some_and(|(file, line)| {
+            !file.is_empty() && !line.is_empty() && line.chars().all(|c| c.is_ascii_digit())
+        })
+    })
+}
+
+/// The verify gate from the PR's plan entries' claims and the verdicts.
+fn verify_gate(detail: &proto::NightEntryDetail, plans: &[proto::NightEntry]) -> proto::NightGate {
+    if detail.verdicts.is_empty() {
+        return proto::NightGate::None;
+    }
+    if detail.verdicts.iter().any(|v| !v.passed) {
+        return proto::NightGate::Failed;
+    }
+    let claims: Vec<(u32, u32)> = plans
+        .iter()
+        .filter(|p| detail.plans.contains(&p.id))
+        .flat_map(|p| (0..p.detail.claims.len() as u32).map(move |i| (p.id, i)))
+        .collect();
+    let covered = |(plan, claim): &(u32, u32)| {
+        detail
+            .verdicts
+            .iter()
+            .any(|v| v.plan == *plan && v.claim == *claim && v.passed)
+    };
+    if !claims.is_empty() && claims.iter().all(covered) {
+        proto::NightGate::Passed
+    } else {
+        proto::NightGate::Pending
     }
 }
 
@@ -1719,6 +1819,9 @@ impl Daemon {
 
     /// One `night_*` verb from the run's orchestrator.
     pub fn night_tool(self: &Arc<Self>, caller: u32, verb: &str, args: &Value) -> Result<Value> {
+        if verb == "verdict" {
+            return self.night_verdict(caller, args);
+        }
         let run = self
             .night_runs_live()
             .into_iter()
@@ -1747,14 +1850,71 @@ impl Daemon {
                     self.db.night_entries(run)?.into_iter().find(|e| {
                         e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number)
                     });
+                for key in ["checks", "ci", "verify"] {
+                    if args.get(key).is_some_and(|v| !v.is_null()) {
+                        bail!(
+                            "night_pr refused: {key} is a fact Houston records (it runs the \
+                             checks on the pull request's head, reads CI from the pull request \
+                             watch and the verify gate from the verifier's verdicts); leave \
+                             {key} out"
+                        );
+                    }
+                }
                 let base = existing.as_ref().map(|e| e.gates).unwrap_or_default();
-                let gates = proto::NightGates {
-                    checks: gate_arg(args, "checks", base.checks)?,
+                let mut gates = proto::NightGates {
                     review: gate_arg(args, "review", base.review)?,
                     qa: gate_arg(args, "qa", base.qa)?,
-                    ci: gate_arg(args, "ci", base.ci)?,
-                    reruns: base.reruns,
+                    ..base
                 };
+                let mut detail = existing
+                    .as_ref()
+                    .map(|e| e.detail.clone())
+                    .unwrap_or_default();
+                if let Some(plans) = ids_arg(args, "plans")? {
+                    let entries = self.db.night_entries(run)?;
+                    if let Some(bad) = plans.iter().find(|id| {
+                        !entries
+                            .iter()
+                            .any(|e| e.id == **id && e.kind == proto::NightEntryKind::Plan)
+                    }) {
+                        bail!(
+                            "night_pr refused: plan entry {bad} is not a planned change of run \
+                             {run}; pass the ids night_plan answered"
+                        );
+                    }
+                    detail.plans = plans;
+                }
+                if let Some(built_by) = ids_arg(args, "built_by")? {
+                    detail.built_by = built_by;
+                }
+                let head = text_arg(args, "head", 200)?.filter(|h| !h.trim().is_empty());
+                if existing.is_none() && head.is_none() {
+                    bail!(
+                        "night_pr refused: head is required for a new pull request: the branch \
+                         or commit it was opened from, so Houston can run the checks on it"
+                    );
+                }
+                let mut check_at = None;
+                if let Some(head) = head {
+                    let workspace = self
+                        .db
+                        .night_run(run)?
+                        .map(|r| r.workspace)
+                        .unwrap_or_default();
+                    let sha = crate::merge_queue_verify::resolve_commit(
+                        Path::new(&workspace),
+                        head.trim(),
+                    )
+                    .map_err(|e| anyhow!("night_pr refused: {e:#}"))?;
+                    if detail.head_sha.as_deref() != Some(sha.as_str()) {
+                        detail.head_sha = Some(sha.clone());
+                        detail.checks_run.clear();
+                        detail.verdicts.clear();
+                        gates.checks = proto::NightGate::Pending;
+                        gates.verify = proto::NightGate::None;
+                        check_at = Some(sha);
+                    }
+                }
                 let title = required(args, "title", title_max)?;
                 let write = NightEntryWrite {
                     run_id: run,
@@ -1771,24 +1931,49 @@ impl Daemon {
                         .or(existing.as_ref().map(|e| e.body.as_str()))
                         .unwrap_or_default(),
                     gates,
+                    detail: &detail,
                     now_ms: now,
                 };
-                match &existing {
+                let (id, note) = match &existing {
                     Some(e) => {
                         self.db.update_night_entry(e.id, &write)?;
-                        format!("updated PR #{number} in the ledger")
+                        (e.id, format!("updated PR #{number} in the ledger"))
                     }
                     None => {
                         self.night_entry_room(run)?;
-                        self.db.insert_night_entry(&write)?;
+                        let id = self.db.insert_night_entry(&write)?;
                         self.night_watch_pr(caller, number);
-                        format!("recorded PR #{number}")
+                        (id, format!("recorded PR #{number}"))
                     }
+                };
+                match check_at {
+                    Some(sha) => {
+                        self.night_run_checks(run, id, number, sha.clone());
+                        format!(
+                            "{note}; Houston runs the checks on {} and records the Checks gate",
+                            crate::merge_queue::short_sha(&sha)
+                        )
+                    }
+                    None => note,
                 }
             }
             "plan" | "lesson" | "decision" => {
                 self.night_entry_room(run)?;
                 let title = required(args, "title", title_max)?;
+                let detail = proto::NightEntryDetail {
+                    claims: claims_arg(args)?,
+                    ..Default::default()
+                };
+                if verb == "plan"
+                    && bool_arg(args, "deferred")? != Some(true)
+                    && detail.claims.is_empty()
+                {
+                    bail!(
+                        "night_plan refused: claims is required for a planned change: list each \
+                         observable claim with a concrete value and the specific test that \
+                         proves it, as [{{claim, proof}}]"
+                    );
+                }
                 let mut body = text_arg(args, "body", body_max)?
                     .unwrap_or_default()
                     .to_string();
@@ -1835,6 +2020,7 @@ impl Daemon {
                     visible: false,
                     body: &body,
                     gates: proto::NightGates::default(),
+                    detail: &detail,
                     now_ms: now,
                 })?;
                 format!(
@@ -1849,6 +2035,259 @@ impl Daemon {
         };
         self.broadcast_night_run(run);
         Ok(json!({ "recorded": true, "note": note }))
+    }
+
+    /// Runs the settings' checks on `sha` in a scratch worktree, inside the
+    /// build slot, off the caller's thread; the Checks gate follows.
+    fn night_run_checks(self: &Arc<Self>, run_id: u32, entry_id: u32, number: u32, sha: String) {
+        let Ok(Some(row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let commands: Vec<String> = match self.night_settings(row.routine_id) {
+            Ok(s) => s.checks.into_iter().map(|c| c.command).collect(),
+            Err(e) => {
+                tracing::warn!("reading run {run_id}'s checks: {e:#}");
+                return;
+            }
+        };
+        let scratch = crate::night_shift::run_dir(&self.state_dir, run_id)
+            .join(format!("checks-pr{number}"));
+        let me = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-checks-{run_id}-{number}"))
+            .spawn(move || {
+                let slot = loop {
+                    if let Some(slot) = me.night_take_build_slot(&row.workspace, number) {
+                        break slot;
+                    }
+                    let ended = me
+                        .db
+                        .night_run(run_id)
+                        .ok()
+                        .flatten()
+                        .is_none_or(|r| r.ended_at_ms.is_some());
+                    if ended {
+                        return;
+                    }
+                    std::thread::sleep(NIGHT_SLOT_POLL);
+                };
+                let ran = crate::merge_queue_verify::run_at(
+                    Path::new(&row.workspace),
+                    &scratch,
+                    &sha,
+                    &commands,
+                    NIGHT_CHECK_LIMIT,
+                );
+                drop(slot);
+                me.night_record_checks(run_id, entry_id, number, &sha, ran);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("starting the checks of PR #{number}: {e}");
+        }
+    }
+
+    fn night_record_checks(
+        self: &Arc<Self>,
+        run_id: u32,
+        entry_id: u32,
+        number: u32,
+        sha: &str,
+        ran: Result<Vec<crate::merge_queue_verify::CommandRun>>,
+    ) {
+        let runs: Vec<proto::NightCheckRun> = match ran {
+            Ok(runs) => runs
+                .into_iter()
+                .map(|r| proto::NightCheckRun {
+                    command: r.command,
+                    passed: r.passed,
+                    code: r.code,
+                    tail: r.tail,
+                })
+                .collect(),
+            Err(e) => vec![proto::NightCheckRun {
+                command: format!("a scratch worktree at {}", crate::merge_queue::short_sha(sha)),
+                passed: false,
+                code: None,
+                tail: format!("{e:#}"),
+            }],
+        };
+        let failed: Vec<&proto::NightCheckRun> = runs.iter().filter(|r| !r.passed).collect();
+        {
+            let _guard = self.night.lock.lock().expect("night lock");
+            let Ok(Some(entry)) = self.db.night_entry(entry_id) else {
+                return;
+            };
+            if entry.detail.head_sha.as_deref() != Some(sha) {
+                return;
+            }
+            let mut gates = entry.gates;
+            gates.checks = if failed.is_empty() {
+                proto::NightGate::Passed
+            } else {
+                proto::NightGate::Failed
+            };
+            let detail = proto::NightEntryDetail {
+                checks_run: runs.clone(),
+                ..entry.detail
+            };
+            if let Err(e) = self.db.set_night_entry_facts(entry_id, &gates, &detail) {
+                tracing::warn!("recording the checks of PR #{number}: {e:#}");
+                return;
+            }
+        }
+        if !failed.is_empty() {
+            let lines: Vec<String> = failed
+                .iter()
+                .map(|r| {
+                    let tail: String = r
+                        .tail
+                        .chars()
+                        .rev()
+                        .take(NIGHT_CHECK_NOTE_CHARS)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    format!("`{}` failed:\n{tail}", r.command)
+                })
+                .collect();
+            self.night_tell_orchestrator(
+                run_id,
+                &format!("Night shift: checks failed on PR #{number}"),
+                &format!(
+                    "Houston ran the checks on PR #{number} at {} and {} of {} failed. Hand \
+                     them to a fixer pane, then record the new head with night_pr.\n\n{}",
+                    crate::merge_queue::short_sha(sha),
+                    failed.len(),
+                    runs.len(),
+                    lines.join("\n\n")
+                ),
+            );
+        }
+        self.broadcast_night_run(run_id);
+    }
+
+    /// `night_verdict`: a run pane that neither orchestrates nor built the
+    /// change records its verdict on each claim it re-ran.
+    fn night_verdict(self: &Arc<Self>, caller: u32, args: &Value) -> Result<Value> {
+        let (run_id, tree) = self
+            .night_tree_of(caller)
+            .filter(|(_, t)| !t.stopping)
+            .ok_or_else(|| {
+                anyhow!(
+                    "night_verdict refused: pane {caller} is not a pane of a Night shift run in \
+                     flight"
+                )
+            })?;
+        if caller == tree.orchestrator {
+            bail!(
+                "night_verdict refused: pane {caller} is the run's orchestrator; a verdict comes \
+                 from a verifier pane that neither built the change nor wrote its brief"
+            );
+        }
+        let number = args
+            .get("pr")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| anyhow!("pr must be the pull request's number"))?;
+        let depth = self.night_settings(tree.routine_id)?.verification;
+        let _guard = self.night.lock.lock().expect("night lock");
+        let entries = self.db.night_entries(run_id)?;
+        let entry = entries
+            .iter()
+            .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+            .ok_or_else(|| {
+                anyhow!("night_verdict refused: PR #{number} is not in run {run_id}'s ledger")
+            })?;
+        if entry.detail.built_by.contains(&caller) {
+            bail!(
+                "night_verdict refused: pane {caller} built PR #{number} (night_pr built_by), so \
+                 it cannot verify it; a pane that did not build it re-runs the proofs"
+            );
+        }
+        let items = args
+            .get("verdicts")
+            .and_then(Value::as_array)
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| anyhow!("verdicts must list one {{plan, claim, passed, evidence}} per claim"))?;
+        let mut detail = entry.detail.clone();
+        for (at, v) in items.iter().enumerate() {
+            let id = |key: &str| {
+                v.get(key)
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or_else(|| anyhow!("verdicts[{at}].{key} must be a number"))
+            };
+            let (plan, claim) = (id("plan")?, id("claim")?);
+            if !detail.plans.contains(&plan) {
+                bail!(
+                    "night_verdict refused: plan entry {plan} is not one of PR #{number}'s plans \
+                     ({:?})",
+                    detail.plans
+                );
+            }
+            let claims = entries
+                .iter()
+                .find(|e| e.id == plan)
+                .map_or(0, |e| e.detail.claims.len());
+            if claim as usize >= claims {
+                bail!(
+                    "night_verdict refused: plan entry {plan} has {claims} claims, so claim \
+                     {claim} does not exist (claims count from 0)"
+                );
+            }
+            let passed = v
+                .get("passed")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| anyhow!("verdicts[{at}].passed must be true or false"))?;
+            let evidence = claim_text(v, "evidence", at)?;
+            if !has_file_line(&evidence) {
+                bail!(
+                    "night_verdict refused: verdicts[{at}].evidence {evidence:?} names no \
+                     file:line of the proof that ran"
+                );
+            }
+            let fault = match v.get("fault").and_then(Value::as_str).map(str::trim) {
+                Some(f) if !f.is_empty() => Some(claim_text(v, "fault", at)?),
+                _ if depth == proto::NightVerification::Standard => bail!(
+                    "night_verdict refused: verification depth is Standard, so verdicts[{at}] \
+                     needs fault: the fault injected and the test failing on it"
+                ),
+                _ => None,
+            };
+            detail.verdicts.retain(|x| !(x.plan == plan && x.claim == claim));
+            detail.verdicts.push(proto::NightVerdict {
+                plan,
+                claim,
+                passed,
+                evidence,
+                fault,
+                verifier: caller,
+            });
+        }
+        let gates = proto::NightGates {
+            verify: verify_gate(&detail, &entries),
+            ..entry.gates
+        };
+        self.db.set_night_entry_facts(entry.id, &gates, &detail)?;
+        drop(_guard);
+        if gates.verify == proto::NightGate::Failed {
+            self.night_tell_orchestrator(
+                run_id,
+                &format!("Night shift: PR #{number} failed verification"),
+                &format!(
+                    "Pane {caller} found a claim of PR #{number} that its proof does not \
+                     support. Hand it back to a fixer pane; a test is never weakened or deleted \
+                     to pass."
+                ),
+            );
+        }
+        self.broadcast_night_run(run_id);
+        let gate = crate::db::wire_name(&gates.verify).unwrap_or_default();
+        Ok(json!({
+            "recorded": true,
+            "note": format!("recorded {} verdicts on PR #{number}; the verify gate is {gate}", items.len())
+        }))
     }
 
     fn night_entry_room(&self, run: u32) -> Result<()> {

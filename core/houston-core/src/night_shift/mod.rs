@@ -23,7 +23,8 @@ pub const ROUTINE_PROMPT: &str =
 pub const GATE_PANES: u32 = 2;
 
 /// The ledger verbs, as MCP tools (`night_<verb>`) and `hs-night <verb>`.
-pub const VERBS: [&str; 5] = ["plan", "pr", "lesson", "decision", "report"];
+/// `verdict` is the verifier's; the others are the orchestrator's.
+pub const VERBS: [&str; 6] = ["plan", "pr", "lesson", "decision", "report", "verdict"];
 
 pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
     state_dir.join("night-shift").join(run_id.to_string())

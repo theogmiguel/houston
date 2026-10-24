@@ -31,8 +31,8 @@ export function nightDefaults(): NightShiftSettings {
 export function nightEntry(overrides: Partial<NightEntry>): NightEntry {
   return {
     id: 1, run_id: 7, kind: 'plan', title: 'Entry', theme: null, status: null, pr_number: null, visible: false, qa_passed: false,
-    body: '', gates: { checks: 'none', review: 'none', qa: 'none', ci: 'none', reruns: 0 }, created_at_ms: NIGHT_NOW,
-    decided_at_ms: null, choice: null, ...overrides
+    body: '', gates: { checks: 'none', review: 'none', qa: 'none', ci: 'none', verify: 'none', reruns: 0 }, created_at_ms: NIGHT_NOW,
+    decided_at_ms: null, choice: null, detail: { claims: [], plans: [], head_sha: null, built_by: [], checks_run: [], verdicts: [] }, ...overrides
   }
 }
 

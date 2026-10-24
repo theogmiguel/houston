@@ -36,9 +36,13 @@ describe('NightShiftReport', () => {
       merge_order: [13, 12], limited: ['claude'],
       entries: [
         nightEntry({ id: 1, kind: 'pr', title: 'Tray fix', theme: 'reliability', pr_number: 12,
-          gates: { checks: 'passed', review: 'passed', qa: 'none', ci: 'failed', reruns: 1 } }),
+          gates: { checks: 'failed', review: 'passed', qa: 'none', ci: 'failed', verify: 'failed', reruns: 1 },
+          detail: { ...nightEntry({}).detail, plans: [6], checks_run: [{ command: 'cargo fmt --check', passed: false, code: 1, tail: 'Diff' }],
+            verdicts: [{ plan: 6, claim: 0, passed: false, evidence: 'core/tests/tray.rs:9 asserts nothing', fault: null, verifier: 44 }] } }),
         nightEntry({ id: 2, kind: 'pr', title: 'Faster diff', theme: 'performance', pr_number: 13, visible: true,
-          gates: { checks: 'passed', review: 'pending', qa: 'passed', ci: 'passed', reruns: 0 } }),
+          gates: { checks: 'passed', review: 'pending', qa: 'passed', ci: 'passed', verify: 'pending', reruns: 0 } }),
+        nightEntry({ id: 6, kind: 'plan', title: 'Tray fix',
+          detail: { ...nightEntry({}).detail, claims: [{ claim: 'the tray opens in 1 click', proof: 'tray::one_click' }, { claim: 'no flicker', proof: 'tray::flicker' }] } }),
         nightEntry({ id: 3, kind: 'decision', title: 'Drop the old API?', body: 'It has no callers.\n\nOptions: keep | remove' }),
         nightEntry({ id: 4, kind: 'decision', title: 'Rename the tray?', choice: 'Go ahead' }),
         nightEntry({ id: 5, kind: 'flaky', title: 'pty::resize_race' })
@@ -61,7 +65,12 @@ describe('NightShiftReport', () => {
       const group = host.querySelector(`[role="group"][aria-label="Theme ${pr}"]`)!
       return Array.from(group.querySelectorAll<HTMLElement>('[data-testid="gate-chip"]')).find((c) => c.textContent?.startsWith(label))!
     }
-    expect(chips.length).toBe(7)
+    expect(chips.length).toBe(9)
+    expect(chip('Verify', 'reliability').dataset.gateKind).toBe('fact')
+    const proofs = host.querySelector('[aria-label="Proofs of #12"]')?.textContent
+    expect(proofs).toContain('Check failed: cargo fmt --check')
+    expect(proofs).toContain('Fails: the tray opens in 1 click · core/tests/tray.rs:9 asserts nothing')
+    expect(proofs).toContain('Not verified yet: no flicker')
     expect(chip('Checks', 'reliability').dataset.gateKind).toBe('fact')
     expect(chip('CI', 'reliability').dataset.gateState).toBe('failed')
     expect(chip('Review', 'performance').dataset.gateKind).toBe('verdict')

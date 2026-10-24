@@ -11,9 +11,9 @@ night() {
 
 echo "fake orchestrator: run folder $HOUSTON_NIGHT_RUN_DIR"
 sleep 5
-night plan --title 'Fake: tighten the attach path' --theme reliability
+night plan --title 'Fake: tighten the attach path' --theme reliability \n  --claim 'attach replays in under 50 ms' --proof fake::attach_budget
 night plan --title 'Fake: cache the diff' --theme performance --deferred
-night pr --number 1 --title 'Fake pull request' --theme reliability --checks passed --review passed --ci pending --visible
+night pr --number 1 --title 'Fake pull request' --theme reliability --head HEAD --review passed --visible
 night lesson --title 'Fake lesson' --body 'Recorded by the dev fake orchestrator'
 night lesson --title 'Fake flaky test' --flaky-test fake::flaky_test
 night decision --title 'Fake decision: keep the old API?' --option keep --option remove

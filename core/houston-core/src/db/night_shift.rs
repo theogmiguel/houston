@@ -63,6 +63,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "crew_json",
         "crew_json TEXT NOT NULL DEFAULT '[]'",
     )?;
+    super::add_column_if_missing(
+        conn,
+        "night_entries",
+        "detail_json",
+        "detail_json TEXT NOT NULL DEFAULT '{}'",
+    )?;
     Ok(())
 }
 
@@ -173,12 +179,14 @@ fn map_run(r: &rusqlite::Row) -> rusqlite::Result<NightRunRow> {
 }
 
 const ENTRY_SELECT: &str = "SELECT id, run_id, kind, title, theme, status, pr_number, visible, \
-    qa_passed, body, created_at_ms, decided_at_ms, choice, gates_json FROM night_entries";
+    qa_passed, body, created_at_ms, decided_at_ms, choice, gates_json, detail_json \
+    FROM night_entries";
 
 fn map_entry(r: &rusqlite::Row) -> rusqlite::Result<proto::NightEntry> {
     let id: u32 = r.get(0)?;
     let kind_raw: String = r.get(2)?;
     let gates_raw: String = r.get(13)?;
+    let detail_raw: String = r.get(14)?;
     Ok(proto::NightEntry {
         id,
         run_id: r.get(1)?,
@@ -196,6 +204,8 @@ fn map_entry(r: &rusqlite::Row) -> rusqlite::Result<proto::NightEntry> {
         created_at_ms: r.get(10)?,
         decided_at_ms: r.get(11)?,
         choice: r.get(12)?,
+        detail: serde_json::from_str(&detail_raw)
+            .map_err(|e| bad(14, format!("night_entries {id} detail {detail_raw:?}: {e}")))?,
     })
 }
 
@@ -210,6 +220,7 @@ pub struct NightEntryWrite<'a> {
     pub visible: bool,
     pub body: &'a str,
     pub gates: proto::NightGates,
+    pub detail: &'a proto::NightEntryDetail,
     pub now_ms: i64,
 }
 
@@ -365,7 +376,8 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO night_entries (run_id, kind, title, theme, status, pr_number, visible, \
-             body, created_at_ms, gates_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             body, created_at_ms, gates_json, detail_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 w.run_id,
                 wire_name(&w.kind)?,
@@ -377,6 +389,7 @@ impl Db {
                 w.body,
                 w.now_ms,
                 serde_json::to_string(&w.gates)?,
+                serde_json::to_string(w.detail)?,
             ],
         )?;
         Ok(conn.last_insert_rowid() as u32)
@@ -386,7 +399,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "UPDATE night_entries SET title = ?2, theme = ?3, status = ?4, pr_number = ?5, \
-             visible = ?6, body = ?7, gates_json = ?8 WHERE id = ?1",
+             visible = ?6, body = ?7, gates_json = ?8, detail_json = ?9 WHERE id = ?1",
             rusqlite::params![
                 id,
                 w.title,
@@ -396,6 +409,27 @@ impl Db {
                 w.visible as i64,
                 w.body,
                 serde_json::to_string(&w.gates)?,
+                serde_json::to_string(w.detail)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// A pull request's gates and detail together, as Houston's checks and the
+    /// verifier change them.
+    pub fn set_night_entry_facts(
+        &self,
+        id: u32,
+        gates: &proto::NightGates,
+        detail: &proto::NightEntryDetail,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE night_entries SET gates_json = ?2, detail_json = ?3 WHERE id = ?1",
+            rusqlite::params![
+                id,
+                serde_json::to_string(gates)?,
+                serde_json::to_string(detail)?
             ],
         )?;
         Ok(())

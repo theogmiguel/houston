@@ -14,9 +14,32 @@ function Gates({ entry }: { entry: NightEntry }): React.JSX.Element {
     <Inline wrap gap="small">
       <GateChip label="Checks" state={g.checks} kind="fact" />
       <GateChip label="CI" state={g.ci} kind="fact" />
+      <GateChip label="Verify" state={g.verify} kind="fact" />
       <GateChip label="Review" state={g.review} kind="verdict" />
       {entry.visible && <GateChip label="QA" state={g.qa} kind="verdict" />}
     </Inline>
+  )
+}
+
+/** What backs a pull request: the checks Houston ran that failed, and each claim of its plan
+ * entries with the verifier's verdict and evidence. */
+function Proofs({ pr, plans }: { pr: NightEntry; plans: NightEntry[] }): React.JSX.Element | null {
+  const failed = pr.detail.checks_run.filter((c) => !c.passed)
+  const claims = plans.filter((p) => pr.detail.plans.includes(p.id)).flatMap((p) => p.detail.claims.map((c, i) => ({
+    key: `${p.id}:${i}`, claim: c.claim, verdict: pr.detail.verdicts.find((v) => v.plan === p.id && v.claim === i)
+  })))
+  if (failed.length === 0 && claims.length === 0) return null
+  return (
+    <ul className="grid gap-[var(--space-0-5)]" aria-label={`Proofs of #${pr.pr_number}`}>
+      {failed.map((c) => <li key={c.command}><Text size="small" tone="danger">{`Check failed: ${c.command}`}</Text></li>)}
+      {claims.map((c) => (
+        <li key={c.key}>
+          <Text size="small" tone={c.verdict ? (c.verdict.passed ? undefined : 'danger') : 'muted'}>
+            {c.verdict ? `${c.verdict.passed ? 'Holds' : 'Fails'}: ${c.claim} · ${c.verdict.evidence}` : `Not verified yet: ${c.claim}`}
+          </Text>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -45,6 +68,7 @@ export function NightShiftReport({ run, report, workers, holdForQa, onDecide, on
   onLoadReport: () => void
 }): React.JSX.Element {
   const decisions = run.entries.filter((e) => e.kind === 'decision')
+  const plans = run.entries.filter((e) => e.kind === 'plan')
   const shelves = prShelves(run)
   const byNumber = new Map(run.entries.filter((e) => e.kind === 'pr').map((e) => [e.pr_number, e]))
   const lessons = run.entries.filter((e) => e.kind === 'lesson' || e.kind === 'flaky' || e.kind === 'deferred')
@@ -78,14 +102,14 @@ export function NightShiftReport({ run, report, workers, holdForQa, onDecide, on
             <Card>
               {shelf.prs.map((pr) => (
                 <Card.Row key={pr.id} heading={`#${pr.pr_number} ${pr.title}`}
-                  meta={<div className="grid gap-[var(--space-1)]"><Gates entry={pr} />{pr.gates.reruns > 0 && <Text size="small" tone="muted">CI re-run {pr.gates.reruns}× for a known flaky test</Text>}</div>}
+                  meta={<div className="grid gap-[var(--space-1)]"><Gates entry={pr} /><Proofs pr={pr} plans={plans} />{pr.gates.reruns > 0 && <Text size="small" tone="muted">CI re-run {pr.gates.reruns}× for a known flaky test</Text>}</div>}
                   action={holdForQa && pr.visible ? (pr.qa_passed ? <Text size="small" tone="muted">QA passed</Text>
                     : <Button variant="secondary" size="sm" onClick={() => onQaPassed(pr.id)}>Mark QA passed</Button>) : null} />
               ))}
             </Card>
           </div>
         ))}
-        <Text size="small" tone="muted">Checks and CI are what ran; review and QA are agents’ verdicts.</Text>
+        <Text size="small" tone="muted">Houston ran the checks on each pull request’s head; CI is from the pull request watch; Verify follows the verifier’s per-claim verdicts. Review and QA are agents’ verdicts.</Text>
       </section>
 
       {run.merge_order.length > 0 && <section className="grid gap-[var(--space-1-5)]" aria-label="Merge order">
