@@ -79,8 +79,8 @@ const PERMISSION_MODES: readonly { value: ThreadPermissionMode; label: string }[
 
 /** Why the mode cannot change now; the daemon refuses it the same way. */
 export function permissionModeLockedReason(info: SessionInfo, connected: boolean): string | null {
-  if (!connected) return 'Reconnecting to the daemon'
-  if (!isLive(info.state)) return `This session is ${info.state}`
+  const unavailable = composerDisabledReason(info, connected)
+  if (unavailable !== null) return unavailable
   if (info.status === 'working') return 'Claude is working; change the mode when the turn ends or after Stop'
   if (info.status === 'needs-input') return 'Claude is waiting for an answer; change the mode after it'
   return null
