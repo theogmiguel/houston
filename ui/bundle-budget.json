@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 946,842 bytes (one boot chunk) with the same small headroom:",
+    "pane notes add their roster patch, mux routes, client verb and the rail's",
+    "clear callback to the boot path. Choosing and drawing the note stay in the",
+    "lazily loaded rail row (`ui/rail/GridRailNoteLine.tsx`)."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

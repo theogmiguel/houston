@@ -1,7 +1,6 @@
 import { doingNow } from './doingNow'
 import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
-import type { PanePhase } from '../../houston/generated/PanePhase'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
 import { sessionCheckoutRoot } from '../checkout/formatCheckout'
@@ -26,15 +25,6 @@ export type RailAgentRow = {
   unread: boolean
 }
 
-/** The newest note an agent in the grid wrote on its own pane. */
-export type RailNote = {
-  session: number
-  pane: string
-  text: string
-  phase: PanePhase | null
-  atMs: number
-}
-
 export type RailCard = {
   gridId: string
   workspace: string
@@ -45,7 +35,6 @@ export type RailCard = {
   pr: { gh: string; pr: PrInfo | null } | null
   diff: { added: number; deleted: number; ahead?: number } | null
   agents: RailAgentRow[]
-  note: RailNote | null
   lastActivityMs: number
 }
 
@@ -122,11 +111,6 @@ export function buildRailCard(source: RailCardSource): RailCard {
   const primaryPaneId = panes[0]?.session.id
   const primaryCheckout = primaryPaneId == null ? null : checkouts[0]
   const checkoutRoot = primaryCheckout && 'root' in primaryCheckout ? primaryCheckout.root : null
-  const note = agents.reduce<RailNote | null>((newest, { session, leading }) => {
-    const n = session.note
-    if (!n || (newest && newest.atMs >= n.at_ms)) return newest
-    return { session: session.id, pane: leading, text: n.text, phase: n.phase ?? null, atMs: n.at_ms }
-  }, null)
   const status = gridStatus(panes.map(({ session }) => session))
   const statusSince = panes.reduce((latest, { session }) => Math.max(latest, session.status_since_ms ?? 0), 0)
   const diff = checkoutRoot ? (source.diffByDir?.get(checkoutRoot) ?? null) : null
@@ -141,7 +125,6 @@ export function buildRailCard(source: RailCardSource): RailCard {
     pr,
     diff: diff ? { added: diff.added, deleted: diff.deleted, ahead: diff.ahead } : null,
     agents,
-    note,
     lastActivityMs: statusSince,
   }
 }

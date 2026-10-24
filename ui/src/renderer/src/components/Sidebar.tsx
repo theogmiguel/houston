@@ -888,6 +888,11 @@ function GridRenameRow({ cardMode, selected, initial, onSubmit, onCancel }: {
   );
 }
 
+// The rail card's Clear on a pane note; absent while no daemon is connected.
+function noteClearer(client: HoustonClient | null | undefined): ((session: number) => void) | undefined {
+  return client ? (session) => client.sessionNoteClear(session) : undefined;
+}
+
 function RailTree({
   treeLabel,
   activeFilterCount,
@@ -1915,7 +1920,7 @@ export function Sidebar({
             activeFilterCount={activeFilterCount}
             onSshConnect={onSshConnect}
             onOpenInspector={onOpenInspector}
-            onClearNote={railClient ? (session) => railClient.sessionNoteClear(session) : undefined}
+            onClearNote={noteClearer(railClient)}
             checkoutBranches={checkoutBranches}
             railDiffByDir={railDiffByDir}
             railPrByDir={railPrByDir}

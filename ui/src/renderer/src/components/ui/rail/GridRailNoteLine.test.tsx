@@ -2,7 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { GridRailNoteLine } from './GridRailNoteLine'
+import { GridRailNoteLine, newestNote } from './GridRailNoteLine'
+import type { RailAgentRow } from '../../rail/railCardModel'
+import type { SessionInfo } from '../../../houston/client'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -44,5 +46,22 @@ describe('GridRailNoteLine', () => {
     act(() => el.querySelector('[data-testid="grid-note-clear"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onClear).toHaveBeenCalledWith(4)
     expect(onRow).not.toHaveBeenCalled()
+  })
+})
+
+describe('newestNote', () => {
+  const agent = (id: number, leading: string, note: SessionInfo['note']): RailAgentRow =>
+    ({ session: { id, note } as SessionInfo, leading } as RailAgentRow)
+
+  it('picks the newest note among the grid panes, with its pane and phase', () => {
+    expect(newestNote([
+      agent(1, 'Max', { text: 'reading the code', phase: 'todo', at_ms: 1_000 }),
+      agent(2, 'Leo', { text: 'running tests', phase: 'in_progress', at_ms: 2_000 }),
+      agent(3, 'Ivy', null)
+    ])).toEqual({ session: 2, pane: 'Leo', text: 'running tests', phase: 'in_progress', atMs: 2_000 })
+  })
+
+  it('has no note when no pane wrote one', () => {
+    expect(newestNote([agent(1, 'Max', null)])).toBeNull()
   })
 })

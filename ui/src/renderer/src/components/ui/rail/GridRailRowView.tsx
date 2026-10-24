@@ -8,7 +8,7 @@ import { WorkingSpinner } from '../Spinner'
 import { GridRailTitleRow } from './GridRailTitleRow'
 import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailAgentRows } from './GridRailAgentRows'
-import { GridRailNoteLine } from './GridRailNoteLine'
+import { GridRailNoteLine, newestNote } from './GridRailNoteLine'
 import { GridRailHoverCardHost } from './GridRailHoverCardHost'
 import { TagCardAffordance } from '../../tags/TagCardAffordance'
 
@@ -89,6 +89,7 @@ export function GridRailRowView({
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
 }): React.JSX.Element {
   const pr = card.pr?.pr ?? null
+  const note = cardMode === 'detailed' ? newestNote(card.agents) : null
   const hasChipRow = properties.includes('tags') && tagDisplay === 'chips' && tags.length > 0
   const openTags = (anchor: HTMLElement): void => openTagPopover({ anchor, gridId, view: 'pick' })
   return (
@@ -119,7 +120,7 @@ export function GridRailRowView({
           <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
           {hasChipRow && <div className="flex min-h-4 items-center text-[length:var(--tr-text-xs)]"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
-          {cardMode === 'detailed' && card.note && <GridRailNoteLine note={card.note} now={now} onClear={onClearNote} />}
+          {note && <GridRailNoteLine note={note} now={now} onClear={onClearNote} />}
           {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
           <GridRailAgentRows agents={card.agents} cardMode={cardMode} agentActivity={agentActivity} properties={properties} expanded={expanded} onToggleExpanded={onToggleExpanded} now={now} onFocusPane={(paneId) => { onSelect(); onFocusPane?.(paneId) }} />
         </div>

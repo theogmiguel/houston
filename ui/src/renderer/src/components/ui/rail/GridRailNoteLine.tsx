@@ -1,9 +1,27 @@
-import type { RailNote } from '../../rail/railCardModel'
+import type { RailAgentRow } from '../../rail/railCardModel'
 import type { PanePhase } from '../../../houston/generated/PanePhase'
 import { formatAge } from '../../tasks/format'
 import { IconClose } from '../../icons'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
+
+/** The newest note an agent in the grid wrote on its own pane. */
+export type RailNote = {
+  session: number
+  pane: string
+  text: string
+  phase: PanePhase | null
+  atMs: number
+}
+
+// Kept out of the boot-loaded card model: only the lazily loaded rail row reads notes.
+export function newestNote(agents: readonly RailAgentRow[]): RailNote | null {
+  return agents.reduce<RailNote | null>((newest, { session, leading }) => {
+    const n = session.note
+    if (!n || (newest && newest.atMs >= n.at_ms)) return newest
+    return { session: session.id, pane: leading, text: n.text, phase: n.phase ?? null, atMs: n.at_ms }
+  }, null)
+}
 
 const PHASE_LABEL: Record<PanePhase, string> = {
   todo: 'To do',
