@@ -675,8 +675,21 @@ impl Daemon {
             .cloned();
         self.db
             .instruction_begin_write(&row.info.id, request, prompt_id.as_deref(), now_ms())?;
-        let outcome =
-            self.instruction_write_receipt(target, &bracketed_paste(&text), &mut admission);
+        let thread = self
+            .get(target)
+            .ok()
+            .and_then(|session| session.thread().cloned());
+        let outcome = match &thread {
+            // A thread takes the instruction as one message; there is no composer to submit.
+            Some(thread) => {
+                drop(admission.take());
+                thread.send(&text).map_err(|error| StdinWriteError {
+                    written: Some(0),
+                    error,
+                })
+            }
+            None => self.instruction_write_receipt(target, &bracketed_paste(&text), &mut admission),
+        };
         admission = Some(self.instruction_admission());
         if self
             .db
@@ -720,59 +733,71 @@ impl Daemon {
             self.broadcast_instruction_queue(target);
             return Ok(false);
         }
-        self.instruction_writes
-            .lock()
-            .expect("instruction writes lock")
-            .get_mut(&target)
-            .expect("instruction write reserved")
-            .phase = InstructionWritePhase::PreEnter;
-        drop(admission.take());
-        #[cfg(feature = "test-barriers")]
-        crate::test_barriers::pause("instruction-before-enter", target);
-        std::thread::sleep(self.paste_submit_settle(target));
-        admission = Some(self.instruction_admission());
-        if self
-            .db
-            .instruction_row(&row.info.id)?
-            .is_none_or(|current| current.info.state != State::Uncertain)
-        {
-            return Ok(false);
-        }
-        let held = if row.info.mode == Mode::Steer {
-            self.immediate_paste_hold_reason(target)
+        let failure = if thread.is_some() {
+            self.instruction_writes
+                .lock()
+                .expect("instruction writes lock")
+                .get_mut(&target)
+                .expect("instruction write reserved")
+                .phase = InstructionWritePhase::Submitted;
+            None
         } else {
-            self.paste_hold_reason(target)
-        };
-        let held = self
-            .ensure_not_closing(target, "instruction submission")
-            .err()
-            .map(|error| error.to_string())
-            .or(held);
-        let held = held.or_else(|| {
-            (!self.instruction_target_live(target))
-                .then(|| "target ended before submission; inspect retained instruction".to_string())
-        });
-        let failure = match held {
-            Some(reason) => Some(reason),
-            None => self
-                .instruction_write_receipt(target, b"\r", &mut admission)
-                .err()
-                .map(|error| format!("Enter outcome uncertain: {error}")),
-        };
-        if admission.is_none() {
+            self.instruction_writes
+                .lock()
+                .expect("instruction writes lock")
+                .get_mut(&target)
+                .expect("instruction write reserved")
+                .phase = InstructionWritePhase::PreEnter;
+            drop(admission.take());
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("instruction-before-enter", target);
+            std::thread::sleep(self.paste_submit_settle(target));
             admission = Some(self.instruction_admission());
-        }
-        if self
-            .db
-            .instruction_row(&row.info.id)?
-            .is_none_or(|current| current.info.state != State::Uncertain)
-        {
-            return Ok(false);
-        }
-        let failure = failure.or_else(|| {
-            (!self.instruction_target_live(target))
-                .then(|| "target ended during submission; inspect retained instruction".to_string())
-        });
+            if self
+                .db
+                .instruction_row(&row.info.id)?
+                .is_none_or(|current| current.info.state != State::Uncertain)
+            {
+                return Ok(false);
+            }
+            let held = if row.info.mode == Mode::Steer {
+                self.immediate_paste_hold_reason(target)
+            } else {
+                self.paste_hold_reason(target)
+            };
+            let held = self
+                .ensure_not_closing(target, "instruction submission")
+                .err()
+                .map(|error| error.to_string())
+                .or(held);
+            let held = held.or_else(|| {
+                (!self.instruction_target_live(target)).then(|| {
+                    "target ended before submission; inspect retained instruction".to_string()
+                })
+            });
+            let failure = match held {
+                Some(reason) => Some(reason),
+                None => self
+                    .instruction_write_receipt(target, b"\r", &mut admission)
+                    .err()
+                    .map(|error| format!("Enter outcome uncertain: {error}")),
+            };
+            if admission.is_none() {
+                admission = Some(self.instruction_admission());
+            }
+            if self
+                .db
+                .instruction_row(&row.info.id)?
+                .is_none_or(|current| current.info.state != State::Uncertain)
+            {
+                return Ok(false);
+            }
+            failure.or_else(|| {
+                (!self.instruction_target_live(target)).then(|| {
+                    "target ended during submission; inspect retained instruction".to_string()
+                })
+            })
+        };
         if let Some(ref reason) = failure {
             self.db.instruction_set_state(
                 &row.info.id,

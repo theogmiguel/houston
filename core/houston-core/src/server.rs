@@ -858,6 +858,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
     matches!(
         msg,
         proto::ClientMsg::SessionList
+            | proto::ClientMsg::ThreadHistory { .. }
             | proto::ClientMsg::SkillSync
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
@@ -1691,6 +1692,9 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::SessionWake { session }
         | proto::ClientMsg::SessionAttach { session, .. }
         | proto::ClientMsg::SessionResize { session, .. }
+        | proto::ClientMsg::ThreadSend { session, .. }
+        | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadHistory { session, .. }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
         _ => None,
     }
@@ -1927,11 +1931,32 @@ async fn dispatch(
             .await;
             Ok(())
         }
-        proto::ClientMsg::ThreadSend { session, .. }
-        | proto::ClientMsg::ThreadStop { session }
-        | proto::ClientMsg::ThreadHistory { session, .. } => Err(anyhow::anyhow!(
-            "session {session}: this daemon does not run thread sessions yet"
-        )),
+        proto::ClientMsg::ThreadSend { session, text } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_send(session, &text))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread send panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadStop { session } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_stop(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread stop panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadHistory {
+            session,
+            before_seq,
+            limit,
+        } => {
+            let d = Arc::clone(daemon);
+            let reply =
+                tokio::task::spawn_blocking(move || d.thread_history(session, before_seq, limit))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("thread history read panicked: {e}"))??;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending thread history failed"))
+        }
         proto::ClientMsg::WorkspaceLocalServers { workspace } => {
             let msg = daemon.workspace_local_servers(workspace);
             send_msg(sink, &msg)

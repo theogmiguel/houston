@@ -308,6 +308,30 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
+### A thread's status stays hook-driven; the daemon ends only turns it ended
+
+A thread session (`thread_session.rs`) runs Claude with the documented
+`--print --input-format stream-json --output-format stream-json` flags on pipes. Claude's
+lifecycle hooks fire in this mode with the session's ids, so they own `AgentStatus`
+exactly as for a terminal pane. Three additions, and no other status source:
+
+- The stream's `result` event ends a turn only while the session has delivered no
+  lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
+- A thread with no turn running is idle by construction: headless Claude reports
+  `SessionStart` only with its first message, so a new or restored thread starts Idle and
+  has no spawn grace.
+- After `thread_stop`, or when the thread's process exits on its own, the daemon ended
+  the turn itself and sets Idle (`TurnInterrupted` / `TurnFailed`). The session stays
+  Running without a process; the next message starts a process that resumes the
+  conversation by exact id. Only Kill and Close end the session.
+
+Stop ends the whole process tree: the process group (through `pid.rs`) on Unix, the Job
+object with kill-on-close on Windows. Killing only `claude` leaves its tools running.
+The thread's history is Houston's own `thread_events` log, written from the stream as it
+arrives; Houston never reads Claude's transcript files to fill it and never writes the
+`control_request` protocol. A thread takes no terminal input: stdin frames,
+`pane_send_keys` and Sleep are refused by name.
+
 ### Generated titles never supply status or identity
 
 Generated pane titles consume only redacted first-prompt and first-reply hook text after

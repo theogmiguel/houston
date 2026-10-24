@@ -876,6 +876,13 @@ enum Backend {
     Ssh(crate::ssh::SshHandle),
     #[cfg(unix)]
     AdoptedPty(crate::adoption::RawMasterPty),
+    Thread(Arc<crate::thread_session::ThreadHandle>),
+}
+
+fn thread_refuses_terminal_input(id: u32) -> anyhow::Error {
+    anyhow!(
+        "session {id} is a thread session (view thread): terminal input is refused; send          messages with thread_send, or open it in a terminal"
+    )
 }
 
 #[derive(Debug)]
@@ -976,6 +983,13 @@ struct StdinQueue {
 }
 
 impl Session {
+    fn thread(&self) -> Option<&Arc<crate::thread_session::ThreadHandle>> {
+        match &self.backend {
+            Backend::Thread(handle) => Some(handle),
+            _ => None,
+        }
+    }
+
     fn cancel_pty_reader(&self) {
         self.reader_cancel.store(true, Ordering::Release);
         #[cfg(unix)]
@@ -1123,6 +1137,7 @@ impl Backend {
                 Ok(())
             }
             Backend::Ssh(h) => h.write_stdin(data),
+            Backend::Thread(_) => Err(StdinWriteError::nothing(thread_refuses_terminal_input(id))),
             #[cfg(unix)]
             Backend::AdoptedPty(raw) => {
                 raw.write_all_counting(data)
@@ -1158,6 +1173,8 @@ impl Backend {
                     .with_context(|| format!("resizing ssh session {id}"))?;
                 Ok((cols, rows))
             }
+            // A thread has no terminal; the size is echoed and never reaches Claude.
+            Backend::Thread(_) => Ok((cols, rows)),
             #[cfg(unix)]
             Backend::AdoptedPty(raw) => raw
                 .resize(cols, rows)
@@ -1185,6 +1202,9 @@ impl Backend {
         #[cfg(unix)]
         if let Backend::AdoptedPty(raw) = self {
             raw.release();
+        }
+        if let Backend::Thread(handle) = self {
+            handle.close();
         }
     }
 
@@ -1258,6 +1278,10 @@ impl Backend {
                 Ok(())
             }
             Backend::Ssh(h) => h.kill(),
+            Backend::Thread(handle) => {
+                handle.close();
+                Ok(())
+            }
             #[cfg(unix)]
             Backend::AdoptedPty(raw) => {
                 raw.kill(id, channel)
@@ -1276,7 +1300,7 @@ impl Backend {
                 .expect("master lock")
                 .as_ref()
                 .and_then(|m| m.as_raw_fd()),
-            Backend::Ssh(_) => None,
+            Backend::Ssh(_) | Backend::Thread(_) => None,
             Backend::AdoptedPty(raw) => raw.as_raw_fd(),
         }
     }
@@ -1541,6 +1565,7 @@ mod remote_phone;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
+mod threads;
 mod title_generation;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
@@ -2620,6 +2645,7 @@ struct SpawnParams {
     /// A first prompt will be pasted once the composer takes input, so its output is
     /// watched for that until the delivery ends.
     pastes_first_prompt: bool,
+    view: proto::SessionView,
 }
 
 struct SessionReplacement {
@@ -9297,12 +9323,33 @@ impl Daemon {
         p: CreateParams,
         view: proto::SessionView,
     ) -> Result<proto::SessionInfo> {
-        match view {
-            proto::SessionView::Terminal => self.create_session(p),
-            proto::SessionView::Thread => {
-                bail!("thread view is not available in this daemon yet; open a terminal session")
-            }
+        if view == proto::SessionView::Terminal {
+            return self.create_session(p);
         }
+        if p.agent != proto::AgentKind::Claude {
+            bail!(
+                "thread view supports Claude only; {} sessions open as terminals",
+                crate::agent_hooks::provider_slug(p.agent)
+            );
+        }
+        if let Some(slug) = &p.acp {
+            bail!("thread view supports Claude only; ACP agent {slug:?} opens as a terminal");
+        }
+        if p.cmd.is_some() {
+            bail!("thread view runs the claude CLI itself; a session with a custom command opens as a terminal");
+        }
+        self.create_session_viewed(
+            p,
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            None,
+            false,
+            None,
+            view,
+        )
     }
 
     pub(crate) fn create_task_plan_session(
@@ -9340,7 +9387,41 @@ impl Daemon {
         prefill_follows: bool,
         launch_override: Option<crate::launch::SessionLaunchSelections>,
     ) -> Result<proto::SessionInfo> {
+        self.create_session_viewed(
+            p,
+            env,
+            spawn_args,
+            prompt_label,
+            cwd,
+            plan_mode,
+            plan_binding,
+            prefill_follows,
+            launch_override,
+            proto::SessionView::Terminal,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_session_viewed(
+        self: &Arc<Self>,
+        mut p: CreateParams,
+        env: Vec<(String, String)>,
+        spawn_args: Vec<String>,
+        prompt_label: Option<String>,
+        cwd: Option<PathBuf>,
+        plan_mode: bool,
+        plan_binding: Option<(i64, i64)>,
+        prefill_follows: bool,
+        launch_override: Option<crate::launch::SessionLaunchSelections>,
+        view: proto::SessionView,
+    ) -> Result<proto::SessionInfo> {
         crate::launch::ensure_launchable(p.agent)?;
+        // A thread's first prompt is its first stream-json message, not an argv prompt.
+        let first_message = if view == proto::SessionView::Thread {
+            p.prompt.take().filter(|text| !text.trim().is_empty())
+        } else {
+            None
+        };
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
         }
@@ -9490,6 +9571,7 @@ impl Daemon {
             scrollback_seed: None,
             replacement: None,
             pastes_first_prompt: first_prompt.is_some() || prefill_follows,
+            view,
         });
         let info = match spawned {
             Ok(info) => info,
@@ -9502,6 +9584,14 @@ impl Daemon {
         };
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(info.id, text, None, true);
+        }
+        if let Some(text) = first_message {
+            if let Err(error) = self.thread_send(info.id, &text) {
+                tracing::warn!(
+                    "delivering thread session {}'s first message: {error:#}",
+                    info.id
+                );
+            }
         }
         Ok(info)
     }
@@ -10309,6 +10399,7 @@ impl Daemon {
                 }),
             }),
             pastes_first_prompt: false,
+            view: self.db.session_view(old_id)?,
         }) {
             Ok(spawned) => spawned,
             Err(error) => {
@@ -11380,19 +11471,23 @@ impl Daemon {
             scrollback_seed,
             replacement,
             pastes_first_prompt,
+            view,
         } = p;
         // Create, respawn and restore all start here; a stored grok/cursor row stays a row.
         crate::launch::ensure_launchable(agent)?;
+        let thread = view == proto::SessionView::Thread;
+        if thread
+            && (agent != proto::AgentKind::Claude
+                || acp.is_some()
+                || custom_cmd.is_some()
+                || hidden)
+        {
+            bail!(
+                "thread view supports Claude only; session {id} ({}) opens as a terminal",
+                crate::agent_hooks::provider_slug(agent)
+            );
+        }
         let command_override = custom_cmd.as_ref().is_some_and(|argv| !argv.is_empty());
-        let pty = native_pty_system();
-        let pair = pty
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| anyhow!("openpty failed: {e}"))?;
 
         let (spawn_dir, relocate_to) = session_spawn_dir(&cwd);
         #[cfg(unix)]
@@ -11689,6 +11784,88 @@ impl Daemon {
             let command = shell_hosted_resume_command(&shell, &argv, shellint_token.is_some())?;
             cmd.args(["-i", "-c", &command]);
         }
+        if thread {
+            cmd.env_remove(CLAUDE_FULLSCREEN_ENV);
+            let status_since_ms = now_ms();
+            let mut info = proto::SessionInfo {
+                title_source,
+                checkout: None,
+                activity: None,
+                id,
+                agent,
+                project_dir: project_dir.display().to_string(),
+                cwd: cwd.display().to_string(),
+                state: proto::SessionState::Running,
+                title: title.clone(),
+                codename,
+                detected_agent,
+                running_agent: None,
+                hidden,
+                ssh_host: None,
+                restore_deferred: None,
+                // Headless Claude reports SessionStart only with its first message; until
+                // then the thread waits for one, which is idle (invariants: thread status).
+                status: Some(proto::AgentStatus::Idle),
+                status_since_ms: Some(status_since_ms),
+                context: None,
+                swarm_agent,
+                spawned_by,
+                acp: None,
+                live_children: 0,
+                profile_label,
+                children_waiting: 0,
+                delegation: None,
+                inbox_unread: 0,
+                tags: p_tags,
+                session_origin: Some(session_origin.unwrap_or(id)),
+                checkout_root: None,
+                worktree: None,
+                resumable: resume_handle.is_some(),
+                resume_notice,
+                compactions: None,
+                task: None,
+                sleep_notice: None,
+                latest_prompt: None,
+                last_agent_message: None,
+                slept_at_ms: None,
+                limit: None,
+                view,
+            };
+            if let Some(cues) = replacement
+                .as_ref()
+                .and_then(|replacement| replacement.wake_cues.as_ref())
+            {
+                info.latest_prompt = cues.latest_prompt.clone();
+                info.last_agent_message = cues.last_agent_message.clone();
+                info.slept_at_ms = cues.slept_at_ms;
+                info.context = cues.context;
+            }
+            return self.spawn_thread_session(threads::ThreadSpawn {
+                id,
+                cmd,
+                info,
+                cols,
+                rows,
+                title_source,
+                extra_env,
+                launch_selections,
+                command_override,
+                resume_handle,
+                resumed,
+                preassigned,
+                replacement,
+                startup: &mut startup,
+            });
+        }
+        let pty = native_pty_system();
+        let pair = pty
+            .openpty(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| anyhow!("openpty failed: {e}"))?;
         #[cfg(target_os = "linux")]
         let codex_runtime_dir = if agent == proto::AgentKind::Codex
             && acp.is_none()
@@ -13451,6 +13628,9 @@ impl Daemon {
         data: &[u8],
         conn: u64,
     ) -> Result<()> {
+        if self.get(id).is_ok_and(|session| session.thread().is_some()) {
+            return Err(thread_refuses_terminal_input(id));
+        }
         let daemon = Arc::clone(self);
         self.enqueue_renderer_stdin(
             id,
@@ -13525,7 +13705,7 @@ impl Daemon {
         Ok(Box::new(move || match &session.backend {
             Backend::Pty { interrupt, .. } => interrupt.active_for_test(),
             Backend::AdoptedPty(raw) => raw.writer_active_for_test(),
-            Backend::Ssh(_) => false,
+            Backend::Ssh(_) | Backend::Thread(_) => false,
         }))
     }
 
@@ -13631,6 +13811,9 @@ impl Daemon {
             if !matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex) {
                 bail!("Sleep refused for session {id}: provider {provider:?} is unsupported; expected Claude or Codex");
             }
+            if session.info.view == proto::SessionView::Thread {
+                bail!("Sleep refused for session {id}: it is a thread session; thread_stop ends its process and its next message resumes the conversation");
+            }
             if session.info.spawned_by.is_some() || session.info.swarm_agent.is_some() {
                 bail!("Sleep refused for session {id}: orchestration child sessions must be closed through their parent");
             }
@@ -13707,7 +13890,7 @@ impl Daemon {
             self.persist_scrollback_result(id)?;
             let creation = match &session.backend {
                 Backend::Pty { pid_creation, .. } => *pid_creation,
-                Backend::Ssh(_) | Backend::AdoptedPty(_) => {
+                Backend::Ssh(_) | Backend::AdoptedPty(_) | Backend::Thread(_) => {
                     bail!("Sleep refused for session {id}: this pane has no supported CLI process identity")
                 }
             };
@@ -14904,6 +15087,7 @@ impl Daemon {
             scrollback_seed: None,
             replacement: None,
             pastes_first_prompt: false,
+            view: proto::SessionView::Terminal,
         });
         if let Err(e) = spawned {
             self.handoff_jobs
@@ -19030,6 +19214,12 @@ impl Daemon {
         if hold().is_some() {
             return Ok(false);
         }
+        if let Some(thread) = self.get(session_id).ok().and_then(|s| s.thread().cloned()) {
+            thread
+                .send(text)
+                .with_context(|| format!("sending a message to thread session {session_id}"))?;
+            return Ok(true);
+        }
         match self.write_stdin_counting(session_id, &bracketed_paste(text)) {
             Ok(()) => {}
             Err(e) if e.nothing_written() => {
@@ -20555,6 +20745,7 @@ impl Daemon {
             scrollback_seed: None,
             replacement: None,
             pastes_first_prompt: first_prompt.is_some(),
+            view: proto::SessionView::Terminal,
         });
         let info = match spawned {
             Ok(info) => info,
@@ -21284,6 +21475,12 @@ impl Daemon {
         self.assert_orchestration_target(caller, target)?;
         let lines = lines.max(1);
         let s = self.get(target)?;
+        if s.thread().is_some() {
+            return Ok(orchestrate::cap_read_tail(
+                self.thread_read_lines(target, lines)?,
+                lines,
+            ));
+        }
         let text = if screen {
             self.session_screen(&s, lines)
         } else {
@@ -21320,6 +21517,9 @@ impl Daemon {
             .expect("temporary cleanup lock");
         self.ensure_not_closing(target, "send_keys")?;
         self.assert_orchestration_target(caller, target)?;
+        if self.get(target)?.thread().is_some() {
+            bail!("pane_send_keys refused for session {target}: it is a thread session (view thread) and takes no keys; send it a message with pane_prompt, or open it in a terminal");
+        }
         if let Some(episode) = self.pending_permission_episode(target)? {
             bail!("send_keys refused for child {target}, permission episode {episode}: use pane_deny or pane_escalate; only the operator may approve");
         }
@@ -24215,7 +24415,8 @@ impl Daemon {
     }
 
     pub fn note_operator_keystroke(&self, session: u32, payload: &[u8]) {
-        if is_terminal_report_only(payload) {
+        if is_terminal_report_only(payload) || self.get(session).is_ok_and(|s| s.thread().is_some())
+        {
             return;
         }
         if self.ensure_not_closing(session, "operator input").is_err() {
@@ -24287,7 +24488,8 @@ impl Daemon {
                 row: row.clone(),
             })
             .collect();
-        let payload = bracketed_paste(&orchestrate::compose_inbox(&entries, &delivery_id));
+        let composed = orchestrate::compose_inbox(&entries, &delivery_id);
+        let payload = bracketed_paste(&composed);
         if let Some(why) = self.paste_hold_reason(parent) {
             tracing::debug!("holding pane {parent}'s inbox at the last moment — {why}");
             self.release_reservation(&delivery_id);
@@ -24310,36 +24512,48 @@ impl Daemon {
         {
             hook(parent);
         }
-        match self.write_stdin_counting(parent, &payload) {
-            Ok(()) => {}
-            Err(e) if e.nothing_written() => {
-                self.paste_wrote_nothing(parent, &delivery_id, &rows, &e);
+        let thread = self.get(parent).ok().and_then(|s| s.thread().cloned());
+        if let Some(thread) = thread {
+            if let Err(error) = thread.send(&composed) {
+                let error = StdinWriteError {
+                    written: Some(0),
+                    error,
+                };
+                self.paste_wrote_nothing(parent, &delivery_id, &rows, &error);
                 return;
             }
-            Err(e) => {
-                self.paste_went_partial(&delivery_id, &rows, &format!("{e}"));
+        } else {
+            match self.write_stdin_counting(parent, &payload) {
+                Ok(()) => {}
+                Err(e) if e.nothing_written() => {
+                    self.paste_wrote_nothing(parent, &delivery_id, &rows, &e);
+                    return;
+                }
+                Err(e) => {
+                    self.paste_went_partial(&delivery_id, &rows, &format!("{e}"));
+                    return;
+                }
+            }
+            std::thread::sleep(self.paste_submit_settle(parent));
+            if let Some(why) = self.paste_hold_reason(parent) {
+                self.paste_went_partial(
+                    &delivery_id,
+                    &rows,
+                    &format!(
+                        "pasted into pane {parent} but not submitted — {why}. The text is sitting \
+                         in that pane's prompt"
+                    ),
+                );
                 return;
             }
-        }
-        std::thread::sleep(self.paste_submit_settle(parent));
-        if let Some(why) = self.paste_hold_reason(parent) {
-            self.paste_went_partial(
-                &delivery_id,
-                &rows,
-                &format!(
-                    "pasted into pane {parent} but not submitted — {why}. The text is sitting \
-                     in that pane's prompt"
-                ),
-            );
-            return;
-        }
-        if let Err(e) = self.write_stdin_counting(parent, b"\r") {
-            self.paste_went_partial(
-                &delivery_id,
-                &rows,
-                &format!("pasted into pane {parent} but the submitting Enter failed: {e}"),
-            );
-            return;
+            if let Err(e) = self.write_stdin_counting(parent, b"\r") {
+                self.paste_went_partial(
+                    &delivery_id,
+                    &rows,
+                    &format!("pasted into pane {parent} but the submitting Enter failed: {e}"),
+                );
+                return;
+            }
         }
         let now = now_ms();
         match self.db.inbox_mark_delivered(&delivery_id, "paste", now) {

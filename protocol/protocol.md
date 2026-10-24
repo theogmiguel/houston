@@ -106,8 +106,8 @@ failure not given a typed refusal comes back as `error`.
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
 | `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. Sent at once during a turn; Claude queues it |
-| `thread_stop` | `session` | v150: ends the thread's whole process tree and records `turn_end{interrupted}`; the session is idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
-| `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v150: `thread_history` (direct), oldest first. Refused by name for a terminal session |
+| `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
+| `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v150: `thread_history` (direct), oldest first, echoing `before_seq`. A refusal is an `error` with `context: "session:<id>"` whose message starts `thread_history refused for session <id>` and names the cause: a terminal session, an unknown session or a limit outside the range |
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct); an unknown or removed session gets no reply and no `error` |
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. An unknown or removed session gets no reply and no `error`, and clears this socket's state for it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
@@ -433,7 +433,7 @@ every refusal names the setting.
 | `session_list` | `sessions: SessionInfo[]` | direct reply to `session_list` |
 | `session_removed` | `session` | bcast — the session is gone from the roster |
 | `thread_events` | `session`, `events: ThreadEvent[]` | v150: bcast. A thread session's live timeline, coalesced to at most 30 messages a second per session; deltas within a batch stay in order. Never on a binary frame |
-| `thread_history` | `session`, `events: ThreadEvent[]`, `has_more` | v150: direct reply to `thread_history`, oldest first; `has_more` means earlier events remain. A client that attaches asks for the newest page, then appends live events whose `seq` exceeds its last |
+| `thread_history` | `session`, `before_seq?` (the request's, echoed), `events: ThreadEvent[]`, `has_more` | v150: direct reply to `thread_history`, oldest first, never an `assistant_delta`; `has_more` means earlier events remain. A client that attaches asks for the newest page, then appends live events whose `seq` exceeds its last |
 | `scrollback` | `session`, `data` (base64), `generation`, `replayed_bytes`, `bytes_seen`, `attempt` (how many `session_attach` for this session this socket has sent, this one included) | direct reply to `session_attach`; honoured only when `attempt` matches the client's own count |
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
@@ -576,7 +576,9 @@ data are internally tagged; the tag field is named in each entry below.
 
 ```
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | zcode | droid | copilot | aider | ssh
-SessionState       running | exited | killed | interrupted
+SessionState       running | exited | killed | interrupted. A thread session without a
+                   process (after `thread_stop`, after its process exited, or restored and
+                   waiting for its first message) is `running` with status idle
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
@@ -650,7 +652,8 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    never stored) | assistant_message{message_id, text, truncated} (supersedes the
                    deltas with its `message_id`, which names one text block of one model message) |
                    tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
-                   tool_result{tool_use_id, is_error, output, truncated} |
+                   tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
+                   `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
                    turn_end{outcome: TurnOutcome, error?} | notice{text}.
                    Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
                    `truncated` says a cap applied
@@ -1419,7 +1422,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 150 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |
+| 150 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct, echoing `before_seq`), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |
