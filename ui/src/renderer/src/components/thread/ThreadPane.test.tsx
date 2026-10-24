@@ -12,6 +12,9 @@ import { ThreadPane } from './ThreadPane'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// The first import of the Markdown chunk is cold and slow while the whole suite runs in parallel.
+const MARKDOWN_CHUNK_TIMEOUT_MS = 30_000
+
 interface FakeClient {
   client: HoustonClient
   sent: { type: string; [key: string]: unknown }[]
@@ -136,6 +139,19 @@ describe('ThreadPane', () => {
     expect(container.textContent).not.toContain('was not requested')
   })
 
+  it('names a refused earlier page, and the retried page lands in its place', () => {
+    mount()
+    history([ev(10, user('ten'))], true)
+    click('thread-show-earlier')
+    act(() => fake.emit({ type: 'error', message: 'thread_history refused for session 7: limit 900 is outside 1..500', context: 'session:7' }))
+    expect(container.textContent).toContain('thread_history refused for session 7')
+    expect((container.querySelector('[data-testid="thread-show-earlier"]') as HTMLButtonElement).disabled).toBe(false)
+    act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Retry') as HTMLButtonElement).click())
+    history([ev(9, user('nine'))], false, 10)
+    expect(rows('user')).toEqual(['nine', 'ten'])
+    expect(container.textContent).not.toContain('refused')
+  })
+
   it('sends on Enter, keeps Shift+Enter for a new line, and clears the field', () => {
     mount()
     history([])
@@ -226,7 +242,7 @@ describe('ThreadPane', () => {
     expect(container.textContent).toContain('https://example.com/leak?d=secret')
     act(() => (container.querySelector('[data-testid="thread-image-load"]') as HTMLButtonElement).click())
     expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain('https://example.com/leak?d=secret')
-  })
+  }, MARKDOWN_CHUNK_TIMEOUT_MS)
 
   it('renders a bounded window of a long history and shows an earlier page in the click that loads it', () => {
     mount()

@@ -86,10 +86,8 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
       case 'turn_end':
         freeze()
         settle()
-        if (kind.outcome === 'interrupted') {
-          untruncateStopped(items, turnStart)
-          items.push({ kind: 'stopped', key })
-        }
+        if (kind.outcome !== 'completed') untruncateStopped(items, turnStart)
+        if (kind.outcome === 'interrupted') items.push({ kind: 'stopped', key })
         else if (kind.outcome === 'error') items.push({ kind: 'error', key, text: kind.error ?? 'The turn ended with an error the CLI did not describe.' })
         break
       case 'notice':
@@ -101,7 +99,7 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
   return items
 }
 
-// A stopped turn's partial answer is stored as truncated; the Stopped marker already says so.
+// A stopped or failed turn's partial answer is stored as truncated; the row after it already says why.
 function untruncateStopped(items: ThreadItem[], turnStart: number): void {
   for (let at = items.length - 1; at >= turnStart; at--) {
     const item = items[at]

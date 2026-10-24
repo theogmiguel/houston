@@ -24,6 +24,7 @@ import type { ThemeName } from '../theme'
 import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
 import { preloadable } from '../preloadable'
+import { THREAD_HISTORY_REFUSAL } from '../thread/threadTypes'
 import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
@@ -423,7 +424,7 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
     })
     const offError = client.subscribe('error', (message) => {
       // A refused close or respawn belongs to PaneOps, which shows it once.
-      if (isSessionLifecycleError(message, sessionId) && ops.attribute(message) === null) setLifecycleError(message.message)
+      if (isSessionLifecycleError(message, sessionId) && !THREAD_HISTORY_REFUSAL.test(message.message) && ops.attribute(message) === null) setLifecycleError(message.message)
     })
     return () => { offMemory(); offError() }
   }, [client, ops, sessionId])

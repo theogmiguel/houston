@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadItems, type ThreadItem } from './threadModel'
-import type { ThreadClientMsg, ThreadEvent, ThreadEventsMsg, ThreadHistoryMsg } from './threadTypes'
+import { THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -77,6 +77,12 @@ export class ThreadSessionStore {
     this.set({ ...this.snapshot, loadingEarlier: beforeSeq === null && this.snapshot.loadingEarlier, failure: reason })
   }
 
+  /** A refusal carries no `before_seq`; the daemon answers in request order, so it is the oldest request's. */
+  refusedOldest(reason: string): void {
+    const oldest = this.pending[0]
+    if (oldest) this.refused(oldest.beforeSeq, reason)
+  }
+
   // `before_seq` echoes the request; a reply without one is matched in send order.
   private take(beforeSeq: number | null | undefined): HistoryRequest | null {
     const at = beforeSeq === undefined ? 0 : this.pending.findIndex((request) => request.beforeSeq === beforeSeq)
@@ -85,7 +91,7 @@ export class ThreadSessionStore {
   }
 
   onHistory(msg: ThreadHistoryMsg): void {
-    const request = this.take((msg as { before_seq?: number | null }).before_seq)
+    const request = this.take(msg.before_seq)
     if (request === null) return
     if (request.beforeSeq === null) {
       this.lastStoredSeq = -1
@@ -169,7 +175,11 @@ function registryFor(client: HoustonClient): Registry {
   // Routed once per client by session, so N thread panes cost one handler per message.
   const offEvents = client.subscribe('thread_events', (msg) => stores.get(msg.session)?.store.onEvents(msg))
   const offHistory = client.subscribe('thread_history', (msg) => stores.get(msg.session)?.store.onHistory(msg))
-  const off = (): void => { offEvents(); offHistory() }
+  const offError = client.subscribe('error', (msg) => {
+    const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
+    if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
+  })
+  const off = (): void => { offEvents(); offHistory(); offError() }
   const registry = { stores, off }
   registries.set(client, registry)
   return registry
