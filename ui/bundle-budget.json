@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 948,437 bytes (one boot chunk) with the same small headroom:",
+    "the pane status announcer is a live region that must already be mounted when",
+    "the focused pane's first status change arrives, so it and its settle logic are",
+    "boot-path code."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 948600,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

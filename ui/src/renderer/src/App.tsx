@@ -392,6 +392,7 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity, stackFullMessage } from "./paneCaps";
+import { PaneStatusAnnouncer } from "./components/PaneStatusAnnouncer";
 import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/ui/Icon";
 import {
@@ -1234,9 +1235,10 @@ export function App(): React.JSX.Element {
     setScmOpen,
     setActiveSurface,
   });
-  const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
+  const attentionIds = useMemo(() => [...sessions.values()].filter((session) =>
     ownUserInput(session) && !session.hidden && openedAttention.get(session.id) !== inputEpisode(session)
-  ).length, [sessions, openedAttention]);
+  ).map((session) => session.id), [sessions, openedAttention]);
+  const taskbarAttentionCount = attentionIds.length;
   useEffect(() => {
     void setTaskbarAttentionCount(taskbarAttentionCount).catch(() => {});
   }, [taskbarAttentionCount]);
@@ -4535,6 +4537,8 @@ export function App(): React.JSX.Element {
           )}
 
           <PrefixHint />
+
+          <PaneStatusAnnouncer activeId={activeId} needingYou={attentionIds} />
 
           <QuickOpenOverlay
             open={quickOpen}
