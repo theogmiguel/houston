@@ -3549,6 +3549,25 @@ impl Db {
                 }
             }
         }
+        // Codex resumes a conversation by id from any folder, so its binding moves with
+        // the cwd. Claude and ZCode keep history per folder: their binding stays, and
+        // respawn refuses the exact resume by name and starts fresh.
+        let bound: Vec<(i64, String)> = tx
+            .prepare(
+                "SELECT rowid, resume_cwd FROM sessions
+                 WHERE resume_agent = 'codex' AND resume_cwd IS NOT NULL",
+            )?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        for (rowid, path) in bound {
+            if let Some(moved) = crate::paths::relocated(from, to, &path) {
+                tx.execute(
+                    "UPDATE sessions SET resume_cwd = ?2 WHERE rowid = ?1",
+                    rusqlite::params![rowid, moved],
+                )
+                .with_context(|| format!("relocating sessions.resume_cwd {path:?}"))?;
+            }
+        }
         for (old, new, common_dir) in worktrees {
             tx.execute(
                 "UPDATE OR REPLACE managed_worktrees SET path = ?2, repo_common_dir = ?3 WHERE path = ?1",
@@ -7338,6 +7357,8 @@ mod tests {
         ("sessions", "transcript_path"),
         ("sessions", "resume_transcript_path"),
         ("sessions", "profile_config_dir"),
+        // Moved for Codex bindings only, inside `relocate_workspace`.
+        ("sessions", "resume_cwd"),
         ("agent_profiles", "config_dir"),
         ("skill_pushes", "path"),
         ("ssh_profiles", "default_dir"),
@@ -7362,6 +7383,7 @@ mod tests {
             matches!(c, "workspace" | "path" | "cwd" | "dir")
                 || c.ends_with("_dir")
                 || c.ends_with("_path")
+                || c.ends_with("_cwd")
         };
         let listed = |t: &str, c: &str| {
             WORKSPACE_KEY_COLUMNS
@@ -7453,6 +7475,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(key, "workspace_actions:/b/proj");
+    }
+
+    #[test]
+    fn relocation_moves_a_codex_resume_binding_and_keeps_a_claude_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        relocation_fixture(&db, "/a/proj");
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "UPDATE sessions SET resume_session_id = 'c1', resume_agent = 'claude',
+                     resume_cwd = cwd WHERE id = 1;
+                 INSERT INTO sessions (id, agent, project_dir, cwd, state, created_at,
+                     resume_session_id, resume_agent, resume_cwd)
+                     VALUES (3, 'codex', '/a/proj', '/a/proj', 'exited', 0,
+                             'x1', 'codex', '/a/proj');",
+            )
+            .unwrap();
+        db.relocate_workspace("/a/proj", "/b/proj", "proj", &[])
+            .unwrap();
+        assert!(db.session_has_bound_resume_handle(3).unwrap());
+        assert!(db
+            .check_session_resume_binding(3, proto::AgentKind::Codex, Path::new("/b/proj"))
+            .is_ok());
+        assert!(!db.session_has_bound_resume_handle(1).unwrap());
+        let refusal = db
+            .check_session_resume_binding(
+                1,
+                proto::AgentKind::Claude,
+                Path::new("/b/proj/.houston/worktrees/x"),
+            )
+            .unwrap_err();
+        assert!(refusal.contains("/a/proj"), "{refusal}");
     }
 
     #[test]
