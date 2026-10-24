@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use houston_protocol::{
-    NightAgent, NightEntry, NightEntryKind, NightFocusLevel, NightOutput,
+    NightAgent, NightEntry, NightEntryKind, NightFocus, NightFocusLevel, NightOutput,
     NightPrSize, NightShiftSettings, ROUTINE_PROMPT_MAX,
 };
 
@@ -54,6 +54,43 @@ fn level(l: NightFocusLevel) -> &'static str {
         NightFocusLevel::Normal => "Normal",
         NightFocusLevel::High => "High",
     }
+}
+
+/// Each area's name, level and one-line definition, in Setup's order. Setup
+/// shows the same definitions as tooltips.
+pub fn focus_areas(f: &NightFocus) -> [(&'static str, NightFocusLevel, &'static str); 6] {
+    [
+        (
+            "Reliability",
+            f.reliability,
+            "Crashes, hangs, lost state, error handling and recovery paths.",
+        ),
+        (
+            "Performance",
+            f.performance,
+            "Startup, memory, CPU and latency, measured before and after.",
+        ),
+        (
+            "UI and UX polish",
+            f.ui_polish,
+            "Rough edges you can see: layout, wording, states, keyboard and focus.",
+        ),
+        (
+            "Competitor gaps",
+            f.competitor_gaps,
+            "Things the competitors listed below do that this project does not.",
+        ),
+        (
+            "Docs accuracy",
+            f.docs_accuracy,
+            "Docs that say something the code does not do.",
+        ),
+        (
+            "Test gaps",
+            f.test_gaps,
+            "Important paths no test covers.",
+        ),
+    ]
 }
 
 fn digest_line(e: &NightEntry) -> String {
@@ -122,18 +159,19 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
              it."
         );
     }
-    let f = &s.focus;
-    let _ = writeln!(
-        out,
-        "- Focus: reliability {}, performance {}, UI and UX polish {}, competitor gaps {}, \
-         docs accuracy {}, test gaps {}.",
-        level(f.reliability),
-        level(f.performance),
-        level(f.ui_polish),
-        level(f.competitor_gaps),
-        level(f.docs_accuracy),
-        level(f.test_gaps)
-    );
+    let areas = focus_areas(&s.focus);
+    out.push_str("- Focus areas, with their level and what each covers; scout only these:\n");
+    for (name, l, definition) in areas.iter().filter(|a| a.1 != NightFocusLevel::Off) {
+        let _ = writeln!(out, "  - {name} ({}): {definition}", level(*l));
+    }
+    let off: Vec<&str> = areas
+        .iter()
+        .filter(|a| a.1 == NightFocusLevel::Off)
+        .map(|a| a.0)
+        .collect();
+    if !off.is_empty() {
+        let _ = writeln!(out, "- Off, not scouted: {}.", off.join(", "));
+    }
     if !s.competitor_sources.is_empty() {
         let _ = writeln!(
             out,
@@ -356,8 +394,9 @@ mod tests {
         let brief = compose(&s, &run(), &digest);
         for needle in [
             "\"stop crashing in long sessions\"",
-            "reliability Normal",
-            "performance Normal",
+            "  - Reliability (Normal): Crashes, hangs",
+            "  - Performance (Normal): Startup, memory",
+            "- Off, not scouted: UI and UX polish, Competitor gaps, Docs accuracy, Test gaps.",
             "zcode (GLM-5.3-Flash), then claude (opus)",
             "Live workers at most: 4",
             "`cargo test`",
@@ -378,6 +417,21 @@ mod tests {
         assert!(METHOD
             .lines()
             .all(|line| line.chars().all(|c| (' '..='~').contains(&c))));
+    }
+
+    #[test]
+    fn areas_are_defined() {
+        let mut s = super::super::settings::defaults();
+        s.focus.test_gaps = NightFocusLevel::High;
+        let brief = compose(&s, &run(), &[]);
+        assert!(
+            brief.contains("  - Test gaps (High): Important paths no test covers."),
+            "{brief}"
+        );
+        for (name, _, definition) in focus_areas(&s.focus) {
+            assert!(!definition.is_empty() && !name.is_empty());
+        }
+        assert!(!brief.contains("Docs that say something"), "Off areas are not defined");
     }
 
     #[test]

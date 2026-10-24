@@ -628,7 +628,7 @@ async fn run_fires_isolated_with_composed_brief() {
     let brief = r.brief(&run);
     for needle in [
         "Direction, in the user's words: \"CI stays green\"",
-        "test gaps High",
+        "  - Test gaps (High): Important paths no test covers.",
         "zcode (GLM-5.3-Flash), then claude (opus)",
         "`cargo test -p core`",
         "draft pull requests only",

@@ -100,6 +100,13 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Checks before hand-back | None; at least one is required before a run starts |
 | Questions at night | Parked for the morning report |
 
+The brief defines each focus area that is on in one line, the same text Setup shows beside
+it: reliability (crashes, hangs, lost state, error handling and recovery), performance
+(startup, memory, CPU and latency, measured before and after), UI and UX polish (rough edges
+you can see), competitor gaps (what the listed competitors do that the project does not),
+docs accuracy (docs that say something the code does not do) and test gaps (important paths
+no test covers). An area that is off is not scouted.
+
 Change the settings in the **Setup** view and choose **Save**. Unsaved edits survive
 updates from elsewhere; if the settings changed in another window meanwhile, **Save** is
 refused and **Discard changes** loads the current ones. The routine is changed and started

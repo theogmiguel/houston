@@ -9,13 +9,14 @@ import type { NightWindow } from '../../houston/generated/NightWindow'
 import type { WindowMark } from '../ui'
 import { engineLabel } from '../engineLabel'
 
-export const FOCUS_AREAS: { key: keyof NightFocus; label: string }[] = [
-  { key: 'reliability', label: 'Reliability' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'ui_polish', label: 'UI and UX polish' },
-  { key: 'competitor_gaps', label: 'Competitor gaps' },
-  { key: 'docs_accuracy', label: 'Docs accuracy' },
-  { key: 'test_gaps', label: 'Test gaps' }
+/** Each area with the one-line definition the brief gives the orchestrator (`brief.rs::focus_areas`). */
+export const FOCUS_AREAS: { key: keyof NightFocus; label: string; definition: string }[] = [
+  { key: 'reliability', label: 'Reliability', definition: 'Crashes, hangs, lost state, error handling and recovery paths.' },
+  { key: 'performance', label: 'Performance', definition: 'Startup, memory, CPU and latency, measured before and after.' },
+  { key: 'ui_polish', label: 'UI and UX polish', definition: 'Rough edges you can see: layout, wording, states, keyboard and focus.' },
+  { key: 'competitor_gaps', label: 'Competitor gaps', definition: 'Things the competitors listed below do that this project does not.' },
+  { key: 'docs_accuracy', label: 'Docs accuracy', definition: 'Docs that say something the code does not do.' },
+  { key: 'test_gaps', label: 'Test gaps', definition: 'Important paths no test covers.' }
 ]
 
 /** Direction words that suggest a focus area, in English and Portuguese. */
