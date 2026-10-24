@@ -5948,6 +5948,11 @@ pub enum ServerMsg {
         /// which merge queue output needs.
         #[serde(default)]
         merge_verify_command: bool,
+        /// The global child panes per agent; a run's orchestrator has its own
+        /// limit of live workers plus two instead.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        child_cap: u32,
     },
     /// One run changed (started, wrap-up, ledger, settled); broadcast.
     NightShiftRunEvent {

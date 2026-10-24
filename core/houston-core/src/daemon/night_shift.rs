@@ -363,6 +363,7 @@ impl Daemon {
                 },
             },
             merge_verify_command,
+            child_cap: self.orchestration_max_live_children(),
         })
     }
 
@@ -1173,6 +1174,19 @@ impl Daemon {
             tracing::warn!("closing pane {session} of night run {run_id}: {e:#}");
         }
         bail!("pane_spawn refused: {why}; pane {session} was closed again")
+    }
+
+    /// The live children `session` may have. A run's orchestrator has its own
+    /// limit, the run's pane cap, whatever the global child panes per agent is.
+    pub(crate) fn child_cap_of(&self, session: u32) -> u32 {
+        let run = self
+            .night_runs_live()
+            .into_iter()
+            .find(|(_, run)| run.session_id == Some(session));
+        match run {
+            Some((routine_id, _)) => self.night_pane_cap(routine_id).1 as u32,
+            None => self.orchestration_max_live_children(),
+        }
     }
 
     pub(crate) fn is_night_shift_orchestrator(&self, session: u32) -> bool {

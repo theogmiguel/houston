@@ -8,7 +8,7 @@ import { NumberField } from '../ui/NumberField'
 import { engineLabel } from '../engineLabel'
 import {
   FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, clockLabel, durationLabel, mergeRefusal,
-  minutesBetween, parseClock, settingsProblems, windowMarks
+  minutesBetween, ownLimitNote, parseClock, settingsProblems, windowMarks
 } from './nightShiftFormat'
 
 const LEVELS: { value: NightFocusLevel; label: string }[] = [
@@ -26,11 +26,13 @@ function ClockField({ label, value, onChange }: { label: string; value: string; 
 }
 
 /** Routines ▸ Night shift ▸ Setup. Edits a draft; Save sends the whole document against the revision it was read at. */
-export function NightShiftSetup({ settings, revision, verifyCommand, onSave, saving = false, error = null }: {
+export function NightShiftSetup({ settings, revision, verifyCommand, childCap = 6, onSave, saving = false, error = null }: {
   settings: NightShiftSettings
   revision: string
   /** Whether the workspace has a merge queue verification command. */
   verifyCommand: boolean
+  /** The global child panes per agent; the run's orchestrator has its own limit. */
+  childCap?: number
   onSave: (settings: NightShiftSettings, revision: string) => void
   saving?: boolean
   error?: string | null
@@ -126,7 +128,7 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Crew">
-        <CrewFields draft={draft} set={set} workerOptions={workerOptions} orchestratorOptions={orchestratorOptions} />
+        <CrewFields draft={draft} set={set} childCap={childCap} workerOptions={workerOptions} orchestratorOptions={orchestratorOptions} />
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Output">
@@ -148,8 +150,9 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
   )
 }
 
-function CrewFields({ draft, set, workerOptions, orchestratorOptions }: {
+function CrewFields({ draft, set, childCap, workerOptions, orchestratorOptions }: {
   draft: NightShiftSettings
+  childCap: number
   set: (patch: Partial<NightShiftSettings>) => void
   workerOptions: { value: AgentKind; label: string }[]
   orchestratorOptions: { value: AgentKind; label: string }[]
@@ -177,7 +180,10 @@ function CrewFields({ draft, set, workerOptions, orchestratorOptions }: {
       </div>
     </Card.Field>
     <Card.Field label="Live workers">
-      <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
+      <div className="flex items-center gap-[var(--space-2)]">
+        <NumberField width="compact" aria-label="Live workers" min={1} max={12} value={draft.live_workers} onChange={(e) => set({ live_workers: Math.max(1, Number(e.target.value) || 1) })} />
+        {ownLimitNote(draft.live_workers, childCap) && <Text size="small" tone="muted">{ownLimitNote(draft.live_workers, childCap)}</Text>}
+      </div>
     </Card.Field>
     <Card.Field label="Reviewer">
       <Select aria-label="Reviewer" value={draft.reviewer?.provider ?? 'same'}

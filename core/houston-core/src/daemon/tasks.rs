@@ -3991,7 +3991,7 @@ impl Daemon {
                     .to_string(),
             ));
         }
-        let cap = self.orchestration_max_live_children();
+        let cap = self.child_cap_of(caller);
         let live = self.active_children_of(caller).len() as u32;
         if live.saturating_add(requested) > cap {
             return Some(Self::task_child_cap_refused(
@@ -4729,7 +4729,7 @@ impl Daemon {
                 ),
             ));
         }
-        let cap = self.orchestration_max_live_children();
+        let cap = self.child_cap_of(orchestrator_session);
         let live = self.active_children_of(orchestrator_session).len() as u32;
         let free = cap.saturating_sub(live);
         if free < count {

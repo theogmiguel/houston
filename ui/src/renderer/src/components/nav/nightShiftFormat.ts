@@ -55,6 +55,12 @@ export const WORKER_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode', 'zc
 export const ORCHESTRATOR_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode']
 export const ZCODE_ORCHESTRATOR_REFUSAL = 'ZCode cannot orchestrate: a pull request watch cannot wake it, so the CI stage would be off.'
 
+/** The run's own pane limit, shown only when it is above the global child panes per agent. */
+export function ownLimitNote(liveWorkers: number, childCap: number): string | null {
+  const own = liveWorkers + 2
+  return own > childCap ? `Own limit: ${own} panes · other agents keep ${childCap}` : null
+}
+
 export const UI_POLISH_SCREENSHOTS = 'UI and UX polish needs screenshots: its changes are visible.'
 
 export function clockLabel(c: NightClock): string {

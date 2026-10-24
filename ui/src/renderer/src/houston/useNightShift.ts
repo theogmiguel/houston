@@ -15,6 +15,8 @@ export interface NightShiftState {
   machine: NightMachine
   /** Whether the workspace's merge queue has a verification command. */
   mergeVerifyCommand: boolean
+  /** The global child panes per agent. */
+  childCap: number
 }
 
 export interface NightShiftReportText {
@@ -75,7 +77,8 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
         revision: msg.revision,
         runs: msg.runs,
         machine: msg.machine,
-        mergeVerifyCommand: msg.merge_verify_command
+        mergeVerifyCommand: msg.merge_verify_command,
+        childCap: msg.child_cap
       }))
       if (msg.preflight) setPreflight(msg.preflight)
     })

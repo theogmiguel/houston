@@ -900,6 +900,39 @@ async fn live_worker_cap_refuses_spawn() {
     assert_eq!(status, 200, "a freed slot admits a spawn: {body}");
 }
 
+/// The orchestrator's child limit is the run's pane cap (live workers plus
+/// two), not the global child panes per agent, which its workers keep.
+#[tokio::test]
+async fn the_orchestrator_has_its_own_child_limit() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(2, 2).unwrap();
+    let routine = r.ready(|s| s.live_workers = 4);
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let mut children = Vec::new();
+    for _ in 0..2 {
+        let (status, body) = r.spawn_child(o, "codex").await;
+        assert_eq!(status, 200, "{body}");
+        children.push(body["session_id"].as_u64().unwrap() as u32);
+    }
+    for _ in 0..2 {
+        let (status, body) = r.spawn_child(children[0], "codex").await;
+        assert_eq!(status, 200, "a worker spawns within the global cap: {body}");
+    }
+    let (status, body) = r.spawn_child(children[0], "codex").await;
+    assert_ne!(status, 200, "{body}");
+    assert!(body.to_string().contains("(cap 2)"), "{body}");
+    for _ in 0..2 {
+        let (status, body) = r.spawn_child(o, "codex").await;
+        assert_eq!(status, 200, "past the global cap of 2: {body}");
+    }
+    let (status, body) = r.spawn_child(o, "codex").await;
+    assert_ne!(status, 200, "{body}");
+    assert!(body.to_string().contains("cap of 6"), "{body}");
+    assert_eq!(r.daemon.orchestration_max_live_children(), 2);
+}
+
 /// The report and the orchestrator's turn end settle the run, and its live
 /// worker and the orchestrator are closed with it.
 #[tokio::test]

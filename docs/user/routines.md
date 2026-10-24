@@ -116,9 +116,10 @@ queue. With **Hold for my QA** on, a visible change stays out of the queue until
 suggested merge order that are queued; if adding it fails, it stays held and you can mark
 it again.
 
-The run's panes also count against the orchestration caps in Settings ▸ Agents ▸
-Orchestration: the child panes per agent must allow the live workers plus two, and workers
-start their own children only when the nesting depth allows it.
+The run's orchestrator has its own child limit, the live workers plus two, whatever
+**Settings ▸ Agents ▸ Orchestration ▸ Child panes per agent** says; Setup notes it when it is
+higher than that setting, which keeps applying to every other agent, the run's workers
+included. Workers start their own children only when the nesting depth allows it.
 
 ### Running
 

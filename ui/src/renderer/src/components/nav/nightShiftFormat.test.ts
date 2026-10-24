@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { suggestFocus } from './nightShiftFormat'
+import { ownLimitNote, suggestFocus } from './nightShiftFormat'
 import { nightDefaults } from '../../test/nightShiftFixtures'
 
 describe('nightShiftFormat', () => {
@@ -11,6 +11,11 @@ describe('nightShiftFormat', () => {
     expect(en.focus).toMatchObject({ reliability: 'high', performance: 'high', ui_polish: 'off', docs_accuracy: 'off', test_gaps: 'off' })
     const pt = suggestFocus('Deixar a documentação certa e aumentar a cobertura de testes', base, base, new Set())
     expect(pt.focus).toMatchObject({ docs_accuracy: 'high', test_gaps: 'high', reliability: 'off', performance: 'off' })
+  })
+
+  it('names the own pane limit only above the global child panes per agent', () => {
+    expect(ownLimitNote(4, 6)).toBeNull()
+    expect(ownLimitNote(5, 6)).toBe('Own limit: 7 panes · other agents keep 6')
   })
 
   it('never overwrites an area changed by hand, and falls back without a match', () => {

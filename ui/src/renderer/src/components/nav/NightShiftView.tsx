@@ -87,7 +87,7 @@ function NightShiftTabContent({ current, state, live, shown, finished, workers, 
 }): React.JSX.Element {
   return <>
     {error && current !== 'setup' && <Notice tone="danger">{error}</Notice>}
-    {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} error={error} onSave={actions.save} />}
+    {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} childCap={state.childCap} error={error} onSave={actions.save} />}
     {current === 'live' && live && <NightShiftLive run={live} machine={state.machine} workers={workers} now={now}
       onWrapUp={() => actions.wrapUp(live.run_id)} onStop={() => actions.stop(live.run_id)} onOpenSession={onOpenSession} />}
     {current === 'report' && shown && <NightShiftReportTab finished={finished} shown={shown} report={report} workers={workers}

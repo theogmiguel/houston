@@ -20459,7 +20459,7 @@ impl Daemon {
             if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
                 caller,
                 direct,
-                self.orchestration_max_live_children(),
+                self.child_cap_of(caller),
             ) {
                 bail!(
                     "{msg}; {} settled children do not count against the cap",
@@ -21056,7 +21056,7 @@ impl Daemon {
         if !self.orchestration_enabled() {
             return false;
         }
-        let max = self.orchestration_max_live_children();
+        let max = self.child_cap_of(id);
         let free = max.saturating_sub(self.active_children_of(id).len() as u32);
         if free == 0 {
             return false;
