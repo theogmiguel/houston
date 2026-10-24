@@ -96,7 +96,7 @@ export function ThreadComposer({ working, disabledReason, onSend, onStop }: {
       <ThreadComposerInput
         data-testid="thread-composer-input"
         aria-label="Message Claude"
-        placeholder={disabledReason ?? (working ? 'Message Claude; it reads this after the current step' : 'Message Claude')}
+        placeholder={disabledReason ?? 'Message Claude'}
         rows={rows}
         value={text}
         disabled={disabledReason !== null}
