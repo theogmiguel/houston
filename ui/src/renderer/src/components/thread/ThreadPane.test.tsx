@@ -227,21 +227,45 @@ describe('ThreadPane', () => {
 
   it('answers a held permission request from its card and shows how it was resolved', () => {
     mount({ status: 'needs-input' })
-    history([ev(1, { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{"command":"rm -rf build"}', truncated: false })])
+    history([ev(1, { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{"command":"rm -rf build"}', truncated: false, input_bytes: 16 })])
     const card = (): HTMLElement => container.querySelector('[data-thread-item="approval"]')!
     expect(card().getAttribute('aria-label')).toBe('Permission request: Bash')
     expect(card().textContent).toContain('rm -rf build')
-    const allow = container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow"]')!
-    const deny = container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-deny"]')!
-    expect(allow.tagName).toBe('BUTTON')
-    act(() => deny.click())
+    const allow = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow"]')!
+    const deny = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-deny"]')!
+    expect(allow().tagName).toBe('BUTTON')
+    act(() => deny().click())
     expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'r1', allow: false })
-    act(() => allow.click())
+    expect(allow().disabled && deny().disabled).toBe(true)
+    expect(card().textContent).toContain('Sending your answer')
+    act(() => fake.emit({ type: 'error', message: 'thread_approve refused for session 7: no pending permission request "r1" (pending: [])', context: 'session:7' }))
+    expect(allow().disabled).toBe(false)
+    act(() => allow().click())
+    expect(fake.sent.filter((msg) => msg.type === 'thread_approve')).toHaveLength(2)
     expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'r1', allow: true })
     act(() => fake.emit({ type: 'thread_events', session: 7, events: [ev(2, { type: 'approval_resolved', request_id: 'r1', decision: 'denied', reason: 'Stopped in Houston before anyone answered.' })] }))
     expect(card().dataset.approvalState).toBe('denied')
     expect(card().textContent).toContain('Denied · Stopped in Houston before anyone answered.')
     expect(container.querySelector('[data-testid="thread-approval-allow"]')).toBeNull()
+  })
+
+  it('keeps the card unanswerable while disconnected and names input it does not show', () => {
+    mount({ status: 'needs-input' })
+    history([ev(1, { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Write', input: 'x'.repeat(1000), truncated: true, input_bytes: 1000 + 40 * 1024 })])
+    const allow = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow"]')!
+    expect(allow().textContent).toBe('Allow (40 KiB not shown)')
+    expect(container.textContent).toContain('40 KiB more is not shown')
+    mount({ status: 'needs-input' }, false)
+    expect(allow().disabled).toBe(true)
+  })
+
+  it('locks the permission mode while a turn is open even before the status says so', () => {
+    mount({ status: 'idle' })
+    history([ev(1, user('go'))])
+    const select = (): HTMLButtonElement => container.querySelector('[data-testid="thread-permission-mode"]')!
+    expect(select().disabled).toBe(true)
+    act(() => fake.emit({ type: 'thread_events', session: 7, events: [ev(2, { type: 'turn_end', outcome: 'completed', error: null })] }))
+    expect(select().disabled).toBe(false)
   })
 
   it('shows the permission mode and locks it while a turn runs, naming the status', () => {

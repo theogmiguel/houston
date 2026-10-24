@@ -107,21 +107,44 @@ function ToolBody({ item }: { item: ToolItem }): React.JSX.Element {
   </>
 }
 
+function formatKiB(bytes: number): string {
+  return `${Math.max(1, Math.ceil(bytes / 1024)).toLocaleString()} KiB`
+}
+
+/** Bytes of the request's input the card does not show; Allow still approves them. */
+export function hiddenInputBytes(item: Pick<ApprovalItem, 'input' | 'inputTruncated' | 'inputBytes'>): number {
+  if (!item.inputTruncated) return 0
+  return Math.max(0, item.inputBytes - new TextEncoder().encode(item.input).length)
+}
+
 /** A held permission request: the tool's input as its tool card shows it, then Allow / Deny. */
-export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, onAnswer }: { item: ApprovalItem; onAnswer: (requestId: string, allow: boolean) => void }): React.JSX.Element {
-  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: item.inputTruncated, result: null, settled: true }
+export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answering, connected, onAnswer }: {
+  item: ApprovalItem
+  answering: boolean
+  connected: boolean
+  onAnswer: (requestId: string, allow: boolean) => void
+}): React.JSX.Element {
+  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, result: null, settled: true }
+  const hidden = hiddenInputBytes(item)
+  const locked = answering || !connected
   return (
     <ThreadApprovalCard
       name={item.name}
       summary={toolSummary(item.input)}
       state={item.state}
       reason={item.reason}
+      status={answering ? 'Sending your answer…' : connected ? undefined : 'Reconnecting to the daemon'}
       actions={<>
-        <Button data-testid="thread-approval-deny" variant="secondary" size="sm" onClick={() => onAnswer(item.requestId, false)}>Deny</Button>
-        <Button data-testid="thread-approval-allow" variant="primary" size="sm" onClick={() => onAnswer(item.requestId, true)}>Allow</Button>
+        <Button data-testid="thread-approval-deny" variant="secondary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, false)}>Deny</Button>
+        <Button data-testid="thread-approval-allow" variant="primary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, true)}>
+          {hidden > 0 ? `Allow (${formatKiB(hidden)} not shown)` : 'Allow'}
+        </Button>
       </>}
     >
-      {item.state === 'pending' ? <ToolBody item={asTool} /> : null}
+      {item.state === 'pending' ? <>
+        <ToolBody item={asTool} />
+        {hidden > 0 && <ThreadCaption>Houston shows the first 64 KiB of this input; {formatKiB(hidden)} more is not shown and Allow approves it too.</ThreadCaption>}
+      </> : null}
     </ThreadApprovalCard>
   )
 })

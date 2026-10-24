@@ -12,3 +12,5 @@ export type ThreadClientMsg = Extract<ClientMsg, { type: 'thread_send' | 'thread
 
 /** The daemon's refusal of a `thread_history` request names the session; the thread pane shows it. */
 export const THREAD_HISTORY_REFUSAL = /^thread_history refused for session (\d+)/
+/** The daemon's refusal of a `thread_approve`; the card's buttons come back. */
+export const THREAD_APPROVE_REFUSAL = /^thread_approve refused for session (\d+)/

@@ -75,11 +75,13 @@ export type ThreadApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
 const APPROVAL_WORD: Record<ThreadApprovalState, string> = { pending: 'Waiting for you', allowed: 'Allowed', denied: 'Denied', withdrawn: 'Not answered' }
 
 /** Claude asks to run a tool: the request, its input and, while pending, the answers. */
-export function ThreadApprovalCard({ name, summary, state, reason, actions, children }: {
+export function ThreadApprovalCard({ name, summary, state, reason, status, actions, children }: {
   name: string
   summary: string
   state: ThreadApprovalState
   reason?: string | null
+  /** Replaces the pending state's words, for example while an answer is on its way. */
+  status?: string
   actions?: ReactNode
   children?: ReactNode
 }): React.JSX.Element {
@@ -100,7 +102,7 @@ export function ThreadApprovalCard({ name, summary, state, reason, actions, chil
       {children && <div className="flex flex-col gap-[var(--space-2)] border-t border-[var(--divider)] p-[var(--space-2)]">{children}</div>}
       <div className="flex min-w-0 items-center gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--space-2)] py-[var(--space-1-5)]">
         <Text as="div" role="status" size="small" tone={pending ? 'secondary' : 'muted'} className="min-w-0 flex-1 break-words">
-          {APPROVAL_WORD[state]}{!pending && reason ? ` · ${reason}` : ''}
+          {pending ? status ?? APPROVAL_WORD.pending : APPROVAL_WORD[state]}{!pending && reason ? ` · ${reason}` : ''}
         </Text>
         {pending && actions}
       </div>

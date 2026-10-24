@@ -16,7 +16,7 @@ export type ThreadItem =
   | { kind: 'notice'; key: string; text: string }
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
-  | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; state: ApprovalState; reason: string | null }
+  | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; inputBytes: number; state: ApprovalState; reason: string | null }
 
 // Folds the event log into rows. Deltas stream into one row per message until its stored
 // `assistant_message` replaces them; deltas arriving after that are stale and skipped.
@@ -99,10 +99,10 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
         freeze()
         items.push({ kind: 'notice', key, text: kind.text })
         break
+      // Requests come from the MCP path, deltas from stdout: an open answer keeps streaming.
       case 'approval_request':
-        freeze()
         approvals.set(kind.request_id, items.length)
-        items.push({ kind: 'approval', key, requestId: kind.request_id, name: kind.tool_name, input: kind.input, inputTruncated: kind.truncated, state: 'pending', reason: null })
+        items.push({ kind: 'approval', key, requestId: kind.request_id, name: kind.tool_name, input: kind.input, inputTruncated: kind.truncated, inputBytes: kind.input_bytes, state: 'pending', reason: null })
         break
       case 'approval_resolved': {
         const at = approvals.get(kind.request_id)
@@ -157,7 +157,7 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
       return true
     case 'approval': {
       const other = b as typeof a
-      return a.requestId === other.requestId && a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.state === other.state && a.reason === other.reason
+      return a.requestId === other.requestId && a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.inputBytes === other.inputBytes && a.state === other.state && a.reason === other.reason
     }
   }
 }

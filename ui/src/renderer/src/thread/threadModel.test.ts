@@ -22,17 +22,27 @@ function events(kinds: ThreadEventKind[]): ThreadEvent[] {
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 
 describe('buildThreadItems', () => {
+  it('keeps streaming an open answer across a permission request', () => {
+    const items = buildThreadItems(events([
+      delta('m1', 'Let me '),
+      { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{}', truncated: false, input_bytes: 2 },
+      delta('m1', 'check.')
+    ]))
+    expect(items.map((item) => item.kind)).toEqual(['assistant', 'approval'])
+    expect(items[0]).toMatchObject({ text: 'Let me check.', streaming: true })
+  })
+
   it('folds a permission request and its resolution into one approval row', () => {
     const items = buildThreadItems(events([
       { type: 'tool_call', tool_use_id: 't1', name: 'Bash', input: '{"command":"ls"}', truncated: false },
-      { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{"command":"ls"}', truncated: false },
-      { type: 'approval_request', request_id: 'r2', tool_use_id: 't2', tool_name: 'Write', input: '{}', truncated: true },
+      { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{"command":"ls"}', truncated: false, input_bytes: 16 },
+      { type: 'approval_request', request_id: 'r2', tool_use_id: 't2', tool_name: 'Write', input: '{}', truncated: true, input_bytes: 16 },
       { type: 'approval_resolved', request_id: 'r1', decision: 'denied', reason: 'not now' },
       { type: 'approval_resolved', request_id: 'unknown', decision: 'allowed', reason: null }
     ]))
     expect(items.slice(1)).toEqual([
-      { kind: 'approval', key: '2', requestId: 'r1', name: 'Bash', input: '{"command":"ls"}', inputTruncated: false, state: 'denied', reason: 'not now' },
-      { kind: 'approval', key: '3', requestId: 'r2', name: 'Write', input: '{}', inputTruncated: true, state: 'pending', reason: null }
+      { kind: 'approval', key: '2', requestId: 'r1', name: 'Bash', input: '{"command":"ls"}', inputTruncated: false, inputBytes: 16, state: 'denied', reason: 'not now' },
+      { kind: 'approval', key: '3', requestId: 'r2', name: 'Write', input: '{}', inputTruncated: true, inputBytes: 16, state: 'pending', reason: null }
     ])
     expect(sameThreadItem(items[1]!, { ...items[1]!, state: 'allowed' } as ThreadItem)).toBe(false)
   })

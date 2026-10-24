@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadItems, type ThreadItem } from './threadModel'
-import { THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
+import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -19,9 +19,11 @@ export interface ThreadSnapshot {
   loadingEarlier: boolean
   /** Why the last history request failed, until a retry. */
   failure: string | null
+  /** Permission requests answered here whose resolution has not arrived yet. */
+  answering: ReadonlySet<string>
 }
 
-const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null }
+const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set() }
 
 /** `beforeSeq: null` is the latest page. */
 interface HistoryRequest { beforeSeq: number | null }
@@ -100,7 +102,7 @@ export class ThreadSessionStore {
       this.noteStored(events)
       const early = this.early
       this.early = []
-      this.set({ events: this.merge(events, early), loaded: true, hasMore: msg.has_more, loadingEarlier: false, failure: null })
+      this.set({ events: this.merge(events, early), loaded: true, hasMore: msg.has_more, loadingEarlier: false, failure: null, answering: this.snapshot.answering })
       return
     }
     const first = this.snapshot.events[0]?.seq ?? Number.POSITIVE_INFINITY
@@ -155,7 +157,21 @@ export class ThreadSessionStore {
     }
   }
 
+  markAnswering(requestId: string): void {
+    this.set({ ...this.snapshot, answering: new Set([...this.snapshot.answering, requestId]) })
+  }
+
+  /** The daemon refused an answer: every button of this thread is usable again. */
+  answerRefused(): void {
+    if (this.snapshot.answering.size > 0) this.set({ ...this.snapshot, answering: new Set() })
+  }
+
   private set(next: ThreadSnapshot): void {
+    if (next.answering.size > 0) {
+      const waiting = new Set(next.answering)
+      for (const event of next.events) if (event.kind.type === 'approval_resolved') waiting.delete(event.kind.request_id)
+      if (waiting.size !== next.answering.size) next = { ...next, answering: waiting }
+    }
     this.snapshot = next
     for (const listener of [...this.listeners]) listener()
   }
@@ -178,6 +194,8 @@ function registryFor(client: HoustonClient): Registry {
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
     if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
+    const answer = THREAD_APPROVE_REFUSAL.exec(msg.message)
+    if (answer) stores.get(Number(answer[1]))?.store.answerRefused()
   })
   const off = (): void => { offEvents(); offHistory(); offError() }
   const registry = { stores, off }
@@ -221,8 +239,9 @@ export function stopThread(client: HoustonClient, session: number): void {
   client.send({ type: 'thread_stop', session })
 }
 
-export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean): void {
-  client.send({ type: 'thread_approve', session, request_id: requestId, allow })
+/** Whether the answer was written to the socket; a closed socket drops it. */
+export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean): boolean {
+  return client.trySend({ type: 'thread_approve', session, request_id: requestId, allow })
 }
 
 export function setThreadPermissionMode(client: HoustonClient, session: number, mode: ThreadPermissionMode): void {
@@ -233,6 +252,7 @@ export interface ThreadView extends ThreadSnapshot {
   items: ThreadItem[]
   loadEarlier: () => void
   retry: () => void
+  answer: (requestId: string, allow: boolean) => void
 }
 
 export function useThread(client: HoustonClient, session: number, connected: boolean): ThreadView {
@@ -247,5 +267,8 @@ export function useThread(client: HoustonClient, session: number, connected: boo
     if (connected) store.attach()
   }, [store, connected])
   const items = useMemo(() => buildThreadItems(snapshot.events), [snapshot.events])
-  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry() }
+  const answer = useCallback((requestId: string, allow: boolean) => {
+    if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
+  }, [client, session, store])
+  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer }
 }
