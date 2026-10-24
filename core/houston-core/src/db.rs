@@ -31,6 +31,7 @@ mod task_trackers;
 pub use remote::RemoteDeviceRow;
 mod tasks;
 mod threads;
+mod view_switch;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
@@ -2029,6 +2030,7 @@ impl Db {
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
         threads::migrate(&conn)?;
+        view_switch::migrate(&conn)?;
         intake::migrate(&conn)?;
         migrate_routine_schema(&conn)?;
         conn.execute(
@@ -6922,7 +6924,7 @@ mod tests {
         );
     }
 
-    fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
+    pub(super) fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
             title_source: Default::default(),
             checkout: None,

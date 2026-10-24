@@ -158,6 +158,7 @@ mod tracer;
 mod updates_wire;
 mod usage_rollup_wire;
 mod usage_wire;
+mod view_switch_wire;
 mod voice_capture;
 mod voice_model_latency;
 mod voice_model_reuse;

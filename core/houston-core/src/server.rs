@@ -1076,6 +1076,7 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
         msg,
         proto::ClientMsg::SessionCreate { .. }
             | proto::ClientMsg::SessionRespawn { .. }
+            | proto::ClientMsg::SessionSetView { .. }
             | proto::ClientMsg::SessionWake { .. }
             | proto::ClientMsg::SessionAttach { .. }
             | proto::ClientMsg::SessionVisibility { .. }
@@ -1311,6 +1312,22 @@ impl OnLoop {
                     let result = task
                         .await
                         .unwrap_or_else(|e| Err(anyhow::anyhow!("respawn task panicked: {e}")));
+                    Landed::Spawned {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                (busy, work.boxed())
+            }
+            proto::ClientMsg::SessionSetView { session, view } => {
+                let task =
+                    tokio::task::spawn_blocking(move || daemon.set_session_view(session, view));
+                let busy = vec![session];
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("view switch task panicked: {e}")));
                     Landed::Spawned {
                         session,
                         result,
@@ -1689,6 +1706,7 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
     match msg {
         proto::ClientMsg::SessionClose { session, .. }
         | proto::ClientMsg::SessionRespawn { session, .. }
+        | proto::ClientMsg::SessionSetView { session, .. }
         | proto::ClientMsg::SessionWake { session }
         | proto::ClientMsg::SessionAttach { session, .. }
         | proto::ClientMsg::SessionResize { session, .. }
@@ -1880,6 +1898,7 @@ async fn dispatch(
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate { .. }
         | proto::ClientMsg::SessionRespawn { .. }
+        | proto::ClientMsg::SessionSetView { .. }
         | proto::ClientMsg::SessionWake { .. }
         | proto::ClientMsg::SessionAttach { .. } => Err(anyhow::anyhow!(
             "spawn and attach requests land through the connection loop, not dispatch"
@@ -2886,6 +2905,15 @@ async fn dispatch(
         .await
         .map_err(|_| anyhow::anyhow!("sending generated-title setting failed")),
         proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
+        proto::ClientMsg::DefaultViewGet {} => send_msg(
+            sink,
+            &proto::ServerMsg::DefaultView {
+                view: daemon.default_view(),
+            },
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("sending the default view failed")),
+        proto::ClientMsg::DefaultViewSet { view } => daemon.set_default_view(view),
         proto::ClientMsg::SessionTitleReset { session } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.reset_title(session))

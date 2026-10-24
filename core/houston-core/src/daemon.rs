@@ -1567,6 +1567,7 @@ mod task_trackers;
 pub(crate) mod tasks;
 mod threads;
 mod title_generation;
+mod view_switch;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
@@ -10436,6 +10437,18 @@ impl Daemon {
             .lock()
             .expect("respawned_as lock")
             .insert(old_id, spawned.id);
+        if spawned.view == proto::SessionView::Terminal {
+            let carried = self
+                .db
+                .terminal_turns(old_id)
+                .and_then(|turns| self.db.set_terminal_turns(spawned.id, turns));
+            if let Err(error) = carried {
+                tracing::warn!(
+                    "carrying session {old_id}'s terminal turns to {}: {error:#}",
+                    spawned.id
+                );
+            }
+        }
         self.voice.forget_session(old_id);
         self.frame_taps.forget_session(old_id);
         self.forget_session_visibility(old_id);
@@ -16443,6 +16456,7 @@ impl Daemon {
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) && !d.stop_continued
         {
             self.maybe_generate_title(d.session);
+            self.note_terminal_turn(d.session);
         }
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) {
             if d.stop_hook_active {

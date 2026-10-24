@@ -807,6 +807,11 @@ impl ThreadHandle {
         *self.closed.0.lock().expect("thread closed lock")
     }
 
+    /// A message was sent and its turn has not ended.
+    pub fn turn_open(&self) -> bool {
+        self.state.lock().expect("thread state lock").open_turns > 0
+    }
+
     /// Records `text` and delivers it as one stream-json user message, starting a process
     /// that resumes the conversation first when none runs.
     pub fn send(self: &Arc<Self>, text: &str) -> Result<()> {
