@@ -250,13 +250,8 @@ impl Daemon {
         source: &str,
         event: crate::agent_events::AgentEvent,
     ) {
-        let running = matches!(
-            self.session_status(id),
-            Ok(Some(
-                proto::AgentStatus::Working | proto::AgentStatus::NeedsInput
-            ))
-        );
-        if running {
+        let idle = matches!(self.session_status(id), Ok(Some(proto::AgentStatus::Idle)));
+        if !idle {
             self.apply_agent_event(id, source, event, false, true, None);
         }
     }
@@ -428,15 +423,6 @@ impl Daemon {
                 daemon.routine_pane_exited(id);
             })
             .context(orchestrate::MutationMayHaveActed)?;
-        if info.status == Some(proto::AgentStatus::Spawning) {
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                let daemon = Arc::clone(self);
-                runtime.spawn(async move {
-                    tokio::time::sleep(SPAWN_GRACE).await;
-                    daemon.expire_spawn_grace(id);
-                });
-            }
-        }
         Ok(info)
     }
 }

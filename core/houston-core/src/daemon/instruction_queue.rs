@@ -320,9 +320,6 @@ impl Daemon {
             .agent_kind_of(target)
             .ok_or_else(|| anyhow!("pane {target} has no provider"))?;
         orchestrate::prompt_mode_supported(provider, mode)?;
-        if mode == orchestrate::PromptMode::Restart && session.thread().is_some() {
-            bail!("mode restart refused for pane {target}: it is a thread session, which takes no interrupt key; use mode queue or steer");
-        }
         if mode != orchestrate::PromptMode::Queue {
             if let Some(reason) = self.immediate_paste_hold_reason(target) {
                 bail!("mode {mode:?} refused for pane {target}: {reason}; use mode queue");

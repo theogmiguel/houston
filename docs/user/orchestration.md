@@ -360,6 +360,10 @@ binding. Claude, OpenCode, Antigravity and ZCode are refused
 by name because a reliable interrupt-to-idle path is not verified. Keep the
 supported provider's default interrupt binding.
 
+A child running as a thread receives each prompt as one chat message instead of a
+paste; `pane_read` returns its latest answers and tool summaries, and `pane_send_keys`
+is refused because a thread has no terminal.
+
 Steer and restart refuse an operator draft, a question or permission prompt, or
 another queued prompt. Answer routine questions with `pane_send_keys`; deny or escalate
 permissions. Use queue to wait for a busy composer. These modes never paste over operator text.

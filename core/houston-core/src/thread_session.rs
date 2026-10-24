@@ -696,6 +696,41 @@ struct HandleState {
     generation: u64,
     open_turns: u32,
     closed: bool,
+    /// Text streamed for the open block whose final message has not arrived yet.
+    partial: Option<(String, String)>,
+}
+
+impl HandleState {
+    fn track_partial(&mut self, events: &[ThreadEventKind]) {
+        for event in events {
+            match event {
+                ThreadEventKind::AssistantDelta { message_id, text } => match &mut self.partial {
+                    Some((open, so_far)) if open == message_id => so_far.push_str(text),
+                    _ => self.partial = Some((message_id.clone(), text.clone())),
+                },
+                ThreadEventKind::AssistantMessage { message_id, .. }
+                    if self
+                        .partial
+                        .as_ref()
+                        .is_some_and(|(open, _)| open == message_id) =>
+                {
+                    self.partial = None
+                }
+                ThreadEventKind::TurnEnd { .. } => self.partial = None,
+                _ => {}
+            }
+        }
+    }
+
+    /// The streamed text of an answer cut off by Stop or an exit, kept as a truncated message.
+    fn take_partial(&mut self) -> Option<ThreadEventKind> {
+        let (message_id, text) = self.partial.take()?;
+        (!text.is_empty()).then(|| ThreadEventKind::AssistantMessage {
+            message_id,
+            text: cap_text(text, THREAD_ASSISTANT_TEXT_MAX_BYTES).0,
+            truncated: true,
+        })
+    }
 }
 
 /// The thread backend of one session.
@@ -730,6 +765,7 @@ impl ThreadHandle {
                 generation: 0,
                 open_turns: 0,
                 closed: false,
+                partial: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
             outbox: Arc::clone(&outbox),
@@ -810,22 +846,25 @@ impl ThreadHandle {
 
     /// Ends the process tree. Returns whether a process was running.
     pub fn stop(&self) -> bool {
-        let (process, open_turns) = {
+        let (process, open_turns, partial) = {
             let mut state = self.state.lock().expect("thread state lock");
             let open = std::mem::take(&mut state.open_turns);
-            (state.process.take(), open)
+            let partial = state.take_partial();
+            (state.process.take(), open, partial)
         };
         let Some(process) = process else {
             return false;
         };
         process.stopping.store(true, Ordering::Release);
         process.end_tree(true);
+        let mut events: Vec<ThreadEventKind> = partial.into_iter().collect();
         if open_turns > 0 {
-            self.emit(vec![ThreadEventKind::TurnEnd {
+            events.push(ThreadEventKind::TurnEnd {
                 outcome: TurnOutcome::Interrupted,
                 error: None,
-            }]);
+            });
         }
+        self.emit(events);
         true
     }
 
@@ -904,9 +943,17 @@ impl ThreadHandle {
 
     fn on_line(&self, generation: u64, mapper: &mut StreamMapper, line: &str) {
         let mapped = mapper.map_line(line);
-        if let Some(id) = mapped.conversation {
+        {
+            // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
-            if state.generation == generation {
+            if state
+                .process
+                .as_ref()
+                .is_none_or(|current| current.generation != generation)
+            {
+                return;
+            }
+            if let Some(id) = mapped.conversation {
                 let resumable = matches!(state.conversation, Some(Conversation::Resume(_)));
                 state.conversation = Some(if resumable {
                     Conversation::Resume(id)
@@ -914,12 +961,12 @@ impl ThreadHandle {
                     Conversation::New(id)
                 });
             }
+            if mapped.turn_end.is_some() {
+                state.open_turns = state.open_turns.saturating_sub(1);
+            }
+            state.track_partial(&mapped.events);
+            self.emit(mapped.events);
         }
-        if mapped.turn_end.is_some() {
-            let mut state = self.state.lock().expect("thread state lock");
-            state.open_turns = state.open_turns.saturating_sub(1);
-        }
-        self.emit(mapped.events);
         if let Some(outcome) = mapped.turn_end {
             self.host.turn_ended(self.session, outcome);
         }
@@ -929,7 +976,7 @@ impl ThreadHandle {
         if process.stopping.load(Ordering::Acquire) {
             return;
         }
-        let open_turns = {
+        let (open_turns, partial) = {
             let mut state = self.state.lock().expect("thread state lock");
             if state
                 .process
@@ -939,7 +986,7 @@ impl ThreadHandle {
                 return;
             }
             state.process = None;
-            std::mem::take(&mut state.open_turns)
+            (std::mem::take(&mut state.open_turns), state.take_partial())
         };
         let code = process.end_tree(false);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
@@ -947,7 +994,7 @@ impl ThreadHandle {
             || "no exit code".to_string(),
             |code| format!("exit code {code}"),
         );
-        let mut events = Vec::new();
+        let mut events: Vec<ThreadEventKind> = partial.into_iter().collect();
         if open_turns > 0 {
             events.push(ThreadEventKind::TurnEnd {
                 outcome: TurnOutcome::Error,

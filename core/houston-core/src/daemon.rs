@@ -11803,7 +11803,9 @@ impl Daemon {
                 hidden,
                 ssh_host: None,
                 restore_deferred: None,
-                status: Some(proto::AgentStatus::Spawning),
+                // Headless Claude reports SessionStart only with its first message; until
+                // then the thread waits for one, which is idle (invariants: thread status).
+                status: Some(proto::AgentStatus::Idle),
                 status_since_ms: Some(status_since_ms),
                 context: None,
                 swarm_agent,

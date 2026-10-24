@@ -83,6 +83,11 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
             "delta":{"type":"text_delta","text":"working"}},"parent_tool_use_id":null,"api_message_id":"msg_hang"}),
         );
     } else if text == "crash" {
+        emit_value(
+            json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
+            "delta":{"type":"text_delta","text":"partial answer"}},"parent_tool_use_id":null,"api_message_id":"msg_crash"}),
+        );
+        std::thread::sleep(Duration::from_millis(200));
         eprintln!("fatal: fake crash");
         std::process::exit(3);
     } else if let Some(count) = text.strip_prefix("flood:") {

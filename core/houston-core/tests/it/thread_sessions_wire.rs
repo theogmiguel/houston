@@ -200,6 +200,16 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     }
 }
 
+/// A thread without a process is a live session waiting for its next message.
+async fn assert_idle_and_running(daemon: &Daemon, id: u32) {
+    wait_until("the thread to wait idle", || {
+        daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+    let info = daemon.list().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(info.state, proto::SessionState::Running);
+}
+
 fn stored(events: &[ThreadEvent]) -> Vec<ThreadEvent> {
     events
         .iter()
@@ -304,6 +314,7 @@ async fn a_thread_turn_streams_typed_events_and_keeps_them_as_history() {
 async fn stop_ends_the_whole_process_tree_and_the_next_message_resumes() {
     let mut rig = Rig::new().await;
     let id = rig.thread().await;
+    assert_idle_and_running(&rig.daemon, id).await;
     let pidfile = rig.scratch.path().join("sleeper.pid");
     rig.say(id, &format!("hang:{}", pidfile.display())).await;
     wait_until("the tool process to start", || pidfile.is_file()).await;
@@ -327,17 +338,23 @@ async fn stop_ends_the_whole_process_tree_and_the_next_message_resumes() {
             ..
         }
     ));
+    let kept = ThreadEventKind::AssistantMessage {
+        message_id: "msg_hang:0".into(),
+        text: "working".into(),
+        truncated: true,
+    };
+    assert_eq!(
+        events[events.len() - 2].kind,
+        kept,
+        "Stop keeps the partial answer"
+    );
+    assert!(rig.history(id).await.0.iter().any(|e| e.kind == kept));
     wait_until("Claude and its tool process to end", || {
         !houston_core::pid::process_is_alive(claude)
             && !houston_core::pid::process_is_alive(sleeper)
     })
     .await;
-    let info = rig.daemon.list().into_iter().find(|s| s.id == id).unwrap();
-    assert_eq!(
-        info.state,
-        proto::SessionState::Running,
-        "Stop keeps the session"
-    );
+    assert_idle_and_running(&rig.daemon, id).await;
 
     let resumed = rig.turn(id, "replay:resumed").await;
     let launches = rig.launches();
@@ -373,6 +390,13 @@ async fn a_crash_is_a_notice_and_the_next_message_starts_claude_again() {
         notice.contains("exit code 3") && notice.contains("fatal: fake crash"),
         "{notice}"
     );
+    assert!(events.iter().any(|e| e.kind
+        == ThreadEventKind::AssistantMessage {
+            message_id: "msg_crash:0".into(),
+            text: "partial answer".into(),
+            truncated: true,
+        }));
+    assert_idle_and_running(&rig.daemon, id).await;
     let next = rig.turn(id, "replay:warm").await;
     assert!(matches!(
         next.last().unwrap().kind,
