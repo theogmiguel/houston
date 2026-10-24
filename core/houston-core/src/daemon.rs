@@ -7970,6 +7970,25 @@ impl Daemon {
         self.agent_hooks_state()
     }
 
+    /// Answers one client's hooks request. With every CLI cached it replies at once, then
+    /// rescans and replies again only if the listing changed; otherwise it replies once,
+    /// after the rescan, so no reply carries a CLI that was never probed.
+    pub fn answer_agent_hooks(&self, conn_id: u64) {
+        let cached = self.cli_probes_primed().then(|| self.agent_hooks_state());
+        if let Some(providers) = &cached {
+            let providers = providers.clone();
+            self.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+            self.send_control_to(conn_id, &self.agent_accounts_state());
+        }
+        let providers = self.agent_hooks_state_rescanned();
+        if cached.as_ref() != Some(&providers) {
+            self.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+        }
+        if cached.is_none() {
+            self.send_control_to(conn_id, &self.agent_accounts_state());
+        }
+    }
+
     /// Re-probes every spawnable provider's CLI and swaps the answers in at once. A call
     /// while a sweep runs waits for that sweep instead of starting another.
     pub fn rescan_cli_probes(&self) {

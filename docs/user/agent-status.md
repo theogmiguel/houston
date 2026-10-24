@@ -106,7 +106,9 @@ multiplexer may suppress the probe or reports; then the program cannot negotiate
 
 ## Settings ▸ Agents ▸ CLIs
 
-This screen lists every CLI Houston knows how to wire, and what each row means:
+This screen lists every CLI Houston knows how to wire, and what each row means. It
+opens with the result of the last check, which Houston also makes when it starts, and
+updates in place when checking again finds a CLI installed, removed or upgraded:
 
 - **Not found on PATH** — the CLI is not installed on this machine, so there is nothing
   to turn on.
