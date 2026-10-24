@@ -26,6 +26,9 @@ const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_AGE_MS: u64 = 60 * 60 * 1000;
 /// Bounds rewrites to the in-memory cache's own TTL.
 const WRITE_EVERY: Duration = Duration::from_secs(30);
+/// An unchanged answer is rewritten only to keep its entry inside `MAX_AGE_MS`, so the
+/// file is not rewritten every interval while a client polls.
+const REFRESH_UNCHANGED_MS: u64 = MAX_AGE_MS / 2;
 
 #[derive(Serialize, Deserialize)]
 struct File {
@@ -105,6 +108,13 @@ impl PrStatusStore {
     /// Records gh's answer and rewrites the file when the last write is old enough.
     pub fn record(&self, dir: &Path, status: &PrStatus, now_ms: u64) {
         let mut inner = self.inner.lock().expect("PR status store lock");
+        if let Some(entry) = inner.entries.get_mut(dir) {
+            let unchanged = same_answer(&entry.stored, status);
+            if unchanged && now_ms.saturating_sub(entry.stored.saved_ms) < REFRESH_UNCHANGED_MS {
+                entry.seed = false;
+                return;
+            }
+        }
         if inner.entries.len() >= MAX_ENTRIES && !inner.entries.contains_key(dir) {
             if let Some(oldest) = inner
                 .entries
@@ -166,6 +176,14 @@ impl PrStatusStore {
             ),
         }
     }
+}
+
+// `PrInfo` has no `PartialEq`; its JSON is the stored form, so equal JSON is the same entry.
+fn same_answer(stored: &StoredEntry, status: &PrStatus) -> bool {
+    let json = |status: &PrStatus| {
+        serde_json::to_vec(&(status.gh, status.has_upstream, &status.pr, &status.hint)).ok()
+    };
+    json(&to_status(stored)).is_some_and(|a| Some(a) == json(status))
 }
 
 fn to_status(stored: &StoredEntry) -> PrStatus {
@@ -287,6 +305,32 @@ mod tests {
         assert_eq!(
             title(&flushed.take_seed(Path::new("/b"), NOW).unwrap()),
             "B"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_answer_does_not_mark_the_file_for_rewrite() {
+        let state = tempfile::tempdir().unwrap();
+        let path = state.path().join(FILE_NAME);
+        let store = PrStatusStore::load(path, NOW);
+        let dir = Path::new("/a");
+        let dirty = || store.inner.lock().unwrap().dirty;
+        store.record(dir, &status("A"), NOW);
+        assert!(!dirty(), "the first answer is written at once");
+
+        store.record(dir, &status("A"), NOW + 30_000);
+        assert!(!dirty(), "a repeated answer leaves nothing to write");
+        store.record(dir, &status("A, renamed"), NOW + 31_000);
+        assert!(dirty(), "a changed answer is written");
+        store.flush();
+        store.record(
+            dir,
+            &status("A, renamed"),
+            NOW + 31_000 + REFRESH_UNCHANGED_MS,
+        );
+        assert!(
+            dirty(),
+            "an unchanged answer is refreshed before it ages out"
         );
     }
 

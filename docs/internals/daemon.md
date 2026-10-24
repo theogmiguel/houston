@@ -890,7 +890,8 @@ probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create
 `gh pr create --fill` then re-reads. A missing or unauthenticated `gh` is a **typed state**,
 never a wire error — a wire error here becomes a toast loop. `pr_status_store.rs` keeps the
 last answer per directory in `pr-status-cache.json` (versioned, at most 256 entries,
-rewritten at most every 30 s and at orderly shutdown; PR metadata only). A restarted daemon
+rewritten at most every 30 s when an answer changed, every 30 min for an unchanged one, and
+before orderly shutdown or a live handoff; PR metadata only). A restarted daemon
 answers a directory's first `pr_status` from that file when the entry is under an hour old,
 then asks `gh` at once and sends a second `pr_status` with the fresh answer; each stored
 entry is served once. Pull-request check logs are
