@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{AgentKind, AgentStatus, RoutineTrigger};
 
 /// The `v` of a stored settings document.
-pub const NIGHT_SHIFT_SETTINGS_VERSION: u32 = 1;
+pub const NIGHT_SHIFT_SETTINGS_VERSION: u32 = 2;
 /// The longest window, start to hard stop.
 pub const NIGHT_SHIFT_WINDOW_MAX_MINUTES: u32 = 16 * 60;
 /// A run's `report.md` past this is refused by `night_report`.
@@ -102,6 +102,20 @@ pub struct NightAppCheck {
     pub smoke_flows: Vec<String>,
 }
 
+/// How finished changes become pull requests. A change is one plan entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum NightPrSize {
+    /// One change per pull request.
+    One,
+    /// Changes of one theme together, at most `max_changes` per pull request.
+    Related {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        max_changes: u32,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -110,7 +124,7 @@ pub enum NightQuestions {
     Park,
 }
 
-/// The stored document is `{"v":1,...}`.
+/// The stored document is `{"v":2,...}`; a v1 document is upgraded on read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightShiftSettings {
@@ -132,9 +146,7 @@ pub struct NightShiftSettings {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub reviewer: Option<NightAgent>,
     pub output: NightOutput,
-    pub themed: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-    pub max_changes_per_pr: u32,
+    pub pr_size: NightPrSize,
     pub screenshots: bool,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]

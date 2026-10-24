@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use houston_protocol::{
     AgentKind, NightAgent, NightEntry, NightEntryKind, NightFocusLevel, NightOutput,
-    NightShiftSettings, ROUTINE_PROMPT_MAX,
+    NightPrSize, NightShiftSettings, ROUTINE_PROMPT_MAX,
 };
 
 use super::settings::{clock_label, has_app_check};
@@ -82,6 +82,17 @@ fn digest_line(e: &NightEntry) -> String {
     }
     line.push('\n');
     line
+}
+
+/// A change is one plan entry; grouping never mixes themes.
+fn pr_size(s: &NightShiftSettings) -> String {
+    match s.pr_size {
+        NightPrSize::One => "one change per pull request".into(),
+        NightPrSize::Related { max_changes } => format!(
+            "related changes together (one theme per pull request), up to {max_changes} \
+             changes per pull request"
+        ),
+    }
 }
 
 fn one_line(s: &str) -> String {
@@ -168,13 +179,8 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
         NightOutput::Prs => {
             let _ = writeln!(
                 out,
-                "- Output: draft pull requests only, {}, up to {} changes per PR{}.",
-                if s.themed {
-                    "grouped by theme"
-                } else {
-                    "one theme per PR is not required"
-                },
-                s.max_changes_per_pr,
+                "- Output: draft pull requests only, {}{}.",
+                pr_size(s),
                 if s.screenshots {
                     ", with screenshots for visible changes"
                 } else {
@@ -186,9 +192,9 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
             let _ = writeln!(
                 out,
                 "- Output: merge queue. Mark ready PRs and hand them to the queue with \
-                 pane_pr_enqueue and depends_on; the queue's gates decide. Up to {} changes \
-                 per PR. App QA is required for visible changes.{}",
-                s.max_changes_per_pr,
+                 pane_pr_enqueue and depends_on; the queue's gates decide. Pull requests: {}. \
+                 App QA is required for visible changes.{}",
+                pr_size(s),
                 if s.hold_for_qa {
                     " Hold for my QA is on: record visible PRs with night_pr and leave them \
                      out of the queue; the user releases them after QA."
@@ -374,6 +380,15 @@ mod tests {
         assert!(METHOD
             .lines()
             .all(|line| line.chars().all(|c| (' '..='~').contains(&c))));
+    }
+
+    #[test]
+    fn pr_size_is_stated() {
+        let mut s = super::super::settings::defaults();
+        assert!(compose(&s, &run(), &[])
+            .contains("related changes together (one theme per pull request), up to 5 changes"));
+        s.pr_size = NightPrSize::One;
+        assert!(compose(&s, &run(), &[]).contains("one change per pull request"));
     }
 
     #[test]

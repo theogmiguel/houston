@@ -7,7 +7,7 @@ export const NIGHT_NOW = 1_790_000_000_000
 /** The daemon's defaults (door 10). */
 export function nightDefaults(): NightShiftSettings {
   return {
-    v: 1,
+    v: 2,
     enabled: false,
     window: { start: { hour: 23, minute: 30 }, wrap_up: { hour: 6, minute: 45 }, hard_stop: { hour: 7, minute: 30 }, nights: [] },
     focus: { reliability: 'normal', performance: 'normal', ui_polish: 'off', competitor_gaps: 'off', docs_accuracy: 'off', test_gaps: 'off' },
@@ -18,8 +18,7 @@ export function nightDefaults(): NightShiftSettings {
     live_workers: 4,
     reviewer: null,
     output: 'prs',
-    themed: true,
-    max_changes_per_pr: 5,
+    pr_size: { kind: 'related', max_changes: 5 },
     screenshots: true,
     app_check: null,
     hold_for_qa: true,

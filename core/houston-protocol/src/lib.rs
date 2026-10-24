@@ -7357,8 +7357,7 @@ mod tests {
             live_workers: 4,
             reviewer: None,
             output: NightOutput::MergeQueue,
-            themed: true,
-            max_changes_per_pr: 5,
+            pr_size: NightPrSize::Related { max_changes: 5 },
             screenshots: true,
             app_check: Some(NightAppCheck {
                 start_command: "scripts/dev.sh".into(),

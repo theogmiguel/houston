@@ -109,7 +109,7 @@ const NIGHT_PR_FATES_PER_START: u32 = 10;
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
 
 fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
-    serde_json::from_str(json).with_context(|| format!("unreadable Night shift settings {json:?}"))
+    settings::parse(json)
 }
 
 /// A run's worktree, detached at the workspace's HEAD under its

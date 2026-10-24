@@ -200,10 +200,15 @@ function OutputFields({ draft, set, refusal, appCheck }: {
         onChange={(output) => set({ output })} />
       {refusal && <Notice tone="warn" data-testid="merge-refusal">{refusal}</Notice>}
     </Card.Field>
-    <Card.Field label="Changes per PR">
-      <NumberField width="compact" aria-label="Changes per PR" min={1} max={20} value={draft.max_changes_per_pr} onChange={(e) => set({ max_changes_per_pr: Math.max(1, Number(e.target.value) || 1) })} />
+    <Card.Field label="Pull request size">
+      <Segmented aria-label="Pull request size" size="xs" value={draft.pr_size.kind}
+        options={[{ value: 'one', label: 'One change each' }, { value: 'related', label: 'Related changes together' }]}
+        onChange={(kind) => set({ pr_size: kind === 'one' ? { kind } : { kind, max_changes: 5 } })} />
+      {draft.pr_size.kind === 'related' && (
+        <NumberField width="compact" aria-label="Most changes in one pull request" min={2} max={20} value={draft.pr_size.max_changes}
+          onChange={(e) => set({ pr_size: { kind: 'related', max_changes: Math.min(20, Math.max(2, Number(e.target.value) || 2)) } })} />
+      )}
     </Card.Field>
-    <Card.Field label="Themed PRs"><Toggle aria-label="Themed PRs" on={draft.themed} onChange={(themed) => set({ themed })} /></Card.Field>
     <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
     <Card.Field label="App check">
       <div className="grid gap-[var(--space-1)]">

@@ -1,14 +1,18 @@
 //! A Night shift routine's settings document: defaults, revision and the
 //! checks `night_shift_update` refuses with.
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use houston_protocol::{
-    AgentKind, NightAgent, NightClock, NightFocus, NightFocusLevel, NightOutput, NightQuestions,
-    NightShiftSettings, NightWindow, NIGHT_SHIFT_SETTINGS_VERSION, NIGHT_SHIFT_WINDOW_MAX_MINUTES,
+    AgentKind, NightAgent, NightClock, NightFocus, NightFocusLevel, NightOutput, NightPrSize,
+    NightQuestions, NightShiftSettings, NightWindow, NIGHT_SHIFT_SETTINGS_VERSION,
+    NIGHT_SHIFT_WINDOW_MAX_MINUTES,
 };
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 /// More workers than this would outgrow the orchestration child cap.
 pub const LIVE_WORKERS_MAX: u32 = 12;
+/// Grouping needs room for two; past twenty a pull request is no longer reviewable.
+pub const MAX_CHANGES_PER_PR_MIN: u32 = 2;
 pub const MAX_CHANGES_PER_PR_MAX: u32 = 20;
 pub const CHECKS_MAX: usize = 20;
 pub const SOURCES_MAX: usize = 10;
@@ -59,14 +63,46 @@ pub fn defaults() -> NightShiftSettings {
         live_workers: 4,
         reviewer: None,
         output: NightOutput::Prs,
-        themed: true,
-        max_changes_per_pr: 5,
+        pr_size: NightPrSize::Related { max_changes: 5 },
         screenshots: true,
         app_check: None,
         hold_for_qa: true,
         checks: Vec::new(),
         questions: NightQuestions::Park,
     }
+}
+
+/// Reads a stored document, upgrading an older version first.
+pub fn parse(json: &str) -> Result<NightShiftSettings> {
+    let mut doc: Value = serde_json::from_str(json)
+        .with_context(|| format!("unreadable Night shift settings {json:?}"))?;
+    if doc.get("v").and_then(Value::as_u64) == Some(1) {
+        upgrade_v1(&mut doc);
+    }
+    serde_json::from_value(doc)
+        .with_context(|| format!("unreadable Night shift settings {json:?}"))
+}
+
+/// v1 → v2. Fields v2 dropped are ignored by the reader.
+fn upgrade_v1(doc: &mut Value) {
+    let Some(o) = doc.as_object_mut() else {
+        return;
+    };
+    let max = o
+        .remove("max_changes_per_pr")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(5)
+        .min(u64::from(MAX_CHANGES_PER_PR_MAX));
+    o.remove("themed");
+    o.insert(
+        "pr_size".into(),
+        if max < u64::from(MAX_CHANGES_PER_PR_MIN) {
+            json!({ "kind": "one" })
+        } else {
+            json!({ "kind": "related", "max_changes": max })
+        },
+    );
+    o.insert("v".into(), json!(2));
 }
 
 /// A content hash of the document; every update must echo it.
@@ -227,11 +263,14 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         Ok(())
     };
     bounded("live workers", s.live_workers, LIVE_WORKERS_MAX)?;
-    bounded(
-        "changes per PR",
-        s.max_changes_per_pr,
-        MAX_CHANGES_PER_PR_MAX,
-    )?;
+    if let NightPrSize::Related { max_changes } = s.pr_size {
+        if !(MAX_CHANGES_PER_PR_MIN..=MAX_CHANGES_PER_PR_MAX).contains(&max_changes) {
+            bail!(
+                "pull request size is related changes up to {max_changes}; expected \
+                 {MAX_CHANGES_PER_PR_MIN} to {MAX_CHANGES_PER_PR_MAX}"
+            );
+        }
+    }
     let smoke_flows = s.app_check.as_ref().map_or(&[][..], |a| &a.smoke_flows[..]);
     for (name, count, max) in [
         ("checks before hand-back", s.checks.len(), CHECKS_MAX),
@@ -327,6 +366,48 @@ mod tests {
         validate(&d, &facts()).unwrap();
         assert_eq!(revision(&d), revision(&defaults()));
         assert_eq!(revision(&d).len(), 16);
+    }
+
+    /// A document an earlier version stored, with every v1 field.
+    pub(crate) const V1_DOC: &str = r#"{"v":1,"enabled":false,
+        "window":{"start":{"hour":23,"minute":30},"wrap_up":{"hour":6,"minute":45},
+          "hard_stop":{"hour":7,"minute":30},"nights":[2]},
+        "focus":{"reliability":"normal","performance":"high","ui_polish":"off",
+          "competitor_gaps":"low","platform_parity":"normal","docs_accuracy":"off",
+          "test_gaps":"off"},
+        "goal":"no lost hook events",
+        "competitor_sources":["https://github.com/pingdotgg/t3code","a notes file"],
+        "orchestrator":{"provider":"claude","model":"opus"},
+        "workers":[{"provider":"zcode","model":null}],"live_workers":4,"reviewer":null,
+        "output":"prs","themed":true,"max_changes_per_pr":3,"screenshots":true,
+        "app_check":{"start_command":"bun run dev","address":"","smoke_flows":["open"]},
+        "hold_for_qa":true,"checks":["cargo test"],"safety_cap_pane_hours":60,
+        "questions":"park"}"#;
+
+    #[test]
+    fn a_v1_document_upgrades_to_v2() {
+        let s = parse(V1_DOC).unwrap();
+        assert_eq!(s.v, 2);
+        assert_eq!(s.pr_size, NightPrSize::Related { max_changes: 3 });
+        assert_eq!(s.focus.performance, NightFocusLevel::High);
+        let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
+            .unwrap();
+        assert_eq!(one.pr_size, NightPrSize::One);
+        let v2 = serde_json::to_string(&defaults()).unwrap();
+        assert_eq!(parse(&v2).unwrap(), defaults());
+    }
+
+    #[test]
+    fn pr_size_bounds() {
+        for bad in [1, 21] {
+            let mut s = defaults();
+            s.pr_size = NightPrSize::Related { max_changes: bad };
+            let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+            assert!(err.contains(&format!("up to {bad}")) && err.contains("2 to 20"), "{err}");
+        }
+        let mut s = defaults();
+        s.pr_size = NightPrSize::One;
+        validate(&s, &facts()).unwrap();
     }
 
     #[test]

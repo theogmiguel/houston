@@ -408,8 +408,8 @@ async fn create_is_paused_with_defaults_and_idempotent() {
     assert_eq!(d.live_workers, 4);
     assert_eq!(d.reviewer, None);
     assert_eq!(d.output, proto::NightOutput::Prs);
-    assert!(d.themed && d.screenshots && d.hold_for_qa);
-    assert_eq!(d.max_changes_per_pr, 5);
+    assert!(d.screenshots && d.hold_for_qa);
+    assert_eq!(d.pr_size, proto::NightPrSize::Related { max_changes: 5 });
     assert_eq!(d.app_check, None);
     assert!(d.checks.is_empty());
     assert_eq!(d.questions, proto::NightQuestions::Park);

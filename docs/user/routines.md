@@ -95,7 +95,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator. The orchestrator is Claude, Codex or OpenCode: a ZCode orchestrator is refused because a pull request watch cannot wake it to follow CI |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
-| Output | Draft pull requests only, grouped by theme, up to 5 changes each, screenshots for visible changes |
+| Output | Draft pull requests only; pull request size: related changes together (one theme), up to 5 per pull request, or one change each (a change is one planned item); screenshots for visible changes |
 | App check: start command, address or story, smoke flows | None; App QA is off until a start command is set |
 | Checks before hand-back | None; at least one is required before a run starts |
 | Questions at night | Parked for the morning report |
