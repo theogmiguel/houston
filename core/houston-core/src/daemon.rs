@@ -4375,17 +4375,19 @@ impl Daemon {
             Some(s) => Arc::clone(s),
             None => return Ok(false),
         };
-        if *session.state.lock().expect("state lock") == proto::SessionState::Killed
-            && !self.is_shutting_down()
-        {
-            // Kill released this pane's scrollback file; the EOF drain must not
-            // re-create it. Shutdown's own kills keep theirs for the restart.
-            return Ok(false);
-        }
         let _writes = self
             .scrollback_writes
             .lock()
             .expect("scrollback writes lock");
+        // Checked under the write lock that removal also takes, so a kill or close that
+        // lands mid-pass cannot have its released file re-created. Shutdown's own kills
+        // keep theirs for the restart.
+        if session.removed.load(Ordering::Acquire)
+            || (*session.state.lock().expect("state lock") == proto::SessionState::Killed
+                && !self.is_shutting_down())
+        {
+            return Ok(false);
+        }
         let (mark, snapshot) = {
             let ring = session.scrollback.lock().expect("scrollback lock");
             let mark = (ring.generation(), ring.bytes_seen());
@@ -5742,6 +5744,10 @@ impl Daemon {
             }
         }
         let path = self.scrollback_path(id);
+        let _writes = self
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
                 tracing::warn!("removing persisted scrollback of session {id}: {e}");
@@ -12014,13 +12020,16 @@ impl Daemon {
                 .scrollback_writes
                 .lock()
                 .expect("scrollback writes lock");
-            let snapshot = session
-                .scrollback
-                .lock()
-                .expect("scrollback lock")
-                .snapshot();
+            let (mark, snapshot) = {
+                let ring = session.scrollback.lock().expect("scrollback lock");
+                ((ring.generation(), ring.bytes_seen()), ring.snapshot())
+            };
             crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
                 .context(orchestrate::MutationMayHaveActed)?;
+            *session
+                .scrollback_checkpointed
+                .lock()
+                .expect("scrollback checkpointed lock") = Some(mark);
         }
         let prepare = || -> Result<()> {
             #[cfg(feature = "test-barriers")]
@@ -27474,6 +27483,42 @@ mod kill_teardown_tests {
         assert!(
             !daemon.scrollback_path(7).exists(),
             "a killed pane's released file is not re-created"
+        );
+    }
+
+    #[test]
+    fn a_kill_during_the_periodic_checkpoint_does_not_re_create_the_file() {
+        let (daemon, state) = test_daemon();
+        let busy = stub_ssh_session(&daemon, state.path(), 7);
+        let push = |bytes: &[u8]| busy.scrollback.lock().expect("scrollback lock").push(bytes);
+        push(b"first output");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 1);
+        push(
+            b"
+second output",
+        );
+
+        // Holding the write lock parks the pass after it has read the pane as Running.
+        let writes = daemon
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
+        let pass = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.checkpoint_dirty_scrollback())
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        let kill = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.kill(7))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        drop(writes);
+        kill.join().unwrap().unwrap();
+        pass.join().unwrap();
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a kill that lands mid-pass keeps its scrollback file released"
         );
     }
 
