@@ -1064,16 +1064,22 @@ impl Runtime {
         from
     }
 
-    /// `active` holds notifications for `DESKTOP_AWAY_SECS`; anything else releases
-    /// them at once, so an unknown desktop never silences the phone.
+    /// `active` holds notifications for `DESKTOP_AWAY_SECS`; away from the holding
+    /// connection releases them at once, so an unknown desktop never silences the phone.
     pub(crate) fn report_presence(&self, conn: u64, active: bool) {
         let away = Duration::from_secs(u64::from(proto::DESKTOP_AWAY_SECS));
         self.hold_until(conn, active.then(|| tokio::time::Instant::now() + away));
     }
 
+    /// Any connection may hold; only the holder's own away report releases.
     fn hold_until(&self, conn: u64, until: Option<tokio::time::Instant>) {
-        *self.presence.lock().expect("remote presence lock") =
-            until.map(|until| DesktopPresence { conn, until });
+        let mut presence = self.presence.lock().expect("remote presence lock");
+        match until {
+            Some(until) => *presence = Some(DesktopPresence { conn, until }),
+            None if presence.is_some_and(|p| p.conn == conn) => *presence = None,
+            None => return,
+        }
+        drop(presence);
         self.notification_wake.notify_one();
     }
 
@@ -1206,6 +1212,11 @@ mod tests {
         assert!(
             rt.presence_hold().is_some(),
             "another connection closing keeps it"
+        );
+        rt.report_presence(2, false);
+        assert!(
+            rt.presence_hold().is_some(),
+            "another connection going away keeps it"
         );
         rt.forget_presence(1);
         assert!(

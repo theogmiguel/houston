@@ -466,6 +466,74 @@ async fn an_active_desktop_holds_phone_notifications_until_it_goes_away() {
     daemon.kill(waiting.id).ok();
 }
 
+/// Presence is handled on the connection task, so it is never refused for want of a
+/// control slot nor reordered against an earlier report from the same socket.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_away_report_applies_while_every_control_slot_of_its_connection_is_busy() {
+    let (ntfy, _inbox) = fixture_ntfy().await;
+    let (addr, daemon, _state) = notifying_daemon_at(ntfy, 0, ConfigPatch::default()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let busy = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: dir.path().to_path_buf(),
+            cmd: Some(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "while :; do echo busy; sleep 0.05; done".into(),
+            ]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let mut observer = daemon.observe();
+    common::collect_broadcast_until(&mut observer, busy.id, "busy").await;
+    drop(observer);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    report_presence(&mut ws, &daemon, true).await;
+    for request in 0..16 {
+        let wait = proto::ClientMsg::WaitForIdle {
+            request,
+            session: busy.id,
+            timeout_ms: Some(60_000),
+            idle_quiet_ms: Some(30_000),
+        };
+        ws.send(Message::text(serde_json::to_string(&wait).unwrap()))
+            .await
+            .unwrap();
+    }
+    ws.send(Message::text(r#"{"type":"session_list"}"#))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let proto::ServerMsg::Error {
+                context: Some(context),
+                ..
+            } = common::next_control(&mut ws).await
+            {
+                if context.starts_with("control_admission") {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("sixteen idle waits fill the connection's control slots");
+
+    report_presence(&mut ws, &daemon, false).await;
+    daemon.kill(busy.id).ok();
+}
+
 #[tokio::test]
 async fn closing_the_desktop_connection_releases_held_notifications() {
     let (ntfy, inbox) = fixture_ntfy().await;
