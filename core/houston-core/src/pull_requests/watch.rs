@@ -105,6 +105,7 @@ pub fn evaluate(
         state.passed = false;
         state.no_checks_woken = false;
         state.checks_awaited_since_ms = Some(now);
+        state.conflicting = false;
     }
 
     for check in &detail.checks {
@@ -207,8 +208,9 @@ pub fn evaluate(
             .unwrap_or(state.comments_through),
     );
 
-    // GitHub answers Unknown while it recomputes mergeability after a push; only a clean
-    // answer moves the flag, so a conflict that persists across that window wakes once.
+    // GitHub answers Unknown while it recomputes mergeability; only a clean answer or a
+    // new head clears the flag, so a head that keeps conflicting through that window wakes
+    // once, and a push that still conflicts wakes again.
     match detail.mergeable {
         proto::PrMergeable::Conflicting if !state.conflicting => {
             state.conflicting = true;
@@ -589,6 +591,48 @@ pub(crate) mod tests {
         assert!(
             again.changes.is_empty(),
             "a still-computing answer never re-arms the conflict wake: {:?}",
+            again.changes
+        );
+    }
+
+    #[test]
+    fn a_push_that_still_conflicts_wakes_again_once() {
+        let link = link(proto::PullRequestState::Open);
+        let mut conflicting = detail("abc");
+        conflicting.mergeable = proto::PrMergeable::Conflicting;
+        let first = evaluate(settled(), &link, &conflicting, None, None);
+        assert_eq!(first.changes.len(), 1);
+
+        let mut pushed = detail("def");
+        pushed.mergeable = proto::PrMergeable::Unknown;
+        let computing = evaluate(first.state.unwrap(), &link, &pushed, None, None);
+        assert!(
+            !computing
+                .changes
+                .iter()
+                .any(|c| matches!(c, Change::Conflict { .. })),
+            "{:?}",
+            computing.changes
+        );
+        pushed.mergeable = proto::PrMergeable::Conflicting;
+        let still = evaluate(computing.state.unwrap(), &link, &pushed, None, None);
+        assert_eq!(
+            still
+                .changes
+                .iter()
+                .filter(|c| matches!(c, Change::Conflict { .. }))
+                .count(),
+            1,
+            "a new head that still conflicts must wake: {:?}",
+            still.changes
+        );
+        let again = evaluate(still.state.unwrap(), &link, &pushed, None, None);
+        assert!(
+            !again
+                .changes
+                .iter()
+                .any(|c| matches!(c, Change::Conflict { .. })),
+            "the same head wakes once: {:?}",
             again.changes
         );
     }
