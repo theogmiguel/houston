@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import type { SetStateAction } from 'react'
 import { moveWorkspaceLocalState, relocatedNotice, type RelocateState } from './workspaceRelocate'
