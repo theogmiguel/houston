@@ -75,6 +75,11 @@ export type ThreadApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
 const APPROVAL_WORD: Record<ThreadApprovalState, string> = { pending: 'Waiting for you', allowed: 'Allowed', denied: 'Denied', withdrawn: 'Not answered' }
 
 /** Claude asks to run a tool: the request, its input and, while pending, the answers. */
+/** A line under an approval card's input, wrapped so no word is left alone on a line. */
+export function ThreadApprovalNote({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="small" tone="faint" className="[text-wrap:pretty]">{children}</Text>
+}
+
 export function ThreadApprovalCard({ name, summary, state, reason, status, actions, children }: {
   name: string
   summary: string
@@ -101,7 +106,7 @@ export function ThreadApprovalCard({ name, summary, state, reason, status, actio
       </div>
       {children && <div className="flex flex-col gap-[var(--space-2)] border-t border-[var(--divider)] p-[var(--space-2)]">{children}</div>}
       <div className="flex min-w-0 items-center gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--space-2)] py-[var(--space-1-5)]">
-        <Text as="div" role="status" size="small" tone={pending ? 'secondary' : 'muted'} className="min-w-0 flex-1 break-words">
+        <Text as="div" role="status" size="small" tone={pending ? 'secondary' : 'muted'} className="min-w-0 flex-1 break-words [text-wrap:pretty]">
           {pending ? status ?? APPROVAL_WORD.pending : APPROVAL_WORD[state]}{!pending && reason ? ` · ${reason}` : ''}
         </Text>
         {pending && actions}
@@ -206,6 +211,7 @@ export function ThreadSpecimen(): React.JSX.Element {
       <ThreadStoppedMarker />
       <ThreadApprovalCard name="Bash" summary="rm -rf build" state="pending" actions={<><Button variant="secondary" size="sm">Deny</Button><Button variant="primary" size="sm">Allow</Button></>}>
         <ThreadToolSection label="Command"><ThreadCodeBlock>rm -rf build</ThreadCodeBlock></ThreadToolSection>
+        <ThreadApprovalNote>12 KiB more input is not shown; Allow approves it too.</ThreadApprovalNote>
       </ThreadApprovalCard>
       <ThreadApprovalCard name="Write" summary="notes.txt" state="denied" reason="Stopped in Houston before anyone answered." />
       <ThreadComposerFrame>

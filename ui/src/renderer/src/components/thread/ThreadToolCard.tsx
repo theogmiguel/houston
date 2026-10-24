@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 import { IconFileDiff, IconFileText, IconSearch, IconSquareTerminal, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
 import { Button } from '../ui/Button'
-import { ThreadApprovalCard, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
+import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
 import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
@@ -143,7 +143,7 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
     >
       {item.state === 'pending' ? <>
         <ToolBody item={asTool} />
-        {hidden > 0 && <ThreadCaption>Houston shows the first 64 KiB of this input; {formatKiB(hidden)} more is not shown and Allow approves it too.</ThreadCaption>}
+        {hidden > 0 && <ThreadApprovalNote>{formatKiB(hidden)} more input is not shown; Allow approves it too.</ThreadApprovalNote>}
       </> : null}
     </ThreadApprovalCard>
   )

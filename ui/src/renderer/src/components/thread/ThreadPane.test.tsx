@@ -254,7 +254,7 @@ describe('ThreadPane', () => {
     history([ev(1, { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Write', input: 'x'.repeat(1000), truncated: true, input_bytes: 1000 + 40 * 1024 })])
     const allow = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow"]')!
     expect(allow().textContent).toBe('Allow (40 KiB not shown)')
-    expect(container.textContent).toContain('40 KiB more is not shown')
+    expect(container.textContent).toContain('40 KiB more input is not shown')
     mount({ status: 'needs-input' }, false)
     expect(allow().disabled).toBe(true)
   })
