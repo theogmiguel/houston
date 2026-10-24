@@ -48,7 +48,9 @@ export function createGitStatusPoller(
   const markFailure = (dir: string): void => {
     const count = (failures.get(dir) ?? 0) + 1
     failures.set(dir, count)
-    nextAttemptAt.set(dir, Date.now() + gitStatusBackoffDelayMs(count))
+    // The deadline measures elapsed time, so read the monotonic clock: a
+    // wall-clock step (NTP, manual change) must not extend or cut a backoff.
+    nextAttemptAt.set(dir, performance.now() + gitStatusBackoffDelayMs(count))
   }
   const markSuccess = (dir: string): void => {
     failures.delete(dir)
@@ -56,7 +58,7 @@ export function createGitStatusPoller(
   }
   const backingOff = (dir: string): boolean => {
     const at = nextAttemptAt.get(dir)
-    return at !== undefined && Date.now() < at
+    return at !== undefined && performance.now() < at
   }
 
   const pump = (): void => {

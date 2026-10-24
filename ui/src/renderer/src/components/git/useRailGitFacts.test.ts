@@ -160,6 +160,17 @@ describe('useRailGitFacts failure backoff', () => {
     expect(client.sent).toHaveLength(sent + 1)
   })
 
+  test('a wall-clock step back does not extend the backoff', () => {
+    const { client } = mount(dirsOf(1))
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    // NTP or a manual change can step the wall clock back; the ladder measures
+    // elapsed time, so an hour of stepping must not delay the next rung.
+    act(() => { vi.setSystemTime(Date.now() - 3_600_000) })
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(client.sent).toHaveLength(sent + 1)
+  })
+
   test('a focus refresh is never delayed by the failure ladder', () => {
     const { client } = mount(dirsOf(1))
     drain(client)
