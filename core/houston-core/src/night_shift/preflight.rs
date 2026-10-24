@@ -205,6 +205,14 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
             format!("{} configured", s.checks.len()),
         )
     });
+    if s.app_qa.enabled && s.app_qa.start_command.trim().is_empty() {
+        out.push(item(
+            "app_qa_start_missing",
+            PreflightStatus::Block,
+            "App QA",
+            "App QA is on but has no start command; enter one in Setup or turn App QA off".into(),
+        ));
+    }
     out.extend(restart_items(m.reboot_pending, m.active_hours, run));
     out.extend(super::awake::inhibitor_item(m.inhibitor_available));
     out
@@ -616,6 +624,17 @@ mod tests {
                 "checks_missing"
             ]
         );
+    }
+
+    #[test]
+    fn app_qa_needs_a_start_command() {
+        let mut s = settings();
+        s.app_qa.enabled = true;
+        let items = evaluate(&s, &facts(healthy()), &s.window);
+        let ids: Vec<&str> = blocks(&items).iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["app_qa_start_missing"]);
+        s.app_qa.start_command = "bun run dev".into();
+        assert!(blocks(&evaluate(&s, &facts(healthy()), &s.window)).is_empty());
     }
 
     #[test]

@@ -327,7 +327,7 @@ value. Its settings and runs use these messages. Every refusal of one is an `err
 |---|---|---|
 | `night_shift_create` | `workspace` | `night_shift_state` (direct) for the existing routine, or for a new paused one with the default settings; `routines` (bcast) when created; `error` when the workspace is not a git repository |
 | `night_shift_state` | `workspace`, `preflight_until_ms?` (also run preflight for a start lasting until then) | `night_shift_state` (direct) |
-| `night_shift_update` | `routine_id`, `settings: NightShiftSettings`, `expected_revision` | `night_shift_state` (bcast); `error` naming both revisions when stale, naming each missing setting for `merge_queue` output without a verification command or an App check, naming a worker provider that reports no usage limit, and naming the values and the limit for a wrap-up not before the hard stop or a window over `NIGHT_SHIFT_WINDOW_MAX_MINUTES` |
+| `night_shift_update` | `routine_id`, `settings: NightShiftSettings`, `expected_revision` | `night_shift_state` (bcast); `error` naming both revisions when stale, naming each missing setting for `merge_queue` output without a verification command or App QA on with a start command, naming UI and UX polish with screenshots off, naming a worker provider that reports no usage limit, and naming the values and the limit for a wrap-up not before the hard stop or a window over `NIGHT_SHIFT_WINDOW_MAX_MINUTES` |
 | `night_shift_run_now` | `routine_id`, `until_ms` (the hard stop; wrap-up is `NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES` before it, or 75 % of a run under one hour) | `night_shift_run_event` (bcast); a blocking preflight, or any failure to launch, records a `refused` run carrying every item and its reason and opens no pane; `error` while the routine has a run in flight or starting |
 | `night_shift_wrap_up` | `run_id` | as reaching wrap-up now: one wrap-up instruction to the orchestrator |
 | `night_shift_stop` | `run_id` | as reaching the hard stop now: every pane the run started, then the orchestrator, is closed and the run settles |
@@ -821,17 +821,19 @@ NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, win
                    order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
                    output: prs | merge_queue, pr_size: {kind: one} | {kind: related,
                    max_changes: 2..20}, screenshots,
-                   app_check?: NightAppCheck, hold_for_qa, checks: NightCheck[], verification: light | standard,
+                   app_qa: NightAppQa, hold_for_qa, checks: NightCheck[], verification: light | standard,
                    questions: park
 NightCheck         command, source (`ci.yml · core-checks`, `package.json`, `AGENTS.md` or
                    `added by you`)
-NightDetected      checks: NightCheck[] (found in the workspace, runnable on this machine)
+NightDetected      checks: NightCheck[] (found in the workspace, runnable on this machine),
+                   start_command?: NightCheck
 NightWindow        start, wrap_up, hard_stop: NightClock{hour, minute} (local), nights: u8[]
                    (1 = Sunday … 7 = Saturday)
 NightFocus         reliability, performance, ui_polish, competitor_gaps, docs_accuracy,
                    test_gaps: off | low | normal | high
 NightAgent         provider: AgentKind, model?
-NightAppCheck      start_command, address, smoke_flows: string[]
+NightAppQa         enabled, start_command, source, address (empty: each change opens what it
+                   touches), smoke_flows: string[]
 PreflightItem      id, status: ok | warn | block, label, detail, limit?, actual?
 NightRun           run_id, routine_id, workspace, trigger: RoutineTrigger,
                    phase: refused | running | wrapping_up | settled, session_id?,

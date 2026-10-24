@@ -7,7 +7,7 @@ use houston_protocol::{
     NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
 };
 
-use super::settings::{clock_label, has_app_check};
+use super::settings::{app_qa_on, clock_label};
 
 pub const METHOD: &str = include_str!("method.txt");
 
@@ -265,28 +265,33 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
             );
         }
     }
-    match s.app_check.as_ref().filter(|_| has_app_check(s)) {
-        Some(a) => {
-            let _ = writeln!(
-                out,
-                "- App check: start with `{}`, open {}{}.",
-                one_line(&a.start_command),
-                one_line(&a.address),
-                if a.smoke_flows.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        ", smoke flows: {}",
-                        a.smoke_flows
-                            .iter()
-                            .map(|x| one_line(x))
-                            .collect::<Vec<_>>()
-                            .join("; ")
-                    )
-                }
-            );
-        }
-        None => out.push_str("- App check: none; App QA is off.\n"),
+    if app_qa_on(s) {
+        let a = &s.app_qa;
+        let open = if a.address.trim().is_empty() {
+            "the story or screen that change touches, chosen from the change".to_string()
+        } else {
+            format!("`{}`", one_line(&a.address))
+        };
+        let _ = writeln!(
+            out,
+            "- App QA: on, for every change the user can see. The QA pane starts the app with \
+             `{}`, opens {open}, and checks that change's claims{}.",
+            one_line(&a.start_command),
+            if a.smoke_flows.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " plus these smoke flows: {}",
+                    a.smoke_flows
+                        .iter()
+                        .map(|x| one_line(x))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )
+            }
+        );
+    } else {
+        out.push_str("- App QA: off.\n");
     }
     out.push_str("- Questions: parked for the morning report.\n");
     out.push_str("\n## Ledger of earlier runs (newest first)\n\n");
@@ -378,11 +383,13 @@ mod tests {
             4
         ];
         s.competitor_sources = vec!["s".repeat(600); SOURCES_MAX];
-        s.app_check = Some(houston_protocol::NightAppCheck {
+        s.app_qa = houston_protocol::NightAppQa {
+            enabled: true,
             start_command: "a".repeat(1_000),
+            source: "s".repeat(SOURCE_MAX),
             address: "b".repeat(1_000),
             smoke_flows: vec!["f".repeat(300); SMOKE_FLOWS_MAX],
-        });
+        };
         s.focus.competitor_gaps = NightFocusLevel::High;
         s.orchestrator.model = Some("m".repeat(MODEL_MAX));
         s.workers = vec![
@@ -454,6 +461,20 @@ mod tests {
         assert!(METHOD
             .lines()
             .all(|line| line.chars().all(|c| (' '..='~').contains(&c))));
+    }
+
+    #[test]
+    fn app_qa_opens_what_each_change_touches() {
+        let mut s = super::super::settings::defaults();
+        assert!(compose(&s, &run(), &[]).contains("- App QA: off."));
+        s.app_qa.enabled = true;
+        s.app_qa.start_command = "node ui/harness/shot.mjs <story> <out.png>".into();
+        s.app_qa.smoke_flows = vec!["open a workspace".into()];
+        let brief = compose(&s, &run(), &[]);
+        assert!(brief.contains("opens the story or screen that change touches"), "{brief}");
+        assert!(brief.contains("checks that change's claims plus these smoke flows: open a workspace"), "{brief}");
+        s.app_qa.address = "http://127.0.0.1:5173".into();
+        assert!(compose(&s, &run(), &[]).contains("opens `http://127.0.0.1:5173`"));
     }
 
     #[test]

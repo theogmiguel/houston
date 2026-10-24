@@ -8,4 +8,8 @@ export type NightDetected = {
 /**
  * From CI workflows, package manifests and AGENTS.md, runnable here.
  */
-checks: Array<NightCheck>, };
+checks: Array<NightCheck>,
+/**
+ * How the app starts, from a harness, package scripts or AGENTS.md.
+ */
+start_command?: NightCheck | null, };

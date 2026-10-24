@@ -131,12 +131,17 @@ export function countdownLabel(untilMs: number, now: number): string {
   return h > 0 ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`
 }
 
+/** App QA runs: it is on and knows how to start the app (`settings.rs::app_qa_on`). */
+export function appQaOn(s: NightShiftSettings): boolean {
+  return s.app_qa.enabled && s.app_qa.start_command.trim() !== ''
+}
+
 /** What blocks merge queue output, by setting name; empty when it may be chosen. */
 export function mergeRefusal(s: NightShiftSettings, verifyCommand: boolean | null): string | null {
   if (s.output !== 'merge_queue') return null
   const missing: string[] = []
   if (verifyCommand === false) missing.push('a merge queue verification command for this workspace')
-  if (!s.app_check || !s.app_check.start_command.trim()) missing.push('an App check')
+  if (!appQaOn(s)) missing.push('App QA on with a start command')
   return missing.length ? `Merge queue output needs ${missing.join(' and ')}. Set them first, or keep pull requests only.` : null
 }
 

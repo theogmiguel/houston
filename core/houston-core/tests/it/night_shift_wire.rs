@@ -18,6 +18,16 @@ use std::time::Duration;
 
 const MINUTE: i64 = 60_000;
 
+fn app_qa_on() -> proto::NightAppQa {
+    proto::NightAppQa {
+        enabled: true,
+        start_command: "bun run dev".into(),
+        source: "added by you".into(),
+        address: String::new(),
+        smoke_flows: vec!["open settings".into()],
+    }
+}
+
 fn check(command: &str) -> proto::NightCheck {
     proto::NightCheck {
         command: command.into(),
@@ -417,7 +427,7 @@ async fn create_is_paused_with_defaults_and_idempotent() {
     assert_eq!(d.output, proto::NightOutput::Prs);
     assert!(d.screenshots && d.hold_for_qa);
     assert_eq!(d.pr_size, proto::NightPrSize::Related { max_changes: 5 });
-    assert_eq!(d.app_check, None);
+    assert!(!d.app_qa.enabled, "App QA starts off");
     assert!(d.checks.is_empty());
     assert_eq!(d.questions, proto::NightQuestions::Park);
 
@@ -465,7 +475,7 @@ async fn stale_revision_is_refused() {
 }
 
 #[tokio::test]
-async fn merge_output_needs_verify_and_app_check() {
+async fn merge_output_needs_verify_and_app_qa() {
     let r = rig().await;
     let routine = r.create();
     let st = r.state();
@@ -477,15 +487,11 @@ async fn merge_output_needs_verify_and_app_check() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("verification command"), "{err}");
-    assert!(err.contains("App check"), "{err}");
+    assert!(err.contains("App QA"), "{err}");
     r.daemon
         .merge_queue_settings_set(&r.ws_str(), false, "true", 30)
         .unwrap();
-    s.app_check = Some(proto::NightAppCheck {
-        start_command: "bun run dev".into(),
-        address: "http://127.0.0.1:5173".into(),
-        smoke_flows: vec!["open settings".into()],
-    });
+    s.app_qa = app_qa_on();
     r.daemon
         .night_shift_update(routine.id, s, &st.revision)
         .expect("both set: accepted");
@@ -1366,11 +1372,7 @@ async fn enqueue_from_a_run_follows_output_and_hold() {
     let st = r.state();
     let mut s = st.settings;
     s.output = proto::NightOutput::MergeQueue;
-    s.app_check = Some(proto::NightAppCheck {
-        start_command: "bun run dev".into(),
-        address: "http://127.0.0.1:5173".into(),
-        smoke_flows: vec![],
-    });
+    s.app_qa = app_qa_on();
     r.daemon
         .night_shift_update(routine.id, s, &st.revision)
         .unwrap();

@@ -7366,11 +7366,13 @@ mod tests {
             output: NightOutput::MergeQueue,
             pr_size: NightPrSize::Related { max_changes: 5 },
             screenshots: true,
-            app_check: Some(NightAppCheck {
+            app_qa: NightAppQa {
+                enabled: true,
                 start_command: "scripts/dev.sh".into(),
-                address: "http://127.0.0.1:1420".into(),
+                source: "AGENTS.md".into(),
+                address: String::new(),
                 smoke_flows: vec!["open a pane".into()],
-            }),
+            },
             hold_for_qa: true,
             checks: vec![NightCheck {
                 command: "cargo test".into(),
@@ -7533,6 +7535,10 @@ mod tests {
                         command: "cargo fmt --check".into(),
                         source: "ci.yml · core-checks".into(),
                     }],
+                    start_command: Some(NightCheck {
+                        command: "node ui/harness/shot.mjs <story> <out.png>".into(),
+                        source: "ui/harness/shot.mjs".into(),
+                    }),
                 },
             },
             ServerMsg::NightShiftRunEvent { run },

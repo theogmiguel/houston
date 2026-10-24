@@ -20,7 +20,7 @@ export function nightDefaults(): NightShiftSettings {
     output: 'prs',
     pr_size: { kind: 'related', max_changes: 5 },
     screenshots: true,
-    app_check: null,
+    app_qa: { enabled: false, start_command: '', source: '', address: '', smoke_flows: [] },
     hold_for_qa: true,
     checks: [],
     verification: 'light',

@@ -69,7 +69,7 @@ pub fn defaults() -> NightShiftSettings {
         output: NightOutput::Prs,
         pr_size: NightPrSize::Related { max_changes: 5 },
         screenshots: true,
-        app_check: None,
+        app_qa: houston_protocol::NightAppQa::default(),
         hold_for_qa: true,
         checks: Vec::new(),
         verification: NightVerification::Light,
@@ -107,6 +107,19 @@ fn upgrade_v1(doc: &mut Value) {
         }
     }
     o.insert("verification".into(), json!("light"));
+    let app = o.remove("app_check").unwrap_or(Value::Null);
+    let text = |key: &str| app.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
+    let start = text("start_command");
+    o.insert(
+        "app_qa".into(),
+        json!({
+            "enabled": !start.trim().is_empty(),
+            "source": if start.trim().is_empty() { "" } else { ADDED_BY_YOU },
+            "start_command": start,
+            "address": text("address"),
+            "smoke_flows": app.get("smoke_flows").cloned().unwrap_or(json!([])),
+        }),
+    );
     if let Some(goal) = o.remove("goal") {
         o.insert("direction".into(), goal);
     }
@@ -287,7 +300,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
             );
         }
     }
-    let smoke_flows = s.app_check.as_ref().map_or(&[][..], |a| &a.smoke_flows[..]);
+    let smoke_flows = &s.app_qa.smoke_flows[..];
     for (name, count, max) in [
         ("checks before hand-back", s.checks.len(), CHECKS_MAX),
         (
@@ -301,14 +314,11 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
             bail!("{count} {name}; the limit is {max}");
         }
     }
-    let app = s.app_check.as_ref();
+    let app = &s.app_qa;
     let texts = [
         ("direction", s.direction.as_str()),
-        (
-            "App start command",
-            app.map_or("", |a| a.start_command.as_str()),
-        ),
-        ("App address", app.map_or("", |a| a.address.as_str())),
+        ("App start command", app.start_command.as_str()),
+        ("App address", app.address.as_str()),
     ]
     .into_iter()
     .chain(s.checks.iter().map(|c| ("check", c.command.as_str())))
@@ -363,8 +373,8 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         if !facts.merge_verify_command {
             missing.push("the workspace's merge queue verification command");
         }
-        if !has_app_check(s) {
-            missing.push("an App check");
+        if !app_qa_on(s) {
+            missing.push("App QA on with a start command");
         }
         if !missing.is_empty() {
             bail!(
@@ -376,10 +386,9 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     Ok(())
 }
 
-pub fn has_app_check(s: &NightShiftSettings) -> bool {
-    s.app_check
-        .as_ref()
-        .is_some_and(|a| !a.start_command.trim().is_empty())
+/// App QA runs: it is on and knows how to start the app.
+pub fn app_qa_on(s: &NightShiftSettings) -> bool {
+    s.app_qa.enabled && !s.app_qa.start_command.trim().is_empty()
 }
 
 #[cfg(test)]
@@ -432,6 +441,17 @@ mod tests {
             }]
         );
         assert_eq!(s.verification, NightVerification::Light);
+        assert!(s.app_qa.enabled && s.app_qa.source == ADDED_BY_YOU, "{:?}", s.app_qa);
+        assert_eq!(
+            (s.app_qa.start_command.as_str(), &s.app_qa.smoke_flows[..]),
+            ("bun run dev", &["open".to_string()][..])
+        );
+        let none = parse(&V1_DOC.replace(
+            r#""app_check":{"start_command":"bun run dev","address":"","smoke_flows":["open"]}"#,
+            r#""app_check":null"#,
+        ))
+        .unwrap();
+        assert_eq!(none.app_qa, houston_protocol::NightAppQa::default());
         let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
             .unwrap();
         assert_eq!(one.pr_size, NightPrSize::One);
@@ -535,14 +555,13 @@ mod tests {
         s.output = NightOutput::MergeQueue;
         let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
         assert!(err.contains("verification command"), "{err}");
-        assert!(err.contains("App check"), "{err}");
-        s.app_check = Some(houston_protocol::NightAppCheck {
-            start_command: "bun run dev".into(),
-            address: "http://127.0.0.1:5173".into(),
-            smoke_flows: Vec::new(),
-        });
+        assert!(err.contains("App QA on with a start command"), "{err}");
+        s.app_qa.start_command = "bun run dev".into();
         let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
-        assert!(!err.contains("App check"), "{err}");
+        assert!(err.contains("App QA"), "a start command alone is not App QA on: {err}");
+        s.app_qa.enabled = true;
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(!err.contains("App QA"), "{err}");
         validate(
             &s,
             &WorkspaceFacts {
@@ -565,31 +584,31 @@ mod tests {
     /// field, the value and the limit.
     #[test]
     fn every_text_field_and_list_is_bounded() {
-        let app = |start: &str, address: &str, flows: Vec<String>| {
-            Some(houston_protocol::NightAppCheck {
-                start_command: start.into(),
-                address: address.into(),
-                smoke_flows: flows,
-            })
+        let app = |start: &str, address: &str, flows: Vec<String>| houston_protocol::NightAppQa {
+            enabled: true,
+            start_command: start.into(),
+            source: ADDED_BY_YOU.into(),
+            address: address.into(),
+            smoke_flows: flows,
         };
         type Edit = Box<dyn Fn(&mut NightShiftSettings)>;
         let cases: Vec<(&str, Edit)> = vec![
             (
                 "App start command",
-                Box::new(move |s| s.app_check = app(&"x".repeat(TEXT_FIELD_MAX + 1), "", vec![])),
+                Box::new(move |s| s.app_qa = app(&"x".repeat(TEXT_FIELD_MAX + 1), "", vec![])),
             ),
             (
                 "App address",
-                Box::new(move |s| s.app_check = app("", &"x".repeat(TEXT_FIELD_MAX + 1), vec![])),
+                Box::new(move |s| s.app_qa = app("", &"x".repeat(TEXT_FIELD_MAX + 1), vec![])),
             ),
             (
                 "smoke flow",
-                Box::new(move |s| s.app_check = app("", "", vec!["x".repeat(TEXT_FIELD_MAX + 1)])),
+                Box::new(move |s| s.app_qa = app("", "", vec!["x".repeat(TEXT_FIELD_MAX + 1)])),
             ),
             (
                 "21 smoke flows",
                 Box::new(move |s| {
-                    s.app_check = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1])
+                    s.app_qa = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1])
                 }),
             ),
             (

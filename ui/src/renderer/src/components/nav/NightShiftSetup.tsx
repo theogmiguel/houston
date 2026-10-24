@@ -78,10 +78,7 @@ export function NightShiftSetup({ settings, revision, verifyCommand, childCap = 
   // A stored ZCode orchestrator stays visible, with its refusal, until it is changed.
   const orchestratorOptions = [...new Set([...ORCHESTRATOR_PROVIDERS, draft.orchestrator.provider])]
     .map((p) => ({ value: p, label: engineLabel(p) }))
-  const appCheck = (patch: Partial<NonNullable<NightShiftSettings['app_check']>>): NightShiftSettings['app_check'] => {
-    const next = { start_command: '', address: '', smoke_flows: [], ...draft.app_check, ...patch }
-    return next.start_command.trim() || next.address.trim() || next.smoke_flows.length > 0 ? next : null
-  }
+  const appQa = (patch: Partial<NightShiftSettings['app_qa']>): NightShiftSettings['app_qa'] => ({ ...draft.app_qa, ...patch })
 
   return (
     <div className="grid gap-[var(--space-3)]" data-testid="night-shift-setup">
@@ -132,7 +129,7 @@ export function NightShiftSetup({ settings, revision, verifyCommand, childCap = 
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Output">
-        <OutputFields draft={draft} set={set} refusal={refusal} appCheck={appCheck} />
+        <OutputFields draft={draft} set={set} refusal={refusal} appQa={appQa} />
       </Card>
 
       <Card layout="fields" shape="card" role="group" aria-label="Before hand-back">
@@ -198,11 +195,11 @@ function CrewFields({ draft, set, childCap, workerOptions, orchestratorOptions }
   </>
 }
 
-function OutputFields({ draft, set, refusal, appCheck }: {
+function OutputFields({ draft, set, refusal, appQa }: {
   draft: NightShiftSettings
   set: (patch: Partial<NightShiftSettings>) => void
   refusal: string | null
-  appCheck: (patch: Partial<NonNullable<NightShiftSettings['app_check']>>) => NightShiftSettings['app_check']
+  appQa: (patch: Partial<NightShiftSettings['app_qa']>) => NightShiftSettings['app_qa']
 }): React.JSX.Element {
   return <>
     <Card.Field label="Output">
@@ -221,15 +218,15 @@ function OutputFields({ draft, set, refusal, appCheck }: {
       )}
     </Card.Field>
     <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots || draft.focus.ui_polish !== 'off'} disabled={draft.focus.ui_polish !== 'off'} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
-    <Card.Field label="App check">
+    <Card.Field label="App QA">
       <div className="grid gap-[var(--space-1)]">
-        <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}
-          onChange={(e) => set({ app_check: appCheck({ start_command: e.target.value }) })} />
-        <TextInput aria-label="App address" placeholder="Address or story" value={draft.app_check?.address ?? ''}
-          onChange={(e) => set({ app_check: appCheck({ address: e.target.value }) })} />
-        <TextArea aria-label="Smoke flows" rows={2} value={draft.app_check?.smoke_flows.join('\n') ?? ''} placeholder="One smoke flow per line"
-          onChange={(e) => set({ app_check: appCheck({ smoke_flows: lines(e.target.value) }) })} />
-        {!draft.app_check?.start_command.trim() && <Text size="small" tone="muted">App QA is off until a start command is set.</Text>}
+        <Toggle aria-label="App QA on" on={draft.app_qa.enabled} onChange={(enabled) => set({ app_qa: appQa({ enabled }) })} />
+        <TextInput aria-label="App start command" placeholder="Command that starts the app" value={draft.app_qa.start_command}
+          onChange={(e) => set({ app_qa: appQa({ start_command: e.target.value, source: ADDED_BY_YOU }) })} />
+        <TextInput aria-label="App address" placeholder="Per change: the story or screen it touches" value={draft.app_qa.address}
+          onChange={(e) => set({ app_qa: appQa({ address: e.target.value }) })} />
+        <TextArea aria-label="Smoke flows" rows={2} value={draft.app_qa.smoke_flows.join('\n')} placeholder="Optional, one per line"
+          onChange={(e) => set({ app_qa: appQa({ smoke_flows: lines(e.target.value) }) })} />
       </div>
     </Card.Field>
     <Card.Field label="Hold for my QA"><Toggle aria-label="Hold for my QA" on={draft.hold_for_qa} onChange={(hold_for_qa) => set({ hold_for_qa })} /></Card.Field>

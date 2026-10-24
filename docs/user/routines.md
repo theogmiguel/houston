@@ -96,7 +96,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
 | Output | Draft pull requests only; pull request size: related changes together (one theme), up to 5 per pull request, or one change each (a change is one planned item); screenshots for visible changes |
-| App check: start command, address or story, smoke flows | None; App QA is off until a start command is set |
+| App QA: on or off, start command, what to open, smoke flows | Off. The start command is found when Night shift is set up (a screenshot harness such as `ui/harness/shot.mjs`, a package `dev` or `start` script, or a dev script in AGENTS.md) and shown with its source. Each visible change opens the story or screen it touches unless you set a fixed address, and is checked against its own claims plus any smoke flows you add. On without a start command blocks preflight |
 | Checks | Found when Night shift is set up: the check commands CI workflows run (formatters, linters, type checks and safety scripts, not test suites), package scripts and backticked commands in AGENTS.md, each with its source and only when its program is on PATH. Edit, remove or add them; at least one is required before a run starts |
 | Verification depth | Light: the verifier re-runs every proof and confirms each test asserts its claim; it cannot catch a test that would also pass with a wrong implementation. Standard also breaks the new code once per assertion and requires the test to fail; it cannot catch a requirement nobody wrote down as a claim |
 | Questions at night | Parked for the morning report |
@@ -117,8 +117,8 @@ While UI and UX polish is on, screenshots stay on: its changes are visible, and 
 refuses the settings with screenshots off.
 
 **Merge queue** output hands ready pull requests to the workspace's merge queue; it is
-refused until the workspace has a merge queue verification command and Night shift has an
-App check. With **Pull requests only**, the run's panes cannot add a pull request to the
+refused until the workspace has a merge queue verification command and App QA is on with a
+start command. With **Pull requests only**, the run's panes cannot add a pull request to the
 queue. With **Hold for my QA** on, a visible change stays out of the queue until you choose
 **Mark QA passed** in the report, which adds it after the earlier pull requests of the
 suggested merge order that are queued; if adding it fails, it stays held and you can mark

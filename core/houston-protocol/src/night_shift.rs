@@ -96,17 +96,23 @@ pub enum NightOutput {
     MergeQueue,
 }
 
-/// How a QA pane starts and drives the app. An empty `start_command` means no
-/// App check.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// App QA: a QA pane starts the app, opens what each visible change touches
+/// and checks that change's claims plus the smoke flows. On only when
+/// `enabled` and a start command is set.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct NightAppCheck {
+pub struct NightAppQa {
+    pub enabled: bool,
     pub start_command: String,
+    /// Where the start command was found, or `added by you`; empty for none.
+    pub source: String,
+    /// A fixed address every change starts from; empty means each change
+    /// opens the story or screen it touches.
     pub address: String,
+    /// Flows run on every change, beyond its claims.
     pub smoke_flows: Vec<String>,
 }
 
-/// A command every change passes, and where Houston found it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCheck {
@@ -133,6 +139,10 @@ pub enum NightVerification {
 pub struct NightDetected {
     /// From CI workflows, package manifests and AGENTS.md, runnable here.
     pub checks: Vec<NightCheck>,
+    /// How the app starts, from a harness, package scripts or AGENTS.md.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub start_command: Option<NightCheck>,
 }
 
 /// How finished changes become pull requests. A change is one plan entry.
@@ -182,9 +192,7 @@ pub struct NightShiftSettings {
     pub output: NightOutput,
     pub pr_size: NightPrSize,
     pub screenshots: bool,
-    #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-    pub app_check: Option<NightAppCheck>,
+    pub app_qa: NightAppQa,
     pub hold_for_qa: bool,
     /// Commands Houston runs on every pull request's head.
     pub checks: Vec<NightCheck>,

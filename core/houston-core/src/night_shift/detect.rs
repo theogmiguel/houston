@@ -215,6 +215,50 @@ fn instruction_checks(root: &Path, found: &mut Found, runnable: &dyn Fn(&str) ->
     }
 }
 
+/// How the app starts for App QA: a screenshot harness first, then a
+/// package `dev` or `start` script, then a backticked dev script in AGENTS.md.
+pub fn start_command(root: &Path) -> Option<NightCheck> {
+    for dir in ["ui/harness", "harness", "app/harness", "web/harness"] {
+        for file in ["shot.mjs", "screenshot.mjs", "shot.js"] {
+            let rel = format!("{dir}/{file}");
+            if root.join(&rel).is_file() {
+                return Some(NightCheck {
+                    command: format!("node {rel} <story> <out.png>"),
+                    source: rel,
+                });
+            }
+        }
+    }
+    let package = read(&root.join("package.json"))
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    if let Some(scripts) = package.as_ref().and_then(|p| p.get("scripts")?.as_object().cloned()) {
+        let runner = if root.join("bun.lock").exists() || root.join("bun.lockb").exists() {
+            "bun run"
+        } else {
+            "npm run"
+        };
+        if let Some(name) = ["dev", "start"].into_iter().find(|n| scripts.contains_key(*n)) {
+            return Some(NightCheck {
+                command: format!("{runner} {name}"),
+                source: "package.json".into(),
+            });
+        }
+    }
+    let text = read(&root.join("AGENTS.md"))?;
+    text.split('`')
+        .skip(1)
+        .step_by(2)
+        .map(str::trim)
+        .find(|span| {
+            let first = span.split_whitespace().next().unwrap_or_default();
+            first.rsplit('/').next().is_some_and(|f| f.starts_with("dev."))
+        })
+        .map(|span| NightCheck {
+            command: span.to_string(),
+            source: "AGENTS.md".into(),
+        })
+}
+
 /// The repository's checks: CI workflows first, then package scripts, then
 /// the contributor instructions; each once, at most `CHECKS_MAX`, and only
 /// those whose program `runnable` finds on this machine.
@@ -318,6 +362,26 @@ jobs:
         let found = checks(dir.path(), &|program| program == "bun");
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].command, "cd ui && bun run typecheck");
+    }
+
+    #[test]
+    fn start_command_from_a_harness() {
+        let dir = repo();
+        assert_eq!(start_command(dir.path()), None, "lint and test start nothing");
+        std::fs::write(dir.path().join("AGENTS.md"), "Run `scripts/dev.sh --fresh` to try it.").unwrap();
+        assert_eq!(
+            start_command(dir.path()).map(|c| (c.command, c.source)),
+            Some(("scripts/dev.sh --fresh".to_string(), "AGENTS.md".to_string()))
+        );
+        std::fs::create_dir_all(dir.path().join("ui/harness")).unwrap();
+        std::fs::write(dir.path().join("ui/harness/shot.mjs"), "").unwrap();
+        assert_eq!(
+            start_command(dir.path()).map(|c| (c.command, c.source)),
+            Some((
+                "node ui/harness/shot.mjs <story> <out.png>".to_string(),
+                "ui/harness/shot.mjs".to_string()
+            ))
+        );
     }
 
     #[test]

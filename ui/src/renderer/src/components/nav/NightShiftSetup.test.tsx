@@ -60,7 +60,7 @@ describe('NightShiftSetup', () => {
 
     click(Array.from(host.querySelectorAll('[role="radiogroup"][aria-label="Output"] [role="radio"]')).find((b) => b.textContent === 'Merge queue'))
     const refusal = host.querySelector('[data-testid="merge-refusal"]')
-    expect(refusal?.textContent).toContain('an App check')
+    expect(refusal?.textContent).toContain('App QA on with a start command')
     expect(refusal?.textContent).toContain('verification command')
     expect(button('Save')?.disabled).toBe(true)
 
