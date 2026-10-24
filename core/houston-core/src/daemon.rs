@@ -24770,9 +24770,11 @@ fn pane_identity_env(
     let slug = worktrees
         .iter()
         .map(|row| Path::new(&row.path))
-        .find(|root| {
+        .filter(|root| {
             cwd.starts_with(root) || resolved.as_ref().is_some_and(|r| r.starts_with(root))
         })
+        // A worktree can hold its own managed worktrees; the innermost one is the pane's.
+        .max_by_key(|root| root.components().count())
         .and_then(|root| root.file_name())
         .map(|name| name.to_string_lossy().into_owned());
     (workspace.display().to_string(), slug)
@@ -24826,6 +24828,27 @@ mod pane_identity_env_tests {
             "a directory that only shares the worktree's name prefix is not inside it"
         );
         assert_eq!(pane_identity_env(workspace.path(), &tree, &[]).1, None);
+    }
+
+    #[test]
+    fn a_pane_in_a_nested_managed_worktree_carries_the_innermost_slug() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outer = workspace.path().join(".houston/worktrees/outer");
+        let inner = outer.join(".houston/worktrees/inner");
+        std::fs::create_dir_all(inner.join("src")).unwrap();
+        let rows = [
+            row(&outer.canonicalize().unwrap()),
+            row(&inner.canonicalize().unwrap()),
+        ];
+
+        assert_eq!(
+            pane_identity_env(&outer, &inner.join("src"), &rows).1,
+            Some("inner".into())
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &outer, &rows).1,
+            Some("outer".into())
+        );
     }
 }
 
