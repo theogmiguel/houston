@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_GRID_ID, gridStorageKey, type LayoutNode } from './layout/tree'
+import { DEFAULT_GRID_ID, flushLayoutSaves, gridStorageKey, type LayoutNode } from './layout/tree'
 import { openSideTasks } from './sidePanel'
 import type { TaskRun } from './houston/generated/TaskRun'
 import {
@@ -39,6 +39,7 @@ function sessionsIn(node: LayoutNode | null): number[] {
 }
 
 function storedOrder(): number[] {
+  flushLayoutSaves()
   const raw = localStorage.getItem(`tr-layout:${GRID_KEY}`)
   return sessionsIn(raw ? (JSON.parse(raw).tree as LayoutNode | null) : null)
 }

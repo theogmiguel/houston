@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_GRID_ID, gridStorageKey, preorderSessions } from './layout/tree'
+import { DEFAULT_GRID_ID, flushLayoutSaves, gridStorageKey, preorderSessions } from './layout/tree'
 import { gridRecency, gridRecencyKey, touchGrid } from './gridRecency'
 import type { SessionInfo } from './houston/client'
 import {
@@ -92,6 +92,7 @@ describe('grids (step 05, driven from the rail)', () => {
       ],
       workspaces: [makeWorkspace()]
     })
+    flushLayoutSaves()
     expect(JSON.parse(localStorage.getItem('tr-layout:all') ?? 'null').tree).toEqual(tree)
 
     await act(async () => {
@@ -119,6 +120,7 @@ describe('grids (step 05, driven from the rail)', () => {
       await Promise.resolve()
     })
 
+    flushLayoutSaves()
     expect(JSON.parse(localStorage.getItem('tr-layout:all') ?? 'null').tree).toEqual({
       ...tree,
       children: [
@@ -131,6 +133,7 @@ describe('grids (step 05, driven from the rail)', () => {
   it('adding a grid, then switching, never duplicates a session across grids', async () => {
     await boot([1, 2])
 
+    flushLayoutSaves()
     const before = JSON.parse(
       localStorage.getItem(`tr-layout:${gridStorageKey(WS, DEFAULT_GRID_ID)}`) ?? 'null'
     )
@@ -160,6 +163,7 @@ describe('grids (step 05, driven from the rail)', () => {
     }[]
     expect(grids).toHaveLength(2)
     const allSessions: number[] = []
+    flushLayoutSaves()
     for (const g of grids) {
       const raw = localStorage.getItem(`tr-layout:${gridStorageKey(WS, g.id)}`)
       const st = raw ? JSON.parse(raw) : { tree: null }

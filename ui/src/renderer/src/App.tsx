@@ -290,6 +290,7 @@ import {
   sessionForPaneId,
   removeLeaf,
   saveLayout,
+  forgetLayout,
   setRatio,
   stackWith,
   swapLeaf,
@@ -2872,7 +2873,7 @@ export function App(): React.JSX.Element {
         if (pane.kind === "browser")
           localStorage.removeItem(tabsStorageKey(pane.id));
       }
-      localStorage.removeItem(`tr-layout:${key}`);
+      forgetLayout(key);
     }
     setLayouts((prev) => {
       let changed = false;
@@ -2899,7 +2900,7 @@ export function App(): React.JSX.Element {
     setWsOrder((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : prev));
     pruneCollapsedWorkspace(path);
     localStorage.removeItem(`tr-grids:${path}`);
-    localStorage.removeItem(`tr-layout:${path}`);
+    forgetLayout(path);
     dropWorkspaceBuffers(path);
   }, []);
 

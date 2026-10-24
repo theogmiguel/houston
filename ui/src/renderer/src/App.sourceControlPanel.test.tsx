@@ -3,7 +3,7 @@ import { browserTabUrl, loadInspectorTabs } from './scmPanel'
 import { act } from 'react'
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_GRID_ID, gridStorageKey, loadLayout, type LayoutNode } from './layout/tree'
+import { DEFAULT_GRID_ID, flushLayoutSaves, gridStorageKey, loadLayout, type LayoutNode } from './layout/tree'
 import { setScmWidth } from './scmPanel'
 import {
   type AppHarness,
@@ -45,6 +45,7 @@ function pressCtrlK(): void {
 }
 
 function storedTree(key = GRID_KEY): LayoutNode | null {
+  flushLayoutSaves()
   const raw = localStorage.getItem(`tr-layout:${key}`)
   return raw ? (JSON.parse(raw).tree as LayoutNode | null) : null
 }

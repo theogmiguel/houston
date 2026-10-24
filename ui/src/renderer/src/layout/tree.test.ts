@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addGrid,
+  flushLayoutSaves,
   appendToRoot,
   clampSplitRatio,
   computeRects,
@@ -1085,6 +1086,7 @@ describe('savedGrids', () => {
     })
     const grids = addGrid('/proj/api', 'Auth work')
     saveLayout(gridStorageKey('/proj/api', grids[0].id), { tree: leaf(1), cols: 1 })
+    flushLayoutSaves()
     off()
     renameGrid('/proj/api', grids[0].id, 'Renamed')
     expect(calls).toBeGreaterThanOrEqual(2)

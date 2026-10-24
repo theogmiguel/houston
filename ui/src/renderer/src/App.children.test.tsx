@@ -2,7 +2,7 @@ import { withInputOwner } from './test/inputFixtures'
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { gridStorageKey, leaf, preorderSessions } from './layout/tree'
+import { flushLayoutSaves, gridStorageKey, leaf, preorderSessions } from './layout/tree'
 import { type AppHarness, deliverControl, makeSession, makeWorkspace, renderReadyApp, resetHarness } from './test/appTestHarness'
 
 let harness: AppHarness | null = null
@@ -16,6 +16,7 @@ function click(label: string): void {
 }
 
 function storedSessions(path: string): number[] {
+  flushLayoutSaves()
   const grids = JSON.parse(localStorage.getItem(`tr-grids:${path}`) ?? '[]') as { id: string }[]
   return grids.flatMap((grid) => {
     const layout = localStorage.getItem(`tr-layout:${gridStorageKey(path, grid.id)}`)
@@ -116,6 +117,7 @@ describe('orchestrator children', () => {
       })
       click('Move 2 to grid')
       await act(async () => { await Promise.resolve() })
+      flushLayoutSaves()
       const current = JSON.parse(localStorage.getItem(`tr-layout:${gridStorageKey('/tmp/project', 'active')}`)!)
       const destination = JSON.parse(localStorage.getItem(`tr-layout:${gridStorageKey('/tmp/project', 'parent')}`)!)
       expect(current).toEqual(active)

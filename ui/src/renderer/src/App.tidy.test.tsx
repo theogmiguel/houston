@@ -2,9 +2,15 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness } from './test/appTestHarness'
+import { flushLayoutSaves } from './layout/tree'
 
 const WS = '/tmp/project'
 const LAYOUT_KEY = `tr-layout:${WS}::g-default`
+
+function storedLayout(): string | null {
+  flushLayoutSaves()
+  return localStorage.getItem(LAYOUT_KEY)
+}
 const SEEDED = {
   customized: true,
   cols: 2,
@@ -27,7 +33,7 @@ beforeEach(() => {
 })
 
 function savedPanes(): { browsers: string[]; editors: string[]; sessions: number[] } {
-  const tree = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null')?.tree
+  const tree = JSON.parse(storedLayout() ?? 'null')?.tree
   const out = { browsers: [] as string[], editors: [] as string[], sessions: [] as number[] }
   const walk = (n: Record<string, unknown> | null): void => {
     if (!n) return
@@ -88,7 +94,7 @@ describe('tidying the grid (inherits M9/D37)', () => {
     harness = await renderReadyApp()
     clickTidy()
 
-    const tree = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null')?.tree
+    const tree = JSON.parse(storedLayout() ?? 'null')?.tree
     expect(tree.kind).toBe('split')
     expect(tree.dir).toBe('col')
     expect(tree.weights).toEqual([50, 50])
@@ -118,7 +124,7 @@ describe('tidying the grid (inherits M9/D37)', () => {
   }
 
   function savedTree(): { dir: string; weights: number[]; children: unknown[] } {
-    return JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null')?.tree
+    return JSON.parse(storedLayout() ?? 'null')?.tree
   }
 
   it('lists the three shapes with their chords in the menu', async () => {
