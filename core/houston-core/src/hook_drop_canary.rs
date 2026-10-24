@@ -133,6 +133,22 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
     !state.unhealthy
 }
 
+/// Returns once `watch`'s counter holds still for 100 ms: a dropped watcher's thread
+/// can still count events it had already queued.
+#[doc(hidden)]
+pub fn wait_for_quiet_for_test(watch: &MailWatchState) {
+    let mut last = watch.events();
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(100));
+        let now = watch.events();
+        if now == last {
+            return;
+        }
+        last = now;
+    }
+    panic!("the watcher kept counting events for 5 s after it was stopped");
+}
+
 /// Never creates the directory: a watch on a vanished drop directory delivers
 /// nothing, so a missing directory is a miss rather than something to repair
 /// here with permissions `hook_drop::ensure_drop_dir` would not choose.
@@ -327,6 +343,7 @@ mod tests {
         );
 
         drop(watcher);
+        wait_for_quiet_for_test(&watch);
 
         assert!(
             check(&mut state, &dir, &watch, 31_000),
@@ -371,6 +388,7 @@ mod tests {
     fn dead_delivery_bounds_the_directory_to_one_probe() {
         let (tmp, watch, watcher) = watched_dir();
         drop(watcher);
+        wait_for_quiet_for_test(&watch);
         let mut state = CanaryState::default();
         let dir = hook_drop::drop_dir(tmp.path());
 

@@ -17213,6 +17213,7 @@ impl Daemon {
             ._hook_drop_watcher
             .lock()
             .expect("hook_drop_watcher lock") = None;
+        crate::hook_drop_canary::wait_for_quiet_for_test(&self.hook_drop_watch);
     }
 
     #[doc(hidden)]
