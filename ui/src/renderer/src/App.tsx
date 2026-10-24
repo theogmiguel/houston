@@ -73,6 +73,7 @@ import type { SkillToolState } from "./houston/generated/SkillToolState";
 import type { SkillPushRecord } from "./houston/generated/SkillPushRecord";
 import type { ProfileChoice } from "./houston/generated/ProfileChoice";
 import type { SessionView } from "./thread/threadTypes";
+import { newSessionView, useDefaultView } from "./thread/useDefaultView";
 import {
   isLive,
   LIVE_CHILDREN_MARKER,
@@ -916,6 +917,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  const defaultView = useDefaultView(readyClient(conn));
   const openMergeQueue = useCallback((): void => {
     requestPrsView({ view: "queue" });
     setSettings(false);
@@ -2985,16 +2987,17 @@ export function App(): React.JSX.Element {
       if (conn.kind !== "ready") return;
       if (selectedWs === "all") return;
       setExpandedId(null);
+      const opened = newSessionView(agent, view, defaultView);
       conn.client.createSession({
         ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
         agent,
         project_dir: selectedWs,
         shell_integration: shellIntegration,
         profile,
-        ...(view === "thread" ? { view } : {}),
+        ...(opened === "thread" ? { view: opened } : {}),
       });
     },
-    [conn, selectedWs, shellIntegration],
+    [conn, selectedWs, shellIntegration, defaultView],
   );
   const pasteToAgent = useCallback((session: number, text: string): void => {
     pasteToAgentMessage(readyClient(conn), sessionsRef, session, text, pushError);

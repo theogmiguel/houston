@@ -61,6 +61,8 @@ import {
   IconSplitRight,
   IconStopCircle,
   IconGitBranch,
+  IconMessageSquare,
+  IconSquareTerminal,
   IconSwap,
   IconTextLarger,
   IconTextSmaller,
@@ -531,6 +533,28 @@ function TextAndHandoffRows({ thread, keymapOverrides, menuItem, onZoom, onHando
   </>
 }
 
+const TURN_STATUS_WORD: Partial<Record<AgentStatus, string>> = { working: 'Working', spawning: 'Starting', 'needs-input': 'Needs input' }
+
+/** Moves a Claude conversation to the other view; the daemon refuses while a turn runs, and so does the row. */
+function ViewSwitchRow({ info, client, menuItem }: {
+  info: SessionInfo
+  client: HoustonClient
+  menuItem: PaneContextMenuController['menuItem']
+}): React.JSX.Element | null {
+  if (info.agent !== 'claude' || info.acp != null) return null
+  const target = info.view === 'thread' ? 'terminal' : 'thread'
+  const busy = info.status ? TURN_STATUS_WORD[info.status] : undefined
+  return (
+    <CtxRow
+      glyph={target === 'thread' ? IconMessageSquare : IconSquareTerminal}
+      label={target === 'thread' ? 'Open as thread' : 'Open in terminal'}
+      disabled={busy !== undefined}
+      disabledReason={`Claude's status is ${busy}; wait for the turn to end or stop it first`}
+      onClick={menuItem(() => client.send({ type: 'session_set_view', session: info.id, view: target }))}
+    />
+  )
+}
+
 /** A thread stops its turn; a terminal clears its screen or sends Ctrl+C. */
 function InterruptRows({ info, live, client, menuItem, termActions }: {
   info: SessionInfo
@@ -797,6 +821,7 @@ function SessionPaneImpl({
           />
           <PaneContextMenuSeparator />
           <InterruptRows info={info} live={live} client={client} menuItem={menuItem} termActions={termActions} />
+          <ViewSwitchRow info={info} client={client} menuItem={menuItem} />
           {!sleeping && restartEntries({
             info,
             live,

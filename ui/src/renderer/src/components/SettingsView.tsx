@@ -1,4 +1,5 @@
 import { GeneratedTitlesSetting } from './settings/GeneratedTitlesSetting'
+import { DefaultViewSetting } from './settings/DefaultViewSetting'
 import type { VoiceExternalModel } from '../houston/generated/VoiceExternalModel'
 import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
 import { AgentsOverview } from './settings/AgentsOverview'
@@ -361,6 +362,7 @@ function SectionDispatch({
               onAgentProfileDelete={onAgentProfileDelete}
               onAgentProfileSetActive={onAgentProfileSetActive}
             />
+            <DefaultViewSetting client={daemonClient} />
           </>
         )}
 

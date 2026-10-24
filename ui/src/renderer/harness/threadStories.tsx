@@ -1,6 +1,7 @@
 import React from 'react'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../src/houston/client'
 import { SessionPane } from '../src/components/SessionPane'
+import { DefaultViewSetting } from '../src/components/settings/DefaultViewSetting'
 import type { ThreadEvent, ThreadEventKind } from '../src/thread/threadTypes'
 
 const noop = (): void => {}
@@ -83,7 +84,7 @@ function threadInfo(over: Partial<SessionInfo>): SessionInfo {
   } as unknown as SessionInfo
 }
 
-function ThreadFrame({ events, info, hasMore, expandTools = 0 }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number }): React.JSX.Element {
+function ThreadFrame({ events, info, hasMore, expandTools = 0, menu = false }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number; menu?: boolean }): React.JSX.Element {
   const client = React.useMemo(() => fixtureClient(timeline(events), hasMore), [events, hasMore])
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
@@ -96,6 +97,15 @@ function ThreadFrame({ events, info, hasMore, expandTools = 0 }: { events: Threa
     }, 20)
     return () => window.clearInterval(timer)
   }, [expandTools])
+  React.useEffect(() => {
+    if (!menu) return
+    const timer = window.setTimeout(() => {
+      const pane = ref.current?.querySelector('.pane')
+      const box = pane?.getBoundingClientRect()
+      pane?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: (box?.left ?? 0) + 40, clientY: (box?.top ?? 0) + 60 }))
+    }, 60)
+    return () => window.clearTimeout(timer)
+  }, [menu])
   return (
     <div ref={ref} style={{ height: '100%', width: '100%', display: 'flex', minHeight: 0 }}>
       <SessionPane
@@ -171,4 +181,34 @@ export function ThreadStatesStory(): React.JSX.Element {
       <ThreadFrame events={TOOL_HEAVY} info={threadInfo({ id: 704, title: 'Notes file' })} expandTools={3} />
     </div>
   )
+}
+
+/** The pane menu of an idle Claude terminal and of a thread: each offers the other view. */
+export function ViewSwitchMenuStory(): React.JSX.Element {
+  return (
+    <div style={{ height: '100%', padding: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <ThreadFrame events={[]} info={threadInfo({ id: 711, view: 'terminal', title: 'Terminal Claude' } as Partial<SessionInfo>)} menu />
+      <ThreadFrame events={HISTORY} info={threadInfo({ id: 712, title: 'Rail flicker' })} menu />
+    </div>
+  )
+}
+
+/** A busy session's switch is disabled and names the status. */
+export function ViewSwitchBusyStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={STREAMING} info={threadInfo({ id: 713, status: 'working', title: 'Stack tab order' })} menu /></div>
+}
+
+/** Settings ▸ Agents ▸ CLIs ▸ Default view, answered by a client that holds Terminal. */
+export function DefaultViewSettingStory(): React.JSX.Element {
+  const client = React.useMemo(() => {
+    let listener: ((msg: ServerMsg) => void) | null = null
+    return {
+      subscribe: (_kind: string, handler: (msg: ServerMsg) => void) => { listener = handler; return noop },
+      send: (msg: { type: string; view?: string }) => {
+        const view = msg.type === 'default_view_set' ? msg.view : 'terminal'
+        queueMicrotask(() => listener?.({ type: 'default_view', view } as ServerMsg))
+      }
+    } as unknown as HoustonClient
+  }, [])
+  return <div style={{ maxWidth: 720, padding: 24 }}><DefaultViewSetting client={client} /></div>
 }
