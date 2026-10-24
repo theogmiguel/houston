@@ -52,6 +52,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         })
         .unwrap();
     }
@@ -110,6 +111,7 @@ fn seed_one(
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        permission_mode: None,
     })
     .unwrap();
 }
@@ -356,6 +358,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        permission_mode: None,
     })
     .unwrap();
     drop(db);
@@ -648,6 +651,7 @@ fn no_flags_set_runs_normal_restore_policy() {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        permission_mode: None,
     })
     .unwrap();
     drop(db);
