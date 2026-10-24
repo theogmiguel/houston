@@ -41,6 +41,7 @@ named.
 | **provider / CLI** | The agent runtime Houston launches and talks to. Each has a launch shape (`launch.rs`) and, for seven of them, a hook installer. | `launch.rs`, `agent_events.rs` |
 | **session** | One PTY (or SSH channel) running an agent CLI or a shell in a project directory, or a thread. Has a process `state` and, orthogonally, an agent `status`. | `daemon.rs::Session` |
 | **session view** | How a session is presented: `terminal` (a PTY drawn as a terminal pane) or `thread`. Fixed when the session is created and kept across Restart and restore. | `proto::SessionView` |
+| **approval card** | A thread's permission request: the tool and input Claude asks to run, with Allow and Deny. Houston holds Claude's `--permission-prompt-tool` call until the user answers it. | `mcp_thread_permission.rs`, `ThreadApprovalCard` |
 | **thread** | A Claude session in thread view: headless `claude --print` with stream-json on pipes, drawn as chat. It keeps its process across turns; Stop ends the process tree and the next message resumes the conversation. Its timeline is Houston's own `thread_events` history. | `thread_session.rs`, `daemon/threads.rs` |
 | **pane** | A session's cell in the grid. Its identity (`LeafNode.id`) outlives the session in it. | `layout/tree.ts` |
 | **workspace** | A project directory the daemon knows. Sessions belong to one; hooks are installed per workspace. `workspace_id` on the wire and in `pane_inbox` is the workspace's own path — Houston's only workspace key, so no separate id table can drift from it. | `db.rs::workspaces` |

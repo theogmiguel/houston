@@ -313,7 +313,7 @@ be delegated to, via #3 — identity is still not status.
 A thread session (`thread_session.rs`) runs Claude with the documented
 `--print --input-format stream-json --output-format stream-json` flags on pipes. Claude's
 lifecycle hooks fire in this mode with the session's ids, so they own `AgentStatus`
-exactly as for a terminal pane. Three additions, and no other status source:
+exactly as for a terminal pane. Four additions, and no other status source:
 
 - The stream's `result` event ends a turn only while the session has delivered no
   lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
@@ -324,6 +324,11 @@ exactly as for a terminal pane. Three additions, and no other status source:
   the turn itself and sets Idle (`TurnInterrupted` / `TurnFailed`). The session stays
   Running without a process; the next message starts a process that resumes the
   conversation by exact id. Only Kill and Close end the session.
+- While Houston holds a permission request for the thread (next section) the session is
+  NeedsInput, and Working again once the last one is answered. Houston holds the request,
+  so this is its own fact, not an inference.
+
+The daemon's own thread sources (`thread_*`) never count as a lifecycle hook.
 
 Stop ends the whole process tree: the process group (through `pid.rs`) on Unix, the Job
 object with kill-on-close on Windows. Killing only `claude` leaves its tools running.
@@ -331,6 +336,24 @@ The thread's history is Houston's own `thread_events` log, written from the stre
 arrives; Houston never reads Claude's transcript files to fill it and never writes the
 `control_request` protocol. A thread takes no terminal input: stdin frames,
 `pane_send_keys` and Sleep are refused by name.
+
+### Houston answers permission prompts for threads, never for terminal panes
+
+A thread session's Claude runs with `--permission-prompt-tool mcp__houston__thread_permission`.
+The tool is on the daemon's MCP server, listed only to a thread session's bearer token and
+refused by name for any other session. Claude calls it with `tool_name`, `input` and
+`tool_use_id` when a tool needs approval; the daemon records an `approval_request`, holds
+the call and answers with the documented result (`behavior: allow` with `updatedInput`, or
+`behavior: deny` with a message) only when the user answers the approval card. Houston
+never approves on its own. Stop, Kill, Close and an exit of the process deny every held
+request with a reason; a call Claude abandons, and a request left by a daemon that
+stopped, are recorded as withdrawn. Claude ends a tool call after 60 s without progress,
+so the held call carries MCP progress notifications.
+
+In a terminal pane Houston answers no permission prompt: the CLI's own dialog asks at the
+keyboard, and orchestration only relays, denies or escalates it (only the operator
+approves). The permission mode a thread runs with is a launch flag: changing it is refused
+while a turn runs and otherwise restarts the process with `--resume`.
 
 ### Generated titles never supply status or identity
 

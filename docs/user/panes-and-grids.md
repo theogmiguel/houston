@@ -87,6 +87,18 @@ messages; **Show earlier** loads older ones, and **Jump to latest** returns to t
 The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
 a terminal pane.
 
+When Claude needs permission to run a tool, the thread shows an approval card with the
+tool and its input. Choose **Allow** to run it or **Deny** to refuse it; Claude reads the
+answer and continues. The pane shows waiting for input until you answer. Stopping or
+closing the thread denies a request nobody answered. Houston answers these requests only
+in threads; in a terminal pane Claude asks in its own prompt.
+
+The **Permissions** menu above the timeline shows how the thread asks: **Ask before
+tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
+**Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
+conversation with the new mode and keeps it across Restart. The menu is unavailable while
+Claude works or waits for an answer.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a
