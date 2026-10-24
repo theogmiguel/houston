@@ -829,7 +829,7 @@ impl ThreadHandle {
 
     /// A message was sent and its turn has not ended.
     pub fn turn_open(&self) -> bool {
-        self.state.lock().expect("thread state lock").open_turns > 0
+        self.state.lock().expect("thread state lock").turn_open
     }
 
     /// Records `text` and delivers it as one stream-json user message, starting a process
