@@ -133,8 +133,9 @@ pub struct NightShiftSettings {
     pub enabled: bool,
     pub window: NightWindow,
     pub focus: NightFocus,
-    /// The run's completion condition; empty for none.
-    pub goal: String,
+    /// Where the run should go, in the user's words: a priority within the
+    /// focus areas, not a completion condition. Empty for none.
+    pub direction: String,
     pub competitor_sources: Vec<String>,
     pub orchestrator: NightAgent,
     /// The worker providers in fallback order.

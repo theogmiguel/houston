@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use houston_protocol::{
-    AgentKind, NightAgent, NightEntry, NightEntryKind, NightFocusLevel, NightOutput,
+    NightAgent, NightEntry, NightEntryKind, NightFocusLevel, NightOutput,
     NightPrSize, NightShiftSettings, ROUTINE_PROMPT_MAX,
 };
 
@@ -99,18 +99,10 @@ fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// A Claude orchestrator's first input, before the brief: the goal as its
-/// completion condition.
-pub fn goal_command(s: &NightShiftSettings) -> Option<String> {
-    let goal = one_line(&s.goal);
-    (s.orchestrator.provider == AgentKind::Claude && !goal.is_empty())
-        .then(|| format!("/goal {goal}"))
-}
-
 /// `digest` is newest first; entries that do not fit are counted, not cut.
 pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]) -> String {
     let mut out = String::new();
-    let goal = one_line(&s.goal);
+    let direction = one_line(&s.direction);
     out.push_str(METHOD);
     out.push_str("\n## This run\n\n");
     let _ = writeln!(out, "- Run: {}", run.run_id);
@@ -120,10 +112,15 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
         run.wrap_up, run.hard_stop
     );
     let _ = writeln!(out, "- Report path: {}", run.report_path);
-    if goal.is_empty() {
-        out.push_str("- Goal: none; work the focus areas.\n");
+    if direction.is_empty() {
+        out.push_str("- Direction: none; weigh the focus areas by their levels.\n");
     } else {
-        let _ = writeln!(out, "- Goal (the run's completion condition): {goal}");
+        let _ = writeln!(
+            out,
+            "- Direction, in the user's words: \"{direction}\". Within the focus areas, look \
+             first at what serves it and rank it higher; it steers the night, the window ends \
+             it."
+        );
     }
     let f = &s.focus;
     let _ = writeln!(
@@ -271,6 +268,7 @@ pub fn window_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use houston_protocol::AgentKind;
 
     fn run() -> BriefRun<'static> {
         BriefRun {
@@ -306,7 +304,7 @@ mod tests {
     fn bounded_with_full_ledger() {
         use super::super::settings::*;
         let mut s = defaults();
-        s.goal = "g".repeat(TEXT_FIELD_MAX);
+        s.direction = "g".repeat(TEXT_FIELD_MAX);
         s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 4];
         s.competitor_sources = vec!["s".repeat(600); SOURCES_MAX];
         s.app_check = Some(houston_protocol::NightAppCheck {
@@ -348,7 +346,7 @@ mod tests {
     #[test]
     fn brief_names_every_setting() {
         let mut s = super::super::settings::defaults();
-        s.goal = "CI is green".into();
+        s.direction = "stop crashing in long sessions".into();
         s.checks = vec!["cargo test".into()];
         let digest = vec![
             entry(3, NightEntryKind::Flaky, "pty_resize_race"),
@@ -357,7 +355,7 @@ mod tests {
         ];
         let brief = compose(&s, &run(), &digest);
         for needle in [
-            "CI is green",
+            "\"stop crashing in long sessions\"",
             "reliability Normal",
             "performance Normal",
             "zcode (GLM-5.3-Flash), then claude (opus)",
@@ -392,20 +390,15 @@ mod tests {
     }
 
     #[test]
-    fn goal_command_only_for_claude() {
+    fn direction_steers_and_is_no_goal() {
         let mut s = super::super::settings::defaults();
-        s.goal = "ship the\ntray fix".into();
-        assert_eq!(goal_command(&s).as_deref(), Some("/goal ship the tray fix"));
+        s.direction = "make it feel\nfaster".into();
         let brief = compose(&s, &run(), &[]);
-        assert!(
-            !brief.contains("/goal"),
-            "the brief is a separate input: {brief}"
-        );
-        assert!(brief.contains("ship the tray fix"));
-        s.orchestrator.provider = AgentKind::Codex;
-        assert_eq!(goal_command(&s), None);
-        s.orchestrator.provider = AgentKind::Claude;
-        s.goal.clear();
-        assert_eq!(goal_command(&s), None);
+        assert!(brief.contains("\"make it feel faster\""), "{brief}");
+        assert!(brief.contains("Within the focus areas, look first"), "{brief}");
+        assert!(!brief.contains("/goal"), "{brief}");
+        assert!(!brief.contains("completion condition"), "{brief}");
+        s.direction.clear();
+        assert!(compose(&s, &run(), &[]).contains("- Direction: none"));
     }
 }

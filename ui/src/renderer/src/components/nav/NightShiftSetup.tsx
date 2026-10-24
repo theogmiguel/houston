@@ -116,8 +116,8 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
               onChange={(level) => set({ focus: { ...draft.focus, [area.key]: level } })} />
           </Card.Field>
         ))}
-        <Card.Field label="Goal">
-          <TextArea aria-label="Goal" rows={2} value={draft.goal} placeholder="What a finished night looks like (optional)" onChange={(e) => set({ goal: e.target.value })} />
+        <Card.Field label="Direction">
+          <TextArea aria-label="Direction" rows={2} value={draft.direction} placeholder="e.g. Make it feel faster and stop it crashing in long sessions" onChange={(e) => set({ direction: e.target.value })} />
         </Card.Field>
         <Card.Field label="Competitor sources">
           <TextArea aria-label="Competitor sources" rows={2} value={draft.competitor_sources.join('\n')} placeholder="One repository URL per line"

@@ -783,7 +783,7 @@ impl Daemon {
                 dir,
                 super::RoutinePanePrompt {
                     prompt: text,
-                    leading: brief::goal_command(s).into_iter().collect(),
+                    leading: Vec::new(),
                 },
                 env,
             )?

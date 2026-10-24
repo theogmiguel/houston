@@ -438,12 +438,12 @@ async fn stale_revision_is_refused() {
     let routine = r.create();
     let st = r.state();
     let mut s = st.settings.clone();
-    s.goal = "first".into();
+    s.direction = "first".into();
     r.daemon
         .night_shift_update(routine.id, s.clone(), &st.revision)
         .unwrap();
     let current = r.state().revision;
-    s.goal = "second".into();
+    s.direction = "second".into();
     let err = r
         .daemon
         .night_shift_update(routine.id, s, &st.revision)
@@ -454,7 +454,7 @@ async fn stale_revision_is_refused() {
         "names the stale revision: {err}"
     );
     assert!(err.contains(&current), "names the current revision: {err}");
-    assert_eq!(r.state().settings.goal, "first");
+    assert_eq!(r.state().settings.direction, "first");
 }
 
 #[tokio::test]
@@ -596,7 +596,7 @@ async fn a_start_racing_another_is_refused() {
 async fn run_fires_isolated_with_composed_brief() {
     let r = rig().await;
     let routine = r.ready(|s| {
-        s.goal = "CI stays green".into();
+        s.direction = "CI stays green".into();
         s.focus.test_gaps = proto::NightFocusLevel::High;
         s.checks = vec!["cargo test -p core".into()];
     });
@@ -627,7 +627,7 @@ async fn run_fires_isolated_with_composed_brief() {
     );
     let brief = r.brief(&run);
     for needle in [
-        "Goal (the run's completion condition): CI stays green",
+        "Direction, in the user's words: \"CI stays green\"",
         "test gaps High",
         "zcode (GLM-5.3-Flash), then claude (opus)",
         "`cargo test -p core`",
@@ -731,10 +731,10 @@ async fn cost_counts_the_orchestrator_and_its_crew() {
     }
 }
 
-/// A Claude orchestrator's TUI receives `/goal <goal>` as an input of its
-/// own, submitted before the brief is pasted.
+/// Direction steers the run from inside the brief; a Claude orchestrator is
+/// sent no `/goal`, which would make it a completion condition.
 #[tokio::test]
-async fn goal_is_typed_before_the_brief() {
+async fn direction_is_not_typed_as_a_goal() {
     let r = rig().await;
     let typed = r.ws.join("orchestrator-input");
     r.daemon.set_routine_pane_cmd_for_test(vec![
@@ -745,7 +745,7 @@ async fn goal_is_typed_before_the_brief() {
             typed.display()
         ),
     ]);
-    let routine = r.ready(|s| s.goal = "CI stays\ngreen".into());
+    let routine = r.ready(|s| s.direction = "CI stays\ngreen".into());
     r.run_now(routine.id, 120);
     let brief_start = "Houston Night shift: you are the orchestrator";
     wait_until("the brief to be typed", || {
@@ -753,16 +753,8 @@ async fn goal_is_typed_before_the_brief() {
     })
     .await;
     let text = std::fs::read_to_string(&typed).unwrap();
-    let goal = text
-        .find("/goal CI stays green")
-        .expect("the goal was typed");
-    let brief = text.find(brief_start).unwrap();
-    assert!(goal < brief, "the goal comes first: {text:?}");
-    let between = &text[goal..brief];
-    assert!(
-        between.contains("\x1b[201~\n") && between.contains("\x1b[200~"),
-        "the goal is submitted as its own paste before the brief's: {between:?}"
-    );
+    assert!(!text.contains("/goal"), "{text:?}");
+    assert!(text.contains("CI stays green"), "{text:?}");
 }
 
 #[tokio::test]

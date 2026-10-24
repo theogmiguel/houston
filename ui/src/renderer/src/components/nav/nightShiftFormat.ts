@@ -18,6 +18,31 @@ export const FOCUS_AREAS: { key: keyof NightFocus; label: string }[] = [
   { key: 'test_gaps', label: 'Test gaps' }
 ]
 
+/** Direction words that suggest a focus area, in English and Portuguese. */
+const DIRECTION_HINTS: Record<keyof NightFocus, RegExp> = {
+  reliability: /crash|stab|reliab|hang|freez|lost|lose|break|bug|error|trav|est[aá]v|confi[aá]v|perd/i,
+  performance: /fast|slow|speed|perf|lag|memory|cpu|startup|r[aá]pid|lent|desempenho|mem[oó]ria/i,
+  ui_polish: /look|ui|ux|design|polish|screen|visual|layout|beaut|bonit|tela|interface/i,
+  competitor_gaps: /compet|rival|catch up|alcan|concorr/i,
+  docs_accuracy: /doc|guide|readme|manual/i,
+  test_gaps: /test|coverage|cobertura/i
+}
+
+/** Focus areas the Direction suggests: a matching area goes High, the others Off while any
+ * matches; with no match or no text, an area keeps `base`. Areas in `touched` (changed by
+ * hand) are never overwritten. */
+export function suggestFocus(direction: string, base: NightFocus, current: NightFocus, touched: ReadonlySet<keyof NightFocus>): { focus: NightFocus; suggested: boolean } {
+  const text = direction.trim()
+  const keys = Object.keys(DIRECTION_HINTS) as (keyof NightFocus)[]
+  const hits = new Set(text ? keys.filter((k) => DIRECTION_HINTS[k].test(text)) : [])
+  const focus = { ...current }
+  for (const k of keys) {
+    if (touched.has(k)) continue
+    focus[k] = hits.size === 0 ? base[k] : hits.has(k) ? 'high' : 'off'
+  }
+  return { focus, suggested: [...hits].some((k) => !touched.has(k)) }
+}
+
 export const NIGHTS: { day: number; label: string }[] = [
   { day: 2, label: 'Mon' }, { day: 3, label: 'Tue' }, { day: 4, label: 'Wed' }, { day: 5, label: 'Thu' },
   { day: 6, label: 'Fri' }, { day: 7, label: 'Sat' }, { day: 1, label: 'Sun' }

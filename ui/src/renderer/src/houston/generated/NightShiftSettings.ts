@@ -12,9 +12,10 @@ import type { NightWindow } from "./NightWindow";
  */
 export type NightShiftSettings = { v: number, enabled: boolean, window: NightWindow, focus: NightFocus,
 /**
- * The run's completion condition; empty for none.
+ * Where the run should go, in the user's words: a priority within the
+ * focus areas, not a completion condition. Empty for none.
  */
-goal: string, competitor_sources: Array<string>, orchestrator: NightAgent,
+direction: string, competitor_sources: Array<string>, orchestrator: NightAgent,
 /**
  * The worker providers in fallback order.
  */

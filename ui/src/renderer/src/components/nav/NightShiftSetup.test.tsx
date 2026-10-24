@@ -75,8 +75,8 @@ describe('NightShiftSetup', () => {
 
   it('keeps an edit across refreshes and saves it against the revision it was read at', () => {
     const onSave = vi.fn()
-    const render = (revision: string, goal = ''): void =>
-      act(() => root.render(<NightShiftSetup settings={{ ...nightDefaults(), goal }} revision={revision} verifyCommand onSave={onSave} />))
+    const render = (revision: string, direction = ''): void =>
+      act(() => root.render(<NightShiftSetup settings={{ ...nightDefaults(), direction }} revision={revision} verifyCommand onSave={onSave} />))
     render('r')
     const input = (label: string): HTMLInputElement | HTMLTextAreaElement =>
       host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLTextAreaElement
@@ -85,20 +85,20 @@ describe('NightShiftSetup', () => {
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!
       act(() => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })) })
     }
-    type('Goal', 'CI is green')
+    type('Direction', 'CI is green')
     type('Wrap-up', '05:00')
     render('r')
-    expect(input('Goal').value).toBe('CI is green')
+    expect(input('Direction').value).toBe('CI is green')
     render('r2', 'from another window')
-    expect(input('Goal').value).toBe('CI is green')
+    expect(input('Direction').value).toBe('CI is green')
     click(button('Save'))
     expect(onSave.mock.calls[0][1]).toBe('r')
 
     click(button('Discard changes'))
-    expect(input('Goal').value).toBe('from another window')
+    expect(input('Direction').value).toBe('from another window')
     expect(input('Wrap-up').value).toBe('06:45')
     render('r3', 'saved elsewhere')
-    expect(input('Goal').value).toBe('saved elsewhere')
+    expect(input('Direction').value).toBe('saved elsewhere')
   })
 
   it('confirms a save once the daemon answers with the saved settings', () => {
@@ -106,10 +106,10 @@ describe('NightShiftSetup', () => {
     const render = (settings: ReturnType<typeof nightDefaults>, revision: string, error: string | null = null): void =>
       act(() => root.render(<NightShiftSetup settings={settings} revision={revision} verifyCommand onSave={onSave} error={error} />))
     render(nightDefaults(), 'r')
-    const goal = host.querySelector('[aria-label="Goal"]') as HTMLTextAreaElement
+    const field = host.querySelector('[aria-label="Direction"]') as HTMLTextAreaElement
     const type = (value: string): void => {
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(goal), 'value')!.set!
-      act(() => { setter.call(goal, value); goal.dispatchEvent(new Event('input', { bubbles: true })) })
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')!.set!
+      act(() => { setter.call(field, value); field.dispatchEvent(new Event('input', { bubbles: true })) })
     }
     const status = (): string => host.querySelector('[role="status"]')?.textContent ?? ''
     type('CI is green')
@@ -117,14 +117,14 @@ describe('NightShiftSetup', () => {
     click(button('Save'))
     expect(status()).toContain('Saving')
     expect(button('Save')?.disabled).toBe(true)
-    render({ ...nightDefaults(), goal: 'CI is green' }, 'r2')
+    render({ ...nightDefaults(), direction: 'CI is green' }, 'r2')
     expect(status()).toContain('Saved')
     expect(host.querySelector('[aria-label="Saved"]')).not.toBeNull()
     type('CI is green, docs too')
     expect(status()).toBe('')
 
     click(button('Save'))
-    render({ ...nightDefaults(), goal: 'CI is green' }, 'r2', 'stale revision')
+    render({ ...nightDefaults(), direction: 'CI is green' }, 'r2', 'stale revision')
     expect(status(), 'a refused save is not confirmed').toBe('')
     expect(button('Save')?.disabled).toBe(false)
   })

@@ -816,7 +816,7 @@ RoutineErrorKind   conflict | duplicate_name | limit | not_found | already_runni
 RoutineEngineRefusal engine: AgentKind, permission_mode: ChatPermissionMode, reason
                    (a pair `routine_create`/`routine_update` refuse whatever the model;
                    pickers show the engine disabled with `reason`)
-NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, window: NightWindow, focus: NightFocus, goal,
+NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, window: NightWindow, focus: NightFocus, direction,
                    competitor_sources, orchestrator: NightAgent, workers: NightAgent[] (fallback
                    order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
                    output: prs | merge_queue, pr_size: {kind: one} | {kind: related,

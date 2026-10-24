@@ -7344,7 +7344,7 @@ mod tests {
                 docs_accuracy: NightFocusLevel::Off,
                 test_gaps: NightFocusLevel::Off,
             },
-            goal: "green CI".into(),
+            direction: "faster attach".into(),
             competitor_sources: vec!["https://example.invalid/repo".into()],
             orchestrator: NightAgent {
                 provider: AgentKind::Claude,

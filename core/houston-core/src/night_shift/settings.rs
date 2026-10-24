@@ -44,7 +44,7 @@ pub fn defaults() -> NightShiftSettings {
             docs_accuracy: NightFocusLevel::Off,
             test_gaps: NightFocusLevel::Off,
         },
-        goal: String::new(),
+        direction: String::new(),
         competitor_sources: Vec::new(),
         orchestrator: NightAgent {
             provider: AgentKind::Claude,
@@ -94,6 +94,9 @@ fn upgrade_v1(doc: &mut Value) {
         .unwrap_or(5)
         .min(u64::from(MAX_CHANGES_PER_PR_MAX));
     o.remove("themed");
+    if let Some(goal) = o.remove("goal") {
+        o.insert("direction".into(), goal);
+    }
     o.insert(
         "pr_size".into(),
         if max < u64::from(MAX_CHANGES_PER_PR_MIN) {
@@ -287,7 +290,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     }
     let app = s.app_check.as_ref();
     let texts = [
-        ("goal", s.goal.as_str()),
+        ("direction", s.direction.as_str()),
         (
             "App start command",
             app.map_or("", |a| a.start_command.as_str()),
@@ -390,6 +393,7 @@ mod tests {
         assert_eq!(s.v, 2);
         assert_eq!(s.pr_size, NightPrSize::Related { max_changes: 3 });
         assert_eq!(s.focus.performance, NightFocusLevel::High);
+        assert_eq!(s.direction, "no lost hook events");
         let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
             .unwrap();
         assert_eq!(one.pr_size, NightPrSize::One);
