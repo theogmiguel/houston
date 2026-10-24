@@ -5150,6 +5150,8 @@ impl Daemon {
         let listener = UnixListener::bind(&socket_path)
             .map_err(|e| format!("binding adoption socket {path_str}: {e}"))?;
 
+        // The candidate loads the PR status file at startup.
+        self.pr_status_store.flush();
         self.request_spawn_next(
             &candidate.to_string_lossy(),
             &["--adopt".to_string(), path_str.clone()],

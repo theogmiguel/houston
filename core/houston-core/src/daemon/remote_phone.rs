@@ -231,7 +231,8 @@ impl Daemon {
     /// `GET /api/sessions/{id}/pr`: the pull request of the pane's branch.
     pub fn remote_pr(&self, id: u32) -> Result<Value, ApiError> {
         let dir = self.remote_pane_dir(id)?;
-        let (status, _) = self.pr_status(&dir);
+        // No follow-up request would replace a seed here, so the phone skips the store.
+        let status = crate::gh::pr_status_cached(&dir);
         let Some(pr) = status.pr else {
             let mut body = json!({ "pr": null });
             if let Some(hint) = status.hint {
