@@ -120,10 +120,10 @@ export function ThreadComposer({ stoppable, disabledReason, onSend, onStop }: {
   )
 }
 
-// A thread without a process resumes on the next message, so only a removed or sleeping session refuses input.
+// A thread without a process stays running and resumes on the next message; any other state refuses input.
 export function composerDisabledReason(info: SessionInfo, connected: boolean): string | null {
   if (!connected) return 'Reconnecting to the daemon'
-  if (info.state === 'killed' || info.state === 'sleeping') return `This session is ${info.state}`
+  if (info.state !== 'running') return `This session is ${info.state}; restart it to continue`
   return null
 }
 

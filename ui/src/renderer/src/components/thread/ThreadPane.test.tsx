@@ -206,15 +206,13 @@ describe('ThreadPane', () => {
     expect(container.querySelector('[data-testid="thread-stop"]')).toBeNull()
   })
 
-  it('accepts input in a thread without a process, and refuses it once the session is removed or asleep', () => {
-    for (const state of ['exited', 'interrupted'] as const) {
-      mount({ state })
-      expect(input().disabled).toBe(false)
-    }
-    for (const state of ['killed', 'sleeping'] as const) {
+  it('takes input only while the session runs, and names the state otherwise', () => {
+    mount({ state: 'running', status: 'idle' })
+    expect(input().disabled).toBe(false)
+    for (const state of ['exited', 'interrupted', 'killed', 'sleeping'] as const) {
       mount({ state })
       expect(input().disabled).toBe(true)
-      expect(input().placeholder).toBe(`This session is ${state}`)
+      expect(input().placeholder).toBe(`This session is ${state}; restart it to continue`)
     }
   })
 
