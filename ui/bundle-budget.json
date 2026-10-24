@@ -196,9 +196,14 @@
     "the thread view's boot-path pieces share this chunk: the Claude thread rows in",
     "the new pane menu and empty grid, the lazy thread pane slot, the thread menu's",
     "Stop and Handoff rows, HoustonClient.trySend and the history refusal pattern;",
-    "the thread pane, its store and its Markdown variant load on demand."
+    "the thread pane, its store and its Markdown variant load on demand.",
+    "Re-cut against 949,005 bytes (one boot chunk) with the same small headroom:",
+    "view switching adds the pane menu's Open as thread / Open in terminal row, the",
+    "default-view hook applied by the new pane flows and the WSL routes for the",
+    "three new protocol messages; the Default view settings row is on the lazy",
+    "Settings chunk."
   ],
-  "maxBootBytes": 948800,
+  "maxBootBytes": 949800,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
