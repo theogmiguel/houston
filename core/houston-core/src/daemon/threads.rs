@@ -69,13 +69,27 @@ impl ThreadHost for DaemonThreadHost {
         }
     }
 
-    fn process_ended(&self, session: u32) {
-        if let Some(daemon) = self.daemon.upgrade() {
-            daemon.thread_settle(
+    fn settle(&self, session: u32, outcome: proto::TurnOutcome) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        match outcome {
+            proto::TurnOutcome::Interrupted => daemon.thread_settle(
+                session,
+                "thread_stop",
+                crate::agent_events::AgentEvent::TurnInterrupted,
+            ),
+            _ => daemon.thread_settle(
                 session,
                 "thread_exit",
                 crate::agent_events::AgentEvent::TurnFailed,
-            );
+            ),
+        }
+    }
+
+    fn process_started(&self, session: u32, pid: u32) {
+        if let Some(daemon) = self.daemon.upgrade() {
+            daemon.record_thread_group(session, pid);
         }
     }
 }
@@ -143,14 +157,7 @@ impl Daemon {
     }
 
     pub fn thread_stop(self: &Arc<Self>, id: u32) -> Result<()> {
-        let handle = self.thread_handle(id, "thread_stop")?;
-        if handle.stop() {
-            self.thread_settle(
-                id,
-                "thread_stop",
-                crate::agent_events::AgentEvent::TurnInterrupted,
-            );
-        }
+        self.thread_handle(id, "thread_stop")?.stop();
         Ok(())
     }
 
@@ -243,6 +250,37 @@ impl Daemon {
         self.apply_agent_event(id, "thread_result", event, false, true, None);
     }
 
+    fn record_thread_group(&self, id: u32, pid: u32) {
+        let Some(group) = crate::thread_session::ThreadGroup::capture(pid) else {
+            return;
+        };
+        let recorded = serde_json::to_string(&group)
+            .map_err(anyhow::Error::from)
+            .and_then(|json| self.db.set_thread_group(id, &json));
+        if let Err(error) = recorded {
+            tracing::warn!("recording thread session {id}'s process group: {error:#}");
+        }
+    }
+
+    /// Kills what a thread's previous Claude left running after its daemon died.
+    pub(super) fn reclaim_thread_group(&self, id: u32) -> Result<()> {
+        let Some(json) = self.db.thread_group(id)? else {
+            return Ok(());
+        };
+        let group: crate::thread_session::ThreadGroup =
+            serde_json::from_str(&json).with_context(|| {
+                format!("session {id}'s thread group {json:?} is not a ThreadGroup")
+            })?;
+        let stopped = group.reclaim()?;
+        if stopped > 0 {
+            tracing::info!(
+                "session {id}: stopped {stopped} process(es) left in thread group {}",
+                group.pgid
+            );
+        }
+        Ok(())
+    }
+
     /// The daemon ended the process itself, so no turn is running any more.
     fn thread_settle(
         self: &Arc<Self>,
@@ -276,6 +314,9 @@ impl Daemon {
             replacement,
             startup,
         } = spawn;
+        if let Some(replacement) = &replacement {
+            self.reclaim_thread_group(replacement.id)?;
+        }
         let (launch, assembled) = ThreadLaunch::from_command(&cmd)?;
         let conversation = assembled.or_else(|| preassigned.clone().map(Conversation::New));
         let history_owner = replacement
@@ -395,6 +436,10 @@ impl Daemon {
                 || Ok(()),
             )
             .context(orchestrate::MutationMayHaveActed)?;
+        // The first process started before its row existed.
+        if let Some(pid) = handle.pid() {
+            self.record_thread_group(id, pid);
+        }
         self.sessions
             .lock()
             .expect("sessions lock")

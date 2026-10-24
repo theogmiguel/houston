@@ -2,7 +2,8 @@
 import type { ThreadEventKind } from "./ThreadEventKind";
 
 /**
- * One entry of a thread's timeline. `seq` increases per session and is never
- * reused, so a client merges history and live events by it.
+ * One entry of a thread's timeline. `seq` increases per session and is not reused
+ * within one daemon run; a client merges history and live events by it and reloads
+ * history after reconnecting.
  */
 export type ThreadEvent = { seq: number, at_ms: number, kind: ThreadEventKind, };

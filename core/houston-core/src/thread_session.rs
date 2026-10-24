@@ -5,7 +5,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
     ThreadEvent, ThreadEventKind, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -31,9 +31,9 @@ pub const THREAD_FLAGS: [&str; 7] = [
 
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
-/// One stdout line above this is skipped whole: a single tool result can be megabytes,
-/// and only its first 16 KiB are kept anyway.
-const STDOUT_LINE_MAX_BYTES: usize = 32 * 1024 * 1024;
+/// One stdout line above this is skipped whole, with a notice: a single tool result can
+/// be megabytes, and at most 256 KiB of any event is kept anyway.
+const STDOUT_LINE_MAX_BYTES: usize = 4 * 1024 * 1024;
 const STDERR_TAIL_BYTES: usize = 4 * 1024;
 /// Time a stopped Claude gets to exit on SIGTERM before its group is killed.
 #[cfg(unix)]
@@ -47,8 +47,10 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn broadcast(&self, session: u32, events: Vec<ThreadEvent>);
     /// The stream's `result` event ended a turn.
     fn turn_ended(&self, session: u32, outcome: TurnOutcome);
-    /// The process ended on its own; no turn can still be running.
-    fn process_ended(&self, session: u32);
+    /// Stop or an exit ended the process, so no turn is running any more.
+    fn settle(&self, session: u32, outcome: TurnOutcome);
+    /// A new Claude process leads the thread's process group.
+    fn process_started(&self, session: u32, pid: u32);
 }
 
 /// The launch a thread restarts from: the session's assembled Claude command without its
@@ -583,6 +585,8 @@ struct ThreadProcess {
     generation: u64,
     pid: u32,
     child: Mutex<Option<std::process::Child>>,
+    /// Held only by writers: ending the tree never waits for it, so a write blocked on a
+    /// Claude that stopped reading cannot hold up Stop, Kill or shutdown.
     stdin: Mutex<Option<std::process::ChildStdin>>,
     stopping: AtomicBool,
     stderr: Arc<Mutex<Tail>>,
@@ -654,7 +658,6 @@ impl ThreadProcess {
 
     /// Ends every process in the tree and reaps the root. Returns its exit code if known.
     fn end_tree(&self, graceful: bool) -> Option<i32> {
-        *self.stdin.lock().expect("thread stdin lock") = None;
         let mut child = self.child.lock().expect("thread child lock").take()?;
         #[cfg(target_os = "linux")]
         {
@@ -694,8 +697,10 @@ struct HandleState {
     process: Option<Arc<ThreadProcess>>,
     conversation: Option<Conversation>,
     generation: u64,
-    open_turns: u32,
+    /// A message was sent and its `result` has not arrived.
+    turn_open: bool,
     closed: bool,
+    close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
     partial: Option<(String, String)>,
 }
@@ -722,14 +727,25 @@ impl HandleState {
         }
     }
 
-    /// The streamed text of an answer cut off by Stop or an exit, kept as a truncated message.
-    fn take_partial(&mut self) -> Option<ThreadEventKind> {
-        let (message_id, text) = self.partial.take()?;
-        (!text.is_empty()).then(|| ThreadEventKind::AssistantMessage {
-            message_id,
-            text: cap_text(text, THREAD_ASSISTANT_TEXT_MAX_BYTES).0,
-            truncated: true,
-        })
+    /// What an ended process leaves of an open turn: the streamed text of a cut-off answer
+    /// as a truncated message, then the turn end.
+    fn end_open_turn(
+        &mut self,
+        outcome: TurnOutcome,
+        error: Option<String>,
+    ) -> Vec<ThreadEventKind> {
+        let mut events = Vec::new();
+        if let Some((message_id, text)) = self.partial.take().filter(|(_, text)| !text.is_empty()) {
+            events.push(ThreadEventKind::AssistantMessage {
+                message_id,
+                text: cap_text(text, THREAD_ASSISTANT_TEXT_MAX_BYTES).0,
+                truncated: true,
+            });
+        }
+        if std::mem::take(&mut self.turn_open) {
+            events.push(ThreadEventKind::TurnEnd { outcome, error });
+        }
+        events
     }
 }
 
@@ -738,6 +754,9 @@ pub struct ThreadHandle {
     session: u32,
     launch: ThreadLaunch,
     host: Arc<dyn ThreadHost>,
+    /// Serialises process start, Stop, exit handling and close, with their events and the
+    /// daemon's status settle, so a message sent during a Stop waits for the old tree.
+    op: Mutex<()>,
     state: Mutex<HandleState>,
     next_seq: Mutex<u64>,
     outbox: Arc<Outbox>,
@@ -745,8 +764,7 @@ pub struct ThreadHandle {
 }
 
 impl ThreadHandle {
-    /// Starts the first process at once, so the session's start-up hooks fire before its
-    /// first message.
+    /// Starts the first process at once; it waits on stdin for the first message.
     pub fn start(
         session: u32,
         launch: ThreadLaunch,
@@ -759,12 +777,14 @@ impl ThreadHandle {
             session,
             launch,
             host: Arc::clone(&host),
+            op: Mutex::new(()),
             state: Mutex::new(HandleState {
                 process: None,
                 conversation,
                 generation: 0,
-                open_turns: 0,
+                turn_open: false,
                 closed: false,
+                close_cause: None,
                 partial: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
@@ -815,7 +835,17 @@ impl ThreadHandle {
     /// Records `text` and delivers it as one stream-json user message, starting a process
     /// that resumes the conversation first when none runs.
     pub fn send(self: &Arc<Self>, text: &str) -> Result<()> {
+        if text.len() > THREAD_USER_MESSAGE_MAX_BYTES {
+            bail!(
+                "message refused for thread session {}: it is {} bytes, over the {} byte limit \
+                 (THREAD_USER_MESSAGE_MAX_BYTES)",
+                self.session,
+                text.len(),
+                THREAD_USER_MESSAGE_MAX_BYTES
+            );
+        }
         let process = {
+            let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.state.lock().expect("thread state lock");
             if state.closed {
                 bail!(
@@ -824,15 +854,13 @@ impl ThreadHandle {
                 );
             }
             let process = self.ensure_process(&mut state)?;
-            state.open_turns = state.open_turns.saturating_add(1);
-            if let Some(Conversation::New(id)) = &state.conversation {
-                state.conversation = Some(Conversation::Resume(id.clone()));
-            }
+            state.turn_open = true;
+            drop(state);
+            self.emit(vec![ThreadEventKind::UserMessage {
+                text: text.to_string(),
+            }]);
             process
         };
-        self.emit(vec![ThreadEventKind::UserMessage {
-            text: text.to_string(),
-        }]);
         let line = serde_json::json!({
             "type": "user",
             "message": {"role": "user", "content": text},
@@ -841,6 +869,12 @@ impl ThreadHandle {
         // Written outside every lock: Claude may be writing a long answer to stdout while
         // this blocks on a full stdin pipe, and the stdout reader must keep draining.
         if let Err(error) = process.write_line(&line) {
+            if process.stopping.load(Ordering::Acquire) {
+                bail!(
+                    "thread session {} stopped before this message reached Claude",
+                    self.session
+                );
+            }
             self.emit(vec![ThreadEventKind::Notice {
                 text: format!("This message did not reach Claude: {error:#}"),
             }]);
@@ -851,39 +885,57 @@ impl ThreadHandle {
 
     /// Ends the process tree. Returns whether a process was running.
     pub fn stop(&self) -> bool {
-        let (process, open_turns, partial) = {
-            let mut state = self.state.lock().expect("thread state lock");
-            let open = std::mem::take(&mut state.open_turns);
-            let partial = state.take_partial();
-            (state.process.take(), open, partial)
-        };
-        let Some(process) = process else {
+        let _op = self.op.lock().expect("thread operation lock");
+        let Some(process) = self.state.lock().expect("thread state lock").process.take() else {
             return false;
         };
         process.stopping.store(true, Ordering::Release);
         process.end_tree(true);
-        let mut events: Vec<ThreadEventKind> = partial.into_iter().collect();
-        if open_turns > 0 {
-            events.push(ThreadEventKind::TurnEnd {
-                outcome: TurnOutcome::Interrupted,
-                error: None,
-            });
-        }
+        let events = self
+            .state
+            .lock()
+            .expect("thread state lock")
+            .end_open_turn(TurnOutcome::Interrupted, None);
         self.emit(events);
+        self.host.settle(self.session, TurnOutcome::Interrupted);
         true
     }
 
-    /// Ends the thread for good: the session was killed or closed.
+    /// Names why the next `close` happens, for the notice it records mid-turn.
+    pub fn note_close_cause(&self, cause: &str) {
+        self.state.lock().expect("thread state lock").close_cause = Some(cause.to_string());
+    }
+
+    /// Ends the thread for good: the session was killed, restarted, closed or the daemon
+    /// is stopping. An open turn is recorded as interrupted, naming the cause.
     pub fn close(&self) {
+        let _op = self.op.lock().expect("thread operation lock");
         let process = {
             let mut state = self.state.lock().expect("thread state lock");
+            if state.closed {
+                return;
+            }
             state.closed = true;
             state.process.take()
         };
-        if let Some(process) = process {
+        if let Some(process) = &process {
             process.stopping.store(true, Ordering::Release);
             process.end_tree(false);
         }
+        let mut state = self.state.lock().expect("thread state lock");
+        let was_open = state.turn_open;
+        let mut events = state.end_open_turn(TurnOutcome::Interrupted, None);
+        if was_open {
+            let cause = state
+                .close_cause
+                .take()
+                .unwrap_or_else(|| "its session ended".to_string());
+            events.push(ThreadEventKind::Notice {
+                text: format!("Houston stopped this thread: {cause}."),
+            });
+        }
+        drop(state);
+        self.emit(events);
         self.outbox.close();
         let (closed, changed) = &self.closed;
         *closed.lock().expect("thread closed lock") = true;
@@ -918,6 +970,7 @@ impl ThreadHandle {
             process.end_tree(false);
             return Err(error).context("starting the thread's output readers");
         }
+        self.host.process_started(self.session, process.pid);
         state.process = Some(Arc::clone(&process));
         Ok(process)
     }
@@ -948,6 +1001,10 @@ impl ThreadHandle {
 
     fn on_line(&self, generation: u64, mapper: &mut StreamMapper, line: &str) {
         let mapped = mapper.map_line(line);
+        self.on_mapped(generation, mapped);
+    }
+
+    fn on_mapped(&self, generation: u64, mapped: Mapped) {
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
@@ -958,16 +1015,16 @@ impl ThreadHandle {
             {
                 return;
             }
+            // `--resume` only once the stream shows Claude holds the conversation.
             if let Some(id) = mapped.conversation {
-                let resumable = matches!(state.conversation, Some(Conversation::Resume(_)));
-                state.conversation = Some(if resumable {
-                    Conversation::Resume(id)
-                } else {
-                    Conversation::New(id)
-                });
+                state.conversation = Some(Conversation::Resume(id));
+            } else if mapped.turn_end.is_some() {
+                if let Some(Conversation::New(id)) = &state.conversation {
+                    state.conversation = Some(Conversation::Resume(id.clone()));
+                }
             }
             if mapped.turn_end.is_some() {
-                state.open_turns = state.open_turns.saturating_sub(1);
+                state.turn_open = false;
             }
             state.track_partial(&mapped.events);
             self.emit(mapped.events);
@@ -977,35 +1034,49 @@ impl ThreadHandle {
         }
     }
 
+    fn line_skipped(&self, generation: u64, bytes: usize) {
+        self.on_mapped(
+            generation,
+            Mapped {
+                events: vec![ThreadEventKind::Notice {
+                    text: format!(
+                        "Skipped one {bytes} byte line of Claude's output: over the {} MiB \
+                         limit for a thread line, so an event of this turn is missing.",
+                        STDOUT_LINE_MAX_BYTES / (1024 * 1024)
+                    ),
+                }],
+                ..Mapped::default()
+            },
+        );
+    }
+
     fn process_ended(&self, process: &ThreadProcess) {
         if process.stopping.load(Ordering::Acquire) {
             return;
         }
-        let (open_turns, partial) = {
+        let _op = self.op.lock().expect("thread operation lock");
+        {
             let mut state = self.state.lock().expect("thread state lock");
-            if state
-                .process
-                .as_ref()
-                .is_none_or(|current| current.generation != process.generation)
+            if process.stopping.load(Ordering::Acquire)
+                || state
+                    .process
+                    .as_ref()
+                    .is_none_or(|current| current.generation != process.generation)
             {
                 return;
             }
             state.process = None;
-            (std::mem::take(&mut state.open_turns), state.take_partial())
-        };
+        }
         let code = process.end_tree(false);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
             || "no exit code".to_string(),
             |code| format!("exit code {code}"),
         );
-        let mut events: Vec<ThreadEventKind> = partial.into_iter().collect();
-        if open_turns > 0 {
-            events.push(ThreadEventKind::TurnEnd {
-                outcome: TurnOutcome::Error,
-                error: Some(format!("Claude exited during the turn ({code})")),
-            });
-        }
+        let mut events = self.state.lock().expect("thread state lock").end_open_turn(
+            TurnOutcome::Error,
+            Some(format!("Claude exited during the turn ({code})")),
+        );
         let text = if stderr.is_empty() {
             format!("Claude exited ({code}); the next message starts it again.")
         } else {
@@ -1013,7 +1084,7 @@ impl ThreadHandle {
         };
         events.push(ThreadEventKind::Notice { text });
         self.emit(events);
-        self.host.process_ended(self.session);
+        self.host.settle(self.session, TurnOutcome::Error);
     }
 }
 
@@ -1043,22 +1114,25 @@ fn read_stdout(
     let mut line = Vec::new();
     loop {
         line.clear();
-        match read_bounded_line(&mut reader, &mut line, STDOUT_LINE_MAX_BYTES) {
-            Ok(None) | Err(_) => break,
-            Ok(Some(false)) => {
-                let Some(handle) = handle.upgrade() else {
-                    break;
-                };
-                handle.on_line(
-                    process.generation,
-                    &mut mapper,
-                    &String::from_utf8_lossy(&line),
-                );
-            }
-            Ok(Some(true)) => tracing::warn!(
-                "thread pid {}: skipped a stdout line over {STDOUT_LINE_MAX_BYTES} bytes",
+        let Ok(Some(bytes)) = read_bounded_line(&mut reader, &mut line, STDOUT_LINE_MAX_BYTES)
+        else {
+            break;
+        };
+        let Some(handle) = handle.upgrade() else {
+            break;
+        };
+        if bytes > STDOUT_LINE_MAX_BYTES {
+            tracing::warn!(
+                "thread pid {}: skipped a {bytes} byte stdout line over {STDOUT_LINE_MAX_BYTES}",
                 process.pid
-            ),
+            );
+            handle.line_skipped(process.generation, bytes);
+        } else {
+            handle.on_line(
+                process.generation,
+                &mut mapper,
+                &String::from_utf8_lossy(&line),
+            );
         }
     }
     if let Some(handle) = handle.upgrade() {
@@ -1066,44 +1140,179 @@ fn read_stdout(
     }
 }
 
-/// Reads one `\n`-terminated line into `out`, keeping at most `max` bytes. `None` at EOF,
-/// `Some(true)` when the line was longer than `max` and was skipped.
+/// Reads one `\n`-terminated line, keeping it in `out` only up to `max` bytes. Returns the
+/// line's length (`None` at EOF); a length over `max` means the line was skipped.
 fn read_bounded_line(
     reader: &mut impl BufRead,
     out: &mut Vec<u8>,
     max: usize,
-) -> std::io::Result<Option<bool>> {
-    let mut overflow = false;
+) -> std::io::Result<Option<usize>> {
+    let mut length = 0;
     let mut read_any = false;
     loop {
         let available = reader.fill_buf()?;
         if available.is_empty() {
-            return Ok(read_any.then_some(overflow));
+            return Ok(read_any.then_some(length));
         }
         read_any = true;
         let (chunk, done) = match available.iter().position(|b| *b == b'\n') {
             Some(at) => (&available[..at], at + 1),
             None => (available, available.len()),
         };
-        if !overflow {
-            if out.len() + chunk.len() > max {
-                overflow = true;
-                out.clear();
-            } else {
-                out.extend_from_slice(chunk);
-            }
+        length += chunk.len();
+        if length <= max {
+            out.extend_from_slice(chunk);
+        } else {
+            out.clear();
         }
         let ended = done > chunk.len();
         reader.consume(done);
         if ended {
-            return Ok(Some(overflow));
+            return Ok(Some(length));
         }
     }
+}
+
+/// A thread's process group as a later daemon can find it: Claude leads the group, inside
+/// the daemon's session, on one boot. Windows needs none: its Job object kills the tree
+/// when the daemon's handle closes, crash included.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThreadGroup {
+    pub pgid: u32,
+    pub sid: u32,
+    pub system: String,
+}
+
+impl ThreadGroup {
+    #[cfg(target_os = "linux")]
+    pub fn capture(leader: u32) -> Option<Self> {
+        // SAFETY: getsid(0) only reads this process's session id.
+        let sid = unsafe { libc::getsid(0) };
+        let system = crate::recovery_process::system_identity().ok().flatten()?;
+        (sid > 0).then_some(Self {
+            pgid: leader,
+            sid: sid as u32,
+            system,
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn capture(_leader: u32) -> Option<Self> {
+        None
+    }
+
+    /// Kills what is left of the group after its daemon died: every process still in this
+    /// pgid and session on this boot. A pgid cannot be reissued while any member lives, and
+    /// the old daemon's session holds only what it launched. Returns how many were signalled.
+    #[cfg(target_os = "linux")]
+    pub fn reclaim(&self) -> Result<usize> {
+        let current = crate::recovery_process::system_identity()?;
+        if current.as_deref() != Some(self.system.as_str()) {
+            return Ok(0);
+        }
+        let mut stats = Vec::new();
+        for entry in std::fs::read_dir("/proc")
+            .context("listing /proc")?
+            .flatten()
+        {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|n| n.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if let Some((pgrp, session)) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|stat| group_and_session(&stat))
+            {
+                stats.push((pid, pgrp, session));
+            }
+        }
+        let members = self.members(&stats, std::process::id());
+        for pid in &members {
+            let creation = crate::pid::process_creation_token(*pid);
+            if let Err(error) = crate::pid::signal_process_checked_identity(
+                *pid,
+                crate::pid::Signal::Kill,
+                creation,
+            ) {
+                tracing::warn!(
+                    "stopping process {pid} left in thread group {}: {error}",
+                    self.pgid
+                );
+            }
+        }
+        Ok(members.len())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn reclaim(&self) -> Result<usize> {
+        Ok(0)
+    }
+
+    /// The processes of `stats` (pid, pgrp, session) that belong to this group.
+    pub fn members(&self, stats: &[(u32, u32, u32)], me: u32) -> Vec<u32> {
+        if self.pgid <= 1 || self.sid <= 1 {
+            return Vec::new();
+        }
+        stats
+            .iter()
+            .filter(|(pid, pgrp, session)| *pid != me && *pgrp == self.pgid && *session == self.sid)
+            .map(|(pid, _, _)| *pid)
+            .collect()
+    }
+}
+
+/// The pgrp and session fields of a `/proc/<pid>/stat` line.
+pub fn group_and_session(stat: &str) -> Option<(u32, u32)> {
+    let mut fields = stat[stat.rfind(')')? + 1..].split_whitespace();
+    // After the command: state, ppid, pgrp, session.
+    let pgrp = fields.nth(2)?.parse().ok()?;
+    let session = fields.next()?.parse().ok()?;
+    Some((pgrp, session))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stale_group_is_matched_by_pgid_and_session_only() {
+        let group = ThreadGroup {
+            pgid: 400,
+            sid: 30,
+            system: "linux:x".into(),
+        };
+        let stats = [
+            (400, 400, 30),
+            (401, 400, 30),
+            (402, 400, 31),
+            (403, 402, 30),
+            (9, 400, 30),
+        ];
+        assert_eq!(group.members(&stats, 9), [400, 401]);
+        let broadcast = ThreadGroup { pgid: 1, ..group };
+        assert!(broadcast.members(&stats, 9).is_empty());
+        assert_eq!(
+            group_and_session("12 (a b) c) S 1 400 30 0 -1"),
+            Some((400, 30))
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reclaim_kills_a_left_over_group_member() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let mut sleeper = crate::spawn::command("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
+        assert!(group.reclaim().unwrap() >= 1);
+        assert_eq!(sleeper.wait().unwrap().signal(), Some(libc::SIGKILL));
+    }
 
     fn kinds(lines: &str) -> Vec<ThreadEventKind> {
         let mut mapper = StreamMapper::default();
@@ -1228,18 +1437,18 @@ mod tests {
         let mut line = Vec::new();
         assert_eq!(
             read_bounded_line(&mut reader, &mut line, 10).unwrap(),
-            Some(true)
+            Some(100)
         );
         line.clear();
         assert_eq!(
             read_bounded_line(&mut reader, &mut line, 10).unwrap(),
-            Some(false)
+            Some(5)
         );
         assert_eq!(line, b"short");
         line.clear();
         assert_eq!(
             read_bounded_line(&mut reader, &mut line, 10).unwrap(),
-            Some(false)
+            Some(4)
         );
         assert_eq!(line, b"last");
         line.clear();
