@@ -218,6 +218,7 @@ fn stored_session(id: u32, dir: &Path) -> proto::SessionInfo {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     }
 }
 

@@ -83,6 +83,7 @@ fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     }
 }
 

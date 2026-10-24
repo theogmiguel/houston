@@ -78,6 +78,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     })
     .unwrap();
 }

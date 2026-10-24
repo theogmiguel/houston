@@ -51,6 +51,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         })
         .unwrap();
     }
@@ -108,6 +109,7 @@ fn seed_one(
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     })
     .unwrap();
 }
@@ -353,6 +355,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     })
     .unwrap();
     drop(db);
@@ -644,6 +647,7 @@ fn no_flags_set_runs_normal_restore_policy() {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     })
     .unwrap();
     drop(db);

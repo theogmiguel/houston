@@ -44,3 +44,5 @@ export const REMOTE_NOTIFY_DELAY_MAX_SECS = 600
 export const TAG_PALETTE = ["#a78bfa", "#7cb7ff", "#22d3ee", "#2dd4bf", "#4ade80", "#a3e635", "#f59e0b", "#fb923c", "#f472b6", "#e879f9", "#a8b0c2"]
 export const MAX_TAG_NAME_LEN = 32
 export const MAX_TAGS_PER_SESSION = 5
+export const THREAD_HISTORY_PAGE_MAX = 500
+export const THREAD_USER_MESSAGE_MAX_BYTES = 262144

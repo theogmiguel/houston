@@ -68,6 +68,7 @@ async fn flood_throughput_floor() {
         prompt: None,
         model: None,
         effort: None,
+        view: None,
     })
     .unwrap();
     ws.send(Message::text(create)).await.unwrap();
@@ -173,6 +174,7 @@ async fn daemon_rss_at_ten_sessions() {
             prompt: None,
             model: None,
             effort: None,
+            view: None,
         })
         .unwrap();
         ws.send(Message::text(create)).await.unwrap();

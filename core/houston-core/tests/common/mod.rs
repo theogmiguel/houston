@@ -440,6 +440,7 @@ pub fn create_custom_msg(cmd: Vec<&str>, dir: &std::path::Path) -> String {
         prompt: None,
         model: None,
         effort: None,
+        view: None,
     })
     .unwrap()
 }

@@ -48,6 +48,7 @@ fn info(id: u32, project: &Path, agent: proto::AgentKind) -> proto::SessionInfo 
         last_agent_message: Some("Finished output".into()),
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
     }
 }
 

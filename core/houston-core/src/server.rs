@@ -1247,6 +1247,7 @@ impl OnLoop {
                 prompt,
                 model,
                 effort,
+                view,
             } => {
                 let busy: Vec<u32> = cwd_from.iter().copied().collect();
                 let params = CreateParams {
@@ -1264,7 +1265,10 @@ impl OnLoop {
                     model,
                     effort,
                 };
-                let task = tokio::task::spawn_blocking(move || daemon.create_session(params));
+                let view = view.unwrap_or_default();
+                let task = tokio::task::spawn_blocking(move || {
+                    daemon.create_session_in_view(params, view)
+                });
                 let landed_busy = busy.clone();
                 let work = async move {
                     let result = task
@@ -1923,6 +1927,11 @@ async fn dispatch(
             .await;
             Ok(())
         }
+        proto::ClientMsg::ThreadSend { session, .. }
+        | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadHistory { session, .. } => Err(anyhow::anyhow!(
+            "session {session}: this daemon does not run thread sessions yet"
+        )),
         proto::ClientMsg::WorkspaceLocalServers { workspace } => {
             let msg = daemon.workspace_local_servers(workspace);
             send_msg(sink, &msg)

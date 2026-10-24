@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1564,6 +1564,97 @@ pub struct SafeModeSummary {
     pub disable_swarm_autolaunch: bool,
 }
 
+/// How a session is presented: a terminal pane over its PTY, or a thread, the
+/// same Claude conversation run headless and drawn as chat.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SessionView {
+    #[default]
+    Terminal,
+    Thread,
+}
+
+impl SessionView {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionView::Terminal => "terminal",
+            SessionView::Thread => "thread",
+        }
+    }
+}
+
+/// Largest `thread_history` page.
+pub const THREAD_HISTORY_PAGE_MAX: u32 = 500;
+/// Largest `thread_send` text; a longer message is refused, never cut.
+pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
+pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
+pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
+pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
+
+/// One entry of a thread's timeline. `seq` increases per session and is never
+/// reused, so a client merges history and live events by it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadEvent {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub seq: u64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: u64,
+    pub kind: ThreadEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ThreadEventKind {
+    UserMessage {
+        text: String,
+    },
+    /// Live only, never stored: the `AssistantMessage` with the same
+    /// `message_id` supersedes every delta before it.
+    AssistantDelta {
+        message_id: String,
+        text: String,
+    },
+    AssistantMessage {
+        message_id: String,
+        text: String,
+        #[serde(default)]
+        truncated: bool,
+    },
+    ToolCall {
+        tool_use_id: String,
+        name: String,
+        input: String,
+        truncated: bool,
+    },
+    ToolResult {
+        tool_use_id: String,
+        is_error: bool,
+        output: String,
+        truncated: bool,
+    },
+    TurnEnd {
+        outcome: TurnOutcome,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        error: Option<String>,
+    },
+    Notice {
+        text: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TurnOutcome {
+    Completed,
+    Interrupted,
+    Error,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -2363,6 +2454,10 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
+    /// Terminal for every session except a Claude session opened as a thread.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(as = "Option<SessionView>", optional))]
+    pub view: SessionView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3909,6 +4004,10 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         effort: Option<ChatEffort>,
+        /// Absent is `terminal`; `thread` is refused for every agent but Claude.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        view: Option<SessionView>,
     },
     SessionKill {
         session: u32,
@@ -3966,6 +4065,20 @@ pub enum ClientMsg {
         session: u32,
         cols: u16,
         rows: u16,
+    },
+    ThreadSend {
+        session: u32,
+        text: String,
+    },
+    ThreadStop {
+        session: u32,
+    },
+    ThreadHistory {
+        session: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_seq: Option<u64>,
+        limit: u32,
     },
     SessionList,
     PrWatchList,
@@ -5257,6 +5370,15 @@ pub enum ServerMsg {
     },
     SessionRemoved {
         session: u32,
+    },
+    ThreadEvents {
+        session: u32,
+        events: Vec<ThreadEvent>,
+    },
+    ThreadHistory {
+        session: u32,
+        events: Vec<ThreadEvent>,
+        has_more: bool,
     },
     Scrollback {
         session: u32,
@@ -7430,5 +7552,46 @@ mod tests {
         })
         .unwrap();
         assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
+    }
+
+    #[test]
+    fn thread_messages_keep_their_wire_shape() {
+        let create: ClientMsg = serde_json::from_str(
+            r#"{"type":"session_create","agent":"claude","project_dir":"/p","view":"thread"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            create,
+            ClientMsg::SessionCreate {
+                view: Some(SessionView::Thread),
+                ..
+            }
+        ));
+        let history: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_history","session":3,"limit":200}"#).unwrap();
+        assert!(matches!(
+            history,
+            ClientMsg::ThreadHistory {
+                session: 3,
+                before_seq: None,
+                limit: 200
+            }
+        ));
+        let events = serde_json::to_string(&ServerMsg::ThreadEvents {
+            session: 3,
+            events: vec![ThreadEvent {
+                seq: 7,
+                at_ms: 1,
+                kind: ThreadEventKind::TurnEnd {
+                    outcome: TurnOutcome::Interrupted,
+                    error: None,
+                },
+            }],
+        })
+        .unwrap();
+        assert_eq!(
+            events,
+            r#"{"type":"thread_events","session":3,"events":[{"seq":7,"at_ms":1,"kind":{"type":"turn_end","outcome":"interrupted","error":null}}]}"#
+        );
     }
 }

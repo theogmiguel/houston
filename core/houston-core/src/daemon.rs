@@ -5455,6 +5455,7 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -9291,6 +9292,19 @@ impl Daemon {
         )
     }
 
+    pub fn create_session_in_view(
+        self: &Arc<Self>,
+        p: CreateParams,
+        view: proto::SessionView,
+    ) -> Result<proto::SessionInfo> {
+        match view {
+            proto::SessionView::Terminal => self.create_session(p),
+            proto::SessionView::Thread => {
+                bail!("thread view is not available in this daemon yet; open a terminal session")
+            }
+        }
+    }
+
     pub(crate) fn create_task_plan_session(
         self: &Arc<Self>,
         p: CreateParams,
@@ -11875,6 +11889,7 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         };
 
         if let Some(cues) = replacement
@@ -12533,6 +12548,7 @@ impl Daemon {
                 last_agent_message: None,
                 slept_at_ms: None,
                 limit: None,
+                view: Default::default(),
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -27287,6 +27303,7 @@ mod kill_teardown_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27644,6 +27661,7 @@ mod shell_restore_bookkeeping_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         }
     }
 
@@ -27911,6 +27929,7 @@ mod force_respawn_guard_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         };
         let session = Arc::new(Session {
             info: info.clone(),

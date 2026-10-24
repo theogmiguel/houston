@@ -82,6 +82,7 @@ fn create_msg(request: u32, dir: &std::path::Path, cwd_from: Option<u32>) -> Mes
         prompt: None,
         model: None,
         effort: None,
+        view: None,
     })
 }
 

@@ -2570,6 +2570,7 @@ impl Db {
                     last_agent_message,
                     slept_at_ms,
                     limit: None,
+                    view: Default::default(),
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -6956,6 +6957,7 @@ mod tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
         }
     }
 
