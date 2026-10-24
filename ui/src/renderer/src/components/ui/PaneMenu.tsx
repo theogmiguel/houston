@@ -44,19 +44,22 @@ export function PaneMenuDivider(): React.JSX.Element {
 }
 
 /** Agent row: brand-coloured glyph and name; `expanded` adds a chevron, `disabledReason` disables the row. */
-export function PaneMenuAgentRow({ agent, expanded, disabledReason, onClick }: {
+export function PaneMenuAgentRow({ agent, label, expanded, disabledReason, onClick, ...rest }: {
   agent: AgentKind
+  /** Replaces the agent's name, for a variant such as its thread view. */
+  label?: string
+  'data-testid'?: string
   expanded?: boolean
   disabledReason?: string
   onClick: () => void
 }): React.JSX.Element {
   return (
     <Tooltip label={disabledReason} className="inline-flex w-full">
-      <button type="button" disabled={disabledReason !== undefined} className={AGENT_ROW_CLS} onClick={onClick}>
+      <button {...rest} type="button" disabled={disabledReason !== undefined} className={AGENT_ROW_CLS} onClick={onClick}>
         <span style={{ color: AGENT_DOT_COLOR[agent] ?? 'var(--text-muted)' }} className="flex-none inline-flex">
           <IconAgent agent={agent} className={ICON_ROLE_CLS.ui} />
         </span>
-        <Text size="ui" weight="ui" tone="secondary" className="flex-1">{AGENT_LABEL[agent] ?? agent}</Text>
+        <Text size="ui" weight="ui" tone="secondary" className="flex-1">{label ?? AGENT_LABEL[agent] ?? agent}</Text>
         {expanded !== undefined && (
           <Icon
             glyph={expanded ? IconChevronDown : IconChevronRight}

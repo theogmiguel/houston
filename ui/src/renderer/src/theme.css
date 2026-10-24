@@ -1437,6 +1437,9 @@
   --w-notice-pane-stack: 400px;
   --w-composer-option-menu: 160px;
   --w-composer-field-menu: 200px;
+  --w-thread-column: 760px;
+  --h-thread-code-max: 320px;
+  --h-thread-composer-max: 200px;
   --w-stepper-button: 26px;
   --w-attachment-preview: 220px;
   --tr-spinner-border: 2px;

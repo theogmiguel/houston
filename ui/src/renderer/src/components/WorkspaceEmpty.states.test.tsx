@@ -42,14 +42,19 @@ describe('WorkspaceEmpty — state matrix', () => {
     expect(plate?.querySelector('[data-testid="workspace-empty-headline"]')).not.toBeNull()
   })
 
-  it('Empty — the headline names no workspace and promises no thread', () => {
+  it('Empty — the headline names no workspace and the copy promises no thread', () => {
     expect(container.querySelector('[data-testid="workspace-empty-headline"]')?.textContent).toBe(
       'Nothing running here yet'
     )
     expect(container.textContent).toContain(
       'Open a terminal or an installed agent inside this workspace.'
     )
-    expect(container.textContent).not.toContain('thread')
+    const headline = container.querySelector('[data-testid="workspace-empty-headline"]')
+    expect(`${headline?.textContent} ${headline?.nextElementSibling?.textContent}`).not.toContain('thread')
+  })
+
+  it('offers Claude in thread view when Claude is installed', () => {
+    expect(container.querySelector('[data-testid="workspace-empty-claude-thread"]')?.textContent).toBe('Claude thread')
   })
 
   it('the action row is the three doors that work', () => {
