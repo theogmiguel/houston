@@ -242,10 +242,10 @@ function TaskListEmpty({ filtered }: { filtered: boolean }): React.JSX.Element {
 
 function useInboxRows(client: HoustonClient | null, workspaces: string[], setRows: React.Dispatch<React.SetStateAction<InboxRow[]>>): void {
   // Keyed by content: the workspace list is a new array on every App render.
-  const workspaceKey = workspaces.join(' ')
+  const workspaceKey = workspaces.join('\0')
   useEffect(() => {
     if (!client || workspaceKey === '') return
-    const known = new Set(workspaceKey.split(' '))
+    const known = new Set(workspaceKey.split('\0'))
     const offRows = client.subscribe('inbox_rows', (message) => {
       if (known.has(message.workspace)) setRows((current) => [...current.filter((row) => row.workspace !== message.workspace), ...message.rows])
     })

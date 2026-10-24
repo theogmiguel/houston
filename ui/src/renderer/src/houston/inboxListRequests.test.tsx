@@ -104,4 +104,12 @@ describe('per-workspace refresh burst', () => {
     // Bounding drops nothing: every workspace and worktree was listed.
     expect([...connection.listed].sort()).toEqual([...workspaces.map((w) => w.path), '/repo', '/repo/.wt/2', '/repo/.wt/3', '/repo/.wt/4', '/repo/.wt/5'].sort())
   })
+
+  test('a workspace path containing spaces is listed whole', () => {
+    const connection = new FakeConnection()
+    const workspaces = [{ path: 'C:\\Users\\John Smith\\proj', name: 'proj' }, { path: '/home/me/site b', name: 'site b' }]
+    render(<Surfaces client={clientOf(connection)} workspaces={workspaces} sessions={new Map([[1, session(1, null, '/repo')]])} />)
+    connection.replyAll()
+    expect([...connection.listed].sort()).toEqual([...workspaces.map((w) => w.path), '/repo'].sort())
+  })
 })
