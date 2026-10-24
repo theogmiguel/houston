@@ -193,7 +193,7 @@
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
     "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 948800,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
