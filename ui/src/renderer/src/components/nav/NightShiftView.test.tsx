@@ -58,15 +58,15 @@ describe('NightShiftView', () => {
     const { client, emit } = fakeClient()
     act(() => root.render(<NightShiftView client={client as unknown as HoustonClient} workspaces={[{ id: WS, name: 'w' }]} now={NIGHT_NOW} onOpenSession={() => {}} />))
     expect(client.nightShiftState).toHaveBeenCalledWith(WS)
-    emit({ type: 'night_shift_state', workspace: WS, routine: null, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6 })
+    emit({ type: 'night_shift_state', workspace: WS, routine: null, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6, detected: { checks: [] } })
     act(() => button('Set up Night shift').click())
     expect(client.nightShiftCreate).toHaveBeenCalledWith(WS)
 
-    emit({ type: 'night_shift_state', workspace: WS, routine, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6 })
+    emit({ type: 'night_shift_state', workspace: WS, routine, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6, detected: { checks: [] } })
     expect(host.querySelector('[data-testid="night-shift-setup"]')).not.toBeNull()
     act(() => button('Run now').click())
     expect(client.nightShiftState).toHaveBeenLastCalledWith(WS, NIGHT_NOW + 240 * 60_000)
-    emit({ type: 'night_shift_state', workspace: WS, routine, settings: nightDefaults(), revision: 'r', runs: [], machine, merge_verify_command: false, child_cap: 6,
+    emit({ type: 'night_shift_state', workspace: WS, routine, settings: nightDefaults(), revision: 'r', runs: [], machine, merge_verify_command: false, child_cap: 6, detected: { checks: [] },
       preflight: [{ id: 'checks', status: 'ok', label: 'Checks', detail: '1 configured', limit: null, actual: null }] })
     act(() => button('Start').click())
     expect(client.nightShiftRunNow).toHaveBeenCalledWith(3, NIGHT_NOW + 240 * 60_000)
@@ -86,7 +86,7 @@ describe('NightShiftView', () => {
   it('shows only Night shift refusals', () => {
     const { client, emit } = fakeClient()
     act(() => root.render(<NightShiftView client={client as unknown as HoustonClient} workspaces={[{ id: WS, name: 'w' }]} now={NIGHT_NOW} onOpenSession={() => {}} />))
-    emit({ type: 'night_shift_state', workspace: WS, routine: null, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6 })
+    emit({ type: 'night_shift_state', workspace: WS, routine: null, settings: nightDefaults(), revision: 'r', runs: [], preflight: null, machine, merge_verify_command: false, child_cap: 6, detected: { checks: [] } })
     act(() => button('Set up Night shift').click())
     emit({ type: 'error', message: 'another view was refused', context: 'session:4' })
     expect(host.textContent).not.toContain('another view was refused')

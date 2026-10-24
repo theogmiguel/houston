@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { NightDetected } from './generated/NightDetected'
 import type { HoustonClient } from './client'
 import type { NightMachine } from './generated/NightMachine'
 import type { NightRun } from './generated/NightRun'
@@ -17,6 +18,8 @@ export interface NightShiftState {
   mergeVerifyCommand: boolean
   /** The global child panes per agent. */
   childCap: number
+  /** What Houston found in the workspace for Setup to offer. */
+  detected: NightDetected
 }
 
 export interface NightShiftReportText {
@@ -78,7 +81,8 @@ export function useNightShift(client: HoustonClient | null, workspace: string | 
         runs: msg.runs,
         machine: msg.machine,
         mergeVerifyCommand: msg.merge_verify_command,
-        childCap: msg.child_cap
+        childCap: msg.child_cap,
+        detected: msg.detected
       }))
       if (msg.preflight) setPreflight(msg.preflight)
     })

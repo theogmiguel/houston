@@ -23,6 +23,7 @@ export function nightDefaults(): NightShiftSettings {
     app_check: null,
     hold_for_qa: true,
     checks: [],
+    verification: 'light',
     questions: 'park'
   }
 }

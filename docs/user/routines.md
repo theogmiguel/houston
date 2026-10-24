@@ -97,7 +97,8 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
 | Output | Draft pull requests only; pull request size: related changes together (one theme), up to 5 per pull request, or one change each (a change is one planned item); screenshots for visible changes |
 | App check: start command, address or story, smoke flows | None; App QA is off until a start command is set |
-| Checks before hand-back | None; at least one is required before a run starts |
+| Checks | Found when Night shift is set up: the check commands CI workflows run (formatters, linters, type checks and safety scripts, not test suites), package scripts and backticked commands in AGENTS.md, each with its source and only when its program is on PATH. Edit, remove or add them; at least one is required before a run starts |
+| Verification depth | Light: the verifier re-runs every proof and confirms each test asserts its claim; it cannot catch a test that would also pass with a wrong implementation. Standard also breaks the new code once per assertion and requires the test to fail; it cannot catch a requirement nobody wrote down as a claim |
 | Questions at night | Parked for the morning report |
 
 The brief defines each focus area that is on in one line, the same text Setup shows beside
@@ -138,7 +139,7 @@ item blocks:
 - a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks);
 - the machine is on battery;
 - less than 6 GiB of memory or 20 GiB of disk is free;
-- no check before hand-back is configured.
+- no check is configured.
 
 On Windows, preflight warns when a restart is pending or when the run's own window (Run
 now's duration, or the nightly window) reaches outside Windows Update active hours. On Linux

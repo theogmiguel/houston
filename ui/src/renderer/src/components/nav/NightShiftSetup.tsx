@@ -7,7 +7,7 @@ import { Toggle } from '../ui/settingsPrimitives'
 import { NumberField } from '../ui/NumberField'
 import { engineLabel } from '../engineLabel'
 import {
-  FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, clockLabel, durationLabel, mergeRefusal,
+  ADDED_BY_YOU, FOCUS_AREAS, NIGHTS, NO_LIMIT_SIGNAL, ORCHESTRATOR_PROVIDERS, WORKER_PROVIDERS, clockLabel, durationLabel, mergeRefusal,
   minutesBetween, ownLimitNote, parseClock, settingsProblems, windowMarks
 } from './nightShiftFormat'
 
@@ -137,8 +137,13 @@ export function NightShiftSetup({ settings, revision, verifyCommand, childCap = 
 
       <Card layout="fields" shape="card" role="group" aria-label="Before hand-back">
         <Card.Field label="Checks before hand-back">
-          <TextArea aria-label="Checks before hand-back" rows={3} mono value={draft.checks.join('\n')} placeholder="One command per line; required before the first run"
-            onChange={(e) => set({ checks: lines(e.target.value) })} />
+          <TextArea aria-label="Checks before hand-back" rows={3} mono value={draft.checks.map((c) => c.command).join('\n')} placeholder="One command per line; required before the first run"
+            onChange={(e) => set({ checks: lines(e.target.value).map((command) => draft.checks.find((c) => c.command === command) ?? { command, source: ADDED_BY_YOU }) })} />
+        </Card.Field>
+        <Card.Field label="Verification depth">
+          <Segmented aria-label="Verification depth" size="xs" value={draft.verification}
+            options={[{ value: 'light', label: 'Light' }, { value: 'standard', label: 'Standard' }]}
+            onChange={(verification) => set({ verification })} />
         </Card.Field>
         <Card.Field label="Questions at night"><Text>Parked for the morning report</Text></Card.Field>
       </Card>

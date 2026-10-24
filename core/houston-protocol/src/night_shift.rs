@@ -102,6 +102,35 @@ pub struct NightAppCheck {
     pub smoke_flows: Vec<String>,
 }
 
+/// A command every change passes, and where Houston found it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightCheck {
+    pub command: String,
+    /// `ci.yml · core-checks`, `package.json`, `AGENTS.md` or `added by you`.
+    pub source: String,
+}
+
+/// How hard the independent verifier tries to break a change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum NightVerification {
+    /// Re-runs every proof and confirms each test exists and asserts its claim.
+    #[default]
+    Light,
+    /// Also injects one fault per assertion; the test must then fail.
+    Standard,
+}
+
+/// What Houston found in the workspace, for Setup to offer.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct NightDetected {
+    /// From CI workflows, package manifests and AGENTS.md, runnable here.
+    pub checks: Vec<NightCheck>,
+}
+
 /// How finished changes become pull requests. A change is one plan entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -153,8 +182,9 @@ pub struct NightShiftSettings {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub app_check: Option<NightAppCheck>,
     pub hold_for_qa: bool,
-    /// Commands every change passes before it is handed back.
-    pub checks: Vec<String>,
+    /// Commands Houston runs on every pull request's head.
+    pub checks: Vec<NightCheck>,
+    pub verification: NightVerification,
     pub questions: NightQuestions,
 }
 

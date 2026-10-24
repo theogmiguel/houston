@@ -544,7 +544,7 @@ every refusal names the setting.
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
 | `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]`, `engine_refusals: RoutineEngineRefusal[]` | direct reply to `harness_state` |
-| `night_shift_state` | `workspace`, `routine?: Routine`, `settings: NightShiftSettings` (the defaults when there is no routine), `revision`, `runs: NightRun[]` (newest first, at most `NIGHT_SHIFT_RUNS_PAGE`), `preflight?: PreflightItem[]` (the restart items judge the window of a start lasting until `preflight_until_ms`), `machine: NightMachine`, `merge_verify_command` (whether the workspace's merge queue has a verification command), `child_cap` (the global child panes per agent; a run's orchestrator has its own limit, live workers plus two) | direct reply to `night_shift_state` and `night_shift_create`; bcast after `night_shift_update` |
+| `night_shift_state` | `workspace`, `routine?: Routine`, `settings: NightShiftSettings` (the defaults when there is no routine), `revision`, `runs: NightRun[]` (newest first, at most `NIGHT_SHIFT_RUNS_PAGE`), `preflight?: PreflightItem[]` (the restart items judge the window of a start lasting until `preflight_until_ms`), `machine: NightMachine`, `merge_verify_command` (whether the workspace's merge queue has a verification command), `child_cap` (the global child panes per agent; a run's orchestrator has its own limit, live workers plus two), `detected: NightDetected` (what Setup offers from the workspace) | direct reply to `night_shift_state` and `night_shift_create`; bcast after `night_shift_update` |
 | `night_shift_run_event` | `run: NightRun` | bcast — a run started, was refused, wrapped up, wrote its ledger or settled |
 | `night_shift_notice` | `workspace`, `run_id`, `headline` (PR and open decision counts, or why a refused run did not start) | bcast — once per settled run |
 | `night_shift_report` | `run_id`, `markdown`, `truncated` | direct reply to `night_shift_report` |
@@ -821,7 +821,11 @@ NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, win
                    order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
                    output: prs | merge_queue, pr_size: {kind: one} | {kind: related,
                    max_changes: 2..20}, screenshots,
-                   app_check?: NightAppCheck, hold_for_qa, checks: string[], questions: park
+                   app_check?: NightAppCheck, hold_for_qa, checks: NightCheck[], verification: light | standard,
+                   questions: park
+NightCheck         command, source (`ci.yml · core-checks`, `package.json`, `AGENTS.md` or
+                   `added by you`)
+NightDetected      checks: NightCheck[] (found in the workspace, runnable on this machine)
 NightWindow        start, wrap_up, hard_stop: NightClock{hour, minute} (local), nights: u8[]
                    (1 = Sunday … 7 = Saturday)
 NightFocus         reliability, performance, ui_polish, competitor_gaps, docs_accuracy,

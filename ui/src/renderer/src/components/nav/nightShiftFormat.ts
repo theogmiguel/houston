@@ -62,6 +62,9 @@ export function ownLimitNote(liveWorkers: number, childCap: number): string | nu
   return own > childCap ? `Own limit: ${own} panes · other agents keep ${childCap}` : null
 }
 
+/** The source of a check the user typed (`settings.rs::ADDED_BY_YOU`). */
+export const ADDED_BY_YOU = 'added by you'
+
 export const UI_POLISH_SCREENSHOTS = 'UI and UX polish needs screenshots: its changes are visible.'
 
 export function clockLabel(c: NightClock): string {

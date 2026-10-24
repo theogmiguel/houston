@@ -3,6 +3,7 @@
 pub mod awake;
 pub mod brief;
 pub mod cli;
+pub mod detect;
 pub mod preflight;
 pub mod settings;
 pub mod window;
@@ -85,6 +86,7 @@ mod tests {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let files = [
             "night_shift/mod.rs",
+            "night_shift/detect.rs",
             "night_shift/awake.rs",
             "night_shift/brief.rs",
             "night_shift/cli.rs",

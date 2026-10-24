@@ -275,7 +275,8 @@ impl Daemon {
                     .unwrap_or(true)
             })
             .ok_or_else(|| anyhow!("every Night shift routine name for {workspace} is taken"))?;
-        let s = settings::defaults();
+        let mut s = settings::defaults();
+        s.checks = self.night_detect(workspace).checks;
         let msg = self.routine_create_impl(
             &name,
             crate::night_shift::ROUTINE_PROMPT,
@@ -300,6 +301,15 @@ impl Daemon {
             .set_night_shift_routine(created.id, &serde_json::to_string(&s)?)?;
         self.broadcast_control(&self.routine_list());
         self.night_shift_state(workspace, None)
+    }
+
+    /// What Setup offers from the workspace: checks whose program is on PATH.
+    fn night_detect(&self, workspace: &str) -> proto::NightDetected {
+        let env = self.env();
+        let runnable = |program: &str| crate::exe_path::resolve_in(&env, program).is_some();
+        proto::NightDetected {
+            checks: crate::night_shift::detect::checks(Path::new(workspace), &runnable),
+        }
     }
 
     fn night_cadence(w: &proto::NightWindow) -> proto::Cadence {
@@ -364,6 +374,7 @@ impl Daemon {
             },
             merge_verify_command,
             child_cap: self.orchestration_max_live_children(),
+            detected: self.night_detect(workspace),
         })
     }
 

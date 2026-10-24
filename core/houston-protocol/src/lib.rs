@@ -5953,6 +5953,8 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         child_cap: u32,
+        #[serde(default)]
+        detected: NightDetected,
     },
     /// One run changed (started, wrap-up, ledger, settled); broadcast.
     NightShiftRunEvent {
@@ -7370,7 +7372,11 @@ mod tests {
                 smoke_flows: vec!["open a pane".into()],
             }),
             hold_for_qa: true,
-            checks: vec!["cargo test".into()],
+            checks: vec![NightCheck {
+                command: "cargo test".into(),
+                source: "added by you".into(),
+            }],
+            verification: NightVerification::Standard,
             questions: NightQuestions::Park,
         }
     }
@@ -7501,6 +7507,12 @@ mod tests {
                 },
                 merge_verify_command: true,
                 child_cap: 6,
+                detected: NightDetected {
+                    checks: vec![NightCheck {
+                        command: "cargo fmt --check".into(),
+                        source: "ci.yml · core-checks".into(),
+                    }],
+                },
             },
             ServerMsg::NightShiftRunEvent { run },
             ServerMsg::NightShiftNotice {

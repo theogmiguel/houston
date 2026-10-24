@@ -3,7 +3,7 @@
 use anyhow::{bail, Context, Result};
 use houston_protocol::{
     AgentKind, NightAgent, NightClock, NightFocus, NightFocusLevel, NightOutput, NightPrSize,
-    NightQuestions, NightShiftSettings, NightWindow, NIGHT_SHIFT_SETTINGS_VERSION,
+    NightQuestions, NightShiftSettings, NightVerification, NightWindow, NIGHT_SHIFT_SETTINGS_VERSION,
     NIGHT_SHIFT_WINDOW_MAX_MINUTES,
 };
 use serde_json::{json, Value};
@@ -15,6 +15,10 @@ pub const LIVE_WORKERS_MAX: u32 = 12;
 pub const MAX_CHANGES_PER_PR_MIN: u32 = 2;
 pub const MAX_CHANGES_PER_PR_MAX: u32 = 20;
 pub const CHECKS_MAX: usize = 20;
+/// Where a check was found: a workflow and job name, or a file name.
+pub const SOURCE_MAX: usize = 120;
+/// The source of a check the user typed.
+pub const ADDED_BY_YOU: &str = "added by you";
 pub const SOURCES_MAX: usize = 10;
 pub const SMOKE_FLOWS_MAX: usize = 20;
 /// The setup offers four; more providers than this is no fallback order.
@@ -68,6 +72,7 @@ pub fn defaults() -> NightShiftSettings {
         app_check: None,
         hold_for_qa: true,
         checks: Vec::new(),
+        verification: NightVerification::Light,
         questions: NightQuestions::Park,
     }
 }
@@ -94,6 +99,14 @@ fn upgrade_v1(doc: &mut Value) {
         .unwrap_or(5)
         .min(u64::from(MAX_CHANGES_PER_PR_MAX));
     o.remove("themed");
+    if let Some(Value::Array(checks)) = o.get_mut("checks") {
+        for c in checks.iter_mut() {
+            if let Value::String(command) = c {
+                *c = json!({ "command": command, "source": ADDED_BY_YOU });
+            }
+        }
+    }
+    o.insert("verification".into(), json!("light"));
     if let Some(goal) = o.remove("goal") {
         o.insert("direction".into(), goal);
     }
@@ -298,7 +311,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         ("App address", app.map_or("", |a| a.address.as_str())),
     ]
     .into_iter()
-    .chain(s.checks.iter().map(|c| ("check", c.as_str())))
+    .chain(s.checks.iter().map(|c| ("check", c.command.as_str())))
     .chain(s.competitor_sources.iter().map(|c| ("source", c.as_str())))
     .chain(smoke_flows.iter().map(|c| ("smoke flow", c.as_str())));
     let mut total = 0;
@@ -313,6 +326,17 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         bail!(
             "the settings' text fields hold {total} characters together; the limit is \
              {TEXT_TOTAL_MAX}, so the brief keeps room for the ledger"
+        );
+    }
+    if let Some(c) = s
+        .checks
+        .iter()
+        .find(|c| c.source.chars().count() > SOURCE_MAX || c.command.trim().is_empty())
+    {
+        bail!(
+            "check {:?} from {:?} is empty or its source is over {SOURCE_MAX} characters",
+            c.command,
+            c.source
         );
     }
     let models = std::iter::once(&s.orchestrator)
@@ -400,6 +424,14 @@ mod tests {
         assert_eq!(s.pr_size, NightPrSize::Related { max_changes: 3 });
         assert_eq!(s.focus.performance, NightFocusLevel::High);
         assert_eq!(s.direction, "no lost hook events");
+        assert_eq!(
+            s.checks,
+            [houston_protocol::NightCheck {
+                command: "cargo test".into(),
+                source: ADDED_BY_YOU.into()
+            }]
+        );
+        assert_eq!(s.verification, NightVerification::Light);
         let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
             .unwrap();
         assert_eq!(one.pr_size, NightPrSize::One);
@@ -574,7 +606,15 @@ mod tests {
             ),
             (
                 "together",
-                Box::new(|s| s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 13]),
+                Box::new(|s| {
+                    s.checks = vec![
+                        houston_protocol::NightCheck {
+                            command: "c".repeat(TEXT_FIELD_MAX),
+                            source: ADDED_BY_YOU.into()
+                        };
+                        13
+                    ]
+                }),
             ),
         ];
         for (needle, edit) in cases {

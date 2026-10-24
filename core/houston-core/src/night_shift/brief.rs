@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use houston_protocol::{
     NightAgent, NightEntry, NightEntryKind, NightFocus, NightFocusLevel, NightOutput,
-    NightPrSize, NightShiftSettings, ROUTINE_PROMPT_MAX,
+    NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
 };
 
 use super::settings::{clock_label, has_app_check};
@@ -121,6 +121,23 @@ fn digest_line(e: &NightEntry) -> String {
     line
 }
 
+/// What each verification depth does and what it cannot catch; Setup and the
+/// report say the same.
+pub fn depth_line(depth: NightVerification) -> &'static str {
+    match depth {
+        NightVerification::Light => {
+            "Verification depth: Light. The verifier re-runs every proof and confirms each test \
+             exists and asserts its claim. It cannot catch a test that would also pass with a \
+             wrong implementation."
+        }
+        NightVerification::Standard => {
+            "Verification depth: Standard. The verifier also breaks the new code once per \
+             assertion and requires the test to fail. It cannot catch a requirement nobody wrote \
+             down as a claim."
+        }
+    }
+}
+
 /// A change is one plan entry; grouping never mixes themes.
 fn pr_size(s: &NightShiftSettings) -> String {
     match s.pr_size {
@@ -207,9 +224,15 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
     } else {
         out.push_str("- Checks before hand-back:\n");
         for c in &s.checks {
-            let _ = writeln!(out, "  - `{}`", one_line(c));
+            let _ = writeln!(
+                out,
+                "  - `{}` (from {})",
+                one_line(&c.command),
+                one_line(&c.source)
+            );
         }
     }
+    let _ = writeln!(out, "- {}", depth_line(s.verification));
     match s.output {
         NightOutput::Prs => {
             let _ = writeln!(
@@ -343,7 +366,13 @@ mod tests {
         use super::super::settings::*;
         let mut s = defaults();
         s.direction = "g".repeat(TEXT_FIELD_MAX);
-        s.checks = vec!["c".repeat(TEXT_FIELD_MAX); 4];
+        s.checks = vec![
+            houston_protocol::NightCheck {
+                command: "c".repeat(TEXT_FIELD_MAX),
+                source: "s".repeat(SOURCE_MAX),
+            };
+            4
+        ];
         s.competitor_sources = vec!["s".repeat(600); SOURCES_MAX];
         s.app_check = Some(houston_protocol::NightAppCheck {
             start_command: "a".repeat(1_000),
@@ -385,7 +414,10 @@ mod tests {
     fn brief_names_every_setting() {
         let mut s = super::super::settings::defaults();
         s.direction = "stop crashing in long sessions".into();
-        s.checks = vec!["cargo test".into()];
+        s.checks = vec![houston_protocol::NightCheck {
+            command: "cargo test".into(),
+            source: "ci.yml · core-checks".into(),
+        }];
         let digest = vec![
             entry(3, NightEntryKind::Flaky, "pty_resize_race"),
             entry(2, NightEntryKind::Deferred, "rewrite the tray"),
@@ -399,7 +431,8 @@ mod tests {
             "- Off, not scouted: UI and UX polish, Competitor gaps, Docs accuracy, Test gaps.",
             "zcode (GLM-5.3-Flash), then claude (opus)",
             "Live workers at most: 4",
-            "`cargo test`",
+            "`cargo test` (from ci.yml · core-checks)",
+            "Verification depth: Light.",
             "draft pull requests only",
             "/state/night-shift/7/report.md",
             "[flaky test] pty_resize_race",

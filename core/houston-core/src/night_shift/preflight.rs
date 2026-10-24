@@ -522,7 +522,10 @@ mod tests {
 
     fn settings() -> NightShiftSettings {
         let mut s = crate::night_shift::settings::defaults();
-        s.checks = vec!["cargo test".into()];
+        s.checks = vec![houston_protocol::NightCheck {
+            command: "cargo test".into(),
+            source: "added by you".into(),
+        }];
         s
     }
 

@@ -18,6 +18,13 @@ use std::time::Duration;
 
 const MINUTE: i64 = 60_000;
 
+fn check(command: &str) -> proto::NightCheck {
+    proto::NightCheck {
+        command: command.into(),
+        source: "added by you".into(),
+    }
+}
+
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
         .arg("-C")
@@ -168,7 +175,7 @@ impl Rig {
         let routine = self.create();
         let st = self.state();
         let mut s = st.settings;
-        s.checks = vec!["true".into()];
+        s.checks = vec![check("true")];
         edit(&mut s);
         self.daemon
             .night_shift_update(routine.id, s, &st.revision)
@@ -598,7 +605,7 @@ async fn run_fires_isolated_with_composed_brief() {
     let routine = r.ready(|s| {
         s.direction = "CI stays green".into();
         s.focus.test_gaps = proto::NightFocusLevel::High;
-        s.checks = vec!["cargo test -p core".into()];
+        s.checks = vec![check("cargo test -p core")];
     });
     let run = r.run_now(routine.id, 120);
     assert_eq!(run.phase, proto::NightRunPhase::Running);
@@ -2019,7 +2026,7 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
         other => panic!("{other:?}"),
     };
     let (routine, mut s, revision, _) = read(&d);
-    s.checks = vec!["true".into()];
+    s.checks = vec![check("true")];
     s.workers = vec![proto::NightAgent {
         provider: proto::AgentKind::Claude,
         model: None,
@@ -2149,7 +2156,7 @@ async fn dev_fake_orchestrator_prompt_is_not_awaited() {
         } => (routine.unwrap(), settings, revision),
         other => panic!("{other:?}"),
     };
-    settings.checks = vec!["true".into()];
+    settings.checks = vec![check("true")];
     daemon
         .night_shift_update(routine.id, settings, &revision)
         .unwrap();
