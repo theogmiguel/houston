@@ -80,7 +80,8 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
             let _ = std::fs::remove_file(dir.join(PROBE_NAME));
             if state.unhealthy {
                 tracing::info!(
-                    "hook-drop canary: the delivery probe in {} was delivered again —                      leaving the watcher-dead rungs",
+                    "hook-drop canary: the delivery probe in {} was delivered again — \
+                     leaving the watcher-dead rungs",
                     dir.display()
                 );
             }
@@ -90,7 +91,9 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
             let _ = std::fs::remove_file(dir.join(PROBE_NAME));
             if !state.warned {
                 tracing::warn!(
-                    "hook-drop canary: no watcher event within {}ms of the delivery probe in {} —                      hook-drop delivery degraded to polling; holding the ladder's watcher-dead                      rungs until a probe is delivered",
+                    "hook-drop canary: no watcher event within {}ms of the delivery probe in {} — \
+                     hook-drop delivery degraded to polling; holding the ladder's watcher-dead \
+                     rungs until a probe is delivered",
                     state.deadline_ms,
                     dir.display()
                 );
@@ -117,7 +120,8 @@ pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now_ms
             Err(error) => {
                 if !state.warned {
                     tracing::warn!(
-                        "hook-drop canary: writing the delivery probe {} failed: {error} —                          holding the ladder's watcher-dead rungs",
+                        "hook-drop canary: writing the delivery probe {} failed: {error} — \
+                         holding the ladder's watcher-dead rungs",
                         dir.join(PROBE_NAME).display()
                     );
                     state.warned = true;
@@ -347,9 +351,17 @@ mod tests {
         );
         assert!(probe_path(&tmp).exists());
         wait_delivered(&state, &watch, "the recovery probe's create event");
+        crate::test_tracing_capture::ensure_permissive_global_default();
+        let buf = LogBuf::default();
+        let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
+        let recovered = tracing::subscriber::with_default(subscriber, || {
+            check(&mut state, &dir, &watch, 61_100)
+        });
+        assert!(recovered, "delivery recovered");
+        let logged = buf.text();
         assert!(
-            check(&mut state, &dir, &watch, 61_100),
-            "delivery recovered"
+            logged.contains("delivered again") && !logged.contains("    "),
+            "recovery is logged on one clean line: {logged}"
         );
         assert!(!probe_path(&tmp).exists());
         drop(restarted);
@@ -366,15 +378,30 @@ mod tests {
             check(&mut state, &dir, &watch, 31_000),
             "the first probe is written"
         );
-        for round in 0..3u64 {
-            let now = 31_000 * (round + 2);
-            assert!(!check(&mut state, &dir, &watch, now), "round {round}");
-            let entries = std::fs::read_dir(&dir).unwrap().count();
-            assert!(
-                entries <= 1,
-                "round {round}: {entries} files in the drop directory"
-            );
-        }
+        crate::test_tracing_capture::ensure_permissive_global_default();
+        let buf = LogBuf::default();
+        let subscriber = tracing_subscriber::fmt().with_writer(buf.clone()).finish();
+        tracing::subscriber::with_default(subscriber, || {
+            for round in 0..3u64 {
+                let now = 31_000 * (round + 2);
+                assert!(!check(&mut state, &dir, &watch, now), "round {round}");
+                let entries = std::fs::read_dir(&dir).unwrap().count();
+                assert!(
+                    entries <= 1,
+                    "round {round}: {entries} files in the drop directory"
+                );
+            }
+        });
+        let logged = buf.text();
+        assert_eq!(
+            logged.matches("no watcher event within").count(),
+            1,
+            "a miss warns once until delivery recovers: {logged}"
+        );
+        assert!(
+            !logged.contains("    "),
+            "the warning text has no indentation runs from a lost line continuation: {logged}"
+        );
     }
 
     #[test]
@@ -398,6 +425,10 @@ mod tests {
         assert!(
             logged.contains("delivery probe") && logged.contains(PROBE_NAME),
             "the warning must name the canary and the probe path: {logged}"
+        );
+        assert!(
+            !logged.contains("    "),
+            "the warning text has no indentation runs from a lost line continuation: {logged}"
         );
     }
 
