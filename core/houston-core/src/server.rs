@@ -3235,68 +3235,10 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
-        proto::ClientMsg::PrStatus { dir } => {
-            let d = PathBuf::from(&dir);
-            let st = tokio::task::spawn_blocking(move || crate::gh::pr_status_cached(&d))
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::error!("pr_status: spawn_blocking join failed for {dir:?}: {e}");
-                    crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    }
-                });
-            let _ = send_msg(
-                sink,
-                &proto::ServerMsg::PrStatus {
-                    dir,
-                    gh: st.gh,
-                    has_upstream: st.has_upstream,
-                    pr: st.pr,
-                    hint: st.hint,
-                },
-            )
-            .await;
-            Ok(())
-        }
+        proto::ClientMsg::PrStatus { dir } => send_pr_statuses(daemon, sink, vec![dir]).await,
         proto::ClientMsg::PrStatusBatch { dirs } => {
             check_pr_status_batch_size(dirs.len())?;
-            let requested = dirs.len();
-            let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
-            let statuses = tokio::task::spawn_blocking(move || {
-                paths
-                    .iter()
-                    .map(|path| crate::gh::pr_status_cached(path))
-                    .collect::<Vec<_>>()
-            })
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("pr_status batch: spawn_blocking join failed: {e}");
-                (0..requested)
-                    .map(|_| crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    })
-                    .collect()
-            });
-            for (dir, st) in dirs.into_iter().zip(statuses) {
-                let _ = send_msg(
-                    sink,
-                    &proto::ServerMsg::PrStatus {
-                        dir,
-                        gh: st.gh,
-                        has_upstream: st.has_upstream,
-                        pr: st.pr,
-                        hint: st.hint,
-                    },
-                )
-                .await;
-            }
-            Ok(())
+            send_pr_statuses(daemon, sink, dirs).await
         }
         proto::ClientMsg::PrCheckLog { dir, run_id } => {
             let d = PathBuf::from(&dir);
@@ -5461,6 +5403,61 @@ async fn pr_stack_merge(
         },
     )
     .await;
+}
+
+/// One `PrStatus` per dir. A dir answered from the previous daemon's file is
+/// re-asked of gh at once and answered again, so the stored answer only fills
+/// the gap until the fresh one arrives.
+async fn send_pr_statuses(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    mut dirs: Vec<String>,
+) -> anyhow::Result<()> {
+    while !dirs.is_empty() {
+        let requested = dirs.len();
+        let d = Arc::clone(daemon);
+        let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        let statuses = tokio::task::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| d.pr_status(path))
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("pr_status: spawn_blocking join failed for {dirs:?}: {e}");
+            (0..requested)
+                .map(|_| {
+                    let st = crate::gh::PrStatus {
+                        gh: proto::GhState::Missing,
+                        has_upstream: false,
+                        pr: None,
+                        hint: Some(crate::gh::MISSING_HINT.to_string()),
+                    };
+                    (st, false)
+                })
+                .collect()
+        });
+        let mut seeded = Vec::new();
+        for (dir, (st, from_store)) in dirs.into_iter().zip(statuses) {
+            if from_store {
+                seeded.push(dir.clone());
+            }
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::PrStatus {
+                    dir,
+                    gh: st.gh,
+                    has_upstream: st.has_upstream,
+                    pr: st.pr,
+                    hint: st.hint,
+                },
+            )
+            .await;
+        }
+        dirs = seeded;
+    }
+    Ok(())
 }
 
 async fn send_msg(

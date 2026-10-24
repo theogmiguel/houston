@@ -66,6 +66,7 @@ pub mod pane_name;
 pub mod paths;
 pub mod pid;
 pub mod power_throttling;
+pub mod pr_status_store;
 pub mod pull_requests;
 pub mod recovery_process;
 pub mod remote;
