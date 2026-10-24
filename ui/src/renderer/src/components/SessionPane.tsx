@@ -22,6 +22,8 @@ import { showItemInFolder } from '../houston/bridge'
 import type { ThemeName } from '../theme'
 import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
+import { ThreadPane } from './thread/ThreadPane'
+import { stopThread } from '../thread/threadStore'
 import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
@@ -590,6 +592,7 @@ function SessionPaneImpl({
     usePaneContextMenu(menuSideEffects)
 
   const glyphAgent: AgentKind = info.detected_agent ?? info.agent
+  const thread = info.view === 'thread'
   return (
     <PaneFrame
       kind="session"
@@ -733,6 +736,15 @@ function SessionPaneImpl({
             )}
           />
           <PaneContextMenuSeparator />
+          {thread ? (
+            <CtxRow
+              glyph={IconStopCircle}
+              label="Stop"
+              disabled={info.status !== 'working'}
+              disabledReason="Claude is not working on a turn"
+              onClick={menuItem(() => stopThread(client, info.id))}
+            />
+          ) : <>
           <CtxRow
             glyph={IconEraser}
             label="Clear screen"
@@ -750,6 +762,7 @@ function SessionPaneImpl({
               }
             })}
           />
+          </>}
           {!sleeping && restartEntries({
             info,
             live,
@@ -848,7 +861,7 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
                 {shown.id !== info.id && <ChildInputBanner info={shown} client={client} />}
                 <GridHiddenContext.Provider value={gridHidden || hidden}>
                   <WarmContext.Provider value={gridWarm || hidden}>
-                    <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
+                    {shown.view === 'thread' ? <ThreadPane client={client} info={shown} connected={connected} /> : <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />}
                   </WarmContext.Provider>
                 </GridHiddenContext.Provider>
               </PeekTerminalLayer>

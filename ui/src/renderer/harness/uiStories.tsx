@@ -1,3 +1,4 @@
+import { ThreadSpecimen } from '../src/components/ui/Thread'
 import { PhonePairingCard, PairingStep, PairingSteps } from '../src/components/ui/PhonePairingCard'
 import { ReviewSummary } from '../src/components/ui/ReviewSummary'
 import { ReviewFindingSpecimen } from '../src/components/ui/ReviewFinding'
@@ -588,6 +589,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Merge queue"><MergeQueueSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Pull request actions menu"><PrMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Pull request property actions"><ReviewButton variant="text-link">Request</ReviewButton><ReviewButton variant="text-link">Edit</ReviewButton><ReviewButton variant="text-link">Show full description</ReviewButton><PrChangeStats additions={91} deletions={12} files={4} commits={5} /></SpecimenGroup>
+        <SpecimenGroup heading="Thread"><ThreadSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Panel Markdown"><MarkdownDocument variant="panel" source={"# Problem\n\nPanel headings stay below the title.\n\n## Changes\n\nUse `fit()` and a bounded preview."} /></SpecimenGroup>
         <SpecimenGroup heading="Pull request header"><PrHeaderSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Commit box"><GitCommitSpecimen /></SpecimenGroup>
