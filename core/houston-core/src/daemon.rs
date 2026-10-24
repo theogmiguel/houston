@@ -7983,6 +7983,14 @@ impl Daemon {
         });
     }
 
+    /// Whether every spawnable provider's CLI has a cached answer under the current PATH.
+    pub fn cli_probes_primed(&self) -> bool {
+        self.cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .holds_all(&self.env())
+    }
+
     fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
         let Some(binary) = crate::cli_probe::binary_name(provider) else {
             return crate::cli_probe::CliPresence::default();

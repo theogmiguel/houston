@@ -119,3 +119,31 @@ async fn a_listing_during_a_rescan_answers_from_the_last_sweep() {
         "the listing during the rescan probed nothing"
     );
 }
+
+async fn wait_until_primed(daemon: &houston_core::daemon::Daemon) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !daemon.cli_probes_primed() {
+        assert!(Instant::now() < deadline, "the boot prime never finished");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// The boot prime probes each CLI once, so the first listing (and the first spawn's
+/// Claude version) runs no `--version` of its own.
+#[tokio::test]
+async fn the_boot_prime_answers_the_first_listing_without_a_probe() {
+    let cli = FakeCli::new("1.0.0");
+    let (_addr, _state, daemon) = common::start_daemon_with_handle_in(cli.env()).await;
+    assert!(
+        !daemon.cli_probes_primed(),
+        "a new daemon has answered nothing"
+    );
+    houston_core::boot::spawn_cli_probe_prime(&daemon);
+    wait_until_primed(&daemon).await;
+    assert_eq!(cli.calls(), 1);
+
+    let rows = daemon.agent_hooks_state();
+    assert_eq!(codex(&rows).version.as_deref(), Some("1.0.0"));
+    assert!(codex(&rows).present, "{rows:#?}");
+    assert_eq!(cli.calls(), 1, "the listing ran a probe of its own");
+}
