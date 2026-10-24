@@ -916,7 +916,11 @@ async fn queued_hooks_cross_the_boundary_exactly_once_and_in_order() {
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
     poll_until(POLL_TIMEOUT, || {
-        (std::fs::read_dir(&drop_dir).ok()?.count() == 0).then_some(())
+        let pending = std::fs::read_dir(&drop_dir)
+            .ok()?
+            .flatten()
+            .any(|entry| entry.file_name() != houston_core::hook_drop_canary::PROBE_NAME);
+        (!pending).then_some(())
     });
 
     let mut ws = connect_when_ready(addr, &after.token).await;
