@@ -509,6 +509,34 @@ pub struct CheckoutFacts {
     pub common_dir: Option<String>,
 }
 
+/// Re-links a main checkout and its linked worktrees in both directions after they
+/// moved; git needs each worktree's new path when the main checkout moved too.
+pub fn worktree_repair(repo: &Path, worktrees: &[PathBuf]) -> Result<()> {
+    let mut command = command();
+    command
+        .arg("-C")
+        .arg(repo)
+        .args(["worktree", "repair"])
+        .args(worktrees);
+    let out = git_output(command, GIT_COMMAND_TIMEOUT)?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git worktree repair in {} failed: {}",
+            repo.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// The admin directory a linked worktree's `.git` file names, resolved against
+/// the worktree when git wrote it relative.
+pub fn worktree_admin_dir(worktree: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(worktree.join(".git")).ok()?;
+    let link = contents.trim().strip_prefix("gitdir:")?.trim();
+    Some(worktree.join(link))
+}
+
 /// One `rev-parse` answers the identity, and the branch comes from the HEAD file
 /// the cache already keys on: that is the only source that answers in a
 /// repository with no commit yet, where `rev-parse HEAD` fails outright.
@@ -614,7 +642,7 @@ fn facts_via_cache(
     fresh
 }
 
-fn head_file(dir: &Path) -> Option<std::path::PathBuf> {
+fn head_file(dir: &Path) -> Option<PathBuf> {
     for ancestor in dir.ancestors() {
         let dot_git = ancestor.join(".git");
         let Ok(meta) = std::fs::metadata(&dot_git) else {

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2781,6 +2781,23 @@ pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+    /// The folder is gone on disk, e.g. moved or renamed outside Houston; the
+    /// workspace keeps its rows until it is relocated or removed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts-gen", ts(optional))]
+    pub missing: bool,
+}
+
+/// What a `workspace_relocate` re-pointed, so the client can say what followed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceRelocateMoved {
+    pub worktrees: u32,
+    pub sessions: u32,
+    /// Managed worktrees whose git links `git worktree repair` re-attached.
+    pub repaired: u32,
+    /// Non-fatal follow-up problems, one line each.
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -4026,6 +4043,13 @@ pub enum ClientMsg {
     WorkspaceRename {
         path: String,
         name: String,
+    },
+    /// Re-point a workspace whose folder moved on disk. `from` is the
+    /// registered path, `to` the moved location; the daemon verifies the new
+    /// path is the same repository first.
+    WorkspaceRelocate {
+        from: String,
+        to: String,
     },
     WorkspaceList,
     WorkspaceLocalServers {
@@ -5279,6 +5303,12 @@ pub enum ServerMsg {
     },
     WorkspaceList {
         workspaces: Vec<Workspace>,
+    },
+    /// Broadcast after `workspace_relocate` moved a workspace and its rows.
+    WorkspaceRelocated {
+        from: String,
+        to: String,
+        moved: WorkspaceRelocateMoved,
     },
     /// Broadcast after `/manage workspace_open`: clients select this workspace.
     WorkspaceFocus {

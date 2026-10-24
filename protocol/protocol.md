@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -140,6 +140,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_add` | `path` | `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_remove` | `path` | kills and removes every session rooted there; `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
+| `workspace_relocate` | `from`, `to` | re-points a workspace whose folder moved. Refused when `from` is unknown or still exists, `to` is registered or is not a git repository root, a session is live or a swarm is rooted in `from`, or a managed worktree of `from` links outside `to`. One transaction moves every row keyed by the path, then `git worktree repair` relinks the worktrees; `workspace_relocated` + `workspace_list` (bcast), plus `session_reparented` per restored session that moved |
 | `workspace_list` | — | `workspace_list` (direct) |
 | `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
 
@@ -455,7 +456,8 @@ every refusal names the setting.
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
-| `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename/relocate |
+| `workspace_relocated` | `from`, `to`, `moved: WorkspaceRelocateMoved` | v150: bcast after `workspace_relocate`; clients move their own state keyed by `from` |
 | `workspace_focus` | `path` | bcast after `/manage workspace_open` added `path`; clients select that workspace |
 | `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
 | `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
@@ -662,7 +664,10 @@ InboxKind          snake: restored | result | no_handback | needs_input | exited
                    | progress | question | blocked | reply (v133)
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
 RoleRoute          pattern (1..128 bytes), model (1..128 bytes), effort?: ChatEffort
-Workspace          path, name
+Workspace          path, name, missing? (v150: true when the folder is gone on disk)
+WorkspaceRelocateMoved v150: worktrees, sessions, repaired, notes (managed worktree rows and
+                   restored sessions re-pointed, worktrees `git worktree repair` relinked,
+                   and non-fatal follow-up notes)
 TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32) chars, unique
                    case-insensitively), color (#rrggbb, one of TAG_PALETTE's eleven fills —
                    fixed, because the chrome's 4.5:1 ink/ground gate can only clear colors
@@ -1400,6 +1405,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **A workspace whose folder moved can be located.** `Workspace` gains `missing?`, true when the folder is gone on disk. New `workspace_relocate{from, to}` checks that `to` is the same repository (each surviving managed worktree must link to a worktree entry of `to`), re-points every row keyed by the path in one transaction, relinks worktrees with `git worktree repair`, and answers `workspace_relocated{from, to, moved: WorkspaceRelocateMoved}` plus `workspace_list` (both bcast). Refusals are the ordinary `error` frame |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

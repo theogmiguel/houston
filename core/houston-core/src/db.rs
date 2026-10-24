@@ -148,6 +148,42 @@ impl WorktreeProvenance {
     }
 }
 
+/// Columns whose value is a workspace path; each follows `relocate_workspace`.
+/// `relocation_covers_every_path_column` fails when a new path column is unlisted.
+const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
+    ("workspace_hooks", "path"),
+    ("tasks", "workspace"),
+    ("pane_inbox", "workspace"),
+    ("command_history", "workspace"),
+    ("usage_daily_rollup", "workspace_path"),
+    ("backlog_tasks", "workspace"),
+    ("backlog_projects", "workspace"),
+    ("merge_queue_entries", "workspace"),
+    ("merge_queue_log", "workspace"),
+    ("merge_queue_settings", "workspace"),
+    ("harness_routines", "workspace"),
+    ("harness_reviews", "workspace"),
+    ("harness_decisions", "workspace"),
+    ("harness_finding_tasks", "workspace"),
+    ("intake_events", "workspace"),
+    ("task_tracker_settings", "workspace"),
+    ("task_tracker_poll_state", "workspace"),
+    ("task_tracker_refresh_cursor", "workspace"),
+    ("task_tracker_outbox", "workspace"),
+    ("backlog_task_counters", "workspace"),
+];
+
+/// Columns holding a path that may sit inside a workspace: rows under the old
+/// folder move with it, the rest are untouched.
+const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
+    ("sessions", "project_dir"),
+    ("sessions", "cwd"),
+    ("command_history", "cwd"),
+];
+
+/// Settings stored per workspace as `<prefix><workspace path>`.
+const WORKSPACE_SETTING_PREFIXES: &[&str] = &["workspace_actions:", "workspace_routing:"];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedWorktreeRow {
     pub path: String,
@@ -3447,6 +3483,65 @@ impl Db {
         Ok(())
     }
 
+    /// Re-point a workspace and every row keyed by its path in one transaction: an
+    /// error leaves every row at `from`. `worktrees` holds each managed worktree
+    /// row's old path, new path and new common dir.
+    pub fn relocate_workspace(
+        &self,
+        from: &str,
+        to: &str,
+        name: &str,
+        worktrees: &[(String, String, String)],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let n = tx.execute(
+            "UPDATE workspaces SET path = ?2, name = ?3 WHERE path = ?1",
+            rusqlite::params![from, to, name],
+        )?;
+        if n == 0 {
+            anyhow::bail!("no workspace row with path {from:?} to relocate");
+        }
+        for (table, column) in WORKSPACE_KEY_COLUMNS {
+            tx.execute(
+                &format!("UPDATE {table} SET {column} = ?2 WHERE {column} = ?1"),
+                rusqlite::params![from, to],
+            )
+            .with_context(|| format!("relocating {table}.{column} from {from:?} to {to:?}"))?;
+        }
+        for (table, column) in WORKSPACE_PREFIX_COLUMNS {
+            let rows: Vec<(i64, String)> = tx
+                .prepare(&format!("SELECT rowid, {column} FROM {table}"))?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<std::result::Result<_, _>>()?;
+            for (rowid, path) in rows {
+                if let Some(moved) = crate::paths::relocated(from, to, &path) {
+                    tx.execute(
+                        &format!("UPDATE {table} SET {column} = ?2 WHERE rowid = ?1"),
+                        rusqlite::params![rowid, moved],
+                    )
+                    .with_context(|| format!("relocating {table}.{column} {path:?}"))?;
+                }
+            }
+        }
+        for (old, new, common_dir) in worktrees {
+            tx.execute(
+                "UPDATE managed_worktrees SET path = ?2, repo_common_dir = ?3 WHERE path = ?1",
+                rusqlite::params![old, new, common_dir],
+            )
+            .with_context(|| format!("relocating managed worktree {old:?} to {new:?}"))?;
+        }
+        for prefix in WORKSPACE_SETTING_PREFIXES {
+            tx.execute(
+                "UPDATE settings SET key = ?2 WHERE key = ?1",
+                rusqlite::params![format!("{prefix}{from}"), format!("{prefix}{to}")],
+            )
+            .with_context(|| format!("relocating setting {prefix}{from:?}"))?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Called only once a worktree was just created at `row.path`, so a row already
     /// there belongs to a tree that is gone and gives way to the new one.
     pub fn managed_worktree_record(&self, row: &ManagedWorktreeRow) -> Result<()> {
@@ -6045,17 +6140,23 @@ impl Db {
     }
 
     pub fn list_workspaces(&self) -> Result<Vec<proto::Workspace>> {
-        let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare("SELECT path, name FROM workspaces ORDER BY name")?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok(proto::Workspace {
-                    path: r.get(0)?,
-                    name: r.get(1)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
+        let rows: Vec<(String, String)> = {
+            let conn = self.conn.lock().expect("db lock");
+            let mut stmt = conn.prepare("SELECT path, name FROM workspaces ORDER BY name")?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<std::result::Result<_, _>>()?;
+            rows
+        };
+        // Stat outside the lock: a slow volume must not stall every other query.
+        Ok(rows
+            .into_iter()
+            .map(|(path, name)| proto::Workspace {
+                missing: !Path::new(&path).exists(),
+                path,
+                name,
+            })
+            .collect())
     }
 
     pub fn usage_daily_rollup_upsert(
@@ -7195,6 +7296,183 @@ mod tests {
         let db = Db::open(&tmp.path().join("t.db")).unwrap();
         let err = db.update_session_title(42, "Nope").unwrap_err().to_string();
         assert!(err.contains("42"), "error should name the id: {err}");
+    }
+
+    /// Path columns `relocate_workspace` deliberately leaves alone, and why.
+    const RELOCATION_EXEMPT_COLUMNS: &[(&str, &str)] = &[
+        // The key itself and the worktree rows the daemon maps for the transaction.
+        ("workspaces", "path"),
+        ("managed_worktrees", "path"),
+        ("managed_worktrees", "repo_common_dir"),
+        // Relocation is refused while a swarm is rooted in the workspace.
+        ("swarms", "root_dir"),
+        ("swarm_agents", "worktree_dir"),
+        ("swarm_agents", "config_dir"),
+        // Provider and Houston state outside any workspace.
+        ("sessions", "transcript_path"),
+        ("sessions", "resume_transcript_path"),
+        ("sessions", "profile_config_dir"),
+        ("agent_profiles", "config_dir"),
+        ("skill_pushes", "path"),
+        ("ssh_profiles", "default_dir"),
+    ];
+
+    #[test]
+    fn relocation_covers_every_path_column() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let columns: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT m.name, c.name FROM sqlite_master m, pragma_table_info(m.name) c
+                 WHERE m.type = 'table' ORDER BY m.name, c.cid",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let path_like = |c: &str| {
+            matches!(c, "workspace" | "path" | "cwd" | "dir")
+                || c.ends_with("_dir")
+                || c.ends_with("_path")
+        };
+        let listed = |t: &str, c: &str| {
+            WORKSPACE_KEY_COLUMNS
+                .iter()
+                .chain(WORKSPACE_PREFIX_COLUMNS)
+                .chain(RELOCATION_EXEMPT_COLUMNS)
+                .any(|(lt, lc)| *lt == t && *lc == c)
+        };
+        let unhandled: Vec<_> = columns
+            .iter()
+            .filter(|(t, c)| path_like(c) && !listed(t, c))
+            .collect();
+        assert!(
+            unhandled.is_empty(),
+            "path columns missing from WORKSPACE_KEY_COLUMNS, WORKSPACE_PREFIX_COLUMNS or              RELOCATION_EXEMPT_COLUMNS: {unhandled:?}"
+        );
+        for (t, c) in WORKSPACE_KEY_COLUMNS.iter().chain(WORKSPACE_PREFIX_COLUMNS) {
+            assert!(
+                columns.iter().any(|(lt, lc)| lt == t && lc == c),
+                "{t}.{c} is listed for relocation but is not in the schema"
+            );
+        }
+    }
+
+    fn relocation_fixture(db: &Db, from: &str) {
+        db.add_workspace(from, "proj").unwrap();
+        db.add_workspace("/a/project", "project").unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO sessions (id, agent, project_dir, cwd, state, created_at)
+                 VALUES (1, 'claude', '{from}', '{from}/.houston/worktrees/x', 'exited', 0),
+                        (2, 'claude', '/a/project', '/a/project', 'exited', 0);
+             INSERT INTO command_history (workspace, session_id, cwd, cmd, shell, started_at, ended_at)
+                 VALUES ('{from}', 1, '{from}/src', 'ls', 'bash', 0, 0);
+             INSERT INTO settings (key, value) VALUES ('workspace_actions:{from}', '[]');
+             INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('{from}', 3);"
+        ))
+        .unwrap();
+    }
+
+    fn session_dirs(db: &Db, id: u32) -> (String, String) {
+        db.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT project_dir, cwd FROM sessions WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn relocate_workspace_moves_every_row_under_the_old_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        relocation_fixture(&db, "/a/proj");
+        db.relocate_workspace("/a/proj", "/b/proj", "proj", &[])
+            .unwrap();
+
+        let paths: Vec<_> = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        assert!(paths.contains(&"/b/proj".to_owned()) && !paths.contains(&"/a/proj".to_owned()));
+        let (project_dir, cwd) = session_dirs(&db, 1);
+        assert_eq!(project_dir, "/b/proj");
+        assert_eq!(Path::new(&cwd), Path::new("/b/proj/.houston/worktrees/x"));
+        assert_eq!(
+            session_dirs(&db, 2).0,
+            "/a/project",
+            "a sibling folder must not move"
+        );
+        let conn = db.conn.lock().unwrap();
+        let (ws, cwd): (String, String) = conn
+            .query_row("SELECT workspace, cwd FROM command_history", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(ws, "/b/proj");
+        assert_eq!(Path::new(&cwd), Path::new("/b/proj/src"));
+        let key: String = conn
+            .query_row(
+                "SELECT key FROM settings WHERE key LIKE 'workspace_actions:%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(key, "workspace_actions:/b/proj");
+    }
+
+    #[test]
+    fn a_relocation_failing_part_way_leaves_every_row_at_the_old_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        relocation_fixture(&db, "/a/proj");
+        // A stale counter already keyed at the destination: the last key column
+        // collides after every earlier table has been rewritten.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('/b/proj', 1)",
+                [],
+            )
+            .unwrap();
+        let err = db
+            .relocate_workspace("/a/proj", "/b/proj", "proj", &[])
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("backlog_task_counters.workspace"),
+            "{err:#}"
+        );
+
+        let paths: Vec<_> = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        assert!(paths.contains(&"/a/proj".to_owned()) && !paths.contains(&"/b/proj".to_owned()));
+        assert_eq!(session_dirs(&db, 1).0, "/a/proj");
+        let conn = db.conn.lock().unwrap();
+        let ws: String = conn
+            .query_row("SELECT workspace FROM command_history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ws, "/a/proj");
+        let key: String = conn
+            .query_row(
+                "SELECT key FROM settings WHERE key LIKE 'workspace_actions:%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(key, "workspace_actions:/a/proj");
     }
 
     #[test]

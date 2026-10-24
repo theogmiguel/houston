@@ -9181,6 +9181,180 @@ impl Daemon {
         self.workspace_list()
     }
 
+    /// Re-point a workspace whose folder moved or was renamed on disk. `to` must be
+    /// the same repository: every managed worktree of the old checkout that still
+    /// exists has to link to a worktree entry `to` holds.
+    pub fn workspace_relocate(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<proto::WorkspaceRelocateMoved> {
+        use crate::paths::relocated;
+        let _membership = self
+            .workspace_membership
+            .lock()
+            .expect("workspace_membership lock");
+        let known = self.workspace_list()?;
+        let Some(current) = known.iter().find(|w| w.path == from) else {
+            bail!("unknown workspace path: {from}");
+        };
+        if Path::new(from).exists() {
+            bail!("workspace {from} still exists on disk; relocation is for a folder that moved or was renamed");
+        }
+        if known.iter().any(|w| w.path == to) {
+            bail!("{to} is already a workspace; pick the folder {from} moved to");
+        }
+        let target = Path::new(to);
+        if !target.is_dir() {
+            bail!("relocation target does not exist or is not a directory: {to}");
+        }
+        let facts = crate::git::checkout_facts(target);
+        let is_root = facts.toplevel.as_deref().is_some_and(|top| {
+            matches!((Path::new(top).canonicalize(), target.canonicalize()), (Ok(a), Ok(b)) if a == b)
+        });
+        let common_dir = match (is_root, facts.common_dir) {
+            (true, Some(dir)) if !dir.is_empty() => dir,
+            _ => bail!(
+                "relocation target {to} is not a git repository root (toplevel {:?}); expected the folder {from} moved to",
+                facts.toplevel.as_deref().unwrap_or("none")
+            ),
+        };
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|s| {
+                s.state.lock().expect("state lock").is_live()
+                    && relocated(from, to, &s.project_dir.lock().expect("project_dir lock"))
+                        .is_some()
+            })
+            .count();
+        if live > 0 {
+            bail!("{live} running session(s) are rooted in {from}; close them before relocating the workspace");
+        }
+        if let Some(swarm) = self
+            .db
+            .list_swarms()?
+            .into_iter()
+            .find(|s| relocated(from, to, &s.root_dir).is_some())
+        {
+            bail!(
+                "swarm {} ({:?}) is rooted in {from}; remove it before relocating the workspace",
+                swarm.id,
+                swarm.name
+            );
+        }
+
+        let mut moved = proto::WorkspaceRelocateMoved::default();
+        let mut worktrees = Vec::new();
+        let mut present = Vec::new();
+        let admin_root = Path::new(&common_dir).join("worktrees");
+        for row in self.db.managed_worktrees()? {
+            let ours = relocated(from, to, &row.repo_common_dir);
+            let path = relocated(from, to, &row.path);
+            if ours.is_none() && path.is_none() {
+                continue;
+            }
+            let path = path.unwrap_or_else(|| row.path.clone());
+            let dir = PathBuf::from(&path);
+            match crate::git::worktree_admin_dir(&dir) {
+                Some(admin) => {
+                    let home = relocated(from, to, &admin.to_string_lossy())
+                        .or_else(|| relocated(to, to, &admin.to_string_lossy()));
+                    let entry = admin.file_name().map(|n| admin_root.join(n));
+                    if home.is_none() || !entry.as_deref().is_some_and(Path::is_dir) {
+                        bail!(
+                            "worktree {path} links to {}, which is not a worktree entry of {to}; {to} is not the repository {from} held",
+                            admin.display()
+                        );
+                    }
+                    present.push(dir.clone());
+                }
+                None if dir.is_dir() => moved.notes.push(format!(
+                    "worktree {path} has no .git link; git cannot repair it"
+                )),
+                None => moved.notes.push(format!(
+                    "worktree {path} is gone; its row stays for cleanup"
+                )),
+            }
+            let stored = dir
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or(path);
+            let common = if ours.is_some() {
+                common_dir.clone()
+            } else {
+                row.repo_common_dir.clone()
+            };
+            worktrees.push((row.path, stored, common));
+        }
+        if present.is_empty() {
+            moved.notes.push(format!(
+                "{from} had no linked worktree to compare; {to} was accepted as a git repository root"
+            ));
+        }
+
+        let folder = |p: &str| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        };
+        let name = match (folder(from), folder(to)) {
+            (Some(old), Some(new)) if current.name == old => new,
+            _ => current.name.clone(),
+        };
+        self.db.relocate_workspace(from, to, &name, &worktrees)?;
+        moved.worktrees = worktrees.len() as u32;
+        let mut reparented = Vec::new();
+        for session in self.sessions.lock().expect("sessions lock").values() {
+            let mut project_dir = session.project_dir.lock().expect("project_dir lock");
+            if let Some(dir) = relocated(from, to, &project_dir) {
+                *project_dir = dir;
+                reparented.push((session.info.id, project_dir.clone()));
+            }
+        }
+        for info in self.dead.lock().expect("dead lock").values_mut() {
+            let project_dir = relocated(from, to, &info.project_dir);
+            let cwd = relocated(from, to, &info.cwd);
+            if project_dir.is_none() && cwd.is_none() {
+                continue;
+            }
+            if let Some(dir) = project_dir {
+                info.project_dir = dir;
+            }
+            if let Some(cwd) = cwd {
+                info.cwd = cwd;
+            }
+            reparented.push((info.id, info.project_dir.clone()));
+        }
+        moved.sessions = reparented.len() as u32;
+        for (session, project_dir) in reparented {
+            self.broadcast_control(&proto::ServerMsg::SessionReparented {
+                session,
+                project_dir,
+            });
+        }
+        self.install_workspace_hooks(to);
+
+        if !present.is_empty() {
+            match crate::git::worktree_repair(target, &present) {
+                Ok(()) => {
+                    moved.repaired = present
+                        .iter()
+                        .filter(|dir| {
+                            crate::git::worktree_admin_dir(dir).is_some_and(|admin| {
+                                relocated(to, to, &admin.to_string_lossy()).is_some()
+                            })
+                        })
+                        .count() as u32;
+                }
+                Err(e) => moved.notes.push(format!("{e:#}")),
+            }
+        }
+        Ok(moved)
+    }
+
     pub fn workspace_remove(self: &Arc<Self>, path: &str) -> Result<Vec<proto::Workspace>> {
         let _membership = self
             .workspace_membership

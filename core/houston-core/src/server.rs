@@ -2929,6 +2929,29 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
+        proto::ClientMsg::WorkspaceRelocate { from, to } => {
+            let daemon_bg = Arc::clone(daemon);
+            let origin = from.clone();
+            let destination = to.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                daemon_bg.workspace_relocate(&origin, &destination)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("workspace relocate task panicked: {e}")));
+            match result {
+                Ok(moved) => {
+                    let workspaces = daemon.workspace_list().unwrap_or_default();
+                    daemon.broadcast_control(&proto::ServerMsg::WorkspaceRelocated {
+                        from,
+                        to,
+                        moved,
+                    });
+                    daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
         proto::ClientMsg::WorkspaceList => {
             let workspaces = daemon.workspace_list().unwrap_or_default();
             let _ = send_msg(sink, &proto::ServerMsg::WorkspaceList { workspaces }).await;
