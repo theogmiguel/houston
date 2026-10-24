@@ -14,11 +14,13 @@ export type ThreadItem =
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
 
-// Folds the event log into rows. Deltas no `assistant_message` superseded stay one row
-// per message; a turn end freezes them: the partial answer a Stop leaves behind.
+// Folds the event log into rows. Deltas stream into one row per message until its stored
+// `assistant_message` replaces them; deltas arriving after that are stale and skipped.
 export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
   const items: ThreadItem[] = []
   const tools = new Map<string, number>()
+  const stored = new Set<string>()
+  let turnStart = 0
   let open: { messageId: string; index: number } | null = null
   const settle = (): void => {
     for (const at of tools.values()) {
@@ -39,9 +41,11 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
     switch (kind.type) {
       case 'user_message':
         freeze()
+        turnStart = items.length
         items.push({ kind: 'user', key, text: kind.text })
         break
       case 'assistant_delta': {
+        if (stored.has(kind.message_id)) break
         const current = open !== null && open.messageId === kind.message_id ? items[open.index] : undefined
         if (current?.kind === 'assistant' && open !== null) {
           items[open.index] = { ...current, text: current.text + kind.text }
@@ -53,6 +57,7 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
         break
       }
       case 'assistant_message':
+        stored.add(kind.message_id)
         if (open !== null && open.messageId === kind.message_id) {
           items[open.index] = { kind: 'assistant', key, text: kind.text, streaming: false, truncated: kind.truncated }
           open = null
@@ -81,7 +86,10 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
       case 'turn_end':
         freeze()
         settle()
-        if (kind.outcome === 'interrupted') items.push({ kind: 'stopped', key })
+        if (kind.outcome === 'interrupted') {
+          untruncateStopped(items, turnStart)
+          items.push({ kind: 'stopped', key })
+        }
         else if (kind.outcome === 'error') items.push({ kind: 'error', key, text: kind.error ?? 'The turn ended with an error the CLI did not describe.' })
         break
       case 'notice':
@@ -91,6 +99,26 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
     }
   }
   return items
+}
+
+// A stopped turn's partial answer is stored as truncated; the Stopped marker already says so.
+function untruncateStopped(items: ThreadItem[], turnStart: number): void {
+  for (let at = items.length - 1; at >= turnStart; at--) {
+    const item = items[at]
+    if (item?.kind !== 'assistant') continue
+    if (item.truncated) items[at] = { ...item, truncated: false }
+    return
+  }
+}
+
+/** A turn is open when the newest user message has no turn end after it. */
+export function turnOpen(events: readonly ThreadEvent[]): boolean {
+  for (let at = events.length - 1; at >= 0; at--) {
+    const type = events[at]!.kind.type
+    if (type === 'turn_end') return false
+    if (type === 'user_message') return true
+  }
+  return false
 }
 
 /** Field-wise equality, so a rebuilt row with unchanged content skips re-rendering. */

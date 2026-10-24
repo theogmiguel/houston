@@ -9,6 +9,7 @@ import {
   showEarlier,
   showLater,
   toolSummary,
+  turnOpen,
   windowBounds,
   type ThreadItem
 } from './threadModel'
@@ -73,6 +74,23 @@ describe('buildThreadItems', () => {
     expect(sameThreadItem(b1!, b2!)).toBe(true)
     const [, b3] = buildThreadItems([...list, { seq: 3, at_ms: 3, kind: delta('m', 'c') }])
     expect(sameThreadItem(b1!, b3!)).toBe(false)
+  })
+})
+
+describe('stale deltas and open turns', () => {
+  it('skips deltas for a message already stored earlier in the log', () => {
+    const items = buildThreadItems(events([
+      { type: 'assistant_message', message_id: 'x', text: 'Hello.', truncated: false },
+      { type: 'turn_end', outcome: 'completed', error: null },
+      delta('x', 'late')
+    ]))
+    expect(items).toEqual([{ kind: 'assistant', key: '1', text: 'Hello.', streaming: false, truncated: false }])
+  })
+
+  it('reports a turn as open from its user message until its turn end', () => {
+    expect(turnOpen(events([]))).toBe(false)
+    expect(turnOpen(events([{ type: 'user_message', text: 'go' }, delta('m', 'a')]))).toBe(true)
+    expect(turnOpen(events([{ type: 'user_message', text: 'go' }, { type: 'turn_end', outcome: 'interrupted', error: null }]))).toBe(false)
   })
 })
 
