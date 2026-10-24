@@ -126,6 +126,48 @@ pub fn base_env() -> houston_core::host_env::HostEnv {
     isolate_config(env)
 }
 
+/// Copies the hermetic `fake_claude_stream` into `shim` as the `claude` a daemon launches.
+pub fn install_fake_claude(shim: &std::path::Path) -> std::path::PathBuf {
+    let fake = shim.join(if cfg!(windows) {
+        "claude.exe"
+    } else {
+        "claude"
+    });
+    std::fs::copy(env!("CARGO_BIN_EXE_fake_claude_stream"), &fake).unwrap();
+    fake
+}
+
+/// `base_env` whose `claude` can only be the fake in `shim`: PATH keeps no directory under
+/// the user's home (`~/.local/bin`, npm, bun) or holding another `claude`, so a test that
+/// renames its fake cannot reach the real CLI. Panics unless `claude` resolves in `shim`.
+pub fn hermetic_claude_env(shim: &std::path::Path) -> houston_core::host_env::HostEnv {
+    let homes: Vec<std::path::PathBuf> = ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(process_var_os)
+        .map(std::path::PathBuf::from)
+        .filter(|home| home.components().count() > 1)
+        .collect();
+    let env = base_env();
+    let provides_claude = |dir: &std::path::Path| {
+        houston_core::exe_path::resolve_in(&env.with("PATH", Some(dir)), "claude").is_some()
+    };
+    let inherited = process_var_os("PATH").unwrap_or_default();
+    let kept = std::env::split_paths(&inherited)
+        .filter(|dir| !homes.iter().any(|home| dir.starts_with(home)) && !provides_claude(dir));
+    let path = std::env::join_paths(std::iter::once(shim.to_path_buf()).chain(kept))
+        .expect("PATH entries contain no separator");
+    let env = env.with("PATH", Some(path));
+    let resolved = houston_core::exe_path::resolve_in(&env, "claude");
+    assert!(
+        resolved
+            .as_deref()
+            .is_some_and(|claude| claude.starts_with(shim)),
+        "claude resolves to {resolved:?}, expected the fake in {}",
+        shim.display()
+    );
+    env
+}
+
 /// The test process's environment as it is, for fixtures that pass daemon-behaviour
 /// variables to a re-executed child, with the same config-home isolation as `base_env`.
 pub fn capture_env() -> houston_core::host_env::HostEnv {

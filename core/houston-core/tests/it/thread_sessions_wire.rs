@@ -28,24 +28,28 @@ struct Rig {
 }
 
 fn fake_claude_env(shim: &Path, scratch: &Path) -> houston_core::host_env::HostEnv {
-    let name = if cfg!(windows) {
-        "claude.exe"
-    } else {
-        "claude"
-    };
-    std::fs::copy(env!("CARGO_BIN_EXE_fake_claude_stream"), shim.join(name)).unwrap();
-    let inherited = process_var_os("PATH").unwrap_or_default();
-    let path = std::env::join_paths(
-        std::iter::once(shim.to_path_buf()).chain(std::env::split_paths(&inherited)),
+    install_fake_claude(shim);
+    fake_claude_vars(hermetic_claude_env(shim), scratch)
+}
+
+#[test]
+fn a_renamed_fake_leaves_no_claude_to_launch() {
+    let shim = tempfile::tempdir().unwrap();
+    let fake = install_fake_claude(shim.path());
+    let env = hermetic_claude_env(shim.path());
+    std::fs::rename(&fake, shim.path().join("renamed")).unwrap();
+    assert_eq!(houston_core::exe_path::resolve_in(&env, "claude"), None);
+}
+
+fn fake_claude_vars(
+    env: houston_core::host_env::HostEnv,
+    scratch: &Path,
+) -> houston_core::host_env::HostEnv {
+    env.with(
+        "HOUSTON_FAKE_CLAUDE_LOG",
+        Some(scratch.join("launches.jsonl")),
     )
-    .unwrap();
-    base_env()
-        .with("PATH", Some(path))
-        .with(
-            "HOUSTON_FAKE_CLAUDE_LOG",
-            Some(scratch.join("launches.jsonl")),
-        )
-        .with("HOUSTON_FAKE_CLAUDE_FIXTURES", Some(FIXTURES))
+    .with("HOUSTON_FAKE_CLAUDE_FIXTURES", Some(FIXTURES))
 }
 
 impl Rig {
@@ -1167,18 +1171,7 @@ async fn a_cmd_shim_receives_quoted_json_and_percent_signs_verbatim() {
         format!("@\"{}\" %*\r\n", fake.display()),
     )
     .unwrap();
-    let inherited = process_var_os("PATH").unwrap_or_default();
-    let path = std::env::join_paths(
-        std::iter::once(shim.path().to_path_buf()).chain(std::env::split_paths(&inherited)),
-    )
-    .unwrap();
-    let env = base_env()
-        .with("PATH", Some(path))
-        .with(
-            "HOUSTON_FAKE_CLAUDE_LOG",
-            Some(scratch.path().join("launches.jsonl")),
-        )
-        .with("HOUSTON_FAKE_CLAUDE_FIXTURES", Some(FIXTURES));
+    let env = fake_claude_vars(hermetic_claude_env(shim.path()), scratch.path());
     let (addr, _state, _daemon) = start_daemon_with_handle_in(env).await;
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let _ = next_control(&mut ws).await;
