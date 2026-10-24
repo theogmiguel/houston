@@ -4,7 +4,8 @@ import type { NoticeInput } from './notices'
 import type { RelocateState } from './workspaceRelocate'
 
 // A relocated workspace moves its renderer-local state (grids, colours, pins) to the new
-// path. The module loads on the first relocation, so the boot bundle does not carry it.
+// path. Locate loads the module before its request, keeping it out of the boot bundle
+// while the move still lands before the panes' `session_reparented`.
 export function useWorkspaceRelocated(
   conn: Conn,
   state: RefObject<RelocateState | null>,

@@ -2925,6 +2925,8 @@ export function App(): React.JSX.Element {
       pushError(resolved.refusal);
       return;
     }
+    // Loaded first, so the reply moves the layouts before the panes' reparents arrive.
+    await import("./workspaceRelocate");
     conn.client.relocateWorkspace(path, resolved.wire);
   }, [conn, pushError]);
 
