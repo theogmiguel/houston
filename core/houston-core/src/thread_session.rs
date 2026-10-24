@@ -61,6 +61,8 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn settle(&self, session: u32, outcome: TurnOutcome);
     /// A new Claude process leads the thread's process group.
     fn process_started(&self, session: u32, pid: u32);
+    /// Stop, an exit or close ended the process tree, so nothing of it is left to reclaim.
+    fn process_gone(&self, session: u32);
     /// Whether Houston now holds at least one unanswered permission request.
     fn approvals_pending(&self, session: u32, pending: bool);
     /// The stream reported a permission mode other than the recorded one.
@@ -1124,7 +1126,7 @@ impl ThreadHandle {
     }
 
     /// Denies every held request with `reason`, before the process they belong to ends.
-    /// `report` is false on close: its callers may hold daemon locks the status path takes.
+    /// `report` is false when the caller holds daemon locks the status path takes.
     fn deny_pending(&self, reason: &str, report: bool) {
         self.resolve_pending(ApprovalDecision::Denied, reason, report);
     }
@@ -1152,6 +1154,8 @@ impl ThreadHandle {
         }
         self.emit(events);
         if report {
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("thread-approvals-report", self.session);
             self.host.approvals_pending(self.session, false);
         }
     }
@@ -1216,14 +1220,31 @@ impl ThreadHandle {
         self.deny_pending("Stopped in Houston before anyone answered.", true);
         process.stopping.store(true, Ordering::Release);
         process.end_tree(true);
+        self.host.process_gone(self.session);
         let events = self
             .state
             .lock()
             .expect("thread state lock")
             .end_open_turn(TurnOutcome::Interrupted, None);
         self.emit(events);
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-stop-settle", self.session);
         self.host.settle(self.session, TurnOutcome::Interrupted);
         true
+    }
+
+    /// Records the end of a turn that stored history left open, with `notice` as its cause.
+    pub fn end_stored_turn(&self, notice: &str) {
+        let _op = self.op.lock().expect("thread operation lock");
+        self.emit(vec![
+            ThreadEventKind::TurnEnd {
+                outcome: TurnOutcome::Interrupted,
+                error: None,
+            },
+            ThreadEventKind::Notice {
+                text: notice.to_string(),
+            },
+        ]);
     }
 
     /// Names why the next `close` happens, for the notice it records mid-turn.
@@ -1231,10 +1252,28 @@ impl ThreadHandle {
         self.state.lock().expect("thread state lock").close_cause = Some(cause.to_string());
     }
 
-    /// Ends the thread for good: the session was killed, restarted, closed or the daemon
-    /// is stopping. An open turn is recorded as interrupted, naming the cause.
+    /// Ends the thread for good, recording an open turn as interrupted with its cause.
+    /// Waits for a Stop or exit in progress, whose status settle takes daemon locks:
+    /// callers must not hold `temporary_cleanup_lock`.
     pub fn close(&self) {
-        let _op = self.op.lock().expect("thread operation lock");
+        let op = self.op.lock().expect("thread operation lock");
+        self.close_held(op, true);
+    }
+
+    /// `close` unless a send, Stop or exit holds the thread. Returns whether it closed.
+    /// Its caller holds `temporary_cleanup_lock`, so held requests are denied unreported.
+    pub fn try_close(&self) -> bool {
+        match self.op.try_lock() {
+            Ok(op) => {
+                self.close_held(op, false);
+                true
+            }
+            Err(std::sync::TryLockError::WouldBlock) => false,
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("thread operation lock poisoned"),
+        }
+    }
+
+    fn close_held(&self, _op: std::sync::MutexGuard<'_, ()>, report: bool) {
         let process = {
             let mut state = self.state.lock().expect("thread state lock");
             if state.closed {
@@ -1243,10 +1282,11 @@ impl ThreadHandle {
             state.closed = true;
             state.process.take()
         };
-        self.deny_pending("The session ended before anyone answered.", false);
+        self.deny_pending("The session ended before anyone answered.", report);
         if let Some(process) = &process {
             process.stopping.store(true, Ordering::Release);
             process.end_tree(false);
+            self.host.process_gone(self.session);
         }
         let mut state = self.state.lock().expect("thread state lock");
         let was_open = state.turn_open;
@@ -1409,6 +1449,7 @@ impl ThreadHandle {
         }
         self.deny_pending("Claude exited before anyone answered.", true);
         let code = process.end_tree(false);
+        self.host.process_gone(self.session);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
             || "no exit code".to_string(),
@@ -1522,6 +1563,9 @@ pub struct ThreadGroup {
     pub pgid: u32,
     pub sid: u32,
     pub system: String,
+    /// `pid::process_creation_token` of the leader, so a reused pgid is told apart.
+    #[serde(default)]
+    pub leader_creation: Option<u64>,
 }
 
 impl ThreadGroup {
@@ -1534,6 +1578,7 @@ impl ThreadGroup {
             pgid: leader,
             sid: sid as u32,
             system,
+            leader_creation: crate::pid::process_creation_token(leader),
         })
     }
 
@@ -1543,12 +1588,14 @@ impl ThreadGroup {
     }
 
     /// Kills what is left of the group after its daemon died: every process still in this
-    /// pgid and session on this boot. A pgid cannot be reissued while any member lives, and
-    /// the old daemon's session holds only what it launched. Returns how many were signalled.
+    /// pgid and session id on this boot, unless a new process now holds the leader's pid.
+    /// Returns how many were signalled.
     #[cfg(target_os = "linux")]
     pub fn reclaim(&self) -> Result<usize> {
         let current = crate::recovery_process::system_identity()?;
-        if current.as_deref() != Some(self.system.as_str()) {
+        if current.as_deref() != Some(self.system.as_str())
+            || self.reused(crate::pid::process_creation_token(self.pgid))
+        {
             return Ok(0);
         }
         let mut stats = Vec::new();
@@ -1592,6 +1639,12 @@ impl ThreadGroup {
         Ok(0)
     }
 
+    /// A live process with the leader's pid but another creation token means every member
+    /// exited and the pgid number was issued again.
+    pub fn reused(&self, live_leader: Option<u64>) -> bool {
+        matches!((self.leader_creation, live_leader), (Some(was), Some(now)) if was != now)
+    }
+
     /// The processes of `stats` (pid, pgrp, session) that belong to this group.
     pub fn members(&self, stats: &[(u32, u32, u32)], me: u32) -> Vec<u32> {
         if self.pgid <= 1 || self.sid <= 1 {
@@ -1624,6 +1677,7 @@ mod tests {
             pgid: 400,
             sid: 30,
             system: "linux:x".into(),
+            leader_creation: Some(7),
         };
         let stats = [
             (400, 400, 30),
@@ -1653,6 +1707,48 @@ mod tests {
         let group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
         assert!(group.reclaim().unwrap() >= 1);
         assert_eq!(sleeper.wait().unwrap().signal(), Some(libc::SIGKILL));
+    }
+
+    #[test]
+    fn a_group_is_reused_only_when_a_different_leader_holds_its_pid() {
+        let group = ThreadGroup {
+            pgid: 400,
+            sid: 30,
+            system: "linux:x".into(),
+            leader_creation: Some(7),
+        };
+        assert!(group.reused(Some(8)));
+        assert!(!group.reused(Some(7)), "the original leader still runs");
+        assert!(
+            !group.reused(None),
+            "the leader exited; its members may remain"
+        );
+        let recorded_before_tokens = ThreadGroup {
+            leader_creation: None,
+            ..group
+        };
+        assert!(!recorded_before_tokens.reused(Some(8)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reclaim_leaves_a_group_whose_pgid_was_issued_again() {
+        use std::os::unix::process::CommandExt;
+        let mut sleeper = crate::spawn::command("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
+        let token = group.leader_creation.expect("the leader's creation token");
+        group.leader_creation = Some(token + 1);
+        assert_eq!(group.reclaim().unwrap(), 0);
+        assert!(
+            sleeper.try_wait().unwrap().is_none(),
+            "the new group was killed"
+        );
+        sleeper.kill().unwrap();
+        sleeper.wait().unwrap();
     }
 
     fn kinds(lines: &str) -> Vec<ThreadEventKind> {

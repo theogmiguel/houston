@@ -93,6 +93,14 @@ impl ThreadHost for DaemonThreadHost {
         }
     }
 
+    fn process_gone(&self, session: u32) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        if let Err(error) = daemon.db.clear_thread_group(session) {
+            tracing::warn!("clearing thread session {session}'s process group: {error:#}");
+        }
+    }
     fn approvals_pending(&self, session: u32, pending: bool) {
         let Some(daemon) = self.daemon.upgrade() else {
             return;
@@ -661,6 +669,14 @@ impl Daemon {
         // The first process started before its row existed.
         if let Some(pid) = handle.pid() {
             self.record_thread_group(id, pid);
+        }
+        // A daemon that died mid-turn stored no turn end; close it before any new message.
+        if replacement.is_some() {
+            match self.db.thread_turn_left_open(id) {
+                Ok(true) => handle.end_stored_turn("Houston restarted while this turn ran."),
+                Ok(false) => {}
+                Err(error) => tracing::warn!("reading session {id}'s last thread turn: {error:#}"),
+            }
         }
         self.sessions
             .lock()
