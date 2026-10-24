@@ -733,9 +733,11 @@ File stdin is passed directly to the child, with no copier thread. OS spawn and
 termination scheduling are outside the wall-clock guarantee. Other platforms,
 including macOS, explicitly refuse bounded capture before spawning until equivalent
 process ownership is available.
-The conflict prediction loop has no setting because it is local, bounded and read-only
-apart from unreferenced merge objects, and it is idle until a managed worktree has a
-creating session. Only sessions with a live inbox recipient are compared or notified;
+The conflict prediction loop has no setting because it is local, bounded and read-only,
+and it is idle until a managed worktree has a creating session. Each `git merge-tree` run
+writes its throwaway objects to a per-call quarantine under the state dir's `merge-tree/`
+(`GIT_OBJECT_DIRECTORY`, with the repository's store as its alternate), deleted when the
+run ends; a pass removes quarantines a crash left behind once they are ten minutes old. Only sessions with a live inbox recipient are compared or notified;
 otherwise a closed orchestrator's notes would reach the workspace operator queue each time
 its abandoned branches fall behind. Siblings are compared only while active (the creating
 pane is live, or a live session runs in the worktree), and a worktree whose head is already
