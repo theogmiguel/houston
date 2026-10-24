@@ -152,6 +152,7 @@ mod task_trackers_wire;
 mod tasks_mcp_wire;
 mod tasks_wire;
 mod terminal_query_wire;
+mod thread_sessions_wire;
 mod tool_roles_wire;
 mod tracer;
 mod updates_wire;

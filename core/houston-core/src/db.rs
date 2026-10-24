@@ -30,6 +30,7 @@ pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
 pub use remote::RemoteDeviceRow;
 mod tasks;
+mod threads;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
@@ -2027,6 +2028,7 @@ impl Db {
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
+        threads::migrate(&conn)?;
         intake::migrate(&conn)?;
         migrate_routine_schema(&conn)?;
         conn.execute(
@@ -2431,7 +2433,7 @@ impl Db {
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
-                    latest_prompt, last_agent_message, slept_at_ms, state, context_json
+                    latest_prompt, last_agent_message, slept_at_ms, state, context_json, view
              FROM sessions
              WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
@@ -2463,6 +2465,7 @@ impl Db {
                     r.get::<_, Option<u64>>(17)?,
                     r.get::<_, String>(18)?,
                     r.get::<_, Option<String>>(19)?,
+                    r.get::<_, Option<String>>(20)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2470,7 +2473,7 @@ impl Db {
         let mut used: std::collections::HashSet<String> = rows
             .iter()
             .filter_map(
-                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
+                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
                     if codename.is_empty() {
                         (!title.is_empty()).then(|| title.clone())
                     } else {
@@ -2501,6 +2504,7 @@ impl Db {
             slept_at_ms,
             persisted_state,
             context_json,
+            view,
         ) in rows
         {
             if codename.is_empty() && !title.is_empty() {
@@ -2570,7 +2574,7 @@ impl Db {
                     last_agent_message,
                     slept_at_ms,
                     limit: None,
-                    view: Default::default(),
+                    view: threads::parse_view(view),
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -2646,8 +2650,8 @@ impl Db {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
-                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, unixepoch())",
+                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, view, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, unixepoch())",
             rusqlite::params![
                 info.id,
                 serde_json::to_string(&info.agent)?.trim_matches('"'),
@@ -2668,6 +2672,7 @@ impl Db {
                 info.slept_at_ms,
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
                 info.hidden,
+                info.view.as_str(),
             ],
         )?;
         // Hidden rows exist only for ownership receipts; their title candidates stay in memory.
@@ -2743,6 +2748,7 @@ impl Db {
                 [old, info.id],
             )?;
             Self::delegation_rebind_on(&tx, old, info.id, info.spawned_by, now)?;
+            threads::move_history(&tx, old, info.id)?;
             let retired = tx.execute(
                 "UPDATE sessions SET state = 'closed', resume_session_id = NULL,
                         resume_transcript_path = NULL, resume_agent = NULL, resume_cwd = NULL
