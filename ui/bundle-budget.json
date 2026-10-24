@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 947,360 bytes (one boot chunk, Windows build) with the same small",
+    "headroom: the operator inbox behind Next request lists every workspace through",
+    "one bounded inbox_list poller per connection, which the Tasks surface and the",
+    "orchestrator overview share, so the poller and its generic queue are boot-path code."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947560,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
