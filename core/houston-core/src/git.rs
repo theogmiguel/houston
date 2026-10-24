@@ -66,22 +66,54 @@ fn is_sensitive_path(path: &str) -> bool {
 
 pub fn status(dir: &Path) -> Result<Vec<proto::GitFileStatus>> {
     ensure_repo(dir)?;
-    let raw = run_git(dir, &["status", "--porcelain=v1", "-z"])?;
+    scan(dir, false).map(|(files, _)| files)
+}
 
+/// Files and branch sync from one worktree scan, for callers that need both.
+pub fn status_and_sync(dir: &Path) -> Result<(Vec<proto::GitFileStatus>, SyncStatus)> {
+    ensure_repo(dir)?;
+    scan(dir, true)
+}
+
+fn scan(dir: &Path, branch: bool) -> Result<(Vec<proto::GitFileStatus>, SyncStatus)> {
+    let args: &[&str] = if branch {
+        &["status", "--porcelain=v2", "--branch", "-z"]
+    } else {
+        &["status", "--porcelain=v2", "-z"]
+    };
+    let (mut files, sync) = parse_status_v2(&run_git(dir, args)?)?;
+    merge_numstat(dir, &mut files, true);
+    merge_numstat(dir, &mut files, false);
+    Ok((files, sync))
+}
+
+fn parse_status_v2(raw: &str) -> Result<(Vec<proto::GitFileStatus>, SyncStatus)> {
     let mut files = Vec::new();
-    let mut tokens = raw.split('\0').filter(|t| !t.is_empty());
-    while let Some(entry) = tokens.next() {
-        let bytes = entry.as_bytes();
-        if bytes.len() < 4 {
-            bail!("unparseable git status entry {entry:?}: expected \"XY <path>\"");
+    let mut sync = SyncStatus::default();
+    let mut records = raw.split('\0').filter(|record| !record.is_empty());
+    while let Some(record) = records.next() {
+        if let Some(header) = record.strip_prefix("# ") {
+            apply_branch_header(header, &mut sync);
+            continue;
         }
-        let (x, y) = (bytes[0], bytes[1]);
-        let path = &entry[3..];
-        if x == b'R' || y == b'R' || x == b'C' || y == b'C' {
-            tokens.next();
-        }
+        // The path is the last of 9 fields (ordinary), 10 (renamed or copied, whose original
+        // path follows as its own record) or 11 (unmerged); paths may contain spaces.
+        let (xy, path) = match record.split_once(' ') {
+            Some(("1", _)) => status_v2_fields(record, 9)?,
+            Some(("2", _)) => {
+                records.next();
+                status_v2_fields(record, 10)?
+            }
+            Some(("u", _)) => status_v2_fields(record, 11)?,
+            Some(("?", path)) => ("??", path),
+            Some(("!", _)) => continue,
+            _ => bail!(
+                "unparseable git status entry {record:?}: expected a porcelain v2 record starting with 1, 2, u, ? or !"
+            ),
+        };
+        let xy = xy.as_bytes();
         let is_sensitive = is_sensitive_path(path);
-        for (status, staged) in split_state(x, y) {
+        for (status, staged) in split_state(xy[0], xy[1]) {
             files.push(proto::GitFileStatus {
                 path: path.to_string(),
                 status,
@@ -92,10 +124,19 @@ pub fn status(dir: &Path) -> Result<Vec<proto::GitFileStatus>> {
             });
         }
     }
+    Ok((files, sync))
+}
 
-    merge_numstat(dir, &mut files, true);
-    merge_numstat(dir, &mut files, false);
-    Ok(files)
+fn status_v2_fields(record: &str, count: usize) -> Result<(&str, &str)> {
+    let fields: Vec<&str> = record.splitn(count, ' ').collect();
+    match fields.as_slice() {
+        [_, xy, .., path] if fields.len() == count && xy.len() == 2 && !path.is_empty() => {
+            Ok((xy, path))
+        }
+        _ => bail!(
+            "unparseable git status entry {record:?}: expected {count} space-separated fields with a two-letter XY state"
+        ),
+    }
 }
 
 fn split_state(x: u8, y: u8) -> Vec<(proto::GitFileState, bool)> {
@@ -407,8 +448,7 @@ pub struct ReviewDiffs {
 
 pub fn review_diffs(dir: &Path) -> Result<ReviewDiffs> {
     ensure_repo(dir)?;
-    let files = status(dir)?;
-    let sync_status = sync(dir);
+    let (files, sync_status) = scan(dir, true)?;
     let head = head_sha(dir).ok();
 
     let mut warnings = Vec::new();
@@ -641,7 +681,7 @@ fn head_file(dir: &Path) -> Option<std::path::PathBuf> {
     None
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SyncStatus {
     pub branch: Option<String>,
     pub upstream: Option<String>,
@@ -662,24 +702,28 @@ pub fn sync(dir: &Path) -> SyncStatus {
     ) else {
         return s;
     };
-    for line in out.lines() {
-        if let Some(v) = line.strip_prefix("# branch.head ") {
-            if v != "(detached)" {
-                s.branch = Some(v.to_string());
-            }
-        } else if let Some(v) = line.strip_prefix("# branch.upstream ") {
-            s.upstream = Some(v.to_string());
-        } else if let Some(v) = line.strip_prefix("# branch.ab ") {
-            for tok in v.split_whitespace() {
-                if let Some(n) = tok.strip_prefix('+') {
-                    s.ahead = n.parse().unwrap_or(0);
-                } else if let Some(n) = tok.strip_prefix('-') {
-                    s.behind = n.parse().unwrap_or(0);
-                }
+    for header in out.lines().filter_map(|line| line.strip_prefix("# ")) {
+        apply_branch_header(header, &mut s);
+    }
+    s
+}
+
+fn apply_branch_header(header: &str, s: &mut SyncStatus) {
+    if let Some(v) = header.strip_prefix("branch.head ") {
+        if v != "(detached)" {
+            s.branch = Some(v.to_string());
+        }
+    } else if let Some(v) = header.strip_prefix("branch.upstream ") {
+        s.upstream = Some(v.to_string());
+    } else if let Some(v) = header.strip_prefix("branch.ab ") {
+        for tok in v.split_whitespace() {
+            if let Some(n) = tok.strip_prefix('+') {
+                s.ahead = n.parse().unwrap_or(0);
+            } else if let Some(n) = tok.strip_prefix('-') {
+                s.behind = n.parse().unwrap_or(0);
             }
         }
     }
-    s
 }
 
 pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, bool)> {
@@ -953,6 +997,39 @@ pub fn default_base(dir: &Path) -> Option<String> {
         }
     }
     None
+}
+
+// Every status poll reports the default base; a new origin/HEAD or main appears within five
+// minutes instead of costing one to three git processes per workspace each minute.
+const DEFAULT_BASE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+// Bound memory when a daemon visits many repositories over its lifetime.
+const DEFAULT_BASE_CACHE_MAX_ENTRIES: usize = 256;
+type DefaultBaseCache = std::collections::HashMap<PathBuf, (std::time::Instant, Option<String>)>;
+static DEFAULT_BASE_CACHE: std::sync::OnceLock<std::sync::Mutex<DefaultBaseCache>> =
+    std::sync::OnceLock::new();
+
+/// `default_base` for background polls, which tolerate a few minutes of staleness.
+pub fn default_base_cached(dir: &Path) -> Option<String> {
+    let cache = DEFAULT_BASE_CACHE.get_or_init(Default::default);
+    if let Some((at, base)) = cache.lock().expect("default base cache poisoned").get(dir) {
+        if at.elapsed() < DEFAULT_BASE_CACHE_TTL {
+            return base.clone();
+        }
+    }
+    let base = default_base(dir);
+    let mut cache = cache.lock().expect("default base cache poisoned");
+    cache.retain(|_, (at, _)| at.elapsed() < DEFAULT_BASE_CACHE_TTL);
+    if cache.len() >= DEFAULT_BASE_CACHE_MAX_ENTRIES && !cache.contains_key(dir) {
+        if let Some(oldest) = cache
+            .iter()
+            .min_by_key(|(_, (at, _))| *at)
+            .map(|(path, _)| path.clone())
+        {
+            cache.remove(&oldest);
+        }
+    }
+    cache.insert(dir.to_path_buf(), (std::time::Instant::now(), base.clone()));
+    base
 }
 
 fn merge_base(dir: &Path, base: &str) -> Result<String> {
@@ -2191,6 +2268,215 @@ mod tests {
         assert_eq!(s.upstream, None);
         assert_eq!(s.ahead, 0);
         assert_eq!(s.behind, 0);
+    }
+
+    /// The porcelain v1 parse `status` used before the single scan, kept as a parity reference.
+    fn v1_status(dir: &Path) -> Vec<proto::GitFileStatus> {
+        let raw = run_git(dir, &["status", "--porcelain=v1", "-z"]).unwrap();
+        let mut files = Vec::new();
+        let mut tokens = raw.split('\0').filter(|t| !t.is_empty());
+        while let Some(entry) = tokens.next() {
+            let (x, y) = (entry.as_bytes()[0], entry.as_bytes()[1]);
+            let path = &entry[3..];
+            if x == b'R' || y == b'R' || x == b'C' || y == b'C' {
+                tokens.next();
+            }
+            for (status, staged) in split_state(x, y) {
+                files.push(proto::GitFileStatus {
+                    path: path.to_string(),
+                    status,
+                    staged,
+                    added: None,
+                    deleted: None,
+                    is_sensitive: is_sensitive_path(path),
+                });
+            }
+        }
+        merge_numstat(dir, &mut files, true);
+        merge_numstat(dir, &mut files, false);
+        files
+    }
+
+    fn assert_scan_parity(dir: &Path) -> (Vec<proto::GitFileStatus>, SyncStatus) {
+        let expected = format!("{:#?}", v1_status(dir));
+        let (files, sync_status) = status_and_sync(dir).unwrap();
+        assert_eq!(format!("{files:#?}"), expected);
+        assert_eq!(format!("{:#?}", status(dir).unwrap()), expected);
+        assert_eq!(sync_status, sync(dir));
+        (files, sync_status)
+    }
+
+    fn has(files: &[proto::GitFileStatus], path: &str, state: proto::GitFileState) -> bool {
+        files.iter().any(|f| f.path == path && f.status == state)
+    }
+
+    #[test]
+    fn single_scan_matches_v1_for_renames_untracked_ignored_and_unusual_paths() {
+        use proto::GitFileState::*;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        init_repo(dir);
+        fs::write(dir.join("old name.txt"), "one\ntwo\nthree\n").unwrap();
+        fs::write(dir.join("gone.txt"), "x\n").unwrap();
+        fs::write(dir.join("unstaged gone.txt"), "y\n").unwrap();
+        fs::write(dir.join(".gitignore"), "*.log\nbuild/\n").unwrap();
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "files"]);
+        git(dir, &["mv", "old name.txt", "renamed café 日本.txt"]);
+        fs::write(dir.join("renamed café 日本.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+        git(dir, &["rm", "-q", "gone.txt"]);
+        fs::remove_file(dir.join("unstaged gone.txt")).unwrap();
+        fs::write(dir.join("staged new.txt"), "s\n").unwrap();
+        git(dir, &["add", "staged new.txt"]);
+        fs::write(dir.join("README.md"), "hello\nchanged\n").unwrap();
+        git(dir, &["add", "README.md"]);
+        fs::write(dir.join("README.md"), "hello\nchanged\nagain\n").unwrap();
+        fs::write(dir.join("untracked ü.txt"), "u\n").unwrap();
+        fs::create_dir(dir.join("new dir")).unwrap();
+        fs::write(dir.join("new dir").join("inner.txt"), "i\n").unwrap();
+        fs::write(dir.join(".env"), "SECRET=1\n").unwrap();
+        fs::write(dir.join("debug.log"), "ignored\n").unwrap();
+        fs::create_dir(dir.join("build")).unwrap();
+        fs::write(dir.join("build").join("out.bin"), "ignored\n").unwrap();
+
+        let (files, _) = assert_scan_parity(dir);
+
+        let renamed = "renamed café 日本.txt";
+        assert!(has(&files, renamed, Renamed), "{files:#?}");
+        assert!(has(&files, renamed, Modified), "{files:#?}");
+        assert!(has(&files, "gone.txt", Deleted), "{files:#?}");
+        assert!(has(&files, "unstaged gone.txt", Deleted), "{files:#?}");
+        assert!(has(&files, "staged new.txt", Added), "{files:#?}");
+        assert_eq!(files.iter().filter(|f| f.path == "README.md").count(), 2);
+        assert!(has(&files, "untracked ü.txt", Untracked), "{files:#?}");
+        assert!(has(&files, "new dir/", Untracked), "{files:#?}");
+        assert!(files.iter().any(|f| f.path == ".env" && f.is_sensitive));
+        assert!(!files
+            .iter()
+            .any(|f| f.path.ends_with(".log") || f.path.starts_with("build")));
+    }
+
+    #[test]
+    fn single_scan_matches_v1_for_merge_conflicts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        init_repo(dir);
+        fs::write(dir.join("both edit.txt"), "base\n").unwrap();
+        fs::write(dir.join("they delete.txt"), "base\n").unwrap();
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "base"]);
+        git(dir, &["switch", "-q", "-c", "other"]);
+        fs::write(dir.join("both edit.txt"), "other\n").unwrap();
+        fs::remove_file(dir.join("they delete.txt")).unwrap();
+        fs::write(dir.join("both added.txt"), "other\n").unwrap();
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "other"]);
+        git(dir, &["switch", "-q", "main"]);
+        fs::write(dir.join("both edit.txt"), "main\n").unwrap();
+        fs::write(dir.join("they delete.txt"), "main\n").unwrap();
+        fs::write(dir.join("both added.txt"), "main\n").unwrap();
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "main"]);
+        let merge = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["merge", "-q", "other"])
+            .output()
+            .unwrap();
+        assert!(!merge.status.success(), "the fixture merge must conflict");
+
+        let (files, _) = assert_scan_parity(dir);
+
+        for path in ["both edit.txt", "they delete.txt", "both added.txt"] {
+            assert!(
+                has(&files, path, proto::GitFileState::Conflicted),
+                "{path}: {files:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_scan_matches_sync_for_upstream_detached_and_no_upstream() {
+        let tmp = tempfile::tempdir().unwrap();
+        let seed = tmp.path().join("seed");
+        let remote = tmp.path().join("remote.git");
+        let peer = tmp.path().join("peer");
+        fs::create_dir(&seed).unwrap();
+        init_repo(&seed);
+
+        let (_, local) = assert_scan_parity(&seed);
+        assert_eq!(local.branch.as_deref(), Some("main"));
+        assert_eq!(local.upstream, None);
+
+        git(
+            tmp.path(),
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "-b",
+                "main",
+                remote.to_str().unwrap(),
+            ],
+        );
+        git(
+            &seed,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        git(&seed, &["push", "-q", "-u", "origin", "main"]);
+        git(
+            tmp.path(),
+            &[
+                "clone",
+                "-q",
+                remote.to_str().unwrap(),
+                peer.to_str().unwrap(),
+            ],
+        );
+        git(&peer, &["config", "user.email", "t@t.local"]);
+        git(&peer, &["config", "user.name", "t"]);
+        fs::write(peer.join("peer.txt"), "peer\n").unwrap();
+        git(&peer, &["add", "-A"]);
+        git(&peer, &["commit", "-q", "-m", "peer"]);
+        git(&peer, &["push", "-q"]);
+        fs::write(seed.join("local.txt"), "local\n").unwrap();
+        git(&seed, &["add", "-A"]);
+        git(&seed, &["commit", "-q", "-m", "local"]);
+        git(&seed, &["fetch", "-q"]);
+
+        let (_, tracking) = assert_scan_parity(&seed);
+        assert_eq!(tracking.upstream.as_deref(), Some("origin/main"));
+        assert_eq!((tracking.ahead, tracking.behind), (1, 1));
+
+        git(&seed, &["checkout", "-q", "--detach"]);
+        fs::write(seed.join("local.txt"), "detached edit\n").unwrap();
+        let (files, detached) = assert_scan_parity(&seed);
+        assert_eq!(detached.branch, None);
+        assert!(has(&files, "local.txt", proto::GitFileState::Modified));
+    }
+
+    #[test]
+    fn unparseable_status_record_names_the_record_and_expected_shape() {
+        let err = parse_status_v2("1 M\0").unwrap_err().to_string();
+        assert!(
+            err.contains("\"1 M\"") && err.contains("9 space-separated fields"),
+            "{err}"
+        );
+        let err = parse_status_v2("X junk\0").unwrap_err().to_string();
+        assert!(
+            err.contains("\"X junk\"") && err.contains("porcelain v2"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn default_base_cached_serves_the_first_answer_within_its_ttl() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
+        git(tmp.path(), &["branch", "-m", "main", "trunk"]);
+        assert_eq!(default_base(tmp.path()), None);
+        assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
     }
 
     #[test]

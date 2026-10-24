@@ -4461,12 +4461,11 @@ async fn send_git_status(
         if d.is_dir() && !crate::git::probe_repo(&d)? {
             return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
         }
-        let files = match b.as_deref() {
-            Some(base) => crate::git::status_vs_base(&d, base)?,
-            None => crate::git::status(&d)?,
+        let (files, sync) = match b.as_deref() {
+            Some(base) => (crate::git::status_vs_base(&d, base)?, crate::git::sync(&d)),
+            None => crate::git::status_and_sync(&d)?,
         };
-        let sync = crate::git::sync(&d);
-        let default_base = crate::git::default_base(&d);
+        let default_base = crate::git::default_base_cached(&d);
         anyhow::Ok((files, sync, default_base, false))
     })
     .await
