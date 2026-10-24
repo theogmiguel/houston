@@ -1,5 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 
+use crate::common;
+
 use houston_core::{git, worktrees};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -140,4 +142,65 @@ fn a_non_git_directory_is_refused_by_name() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("not a git repository"), "unexpected: {err}");
+}
+
+/// A repository with one submodule at `vendor/sub`, added from a local path, so
+/// both the fixture's git and the daemon's need the file transport allowed.
+fn submodule_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    common::allow_git_file_transport();
+    let root = tempfile::tempdir().unwrap();
+    let sub = root.path().join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    init_repo(&sub);
+    let repo = root.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    init_repo(&repo);
+    run_git(
+        &repo,
+        &["submodule", "add", sub.to_str().unwrap(), "vendor/sub"],
+    );
+    run_git(&repo, &["commit", "-m", "add submodule"]);
+    (root, repo, sub)
+}
+
+/// The daemon's panel creation is the managed path a client can drive without a
+/// provider: the warnings it returns are the ones the worktree list reply shows.
+#[tokio::test]
+async fn a_daemon_managed_worktree_initialises_submodules_and_reports_a_failure() {
+    let (_addr, _state, daemon) = common::start_daemon_with_handle().await;
+    let (_root, repo, sub) = submodule_fixture();
+
+    let (good, warnings) = tokio::task::spawn_blocking({
+        let daemon = daemon.clone();
+        let repo = repo.clone();
+        move || daemon.git_worktree_create(&repo, "with-sub", None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(
+        good.path.join("vendor/sub/README.md").is_file(),
+        "a managed worktree must arrive with its submodule checked out"
+    );
+
+    std::fs::remove_dir_all(&sub).unwrap();
+    let (broken, warnings) = tokio::task::spawn_blocking({
+        let daemon = daemon.clone();
+        let repo = repo.clone();
+        move || daemon.git_worktree_create(&repo, "broken-sub", None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        broken.path.join("README.md").is_file(),
+        "a failed submodule init must not fail the creation"
+    );
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].contains("vendor/sub") && warnings[0].contains("failed"),
+        "the warning must name the submodule and the error: {:?}",
+        warnings[0]
+    );
 }

@@ -5884,8 +5884,9 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        let include = crate::worktree_include::carry_over(repo, &path);
-        Ok((wt, include.warnings))
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&path);
+        warnings.extend(crate::worktree_include::carry_over(repo, &path).warnings);
+        Ok((wt, warnings))
     }
 
     /// Drops the row with the tree, so the path and its slug are free again.
@@ -20738,8 +20739,9 @@ impl Daemon {
                 .context("spawn refused")
                 .context(orchestrate::MutationMayHaveActed);
         }
-        created.include_warnings =
-            crate::worktree_include::carry_over(project_dir, &created.path).warnings;
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&created.path);
+        warnings.extend(crate::worktree_include::carry_over(project_dir, &created.path).warnings);
+        created.include_warnings = warnings;
         Ok(created)
     }
 

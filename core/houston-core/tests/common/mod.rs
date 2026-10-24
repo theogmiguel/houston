@@ -30,6 +30,14 @@ pub fn trace_git_processes(path: &std::path::Path) {
     std::env::set_var("GIT_TRACE2_EVENT", path);
 }
 
+/// Lets every git the test process starts, an in-process daemon's included, clone over the
+/// file transport, which local-path submodule fixtures need. Scoped like `trace_git_processes`.
+pub fn allow_git_file_transport() {
+    std::env::set_var("GIT_CONFIG_COUNT", "1");
+    std::env::set_var("GIT_CONFIG_KEY_0", "protocol.file.allow");
+    std::env::set_var("GIT_CONFIG_VALUE_0", "always");
+}
+
 /// Puts `dir` first on the test process's PATH, so a fake CLI there shadows the real one,
 /// until the guard drops. Process-wide: callers serialise the tests that use it.
 pub struct PathPrepend(Option<std::ffi::OsString>);
