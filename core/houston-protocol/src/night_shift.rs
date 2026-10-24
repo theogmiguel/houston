@@ -68,7 +68,6 @@ pub struct NightFocus {
     pub performance: NightFocusLevel,
     pub ui_polish: NightFocusLevel,
     pub competitor_gaps: NightFocusLevel,
-    pub platform_parity: NightFocusLevel,
     pub docs_accuracy: NightFocusLevel,
     pub test_gaps: NightFocusLevel,
 }
@@ -143,8 +142,6 @@ pub struct NightShiftSettings {
     pub hold_for_qa: bool,
     /// Commands every change passes before it is handed back.
     pub checks: Vec<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-    pub safety_cap_pane_hours: u32,
     pub questions: NightQuestions,
 }
 
@@ -193,7 +190,6 @@ pub enum NightStopReason {
     /// The report was published and the orchestrator's turn ended.
     Report,
     HardStop,
-    SafetyCap,
     /// The user chose Stop.
     Stopped,
     PaneExited,

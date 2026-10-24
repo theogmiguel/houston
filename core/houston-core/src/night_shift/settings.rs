@@ -10,8 +10,6 @@ use sha2::{Digest, Sha256};
 /// More workers than this would outgrow the orchestration child cap.
 pub const LIVE_WORKERS_MAX: u32 = 12;
 pub const MAX_CHANGES_PER_PR_MAX: u32 = 20;
-/// A week of continuous panes; anything larger is no safety net.
-pub const SAFETY_CAP_PANE_HOURS_MAX: u32 = 1_000;
 pub const CHECKS_MAX: usize = 20;
 pub const SOURCES_MAX: usize = 10;
 pub const SMOKE_FLOWS_MAX: usize = 20;
@@ -39,7 +37,6 @@ pub fn defaults() -> NightShiftSettings {
             performance: NightFocusLevel::Normal,
             ui_polish: NightFocusLevel::Off,
             competitor_gaps: NightFocusLevel::Off,
-            platform_parity: NightFocusLevel::Off,
             docs_accuracy: NightFocusLevel::Off,
             test_gaps: NightFocusLevel::Off,
         },
@@ -68,7 +65,6 @@ pub fn defaults() -> NightShiftSettings {
         app_check: None,
         hold_for_qa: true,
         checks: Vec::new(),
-        safety_cap_pane_hours: 60,
         questions: NightQuestions::Park,
     }
 }
@@ -235,11 +231,6 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         "changes per PR",
         s.max_changes_per_pr,
         MAX_CHANGES_PER_PR_MAX,
-    )?;
-    bounded(
-        "safety cap (pane-hours)",
-        s.safety_cap_pane_hours,
-        SAFETY_CAP_PANE_HOURS_MAX,
     )?;
     let smoke_flows = s.app_check.as_ref().map_or(&[][..], |a| &a.smoke_flows[..]);
     for (name, count, max) in [

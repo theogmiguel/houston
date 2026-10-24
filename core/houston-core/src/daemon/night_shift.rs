@@ -1212,19 +1212,9 @@ impl Daemon {
             let Ok(Some(row)) = self.db.night_run(run.run_id) else {
                 continue;
             };
-            let pane_hours = self.night_account(&row, now_ms);
+            self.night_account(&row, now_ms);
             if now_ms >= row.hard_stop_at_ms {
                 self.night_shift_stop_run(routine_id, run, proto::NightStopReason::HardStop, None);
-            } else if pane_hours >= f64::from(self.night_cap(row.routine_id)) {
-                let cap = self.night_cap(row.routine_id);
-                self.night_shift_stop_run(
-                    routine_id,
-                    run,
-                    proto::NightStopReason::SafetyCap,
-                    Some(format!(
-                        "{pane_hours:.2} pane-hours reached the {cap} pane-hour safety cap"
-                    )),
-                );
             } else {
                 if now_ms >= row.wrap_up_at_ms && !row.wrap_up_sent {
                     self.night_send_wrap_up(run.run_id);
@@ -1232,12 +1222,6 @@ impl Daemon {
                 self.night_zcode_stall_pass(run.run_id, now_ms);
             }
         }
-    }
-
-    fn night_cap(&self, routine_id: u32) -> u32 {
-        self.night_settings(routine_id)
-            .map(|s| s.safety_cap_pane_hours)
-            .unwrap_or(60)
     }
 
     /// Adds the panes' time since the last tick to the run's cost; answers

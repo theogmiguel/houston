@@ -118,12 +118,11 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
     let _ = writeln!(
         out,
         "- Focus: reliability {}, performance {}, UI and UX polish {}, competitor gaps {}, \
-         platform parity {}, docs accuracy {}, test gaps {}.",
+         docs accuracy {}, test gaps {}.",
         level(f.reliability),
         level(f.performance),
         level(f.ui_polish),
         level(f.competitor_gaps),
-        level(f.platform_parity),
         level(f.docs_accuracy),
         level(f.test_gaps)
     );
@@ -222,11 +221,7 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
         }
         None => out.push_str("- App check: none; App QA is off.\n"),
     }
-    let _ = writeln!(
-        out,
-        "- Questions: parked for the morning report. Safety cap: {} pane-hours.",
-        s.safety_cap_pane_hours
-    );
+    out.push_str("- Questions: parked for the morning report.\n");
     out.push_str("\n## Ledger of earlier runs (newest first)\n\n");
     let budget = ROUTINE_PROMPT_MAX.saturating_sub(out.chars().count() + 120);
     let mut used = 0usize;

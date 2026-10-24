@@ -138,12 +138,6 @@ export function NightShiftSetup({ settings, revision, verifyCommand, onSave, sav
           <TextArea aria-label="Checks before hand-back" rows={3} mono value={draft.checks.join('\n')} placeholder="One command per line; required before the first run"
             onChange={(e) => set({ checks: lines(e.target.value) })} />
         </Card.Field>
-        <Card.Field label="Safety cap">
-          <div className="flex items-center gap-[var(--space-2)]">
-            <NumberField width="compact" aria-label="Safety cap in pane-hours" min={1} max={1000} value={draft.safety_cap_pane_hours} onChange={(e) => set({ safety_cap_pane_hours: Math.max(1, Number(e.target.value) || 1) })} />
-            <Text size="small" tone="muted">pane-hours</Text>
-          </div>
-        </Card.Field>
         <Card.Field label="Questions at night"><Text>Parked for the morning report</Text></Card.Field>
       </Card>
 

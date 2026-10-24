@@ -14,7 +14,6 @@ export const FOCUS_AREAS: { key: keyof NightFocus; label: string }[] = [
   { key: 'performance', label: 'Performance' },
   { key: 'ui_polish', label: 'UI and UX polish' },
   { key: 'competitor_gaps', label: 'Competitor gaps' },
-  { key: 'platform_parity', label: 'Platform parity' },
   { key: 'docs_accuracy', label: 'Docs accuracy' },
   { key: 'test_gaps', label: 'Test gaps' }
 ]
@@ -165,7 +164,6 @@ export function headline(run: NightRun): string {
 export const STOP_REASON: Record<NightStopReason, string> = {
   report: 'Report published',
   hard_stop: 'Hard stop',
-  safety_cap: 'Safety cap reached',
   stopped: 'Stopped by you',
   pane_exited: 'Orchestrator exited',
   restart: 'Settled after a restart'

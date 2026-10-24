@@ -7341,7 +7341,6 @@ mod tests {
                 performance: NightFocusLevel::High,
                 ui_polish: NightFocusLevel::Off,
                 competitor_gaps: NightFocusLevel::Low,
-                platform_parity: NightFocusLevel::Off,
                 docs_accuracy: NightFocusLevel::Off,
                 test_gaps: NightFocusLevel::Off,
             },
@@ -7368,7 +7367,6 @@ mod tests {
             }),
             hold_for_qa: true,
             checks: vec!["cargo test".into()],
-            safety_cap_pane_hours: 60,
             questions: NightQuestions::Park,
         }
     }
@@ -7420,8 +7418,8 @@ mod tests {
             report_path: "/s/night-shift/3/report.md".into(),
             report_published: false,
             summary: None,
-            stop_reason: Some(NightStopReason::SafetyCap),
-            stop_detail: Some("60 pane-hours".into()),
+            stop_reason: Some(NightStopReason::HardStop),
+            stop_detail: Some("07:30".into()),
             interruptions: vec![NightInterruption {
                 at_ms: 1,
                 resumed_at_ms: 2,

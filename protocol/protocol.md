@@ -820,20 +820,19 @@ NightShiftSettings v (1), enabled, window: NightWindow, focus: NightFocus, goal,
                    competitor_sources, orchestrator: NightAgent, workers: NightAgent[] (fallback
                    order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
                    output: prs | merge_queue, themed, max_changes_per_pr, screenshots,
-                   app_check?: NightAppCheck, hold_for_qa, checks: string[],
-                   safety_cap_pane_hours, questions: park
+                   app_check?: NightAppCheck, hold_for_qa, checks: string[], questions: park
 NightWindow        start, wrap_up, hard_stop: NightClock{hour, minute} (local), nights: u8[]
                    (1 = Sunday … 7 = Saturday)
-NightFocus         reliability, performance, ui_polish, competitor_gaps, platform_parity,
-                   docs_accuracy, test_gaps: off | low | normal | high
+NightFocus         reliability, performance, ui_polish, competitor_gaps, docs_accuracy,
+                   test_gaps: off | low | normal | high
 NightAgent         provider: AgentKind, model?
 NightAppCheck      start_command, address, smoke_flows: string[]
 PreflightItem      id, status: ok | warn | block, label, detail, limit?, actual?
 NightRun           run_id, routine_id, workspace, trigger: RoutineTrigger,
                    phase: refused | running | wrapping_up | settled, session_id?,
                    started_at_ms, wrap_up_at_ms, hard_stop_at_ms, ended_at_ms?, report_path,
-                   report_published, summary?, stop_reason?: report | hard_stop | safety_cap |
-                   stopped | pane_exited | restart, stop_detail?,
+                   report_published, summary?, stop_reason?: report | hard_stop | stopped |
+                   pane_exited | restart, stop_detail?,
                    interruptions: NightInterruption[], cost: NightCost, limited: AgentKind[],
                    preflight: PreflightItem[], keep_awake: off | held | unavailable,
                    merge_order: u32[], entries: NightEntry[], crew: NightCrewMember[]

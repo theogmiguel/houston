@@ -10,7 +10,7 @@ export function nightDefaults(): NightShiftSettings {
     v: 1,
     enabled: false,
     window: { start: { hour: 23, minute: 30 }, wrap_up: { hour: 6, minute: 45 }, hard_stop: { hour: 7, minute: 30 }, nights: [] },
-    focus: { reliability: 'normal', performance: 'normal', ui_polish: 'off', competitor_gaps: 'off', platform_parity: 'off', docs_accuracy: 'off', test_gaps: 'off' },
+    focus: { reliability: 'normal', performance: 'normal', ui_polish: 'off', competitor_gaps: 'off', docs_accuracy: 'off', test_gaps: 'off' },
     goal: '',
     competitor_sources: [],
     orchestrator: { provider: 'claude', model: 'opus' },
@@ -24,7 +24,6 @@ export function nightDefaults(): NightShiftSettings {
     app_check: null,
     hold_for_qa: true,
     checks: [],
-    safety_cap_pane_hours: 60,
     questions: 'park'
   }
 }

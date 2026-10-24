@@ -412,7 +412,6 @@ async fn create_is_paused_with_defaults_and_idempotent() {
     assert_eq!(d.max_changes_per_pr, 5);
     assert_eq!(d.app_check, None);
     assert!(d.checks.is_empty());
-    assert_eq!(d.safety_cap_pane_hours, 60);
     assert_eq!(d.questions, proto::NightQuestions::Park);
 
     r.daemon.night_shift_create(&r.ws_str()).unwrap();
@@ -993,30 +992,21 @@ async fn wrap_up_and_stop_now() {
     assert!(r.daemon.night_shift_stop_now(run.run_id).is_err());
 }
 
+/// Agent time is information for the report's cost: no amount of it stops
+/// a run before its hard stop.
 #[tokio::test]
-async fn safety_cap_stops_run() {
+async fn pane_hours_never_stop_a_run() {
     let r = rig().await;
-    let routine = r.ready(|s| s.safety_cap_pane_hours = 1);
+    let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 240);
-    for minute in 1..=30 {
+    for minute in 1..=90 {
         r.daemon
             .routine_tick_at(run.started_at_ms + minute * MINUTE);
     }
-    assert!(r.in_flight(routine.id), "half a pane-hour is under the cap");
-    for minute in 31..=61 {
-        r.daemon
-            .routine_tick_at(run.started_at_ms + minute * MINUTE);
-    }
-    let stopped = r.run(run.run_id);
-    assert_eq!(stopped.stop_reason, Some(proto::NightStopReason::SafetyCap));
-    let detail = stopped.stop_detail.unwrap();
-    assert!(detail.contains("1 pane-hour safety cap"), "{detail}");
-    assert!(
-        detail.starts_with("1.0") && detail.contains(" pane-hours reached"),
-        "names the value: {detail}"
-    );
-    assert!((1.0..1.05).contains(&stopped.cost.pane_hours));
-    assert!(!r.in_flight(routine.id));
+    let after = r.run(run.run_id);
+    assert!(r.in_flight(routine.id), "{:?}", after.stop_reason);
+    assert!(after.cost.pane_hours >= 1.4, "{}", after.cost.pane_hours);
+    assert_eq!(after.stop_reason, None);
 }
 
 /// A gap between ticks (a suspended machine, a stalled daemon) is charged
@@ -1024,14 +1014,14 @@ async fn safety_cap_stops_run() {
 #[tokio::test]
 async fn a_tick_gap_is_not_charged_as_pane_hours() {
     let r = rig().await;
-    let routine = r.ready(|s| s.safety_cap_pane_hours = 1);
+    let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 600);
     r.daemon.routine_tick_at(run.started_at_ms + MINUTE);
     r.daemon.routine_tick_at(run.started_at_ms + 121 * MINUTE);
     let after = r.run(run.run_id);
     assert!(
         r.in_flight(routine.id),
-        "two hours asleep do not trip the cap"
+        "two hours asleep end nothing"
     );
     assert!(
         after.cost.pane_hours < 3.0 / 60.0,

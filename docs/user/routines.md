@@ -80,7 +80,7 @@ transmission.
 Night shift runs an orchestrator agent on a workspace for a window, usually overnight. The
 orchestrator researches the focus areas you choose, plans, starts worker panes in their own
 worktrees, gates each change and opens pull requests. Houston writes its brief, enforces the
-window and the budget, and leaves a morning report. Night shift never merges anything
+window, and leaves a morning report. Night shift never merges anything
 itself.
 
 Select **Routines ▸ Built in ▸ Night shift**, pick a workspace (it must be a Git repository)
@@ -90,7 +90,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 |---|---|
 | Window: start, wrap-up, hard stop | 23:30, 06:45, 07:30 (local time, at most 16 hours) |
 | Nights | None: it runs only with **Run now** until you choose nights and turn it on |
-| Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, platform parity, docs accuracy and test gaps Off |
+| Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, docs accuracy and test gaps Off |
 | Goal | Empty; a Claude orchestrator receives it as `/goal <goal>`, typed before its brief |
 | Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator. The orchestrator is Claude, Codex or OpenCode: a ZCode orchestrator is refused because a pull request watch cannot wake it to follow CI |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
@@ -98,7 +98,6 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Output | Draft pull requests only, grouped by theme, up to 5 changes each, screenshots for visible changes |
 | App check: start command, address or story, smoke flows | None; App QA is off until a start command is set |
 | Checks before hand-back | None; at least one is required before a run starts |
-| Safety cap | 60 pane-hours |
 | Questions at night | Parked for the morning report |
 
 Change the settings in the **Setup** view and choose **Save**. Unsaved edits survive
@@ -139,13 +138,14 @@ machine was off runs once if Houston is back before wrap-up.
 A run opens the orchestrator with full access in an isolated worktree under the workspace's
 `.houston/worktrees/`; its panes appear in the workspace's grid. At wrap-up Houston
 tells it once to start nothing new and write the report; **Wrap up now** does the same
-immediately. At the hard stop, at the safety cap, or when you confirm **Stop**, Houston
+immediately. At the hard stop, or when you confirm **Stop**, Houston
 closes every pane the run started and then the orchestrator. A run that ends any other way,
 by publishing its report or by its orchestrator exiting, closes them too. The run's panes
 cannot hand off a pane outside it. While a run is in flight Houston keeps the machine awake
 (a system-required power request on Windows, an idle and sleep inhibitor on Linux) and
-releases it when the run ends or the daemon exits. Pane-hours count time while Houston
-runs; a gap while the machine slept is not charged.
+releases it when the run ends or the daemon exits. The window bounds the run; agent time
+(pane-hours, summed over the run's panes while Houston runs) is reported in the morning
+report's cost and never ends a run.
 
 The **Live run** view shows the time left, the timeline with any interruptions, the crew
 and their status, the machine's free memory and disk and the plan board. When a worker's
