@@ -110,6 +110,7 @@ mod retired_providers_wire;
 mod routine_run_wire;
 mod routines_wire;
 mod run_state_wire;
+mod scrollback_checkpoint_wire;
 mod scrollback_wire;
 mod session_activity;
 mod session_create_result_wire;
