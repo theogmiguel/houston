@@ -159,6 +159,19 @@ describe('orchestration notifications', () => {
     expect(notifyNative).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps a pane already waiting for input silent when a handoff re-stamps its status time', async () => {
+    vi.useFakeTimers()
+    const view = render(<Notifications options={options(new Map([[1, pane()]]))} />)
+    view.rerender(<Notifications options={options(new Map([[1, pane({ status: 'needs-input', status_since_ms: 100 })]]))} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(NOTIFICATION_FLAP_WINDOW_MS + 1)
+    // The adopting daemon reports the same wait with its own adoption time.
+    view.rerender(<Notifications options={options(new Map([[1, pane({ status: 'needs-input', status_since_ms: 900 })]]), { rosterRevision: 1 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(1)
+  })
+
   it('catches up a child input request restored by a reconnect and keeps an owner replay on the same episode silent', async () => {
     const child = pane({ id: 2, spawned_by: 1, title: 'Child' })
     const sessions = (worker: SessionInfo): ReadonlyMap<number, SessionInfo> => new Map([[1, pane()], [2, worker]])

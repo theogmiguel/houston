@@ -35,10 +35,13 @@ export interface OrchestrationNotificationOptions {
   onDesktopDelivery: (allowed: boolean, error?: string) => void
 }
 
-function transitionFor(previous: StatusSnapshot | undefined, current: SessionInfo): EventKind | null {
+function transitionFor(previous: StatusSnapshot | undefined, current: SessionInfo, reconciling: boolean): EventKind | null {
   if (!previous || current.hidden || current.state !== 'running' || previous.hidden || previous.state !== 'running') return null
   const episode = inputEpisode(current)
-  if (episode != null && episode !== previous.episode) return 'needs-input'
+  // A live handoff adopts each pane with a fresh `status_since_ms`, so across a reconciliation a
+  // status-only episode change is the same wait; only a new request id or a new wait is news.
+  const restamped = reconciling && !!previous.episode?.startsWith('status:') && !!episode?.startsWith('status:')
+  if (episode != null && episode !== previous.episode && !restamped) return 'needs-input'
   if (current.spawned_by == null && previous.spawned_by == null && previous.status === 'working' && current.status === 'idle') return 'finished'
   return null
 }
@@ -107,7 +110,7 @@ export function useOrchestrationNotifications(options: OrchestrationNotification
     const events: Array<{ session: SessionInfo; kind: EventKind }> = []
     for (const session of options.sessions.values()) {
       if (!ownUserInput(session) && prior.states.get(session.id)?.episode != null) options.dismissNotice?.(`orchestration-${session.id}`)
-      const kind = transitionFor(prior.states.get(session.id), session)
+      const kind = transitionFor(prior.states.get(session.id), session, prior.revision !== options.rosterRevision)
       if (kind) events.push({ session, kind })
     }
     previous.current = { revision: options.rosterRevision, states }
