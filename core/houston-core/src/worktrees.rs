@@ -967,12 +967,7 @@ mod tests {
         let dest = root.path().join("wt");
         create_named(&repo, "hidden-untracked", None, &dest).unwrap();
         git(&dest, &["config", "status.showUntrackedFiles", "no"]);
-        std::fs::write(
-            dest.join("draft.txt"),
-            "unsaved
-",
-        )
-        .unwrap();
+        std::fs::write(dest.join("draft.txt"), "unsaved\n").unwrap();
 
         let err = remove(&repo, &dest, false).unwrap_err().to_string();
         assert!(err.contains("uncommitted changes"), "unexpected: {err}");
