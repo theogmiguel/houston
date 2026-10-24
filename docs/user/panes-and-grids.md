@@ -91,15 +91,22 @@ from that address only when you choose **Load image**.
 
 When Claude needs permission to run a tool, the thread shows an approval card with the
 tool and its input. Choose **Allow** to run it or **Deny** to refuse it; Claude reads the
-answer and continues. The pane shows waiting for input until you answer. Stopping or
-closing the thread denies a request nobody answered. Houston answers these requests only
-in threads; in a terminal pane Claude asks in its own prompt.
+answer and continues. The pane shows waiting for input until you answer. The card shows up
+to 64 KiB of the input; when more is hidden it says how much, and **Allow** names the
+hidden amount because it approves all of it. Stopping or closing the thread denies a
+request nobody answered; if Houston itself restarts, the card shows it was not answered.
+Houston answers these requests only in threads; in a terminal pane Claude asks in its own
+prompt.
+
+A thread cannot show multiple-choice questions yet. When Claude wants to ask one, Houston
+tells it to ask in its reply instead, and you answer in the message box.
 
 The **Permissions** menu above the timeline shows how the thread asks: **Ask before
 tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
 **Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
 conversation with the new mode and keeps it across Restart. The menu is unavailable while
-Claude works or waits for an answer.
+a turn runs or Claude waits for an answer. When Claude changes its own mode, for example
+by leaving **Plan only** after you allow its plan, the menu shows the new mode.
 
 ## Splitting and stacking
 

@@ -346,14 +346,26 @@ refused by name for any other session. Claude calls it with `tool_name`, `input`
 the call and answers with the documented result (`behavior: allow` with `updatedInput`, or
 `behavior: deny` with a message) only when the user answers the approval card. Houston
 never approves on its own. Stop, Kill, Close and an exit of the process deny every held
-request with a reason; a call Claude abandons, and a request left by a daemon that
-stopped, are recorded as withdrawn. Claude ends a tool call after 60 s without progress,
-so the held call carries MCP progress notifications.
+request with a reason. A call Claude abandons, a request held when the daemon shuts down
+or stops a session for recovery, and one left by a daemon that crashed, are recorded as
+withdrawn. Claude ends a tool call after 60 s without progress, so the held call carries
+MCP progress notifications. At most `APPROVALS_PENDING_MAX` (16) requests are held per
+session, and the card shows up to 64 KiB of the input and says how much it hides.
+AskUserQuestion is answered at once with a deny asking Claude to ask in its reply, because
+the card cannot collect answers.
+
+Claude's own `PermissionRequest` hook (and a `Notification` of type `permission_prompt`)
+also fires in headless mode, after the prompt tool is called. For a thread it is
+acknowledged and ignored: it opens no permission episode and sets no status, and tool
+activity cannot override NeedsInput while a request is held.
 
 In a terminal pane Houston answers no permission prompt: the CLI's own dialog asks at the
 keyboard, and orchestration only relays, denies or escalates it (only the operator
 approves). The permission mode a thread runs with is a launch flag: changing it is refused
-while a turn runs and otherwise restarts the process with `--resume`.
+while a turn is open or a request waits, and otherwise restarts the process with
+`--resume`. Claude reports its mode in `permissionMode` on the documented `system` events
+(`init` each turn, `status` on a change such as ExitPlanMode); Houston records that value,
+so leaving plan mode is shown and kept across later restarts.
 
 ### Generated titles never supply status or identity
 
