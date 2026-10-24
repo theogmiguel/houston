@@ -89,7 +89,9 @@ export function useOrchestrationNotifications(options: OrchestrationNotification
         episode: inputEpisode(session)
       })
     }
-    if (!prior || prior.revision !== options.rosterRevision) {
+    if (!prior) {
+      // The roster as the daemon already held it at mount is old news the inbox
+      // records; seed it so a later replay cannot re-fire it.
       for (const session of options.sessions.values()) {
         const episode = inputEpisode(session)
         if (session.spawned_by != null && episode != null) rememberEpisode(`${session.id}:${episode}`)
@@ -99,6 +101,9 @@ export function useOrchestrationNotifications(options: OrchestrationNotification
       return
     }
 
+    // A revision bump is a reconciliation (a reconnect hello or a full session_list):
+    // transitions that happened across the gap never reached the live path, so the
+    // same diff runs here once; the delivered-episode set keeps a replay silent.
     const events: Array<{ session: SessionInfo; kind: EventKind }> = []
     for (const session of options.sessions.values()) {
       if (!ownUserInput(session) && prior.states.get(session.id)?.episode != null) options.dismissNotice?.(`orchestration-${session.id}`)
