@@ -259,8 +259,10 @@ describe('useGitToolsSubscription cleanup calls', () => {
     expect(tools!.removeCheck).toEqual({ path: '/p', status: 'pending' })
   })
 
-  it('a check reply readies the confirm, and a refused check still names why', async () => {
+  it('a check reply readies the confirm; only its own refusal or its timeout stands in for one', async () => {
+    vi.useFakeTimers()
     const { useGitToolsSubscription } = await import('./useGitToolsSubscription')
+    const { WORKTREE_CHECK_TIMEOUT_MS } = await import('./worktrees')
     const handlers = new Map<string, (msg: unknown) => void>()
     const client = {
       subscribe: (type: string, fn: (msg: unknown) => void) => {
@@ -269,15 +271,16 @@ describe('useGitToolsSubscription cleanup calls', () => {
       },
       worktreeCheck: () => {}
     } as never
+    const setToolsBusy = vi.fn()
     let tools: ReturnType<typeof useGitToolsSubscription> | null = null
-    function Harness({ toolsError }: { toolsError: string | null }): null {
+    function Harness(): null {
       tools = useGitToolsSubscription({
         client,
         repoDir: '/repo',
         pendingTools: { current: null },
-        toolsError,
+        toolsError: null,
         setToolsNotice: () => {},
-        setToolsBusy: () => {},
+        setToolsBusy,
         setToolsError: () => {}
       })
       return null
@@ -285,19 +288,27 @@ describe('useGitToolsSubscription cleanup calls', () => {
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    act(() => root!.render(<Harness toolsError={null} />))
+    act(() => root!.render(<Harness />))
+    const reasons = () => (tools!.removeCheck as unknown as { status: string; check: { gaps: { reason: string }[] } }).check.gaps.map((g) => g.reason)
 
     const check = { dirty_files: 0, newest_change_ms: null, base: 'main', ahead: 2, unpushed: 2, panes: [], gaps: [] }
     act(() => tools!.checkWorktree('/p'))
+    // A check that never answers must not hold Remove, Refresh and Prune disabled.
+    expect(setToolsBusy).not.toHaveBeenCalled()
     act(() => handlers.get('worktree_check')!({ type: 'worktree_check', dir: '/repo', path: '/other', check }))
     expect(tools!.removeCheck).toEqual({ path: '/p', status: 'pending' })
     act(() => handlers.get('worktree_check')!({ type: 'worktree_check', dir: '/repo', path: '/p', check }))
     expect(tools!.removeCheck).toEqual({ path: '/p', status: 'ready', check })
 
     act(() => tools!.checkWorktree('/q'))
-    act(() => root!.render(<Harness toolsError="worktree check task panicked" />))
-    const refused = tools!.removeCheck as unknown as { status: string; check: { gaps: { reason: string }[] } }
-    expect(refused.status).toBe('ready')
-    expect(refused.check.gaps.map((g) => g.reason)).toEqual(Array(3).fill('worktree check task panicked'))
+    act(() => handlers.get('error')!({ type: 'error', message: 'git status failed', context: null }))
+    expect(tools!.removeCheck).toEqual({ path: '/q', status: 'pending' })
+    act(() => handlers.get('error')!({ type: 'error', message: 'control handler limits: refused', context: 'control_admission:worktree_check:/repo' }))
+    expect(reasons()).toEqual(Array(3).fill('control handler limits: refused'))
+
+    act(() => tools!.checkWorktree('/r'))
+    act(() => { vi.advanceTimersByTime(WORKTREE_CHECK_TIMEOUT_MS) })
+    expect(reasons()).toEqual(Array(3).fill('no answer from the daemon within 120 s'))
+    vi.useRealTimers()
   })
 })

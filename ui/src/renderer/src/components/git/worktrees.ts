@@ -43,6 +43,26 @@ export function worktreeRemoveConfirm(w: GitWorktreeInfo, force: boolean): strin
   return `Remove the worktree "${name}" at ${w.path}? The branch itself is kept.`
 }
 
+/** The daemon answers within its seven 15 s git calls; this adds slack for a loaded machine. */
+export const WORKTREE_CHECK_TIMEOUT_MS = 120_000
+
+// A check that never answered still has to unblock the confirm, naming why for each part.
+export function unansweredWorktreeCheck(path: string, reason: string): WorktreeCheckView {
+  return {
+    path,
+    status: 'ready',
+    check: {
+      dirty_files: null,
+      newest_change_ms: null,
+      base: null,
+      ahead: null,
+      unpushed: null,
+      panes: [],
+      gaps: (['changes', 'commits', 'unpushed'] as const).map((part) => ({ part, reason }))
+    }
+  }
+}
+
 const CHECK_PART_LABEL: Record<WorktreeCheckPart, string> = {
   changes: 'uncommitted changes',
   commits: 'commits ahead of the base',
