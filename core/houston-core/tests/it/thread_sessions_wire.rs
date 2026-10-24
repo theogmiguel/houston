@@ -702,3 +702,332 @@ async fn orchestration_prompts_and_reads_a_thread_and_refuses_keys() {
         "{lines:?}"
     );
 }
+
+fn history_of(daemon: &Daemon, id: u32) -> Vec<ThreadEvent> {
+    match daemon.thread_history(id, None, 500).unwrap() {
+        proto::ServerMsg::ThreadHistory { events, .. } => events,
+        other => panic!("expected history, got {other:?}"),
+    }
+}
+
+fn truncated(message_id: &str, text: &str) -> ThreadEventKind {
+    ThreadEventKind::AssistantMessage {
+        message_id: message_id.into(),
+        text: text.into(),
+        truncated: true,
+    }
+}
+
+/// Runs `work` on a detached thread and fails after `limit` instead of hanging the test.
+async fn within<T: Send + 'static>(
+    what: &str,
+    limit: Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    tokio::time::timeout(limit, rx)
+        .await
+        .unwrap_or_else(|_| panic!("{what} did not finish within {limit:?}"))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn stop_and_kill_finish_while_a_message_write_is_blocked() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.say(id, "deaf").await;
+    rig.events_until(id, |e| {
+        matches!(e.kind, ThreadEventKind::AssistantDelta { .. })
+    })
+    .await;
+    // Larger than any pipe buffer: the write blocks because Claude no longer reads.
+    let big = "y".repeat(200 * 1024);
+    let daemon = Arc::clone(&rig.daemon);
+    let blocked = std::thread::spawn(move || daemon.thread_send(id, &big));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let daemon = Arc::clone(&rig.daemon);
+    within("thread_stop", Duration::from_secs(10), move || {
+        daemon.thread_stop(id)
+    })
+    .await
+    .unwrap();
+    within("the blocked write", Duration::from_secs(10), move || {
+        blocked.join().unwrap()
+    })
+    .await
+    .unwrap_err();
+    let daemon = Arc::clone(&rig.daemon);
+    within("kill", Duration::from_secs(10), move || daemon.kill(id))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_message_sent_during_stop_waits_for_the_old_process() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.say(id, "stubborn").await;
+    rig.events_until(id, |e| {
+        matches!(e.kind, ThreadEventKind::AssistantDelta { .. })
+    })
+    .await;
+    let daemon = Arc::clone(&rig.daemon);
+    let stop = std::thread::spawn(move || daemon.thread_stop(id));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let daemon = Arc::clone(&rig.daemon);
+    within("thread_send", Duration::from_secs(10), move || {
+        daemon.thread_send(id, "replay:warm")
+    })
+    .await
+    .unwrap();
+    stop.join().unwrap().unwrap();
+    rig.events_until(id, |e| {
+        matches!(
+            e.kind,
+            ThreadEventKind::TurnEnd {
+                outcome: TurnOutcome::Completed,
+                ..
+            }
+        )
+    })
+    .await;
+    let history = history_of(&rig.daemon, id);
+    let at = |pred: &dyn Fn(&ThreadEventKind) -> bool| {
+        history
+            .iter()
+            .position(|e| pred(&e.kind))
+            .unwrap_or_else(|| panic!("{history:?}"))
+    };
+    let partial = at(&|k| *k == truncated("msg_stubborn:0", "stubborn"));
+    let stopped = at(&|k| {
+        matches!(
+            k,
+            ThreadEventKind::TurnEnd {
+                outcome: TurnOutcome::Interrupted,
+                ..
+            }
+        )
+    });
+    let next = at(&|k| matches!(k, ThreadEventKind::UserMessage { text } if text == "replay:warm"));
+    assert!(partial < stopped && stopped < next, "{history:?}");
+    wait_until("the resumed turn to settle", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+    let launches = rig.launches();
+    assert_eq!(launches.len(), 2);
+    assert!(!houston_core::pid::process_is_alive(launches[0].0));
+}
+
+#[tokio::test]
+async fn kill_mid_turn_keeps_the_partial_answer_and_names_the_cause() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let pidfile = rig.scratch.path().join("sleeper.pid");
+    rig.say(id, &format!("hang:{}", pidfile.display())).await;
+    rig.events_until(id, |e| {
+        matches!(e.kind, ThreadEventKind::AssistantDelta { .. })
+    })
+    .await;
+    let daemon = Arc::clone(&rig.daemon);
+    within("kill", Duration::from_secs(10), move || daemon.kill(id))
+        .await
+        .unwrap();
+    let history = history_of(&rig.daemon, id);
+    let tail: Vec<&ThreadEventKind> = history.iter().rev().take(3).map(|e| &e.kind).collect();
+    assert_eq!(*tail[2], truncated("msg_hang:0", "working"), "{history:?}");
+    assert!(matches!(
+        tail[1],
+        ThreadEventKind::TurnEnd {
+            outcome: TurnOutcome::Interrupted,
+            ..
+        }
+    ));
+    assert!(
+        matches!(tail[0], ThreadEventKind::Notice { text } if text.contains("killed")),
+        "{history:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_daemon_shutdown_mid_turn_is_recorded_and_restored() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    let first = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let id = first
+        .create_session_in_view(
+            houston_core::daemon::CreateParams {
+                agent: proto::AgentKind::Claude,
+                project_dir: rig.project.path().to_path_buf(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            },
+            proto::SessionView::Thread,
+        )
+        .unwrap()
+        .id;
+    let pidfile = rig.scratch.path().join("sleeper.pid");
+    first
+        .thread_send(id, &format!("hang:{}", pidfile.display()))
+        .unwrap();
+    wait_until("the tool process to start", || pidfile.is_file()).await;
+    // The fake streams its partial answer as it starts the tool process.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let shutting = Arc::clone(&first);
+    within("shutdown", Duration::from_secs(20), move || {
+        shutting.manage_shutdown().map(|_| ()).map_err(|e| e.reason)
+    })
+    .await
+    .unwrap();
+    drop(first);
+    let second = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path,
+        rig.env.clone(),
+    ))
+    .unwrap();
+    wait_until("the thread to be restored", || {
+        second
+            .list()
+            .iter()
+            .any(|s| s.session_origin == Some(id) && s.state == proto::SessionState::Running)
+    })
+    .await;
+    let restored = second
+        .list()
+        .into_iter()
+        .find(|s| s.session_origin == Some(id) && s.state == proto::SessionState::Running)
+        .unwrap();
+    let history = history_of(&second, restored.id);
+    assert!(
+        history
+            .iter()
+            .any(|e| e.kind == truncated("msg_hang:0", "working")),
+        "{history:?}"
+    );
+    assert!(
+        history.iter().any(|e| matches!(&e.kind,
+            ThreadEventKind::Notice { text } if text.contains("Houston stopped this thread") && text.contains("shut")
+        )),
+        "{history:?}"
+    );
+    second.close(restored.id).unwrap();
+}
+
+/// npm installs `claude` as a `.cmd` shim; std quotes batch arguments itself. The MCP
+/// config JSON carries quotes and a project path can carry `%`.
+#[cfg(windows)]
+#[tokio::test]
+async fn a_cmd_shim_receives_quoted_json_and_percent_signs_verbatim() {
+    const MODEL: &str = "model-%PATH%-\"quoted\"";
+    let shim = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let fake = shim.path().join("fake-claude.exe");
+    std::fs::copy(env!("CARGO_BIN_EXE_fake_claude_stream"), &fake).unwrap();
+    std::fs::write(
+        shim.path().join("claude.cmd"),
+        format!("@\"{}\" %*\r\n", fake.display()),
+    )
+    .unwrap();
+    let inherited = process_var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(shim.path().to_path_buf()).chain(std::env::split_paths(&inherited)),
+    )
+    .unwrap();
+    let env = base_env()
+        .with("PATH", Some(path))
+        .with(
+            "HOUSTON_FAKE_CLAUDE_LOG",
+            Some(scratch.path().join("launches.jsonl")),
+        )
+        .with("HOUSTON_FAKE_CLAUDE_FIXTURES", Some(FIXTURES));
+    let (addr, _state, _daemon) = start_daemon_with_handle_in(env).await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let parent = tempfile::tempdir().unwrap();
+    let project = parent.path().join("pro%PATH%ject");
+    std::fs::create_dir(&project).unwrap();
+    ws.send(Message::text(
+        json!({"type":"session_create","request":1,"agent":"claude","project_dir":project,"view":"thread","model":MODEL})
+            .to_string(),
+    ))
+    .await
+    .unwrap();
+    let id = loop {
+        if let proto::ServerMsg::SessionCreateResult { info, error, .. } =
+            next_control(&mut ws).await
+        {
+            break info.unwrap_or_else(|| panic!("{error:?}")).id;
+        }
+    };
+    ws.send(Message::text(
+        json!({"type":"thread_send","session":id,"text":"replay:warm"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::ThreadEvents { events, .. }
+                if events
+                    .iter()
+                    .any(|e| matches!(e.kind, ThreadEventKind::TurnEnd { .. })) =>
+            {
+                break
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("{message}"),
+            _ => {}
+        }
+    }
+    let log = std::fs::read_to_string(scratch.path().join("launches.jsonl")).unwrap();
+    let argv: Vec<String> = log
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .filter_map(|record| serde_json::from_value::<Vec<String>>(record["argv"].clone()).ok())
+        .find(|argv| argv.iter().any(|arg| arg == "-p"))
+        .unwrap();
+    let config = arg_after(&argv, "--mcp-config").expect("the MCP config");
+    let parsed: Value = serde_json::from_str(&config).expect("the JSON arrives intact");
+    assert!(parsed.get("mcpServers").is_some(), "{config}");
+    assert_eq!(
+        arg_after(&argv, "--model").as_deref(),
+        Some(MODEL),
+        "quotes and % reach Claude unexpanded"
+    );
+}
+
+/// The daemon's own `thread_*` status sources are not hooks: with hooks off, every turn's
+/// `result` ends that turn, not only the first one.
+#[tokio::test]
+async fn with_hooks_off_every_stream_result_ends_its_turn() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    for turn in ["replay:warm", "replay:resumed"] {
+        rig.turn(id, turn).await;
+        wait_until("the result to settle the status", || {
+            rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+        })
+        .await;
+        assert!(
+            !rig.daemon.lifecycle_hook_seen_for_test(id),
+            "after {turn}, the stream result marked hooks as seen and disabled the fallback"
+        );
+    }
+}
