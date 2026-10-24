@@ -887,6 +887,8 @@ pane's data model: `status`, `diff`, `review_diffs`, `head_sha`, `branch`, `sync
 The rail polls every workspace each minute, so `git_status` reads files and branch sync from
 one `git status --porcelain=v2 --branch -z` scan (`status_and_sync`) and takes the default
 base from `default_base_cached`, which may lag a new `origin/HEAD` or `main` by five minutes.
+It keeps only a found base, and a failed `status_vs_base` against the cached base drops it,
+so a renamed or deleted default branch is replaced on the next poll.
 Subprocesses run with `GIT_TERMINAL_PROMPT=0`, and diffs pass `redact_review_secrets` before
 display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs

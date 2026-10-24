@@ -1009,7 +1009,8 @@ type DefaultBaseCache = std::collections::HashMap<PathBuf, (std::time::Instant, 
 static DEFAULT_BASE_CACHE: std::sync::OnceLock<std::sync::Mutex<DefaultBaseCache>> =
     std::sync::OnceLock::new();
 
-/// `default_base` for background polls, which tolerate a few minutes of staleness.
+/// `default_base` for status polls, which tolerate a few minutes of staleness. Only a found
+/// base is kept, and a failed comparison against it drops it (`forget_default_base`).
 pub fn default_base_cached(dir: &Path) -> Option<String> {
     let cache = DEFAULT_BASE_CACHE.get_or_init(Default::default);
     if let Some((at, base)) = cache.lock().expect("default base cache poisoned").get(dir) {
@@ -1020,6 +1021,10 @@ pub fn default_base_cached(dir: &Path) -> Option<String> {
     let base = default_base(dir);
     let mut cache = cache.lock().expect("default base cache poisoned");
     cache.retain(|_, (at, _)| at.elapsed() < DEFAULT_BASE_CACHE_TTL);
+    if base.is_none() {
+        cache.remove(dir);
+        return None;
+    }
     if cache.len() >= DEFAULT_BASE_CACHE_MAX_ENTRIES && !cache.contains_key(dir) {
         if let Some(oldest) = cache
             .iter()
@@ -1031,6 +1036,21 @@ pub fn default_base_cached(dir: &Path) -> Option<String> {
     }
     cache.insert(dir.to_path_buf(), (std::time::Instant::now(), base.clone()));
     base
+}
+
+/// Drops `dir`'s cached default base when it is `base`, which was just found unusable
+/// (renamed or deleted), so the next status reply names the current one.
+fn forget_default_base(dir: &Path, base: &str) {
+    let Some(cache) = DEFAULT_BASE_CACHE.get() else {
+        return;
+    };
+    let mut cache = cache.lock().expect("default base cache poisoned");
+    if cache
+        .get(dir)
+        .is_some_and(|(_, cached)| cached.as_deref() == Some(base))
+    {
+        cache.remove(dir);
+    }
 }
 
 fn merge_base(dir: &Path, base: &str) -> Result<String> {
@@ -1048,7 +1068,7 @@ fn merge_base(dir: &Path, base: &str) -> Result<String> {
 
 pub fn status_vs_base(dir: &Path, base: &str) -> Result<Vec<proto::GitFileStatus>> {
     ensure_repo(dir)?;
-    let mb = merge_base(dir, base)?;
+    let mb = merge_base(dir, base).inspect_err(|_| forget_default_base(dir, base))?;
     let raw = run_git(dir, &["diff", "--numstat", "-z", &format!("{mb}..HEAD")])?;
     let mut out: Vec<proto::GitFileStatus> = numstat_entries(&raw)
         .map(|(path, added, deleted)| proto::GitFileStatus {
@@ -2482,6 +2502,31 @@ mod tests {
         assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
         git(tmp.path(), &["branch", "-m", "main", "trunk"]);
         assert_eq!(default_base(tmp.path()), None);
+        assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn a_renamed_default_base_is_refreshed_after_its_comparison_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        git(tmp.path(), &["branch", "-m", "main", "master"]);
+        assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("master"));
+        git(tmp.path(), &["branch", "-m", "master", "main"]);
+
+        assert!(status_vs_base(tmp.path(), "master").is_err());
+
+        assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn a_repo_without_a_base_yet_is_not_cached_as_baseless() {
+        let tmp = tempfile::tempdir().unwrap();
+        git(tmp.path(), &["init", "-b", "main"]);
+        assert_eq!(default_base_cached(tmp.path()), None);
+        git(tmp.path(), &["config", "user.email", "t@t.local"]);
+        git(tmp.path(), &["config", "user.name", "t"]);
+        git(tmp.path(), &["commit", "--allow-empty", "-m", "first"]);
+
         assert_eq!(default_base_cached(tmp.path()).as_deref(), Some("main"));
     }
 
