@@ -1,3 +1,4 @@
+import type { PaneNote } from '../src/houston/generated/PaneNote'
 import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { Sidebar } from '../src/components/Sidebar'
@@ -373,7 +374,7 @@ function RailCardGitFixture(): null {
 }
 
 // A note the Codex pane in "Inspector polish" wrote with `pane_note` three minutes ago.
-const CARD_NOTE = { text: '4 commits in; running the inspector tests', phase: 'in_progress', at_ms: CARD_NOW - 3 * 60_000 }
+const CARD_NOTE: PaneNote = { text: '4 commits in; running the inspector tests', phase: 'in_progress', at_ms: CARD_NOW - 3 * 60_000 }
 
 function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu, notes = false }: { notes?: boolean; gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
   const compact = initialCompact
