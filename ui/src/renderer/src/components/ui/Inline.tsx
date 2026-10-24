@@ -6,7 +6,7 @@ const GAP = {
   large: 'gap-[var(--space-3)]',
   spacious: 'gap-[var(--space-5)]',
 } as const
-const ALIGN = { center: 'items-center', baseline: 'items-baseline', start: 'items-start' } as const
+const ALIGN = { center: 'items-center', baseline: 'items-baseline', start: 'items-start', end: 'items-end' } as const
 
 export function Inline({
   gap = 'medium',

@@ -108,6 +108,14 @@ you can see), competitor gaps (what the listed competitors do that the project d
 docs accuracy (docs that say something the code does not do) and test gaps (important paths
 no test covers). An area that is off is not scouted.
 
+**Setup** asks four questions: what the run should work on (Direction and focus areas,
+with competitors under Competitor gaps), how a change is judged (the method's steps, the
+verification depth, the repository checks and App QA), what comes back (draft pull
+requests or the merge queue, and the pull request format) and when it runs (Run now only,
+or a schedule). **Advanced** holds the crew. Each field's info button explains it. The
+footer says what a run still needs; **Run now** opens preflight once Setup is ready and
+saved.
+
 Change the settings in the **Setup** view and choose **Save**. Unsaved edits survive
 updates from elsewhere; if the settings changed in another window meanwhile, **Save** is
 refused and **Discard changes** loads the current ones. The routine is changed and started

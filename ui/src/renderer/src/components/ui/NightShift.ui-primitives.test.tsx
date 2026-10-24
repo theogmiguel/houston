@@ -32,6 +32,22 @@ describe('ui-primitives', () => {
     expect(host.querySelectorAll('section[aria-label]')).toHaveLength(3)
   })
 
+  it('night shift setup questions badge their state and dash an optional step', () => {
+    act(() => root.render(<NightShiftSpecimen />))
+    const badges = Array.from(host.querySelectorAll<HTMLElement>('[data-testid="night-question-badge"]'))
+    expect(badges.map((b) => [b.textContent, b.dataset.tone])).toEqual([['Required', 'required'], ['Answered from the repository', 'answered']])
+    const heading = host.querySelector('section[aria-labelledby] h2')
+    expect(heading?.textContent).toBe('What should it work on?')
+    const numbers = Array.from(host.querySelectorAll<HTMLElement>('[data-testid="night-step-number"]'))
+    expect(numbers.map((n) => n.dataset.optional)).toEqual(['false', 'true'])
+    expect(numbers[1].className).toContain('border-dashed')
+    expect(host.querySelector('button[aria-label="About App QA"]')).not.toBeNull()
+    expect(host.querySelector('h1')?.textContent).toBe('Set up Night shift')
+    const output = host.querySelector('[role="radiogroup"][aria-label="Output"]')!
+    expect(output.querySelector('[aria-checked="true"]')?.textContent).toContain('Draft pull requests')
+    expect(host.querySelector('button[aria-label="About Reviewer"]')).not.toBeNull()
+  })
+
   it('night shift window strip places marks along the window', () => {
     act(() => root.render(<>
       <NightWindowStrip label="w" progress={0.5} marks={[{ at: 0, label: 'a', kind: 'start' }, { at: 2, label: 'b', kind: 'hard-stop' }]} />

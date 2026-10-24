@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NightShiftSetup } from './NightShiftSetup'
 import { nightDefaults } from '../../test/nightShiftFixtures'
+import type { NightDetected } from '../../houston/generated/NightDetected'
+import type { NightShiftSettings } from '../../houston/generated/NightShiftSettings'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let host: HTMLDivElement
@@ -20,140 +22,214 @@ afterEach(() => {
   host.remove()
 })
 
-const checked = (group: string): string | null =>
-  host.querySelector(`[role="radiogroup"][aria-label="${group}"] [aria-checked="true"]`)?.textContent ?? null
+const CHECKS: NightShiftSettings['checks'] = [
+  { command: 'cargo fmt --all --check', source: 'ci.yml · core-checks' },
+  { command: 'cd ui && bun run typecheck', source: 'ci.yml · renderer-checks' }
+]
+const DETECTED: NightDetected = {
+  checks: CHECKS,
+  start_command: { command: 'node ui/harness/shot.mjs <story> <out.png>', source: 'ui/harness/shot.mjs' },
+  apps: [{ name: 'Orca', version: '1.4.238', path: 'C:\\Programs\\orca\\Orca.exe' }],
+  apps_note: null
+}
+const ready = (): NightShiftSettings => ({ ...nightDefaults(), checks: CHECKS })
 
+function render(settings: NightShiftSettings, props: Partial<Parameters<typeof NightShiftSetup>[0]> = {}): { onSave: ReturnType<typeof vi.fn>; onRunNow: ReturnType<typeof vi.fn> } {
+  const onSave = vi.fn()
+  const onRunNow = vi.fn()
+  act(() => root.render(<NightShiftSetup settings={settings} revision="r" verifyCommand={false} detected={DETECTED} onSave={onSave} onRunNow={onRunNow} {...props} />))
+  return { onSave, onRunNow }
+}
+
+const q = <T extends Element = HTMLElement>(sel: string): T | null => host.querySelector<T>(sel)
 const click = (el: Element | null | undefined): void => {
   if (!el) throw new Error('missing element')
   act(() => { (el as HTMLElement).click() })
 }
-
 const button = (text: string): HTMLButtonElement | undefined =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)
-
-/** A crew picker's row: the select and any model hint beside it. */
-const pickerRow = (label: string): string | null | undefined =>
-  host.querySelector(`[aria-label="${label}"]`)?.parentElement?.closest('[class~="gap-[var(--space-2)]"]')?.textContent
+const toggle = (label: string): HTMLElement | null => q(`[role="switch"][aria-label="${label}"]`)
+const radio = (group: string, text: string): Element | undefined =>
+  Array.from(host.querySelectorAll(`[role="radiogroup"][aria-label="${group}"] [role="radio"]`)).find((b) => b.textContent?.includes(text))
+const checked = (group: string): string | null =>
+  q(`[role="radiogroup"][aria-label="${group}"] [aria-checked="true"]`)?.textContent ?? null
+const type = (label: string, value: string): void => {
+  const el = q<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)!
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!
+  act(() => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })) })
+}
+const question = (title: string): HTMLElement =>
+  Array.from(host.querySelectorAll<HTMLElement>('section[aria-labelledby]')).find((s) => s.querySelector('h2')?.textContent === title)!
+const badge = (title: string): string | null | undefined => question(title).querySelector('[data-testid="night-question-badge"]')?.textContent
+const readiness = (): string | null | undefined => q('[data-testid="night-readiness"]')?.textContent
+const openDisclosure = (text: string): void =>
+  click(Array.from(host.querySelectorAll<HTMLButtonElement>('[data-testid="disclosure"] > * button, [data-testid="disclosure"] button[aria-expanded]')).find((b) => b.textContent?.startsWith(text)))
 
 describe('NightShiftSetup', () => {
-  it('renders defaults and merge refusal', () => {
-    const onSave = vi.fn()
-    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand={false} onSave={onSave} />))
-    const value = (label: string): string => (host.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement).value
-    expect([value('Start'), value('Wrap-up'), value('Hard stop')]).toEqual(['23:30', '06:45', '07:30'])
-    expect(host.textContent).toContain('8 h')
-    expect(host.textContent).toContain('No nights selected')
-    expect(checked('Reliability focus')).toBe('Normal')
-    expect(checked('Performance focus')).toBe('Normal')
-    expect(checked('UI and UX polish focus')).toBe('Off')
-    expect(checked('Output')).toBe('Pull requests only')
-    expect(pickerRow('Orchestrator')).toBe('Claude Codeopus')
-    expect(host.textContent).toContain('Same as orchestrator')
-    expect(host.querySelector('[data-testid="window-mark-wrap-up"]')).not.toBeNull()
+  it('asks the four questions with defaults and says what a run still needs', () => {
+    render(nightDefaults())
+    expect(q('h1')?.textContent).toBe('Set up Night shift')
+    expect(Array.from(host.querySelectorAll('section h2')).map((h) => h.textContent)).toEqual([
+      'What should it work on?', 'How do I know a change is good?', 'What do I get back?', 'When does it run?'
+    ])
+    expect(badge('What should it work on?')).toBe('Answered')
+    expect(q('[role="radiogroup"][aria-label="Reliability attention"]')).not.toBeNull()
+    expect(q('[role="radiogroup"][aria-label="UI and UX polish attention"]'), 'Low/Normal/High only for an area that is on').toBeNull()
+    expect(q('button[aria-label="About Reliability"]')).not.toBeNull()
+    expect(badge('How do I know a change is good?')).toBe('Required')
+    expect(host.textContent).toContain('No checks found: add one')
+    expect(q('[role="group"][aria-label="App QA"]')?.textContent).toContain('Off')
+    expect(checked('Output')).toContain('Draft pull requests')
+    expect(toggle('Hold for my QA'), 'Hold for my QA only under Merge queue').toBeNull()
+    expect(host.textContent).toContain('Off: it runs only when you choose Run now.')
+    expect(q('[role="group"][aria-label="Nights"]')).toBeNull()
+    expect(host.textContent).toContain('Claude Code orchestrator · ZCode, then Claude Code workers · 4 at a time')
+    expect(readiness()).toBe('To run, add a repository check.')
+    expect(button('Run now…')?.disabled).toBe(true)
+  })
 
-    click(button('Tue'))
-    click(button('Thu'))
-    expect(host.textContent).not.toContain('No nights selected')
-    expect(button('Tue')?.getAttribute('aria-pressed')).toBe('true')
-    click(Array.from(host.querySelectorAll('[role="radiogroup"][aria-label="Test gaps focus"] [role="radio"]')).find((b) => b.textContent === 'High'))
-    expect(checked('Test gaps focus')).toBe('High')
+  it('is ready to run with checks found in the repository, and Run now opens preflight', () => {
+    const { onRunNow } = render(ready())
+    expect(badge('How do I know a change is good?')).toBe('Answered from the repository')
+    const summary = button('2 checks from ci.yml ▸')
+    expect(summary, 'the list is collapsed behind its summary').toBeDefined()
+    expect(q('[role="group"][aria-label="Repository checks"]')).toBeNull()
+    click(summary)
+    const list = q('[role="group"][aria-label="Repository checks"]')!
+    expect(list.textContent).toContain('cd ui && bun run typecheck')
+    expect(list.textContent).toContain('ci.yml · renderer-checks')
+    expect(readiness()).toBe('Ready to run.')
+    click(button('Run now…'))
+    expect(onRunNow).toHaveBeenCalled()
+    click(q('button[aria-label="Remove cargo fmt --all --check"]'))
+    expect(readiness()).toBe('To run, save your changes.')
+    expect(button('Run now…')?.disabled).toBe(true)
+  })
 
-    click(Array.from(host.querySelectorAll('[role="radiogroup"][aria-label="Output"] [role="radio"]')).find((b) => b.textContent === 'Merge queue'))
-    const refusal = host.querySelector('[data-testid="merge-refusal"]')
-    expect(refusal?.textContent).toContain('App QA on with a start command')
-    expect(refusal?.textContent).toContain('verification command')
-    expect(button('Save')?.disabled).toBe(true)
-
-    click(Array.from(host.querySelectorAll('[role="radiogroup"][aria-label="Output"] [role="radio"]')).find((b) => b.textContent === 'Pull requests only'))
-    expect(host.querySelector('[data-testid="merge-refusal"]')).toBeNull()
+  it('reveals competitor rows for Competitor gaps and saves validated entries', () => {
+    const { onSave } = render(ready())
+    expect(q('[role="group"][aria-label="Competitors"]')).toBeNull()
+    click(toggle('Competitor gaps on'))
+    expect(q('[role="group"][aria-label="Competitors"]')).not.toBeNull()
+    click(button('Add competitor'))
+    type('Competitor 1 repository', 'https://github.com/pingdotgg/t3code.git')
+    expect(host.textContent).toContain('pingdotgg/t3code · cloned read-only')
+    click(button('Add competitor'))
+    click(radio('Competitor 2 kind', 'Installed app'))
+    expect(host.textContent).toContain('Choose an app installed on this computer.')
+    expect(host.textContent).toContain('Complete or remove the unfinished competitor.')
+    expect(host.textContent).toContain('Make sure the app\'s licence allows analysing it.')
+    click(q('button[aria-label="Remove competitor 2"]'))
     click(button('Save'))
-    const [saved, revision] = onSave.mock.calls[0]
-    expect(saved.window.nights).toEqual([3, 5])
-    expect(saved.focus.test_gaps).toBe('high')
-    expect(revision).toBe('r')
+    expect(onSave.mock.calls[0][0].competitors).toEqual([{ kind: 'repo', repo: 'pingdotgg/t3code' }])
+    expect(onSave.mock.calls[0][0].focus.competitor_gaps).toBe('normal')
+  })
+
+  it('keeps Screenshots on while UI and UX polish is on and points to App QA', () => {
+    render({ ...ready(), screenshots: false })
+    click(toggle('UI and UX polish on'))
+    expect(host.textContent).toContain('Changes here are visible, so Screenshots stays on while this is on.')
+    expect(host.textContent).toContain('Turn on App QA, step 5 in question 2')
+    openDisclosure('Pull request format')
+    const shots = toggle('Screenshots')!
+    expect([shots.getAttribute('aria-checked'), (shots as HTMLButtonElement).disabled]).toEqual(['true', true])
+    expect(host.textContent).toContain('On while UI and UX polish is on')
+  })
+
+  it('suggests focus areas from the direction without overriding one set by hand', () => {
+    render(ready())
+    click(toggle('Docs accuracy on'))
+    type('Direction', 'Make it feel faster')
+    expect(host.textContent).toContain('Suggested from your direction')
+    expect(checked('Performance attention')).toBe('High')
+    expect(toggle('Reliability on')?.getAttribute('aria-checked')).toBe('false')
+    expect(toggle('Docs accuracy on')?.getAttribute('aria-checked'), 'changed by hand').toBe('true')
+    type('Direction', '')
+    expect(host.textContent).not.toContain('Suggested from your direction')
+    expect(toggle('Reliability on')?.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('reveals Merge queue requirements and Hold for my QA, keeping the value under Draft pull requests', () => {
+    const { onSave } = render(ready())
+    click(radio('Output', 'Merge queue'))
+    const refusal = q('[data-testid="merge-refusal"]')?.textContent
+    expect(refusal).toContain('verification command')
+    expect(refusal).toContain('App QA on with a start command')
+    click(toggle('Hold for my QA'))
+    click(radio('Output', 'Draft pull requests'))
+    expect(toggle('Hold for my QA')).toBeNull()
+    click(button('Save'))
+    expect(onSave.mock.calls[0][0].hold_for_qa).toBe(false)
+  })
+
+  it('turns App QA on with the start command found in the repository', () => {
+    render(ready())
+    const step = (): string => q('[role="group"][aria-label="App QA"]')?.textContent ?? ''
+    click(toggle('App QA on'))
+    expect(step()).toContain('On')
+    expect(q<HTMLInputElement>('input[aria-label="Start command"]')?.value).toBe('node ui/harness/shot.mjs <story> <out.png>')
+    expect(step()).toContain('ui/harness/shot.mjs')
+    type('Start command', '')
+    expect(step()).toContain('Needs a start command')
+    expect(q<HTMLInputElement>('input[aria-label="What to open"]')?.disabled).toBe(true)
+    expect(step()).toContain('App QA stays off until you do.')
+  })
+
+  it('shows the schedule only when it is on and the own pane limit only above the global cap', () => {
+    render(ready(), { childCap: 6 })
+    click(toggle('Run on a schedule'))
+    expect(host.textContent).toContain('Pick at least one night.')
+    click(button('Tue'))
+    expect(host.textContent).toContain('Runs on 1 night a week.')
+    expect(host.textContent).toContain('8 h · nothing new starts after wrap-up')
+    openDisclosure('Advanced')
+    expect(host.textContent).not.toContain('Own limit')
+    type('Workers at a time', '5')
+    expect(host.textContent).toContain('Own limit: 7 panes · other agents keep 6')
   })
 
   it('keeps an edit across refreshes and saves it against the revision it was read at', () => {
     const onSave = vi.fn()
-    const render = (revision: string, direction = ''): void =>
-      act(() => root.render(<NightShiftSetup settings={{ ...nightDefaults(), direction }} revision={revision} verifyCommand onSave={onSave} />))
-    render('r')
-    const input = (label: string): HTMLInputElement | HTMLTextAreaElement =>
-      host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLTextAreaElement
-    const type = (label: string, value: string): void => {
-      const el = input(label)
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!
-      act(() => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })) })
-    }
+    const at = (revision: string, direction = ''): void =>
+      act(() => root.render(<NightShiftSetup settings={{ ...ready(), direction }} revision={revision} verifyCommand onSave={onSave} />))
+    at('r')
     type('Direction', 'CI is green')
-    type('Wrap-up', '05:00')
-    render('r')
-    expect(input('Direction').value).toBe('CI is green')
-    render('r2', 'from another window')
-    expect(input('Direction').value).toBe('CI is green')
+    at('r')
+    expect(q<HTMLTextAreaElement>('[aria-label="Direction"]')?.value).toBe('CI is green')
+    at('r2', 'from another window')
+    expect(q<HTMLTextAreaElement>('[aria-label="Direction"]')?.value).toBe('CI is green')
     click(button('Save'))
     expect(onSave.mock.calls[0][1]).toBe('r')
-
     click(button('Discard changes'))
-    expect(input('Direction').value).toBe('from another window')
-    expect(input('Wrap-up').value).toBe('06:45')
-    render('r3', 'saved elsewhere')
-    expect(input('Direction').value).toBe('saved elsewhere')
+    expect(q<HTMLTextAreaElement>('[aria-label="Direction"]')?.value).toBe('from another window')
   })
 
   it('confirms a save once the daemon answers with the saved settings', () => {
     const onSave = vi.fn()
-    const render = (settings: ReturnType<typeof nightDefaults>, revision: string, error: string | null = null): void =>
+    const at = (settings: NightShiftSettings, revision: string, error: string | null = null): void =>
       act(() => root.render(<NightShiftSetup settings={settings} revision={revision} verifyCommand onSave={onSave} error={error} />))
-    render(nightDefaults(), 'r')
-    const field = host.querySelector('[aria-label="Direction"]') as HTMLTextAreaElement
-    const type = (value: string): void => {
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')!.set!
-      act(() => { setter.call(field, value); field.dispatchEvent(new Event('input', { bubbles: true })) })
-    }
-    const status = (): string => host.querySelector('[role="status"]')?.textContent ?? ''
-    type('CI is green')
-    expect(status()).toBe('')
+    at(ready(), 'r')
+    const status = (): string => q('[role="status"]')?.textContent ?? ''
+    type('Direction', 'CI is green')
     click(button('Save'))
     expect(status()).toContain('Saving')
-    expect(button('Save')?.disabled).toBe(true)
-    render({ ...nightDefaults(), direction: 'CI is green' }, 'r2')
+    at({ ...ready(), direction: 'CI is green' }, 'r2')
     expect(status()).toContain('Saved')
-    expect(host.querySelector('[aria-label="Saved"]')).not.toBeNull()
-    type('CI is green, docs too')
+    type('Direction', 'CI is green, docs too')
     expect(status()).toBe('')
-
     click(button('Save'))
-    render({ ...nightDefaults(), direction: 'CI is green' }, 'r2', 'stale revision')
+    at({ ...ready(), direction: 'CI is green' }, 'r2', 'stale revision')
     expect(status(), 'a refused save is not confirmed').toBe('')
-    expect(button('Save')?.disabled).toBe(false)
   })
 
   it('offers no ZCode orchestrator and refuses a stored one by its reason', () => {
-    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={vi.fn()} />))
-    const trigger = host.querySelector('[role="combobox"][aria-label="Orchestrator"]')!
+    render(ready())
+    openDisclosure('Advanced')
+    const trigger = q('[role="combobox"][aria-label="Orchestrator"]')!
     act(() => { trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })) })
     const menu = document.getElementById(trigger.getAttribute('aria-controls')!)!
-    const offered = Array.from(menu.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => o.dataset.value)
-    expect(offered).toEqual(['claude', 'codex', 'opencode'])
-
-    const stored = { ...nightDefaults(), orchestrator: { provider: 'zcode' as const, model: null } }
-    act(() => root.render(<NightShiftSetup settings={stored} revision="r2" verifyCommand onSave={vi.fn()} />))
+    expect(Array.from(menu.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => o.dataset.value)).toEqual(['claude', 'codex', 'opencode'])
+    act(() => root.render(<NightShiftSetup settings={{ ...ready(), orchestrator: { provider: 'zcode', model: null } }} revision="r2" verifyCommand onSave={vi.fn()} />))
     expect(host.textContent).toContain('ZCode cannot orchestrate: a pull request watch cannot wake it')
-  })
-
-  it('names OpenCode properly and adds no model hint that repeats the provider', () => {
-    const settings = { ...nightDefaults(), orchestrator: { provider: 'opencode' as const, model: null }, workers: [{ provider: 'zcode' as const, model: null }] }
-    act(() => root.render(<NightShiftSetup settings={settings} revision="r" verifyCommand onSave={vi.fn()} />))
-    expect(pickerRow('Orchestrator')).toBe('OpenCode')
-    expect(pickerRow('Worker 1')).toBe('ZCode')
-  })
-
-  it('edits the orchestrator, reviewer and smoke flows', () => {
-    const onSave = vi.fn()
-    act(() => root.render(<NightShiftSetup settings={nightDefaults()} revision="r" verifyCommand onSave={onSave} />))
-    for (const label of ['Orchestrator', 'Reviewer', 'Smoke flows']) {
-      expect(host.querySelector(`[aria-label="${label}"]`), label).not.toBeNull()
-    }
   })
 })

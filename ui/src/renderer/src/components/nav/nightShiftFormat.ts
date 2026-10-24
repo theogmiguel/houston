@@ -5,6 +5,7 @@ import type { NightFocus } from '../../houston/generated/NightFocus'
 import type { NightRun } from '../../houston/generated/NightRun'
 import type { NightShiftSettings } from '../../houston/generated/NightShiftSettings'
 import type { NightStopReason } from '../../houston/generated/NightStopReason'
+import type { NightVerification } from '../../houston/generated/NightVerification'
 import type { NightWindow } from '../../houston/generated/NightWindow'
 import type { WindowMark } from '../ui'
 import { engineLabel } from '../engineLabel'
@@ -247,4 +248,62 @@ export function resolveNightTab(
 ): NightTab {
   const fallback: NightTab = live ? 'live' : initialRunId !== null && shown ? 'report' : 'setup'
   return tab === 'live' && !live ? (shown ? 'report' : 'setup') : tab ?? fallback
+}
+
+/** What each verification depth does and cannot catch (`brief.rs::depth_line`). */
+export const DEPTH: Record<NightVerification, { does: string; misses: string }> = {
+  light: { does: 'Re-runs every proof and confirms each test exists and asserts its claim.', misses: 'a test that would also pass with a wrong implementation.' },
+  standard: { does: 'Also breaks the new code once per assertion and requires the test to fail. Takes longer per change.', misses: 'a requirement nobody wrote down as a claim.' }
+}
+
+/** `owner/repo` from a GitHub repository as people write it (`settings.rs::github_repo`). */
+export function githubRepo(text: string): string | null {
+  let t = text.trim().replace(/\/+$/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/^github\.com\//, '').replace(/\.git$/, '')
+  const m = /^([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})$/.exec(t)
+  if (!m || m[2] === '.' || m[2] === '..') return null
+  t = `${m[1]}/${m[2]}`
+  return t
+}
+
+/** "4 checks from ci.yml", from the files the checks were found in. */
+export function checksSummary(checks: NightShiftSettings['checks']): string {
+  if (checks.length === 0) return 'No checks found: add one'
+  const files = [...new Set(checks.map((c) => c.source.split(' · ')[0]))]
+  const from = files.length === 1 ? files[0] : `${files.length} sources`
+  return `${countLabel(checks.length, 'check', 'checks')} from ${from}`
+}
+
+export type AppQaState = 'Off' | 'Needs a start command' | 'On'
+
+export function appQaState(s: NightShiftSettings): AppQaState {
+  if (!s.app_qa.enabled) return 'Off'
+  return s.app_qa.start_command.trim() ? 'On' : 'Needs a start command'
+}
+
+/** The collapsed Pull request format line. */
+export function prFormatSummary(s: NightShiftSettings): string {
+  const size = s.pr_size.kind === 'one' ? 'one change each' : `related changes together, up to ${s.pr_size.max_changes}`
+  return `${size} · ${s.screenshots || s.focus.ui_polish !== 'off' ? 'screenshots' : 'no screenshots'}`
+}
+
+/** The state beside the schedule switch. */
+export function scheduleHint(s: NightShiftSettings): string {
+  if (!s.enabled) return 'Off: it runs only when you choose Run now.'
+  const n = s.window.nights.length
+  return n === 0 ? 'Pick at least one night.' : `Runs on ${countLabel(n, 'night', 'nights')} a week.`
+}
+
+/** The collapsed Advanced line: who orchestrates, the worker chain, how many at once. */
+export function crewSummary(s: NightShiftSettings): string {
+  const workers = s.workers.map((w) => engineLabel(w.provider)).join(', then ')
+  return `${engineLabel(s.orchestrator.provider)} orchestrator · ${workers} workers · ${s.live_workers} at a time`
+}
+
+/** What the footer asks for before Run now, in the user's terms; empty when ready. */
+export function readinessGaps(s: NightShiftSettings, dirty: boolean): string[] {
+  const out: string[] = []
+  if (FOCUS_AREAS.every((a) => s.focus[a.key] === 'off')) out.push('turn on a focus area')
+  if (s.checks.length === 0) out.push('add a repository check')
+  if (dirty) out.push('save your changes')
+  return out
 }

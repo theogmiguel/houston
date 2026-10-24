@@ -64,14 +64,15 @@ export function NightShiftView({ client, workspaces, now, onOpenSession, initial
         { value: 'report', label: 'Morning report', disabled: !shown, disabledReason: 'No finished run yet' }
       ]} />
       <NightShiftTabContent current={current} state={state} live={live} shown={shown} finished={finished} workers={workers}
-        now={now} onOpenSession={onOpenSession} error={error} actions={actions} report={report} onPickRun={setReportRun} />
+        now={now} onOpenSession={onOpenSession} error={error} actions={actions} report={report} onPickRun={setReportRun}
+        onRunNow={() => setDialog(true)} />
       {dialog && <NightShiftPreflight items={preflight} now={now} onDuration={actions.preflight} onCancel={() => setDialog(false)}
         onStart={(until) => { actions.runNow(until); setDialog(false); setTab('live') }} />}
     </div>
   )
 }
 
-function NightShiftTabContent({ current, state, live, shown, finished, workers, now, onOpenSession, error, actions, report, onPickRun }: {
+function NightShiftTabContent({ current, state, live, shown, finished, workers, now, onOpenSession, error, actions, report, onPickRun, onRunNow }: {
   current: NightTab
   state: NonNullable<ReturnType<typeof useNightShift>['state']>
   live: NightRun | null
@@ -84,10 +85,12 @@ function NightShiftTabContent({ current, state, live, shown, finished, workers, 
   actions: ReturnType<typeof useNightShift>['actions']
   report: NightShiftReportText | null
   onPickRun: (runId: number) => void
+  onRunNow: () => void
 }): React.JSX.Element {
   return <>
     {error && current !== 'setup' && <Notice tone="danger">{error}</Notice>}
-    {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} childCap={state.childCap} error={error} onSave={actions.save} />}
+    {current === 'setup' && <NightShiftSetup settings={state.settings} revision={state.revision} verifyCommand={state.mergeVerifyCommand} childCap={state.childCap} detected={state.detected}
+      error={error} onSave={actions.save} onRunNow={live ? undefined : onRunNow} />}
     {current === 'live' && live && <NightShiftLive run={live} machine={state.machine} workers={workers} now={now}
       onWrapUp={() => actions.wrapUp(live.run_id)} onStop={() => actions.stop(live.run_id)} onOpenSession={onOpenSession} />}
     {current === 'report' && shown && <NightShiftReportTab finished={finished} shown={shown} report={report} workers={workers}

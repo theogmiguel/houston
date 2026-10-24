@@ -1,6 +1,10 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
+import { IconInfo } from '../icons'
+import { Icon } from './Icon'
+import { RadioCard } from './RadioCard'
 import { SectionHead } from './SectionHead'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 
 export type GateState = 'none' | 'pending' | 'passed' | 'failed'
 
@@ -127,6 +131,144 @@ export function NightPlanItem({ label, meta }: { label: string; meta?: ReactNode
   )
 }
 
+/** A field's explanation: an info button whose tooltip opens on hover, keyboard focus or a
+ * click. The text is self-sufficient; the field itself carries no hint line. */
+export function InfoTip({ about, children }: { about: string; children: string }): React.JSX.Element {
+  return (
+    <Tooltip label={children} openOnClick inline>
+      <button type="button" aria-label={`About ${about}`} className="btn inline-flex items-center justify-center flex-none p-[var(--space-0-5)] rounded-full border-0 bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <Icon glyph={IconInfo} role="small" />
+      </button>
+    </Tooltip>
+  )
+}
+
+export type NightBadgeTone = 'required' | 'answered'
+
+const BADGE_CLS: Record<NightBadgeTone, string> = {
+  required: 'text-[var(--status-doing-text)] border-[var(--status-doing-text)]',
+  answered: 'text-[var(--status-done-text)] border-[var(--status-done-text)]'
+}
+
+/** A Setup question: its number, heading, an optional Required/Answered badge, and its body. */
+export function NightQuestion({ number, heading, badge, children }: {
+  number: number
+  heading: string
+  badge?: { label: string; tone: NightBadgeTone }
+  children: ReactNode
+}): React.JSX.Element {
+  const id = useId()
+  return (
+    <section aria-labelledby={id} className="grid gap-[var(--space-3)] p-[var(--space-4)] rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)]">
+      <div className="flex flex-wrap items-baseline gap-x-[var(--space-2)] gap-y-[var(--space-1)]">
+        <Text weight="semibold" tone="muted" tabular>{number}</Text>
+        <h2 id={id} className="m-0 [font-size:var(--tr-text-subhead-size)] font-semibold">{heading}</h2>
+        {badge && <span data-testid="night-question-badge" data-tone={badge.tone} className={`inline-flex items-center h-[var(--h-pill)] px-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] border text-[length:var(--tr-text-label-size)] whitespace-nowrap ${BADGE_CLS[badge.tone]}`}>{badge.label}</span>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** One step of how a change is judged: a numbered row (dashed when optional), its heading
+ * and tooltip, what sits beside it on the same line, and anything it reveals below. */
+export function NightStep({ number, heading, tip, optional = false, aside, children }: {
+  number: number
+  heading: string
+  tip: string
+  optional?: boolean
+  aside?: ReactNode
+  children?: ReactNode
+}): React.JSX.Element {
+  return (
+    <div role="group" aria-label={heading} className="grid gap-[var(--space-2)] py-[var(--space-3)] border-t border-t-[var(--divider)]">
+      <div className="flex flex-wrap items-center gap-x-[var(--space-4)] gap-y-[var(--space-2)]">
+        <div className="flex flex-1 basis-[var(--tr-control-width-wide)] min-w-0 items-center gap-[var(--space-2)]">
+          <span data-testid="night-step-number" data-optional={optional} className={`inline-flex flex-none items-center justify-center w-[var(--h-pill)] h-[var(--h-pill)] rounded-full border text-[length:var(--tr-text-label-size)] text-[var(--text-secondary)] ${optional ? 'border-dashed border-[var(--border-hover)]' : 'border-[var(--border)]'}`}>{number}</span>
+          <Text weight="semibold">{heading}</Text>
+          <InfoTip about={heading}>{tip}</InfoTip>
+        </div>
+        {aside}
+      </div>
+      {children && <div className="grid gap-[var(--space-2)] ps-[var(--space-6)]">{children}</div>}
+    </div>
+  )
+}
+
+type Labelled = { role?: 'group'; 'aria-label'?: string }
+
+/** One item of a Setup list in its own box: a check, a competitor, the merge queue's options. */
+export function NightBox({ children, ...aria }: Labelled & { children: ReactNode }): React.JSX.Element {
+  return <div {...aria} className="grid gap-[var(--space-1)] p-[var(--space-2)] rounded-[var(--tr-radius-sm)] border border-[var(--border)]">{children}</div>
+}
+
+/** A control that takes the rest of its row and wraps below the given width. */
+export function NightGrow({ children, basis = 'wide' }: { children: ReactNode; basis?: 'wide' | 'medium' }): React.JSX.Element {
+  return <div className={`flex-1 min-w-0 ${basis === 'wide' ? 'basis-[var(--tr-control-width-wide)]' : 'basis-[var(--tr-control-width-medium)]'}`}>{children}</div>
+}
+
+/** What a switch or a choice reveals, indented under it. */
+export function NightReveal({ children, ...aria }: Labelled & { children: ReactNode }): React.JSX.Element {
+  return <div {...aria} className="grid gap-[var(--space-2)] ps-[var(--space-6)]">{children}</div>
+}
+
+/** One row of a divided list, such as a focus area. */
+export function NightDividedRow({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)] py-[var(--space-2)] border-t border-t-[var(--divider)]">{children}</div>
+}
+
+/** The Setup's heading and its one-line purpose. */
+export function NightSetupHeader({ heading, description }: { heading: string; description: string }): React.JSX.Element {
+  return (
+    <div className="grid gap-[var(--space-1)]">
+      <h1 className="m-0 [font-size:var(--tr-text-heading-size)] font-semibold">{heading}</h1>
+      <Text tone="secondary">{description}</Text>
+    </div>
+  )
+}
+
+/** The Setup's footer bar: readiness, save state and the actions. */
+export function NightSetupFooter({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="flex flex-wrap items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] rounded-[var(--tr-radius-card)] border border-[var(--border)]">{children}</div>
+}
+
+/** Choice cards side by side, wrapping on a narrow pane. */
+export function NightChoiceGrid({ children, 'aria-label': label }: { children: ReactNode; 'aria-label': string }): React.JSX.Element {
+  return <div role="radiogroup" aria-label={label} className="grid grid-cols-[repeat(auto-fit,minmax(var(--tr-control-width-wide),1fr))] gap-[var(--space-2)]">{children}</div>
+}
+
+/** One choice card: its name and what choosing it means. */
+export function NightChoice({ selected, heading, description, onSelect }: { selected: boolean; heading: string; description: string; onSelect: () => void }): React.JSX.Element {
+  return (
+    <RadioCard selected={selected} onClick={onSelect}>
+      <span className="grid gap-[var(--space-0-5)] p-[var(--space-3)]">
+        <Text weight="semibold">{heading}</Text>
+        <Text size="small" tone="secondary">{description}</Text>
+      </span>
+    </RadioCard>
+  )
+}
+
+/** A named field with its explanation, for a field grid. */
+export function NightField({ label, tip, children }: { label: string; tip: string; children: ReactNode }): React.JSX.Element {
+  return (
+    <div className="grid content-start gap-[var(--space-1)] min-w-0">
+      <div className="flex items-center gap-[var(--space-1)]"><Text weight="semibold">{label}</Text><InfoTip about={label}>{tip}</InfoTip></div>
+      {children}
+    </div>
+  )
+}
+
+/** Fields in one grid: two columns where they fit, one on a narrow pane. */
+export function NightFieldGrid({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--tr-control-width-wide)),1fr))] gap-x-[var(--space-5)] gap-y-[var(--space-4)] items-start p-[var(--space-3)]">{children}</div>
+}
+
+/** A disclosure's body, inset from its edges. */
+export function NightDisclosureBody({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-3)] px-[var(--space-3)] pb-[var(--space-3)]">{children}</div>
+}
+
 export function NightShiftSpecimen(): React.JSX.Element {
   const states: GateState[] = ['none', 'pending', 'passed', 'failed']
   return (
@@ -158,6 +300,21 @@ export function NightShiftSpecimen(): React.JSX.Element {
         <NightPlanColumn heading="Pull requests" count={0} empty="No PRs yet">{null}</NightPlanColumn>
         <NightPlanColumn heading="Deferred" count={1} empty="Nothing deferred"><NightPlanItem label="Rewrite the tray" /></NightPlanColumn>
       </NightPlanBoard>
+      <NightSetupHeader heading="Set up Night shift" description="Choose what it should work on and press Run now." />
+      <NightQuestion number={1} heading="What should it work on?" badge={{ label: 'Required', tone: 'required' }}>
+        <NightDividedRow><NightGrow basis="medium"><Text weight="semibold">Reliability</Text></NightGrow></NightDividedRow>
+        <NightReveal><NightBox><Text size="small">github.com/owner/repo</Text></NightBox></NightReveal>
+        <NightStep number={1} heading="Claims and proofs" tip="Each change lists what must be true and the test that proves it." aside={<Text size="small" tone="muted">Fixed, nothing to set</Text>} />
+        <NightStep number={5} optional heading="App QA" tip="A QA pane drives the app for changes you can see." aside={<Text size="small" tone="muted">Off</Text>} />
+      </NightQuestion>
+      <NightQuestion number={2} heading="How do I know a change is good?" badge={{ label: 'Answered from the repository', tone: 'answered' }}>
+        <NightChoiceGrid aria-label="Output">
+          <NightChoice selected heading="Draft pull requests" description="You review and merge them yourself." onSelect={() => {}} />
+          <NightChoice selected={false} heading="Merge queue" description="Ready pull requests join the merge queue." onSelect={() => {}} />
+        </NightChoiceGrid>
+        <NightDisclosureBody><NightFieldGrid><NightField label="Reviewer" tip="Reads every change.">{null}</NightField></NightFieldGrid></NightDisclosureBody>
+      </NightQuestion>
+      <NightSetupFooter><Text tone="ok">Ready to run.</Text></NightSetupFooter>
     </div>
   )
 }

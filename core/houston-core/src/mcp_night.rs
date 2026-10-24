@@ -1,7 +1,6 @@
-//! `night_plan`, `night_pr`, `night_lesson`, `night_decision`, `night_report`:
-//! offered only to the orchestrator pane of a Night shift run in flight, since
-//! they write that run's ledger. `night_verdict` is offered to the run's other
-//! panes: the verifier is never the orchestrator.
+//! The `night_*` ledger tools, offered only to a Night shift run's orchestrator
+//! pane, except `night_verdict`, offered only to the run's other panes: the
+//! verifier is never the orchestrator.
 use std::sync::{Arc, Weak};
 
 use serde_json::{json, Value};
