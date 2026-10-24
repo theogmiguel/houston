@@ -191,7 +191,12 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "Re-cut against 948,160 bytes (one boot chunk) with the same small headroom:",
+    "the thread view's boot-path pieces share this chunk: the Claude thread rows in",
+    "the new pane menu and empty grid, the lazy thread pane slot, the thread menu's",
+    "Stop and Handoff rows, HoustonClient.trySend and the history refusal pattern;",
+    "the thread pane, its store and its Markdown variant load on demand."
   ],
   "maxBootBytes": 948800,
   "forbiddenBootPackages": [

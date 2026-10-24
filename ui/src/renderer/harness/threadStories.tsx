@@ -15,11 +15,12 @@ function fixtureClient(events: ThreadEvent[], hasMore = false): HoustonClient {
       return () => listeners.delete(listener)
     },
     sessionCwd: () => Promise.resolve('/home/dev/code/houston'),
-    send: (msg: { type: string; session?: number; before_seq?: number | null }) => {
-      if (msg.type !== 'thread_history') return
+    trySend: (msg: { type: string; session?: number; before_seq?: number | null }) => {
+      if (msg.type !== 'thread_history') return true
       const page = msg.before_seq == null ? events : []
-      const reply = { type: 'thread_history', session: msg.session, events: page, has_more: msg.before_seq == null && hasMore }
+      const reply = { type: 'thread_history', session: msg.session, before_seq: msg.before_seq ?? null, events: page, has_more: msg.before_seq == null && hasMore }
       queueMicrotask(() => { for (const listener of listeners) listener(reply as unknown as ServerMsg) })
+      return true
     }
   }
   return new Proxy(target, {

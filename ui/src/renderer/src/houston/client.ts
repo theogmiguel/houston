@@ -470,13 +470,19 @@ export class HoustonClient {
   }
 
   send(msg: ClientMsg): void {
+    this.trySend(msg)
+  }
+
+  /** Whether the message was written; a socket that is not open drops it with a warning. */
+  trySend(msg: ClientMsg): boolean {
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
-      return
+      return true
     }
     console.warn(
       `houston: dropped ${msg.type} — socket is ${['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][this.ws.readyState] ?? this.ws.readyState}`
     )
+    return false
   }
 
   createSession(params: CreateSessionParams): void {
