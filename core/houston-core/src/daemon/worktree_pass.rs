@@ -355,11 +355,11 @@ impl Daemon {
             if let Some(idle_days) = idle_days {
                 let threshold = self.worktree_idle_removal_days();
                 if idle_days >= threshold && matches!(removal, Removal::All) {
-                    let bytes = wc::tree_bytes(&path);
+                    let bytes = wc::tree_bytes(&path).or(row.bytes.map(|b| b as u64));
                     match remove_idle_managed(ws, &row, &path, &self.db) {
                         Ok(()) => {
                             tracing::info!(
-                                "removed idle worktree {} (kept branch {}, {bytes} bytes)",
+                                "removed idle worktree {} (kept branch {}, size {bytes:?})",
                                 row.path,
                                 row.branch
                             );
@@ -368,7 +368,7 @@ impl Daemon {
                                 path: row.path,
                                 branch: row.branch,
                                 pr,
-                                bytes: Some(bytes),
+                                bytes,
                             });
                             continue;
                         }
@@ -391,15 +391,15 @@ impl Daemon {
                 None => proto::WorktreeStatus::Ready,
             };
             // Only a row the operator can act on is worth walking the tree for.
-            let bytes = if status == proto::WorktreeStatus::Kept {
-                row.bytes.unwrap_or(0) as u64
-            } else {
-                let bytes = wc::tree_bytes(&path);
+            let measured = (status != proto::WorktreeStatus::Kept)
+                .then(|| wc::tree_bytes(&path))
+                .flatten();
+            if let Some(bytes) = measured {
                 let _ = self
                     .db
                     .managed_worktree_set_size(&row.path, bytes as i64, now);
-                bytes
-            };
+            }
+            let bytes = measured.or(row.bytes.map(|b| b as u64));
             let keep = match keep {
                 None if removal.covers(&row.path) => {
                     if let Some((session, _)) = self
@@ -425,7 +425,7 @@ impl Daemon {
                     match remove_managed(ws, &row, &path, &self.db) {
                         Ok(()) => {
                             tracing::info!(
-                                "removed merged worktree {} (branch {}, PR #{}, {bytes} bytes)",
+                                "removed merged worktree {} (branch {}, PR #{}, size {bytes:?})",
                                 row.path,
                                 row.branch,
                                 pr.unwrap_or(0)
@@ -435,7 +435,7 @@ impl Daemon {
                                 path: row.path,
                                 branch: row.branch,
                                 pr,
-                                bytes: Some(bytes),
+                                bytes,
                             });
                             continue;
                         }
