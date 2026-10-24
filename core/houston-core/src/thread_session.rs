@@ -823,6 +823,11 @@ impl ThreadHandle {
             .is_some()
     }
 
+    /// A message was sent and its turn has not ended.
+    pub fn turn_open(&self) -> bool {
+        self.state.lock().expect("thread state lock").turn_open
+    }
+
     pub fn is_closed(&self) -> bool {
         *self.closed.0.lock().expect("thread closed lock")
     }
