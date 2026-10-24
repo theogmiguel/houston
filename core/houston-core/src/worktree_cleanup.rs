@@ -214,9 +214,9 @@ pub struct TreeLimit {
     pub deadline: Duration,
 }
 
-/// A pass measures every removable tree in turn, so one huge or slow tree (a network
-/// mount, millions of files) must not hold it. Two million entries is several dependency
-/// trees' worth; past either bound the tree keeps its previous size.
+/// One huge tree must not hold a pass. Two million entries is several dependency trees'
+/// worth; past either bound the tree keeps its previous size. The deadline is checked
+/// between entries, so it cannot interrupt one filesystem call that hangs.
 pub const TREE_LIMIT: TreeLimit = TreeLimit {
     entries: 2_000_000,
     deadline: Duration::from_secs(120),
@@ -237,7 +237,8 @@ pub fn tree_bytes_within(path: &Path, limit: TreeLimit) -> Option<u64> {
             visited += 1;
             if visited > limit.entries || started.elapsed() >= limit.deadline {
                 tracing::warn!(
-                    "measuring worktree {} stopped after {visited} entries in {} ms; the limit                      is {} entries or {} s, so it keeps its previous size",
+                    "measuring worktree {} stopped after {visited} entries in {} ms; the limit \
+                     is {} entries or {} s, so it keeps its previous size",
                     path.display(),
                     started.elapsed().as_millis(),
                     limit.entries,
@@ -256,10 +257,6 @@ pub fn tree_bytes_within(path: &Path, limit: TreeLimit) -> Option<u64> {
         }
     }
     Some(total)
-}
-
-pub fn tree_bytes(path: &Path) -> Option<u64> {
-    tree_bytes_within(path, TREE_LIMIT)
 }
 
 /// GitHub's `mergedAt` (`YYYY-MM-DDTHH:MM:SSZ`) as Unix milliseconds.

@@ -2,8 +2,8 @@
 //! the removal of those nothing keeps. Clean now and the 6-hourly loop share it.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
 use houston_protocol as proto;
@@ -18,12 +18,17 @@ pub(super) const WORKTREE_CLEANUP_INTERVAL_MS: u64 = 6 * 60 * 60 * 1000;
 const ENABLED_KEY: &str = "worktree_cleanup_enabled";
 const GRACE_HOURS_KEY: &str = "worktree_cleanup_grace_hours";
 const IDLE_REMOVAL_DAYS_KEY: &str = "worktree_idle_removal_days";
+/// A walk that ran out of budget would cost the whole budget again on every pass and every
+/// Check, and such a tree's size seldom matters sooner, so it is skipped for a day.
+const OVERSIZED_REMEASURE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// What the last pass found, kept in memory: a status reply reads it and asks nothing.
 #[derive(Default)]
 pub(super) struct CleanupState {
     checked: HashMap<String, Checked>,
     running: HashSet<String>,
+    /// When each tree's last walk ran out of `wc::TREE_LIMIT`.
+    oversized: HashMap<String, Instant>,
 }
 
 #[derive(Clone)]
@@ -355,7 +360,9 @@ impl Daemon {
             if let Some(idle_days) = idle_days {
                 let threshold = self.worktree_idle_removal_days();
                 if idle_days >= threshold && matches!(removal, Removal::All) {
-                    let bytes = wc::tree_bytes(&path).or(row.bytes.map(|b| b as u64));
+                    let bytes = self
+                        .tree_bytes(&row.path, &path)
+                        .or(row.bytes.map(|b| b as u64));
                     match remove_idle_managed(ws, &row, &path, &self.db) {
                         Ok(()) => {
                             tracing::info!(
@@ -392,7 +399,7 @@ impl Daemon {
             };
             // Only a row the operator can act on is worth walking the tree for.
             let measured = (status != proto::WorktreeStatus::Kept)
-                .then(|| wc::tree_bytes(&path))
+                .then(|| self.tree_bytes(&row.path, &path))
                 .flatten();
             if let Some(bytes) = measured {
                 let _ = self
@@ -492,11 +499,19 @@ impl Daemon {
     }
 
     fn forget_checked(&self, path: &str) {
-        self.worktree_cleanup
-            .lock()
-            .expect("worktree cleanup lock")
-            .checked
-            .remove(path);
+        let mut state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
+        state.checked.remove(path);
+        state.oversized.remove(path);
+    }
+
+    fn tree_bytes(&self, key: &str, path: &Path) -> Option<u64> {
+        measure_tree(
+            &self.worktree_cleanup,
+            key,
+            path,
+            wc::TREE_LIMIT,
+            Instant::now(),
+        )
     }
 
     fn live_session_cwds(&self) -> Vec<(u32, PathBuf)> {
@@ -514,6 +529,33 @@ impl Daemon {
             })
             .collect()
     }
+}
+
+/// The tree's size, or `None` when its walk ran out of `limit` or one did within the
+/// last `OVERSIZED_REMEASURE`. The lock is not held while walking.
+fn measure_tree(
+    state: &Mutex<CleanupState>,
+    key: &str,
+    path: &Path,
+    limit: wc::TreeLimit,
+    now: Instant,
+) -> Option<u64> {
+    let recently_oversized = state
+        .lock()
+        .expect("worktree cleanup lock")
+        .oversized
+        .get(key)
+        .is_some_and(|at| now.saturating_duration_since(*at) < OVERSIZED_REMEASURE);
+    if recently_oversized {
+        return None;
+    }
+    let bytes = wc::tree_bytes_within(path, limit);
+    let mut state = state.lock().expect("worktree cleanup lock");
+    match bytes {
+        Some(_) => state.oversized.remove(key),
+        None => state.oversized.insert(key.to_string(), now),
+    };
+    bytes
 }
 
 /// Closing the pane that created a worktree wakes the loop instead of leaving that
@@ -750,5 +792,32 @@ mod tests {
     #[test]
     fn the_worktree_cleanup_pass_repeats_every_six_hours() {
         assert_eq!(WORKTREE_CLEANUP_INTERVAL_MS, 21_600_000);
+    }
+
+    #[test]
+    fn a_tree_over_the_limit_is_not_walked_again_for_a_day() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..4 {
+            std::fs::write(tmp.path().join(format!("f{i}")), "1234").unwrap();
+        }
+        let state = Mutex::new(CleanupState::default());
+        let limit = |entries| wc::TreeLimit {
+            entries,
+            deadline: Duration::from_secs(60),
+        };
+        let at = Instant::now();
+        assert_eq!(measure_tree(&state, "t", tmp.path(), limit(2), at), None);
+        // A walk would now fit; the remembered overflow skips it.
+        let later = at + Duration::from_secs(60);
+        assert_eq!(
+            measure_tree(&state, "t", tmp.path(), limit(100), later),
+            None
+        );
+        let next_day = at + OVERSIZED_REMEASURE;
+        assert_eq!(
+            measure_tree(&state, "t", tmp.path(), limit(100), next_day),
+            Some(16)
+        );
+        assert!(state.lock().unwrap().oversized.is_empty());
     }
 }
