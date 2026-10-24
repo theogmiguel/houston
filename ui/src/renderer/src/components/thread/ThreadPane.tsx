@@ -1,6 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
-import { isLive } from '../../houston/client'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { IconArrowUp, IconStopCircle } from '../icons'
 import { Button } from '../ui/Button'
@@ -22,7 +21,7 @@ import {
 } from '../ui/Thread'
 import { ThreadToolRow } from './ThreadToolCard'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
-import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
+import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { sendThreadMessage, stopThread, useThread } from '../../thread/threadStore'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
@@ -47,7 +46,7 @@ const ThreadRow = memo(function ThreadRow({ item, markdown }: { item: ThreadItem
     case 'assistant':
       return (
         <ThreadAssistantBlock streaming={item.streaming}>
-          {markdown ? <markdown.MarkdownDocument source={item.text} variant="chat" /> : <ThreadPlainText>{item.text}</ThreadPlainText>}
+          {markdown ? <markdown.MarkdownDocument source={item.text} variant="thread" /> : <ThreadPlainText>{item.text}</ThreadPlainText>}
           {item.truncated && <ThreadCaption>Answer cut at 256 KiB by Houston.</ThreadCaption>}
         </ThreadAssistantBlock>
       )
@@ -66,14 +65,16 @@ function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length
 }
 
-function formatKiB(bytes: number): string {
-  return `${(bytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KiB`
+/** Enter that confirms an IME candidate; WebKit reports it after `compositionend` with key code 229. */
+export function isImeEnter(event: { key: string; keyCode: number; isComposing: boolean }): boolean {
+  return event.isComposing || event.keyCode === 229 || event.key === 'Process'
 }
 
-export function ThreadComposer({ working, disabledReason, onSend, onStop }: {
-  working: boolean
+export function ThreadComposer({ stoppable, disabledReason, onSend, onStop }: {
+  stoppable: boolean
   disabledReason: string | null
-  onSend: (text: string) => void
+  /** Whether the message was written; the text stays in the field when it was not. */
+  onSend: (text: string) => boolean
   onStop: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
@@ -83,11 +84,14 @@ export function ThreadComposer({ working, disabledReason, onSend, onStop }: {
     if (disabledReason !== null || text.trim() === '') return
     const size = utf8Length(text)
     if (size > THREAD_USER_MESSAGE_MAX_BYTES) {
-      setRefusal(`Message not sent: it is ${formatKiB(size)} and a thread message is limited to ${formatKiB(THREAD_USER_MESSAGE_MAX_BYTES)}.`)
+      setRefusal(`Message not sent: it is ${size.toLocaleString()} bytes and a thread message is limited to ${THREAD_USER_MESSAGE_MAX_BYTES.toLocaleString()} bytes.`)
+      return
+    }
+    if (!onSend(text)) {
+      setRefusal('Message not sent: the connection to the daemon is closed. Your text is kept.')
       return
     }
     setRefusal(null)
-    onSend(text)
     setText('')
   }
   return (
@@ -102,13 +106,13 @@ export function ThreadComposer({ working, disabledReason, onSend, onStop }: {
         disabled={disabledReason !== null}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+          if (e.key !== 'Enter' || e.shiftKey || isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })) return
           e.preventDefault()
           send()
         }}
       />
       <ThreadComposerActions hint="Enter sends · Shift+Enter adds a line">
-        {working
+        {stoppable
           ? <Button data-testid="thread-stop" variant="primary" size="sm" icon={IconStopCircle} disabled={disabledReason !== null} onClick={onStop}>Stop</Button>
           : <Button data-testid="thread-send" variant="primary" size="sm" icon={IconArrowUp} disabled={disabledReason !== null || text.trim() === ''} onClick={send}>Send</Button>}
       </ThreadComposerActions>
@@ -116,10 +120,18 @@ export function ThreadComposer({ working, disabledReason, onSend, onStop }: {
   )
 }
 
-function composerDisabledReason(info: SessionInfo, connected: boolean): string | null {
+// A thread without a process resumes on the next message, so only a removed or sleeping session refuses input.
+export function composerDisabledReason(info: SessionInfo, connected: boolean): string | null {
   if (!connected) return 'Reconnecting to the daemon'
-  if (!isLive(info.state)) return `This session is ${info.state}`
+  if (info.state === 'killed' || info.state === 'sleeping') return `This session is ${info.state}`
   return null
+}
+
+const TURN_STATUSES: ReadonlySet<SessionInfo['status']> = new Set(['working', 'spawning', 'needs-input'])
+
+/** Stop is offered while the agent reports a turn in progress or the timeline has one without an end. */
+export function threadStoppable(info: SessionInfo, events: Parameters<typeof turnOpen>[0]): boolean {
+  return TURN_STATUSES.has(info.status) || turnOpen(events)
 }
 
 /** Keeps the newest row in view while the reader is at the bottom; holds position when they paged back. */
@@ -155,18 +167,28 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
   const scroll = useRef<HTMLDivElement>(null)
   const { start, end } = windowBounds(thread.items, win)
   const shown = thread.items.slice(start, end)
-  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, start, end], win.end === null)
-  const earlierAvailable = start > 0 || thread.hasMore
-  const working = info.status === 'working'
-  const earlier = (): void => {
+  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, start, end, markdown], win.end === null)
+  const growOnArrival = useRef(false)
+  useEffect(() => {
+    if (thread.loadingEarlier || !growOnArrival.current) return
+    growOnArrival.current = false
     holdFromBottom()
-    if (start === 0) thread.loadEarlier()
+    setWin((current) => showEarlier(thread.items, current))
+  }, [thread.loadingEarlier, thread.items, holdFromBottom])
+  const earlier = (): void => {
+    if (start === 0) {
+      growOnArrival.current = true
+      thread.loadEarlier()
+      return
+    }
+    holdFromBottom()
     setWin((current) => showEarlier(thread.items, current))
   }
   return (
     <ThreadSurface>
+      {thread.failure && <Notice tone="danger" inset="compact-inline" className="flex-none" action={{ label: 'Retry', onClick: thread.retry }}>{thread.failure}</Notice>}
       <ThreadScroll ref={scroll} onScroll={onScroll}>
-        {earlierAvailable && (
+        {(start > 0 || thread.hasMore) && (
           <ThreadHistoryControl>
             <Button data-testid="thread-show-earlier" variant="ghost" size="sm" disabled={thread.loadingEarlier} onClick={earlier}>
               {thread.loadingEarlier ? 'Loading earlier messages…' : 'Show earlier'}
@@ -183,11 +205,11 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
         )}
       </ThreadScroll>
       <ThreadComposer
-        working={working}
+        stoppable={threadStoppable(info, thread.events)}
         disabledReason={composerDisabledReason(info, connected)}
         onSend={(text) => {
           setWin(LATEST_WINDOW)
-          sendThreadMessage(client, info.id, text)
+          return sendThreadMessage(client, info.id, text)
         }}
         onStop={() => stopThread(client, info.id)}
       />
