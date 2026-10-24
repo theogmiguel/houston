@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::Duration;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use std::time::Instant;
 
 /// Flags that turn an interactive Claude launch into a headless thread process.
@@ -38,6 +38,10 @@ const STDERR_TAIL_BYTES: usize = 4 * 1024;
 /// Time a stopped Claude gets to exit on SIGTERM before its group is killed.
 #[cfg(unix)]
 const STOP_GRACE: Duration = Duration::from_millis(1000);
+/// Bounds the system-wide thread snapshot walk that resumes a suspended Claude; it
+/// normally takes milliseconds.
+#[cfg(windows)]
+const RESUME_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the daemon does with a thread's events. A trait so the backend runs in unit tests
 /// without a daemon.
@@ -467,119 +471,13 @@ impl Tail {
     }
 }
 
+/// Assigns a suspended child, then resumes it, so nothing it starts escapes the job.
 #[cfg(windows)]
-struct Job(windows_sys::Win32::Foundation::HANDLE);
-
-// SAFETY: a Job object handle may be used and closed from any thread.
-#[cfg(windows)]
-unsafe impl Send for Job {}
-#[cfg(windows)]
-unsafe impl Sync for Job {}
-
-#[cfg(windows)]
-impl Job {
-    fn new() -> Result<Self> {
-        use windows_sys::Win32::System::JobObjects::{
-            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        };
-        // SAFETY: null attributes and name create an unnamed job owned by this process.
-        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if handle.is_null() {
-            return Err(std::io::Error::last_os_error()).context("creating a Job object");
-        }
-        let job = Job(handle);
-        // SAFETY: a zeroed limit structure is valid; only the flag below is set.
-        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // SAFETY: the pointer and size describe `limits`, which outlives the call.
-        let ok = unsafe {
-            SetInformationJobObject(
-                job.0,
-                JobObjectExtendedLimitInformation,
-                &limits as *const _ as *const std::ffi::c_void,
-                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        };
-        if ok == 0 {
-            return Err(std::io::Error::last_os_error())
-                .context("setting kill-on-close on the thread's Job object");
-        }
-        Ok(job)
-    }
-
-    /// Assigns a suspended child, then resumes it, so nothing it starts escapes the job.
-    fn adopt_suspended(&self, child: &std::process::Child) -> Result<()> {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
-        // SAFETY: both handles are live for the duration of the call.
-        if unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle() as _) } == 0 {
-            return Err(std::io::Error::last_os_error())
-                .with_context(|| format!("assigning Claude pid {} to its Job object", child.id()));
-        }
-        resume_threads(child.id())
-    }
-
-    fn terminate(&self) -> Result<()> {
-        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-        // SAFETY: the handle is a live Job object owned by this struct.
-        if unsafe { TerminateJobObject(self.0, 1) } == 0 {
-            return Err(std::io::Error::last_os_error())
-                .context("terminating the thread's Job object");
-        }
-        Ok(())
-    }
-}
-
-#[cfg(windows)]
-impl Drop for Job {
-    fn drop(&mut self) {
-        // SAFETY: the handle is owned by this struct and closed once; kill-on-close ends
-        // any process still in the job.
-        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
-    }
-}
-
-#[cfg(windows)]
-fn resume_threads(pid: u32) -> Result<()> {
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-    };
-    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
-    // SAFETY: a thread snapshot of the whole system; the handle is closed below.
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
-    if snapshot == INVALID_HANDLE_VALUE {
-        return Err(std::io::Error::last_os_error()).context("listing threads to resume Claude");
-    }
-    // SAFETY: zeroed is valid for THREADENTRY32 once dwSize is set.
-    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
-    entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-    let mut resumed = 0;
-    // SAFETY: `entry` is a properly sized out-parameter for the snapshot walk.
-    let mut more = unsafe { Thread32First(snapshot, &mut entry) } != 0;
-    while more {
-        if entry.th32OwnerProcessID == pid {
-            // SAFETY: opening a thread of our own suspended child by its id.
-            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
-            if !thread.is_null() {
-                // SAFETY: `thread` is a live handle opened above and closed right after.
-                unsafe {
-                    ResumeThread(thread);
-                    CloseHandle(thread);
-                }
-                resumed += 1;
-            }
-        }
-        // SAFETY: as for Thread32First.
-        more = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
-    }
-    // SAFETY: closing the snapshot handle created above.
-    unsafe { CloseHandle(snapshot) };
-    if resumed == 0 {
-        bail!("Claude pid {pid} was started suspended but none of its threads could be resumed");
-    }
-    Ok(())
+fn adopt_suspended(job: &crate::pid::OwnedJob, child: &std::process::Child) -> Result<()> {
+    job.assign(child)
+        .with_context(|| format!("assigning Claude pid {} to its Job object", child.id()))?;
+    crate::pid::resume_owned_child(child, Instant::now(), RESUME_TIMEOUT)
+        .with_context(|| format!("resuming suspended Claude pid {}", child.id()))
 }
 
 /// One run of the Claude process. A Stop or a crash ends it; the handle starts the next.
@@ -593,7 +491,7 @@ struct ThreadProcess {
     stopping: AtomicBool,
     stderr: Arc<Mutex<Tail>>,
     #[cfg(windows)]
-    job: Job,
+    job: crate::pid::OwnedJob,
 }
 
 impl ThreadProcess {
@@ -617,7 +515,7 @@ impl ThreadProcess {
             use std::os::windows::process::CommandExt;
             use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
             command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
-            Job::new()?
+            crate::pid::OwnedJob::new().context("creating the thread's Job object")?
         };
         let mut child = command.spawn().with_context(|| {
             format!(
@@ -626,8 +524,8 @@ impl ThreadProcess {
             )
         })?;
         #[cfg(windows)]
-        if let Err(error) = job.adopt_suspended(&child) {
-            let _ = child.kill();
+        if let Err(error) = adopt_suspended(&job, &child) {
+            let _ = crate::pid::terminate_owned_child(&child);
             let _ = child.wait();
             return Err(error);
         }
@@ -687,8 +585,11 @@ impl ThreadProcess {
         {
             let _ = graceful;
             if let Err(error) = self.job.terminate() {
-                tracing::warn!("{error:#}");
-                let _ = child.kill();
+                tracing::warn!(
+                    "terminating the Job object of thread pid {}: {error}",
+                    self.pid
+                );
+                let _ = crate::pid::terminate_owned_child(&child);
             }
         }
         child.wait().ok().and_then(|status| status.code())
