@@ -9,6 +9,7 @@ import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { RelocateState } from "./workspaceRelocate";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
@@ -1692,16 +1693,12 @@ export function App(): React.JSX.Element {
           case "history_count":
             setHistoryCount(msg.count);
             break;
-          case "workspace_relocated": {
-            moveWorkspaceLocalStateRef.current(msg.from, msg.to);
-            const { worktrees, sessions, notes } = msg.moved;
-            pushNotice({
-              code: `workspace-relocated:${msg.to}`,
-              title: `Workspace now at ${msg.to}`,
-              body: [`${sessions} session${sessions === 1 ? "" : "s"} and ${worktrees} worktree${worktrees === 1 ? "" : "s"} followed.`, ...notes].join(" "),
+          case "workspace_relocated":
+            void import("./workspaceRelocate").then((m) => {
+              if (relocateStateRef.current) m.moveWorkspaceLocalState(msg.from, msg.to, relocateStateRef.current);
+              pushNotice(m.relocatedNotice(msg));
             });
             break;
-          }
           case "error": {
             if (msg.context === USAGE_SUMMARY_ERROR_CONTEXT || msg.context === USAGE_ACTIVITY_ERROR_CONTEXT || msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
               setUsageLoading(false);
@@ -2913,53 +2910,12 @@ export function App(): React.JSX.Element {
     dropWorkspaceBuffers(path);
   }, []);
 
-  // The daemon re-pointed a moved workspace; this client's state keyed by the old
-  // path follows it, mirroring what dropWorkspaceLocalState removes.
-  const moveWorkspaceLocalState = useCallback((from: string, to: string): void => {
-    const rekey = <T,>(prev: Map<string, T>): Map<string, T> => {
-      const value = prev.get(from);
-      if (value === undefined) return prev;
-      const next = new Map(prev);
-      next.delete(from);
-      return next.set(to, value);
-    };
-    const moveItem = (oldKey: string, newKey: string): void => {
-      const value = localStorage.getItem(oldKey);
-      if (value === null) return;
-      localStorage.setItem(newKey, value);
-      localStorage.removeItem(oldKey);
-    };
-    setWsColors((prev) => {
-      if (!(from in prev)) return prev;
-      const { [from]: color, ...rest } = prev;
-      return { ...rest, [to]: color };
-    });
-    const grids = gridsByWsRef.current.get(from) ?? loadGrids(from);
-    const gridKeys = grids.map((g) => [gridStorageKey(from, g.id), gridStorageKey(to, g.id)] as const);
-    for (const [oldKey, newKey] of gridKeys) moveItem(`tr-layout:${oldKey}`, `tr-layout:${newKey}`);
-    moveItem(`tr-grids:${from}`, `tr-grids:${to}`);
-    setLayouts((prev) => {
-      let next = prev;
-      for (const [oldKey, newKey] of gridKeys) {
-        const layout = next.get(oldKey);
-        if (layout === undefined) continue;
-        if (next === prev) next = new Map(prev);
-        next.delete(oldKey);
-        next.set(newKey, layout);
-      }
-      return next;
-    });
-    setGridsByWs(rekey);
-    setSelectedGridByWs(rekey);
-    const swap = (prev: string[]): string[] =>
-      prev.includes(from) ? prev.map((p) => (p === from ? to : p)) : prev;
-    setWsPinned(swap);
-    setWsOrder(swap);
-    setWsRenaming((cur) => (cur === from ? null : cur));
-    setSelectedWs((cur) => (cur === from ? to : cur));
-  }, []);
-  const moveWorkspaceLocalStateRef = useRef(moveWorkspaceLocalState);
-  moveWorkspaceLocalStateRef.current = moveWorkspaceLocalState;
+  const relocateStateRef = useRef<RelocateState | null>(null);
+  relocateStateRef.current = {
+    gridsByWs: gridsByWsRef.current,
+    setWsColors, setLayouts, setGridsByWs, setSelectedGridByWs,
+    setWsPinned, setWsOrder, setWsRenaming, setSelectedWs,
+  };
 
   const locateWorkspace = useCallback(async (path: string): Promise<void> => {
     if (conn.kind !== "ready") return;
