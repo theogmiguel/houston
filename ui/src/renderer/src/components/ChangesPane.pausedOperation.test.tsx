@@ -29,7 +29,7 @@ describe('Changes pane — paused merge, rebase or cherry-pick', () => {
     expect(call.prompt).toContain('- src/a.ts')
     expect(call.prompt).not.toContain('- README.md')
     expect(call.prompt).toContain('git diff --check')
-    expect(call.prompt).toContain('Never run `git reset --hard`, `git stash` or `git rebase --abort`')
+    expect(call.prompt).toContain('Never run `git reset --hard`, `git checkout -- <path>`, `git restore`, `git clean`, `git stash` or `git rebase --abort`')
     expect(call.prompt).toContain('Report back:')
     expect(h.client.gitReviewDiffsCalls).toEqual([])
   })
