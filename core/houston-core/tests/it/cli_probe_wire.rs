@@ -6,38 +6,50 @@ use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use tokio_tungstenite::tungstenite::Message;
 
-/// A fake `codex` on an otherwise empty PATH: `--version` counts its runs in `calls.txt`,
-/// prints `version.txt`, and first sleeps 3 s while `slow` exists.
+/// Fake CLIs on an otherwise empty PATH: `--version` logs the CLI's name to `calls.txt`,
+/// prints `version.txt`, and first sleeps 3 s while `slow-<name>` exists.
 struct FakeCli {
     dir: tempfile::TempDir,
 }
 
 impl FakeCli {
+    /// A fake `codex` printing `version`.
     fn new(version: &str) -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let cli = Self::empty(version);
+        cli.install("codex");
+        cli
+    }
+
+    fn empty(version: &str) -> Self {
+        let cli = Self {
+            dir: tempfile::tempdir().unwrap(),
+        };
+        cli.set_version(version);
+        cli
+    }
+
+    fn install(&self, name: &str) {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let path = dir.path().join("codex");
+            let path = self.dir.path().join(name);
             std::fs::write(
                 &path,
-                "#!/bin/sh\n[ \"$1\" = --version ] || exit 1\nd=${0%/*}\necho x >> \"$d/calls.txt\"\n\
-                 [ -e \"$d/slow\" ] && /bin/sleep 3\nread -r v < \"$d/version.txt\"\necho \"$v\"\n",
+                "#!/bin/sh\n[ \"$1\" = --version ] || exit 1\nd=${0%/*}\nn=${0##*/}\n\
+                 echo \"$n\" >> \"$d/calls.txt\"\n[ -e \"$d/slow-$n\" ] && /bin/sleep 3\n\
+                 read -r v < \"$d/version.txt\"\necho \"$v\"\n",
             )
             .unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         #[cfg(windows)]
         std::fs::write(
-            dir.path().join("codex.cmd"),
-            "@echo off\r\nif not \"%~1\"==\"--version\" exit /b 1\r\necho x>>\"%~dp0calls.txt\"\r\n\
-             if exist \"%~dp0slow\" \"%SystemRoot%\\System32\\ping.exe\" -n 4 127.0.0.1 >nul\r\n\
+            self.dir.path().join(format!("{name}.cmd")),
+            "@echo off\r\nif not \"%~1\"==\"--version\" exit /b 1\r\necho %~n0>>\"%~dp0calls.txt\"\r\n\
+             if exist \"%~dp0slow-%~n0\" \"%SystemRoot%\\System32\\ping.exe\" -n 4 127.0.0.1 >nul\r\n\
              type \"%~dp0version.txt\"\r\n",
         )
         .unwrap();
-        let cli = Self { dir };
-        cli.set_version(version);
-        cli
     }
 
     fn set_version(&self, version: &str) {
@@ -45,7 +57,11 @@ impl FakeCli {
     }
 
     fn set_slow(&self) {
-        std::fs::write(self.dir.path().join("slow"), "").unwrap();
+        self.set_slow_for("codex");
+    }
+
+    fn set_slow_for(&self, name: &str) {
+        std::fs::write(self.dir.path().join(format!("slow-{name}")), "").unwrap();
     }
 
     fn calls(&self) -> usize {
@@ -68,7 +84,7 @@ impl FakeCli {
         while self.calls() < calls {
             assert!(
                 Instant::now() < deadline,
-                "codex --version ran {} times; expected {calls}",
+                "fake CLIs ran --version {} times; expected {calls}",
                 self.calls()
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -254,9 +270,9 @@ async fn an_unprimed_listing_replies_once_after_the_probe() {
     assert_eq!(extra, None, "a cold request answers once");
 }
 
-/// Reconnect bursts cannot stack sweeps: requests arriving while one runs join it.
+/// Reconnect bursts cannot stack sweeps: requests arriving while one runs share the next.
 #[tokio::test]
-async fn a_burst_of_hooks_requests_costs_one_sweep() {
+async fn a_burst_of_hooks_requests_costs_at_most_two_sweeps() {
     let cli = FakeCli::new("1.0.0");
     cli.set_slow();
     let (addr, _state, _daemon) = common::start_daemon_with_handle_in(cli.env()).await;
@@ -270,5 +286,34 @@ async fn a_burst_of_hooks_requests_costs_one_sweep() {
             .unwrap_or_else(|| panic!("reply {reply} of 5 never came"));
         assert_eq!(codex(&listing).version.as_deref(), Some("1.0.0"));
     }
-    assert_eq!(cli.calls(), 1, "five requests ran more than one sweep");
+    assert!(
+        cli.calls() <= 2,
+        "five requests ran {} sweeps; the running one and one after it at most",
+        cli.calls()
+    );
+}
+
+/// A request made while a sweep runs is answered by a sweep that starts after it, so a CLI
+/// installed after the running sweep probed for it is listed.
+#[tokio::test]
+async fn a_request_during_a_sweep_lists_a_cli_installed_after_that_sweep_probed_it() {
+    let cli = FakeCli::empty("1.0.0");
+    cli.install("opencode");
+    cli.set_slow_for("opencode");
+    let (addr, _state, daemon) = common::start_daemon_with_handle_in(cli.env()).await;
+    houston_core::boot::spawn_cli_probe_prime(&daemon);
+    cli.wait_for_calls(1).await;
+
+    cli.install("codex");
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    request_agent_hooks(&mut ws).await;
+    let listing = next_agent_hooks(&mut ws, Duration::from_secs(30))
+        .await
+        .expect("a listing");
+    let row = codex(&listing);
+    assert!(
+        row.present,
+        "the request was answered by the sweep before it: {row:#?}"
+    );
+    assert_eq!(row.version.as_deref(), Some("1.0.0"));
 }

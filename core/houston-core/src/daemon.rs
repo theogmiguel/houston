@@ -7990,7 +7990,7 @@ impl Daemon {
     }
 
     /// Re-probes every spawnable provider's CLI and swaps the answers in at once. A call
-    /// while a sweep runs waits for that sweep instead of starting another.
+    /// while a sweep runs waits for the next one, which every such call shares.
     pub fn rescan_cli_probes(&self) {
         self.cli_sweep.run_or_join(|| {
             let env = self.env();

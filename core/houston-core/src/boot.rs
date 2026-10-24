@@ -51,7 +51,7 @@ pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
 
 /// Fills the CLI version cache off the async runtime, beside the hook refresh rather
 /// than after it, so the first hooks listing and the first spawn read answers instead
-/// of running `--version` probes. A rescan requested mid-sweep joins this one.
+/// of running `--version` probes. A rescan requested mid-sweep shares the one after it.
 pub fn spawn_cli_probe_prime(daemon: &Arc<Daemon>) {
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || daemon.rescan_cli_probes());
