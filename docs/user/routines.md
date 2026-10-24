@@ -166,7 +166,7 @@ the interruption is recorded. Otherwise the run ends with the interruption recor
 
 ### Morning report
 
-When a run ends, Houston shows one notice such as "7 PRs, 2 decisions"; **Open report** opens
+When a run ends, Houston shows one notice such as "7 PRs, 2 open decisions"; **Open report** opens
 the **Morning report**. It lists the parked decisions with answer buttons (an answer is
 final), pull requests grouped by theme with their gates, the suggested merge order, events
 such as interruptions and limits, and the cost in pane-hours per provider. Checks and CI are

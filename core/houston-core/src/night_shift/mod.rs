@@ -37,18 +37,19 @@ pub fn flaky_match<'a>(flaky: &'a [String], texts: &[String]) -> Option<&'a str>
         .find(|t| texts.iter().any(|line| line.contains(t)))
 }
 
-/// The morning notice: "7 PRs, 2 decisions", or why the run did not start.
+/// The morning notice: "7 PRs, 2 open decisions", or why the run did not start.
+/// Answered decisions stay in the report, so the count names what it counts.
 pub fn headline(prs: usize, open_decisions: usize, refused: Option<&str>) -> String {
     if let Some(why) = refused {
         return format!("Night shift did not start: {why}");
     }
     let plural =
         |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    format!(
-        "{}, {}",
-        plural(prs, "PR", "PRs"),
-        plural(open_decisions, "decision", "decisions")
-    )
+    let decisions = match open_decisions {
+        0 => "no open decisions".to_string(),
+        n => plural(n, "open decision", "open decisions"),
+    };
+    format!("{}, {decisions}", plural(prs, "PR", "PRs"))
 }
 
 #[cfg(test)]
@@ -68,9 +69,9 @@ mod tests {
 
     #[test]
     fn headline_counts() {
-        assert_eq!(headline(7, 2, None), "7 PRs, 2 decisions");
-        assert_eq!(headline(1, 1, None), "1 PR, 1 decision");
-        assert_eq!(headline(0, 0, None), "0 PRs, 0 decisions");
+        assert_eq!(headline(7, 2, None), "7 PRs, 2 open decisions");
+        assert_eq!(headline(1, 1, None), "1 PR, 1 open decision");
+        assert_eq!(headline(1, 0, None), "1 PR, no open decisions");
         assert_eq!(
             headline(0, 0, Some("missed: the machine was asleep")),
             "Night shift did not start: missed: the machine was asleep"

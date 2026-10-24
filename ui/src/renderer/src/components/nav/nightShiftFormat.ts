@@ -154,11 +154,12 @@ export function countLabel(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
 }
 
+/** Answered decisions stay listed, so the count says it is of open ones. */
 export function headline(run: NightRun): string {
   if (run.phase === 'refused') return `Night shift did not start: ${run.stop_detail ?? 'it was refused'}`
   const prs = run.entries.filter((e) => e.kind === 'pr').length
   const open = run.entries.filter((e) => e.kind === 'decision' && !e.choice).length
-  return `${countLabel(prs, 'PR', 'PRs')}, ${countLabel(open, 'decision', 'decisions')}`
+  return `${countLabel(prs, 'PR', 'PRs')}, ${open === 0 ? 'no open decisions' : countLabel(open, 'open decision', 'open decisions')}`
 }
 
 export const STOP_REASON: Record<NightStopReason, string> = {

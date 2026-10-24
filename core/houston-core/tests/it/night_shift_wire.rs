@@ -1275,7 +1275,10 @@ async fn settle_broadcasts_one_notice() {
             Err(_) => break,
         }
     }
-    assert_eq!(notices, [(run.run_id, "2 PRs, 1 decision".to_string())]);
+    assert_eq!(
+        notices,
+        [(run.run_id, "2 PRs, 1 open decision".to_string())]
+    );
 }
 
 #[tokio::test]

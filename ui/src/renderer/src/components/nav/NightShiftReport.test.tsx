@@ -45,7 +45,7 @@ describe('NightShiftReport', () => {
       ]
     })
     act(() => root.render(<NightShiftReport run={run} report={null} workers={['zcode', 'claude']} holdForQa onDecide={onDecide} onQaPassed={onQaPassed} onLoadReport={() => {}} />))
-    expect(host.querySelector('[data-testid="night-headline"]')?.textContent).toBe('2 PRs, 1 decision')
+    expect(host.querySelector('[data-testid="night-headline"]')?.textContent).toBe('2 PRs, 1 open decision')
     expect(host.textContent).toContain('Report published')
 
     const decisions = host.querySelector('section[aria-label="Decisions"]')!
@@ -82,5 +82,18 @@ describe('NightShiftReport', () => {
     expect(cost).toContain('7.5')
     expect(cost).toContain('1 pane')
     expect(cost).not.toContain('1 panes')
+  })
+
+  it('counts open decisions in the headline while an answered one stays listed', () => {
+    const run = nightRun({
+      phase: 'settled', ended_at_ms: NIGHT_NOW, stop_reason: 'report',
+      entries: [
+        nightEntry({ id: 1, kind: 'pr', title: 'Tray fix', pr_number: 12 }),
+        nightEntry({ id: 2, kind: 'decision', title: 'Drop the old API?', body: 'Options: keep | remove', choice: 'keep' })
+      ]
+    })
+    act(() => root.render(<NightShiftReport run={run} report={null} workers={['zcode']} holdForQa={false} onDecide={() => {}} onQaPassed={() => {}} onLoadReport={() => {}} />))
+    expect(host.querySelector('[data-testid="night-headline"]')?.textContent).toBe('1 PR, no open decisions')
+    expect(host.querySelector('section[aria-label="Decisions"]')?.textContent).toContain('Answered: keep')
   })
 })
