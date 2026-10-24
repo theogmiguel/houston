@@ -186,6 +186,7 @@ async fn a_worktree_check_names_changes_commits_and_panes_before_removal() {
     std::fs::write(tree.join("scratch.txt"), "x\n").unwrap();
     std::fs::write(tree.join("README.md"), "changed\n").unwrap();
     let pane = long_running_session(&daemon, tree);
+    daemon.rename(pane.id, "Renamed worker").unwrap();
 
     let busy = check(&mut ws, &dir, &path).await;
     assert_eq!(busy.dirty_files, Some(2));
@@ -196,7 +197,7 @@ async fn a_worktree_check_names_changes_commits_and_panes_before_removal() {
     assert!(busy.gaps.is_empty(), "{:?}", busy.gaps);
     let panes: Vec<u32> = busy.panes.iter().map(|p| p.session).collect();
     assert_eq!(panes, vec![pane.id]);
-    assert!(!busy.panes[0].title.is_empty());
+    assert_eq!(busy.panes[0].title, "Renamed worker", "the title the rail shows");
     daemon.kill(pane.id).ok();
 }
 

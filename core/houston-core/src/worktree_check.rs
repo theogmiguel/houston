@@ -7,7 +7,8 @@ use std::time::{Duration, UNIX_EPOCH};
 use houston_protocol::{WorktreeCheckGap, WorktreeCheckPart, WorktreeCheckResult};
 
 /// The operator waits on the confirm, so a git call past this counts as a gap rather
-/// than holding the dialog; three calls bound the check at under a minute.
+/// than holding the dialog. At most seven calls (four, plus three to find an unrecorded
+/// base) bound the check at 105 s.
 const GIT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Uncommitted files stat'ed for the newest change; a tree with more reports the
@@ -71,6 +72,24 @@ fn modified_ms(path: &Path) -> Option<i64> {
     Some(since.as_millis().min(i64::MAX as u128) as i64)
 }
 
+/// `crate::git::default_base` under this check's per-call bound, so a hung lookup is a
+/// gap instead of a 120 s wait.
+fn default_base(repo: &Path) -> Option<String> {
+    if let Ok(out) = git(
+        repo,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    ) {
+        let name = out.trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    ["main", "master"]
+        .into_iter()
+        .find(|candidate| git(repo, &["rev-parse", "--verify", "--quiet", candidate]).is_ok())
+        .map(str::to_string)
+}
+
 /// Everything but the panes, which only the daemon knows. `base` is the branch the
 /// tree was cut from, when Houston recorded one.
 pub fn check(repo: &Path, tree: &Path, base: Option<String>) -> WorktreeCheckResult {
@@ -120,7 +139,7 @@ pub fn check(repo: &Path, tree: &Path, base: Option<String>) -> WorktreeCheckRes
             (None, None)
         }
     };
-    let base = base.or_else(|| crate::git::default_base(repo));
+    let base = base.or_else(|| default_base(repo));
     let ahead = match &base {
         Some(base) => count(tree, &["rev-list", "--count", &format!("{base}..HEAD")])
             .map_err(|reason| gap(WorktreeCheckPart::Commits, reason))

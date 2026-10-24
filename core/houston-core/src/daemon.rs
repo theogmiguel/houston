@@ -5940,7 +5940,7 @@ impl Daemon {
                 let session = sessions.get(&id)?;
                 Some(proto::WorktreeCheckPane {
                     session: id,
-                    title: session.info.title.clone(),
+                    title: session.snapshot_title().0,
                 })
             })
             .collect();

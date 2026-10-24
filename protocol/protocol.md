@@ -195,7 +195,7 @@ failure not given a typed refusal comes back as `error`.
 | `git_worktree_create` | `dir`, `name`, `base?` | `git_worktrees` carrying a `message` naming the new path and branch |
 | `git_worktree_remove` | `dir`, `path`, `force` (a dirty worktree without it is refused) | `git_worktrees` carrying a `message` |
 | `git_worktree_prune` | `dir` | `git_worktrees` carrying a `message` (the summary, or "Nothing to prune.") |
-| `worktree_check` | `dir`, `path` | `worktree_check` (direct); read-only, asked before a removal is confirmed. Each git call has a 15 s limit |
+| `worktree_check` | `dir`, `path` | `worktree_check` (direct); read-only, asked before a removal is confirmed. Each git call has a 15 s limit, and at most seven run (three of them only to find a base no worktree row recorded), so the reply comes within 105 s |
 | `worktree_cleanup_status` | `dir` (a registered workspace) | `worktree_cleanup` (direct) from the last pass's cache; nothing is measured and `gh` is not called |
 | `worktree_cleanup_run` | `dir` (a registered workspace), `paths?: string[]` | `worktree_cleanup` (bcast) after one pass, whatever the setting. It removes only those `paths` that the pass still finds nothing keeping; stale entries are never removed by this message. With `paths` empty or absent it only checks and measures. A second run while one is going is refused: "a worktree cleanup pass is already running for <dir>" |
 | `worktree_idle_removal_days_get` | — | `worktree_idle_removal_days` (direct) |
