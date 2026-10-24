@@ -69,9 +69,10 @@ pub fn status(dir: &Path) -> Result<Vec<proto::GitFileStatus>> {
     scan(dir, false).map(|(files, _)| files)
 }
 
-/// Files and branch sync from one worktree scan, for callers that need both.
+/// Files and branch sync from one worktree scan, for callers that already proved `dir` is a
+/// work tree with `probe_repo`; repeating that `rev-parse` would add a process to every poll.
 pub fn status_and_sync(dir: &Path) -> Result<(Vec<proto::GitFileStatus>, SyncStatus)> {
-    ensure_repo(dir)?;
+    ensure_dir(dir)?;
     scan(dir, true)
 }
 
@@ -1685,10 +1686,15 @@ fn rev_parse_commit(dir: &Path, name: &str) -> Result<String> {
     Ok(sha)
 }
 
-fn ensure_repo(dir: &Path) -> Result<()> {
+fn ensure_dir(dir: &Path) -> Result<()> {
     if !dir.is_dir() {
         bail!("git target is not a directory: {}", dir.display());
     }
+    Ok(())
+}
+
+fn ensure_repo(dir: &Path) -> Result<()> {
+    ensure_dir(dir)?;
     run_git(dir, &["rev-parse", "--is-inside-work-tree"])
         .with_context(|| format!("{} is not a git repository", dir.display()))?;
     Ok(())
