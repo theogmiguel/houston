@@ -318,7 +318,10 @@ such as `target/` or `node_modules/`, is treated as build output and goes with i
 single ignored file, such as `.env` or a local settings file, keeps the worktree until
 you move or delete it, unless it is byte for byte the file at the same path in your
 checkout: a `.worktreeinclude` copy you have not changed can be recreated, so it does not
-keep the worktree. A copy you edited does.
+keep the worktree. A copy you edited does. On Windows, a junction or symbolic link inside
+the worktree, such as a `node_modules` junction into a shared package store, is removed as
+a link; what it points to is never deleted. A locked worktree, or a folder that is not a
+registered worktree of the repository, is refused rather than deleted.
 
 Otherwise the row says why it stays: the worktree was switched to another branch,
 uncommitted or ignored files, commits outside the PR, commits not yet in the branch it
