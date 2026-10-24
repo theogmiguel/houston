@@ -78,6 +78,9 @@ describe('NightShiftReport', () => {
     expect(events).toContain('Claude Code limited')
     expect(events).toContain('Later Claude Code spawns used ZCode.')
     expect(events).toContain('Known flaky test')
-    expect(host.querySelector('section[aria-label="Cost"]')?.textContent).toContain('7.5')
+    const cost = host.querySelector('section[aria-label="Cost"]')?.textContent
+    expect(cost).toContain('7.5')
+    expect(cost).toContain('1 pane')
+    expect(cost).not.toContain('1 panes')
   })
 })

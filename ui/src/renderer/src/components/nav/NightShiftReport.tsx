@@ -6,7 +6,7 @@ import { MarkdownPreview } from '../MarkdownPreview'
 import { Button, Card, GateChip, Inline, Notice, Readout, SectionHead, Text } from '../ui'
 import { ReadoutGrid } from '../ui/Readout'
 import { engineLabel } from '../engineLabel'
-import { STOP_REASON, decisionOptions, decisionText, headline, limitNote, prShelves, timeOfDay } from './nightShiftFormat'
+import { STOP_REASON, countLabel, decisionOptions, decisionText, headline, limitNote, prShelves, timeOfDay } from './nightShiftFormat'
 
 function Gates({ entry }: { entry: NightEntry }): React.JSX.Element {
   const g = entry.gates
@@ -110,7 +110,7 @@ export function NightShiftReport({ run, report, workers, holdForQa, onDecide, on
         <ReadoutGrid>
           <Readout label="Pane-hours" value={run.cost.pane_hours.toFixed(1)} tabular />
           <Readout label="Panes" value={run.cost.panes} tabular />
-          {run.cost.per_provider.map((l) => <Readout key={l.provider} label={engineLabel(l.provider)} value={`${l.pane_hours.toFixed(1)} h`} sub={`${l.panes} panes`} tabular />)}
+          {run.cost.per_provider.map((l) => <Readout key={l.provider} label={engineLabel(l.provider)} value={`${l.pane_hours.toFixed(1)} h`} sub={countLabel(l.panes, 'pane', 'panes')} tabular />)}
         </ReadoutGrid>
       </section>
 

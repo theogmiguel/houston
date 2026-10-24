@@ -150,12 +150,15 @@ export function decisionText(entry: NightEntry): string {
   return entry.body.split('\n').filter((l) => !l.startsWith('Options: ')).join('\n').trim()
 }
 
+export function countLabel(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
 export function headline(run: NightRun): string {
   if (run.phase === 'refused') return `Night shift did not start: ${run.stop_detail ?? 'it was refused'}`
   const prs = run.entries.filter((e) => e.kind === 'pr').length
   const open = run.entries.filter((e) => e.kind === 'decision' && !e.choice).length
-  const n = (k: number, one: string, many: string): string => `${k} ${k === 1 ? one : many}`
-  return `${n(prs, 'PR', 'PRs')}, ${n(open, 'decision', 'decisions')}`
+  return `${countLabel(prs, 'PR', 'PRs')}, ${countLabel(open, 'decision', 'decisions')}`
 }
 
 export const STOP_REASON: Record<NightStopReason, string> = {

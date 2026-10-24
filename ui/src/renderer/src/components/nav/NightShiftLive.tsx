@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ReadoutGrid } from '../ui/Readout'
 import { StatusLabel } from '../ui/StatusLabel'
 import { engineLabel } from '../engineLabel'
-import { countdownLabel, limitNote, runMarks, timeOfDay } from './nightShiftFormat'
+import { countLabel, countdownLabel, limitNote, runMarks, timeOfDay } from './nightShiftFormat'
 
 const STATUS: Record<string, 'Working' | 'Idle' | 'Needs input' | 'Limited'> = {
   working: 'Working', idle: 'Idle', 'needs-input': 'Needs input'
@@ -61,7 +61,7 @@ export function NightShiftLive({ run, machine, workers, now, onWrapUp, onStop, o
         <Readout label="Pull requests" value={prs.length} tabular />
         <Readout label="Planned" value={plans.length} tabular />
         <Readout label="Decisions" value={decisions.length} tabular />
-        <Readout label="Pane-hours" value={run.cost.pane_hours.toFixed(1)} sub={`${run.cost.panes} panes`} tabular />
+        <Readout label="Pane-hours" value={run.cost.pane_hours.toFixed(1)} sub={countLabel(run.cost.panes, 'pane', 'panes')} tabular />
       </ReadoutGrid>
 
       <section className="grid gap-[var(--space-1-5)]" aria-label="Crew">

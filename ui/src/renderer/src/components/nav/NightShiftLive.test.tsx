@@ -62,6 +62,14 @@ describe('NightShiftLive', () => {
     expect(Array.from(host.querySelectorAll('button')).some((b) => b.textContent === 'Wrap up now')).toBe(false)
   })
 
+  it('counts a single pane in the singular', () => {
+    const run = nightRun({ cost: { pane_hours: 0.3, panes: 1, per_provider: [{ provider: 'opencode', panes: 1, pane_hours: 0.3 }] } })
+    act(() => root.render(<NightShiftLive run={run} workers={['zcode']} now={NIGHT_NOW} onWrapUp={vi.fn()} onStop={vi.fn()} onOpenSession={vi.fn()}
+      machine={{ memory_free_mib: null, disk_free_mib: null, on_battery: null, keep_awake: 'held' }} />))
+    expect(host.textContent).toContain('1 pane')
+    expect(host.textContent).not.toContain('1 panes')
+  })
+
   it('names what spawns of a limited provider become', () => {
     const machine = { memory_free_mib: null, disk_free_mib: null, on_battery: null, keep_awake: 'held' as const }
     const render = (workers: ('zcode' | 'claude')[]): void => act(() => root.render(<NightShiftLive run={nightRun({ limited: ['zcode'] })}
