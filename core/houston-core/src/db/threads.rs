@@ -13,6 +13,7 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "view",
         "view TEXT NOT NULL DEFAULT 'terminal'",
     )?;
+    super::add_column_if_missing(conn, "sessions", "thread_group", "thread_group TEXT")?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS thread_events (
             session_id INTEGER NOT NULL,
@@ -74,6 +75,28 @@ impl Db {
             )
             .optional()?
             .is_some())
+    }
+
+    /// The process group of the thread's current Claude, as JSON (`ThreadGroup`).
+    pub fn set_thread_group(&self, id: u32, group: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET thread_group = ?2 WHERE id = ?1",
+            rusqlite::params![id, group],
+        )?;
+        Ok(())
+    }
+
+    pub fn thread_group(&self, id: u32) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT thread_group FROM sessions WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten())
     }
 
     pub fn session_view(&self, id: u32) -> Result<proto::SessionView> {

@@ -64,6 +64,10 @@ fn result(conversation: &str) {
 }
 
 fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
+    // Real Claude opens every turn with `system/init`; replayed captures carry their own.
+    if !text.starts_with("replay:") {
+        emit_value(json!({"type":"system","subtype":"init","session_id":conversation}));
+    }
     if let Some(name) = text.strip_prefix("replay:") {
         let dir = fixtures.expect("HOUSTON_FAKE_CLAUDE_FIXTURES names the fixture dir");
         let body = std::fs::read_to_string(dir.join(format!("{name}.jsonl")))
@@ -95,6 +99,23 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
     } else if let Some(mode) = text.strip_prefix("mode:") {
         emit_value(json!({"type":"system","subtype":"status","permissionMode":mode}));
         result(conversation);
+    } else if text == "deaf" {
+        delta("msg_deaf", "deaf");
+        // Stops reading stdin for good, as a frozen Claude would.
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    } else if text == "stubborn" {
+        #[cfg(unix)]
+        // SAFETY: SIG_IGN for SIGTERM changes only this test process's disposition.
+        unsafe {
+            libc::signal(libc::SIGTERM, libc::SIG_IGN);
+        }
+        delta("msg_stubborn", "stubborn");
+        // Keeps running without reading stdin, so only a group kill ends it.
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
     } else if text == "crash" {
         emit_value(
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
@@ -210,6 +231,13 @@ fn permission(
         return Err(text.to_string());
     }
     serde_json::from_str(text).map_err(|e| format!("{e}: {text}"))
+}
+
+fn delta(message: &str, text: &str) {
+    emit_value(
+        json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
+        "delta":{"type":"text_delta","text":text}},"parent_tool_use_id":null,"api_message_id":message}),
+    );
 }
 
 fn sleeper(pidfile: &str) -> ! {

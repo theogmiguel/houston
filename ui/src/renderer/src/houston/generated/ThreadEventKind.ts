@@ -2,4 +2,8 @@
 import type { ApprovalDecision } from "./ApprovalDecision";
 import type { TurnOutcome } from "./TurnOutcome";
 
-export type ThreadEventKind = { "type": "user_message", text: string, } | { "type": "assistant_delta", message_id: string, text: string, } | { "type": "assistant_message", message_id: string, text: string, truncated: boolean, } | { "type": "tool_call", tool_use_id: string, name: string, input: string, truncated: boolean, } | { "type": "tool_result", tool_use_id: string, is_error: boolean, output: string, truncated: boolean, } | { "type": "turn_end", outcome: TurnOutcome, error?: string | null, } | { "type": "notice", text: string, } | { "type": "approval_request", request_id: string, tool_use_id: string, tool_name: string, input: string, truncated: boolean, } | { "type": "approval_resolved", request_id: string, decision: ApprovalDecision, reason?: string | null, };
+export type ThreadEventKind = { "type": "user_message", text: string, } | { "type": "assistant_delta", message_id: string, text: string, } | { "type": "assistant_message", message_id: string, text: string, truncated: boolean, } | { "type": "tool_call", tool_use_id: string, name: string, input: string, truncated: boolean, } | { "type": "tool_result", tool_use_id: string, is_error: boolean, output: string, truncated: boolean, } | { "type": "turn_end", outcome: TurnOutcome, error?: string | null, } | { "type": "notice", text: string, } | { "type": "approval_request", request_id: string, tool_use_id: string, tool_name: string, input: string, truncated: boolean,
+/**
+ * The whole input's size, so a truncated card can say how much it hides.
+ */
+input_bytes: number, } | { "type": "approval_resolved", request_id: string, decision: ApprovalDecision, reason?: string | null, };

@@ -1594,8 +1594,9 @@ pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
 /// Larger than a tool card's cap: the user approves this input, so it should be readable.
 pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
 
-/// One entry of a thread's timeline. `seq` increases per session and is never
-/// reused, so a client merges history and live events by it.
+/// One entry of a thread's timeline. `seq` increases per session and is not reused
+/// within one daemon run; a client merges history and live events by it and reloads
+/// history after reconnecting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ThreadEvent {

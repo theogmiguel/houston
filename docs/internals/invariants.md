@@ -332,6 +332,12 @@ The daemon's own thread sources (`thread_*`) never count as a lifecycle hook.
 
 Stop ends the whole process tree: the process group (through `pid.rs`) on Unix, the Job
 object with kill-on-close on Windows. Killing only `claude` leaves its tools running.
+Stop, start and exit handling are serialised per thread, so a message sent during a Stop
+starts its process only after the old tree is reaped, and a write blocked on a Claude that
+stopped reading never holds up Stop, Kill or shutdown. A daemon crash on Windows ends the
+tree with the Job handle. On Linux the session row records the group (pgid, the daemon's
+session id, the boot id); restore, Restart and Close kill the processes still in that pgid
+and session on the same boot, which only the dead daemon launched.
 The thread's history is Houston's own `thread_events` log, written from the stream as it
 arrives; Houston never reads Claude's transcript files to fill it and never writes the
 `control_request` protocol. A thread takes no terminal input: stdin frames,
