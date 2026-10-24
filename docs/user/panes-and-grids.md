@@ -93,22 +93,24 @@ from that address only when you choose **Load image**.
 
 The pane menu of a Claude session offers **Open as thread** on a terminal and **Open in
 terminal** on a thread. Houston restarts the session in the other view and resumes the
-same conversation by its exact ID; the pane keeps its name, its child panes and its
-resume handle, and a thread keeps its history. If the conversation cannot be resumed
-(for example, its working directory changed), the session starts fresh in the new view
-and the pane says why. Switching is refused while Claude's status is Working, Starting
-or Needs input, or while a thread turn is still open; wait for the turn to end or stop
-it first. Child panes started by an agent must close before their parent switches.
+same conversation by its exact ID; the pane keeps its name and its resume handle, and a
+thread keeps its history. If the conversation cannot be resumed (for example, its working
+directory changed, or Houston never received its resume handle), the session starts
+fresh in the new view and the pane says why. Switching is refused while Claude's status
+is Working, Starting or Needs input, while a thread turn is still open, while the session
+is sleeping or not running, and while it has live child panes. Messages and keystrokes
+sent to the pane during the switch are refused rather than lost to the restart.
 
 Turns taken while a session is a terminal are not shown in its thread. Houston counts
 them from Claude's turn-end reports and, when the session opens as a thread, adds one
 note such as "3 turns happened in the terminal; this thread does not show them." It
 never reads Claude's transcript files to fill the thread.
 
-New Claude sessions from the pane **+** menu, an empty grid and the command palette open
-in the view chosen in **Settings ▸ Agents ▸ CLIs ▸ Default view** (Terminal unless you
-change it). The **Thread** entry always opens a thread, and child panes started by an
-agent always open as terminals.
+Claude sessions you open yourself, from the pane **+** menu, an empty grid, the command
+palette, a pane's **Handoff…** or a pull request's **Hand off**, open in the view chosen
+in **Settings ▸ Agents ▸ CLIs ▸ Default view** (Terminal unless you change it). The
+**Thread** entry always opens a thread. Review and check agents, routines, phone-started
+sessions and child panes started by an agent open as terminals.
 
 ## Splitting and stacking
 
