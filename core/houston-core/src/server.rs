@@ -891,6 +891,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
             | proto::ClientMsg::WorktreeCleanupStatus { .. }
+            | proto::ClientMsg::WorktreeCheck { .. }
             | proto::ClientMsg::WorktreeIdleRemovalDaysGet
             | proto::ClientMsg::GitCheckpoints { .. }
             | proto::ClientMsg::GitCheckpointDiff { .. }
@@ -4051,6 +4052,16 @@ async fn dispatch(
                 }
                 Err(e) => Err(e),
             }
+        }
+        proto::ClientMsg::WorktreeCheck { dir, path } => {
+            let d = PathBuf::from(&dir);
+            let wt = PathBuf::from(&path);
+            let daemon = Arc::clone(daemon);
+            let check = tokio::task::spawn_blocking(move || daemon.worktree_check(&d, &wt))
+                .await
+                .map_err(|e| anyhow::anyhow!("worktree check task panicked: {e}"))?;
+            let _ = send_msg(sink, &proto::ServerMsg::WorktreeCheck { dir, path, check }).await;
+            Ok(())
         }
         proto::ClientMsg::GitWorktreePrune { dir } => {
             let d = PathBuf::from(&dir);

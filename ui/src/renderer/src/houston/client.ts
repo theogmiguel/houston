@@ -811,6 +811,10 @@ export class HoustonClient {
     this.send({ type: 'git_worktree_remove', dir, path, force })
   }
 
+  worktreeCheck(dir: string, path: string): void {
+    this.send({ type: 'worktree_check', dir, path })
+  }
+
   gitWorktreePrune(dir: string): void {
     this.send({ type: 'git_worktree_prune', dir })
   }

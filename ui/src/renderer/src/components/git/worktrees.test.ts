@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   shortSha,
   worktreeActionDisabledReason,
+  worktreeCheckFindings,
   worktreePathName,
   worktreeRemoveConfirm,
   worktreeRemoveLabel,
@@ -59,5 +60,58 @@ describe('worktree labels', () => {
 
   test('the path tail names a worktree when it has no branch', () => {
     expect(worktreePathName('/home/dev/wt/task/')).toBe('task')
+  })
+})
+
+describe('worktree check findings', () => {
+  const NOW = 1_800_000_000_000
+  const clean = { dirty_files: 0, newest_change_ms: null, base: 'main', ahead: 0, unpushed: 0, panes: [], gaps: [] }
+
+  test('a clean, idle tree has nothing to list', () => {
+    expect(worktreeCheckFindings(clean, NOW)).toEqual([])
+  })
+
+  test('each finding is counted and the newest change is dated', () => {
+    expect(
+      worktreeCheckFindings(
+        {
+          ...clean,
+          dirty_files: 1,
+          newest_change_ms: NOW - 5 * 60_000,
+          ahead: 1,
+          unpushed: 4,
+          panes: [
+            { session: 3, title: 'Leo' },
+            { session: 7, title: 'review' }
+          ]
+        },
+        NOW
+      )
+    ).toEqual([
+      '1 uncommitted file, the newest changed 5 min ago',
+      '1 commit not on main',
+      '4 commits not pushed to any remote',
+      '2 panes working here: Leo (#3), review (#7)'
+    ])
+  })
+
+  test('a part that could not look is listed with its reason', () => {
+    expect(
+      worktreeCheckFindings(
+        {
+          ...clean,
+          dirty_files: null,
+          unpushed: null,
+          gaps: [
+            { part: 'changes', reason: 'git status gave no answer within 15 s' },
+            { part: 'unpushed', reason: 'the repository has no remote' }
+          ]
+        },
+        NOW
+      )
+    ).toEqual([
+      'Could not check uncommitted changes: git status gave no answer within 15 s',
+      'Could not check unpushed commits: the repository has no remote'
+    ])
   })
 })

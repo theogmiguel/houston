@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2983,6 +2983,50 @@ pub struct ManagedWorktreeInfo {
     pub checked_at_ms: Option<i64>,
 }
 
+/// The part of a worktree check that could not look.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeCheckPart {
+    /// Uncommitted files and the age of the newest one.
+    Changes,
+    /// Commits on `HEAD` that the base lacks.
+    Commits,
+    /// Commits on `HEAD` that no remote-tracking ref has.
+    Unpushed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckGap {
+    pub part: WorktreeCheckPart,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckPane {
+    pub session: u32,
+    pub title: String,
+}
+
+/// What removing a worktree would interrupt or lose. A part that could not look is
+/// `None` with a gap naming why, so a failed check still reads as a finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckResult {
+    pub dirty_files: Option<u32>,
+    /// The newest modification among the uncommitted files that still exist.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+    pub newest_change_ms: Option<i64>,
+    pub base: Option<String>,
+    pub ahead: Option<u32>,
+    pub unpushed: Option<u32>,
+    /// Houston panes whose working directory is inside the tree.
+    pub panes: Vec<WorktreeCheckPane>,
+    pub gaps: Vec<WorktreeCheckGap>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RemovedWorktree {
@@ -4455,6 +4499,11 @@ pub enum ClientMsg {
     GitWorktreePrune {
         dir: String,
     },
+    /// Read-only: what removing `path` would interrupt or lose, asked before the confirm.
+    WorktreeCheck {
+        dir: String,
+        path: String,
+    },
     /// Both halves of the setting at once, as `HostInfo` reports them.
     WorktreeCleanupSet {
         enabled: bool,
@@ -5644,6 +5693,11 @@ pub enum ServerMsg {
     },
     WorktreeIdleRemovalDays {
         days: u32,
+    },
+    WorktreeCheck {
+        dir: String,
+        path: String,
+        check: WorktreeCheckResult,
     },
     GitCheckpoints {
         dir: String,

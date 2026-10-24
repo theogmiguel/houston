@@ -28,6 +28,7 @@ function mount(
         dir="/repo"
         worktrees={[]}
         cleanup={view}
+        removeCheck={null}
         branches={[]}
         defaultBranch="main"
         busy={false}
@@ -35,6 +36,7 @@ function mount(
         onClose={() => {}}
         onRefresh={() => {}}
         onCreate={() => {}}
+        onCheckRemove={() => {}}
         onRemove={overrides.onRemove ?? (() => {})}
         onPrune={() => {}}
         onCheckCleanup={overrides.onCheck ?? (() => {})}
@@ -252,5 +254,50 @@ describe('useGitToolsSubscription cleanup calls', () => {
     expect(calls).toContainEqual(['worktreeCleanupRun', '/repo', ['/a']])
     act(() => tools!.removeWorktree('/p', false))
     expect(calls).toContainEqual(['gitWorktreeRemove', '/repo', '/p', false])
+    act(() => tools!.checkWorktree('/p'))
+    expect(calls).toContainEqual(['worktreeCheck', '/repo', '/p'])
+    expect(tools!.removeCheck).toEqual({ path: '/p', status: 'pending' })
+  })
+
+  it('a check reply readies the confirm, and a refused check still names why', async () => {
+    const { useGitToolsSubscription } = await import('./useGitToolsSubscription')
+    const handlers = new Map<string, (msg: unknown) => void>()
+    const client = {
+      subscribe: (type: string, fn: (msg: unknown) => void) => {
+        handlers.set(type, fn)
+        return () => handlers.delete(type)
+      },
+      worktreeCheck: () => {}
+    } as never
+    let tools: ReturnType<typeof useGitToolsSubscription> | null = null
+    function Harness({ toolsError }: { toolsError: string | null }): null {
+      tools = useGitToolsSubscription({
+        client,
+        repoDir: '/repo',
+        pendingTools: { current: null },
+        toolsError,
+        setToolsNotice: () => {},
+        setToolsBusy: () => {},
+        setToolsError: () => {}
+      })
+      return null
+    }
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() => root!.render(<Harness toolsError={null} />))
+
+    const check = { dirty_files: 0, newest_change_ms: null, base: 'main', ahead: 2, unpushed: 2, panes: [], gaps: [] }
+    act(() => tools!.checkWorktree('/p'))
+    act(() => handlers.get('worktree_check')!({ type: 'worktree_check', dir: '/repo', path: '/other', check }))
+    expect(tools!.removeCheck).toEqual({ path: '/p', status: 'pending' })
+    act(() => handlers.get('worktree_check')!({ type: 'worktree_check', dir: '/repo', path: '/p', check }))
+    expect(tools!.removeCheck).toEqual({ path: '/p', status: 'ready', check })
+
+    act(() => tools!.checkWorktree('/q'))
+    act(() => root!.render(<Harness toolsError="worktree check task panicked" />))
+    const refused = tools!.removeCheck as unknown as { status: string; check: { gaps: { reason: string }[] } }
+    expect(refused.status).toBe('ready')
+    expect(refused.check.gaps.map((g) => g.reason)).toEqual(Array(3).fill('worktree check task panicked'))
   })
 })
