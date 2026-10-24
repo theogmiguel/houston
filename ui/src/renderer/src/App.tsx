@@ -72,6 +72,7 @@ import type { PaneRoster } from "./components/DelegationCard";
 import type { SkillToolState } from "./houston/generated/SkillToolState";
 import type { SkillPushRecord } from "./houston/generated/SkillPushRecord";
 import type { ProfileChoice } from "./houston/generated/ProfileChoice";
+import type { SessionView } from "./thread/threadTypes";
 import {
   isLive,
   LIVE_CHILDREN_MARKER,
@@ -2980,7 +2981,7 @@ export function App(): React.JSX.Element {
   }, [conn, selectedWs, shellIntegration]);
 
   const spawnAgentPane = useCallback(
-    (agent: AgentKind, profile?: ProfileChoice): void => {
+    (agent: AgentKind, profile?: ProfileChoice, view?: SessionView): void => {
       if (conn.kind !== "ready") return;
       if (selectedWs === "all") return;
       setExpandedId(null);
@@ -2990,6 +2991,7 @@ export function App(): React.JSX.Element {
         project_dir: selectedWs,
         shell_integration: shellIntegration,
         profile,
+        ...(view === "thread" ? { view } : {}),
       });
     },
     [conn, selectedWs, shellIntegration],

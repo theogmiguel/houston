@@ -5,6 +5,7 @@ import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
 import type { ProfileChoice } from '../houston/generated/ProfileChoice'
 import type { WorkspaceAction } from '../houston/client'
+import type { SessionView } from '../thread/threadTypes'
 import { PaneMenuRow } from './ui/PaneMenuRow'
 import { PaneMenuAgentRow, PaneMenuDivider, PaneMenuLabel, PaneMenuProfileGroup, PaneMenuProfileRow, PaneMenuSurface } from './ui/PaneMenu'
 import { WorkspaceActions } from './ui/WorkspaceActions'
@@ -21,7 +22,7 @@ export interface AddPanePopoverProps {
   keymapOverrides: KeymapOverrides
   onClose: () => void
   onNewTerminal: () => void
-  onSpawnAgent: (agent: AgentKind, profile?: ProfileChoice) => void
+  onSpawnAgent: (agent: AgentKind, profile?: ProfileChoice, view?: SessionView) => void
   onSplitDown?: () => void
   onNewGrid: () => void
   agentProfiles: AgentProfileState | null
@@ -146,6 +147,16 @@ export function AddPanePopover({
           </div>
         )
       })}
+      <PaneMenuLabel>Thread</PaneMenuLabel>
+      <PaneMenuAgentRow
+        agent="claude"
+        data-testid="add-pane-claude-thread"
+        disabledReason={hasWorkspace ? undefined : 'Open a workspace to spawn an agent'}
+        onClick={() => {
+          onClose()
+          onSpawnAgent('claude', undefined, 'thread')
+        }}
+      />
       <PaneMenuDivider />
       <PaneMenuRow
         icon={IconSplitDown}
