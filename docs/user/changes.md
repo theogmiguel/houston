@@ -303,7 +303,8 @@ when its PR is merged with no commit outside the PR, or, for a branch with no PR
 every commit has a patch-equivalent in the branch it was created from (or in the default
 branch, for worktrees recorded before Houston kept that base). Squash and cherry-pick
 integration count. For a branch with no PR the grace runs from the first check that finds
-it integrated. **Check** finds out which worktrees can go and measures them. **Clean now**
+it integrated. **Check** finds out which worktrees can go and measures them. A worktree
+too large to measure in two minutes or two million entries keeps its previous size. **Clean now**
 lists only Ready worktrees and the space they free, and asks once; it then removes only the
 ones it listed, together with their branches.
 
