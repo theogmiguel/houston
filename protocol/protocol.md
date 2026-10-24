@@ -106,7 +106,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
 | `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. Sent at once during a turn; Claude queues it |
-| `thread_stop` | `session` | v150: ends the thread's whole process tree and records `turn_end{interrupted}`; the session is idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
+| `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
 | `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v150: `thread_history` (direct), oldest first, echoing `before_seq`. A refusal is an `error` with `context: "session:<id>"` whose message starts `thread_history refused for session <id>` and names the cause: a terminal session, an unknown session or a limit outside the range |
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct); an unknown or removed session gets no reply and no `error` |
 | `session_list` | — | `session_list` (direct) |
@@ -576,7 +576,9 @@ data are internally tagged; the tag field is named in each entry below.
 
 ```
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | zcode | droid | copilot | aider | ssh
-SessionState       running | exited | killed | interrupted
+SessionState       running | exited | killed | interrupted. A thread session without a
+                   process (after `thread_stop`, after its process exited, or restored and
+                   waiting for its first message) is `running` with status idle
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
@@ -650,7 +652,8 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    never stored) | assistant_message{message_id, text, truncated} (supersedes the
                    deltas with its `message_id`, which names one text block of one model message) |
                    tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
-                   tool_result{tool_use_id, is_error, output, truncated} |
+                   tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
+                   `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
                    turn_end{outcome: TurnOutcome, error?} | notice{text}.
                    Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
                    `truncated` says a cap applied
