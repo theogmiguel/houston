@@ -15,6 +15,7 @@ import type {
   AgentKind,
   AgentStatus,
   HoustonClient,
+  KeymapOverrides,
   SessionInfo
 } from '../houston/client'
 import { isLive } from '../houston/client'
@@ -403,6 +404,7 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
   setMemoryResult: React.Dispatch<React.SetStateAction<SessionMemoryResult | null>>
   lifecycleError: string | null
   dismissLifecycleError: () => void
+  showLifecycleError: (message: string) => void
 } {
   const [memoryResult, setMemoryResult] = useState<SessionMemoryResult | null>(null)
   const [lifecycleError, setLifecycleError] = useState<string | null>(null)
@@ -427,7 +429,7 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
   }, [client, ops, sessionId])
 
   const dismissLifecycleError = useCallback(() => setLifecycleError(null), [])
-  return { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError }
+  return { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError, showLifecycleError: setLifecycleError }
 }
 
 function SessionLifecycleNotices({ info, lifecycleError, dismissLifecycleError, memoryResult }: {
@@ -495,6 +497,39 @@ function GenerateTitleConfirm({ open, info, onCancel, onConfirm }: {
 // A thread pane's timeline, Markdown and tool cards load only when a thread is shown.
 const threadPane = preloadable(() => import('./thread/ThreadPane').then((module) => module.ThreadPane))
 
+/** Terminal text size and a handoff built from scrollback; a thread has neither yet, so Handoff is refused by name. */
+function TextAndHandoffRows({ thread, keymapOverrides, menuItem, onZoom, onHandoff }: {
+  thread: boolean
+  keymapOverrides: KeymapOverrides
+  menuItem: PaneContextMenuController['menuItem']
+  onZoom: (dir: 1 | -1 | 0) => void
+  onHandoff: () => void
+}): React.JSX.Element {
+  return <>
+    {!thread && <>
+      <CtxRow
+        glyph={IconTextLarger}
+        label="Bigger text"
+        chord={effectiveLabel(fontZoomIn, keymapOverrides)}
+        onClick={menuItem(() => onZoom(1))}
+      />
+      <CtxRow
+        glyph={IconTextSmaller}
+        label="Smaller text"
+        chord={effectiveLabel(fontZoomOut, keymapOverrides)}
+        onClick={menuItem(() => onZoom(-1))}
+      />
+    </>}
+    <CtxRow
+      glyph={IconArrowUpRight}
+      label="Handoff…"
+      disabled={thread}
+      disabledReason="Handoff from a thread is not available yet; it reads terminal scrollback"
+      onClick={menuItem(onHandoff)}
+    />
+  </>
+}
+
 /** A thread stops its turn; a terminal clears its screen or sends Ctrl+C. */
 function InterruptRows({ info, live, client, menuItem, termActions }: {
   info: SessionInfo
@@ -504,7 +539,8 @@ function InterruptRows({ info, live, client, menuItem, termActions }: {
   termActions: React.RefObject<TermActions | null>
 }): React.JSX.Element {
   if (info.view === 'thread') {
-    return <CtxRow glyph={IconStopCircle} label="Stop" disabled={info.status !== 'working'} disabledReason="Claude is not working on a turn" onClick={menuItem(() => client.send({ type: 'thread_stop', session: info.id }))} />
+    const turn = info.status === 'working' || info.status === 'spawning' || info.status === 'needs-input'
+    return <CtxRow glyph={IconStopCircle} label="Stop" disabled={!turn} disabledReason="Claude is not working on a turn" onClick={menuItem(() => client.send({ type: 'thread_stop', session: info.id }))} />
   }
   return <>
     <CtxRow
@@ -601,7 +637,7 @@ function SessionPaneImpl({
   const [confirmRestart, setConfirmRestart] = useState<RestartMode | null>(null)
   const termActions = useRef<TermActions | null>(null)
   const [menuCwd, setMenuCwd] = useState<string | null>(null)
-  const { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError } = useSessionLifecycle(client, infoProp.id)
+  const { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError, showLifecycleError } = useSessionLifecycle(client, infoProp.id)
 
   const lifecycleInfo = info
   const sleeping = info.state === 'sleeping'
@@ -743,22 +779,12 @@ function SessionPaneImpl({
             onClick={menuItem(() => onSwapAdjacent?.(info.id, 1))}
           />
           <PaneContextMenuSeparator />
-          <CtxRow
-            glyph={IconTextLarger}
-            label="Bigger text"
-            chord={effectiveLabel(fontZoomIn, keymapOverrides)}
-            onClick={menuItem(() => onZoom(1))}
-          />
-          <CtxRow
-            glyph={IconTextSmaller}
-            label="Smaller text"
-            chord={effectiveLabel(fontZoomOut, keymapOverrides)}
-            onClick={menuItem(() => onZoom(-1))}
-          />
-          <CtxRow
-            glyph={IconArrowUpRight}
-            label="Handoff…"
-            onClick={menuItem(() =>
+          <TextAndHandoffRows
+            thread={info.view === 'thread'}
+            keymapOverrides={keymapOverrides}
+            menuItem={menuItem}
+            onZoom={onZoom}
+            onHandoff={() =>
               onHandoff({
                 session: info.id,
                 agent: glyphAgent,
@@ -766,7 +792,7 @@ function SessionPaneImpl({
                 cwd,
                 conversation: clampConversation(termActions.current?.readOutput('all') ?? '')
               })
-            )}
+            }
           />
           <PaneContextMenuSeparator />
           <InterruptRows info={info} live={live} client={client} menuItem={menuItem} termActions={termActions} />
@@ -791,7 +817,9 @@ function SessionPaneImpl({
             label="Reveal in file manager"
             onClick={menuItem(() => {
               void showItemInFolder(cwd).then((res) => {
-                if (!res.ok) termActions.current?.toast(res.error)
+                if (res.ok) return
+                if (termActions.current) termActions.current.toast(res.error)
+                else showLifecycleError(res.error)
               })
             })}
           />

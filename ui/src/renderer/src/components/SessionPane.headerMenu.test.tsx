@@ -356,4 +356,18 @@ describe('pane ··· menu', () => {
       HTMLElement.prototype.getBoundingClientRect = orig
     }
   })
+  it('offers a thread Stop instead of terminal rows, and refuses Handoff by name', () => {
+    ;(fakeClient as unknown as { trySend: unknown }).trySend = vi.fn().mockReturnValue(true)
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'idle' }))
+    openPaneMenu()
+    const labels = rows().map((b) => b.textContent ?? '')
+    for (const gone of ['Bigger text', 'Smaller text', 'Clear screen', 'Interrupt']) expect(labels.some((l) => l.includes(gone))).toBe(false)
+    expect(row('Stop').disabled).toBe(true)
+    expect(row('Handoff…').disabled).toBe(true)
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'working' }))
+    openPaneMenu()
+    click(row('Stop'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'thread_stop', session: 1 })
+    expect(onHandoff).not.toHaveBeenCalled()
+  })
 })
