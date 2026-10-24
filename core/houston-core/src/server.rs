@@ -1965,7 +1965,11 @@ async fn dispatch(
             let d = Arc::clone(daemon);
             let reply = tokio::task::spawn_blocking(move || d.collect_diagnostics(&app_version))
                 .await
-                .map_err(|e| anyhow::anyhow!("diagnostics collection panicked: {e}"))?;
+                .unwrap_or_else(|e| proto::ServerMsg::DiagnosticsCollected {
+                    path: None,
+                    bytes: 0,
+                    error: Some(format!("diagnostics collection panicked: {e}")),
+                });
             let _ = send_msg(sink, &reply).await;
             Ok(())
         }

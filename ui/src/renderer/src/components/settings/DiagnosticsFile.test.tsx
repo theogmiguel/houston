@@ -12,7 +12,7 @@ vi.mock('../../houston/bridge', () => ({
     return { ok: true, error: null }
   }
 }))
-import { DiagnosticsFileRow, folderOf } from './DiagnosticsFile'
+import { DiagnosticsFileRow, folderOf, REPLY_TIMEOUT_MS } from './DiagnosticsFile'
 
 beforeAll(() => {
   ;(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = '0.0.0-test'
@@ -65,4 +65,40 @@ it('shows the daemon error when no file was written', () => {
 it('takes the folder of Windows and Unix paths', () => {
   expect(folderOf('C:\\Users\\u\\.houston\\diagnostics\\f.txt')).toBe('C:\\Users\\u\\.houston\\diagnostics')
   expect(folderOf('/home/u/.houston/diagnostics/f.txt')).toBe('/home/u/.houston/diagnostics')
+})
+
+it('leaves Saving… when the daemon refuses the request at admission', () => {
+  const { client, emit } = fakeClient()
+  render(<DiagnosticsFileRow client={client} />)
+  fireEvent.click(screen.getByTestId('settings-diagnostics-file'))
+  emit({ type: 'error', message: 'control handler limits: connection 8', context: 'control_admission:diagnostics_collect' })
+  expect(screen.getByTestId('settings-diagnostics-file-desc').textContent).toBe(
+    'No file was written: control handler limits: connection 8'
+  )
+  expect((screen.getByTestId('settings-diagnostics-file') as HTMLButtonElement).disabled).toBe(false)
+})
+
+it('leaves Saving… when no reply arrives in time', () => {
+  vi.useFakeTimers()
+  try {
+    const { client } = fakeClient()
+    render(<DiagnosticsFileRow client={client} />)
+    fireEvent.click(screen.getByTestId('settings-diagnostics-file'))
+    act(() => vi.advanceTimersByTime(REPLY_TIMEOUT_MS))
+    expect(screen.getByTestId('settings-diagnostics-file-desc').textContent).toBe(
+      'No file was written: the daemon did not answer within 30 s'
+    )
+    expect((screen.getByTestId('settings-diagnostics-file') as HTMLButtonElement).disabled).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('starts over when the client changes', () => {
+  const first = fakeClient()
+  const view = render(<DiagnosticsFileRow client={first.client} />)
+  fireEvent.click(screen.getByTestId('settings-diagnostics-file'))
+  view.rerender(<DiagnosticsFileRow client={fakeClient().client} />)
+  expect(screen.getByTestId('settings-diagnostics-file').textContent).toBe('Save file')
+  expect((screen.getByTestId('settings-diagnostics-file') as HTMLButtonElement).disabled).toBe(false)
 })

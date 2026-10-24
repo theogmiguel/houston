@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import { showItemInFolder } from '../../houston/bridge'
+import { parseControlAdmission } from '../../houston/controlAdmission'
 import { Button, Inline } from '../ui'
 import { formatBytes, Row } from './shared'
 
@@ -13,6 +14,9 @@ type Collect =
 const DESC =
   'Writes a file for a bug report: versions, sessions without output, hook health and the recent daemon log, with secrets, folders and pane titles replaced where Houston can find them. It stays on this computer.'
 
+/** Far past a 1 MiB read and write; a dropped send or a lost reply ends here. */
+export const REPLY_TIMEOUT_MS = 30_000
+
 export function folderOf(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, '')
 }
@@ -22,7 +26,11 @@ export function DiagnosticsFileRow({ client }: { client: HoustonClient | null })
   const [collect, setCollect] = useState<Collect>({ phase: 'idle' })
   useEffect(() => {
     if (!client) return
-    return client.subscribeAll((msg) => {
+    const off = client.subscribeAll((msg) => {
+      if (msg.type === 'error' && parseControlAdmission(msg.context)?.kind === 'diagnostics_collect') {
+        setCollect((cur) => (cur.phase === 'running' ? { phase: 'failed', error: msg.message } : cur))
+        return
+      }
       if (msg.type !== 'diagnostics_collected') return
       setCollect(
         msg.path
@@ -30,7 +38,19 @@ export function DiagnosticsFileRow({ client }: { client: HoustonClient | null })
           : { phase: 'failed', error: msg.error ?? 'the daemon wrote no file and gave no reason' }
       )
     })
+    return () => {
+      off()
+      setCollect({ phase: 'idle' })
+    }
   }, [client])
+  useEffect(() => {
+    if (collect.phase !== 'running') return
+    const timer = setTimeout(
+      () => setCollect({ phase: 'failed', error: `the daemon did not answer within ${REPLY_TIMEOUT_MS / 1000} s` }),
+      REPLY_TIMEOUT_MS
+    )
+    return () => clearTimeout(timer)
+  }, [collect.phase])
 
   const start = (): void => {
     if (!client) return
