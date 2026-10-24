@@ -392,7 +392,12 @@ pub struct CommandRun {
 pub fn resolve_commit(repo: &Path, rev: &str) -> Result<String> {
     git_ok(
         repo,
-        &["rev-parse", "--verify", "--end-of-options", &format!("{rev}^{{commit}}")],
+        &[
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{rev}^{{commit}}"),
+        ],
         GIT_LOCAL_TIMEOUT,
     )
     .with_context(|| format!("{rev:?} is not a commit in {}", repo.display()))
@@ -410,8 +415,11 @@ pub fn run_at(
     let scratch = Scratch::create(repo, scratch, sha)?;
     let mut out = Vec::new();
     for command in commands {
-        let run = match crate::spawn::tail_within(shell(command, &scratch.path), limit, OUTPUT_KEEP_BYTES)
-        {
+        let run = match crate::spawn::tail_within(
+            shell(command, &scratch.path),
+            limit,
+            OUTPUT_KEEP_BYTES,
+        ) {
             Ok(run) => run,
             Err(e) => {
                 out.push(CommandRun {
@@ -435,7 +443,11 @@ pub fn run_at(
                 command: command.clone(),
                 passed: status.success(),
                 code: status.code(),
-                tail: if status.success() { String::new() } else { tail },
+                tail: if status.success() {
+                    String::new()
+                } else {
+                    tail
+                },
             },
         });
     }

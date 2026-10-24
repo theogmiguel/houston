@@ -43,7 +43,11 @@ fn take_claims(args: Vec<String>) -> Result<(Vec<String>, Vec<Value>)> {
         match a.as_str() {
             "--claim" | "--proof" => match it.next() {
                 Some(v) if !v.starts_with("--") => {
-                    if a == "--claim" { claims.push(v) } else { proofs.push(v) }
+                    if a == "--claim" {
+                        claims.push(v)
+                    } else {
+                        proofs.push(v)
+                    }
                 }
                 _ => bail!("{a} needs a value"),
             },
@@ -249,18 +253,42 @@ mod tests {
     #[test]
     fn claims_pair_with_proofs_and_a_verdict_nests() {
         let args = strings(&[
-            "plan", "--title", "Keep hooks", "--claim", "3 events survive", "--proof",
-            "hooks::restart", "--claim", "applied once", "--proof", "hooks::dedupe",
+            "plan",
+            "--title",
+            "Keep hooks",
+            "--claim",
+            "3 events survive",
+            "--proof",
+            "hooks::restart",
+            "--claim",
+            "applied once",
+            "--proof",
+            "hooks::dedupe",
         ]);
         let (rest, claims) = take_claims(args).unwrap();
         assert_eq!(rest, ["plan", "--title", "Keep hooks"]);
-        assert_eq!(claims[1], json!({ "claim": "applied once", "proof": "hooks::dedupe" }));
-        let err = take_claims(strings(&["plan", "--claim", "x"])).unwrap_err().to_string();
+        assert_eq!(
+            claims[1],
+            json!({ "claim": "applied once", "proof": "hooks::dedupe" })
+        );
+        let err = take_claims(strings(&["plan", "--claim", "x"]))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("1 --claim and 0 --proof"), "{err}");
 
         let (positional, flags) = crate::orchestrate::parse_flags(&strings(&[
-            "verdict", "--pr", "7", "--plan", "3", "--index", "0", "--failed", "--evidence",
-            "a.rs:4 asserts nothing", "--built-by", "12,13",
+            "verdict",
+            "--pr",
+            "7",
+            "--plan",
+            "3",
+            "--index",
+            "0",
+            "--failed",
+            "--evidence",
+            "a.rs:4 asserts nothing",
+            "--built-by",
+            "12,13",
         ]));
         assert_eq!(positional, ["verdict"]);
         let flat = args_json("verdict", &flags, &[]).unwrap();

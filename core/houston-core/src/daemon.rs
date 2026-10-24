@@ -20456,11 +20456,9 @@ impl Daemon {
                 self.assert_role_free(caller, role)?;
             }
             let direct = self.active_children_of(caller).len() as u32;
-            if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
-                caller,
-                direct,
-                self.child_cap_of(caller),
-            ) {
+            if let orchestrate::SpawnVerdict::Refused(msg) =
+                orchestrate::children_cap_verdict(caller, direct, self.child_cap_of(caller))
+            {
                 bail!(
                     "{msg}; {} settled children do not count against the cap",
                     self.settled_children_count(caller)

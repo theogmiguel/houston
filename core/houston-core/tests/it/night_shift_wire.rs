@@ -1058,10 +1058,7 @@ async fn a_tick_gap_is_not_charged_as_pane_hours() {
     r.daemon.routine_tick_at(run.started_at_ms + MINUTE);
     r.daemon.routine_tick_at(run.started_at_ms + 121 * MINUTE);
     let after = r.run(run.run_id);
-    assert!(
-        r.in_flight(routine.id),
-        "two hours asleep end nothing"
-    );
+    assert!(r.in_flight(routine.id), "two hours asleep end nothing");
     assert!(
         after.cost.pane_hours < 3.0 / 60.0,
         "charged {} pane-hours",
@@ -2065,7 +2062,7 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
         "pr",
         &json!({ "number": 12, "title": "Tray fix", "head": "HEAD" }),
     )
-        .unwrap();
+    .unwrap();
     let entry = |d: &Arc<Daemon>| {
         read(d)
             .3
@@ -2249,10 +2246,20 @@ async fn houston_runs_the_checks_on_the_pr_head() {
     let o = run.session_id.unwrap();
     for (number, head) in [(5, "fix"), (6, "HEAD")] {
         let (status, body) = r
-            .night(o, "pr", json!({ "number": number, "title": "x", "head": head }))
+            .night(
+                o,
+                "pr",
+                json!({ "number": number, "title": "x", "head": head }),
+            )
             .await;
         assert_eq!(status, 200, "{body}");
-        assert!(body["note"].as_str().unwrap().contains("Houston runs the checks"), "{body}");
+        assert!(
+            body["note"]
+                .as_str()
+                .unwrap()
+                .contains("Houston runs the checks"),
+            "{body}"
+        );
     }
     wait_until("both PRs' checks to finish", || {
         [5, 6]
@@ -2261,13 +2268,24 @@ async fn houston_runs_the_checks_on_the_pr_head() {
     })
     .await;
     let fixed = pr_entry(&r, run.run_id, 5);
-    assert_eq!(fixed.gates.checks, proto::NightGate::Passed, "{:?}", fixed.detail);
+    assert_eq!(
+        fixed.gates.checks,
+        proto::NightGate::Passed,
+        "{:?}",
+        fixed.detail
+    );
     assert_eq!(fixed.detail.checks_run.len(), 2);
     let unfixed = pr_entry(&r, run.run_id, 6);
     assert_eq!(unfixed.gates.checks, proto::NightGate::Failed);
     let failed = &unfixed.detail.checks_run[0];
-    assert_eq!((failed.command.as_str(), failed.passed), ("test -f marker", false));
-    assert!(unfixed.detail.checks_run[1].passed, "a failure does not skip the rest");
+    assert_eq!(
+        (failed.command.as_str(), failed.passed),
+        ("test -f marker", false)
+    );
+    assert!(
+        unfixed.detail.checks_run[1].passed,
+        "a failure does not skip the rest"
+    );
     assert_eq!(r.notes(o, "Night shift: checks failed on PR #6"), 1);
     assert_eq!(r.notes(o, "Night shift: checks failed on PR #5"), 0);
     assert!(
@@ -2288,7 +2306,8 @@ async fn the_orchestrator_cannot_set_checks_or_ci() {
         let (status, body) = r.night(o, "pr", body).await;
         assert_ne!(status, 200, "{body}");
         assert!(
-            body.to_string().contains(&format!("{key} is a fact Houston records")),
+            body.to_string()
+                .contains(&format!("{key} is a fact Houston records")),
             "{body}"
         );
     }
@@ -2296,7 +2315,11 @@ async fn the_orchestrator_cannot_set_checks_or_ci() {
     assert_ne!(status, 200);
     assert!(body.to_string().contains("head is required"), "{body}");
     let (status, body) = r
-        .night(o, "pr", json!({ "number": 9, "title": "x", "head": "no-such-branch" }))
+        .night(
+            o,
+            "pr",
+            json!({ "number": 9, "title": "x", "head": "no-such-branch" }),
+        )
         .await;
     assert_ne!(status, 200);
     assert!(body.to_string().contains("no-such-branch"), "{body}");
@@ -2320,7 +2343,11 @@ async fn verdicts_come_from_an_independent_pane() {
         { "claim": "a duplicate event is applied once", "proof": "hooks::dedupe" }
     ]);
     let (status, body) = r
-        .night(o, "plan", json!({ "title": "Keep hooks", "claims": claims }))
+        .night(
+            o,
+            "plan",
+            json!({ "title": "Keep hooks", "claims": claims }),
+        )
         .await;
     assert_eq!(status, 200, "{body}");
     let plan = r.run(run.run_id).entries[0].clone();
@@ -2347,10 +2374,7 @@ async fn verdicts_come_from_an_independent_pane() {
         ] })
     };
     let ok = verdict(0, true, "core/tests/hooks.rs:41 passed");
-    for (pane, needle) in [
-        (o, "is the run's orchestrator"),
-        (builder, "built PR #7"),
-    ] {
+    for (pane, needle) in [(o, "is the run's orchestrator"), (builder, "built PR #7")] {
         let (status, body) = r.night(pane, "verdict", ok.clone()).await;
         assert_ne!(status, 200, "{body}");
         assert!(body.to_string().contains(needle), "{body}");
@@ -2360,12 +2384,17 @@ async fn verdicts_come_from_an_independent_pane() {
         .await;
     assert_ne!(status, 200);
     assert!(body.to_string().contains("names no file:line"), "{body}");
-    let (status, body) = r.night(verifier, "verdict", verdict(2, true, "a.rs:1")).await;
+    let (status, body) = r
+        .night(verifier, "verdict", verdict(2, true, "a.rs:1"))
+        .await;
     assert_ne!(status, 200);
     assert!(body.to_string().contains("has 2 claims"), "{body}");
 
     assert_eq!(r.night(verifier, "verdict", ok).await.0, 200);
-    assert_eq!(pr_entry(&r, run.run_id, 7).gates.verify, proto::NightGate::Pending);
+    assert_eq!(
+        pr_entry(&r, run.run_id, 7).gates.verify,
+        proto::NightGate::Pending
+    );
     let second = verdict(1, true, "core/tests/hooks.rs:77 passed");
     assert_eq!(r.night(verifier, "verdict", second).await.0, 200);
     let pr = pr_entry(&r, run.run_id, 7);
@@ -2373,7 +2402,10 @@ async fn verdicts_come_from_an_independent_pane() {
     assert!(pr.detail.verdicts.iter().all(|v| v.verifier == verifier));
     let failed = verdict(1, false, "core/tests/hooks.rs:77 asserts nothing");
     assert_eq!(r.night(verifier, "verdict", failed).await.0, 200);
-    assert_eq!(pr_entry(&r, run.run_id, 7).gates.verify, proto::NightGate::Failed);
+    assert_eq!(
+        pr_entry(&r, run.run_id, 7).gates.verify,
+        proto::NightGate::Failed
+    );
     assert_eq!(r.notes(o, "Night shift: PR #7 failed verification"), 1);
 
     let st = r.state();
@@ -2383,7 +2415,11 @@ async fn verdicts_come_from_an_independent_pane() {
         .night_shift_update(routine.id, s, &st.revision)
         .unwrap();
     let (status, body) = r
-        .night(verifier, "verdict", verdict(1, true, "core/tests/hooks.rs:77"))
+        .night(
+            verifier,
+            "verdict",
+            verdict(1, true, "core/tests/hooks.rs:77"),
+        )
         .await;
     assert_ne!(status, 200);
     assert!(body.to_string().contains("needs fault"), "{body}");
@@ -2403,20 +2439,37 @@ async fn studied_reaches_the_next_brief() {
     let first = r.run_now(routine.id, 120);
     let o = first.session_id.unwrap();
     let (status, body) = r
-        .night(o, "studied", json!({ "competitor": "someone/else", "version": "v1" }))
+        .night(
+            o,
+            "studied",
+            json!({ "competitor": "someone/else", "version": "v1" }),
+        )
         .await;
     assert_ne!(status, 200);
-    assert!(body.to_string().contains("pingdotgg/t3code"), "names the competitors: {body}");
+    assert!(
+        body.to_string().contains("pingdotgg/t3code"),
+        "names the competitors: {body}"
+    );
     for version in ["v0.8.0", "v0.9.0"] {
         let (status, body) = r
-            .night(o, "studied", json!({ "competitor": "PingDotGG/t3code", "version": version }))
+            .night(
+                o,
+                "studied",
+                json!({ "competitor": "PingDotGG/t3code", "version": version }),
+            )
             .await;
         assert_eq!(status, 200, "{body}");
     }
     r.daemon.night_shift_stop_now(first.run_id).unwrap();
     let second = r.run_now(routine.id, 120);
     let brief = r.brief(&second);
-    assert!(brief.contains("- [studied] pingdotgg/t3code at v0.9.0"), "{brief}");
+    assert!(
+        brief.contains("- [studied] pingdotgg/t3code at v0.9.0"),
+        "{brief}"
+    );
     assert!(!brief.contains("v0.8.0"), "{brief}");
-    assert!(brief.contains("clone https://github.com/pingdotgg/t3code read-only"), "{brief}");
+    assert!(
+        brief.contains("clone https://github.com/pingdotgg/t3code read-only"),
+        "{brief}"
+    );
 }

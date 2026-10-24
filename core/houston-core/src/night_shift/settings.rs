@@ -3,8 +3,8 @@
 use anyhow::{bail, Context, Result};
 use houston_protocol::{
     AgentKind, NightAgent, NightClock, NightFocus, NightFocusLevel, NightOutput, NightPrSize,
-    NightQuestions, NightShiftSettings, NightVerification, NightWindow, NIGHT_SHIFT_SETTINGS_VERSION,
-    NIGHT_SHIFT_WINDOW_MAX_MINUTES,
+    NightQuestions, NightShiftSettings, NightVerification, NightWindow,
+    NIGHT_SHIFT_SETTINGS_VERSION, NIGHT_SHIFT_WINDOW_MAX_MINUTES,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -84,8 +84,7 @@ pub fn parse(json: &str) -> Result<NightShiftSettings> {
     if doc.get("v").and_then(Value::as_u64) == Some(1) {
         upgrade_v1(&mut doc);
     }
-    serde_json::from_value(doc)
-        .with_context(|| format!("unreadable Night shift settings {json:?}"))
+    serde_json::from_value(doc).with_context(|| format!("unreadable Night shift settings {json:?}"))
 }
 
 /// v1 → v2. Fields v2 dropped are ignored by the reader.
@@ -118,7 +117,12 @@ fn upgrade_v1(doc: &mut Value) {
         .collect();
     o.insert("competitors".into(), json!(competitors));
     let app = o.remove("app_check").unwrap_or(Value::Null);
-    let text = |key: &str| app.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
+    let text = |key: &str| {
+        app.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let start = text("start_command");
     o.insert(
         "app_qa".into(),
@@ -512,7 +516,11 @@ mod tests {
             }]
         );
         assert_eq!(s.verification, NightVerification::Light);
-        assert!(s.app_qa.enabled && s.app_qa.source == ADDED_BY_YOU, "{:?}", s.app_qa);
+        assert!(
+            s.app_qa.enabled && s.app_qa.source == ADDED_BY_YOU,
+            "{:?}",
+            s.app_qa
+        );
         assert_eq!(
             (s.app_qa.start_command.as_str(), &s.app_qa.smoke_flows[..]),
             ("bun run dev", &["open".to_string()][..])
@@ -541,8 +549,14 @@ mod tests {
     fn competitor_entries_are_validated() {
         for (text, want) in [
             ("pingdotgg/t3code", Some("pingdotgg/t3code")),
-            ("https://github.com/stablyai/orca.git", Some("stablyai/orca")),
-            ("github.com/AgentSystemLabs/nebula/", Some("AgentSystemLabs/nebula")),
+            (
+                "https://github.com/stablyai/orca.git",
+                Some("stablyai/orca"),
+            ),
+            (
+                "github.com/AgentSystemLabs/nebula/",
+                Some("AgentSystemLabs/nebula"),
+            ),
             ("https://gitlab.com/a/b", None),
             ("owner/repo/tree/main", None),
             ("just words", None),
@@ -555,7 +569,10 @@ mod tests {
             repo: "https://github.com/a/b".into(),
         }];
         let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
-        assert!(err.contains("competitor 1") && err.contains("owner/repo"), "{err}");
+        assert!(
+            err.contains("competitor 1") && err.contains("owner/repo"),
+            "{err}"
+        );
         s.competitors = vec![houston_protocol::NightCompetitor::App {
             name: "Orca".into(),
             version: String::new(),
@@ -592,7 +609,10 @@ mod tests {
             let mut s = defaults();
             s.pr_size = NightPrSize::Related { max_changes: bad };
             let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
-            assert!(err.contains(&format!("up to {bad}")) && err.contains("2 to 20"), "{err}");
+            assert!(
+                err.contains(&format!("up to {bad}")) && err.contains("2 to 20"),
+                "{err}"
+            );
         }
         let mut s = defaults();
         s.pr_size = NightPrSize::One;
@@ -668,7 +688,10 @@ mod tests {
         assert!(err.contains("App QA on with a start command"), "{err}");
         s.app_qa.start_command = "bun run dev".into();
         let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
-        assert!(err.contains("App QA"), "a start command alone is not App QA on: {err}");
+        assert!(
+            err.contains("App QA"),
+            "a start command alone is not App QA on: {err}"
+        );
         s.app_qa.enabled = true;
         let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
         assert!(!err.contains("App QA"), "{err}");
@@ -717,17 +740,16 @@ mod tests {
             ),
             (
                 "21 smoke flows",
-                Box::new(move |s| {
-                    s.app_qa = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1])
-                }),
+                Box::new(move |s| s.app_qa = app("", "", vec!["open".into(); SMOKE_FLOWS_MAX + 1])),
             ),
             (
                 "11 competitors",
                 Box::new(|s| {
-                    s.competitors = vec![
-                        houston_protocol::NightCompetitor::Repo { repo: "a/b".into() };
-                        COMPETITORS_MAX + 1
-                    ]
+                    s.competitors =
+                        vec![
+                            houston_protocol::NightCompetitor::Repo { repo: "a/b".into() };
+                            COMPETITORS_MAX + 1
+                        ]
                 }),
             ),
             (

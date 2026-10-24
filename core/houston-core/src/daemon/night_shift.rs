@@ -680,9 +680,11 @@ impl Daemon {
             let home = home.as_ref()?;
             crate::mcp::tool_config_path(provider, home)?;
             let tool = crate::mcp::read_tool(provider, home);
-            tool.error
-                .is_none()
-                .then(|| tool.servers.iter().any(|s| s.name.eq_ignore_ascii_case("rea")))
+            tool.error.is_none().then(|| {
+                tool.servers
+                    .iter()
+                    .any(|s| s.name.eq_ignore_ascii_case("rea"))
+            })
         };
         let providers = preflight::providers_of(s)
             .into_iter()
@@ -2107,8 +2109,8 @@ impl Daemon {
                 return;
             }
         };
-        let scratch = crate::night_shift::run_dir(&self.state_dir, run_id)
-            .join(format!("checks-pr{number}"));
+        let scratch =
+            crate::night_shift::run_dir(&self.state_dir, run_id).join(format!("checks-pr{number}"));
         let me = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name(format!("night-checks-{run_id}-{number}"))
@@ -2162,7 +2164,10 @@ impl Daemon {
                 })
                 .collect(),
             Err(e) => vec![proto::NightCheckRun {
-                command: format!("a scratch worktree at {}", crate::merge_queue::short_sha(sha)),
+                command: format!(
+                    "a scratch worktree at {}",
+                    crate::merge_queue::short_sha(sha)
+                ),
                 passed: false,
                 code: None,
                 tail: format!("{e:#}"),
@@ -2266,7 +2271,9 @@ impl Daemon {
             .get("verdicts")
             .and_then(Value::as_array)
             .filter(|v| !v.is_empty())
-            .ok_or_else(|| anyhow!("verdicts must list one {{plan, claim, passed, evidence}} per claim"))?;
+            .ok_or_else(|| {
+                anyhow!("verdicts must list one {{plan, claim, passed, evidence}} per claim")
+            })?;
         let mut detail = entry.detail.clone();
         for (at, v) in items.iter().enumerate() {
             let id = |key: &str| {
@@ -2312,7 +2319,9 @@ impl Daemon {
                 ),
                 _ => None,
             };
-            detail.verdicts.retain(|x| !(x.plan == plan && x.claim == claim));
+            detail
+                .verdicts
+                .retain(|x| !(x.plan == plan && x.claim == claim));
             detail.verdicts.push(proto::NightVerdict {
                 plan,
                 claim,

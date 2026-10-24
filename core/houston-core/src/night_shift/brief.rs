@@ -4,8 +4,7 @@ use std::fmt::Write as _;
 
 use houston_protocol::{
     NightAgent, NightCompetitor, NightEntry, NightEntryKind, NightFocus, NightFocusLevel,
-    NightOutput,
-    NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
+    NightOutput, NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
 };
 
 use super::settings::{app_qa_on, clock_label};
@@ -87,11 +86,7 @@ pub fn focus_areas(f: &NightFocus) -> [(&'static str, NightFocusLevel, &'static 
             f.docs_accuracy,
             "Docs that say something the code does not do.",
         ),
-        (
-            "Test gaps",
-            f.test_gaps,
-            "Important paths no test covers.",
-        ),
+        ("Test gaps", f.test_gaps, "Important paths no test covers."),
     ]
 }
 
@@ -204,17 +199,18 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
              never copied code:\n",
         );
         for c in &s.competitors {
-            let _ = match c {
-                NightCompetitor::Repo { repo } => writeln!(
+            let _ =
+                match c {
+                    NightCompetitor::Repo { repo } => writeln!(
                     out,
                     "  - {repo}: clone https://github.com/{repo} read-only outside the repository \
                      and read the releases after the studied tag."
                 ),
-                NightCompetitor::App {
-                    name,
-                    version,
-                    path,
-                } => writeln!(
+                    NightCompetitor::App {
+                        name,
+                        version,
+                        path,
+                    } => writeln!(
                     out,
                     "  - {} {} installed at {}: analyse it with REA, only what changed since the \
                      studied version.",
@@ -222,7 +218,7 @@ pub fn compose(s: &NightShiftSettings, run: &BriefRun<'_>, digest: &[NightEntry]
                     if version.is_empty() { "(version not reported)" } else { version.as_str() },
                     one_line(path)
                 ),
-            };
+                };
         }
     }
     let _ = writeln!(
@@ -509,8 +505,14 @@ mod tests {
         s.app_qa.start_command = "node ui/harness/shot.mjs <story> <out.png>".into();
         s.app_qa.smoke_flows = vec!["open a workspace".into()];
         let brief = compose(&s, &run(), &[]);
-        assert!(brief.contains("opens the story or screen that change touches"), "{brief}");
-        assert!(brief.contains("checks that change's claims plus these smoke flows: open a workspace"), "{brief}");
+        assert!(
+            brief.contains("opens the story or screen that change touches"),
+            "{brief}"
+        );
+        assert!(
+            brief.contains("checks that change's claims plus these smoke flows: open a workspace"),
+            "{brief}"
+        );
         s.app_qa.address = "http://127.0.0.1:5173".into();
         assert!(compose(&s, &run(), &[]).contains("opens `http://127.0.0.1:5173`"));
     }
@@ -535,10 +537,24 @@ mod tests {
             ..entry(id, NightEntryKind::Studied, "pingdotgg/t3code")
         };
         let brief = compose(&s, &run(), &[studied(2, "v0.9.0"), studied(1, "v0.8.0")]);
-        assert!(brief.contains("clone https://github.com/pingdotgg/t3code read-only"), "{brief}");
-        assert!(brief.contains("Orca (version not reported) installed at /opt/orca/orca: analyse it with REA"), "{brief}");
-        assert!(brief.contains("- [studied] pingdotgg/t3code at v0.9.0"), "{brief}");
-        assert!(!brief.contains("v0.8.0"), "only the newest studied entry: {brief}");
+        assert!(
+            brief.contains("clone https://github.com/pingdotgg/t3code read-only"),
+            "{brief}"
+        );
+        assert!(
+            brief.contains(
+                "Orca (version not reported) installed at /opt/orca/orca: analyse it with REA"
+            ),
+            "{brief}"
+        );
+        assert!(
+            brief.contains("- [studied] pingdotgg/t3code at v0.9.0"),
+            "{brief}"
+        );
+        assert!(
+            !brief.contains("v0.8.0"),
+            "only the newest studied entry: {brief}"
+        );
     }
 
     #[test]
@@ -553,7 +569,10 @@ mod tests {
         for (name, _, definition) in focus_areas(&s.focus) {
             assert!(!definition.is_empty() && !name.is_empty());
         }
-        assert!(!brief.contains("Docs that say something"), "Off areas are not defined");
+        assert!(
+            !brief.contains("Docs that say something"),
+            "Off areas are not defined"
+        );
     }
 
     #[test]
@@ -571,7 +590,10 @@ mod tests {
         s.direction = "make it feel\nfaster".into();
         let brief = compose(&s, &run(), &[]);
         assert!(brief.contains("\"make it feel faster\""), "{brief}");
-        assert!(brief.contains("Within the focus areas, look first"), "{brief}");
+        assert!(
+            brief.contains("Within the focus areas, look first"),
+            "{brief}"
+        );
         assert!(!brief.contains("/goal"), "{brief}");
         assert!(!brief.contains("completion condition"), "{brief}");
         s.direction.clear();

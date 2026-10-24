@@ -7576,7 +7576,7 @@ mod tests {
         let kind: RoutineKind = serde_json::from_str("\"night_shift\"").unwrap();
         assert_eq!(kind, RoutineKind::NightShift);
         let stored = serde_json::to_value(night_settings_sample()).unwrap();
-        assert_eq!(stored["v"], serde_json::json!(1));
+        assert_eq!(stored["v"], serde_json::json!(2));
     }
 
     #[test]

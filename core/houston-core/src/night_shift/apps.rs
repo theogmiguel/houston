@@ -152,7 +152,8 @@ mod platform {
 
     fn dword(key: HKEY, name: &str) -> Option<u32> {
         let (kind, buf) = value(key, name)?;
-        (kind == REG_DWORD && buf.len() == 4).then(|| u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
+        (kind == REG_DWORD && buf.len() == 4)
+            .then(|| u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
     }
 
     pub fn installed() -> (Vec<NightInstalledApp>, Option<String>) {
@@ -270,11 +271,19 @@ mod tests {
         .unwrap();
         assert_eq!(
             (app.name.as_str(), app.version.as_str(), app.path.as_str()),
-            ("Orca", "1.4.238", r"C:\Users\you\AppData\Local\Programs\orca\Orca.exe")
+            (
+                "Orca",
+                "1.4.238",
+                r"C:\Users\you\AppData\Local\Programs\orca\Orca.exe"
+            )
         );
-        let by_folder = app_from_uninstall(s("Warp"), None, s(r"C:\Program Files\Warp"), s("icon.ico"))
-            .unwrap();
-        assert_eq!((by_folder.path.as_str(), by_folder.version.as_str()), (r"C:\Program Files\Warp", ""));
+        let by_folder =
+            app_from_uninstall(s("Warp"), None, s(r"C:\Program Files\Warp"), s("icon.ico"))
+                .unwrap();
+        assert_eq!(
+            (by_folder.path.as_str(), by_folder.version.as_str()),
+            (r"C:\Program Files\Warp", "")
+        );
         assert!(app_from_uninstall(s("No path"), None, None, None).is_none());
         assert!(app_from_uninstall(s(" "), None, s(r"C:\x"), None).is_none());
     }
@@ -290,7 +299,9 @@ mod tests {
             (app.name.as_str(), app.version.as_str(), app.path.as_str()),
             ("Cursor", "1.7.2", "/opt/cursor/cursor")
         );
-        assert!(app_from_desktop("[Desktop Entry]\nName=Hidden\nExec=x\nNoDisplay=true\n").is_none());
+        assert!(
+            app_from_desktop("[Desktop Entry]\nName=Hidden\nExec=x\nNoDisplay=true\n").is_none()
+        );
         assert!(app_from_desktop("[Desktop Entry]\nType=Link\nName=Web\nExec=x\n").is_none());
     }
 }

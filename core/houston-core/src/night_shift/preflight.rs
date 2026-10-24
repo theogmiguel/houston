@@ -695,11 +695,14 @@ mod tests {
         assert!(blocks(&items)[0].detail.contains("no MCP server named rea"));
         f.providers[1].rea = None;
         let items = evaluate(&s, &f, &s.window);
-        assert!(blocks(&items)[0].detail.contains("cannot read zcode's MCP configuration"));
-        s.competitors = vec![houston_protocol::NightCompetitor::Repo {
-            repo: "a/b".into(),
-        }];
-        assert!(blocks(&evaluate(&s, &f, &s.window)).is_empty(), "a repository needs no REA");
+        assert!(blocks(&items)[0]
+            .detail
+            .contains("cannot read zcode's MCP configuration"));
+        s.competitors = vec![houston_protocol::NightCompetitor::Repo { repo: "a/b".into() }];
+        assert!(
+            blocks(&evaluate(&s, &f, &s.window)).is_empty(),
+            "a repository needs no REA"
+        );
     }
 
     #[test]
