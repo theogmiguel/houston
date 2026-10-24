@@ -113,6 +113,7 @@ pub struct NightAppQa {
     pub smoke_flows: Vec<String>,
 }
 
+/// A command every change passes, and where Houston found it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCheck {
