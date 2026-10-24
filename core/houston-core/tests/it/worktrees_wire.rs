@@ -144,13 +144,10 @@ fn a_non_git_directory_is_refused_by_name() {
     assert!(err.contains("not a git repository"), "unexpected: {err}");
 }
 
-/// A repository with one submodule at `vendor/sub`, added from a local path. A
-/// local clone is the file transport, so `protocol.file.allow=always` rides
-/// env-injected `-c` pairs: only this test's git commands see it.
+/// A repository with one submodule at `vendor/sub`, added from a local path, so
+/// both the fixture's git and the daemon's need the file transport allowed.
 fn submodule_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    std::env::set_var("GIT_CONFIG_COUNT", "1");
-    std::env::set_var("GIT_CONFIG_KEY_0", "protocol.file.allow");
-    std::env::set_var("GIT_CONFIG_VALUE_0", "always");
+    common::allow_git_file_transport();
     let root = tempfile::tempdir().unwrap();
     let sub = root.path().join("sub");
     std::fs::create_dir_all(&sub).unwrap();
