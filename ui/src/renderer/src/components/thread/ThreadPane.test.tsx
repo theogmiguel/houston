@@ -244,6 +244,19 @@ describe('ThreadPane', () => {
     expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain('https://example.com/leak?d=secret')
   }, MARKDOWN_CHUNK_TIMEOUT_MS)
 
+  it('keeps an earlier page and the window on it while live events stream in', () => {
+    mount()
+    history(Array.from({ length: 1000 }, (_, i) => ev(i + 1001, user(`m${i + 1001}`))), true)
+    for (let i = 0; i < 6; i++) click('thread-show-earlier')
+    history(Array.from({ length: 200 }, (_, i) => ev(i + 801, user(`m${i + 801}`))), true, 1001)
+    const before = rows('user')
+    expect(before).toContain('m1000')
+    live(Array.from({ length: 300 }, (_, i) => ev(i + 2001, user(`live${i}`))))
+    expect(rows('user')).toEqual(before)
+    click('thread-jump-latest')
+    expect(rows('user').at(-1)).toBe('live299')
+  })
+
   it('renders a bounded window of a long history and shows an earlier page in the click that loads it', () => {
     mount()
     history(Array.from({ length: 1000 }, (_, i) => ev(i + 1001, user(`m${i + 1001}`))), true)

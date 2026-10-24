@@ -47,6 +47,19 @@ describe('ThreadSessionStore', () => {
     expect(snapshot.events.at(-1)?.seq).toBe(THREAD_RETAINED_EVENTS + 2 * THREAD_HISTORY_PAGE)
   })
 
+  it('keeps an earlier page the reader loaded until they follow the latest rows again', () => {
+    const { store: s } = store()
+    s.attach()
+    s.onHistory(history(Array.from({ length: THREAD_RETAINED_EVENTS }, (_, i) => ev(i + 1001, user(String(i)))), null, true))
+    s.loadEarlier()
+    s.onHistory(history(Array.from({ length: THREAD_HISTORY_PAGE }, (_, i) => ev(i + 801, user('old'))), 1001, true))
+    s.onEvents(live(Array.from({ length: 2 * THREAD_HISTORY_PAGE }, (_, i) => ev(i + 3001, user('new')))))
+    expect(s.getSnapshot().events[0]?.seq).toBe(801)
+    s.followLatest()
+    expect(s.getSnapshot().events).toHaveLength(THREAD_RETAINED_EVENTS)
+    expect(s.getSnapshot().hasMore).toBe(true)
+  })
+
   it('does not misfile the next page after a refused request', () => {
     const { store: s, sent } = store()
     s.attach()

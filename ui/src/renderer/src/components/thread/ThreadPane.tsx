@@ -200,7 +200,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
         {win.end !== null && (
           <ThreadHistoryControl>
             <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(thread.items, current))}>Show later</Button>
-            <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => setWin(LATEST_WINDOW)}>Jump to latest</Button>
+            <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => { setWin(LATEST_WINDOW); thread.followLatest() }}>Jump to latest</Button>
           </ThreadHistoryControl>
         )}
       </ThreadScroll>
@@ -209,6 +209,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
         disabledReason={composerDisabledReason(info, connected)}
         onSend={(text) => {
           setWin(LATEST_WINDOW)
+          thread.followLatest()
           return sendThreadMessage(client, info.id, text)
         }}
         onStop={() => stopThread(client, info.id)}
