@@ -82,7 +82,7 @@ async fn a_moved_workspace_is_relocated_with_its_worktrees_only_to_the_same_repo
     loop {
         match next_control(&mut ws).await {
             proto::ServerMsg::WorkspaceList { workspaces } if !workspaces.is_empty() => {
-                assert!(!workspaces[0].missing);
+                assert_eq!(workspaces[0].missing, None);
                 break;
             }
             proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
@@ -124,7 +124,7 @@ async fn a_moved_workspace_is_relocated_with_its_worktrees_only_to_the_same_repo
     loop {
         match next_control(&mut ws).await {
             proto::ServerMsg::WorkspaceList { workspaces } => {
-                assert!(workspaces[0].missing, "{workspaces:?}");
+                assert_eq!(workspaces[0].missing, Some(true), "{workspaces:?}");
                 break;
             }
             _ => continue,
@@ -154,7 +154,7 @@ async fn a_moved_workspace_is_relocated_with_its_worktrees_only_to_the_same_repo
                 assert_eq!(workspaces.len(), 1);
                 assert_eq!(workspaces[0].path, to);
                 assert_eq!(workspaces[0].name, "proj-moved");
-                assert!(!workspaces[0].missing);
+                assert_eq!(workspaces[0].missing, None);
                 break;
             }
             _ => continue,

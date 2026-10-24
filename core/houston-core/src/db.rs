@@ -6152,7 +6152,7 @@ impl Db {
         Ok(rows
             .into_iter()
             .map(|(path, name)| proto::Workspace {
-                missing: !Path::new(&path).exists(),
+                missing: (!Path::new(&path).exists()).then_some(true),
                 path,
                 name,
             })
@@ -7350,7 +7350,7 @@ mod tests {
             .collect();
         assert!(
             unhandled.is_empty(),
-            "path columns missing from WORKSPACE_KEY_COLUMNS, WORKSPACE_PREFIX_COLUMNS or              RELOCATION_EXEMPT_COLUMNS: {unhandled:?}"
+            "unclassified path columns; list each for relocation or exemption: {unhandled:?}"
         );
         for (t, c) in WORKSPACE_KEY_COLUMNS.iter().chain(WORKSPACE_PREFIX_COLUMNS) {
             assert!(

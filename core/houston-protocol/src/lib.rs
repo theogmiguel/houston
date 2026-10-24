@@ -2783,9 +2783,9 @@ pub struct Workspace {
     pub name: String,
     /// The folder is gone on disk, e.g. moved or renamed outside Houston; the
     /// workspace keeps its rows until it is relocated or removed.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-gen", ts(optional))]
-    pub missing: bool,
+    pub missing: Option<bool>,
 }
 
 /// What a `workspace_relocate` re-pointed, so the client can say what followed.

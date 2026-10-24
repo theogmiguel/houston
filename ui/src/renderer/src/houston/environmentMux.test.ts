@@ -410,10 +410,10 @@ describe('environmentMux', () => {
       { entry: wslEntry('Ubuntu', 1), workspaces: [{ path: '/home/u/p', name: 'p' }] }
     ]).get('Ubuntu')!
 
-    r.clientSend({ type: 'workspace_relocate', from: '/home/u/p', to: '\\wsl.localhost\Ubuntu\home\u\q' })
+    r.clientSend({ type: 'workspace_relocate', from: '/home/u/p', to: '\\\\wsl.localhost\\Ubuntu\\home\\u\\q' })
     expect(ubuntu.json()).toEqual([{ type: 'workspace_relocate', from: '/home/u/p', to: '/home/u/q' }])
 
-    r.clientSend({ type: 'workspace_relocate', from: 'C:\work\p', to: '\\wsl.localhost\Ubuntu\home\u\q' })
+    r.clientSend({ type: 'workspace_relocate', from: 'C:\\work\\p', to: '\\\\wsl.localhost\\Ubuntu\\home\\u\\q' })
     expect(ubuntu.json()).toHaveLength(1)
     expect(r.local.sent).toEqual([])
     const errors = r.deliveredJson().filter((m) => m.type === 'error')
