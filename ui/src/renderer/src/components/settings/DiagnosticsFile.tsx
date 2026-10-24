@@ -11,7 +11,7 @@ type Collect =
   | { phase: 'failed'; error: string }
 
 const DESC =
-  'Writes a redacted file for a bug report: versions, sessions without titles or output, hook health and the recent daemon log. It stays on this computer.'
+  'Writes a file for a bug report: versions, sessions without output, hook health and the recent daemon log, with secrets, folders and pane titles replaced where Houston can find them. It stays on this computer.'
 
 export function folderOf(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, '')

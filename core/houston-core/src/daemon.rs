@@ -17565,7 +17565,33 @@ impl Daemon {
             &self.state_dir.join("logs"),
             crate::diagnostics::FILE_MAX_BYTES as u64,
         );
-        let home = self.env().home_dir();
+        let workspaces: Vec<String> = self
+            .workspace_list()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing workspaces: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let worktrees: Vec<String> = self
+            .db
+            .managed_worktrees()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing managed worktrees: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let env = self.env();
+        let mut homes: Vec<PathBuf> = ["HOME", "USERPROFILE"]
+            .iter()
+            .filter_map(|name| env.var_os(name).filter(|v| !v.is_empty()))
+            .map(PathBuf::from)
+            .chain(env.home_dir())
+            .collect();
+        let canonical: Vec<PathBuf> = homes
+            .iter()
+            .filter_map(|h| std::fs::canonicalize(h).ok())
+            .collect();
+        homes.extend(canonical);
         let text = crate::diagnostics::compose(&crate::diagnostics::Inputs {
             generated,
             app_version,
@@ -17576,7 +17602,9 @@ impl Daemon {
             sessions: &sessions,
             hooks: &hooks,
             log_lines: &log_lines,
-            home: home.as_deref(),
+            workspaces: &workspaces,
+            worktrees: &worktrees,
+            homes: &homes,
         });
         let dir = self.state_dir.join("diagnostics");
         match crate::diagnostics::write(&dir, generated, &text) {

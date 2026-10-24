@@ -76,3 +76,71 @@ async fn the_diagnostics_file_is_redacted_capped_and_holds_no_terminal_output() 
     assert!(!text.contains(&project_dir), "the working directory leaked");
     daemon.kill(info.id).ok();
 }
+
+#[tokio::test]
+async fn log_lines_naming_a_workspace_folder_or_a_pane_title_are_redacted() {
+    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let project = tempfile::tempdir().unwrap();
+    let workspace = project.path().join("acme-client-portal");
+    std::fs::create_dir_all(workspace.join("src")).unwrap();
+    let workspace = workspace.display().to_string();
+    daemon.workspace_add(&workspace).unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    #[cfg(unix)]
+    let cmd = vec!["sh", "-c", "sleep 30"];
+    #[cfg(windows)]
+    let cmd = vec!["powershell.exe", "-NoProfile", "-Command", "Start-Sleep 30"];
+    ws.send(Message::text(create_custom_msg(
+        cmd,
+        std::path::Path::new(&workspace),
+    )))
+    .await
+    .unwrap();
+    let info = expect_created(&mut ws).await;
+    daemon.rename(info.id, "Quarterly payroll export").unwrap();
+
+    let logs = state.path().join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    let source = std::path::Path::new(&workspace).join("src").join("main.rs");
+    let log = format!(
+        "INFO killing session 9 while removing workspace {workspace}\n\
+         WARN opening {source:?}: denied\n\
+         INFO merge queue: the queue of {}\n\
+         WARN naming pane {id} from its CLI's window title (\"Lunch order\"): busy\n\
+         INFO pane {id} is \"Quarterly payroll export\" now\n",
+        workspace.replace('\\', "/"),
+        id = info.id
+    );
+    std::fs::write(logs.join("houston-core.2026-10-24.log"), log).unwrap();
+
+    let msg = proto::ClientMsg::DiagnosticsCollect {
+        app_version: "9.9.9-test".into(),
+    };
+    ws.send(Message::text(serde_json::to_string(&msg).unwrap()))
+        .await
+        .unwrap();
+    let path = loop {
+        if let proto::ServerMsg::DiagnosticsCollected { path, error, .. } =
+            next_control(&mut ws).await
+        {
+            assert_eq!(error, None);
+            break std::path::PathBuf::from(path.expect("a written file"));
+        }
+    };
+    let text = std::fs::read_to_string(&path).unwrap();
+    for leak in [
+        "acme-client-portal",
+        "Quarterly payroll export",
+        "Lunch order",
+    ] {
+        assert!(!text.contains(leak), "{leak} leaked:\n{text}");
+    }
+    assert!(
+        text.contains("removing workspace <workspace 1>\n"),
+        "{text}"
+    );
+    assert!(text.contains("the queue of <workspace 1>\n"), "{text}");
+    assert!(text.contains("window title (<title>)\n"), "{text}");
+    assert!(text.contains("is \"<title>\" now\n"), "{text}");
+    daemon.kill(info.id).ok();
+}
