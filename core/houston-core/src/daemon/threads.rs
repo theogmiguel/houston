@@ -167,6 +167,9 @@ impl Daemon {
                 proto::THREAD_HISTORY_PAGE_MAX
             );
         }
+        if self.get(id).is_err() && !self.db.session_exists(id)? {
+            bail!("thread_history refused for session {id}: unknown session");
+        }
         let view = self.session_view(id);
         if view != proto::SessionView::Thread {
             bail!(
@@ -178,6 +181,7 @@ impl Daemon {
         let (events, has_more) = self.db.thread_events_page(id, before_seq, limit)?;
         Ok(proto::ServerMsg::ThreadHistory {
             session: id,
+            before_seq,
             events,
             has_more,
         })

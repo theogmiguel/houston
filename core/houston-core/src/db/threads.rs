@@ -63,6 +63,19 @@ pub(super) fn parse_view(view: Option<String>) -> proto::SessionView {
 }
 
 impl Db {
+    /// A row that is not closed: closed sessions keep no thread history.
+    pub fn session_exists(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM sessions WHERE id = ?1 AND state != 'closed'",
+                [id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     pub fn session_view(&self, id: u32) -> Result<proto::SessionView> {
         let conn = self.conn.lock().expect("db lock");
         view_of(&conn, id)

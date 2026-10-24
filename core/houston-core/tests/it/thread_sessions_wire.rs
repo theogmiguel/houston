@@ -140,15 +140,30 @@ impl Rig {
     }
 
     async fn history(&mut self, session: u32) -> (Vec<ThreadEvent>, bool) {
-        self.send(json!({"type":"thread_history","session":session,"limit":500}))
-            .await;
+        self.page(session, None, 500).await
+    }
+
+    async fn page(
+        &mut self,
+        session: u32,
+        before: Option<u64>,
+        limit: u32,
+    ) -> (Vec<ThreadEvent>, bool) {
+        self.send(
+            json!({"type":"thread_history","session":session,"before_seq":before,"limit":limit}),
+        )
+        .await;
         loop {
             match next_control(&mut self.ws).await {
                 proto::ServerMsg::ThreadHistory {
                     session: s,
+                    before_seq,
                     events,
                     has_more,
-                } if s == session => return (events, has_more),
+                } if s == session => {
+                    assert_eq!(before_seq, before, "the reply echoes its request");
+                    return (events, has_more);
+                }
                 proto::ServerMsg::Error { message, .. } => panic!("history refused: {message}"),
                 _ => {}
             }
@@ -272,6 +287,11 @@ async fn a_thread_turn_streams_typed_events_and_keeps_them_as_history() {
         stored(&live),
         "history is the live timeline without deltas"
     );
+    let middle = history.len() / 2;
+    let (earlier, more) = rig.page(id, Some(history[middle].seq), 3).await;
+    assert!(more);
+    assert_eq!(earlier.len(), 3);
+    assert_eq!(earlier.last().unwrap().seq, history[middle - 1].seq);
 
     // No lifecycle hook reports for the fake, so the stream's result ended the turn.
     wait_until("the result to settle the status", || {
@@ -456,7 +476,21 @@ async fn other_providers_and_terminal_sessions_are_refused_by_name() {
     assert_eq!(context, Some(format!("session:{}", shell.id)));
     rig.send(json!({"type":"thread_history","session":shell.id,"limit":10}))
         .await;
-    assert!(rig.error().await.0.contains("view terminal"));
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains(&format!("thread_history refused for session {}", shell.id))
+            && message.contains("view terminal"),
+        "{message}"
+    );
+    assert_eq!(context, Some(format!("session:{}", shell.id)));
+    rig.send(json!({"type":"thread_history","session":9999,"limit":10}))
+        .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains("thread_history refused for session 9999: unknown session"),
+        "{message}"
+    );
+    assert_eq!(context.as_deref(), Some("session:9999"));
 
     let id = rig.thread().await;
     let over = "x".repeat(proto::THREAD_USER_MESSAGE_MAX_BYTES + 1);

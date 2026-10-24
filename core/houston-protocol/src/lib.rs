@@ -5377,6 +5377,10 @@ pub enum ServerMsg {
     },
     ThreadHistory {
         session: u32,
+        /// The request's `before_seq`, so a client matches the reply to its request.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_seq: Option<u64>,
         events: Vec<ThreadEvent>,
         has_more: bool,
     },
