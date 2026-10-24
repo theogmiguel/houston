@@ -998,18 +998,21 @@ impl ThreadHandle {
         tool_use_id: &str,
         input: &Value,
     ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
-        if self.is_closed() || !self.is_running() {
-            bail!(
-                "session {} has no running Claude process; nothing can be approved",
-                self.session
-            );
-        }
         let request_id = uuid::Uuid::new_v4().to_string();
         let (answer, receiver) = tokio::sync::oneshot::channel();
         let input = input.to_string();
         let input_bytes = input.len() as u64;
         let (input, truncated) = cap_text(input, THREAD_APPROVAL_INPUT_MAX_BYTES);
         let first = {
+            // Under `state`, where Stop and Close take the process before they drain the
+            // requests: a request either lands before that drain or is refused here.
+            let state = self.state.lock().expect("thread state lock");
+            if state.closed || state.process.is_none() {
+                bail!(
+                    "session {} has no running Claude process; nothing can be approved",
+                    self.session
+                );
+            }
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
             if approvals.len() >= APPROVALS_PENDING_MAX {
                 bail!(
