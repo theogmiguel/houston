@@ -393,7 +393,8 @@ pub fn remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
     }
     #[cfg(windows)]
     {
-        if worktree.join(".git").is_file() {
+        let git_file = worktree.join(".git");
+        if git_file.is_file() || is_link(&git_file) {
             return remove_linked_windows(repo, worktree, force);
         }
     }
@@ -412,12 +413,16 @@ pub fn remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
 // and Git then only drops the registration.
 #[cfg(windows)]
 fn remove_linked_windows(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
-    let is_link = std::fs::symlink_metadata(worktree)
-        .map(|meta| meta.file_type().is_symlink())
-        .unwrap_or(true);
-    if is_link {
+    if is_link(worktree) {
         bail!(
             "worktree path {} is a link; remove the worktree by the path Git registered",
+            worktree.display()
+        );
+    }
+    // A linked `.git` would borrow another worktree's registration for this folder.
+    if is_link(&worktree.join(".git")) {
+        bail!(
+            "{} has a .git that is a link, not the file Git writes; refusing to delete it",
             worktree.display()
         );
     }
@@ -508,6 +513,15 @@ fn same_path(left: &Path, right: &Path) -> bool {
     match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
         (Ok(left), Ok(right)) => left == right,
         _ => false,
+    }
+}
+
+/// A symlink or junction; an unreadable path counts as one, so a doubt refuses.
+#[cfg(windows)]
+fn is_link(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta.file_type().is_symlink(),
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
     }
 }
 
@@ -955,6 +969,69 @@ mod tests {
             "a tree that cannot be proved must be refused, not deleted"
         );
         assert!(fake.join(".git").is_file());
+    }
+
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let native = |path: &Path| path.display().to_string().replace('/', "\\");
+        let out = Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(native(link))
+            .arg(native(target))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "mklink /J: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A folder whose `.git` links to a real worktree's, and that worktree.
+    #[cfg(windows)]
+    fn folder_borrowing_a_worktree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let repo = root.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let real = root.join("wt");
+        create_named(&repo, "real", None, &real).unwrap();
+        let folder = root.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("precious.txt"), "keep\n").unwrap();
+        (repo, real, folder)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_folder_whose_git_is_a_junction() {
+        let root = tempfile::tempdir().unwrap();
+        let (repo, real, folder) = folder_borrowing_a_worktree(root.path());
+        let admin = repo.join(".git/worktrees/wt");
+        create_junction(&folder.join(".git"), &admin);
+
+        let err = remove(&repo, &folder, true).unwrap_err().to_string();
+
+        assert!(err.contains("is a link"), "unexpected: {err}");
+        assert!(folder.join("precious.txt").is_file());
+        assert!(real.join("README.md").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_folder_whose_git_file_is_a_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let (repo, real, folder) = folder_borrowing_a_worktree(root.path());
+        // File symlinks need Developer Mode or elevation; CI runners have it.
+        if let Err(e) = std::os::windows::fs::symlink_file(real.join(".git"), folder.join(".git")) {
+            eprintln!("skipped: cannot create a file symlink here: {e}");
+            return;
+        }
+
+        let err = remove(&repo, &folder, true).unwrap_err().to_string();
+
+        assert!(err.contains("is a link"), "unexpected: {err}");
+        assert!(folder.join("precious.txt").is_file());
+        assert!(real.join("README.md").is_file());
     }
 
     #[cfg(windows)]
