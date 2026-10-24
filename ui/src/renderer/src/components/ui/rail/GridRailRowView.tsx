@@ -8,6 +8,7 @@ import { WorkingSpinner } from '../Spinner'
 import { GridRailTitleRow } from './GridRailTitleRow'
 import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailAgentRows } from './GridRailAgentRows'
+import { GridRailNoteLine } from './GridRailNoteLine'
 import { GridRailHoverCardHost } from './GridRailHoverCardHost'
 import { TagCardAffordance } from '../../tags/TagCardAffordance'
 
@@ -43,7 +44,7 @@ function gridRowClassName({ cardMode, hasChipRow, dragging, dragPosition, select
 export function GridRailRowView({
   name, workspace, gridId, selected, pinned, tags,
   cardMode, tagDisplay, agentActivity, properties, dragPosition, dragging, dragRefusal, onGridPointerDown,
-  onToggleUnread, onFilterTag, jumpNumber, onRemove, onSelect, onFocusPane, onContextMenu, onOpenInspector, card, primary,
+  onToggleUnread, onFilterTag, jumpNumber, onRemove, onSelect, onFocusPane, onContextMenu, onOpenInspector, onClearNote, card, primary,
   checkoutLabel, many, hasUnread, altHeld, hoverPosition, hoverVisible, expanded, now, rowRef,
   openTagPopover, startHover, closeHover, onToggleExpanded, onKeyDown,
 }: {
@@ -69,6 +70,7 @@ export function GridRailRowView({
   onFocusPane?: (paneId: number) => void
   onContextMenu?: (event: React.MouseEvent) => void
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
+  onClearNote?: (session: number) => void
   card: RailCard
   primary?: RailAgentRow
   checkoutLabel: { branch: string | null; text: string } | null
@@ -117,6 +119,7 @@ export function GridRailRowView({
           <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
           {hasChipRow && <div className="flex min-h-4 items-center text-[length:var(--tr-text-xs)]"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
+          {cardMode === 'detailed' && card.note && <GridRailNoteLine note={card.note} now={now} onClear={onClearNote} />}
           {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
           <GridRailAgentRows agents={card.agents} cardMode={cardMode} agentActivity={agentActivity} properties={properties} expanded={expanded} onToggleExpanded={onToggleExpanded} now={now} onFocusPane={(paneId) => { onSelect(); onFocusPane?.(paneId) }} />
         </div>

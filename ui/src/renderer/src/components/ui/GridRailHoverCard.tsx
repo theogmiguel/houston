@@ -140,6 +140,7 @@ export function GridRailHoverCardSpecimen(): React.JSX.Element {
     },
     diff: { added: 214, deleted: 38 },
     agents: [],
+    note: null,
     lastActivityMs: 0
   }
   return <GridRailHoverCard card={card} position={{ left: 12, top: 12 }} />

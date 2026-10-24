@@ -508,6 +508,7 @@ type RosterPatchMsg = Extract<
       | "delegation_changed"
       | "session_tags_set"
       | "session_resumable"
+      | "session_note"
       | "agent_running";
   }
 >;
@@ -522,6 +523,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "session_note",
   "agent_running",
 ]);
 
@@ -555,6 +557,8 @@ function patchRosterFields(
                 ? { tags: msg.tags }
                 : msg.type === "session_resumable"
                   ? { resumable: msg.resumable }
+                  : msg.type === "session_note"
+                    ? { note: msg.note ?? null }
                   : msg.type === "agent_running"
                     ? { running_agent: msg.agent ?? null }
                     : { delegation: msg.delegation };

@@ -96,6 +96,7 @@ pub async fn start_with_listener(
         )
         .route("/orchestrate/pr-watch", post(orch_pr_watch))
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
+        .route("/orchestrate/note", post(orch_note))
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
         .route("/harness/publish", post(harness_publish))
@@ -2857,6 +2858,12 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || daemon.reset_title(session))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("title reset task panicked: {e}")))
+        }
+        proto::ClientMsg::SessionNoteClear { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.pane_note_clear(session).map(|_| ()))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note clear panicked: {e}")))
         }
         proto::ClientMsg::SessionRename { session, title } => {
             let daemon = Arc::clone(daemon);
@@ -5992,6 +5999,41 @@ async fn orch_pr_watch(
             .unwrap_or_else(|e| Err(anyhow::anyhow!("PR watch panicked: {e}")));
     match result {
         Ok(()) => (StatusCode::OK, axum::Json(json!({"watching": true, "pr": target, "note": "End your turn now; Houston wakes this pane on the next PR change."}))).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct NoteBody {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    phase: Option<proto::PanePhase>,
+    #[serde(default)]
+    clear: bool,
+}
+
+async fn orch_note(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<NoteBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.pane_note_request(
+            scope.session_id,
+            body.text.as_deref(),
+            body.phase,
+            body.clear,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note panicked: {e}")));
+    match result {
+        Ok(value) => (StatusCode::OK, axum::Json(value)).into_response(),
         Err(e) => orch_err_response(e),
     }
 }

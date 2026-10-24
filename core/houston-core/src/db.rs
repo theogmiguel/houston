@@ -1742,6 +1742,7 @@ impl Db {
             "title_first_turn_ended",
             "title_first_turn_ended INTEGER NOT NULL DEFAULT 0",
         )?;
+        add_column_if_missing(&conn, "sessions", "note_json", "note_json TEXT")?;
         // The candidate backfill below excludes hidden rows.
         add_column_if_missing(
             &conn,
@@ -2519,6 +2520,7 @@ impl Db {
             }
             match serde_json::from_str::<proto::AgentKind>(&format!("\"{agent}\"")) {
                 Ok(kind) => out.push(proto::SessionInfo {
+                    note: None,
                     checkout: None,
                     activity: None,
                     id,
@@ -3185,6 +3187,43 @@ impl Db {
                 |r| r.get(0),
             )
             .optional()?)
+    }
+
+    /// Saves or (with `None`) removes a pane's note on its session row.
+    pub fn update_session_note(&self, id: u32, note: Option<&proto::PaneNote>) -> Result<()> {
+        let json = note.map(serde_json::to_string).transpose()?;
+        let conn = self.conn.lock().expect("db lock");
+        let n = conn.execute(
+            "UPDATE sessions SET note_json = ?2 WHERE id = ?1",
+            rusqlite::params![id, json],
+        )?;
+        if n == 0 {
+            anyhow::bail!("no session row with id {id} to hold a pane note");
+        }
+        Ok(())
+    }
+
+    /// The notes of sessions that are not closed; an unreadable one is skipped and logged.
+    pub fn session_notes(&self) -> Result<Vec<(u32, proto::PaneNote)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT id, note_json FROM sessions WHERE note_json IS NOT NULL AND state != 'closed'",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, json)| match serde_json::from_str(&json) {
+                Ok(note) => Some((id, note)),
+                Err(e) => {
+                    tracing::warn!("session {id} note {json:?} is unreadable: {e}");
+                    None
+                }
+            })
+            .collect())
     }
 
     pub fn tag_list(&self) -> Result<Vec<proto::TagInfo>> {
@@ -6917,6 +6956,7 @@ mod tests {
 
     fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,

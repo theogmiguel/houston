@@ -105,3 +105,17 @@ describe('buildRailCard', () => {
   })
 })
 
+
+describe('buildRailCard notes', () => {
+  it('shows the newest note among the grid panes, with its pane and phase', () => {
+    const older = session({ id: 1, title: 'Max', note: { text: 'reading the code', phase: 'todo', at_ms: 1_000 } })
+    const newer = session({ id: 2, title: 'Leo', spawned_by: 1, note: { text: 'running tests', phase: 'in_progress', at_ms: 2_000 } })
+    const card = buildRailCard({ gridId: 'g', workspace: '/repo', title: 'g', paneIds: [1, 2], sessions: [older, newer] })
+    expect(card.note).toEqual({ session: 2, pane: 'Leo', text: 'running tests', phase: 'in_progress', atMs: 2_000 })
+  })
+
+  it('has no note when no pane wrote one', () => {
+    const card = buildRailCard({ gridId: 'g', workspace: '/repo', title: 'g', paneIds: [1], sessions: [session({ id: 1 })] })
+    expect(card.note).toBeNull()
+  })
+})

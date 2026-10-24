@@ -9,6 +9,7 @@ use std::path::Path;
 
 fn info(id: u32, project: &Path, agent: proto::AgentKind) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,

@@ -18,8 +18,8 @@ other on names and arguments:
 
 - An MCP tool set: `pane_spawn`, `pane_list`, `pane_get`, `pane_send_keys`, `pane_read`,
   `pane_prompt`, `pane_wait`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`,
-  `pane_deny`, `pane_escalate`, `pane_pr_watch`, `pane_pr_unwatch`,
-  and the `pane_instruction_*` controls.
+  `pane_deny`, `pane_escalate`, `pane_pr_watch`, `pane_pr_unwatch`, `pane_pr_enqueue`,
+  `pane_pr_dequeue`, `pane_note` and the `pane_instruction_*` controls.
 - A command-line tool, `hs-pane`, with one subcommand per verb above (plus a CLI-only
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
 
@@ -221,6 +221,15 @@ is verified if the workspace's policy allows; see [Merge queue](changes.md#merge
 the queue cannot verify or merge the pull request, the pane that enqueued it gets one message
 with the conflicting files or the failing output: fix the branch and push, and the new head
 goes back in line on its own.
+
+## Status notes on the rail
+
+An agent can say where its work stands in one line on its grid's rail card:
+`pane_note{text, phase?}` (`hs-pane note TEXT [--phase todo|in_progress|in_review|done]`).
+Each note replaces the pane's last one, and the card shows the newest note of its panes with
+its age and phase. A note longer than 512 bytes is refused, naming the limit; newlines become
+spaces. The **×** on the line clears it, as does `pane_note{clear: true}`
+(`hs-pane note --clear`). A note goes when its pane closes or restarts.
 
 ## Workspaces and child lifetime
 

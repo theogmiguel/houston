@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -111,6 +111,7 @@ failure not given a typed refusal comes back as `error`.
 | `generated_titles_get` | — | `generated_titles` with the current off-default setting |
 | `generated_titles_set` | `enabled` | `generated_titles` (bcast) |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
+| `session_note_clear` | `session` (an active or restored session) | `session_note` (bcast) with `note: null` |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
 | `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
 | `tag_update` | `tag`, `name`, `color` (same rules as `tag_create`) | `tag_list` (bcast); sessions follow — they carry the id |
@@ -431,6 +432,7 @@ every refusal names the setting.
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
 | `session_renamed` | `session`, `title`, `title_source: TitleSource` | bcast after a manual rename, reset or automatic title update |
+| `session_note` | `session`, `note?: PaneNote` | bcast when the pane's agent writes a note (`pane_note`, `hs-pane note`) or a client clears it; absent `note` means cleared. `PaneNote` is `text` (one line, at most `PANE_NOTE_MAX_BYTES` = 512 bytes), `phase?: PanePhase` (`todo`, `in_progress`, `in_review`, `done`) and `at_ms`. `SessionInfo.note` carries the current note in lists and session updates |
 | `session_tags_set` | `session`, `tags: u32[]` | v100: bcast after `session_set_tags` — the whole set, client replaces |
 | `compactions_changed` | `session`, `compactions` | v122: bcast each time the agent's compaction hook fires; at every `HANDOFF_OFFER_AFTER_COMPACTIONS` (3) a top-level pane with children and no earlier handoff also gets one `operator_note` inbox row with reason `handoff_offer` |
 | `session_resumable` | `session`, `resumable` | v119: bcast when a live session gains its first resume handle (a turn in its root conversation) or loses it (kill, close) |
@@ -1400,6 +1402,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **Agents post a one-line status note on their pane's rail card.** `SessionInfo` gains `note?: PaneNote` (`text`, `phase?: PanePhase`, `at_ms`). New `session_note_clear{session}` and the `session_note{session, note?}` broadcast. Agents write the note through the `pane_note` MCP tool or `hs-pane note`; a note over 512 bytes is refused naming the limit |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

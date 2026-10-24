@@ -441,6 +441,7 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
     {
         let db = houston_core::db::Db::open(&state.path().join("test.db")).unwrap();
         db.insert_session(&proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
