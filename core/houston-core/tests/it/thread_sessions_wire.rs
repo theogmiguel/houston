@@ -932,6 +932,117 @@ async fn a_daemon_shutdown_mid_turn_is_recorded_and_restored() {
     second.close(restored.id).unwrap();
 }
 
+/// A Restart or shutdown closing a thread while its Stop has not settled the status.
+#[cfg(any(target_os = "linux", feature = "test-barriers"))]
+type DuringStop = fn(Arc<Daemon>, u32) -> Result<(), String>;
+
+#[cfg(any(target_os = "linux", feature = "test-barriers"))]
+fn restart(daemon: Arc<Daemon>, id: u32) -> Result<(), String> {
+    daemon
+        .respawn(id, false, None, None, true)
+        .map(|_| ())
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[cfg(any(target_os = "linux", feature = "test-barriers"))]
+fn shut_down(daemon: Arc<Daemon>, _: u32) -> Result<(), String> {
+    daemon.manage_shutdown().map(|_| ()).map_err(|e| e.reason)
+}
+
+/// A thread mid-turn in a Claude that ignores SIGTERM and stdin.
+#[cfg(any(target_os = "linux", feature = "test-barriers"))]
+async fn stubborn_thread(rig: &mut Rig) -> u32 {
+    let id = rig.thread().await;
+    rig.say(id, "stubborn").await;
+    rig.events_until(id, |e| {
+        matches!(e.kind, ThreadEventKind::AssistantDelta { .. })
+    })
+    .await;
+    // Headless Claude reports its turn through hooks; Stop settles only a working thread.
+    rig.daemon.handle_hook(id, "UserPromptSubmit", None);
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::Working)
+    );
+    id
+}
+
+/// Starts `during` while `stop` holds the thread, lets the Stop go on with `release`, and
+/// requires both to finish: a closer holding the lock the Stop's settle takes deadlocks.
+#[cfg(any(target_os = "linux", feature = "test-barriers"))]
+async fn both_finish(
+    rig: &Rig,
+    id: u32,
+    stop: std::thread::JoinHandle<anyhow::Result<()>>,
+    during: DuringStop,
+    release: impl FnOnce(),
+) {
+    let daemon = Arc::clone(&rig.daemon);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(during(daemon, id));
+    });
+    // Long enough for `during` to reach the thread's close, which waits for the Stop.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    release();
+    tokio::time::timeout(Duration::from_secs(10), rx)
+        .await
+        .expect("the Restart or shutdown deadlocked with the Stop")
+        .unwrap()
+        .unwrap();
+    within("thread_stop", Duration::from_secs(10), move || {
+        stop.join().unwrap()
+    })
+    .await
+    .unwrap();
+}
+
+#[cfg(feature = "test-barriers")]
+async fn close_while_stop_settles(during: DuringStop) {
+    let mut rig = Rig::new().await;
+    let id = stubborn_thread(&mut rig).await;
+    let barrier = TestBarrier::arm("thread-stop-settle");
+    let daemon = Arc::clone(&rig.daemon);
+    let stop = std::thread::spawn(move || daemon.thread_stop(id));
+    barrier.reached(id).await;
+    both_finish(&rig, id, stop, during, || barrier.release()).await;
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_restart_while_stop_settles_finishes() {
+    close_while_stop_settles(restart).await;
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_shutdown_while_stop_settles_finishes() {
+    close_while_stop_settles(shut_down).await;
+}
+
+/// Linux gives a stopped Claude a grace period, so no barrier is needed to race it.
+#[cfg(target_os = "linux")]
+async fn close_during_stop_grace(during: DuringStop) {
+    let mut rig = Rig::new().await;
+    let id = stubborn_thread(&mut rig).await;
+    let daemon = Arc::clone(&rig.daemon);
+    let stop = std::thread::spawn(move || daemon.thread_stop(id));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    both_finish(&rig, id, stop, during, || {}).await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_restart_during_the_stop_grace_finishes() {
+    close_during_stop_grace(restart).await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_shutdown_during_the_stop_grace_finishes() {
+    close_during_stop_grace(shut_down).await;
+}
+
 /// npm installs `claude` as a `.cmd` shim; std quotes batch arguments itself. The MCP
 /// config JSON carries quotes and a project path can carry `%`.
 #[cfg(windows)]

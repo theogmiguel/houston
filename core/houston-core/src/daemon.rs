@@ -4914,7 +4914,7 @@ impl Daemon {
         if session.info.agent == proto::AgentKind::Custom || session.info.hidden {
             return self.kill_unlocked(id);
         }
-        let _cleanup = self
+        let cleanup = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
@@ -4937,6 +4937,9 @@ impl Daemon {
             } else {
                 "the session was restarted"
             });
+            // As in kill_unlocked: closing waits for a Stop or exit in progress, whose
+            // status settle takes the cleanup lock.
+            drop(cleanup);
         }
         if let Err(error) = session
             .backend
@@ -22847,7 +22850,13 @@ impl Daemon {
             }
             let was_live = session.state.lock().expect("state lock").is_live();
             if was_live {
-                if let Err(error) =
+                if let Some(thread) = session.thread() {
+                    // A Stop or exit in progress settles status under the cleanup lock
+                    // held here; the next watch tick retries.
+                    if !thread.try_close() {
+                        return None;
+                    }
+                } else if let Err(error) =
                     session
                         .backend
                         .kill(child, session.pid, self.channel.as_deref())

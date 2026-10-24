@@ -329,7 +329,9 @@ Stop ends the whole process tree: the process group (through `pid.rs`) on Unix, 
 object with kill-on-close on Windows. Killing only `claude` leaves its tools running.
 Stop, start and exit handling are serialised per thread, so a message sent during a Stop
 starts its process only after the old tree is reaped, and a write blocked on a Claude that
-stopped reading never holds up Stop, Kill or shutdown. A daemon crash on Windows ends the
+stopped reading never holds up Stop, Kill or shutdown. Stop and exit settle the status
+while the thread is held, so code that closes a thread must not hold
+`temporary_cleanup_lock` while it waits. A daemon crash on Windows ends the
 tree with the Job handle. On Linux the session row records the group (pgid, the daemon's
 session id, the boot id); restore, Restart and Close kill the processes still in that pgid
 and session on the same boot, which only the dead daemon launched.

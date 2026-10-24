@@ -52,6 +52,48 @@ impl Drop for PathPrepend {
     }
 }
 
+/// Holds daemon threads that reach `houston_core::test_barriers::pause(point, ..)` until
+/// released or dropped. Process-wide, which nextest's one process per test keeps to one test.
+pub struct TestBarrier {
+    dir: tempfile::TempDir,
+    point: String,
+}
+
+impl TestBarrier {
+    pub fn arm(point: &str) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("HOUSTON_TEST_BARRIER_DIR", dir.path());
+        std::fs::write(dir.path().join("armed"), point).unwrap();
+        Self {
+            dir,
+            point: point.to_string(),
+        }
+    }
+
+    pub async fn reached(&self, subject: u32) {
+        let receipt = format!("{} {subject}", self.point);
+        let reached = self.dir.path().join("reached");
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read_to_string(&reached).ok().as_deref() != Some(receipt.as_str()) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("no daemon thread reached barrier {receipt:?}"));
+    }
+
+    pub fn release(&self) {
+        let _ = std::fs::remove_file(self.dir.path().join("armed"));
+    }
+}
+
+impl Drop for TestBarrier {
+    fn drop(&mut self) {
+        self.release();
+        std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+    }
+}
+
 /// Git processes started since [`trace_git_processes`] named `path`.
 pub fn git_processes_started(path: &std::path::Path) -> usize {
     std::fs::read_to_string(path)

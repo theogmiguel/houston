@@ -897,6 +897,8 @@ impl ThreadHandle {
             .expect("thread state lock")
             .end_open_turn(TurnOutcome::Interrupted, None);
         self.emit(events);
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-stop-settle", self.session);
         self.host.settle(self.session, TurnOutcome::Interrupted);
         true
     }
@@ -906,10 +908,27 @@ impl ThreadHandle {
         self.state.lock().expect("thread state lock").close_cause = Some(cause.to_string());
     }
 
-    /// Ends the thread for good: the session was killed, restarted, closed or the daemon
-    /// is stopping. An open turn is recorded as interrupted, naming the cause.
+    /// Ends the thread for good, recording an open turn as interrupted with its cause.
+    /// Waits for a Stop or exit in progress, whose status settle takes daemon locks:
+    /// callers must not hold `temporary_cleanup_lock`.
     pub fn close(&self) {
-        let _op = self.op.lock().expect("thread operation lock");
+        let op = self.op.lock().expect("thread operation lock");
+        self.close_held(op);
+    }
+
+    /// `close` unless a send, Stop or exit holds the thread. Returns whether it closed.
+    pub fn try_close(&self) -> bool {
+        match self.op.try_lock() {
+            Ok(op) => {
+                self.close_held(op);
+                true
+            }
+            Err(std::sync::TryLockError::WouldBlock) => false,
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("thread operation lock poisoned"),
+        }
+    }
+
+    fn close_held(&self, _op: std::sync::MutexGuard<'_, ()>) {
         let process = {
             let mut state = self.state.lock().expect("thread state lock");
             if state.closed {
