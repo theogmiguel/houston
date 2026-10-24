@@ -176,10 +176,8 @@ impl Rig {
 
     /// Thread launches of the fake, oldest first (a `--version` probe is not one).
     fn launches(&self) -> Vec<(u32, Vec<String>)> {
-        std::fs::read_to_string(self.scratch.path().join("launches.jsonl"))
-            .unwrap_or_default()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        jsonl_records(&self.scratch.path().join("launches.jsonl"))
+            .into_iter()
             .filter_map(|record| {
                 let argv: Vec<String> = serde_json::from_value(record["argv"].clone()).ok()?;
                 argv.iter()
@@ -1209,10 +1207,8 @@ async fn a_cmd_shim_receives_quoted_json_and_percent_signs_verbatim() {
             _ => {}
         }
     }
-    let log = std::fs::read_to_string(scratch.path().join("launches.jsonl")).unwrap();
-    let argv: Vec<String> = log
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+    let argv: Vec<String> = jsonl_records(&scratch.path().join("launches.jsonl"))
+        .into_iter()
         .filter_map(|record| serde_json::from_value::<Vec<String>>(record["argv"].clone()).ok())
         .find(|argv| argv.iter().any(|arg| arg == "-p"))
         .unwrap();
@@ -1243,4 +1239,20 @@ async fn with_hooks_off_every_stream_result_ends_its_turn() {
             "after {turn}, the stream result marked hooks as seen and disabled the fallback"
         );
     }
+}
+
+#[test]
+fn a_launch_record_still_being_written_is_left_for_the_next_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("launches.jsonl");
+    std::fs::write(
+        &log,
+        "{\"pid\":1,\"argv\":[\"-p\"]}\n{\"pid\":2,\"argv\":[\"-p\",\"--ses",
+    )
+    .unwrap();
+    let records = jsonl_records(&log);
+    assert_eq!(records.len(), 1, "{records:?}");
+    assert_eq!(records[0]["pid"], 1);
+    std::fs::write(&log, "").unwrap();
+    assert!(jsonl_records(&log).is_empty());
 }

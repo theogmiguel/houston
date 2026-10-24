@@ -127,6 +127,21 @@ pub fn base_env() -> houston_core::host_env::HostEnv {
 }
 
 /// Copies the hermetic `fake_claude_stream` into `shim` as the `claude` a daemon launches.
+/// The JSON records of a log another process appends to: complete lines only, so a record
+/// still being written is left for the next read.
+pub fn jsonl_records(path: &std::path::Path) -> Vec<serde_json::Value> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let complete = text.rfind('\n').map_or("", |end| &text[..end]);
+    complete
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("{}: bad record {line:?}: {e}", path.display()))
+        })
+        .collect()
+}
+
 pub fn install_fake_claude(shim: &std::path::Path) -> std::path::PathBuf {
     let fake = shim.join(if cfg!(windows) {
         "claude.exe"
