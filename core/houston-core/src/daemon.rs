@@ -8389,6 +8389,15 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn open_permission_episodes_for_test(&self, id: u32) -> usize {
+        self.permission_episodes
+            .lock()
+            .expect("episodes lock")
+            .get(&id)
+            .map_or(0, |episodes| episodes.open_count())
+    }
+
+    #[doc(hidden)]
     pub fn lifecycle_hook_seen_for_test(&self, id: u32) -> bool {
         self.get(id)
             .is_ok_and(|s| s.lifecycle_hook_seen.load(Ordering::Acquire))
@@ -16336,10 +16345,14 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let blocks = match provider {
-                proto::AgentKind::Claude => d
-                    .tool_name
-                    .as_deref()
-                    .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name)),
+                // A thread's interactive tools are answered through its prompt tool, which
+                // owns their status: AskUserQuestion at once, ExitPlanMode through a hold.
+                proto::AgentKind::Claude => {
+                    d.tool_name
+                        .as_deref()
+                        .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name))
+                        && self.session_view(d.session) != proto::SessionView::Thread
+                }
                 proto::AgentKind::Codex => d.tool_name.as_deref() == Some("request_user_input"),
                 proto::AgentKind::Zcode => d.tool_name.as_deref() == Some("AskUserQuestion"),
                 _ => false,

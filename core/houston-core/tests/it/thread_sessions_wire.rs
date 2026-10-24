@@ -1538,3 +1538,19 @@ async fn a_truncated_request_reports_its_full_size_and_requests_are_capped() {
         "{text}"
     );
 }
+
+#[tokio::test]
+async fn interactive_tool_hooks_neither_ask_for_input_nor_open_an_episode_in_a_thread() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.turn(id, "ask:AskUserQuestion:red or blue").await;
+    let question = format!("toolu_ask_{}", rig.launches()[0].0);
+    hook(&rig, "PreToolUse", id, "AskUserQuestion", &question);
+    hook(&rig, "PreToolUse", id, "ExitPlanMode", "toolu_plan");
+    assert_ne!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "the prompt tool owns a thread's interactive tools; their hooks ask for nothing"
+    );
+    assert_eq!(rig.daemon.open_permission_episodes_for_test(id), 0);
+}
