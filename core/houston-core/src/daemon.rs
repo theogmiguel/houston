@@ -17565,7 +17565,7 @@ impl Daemon {
             &self.state_dir.join("logs"),
             crate::diagnostics::FILE_MAX_BYTES as u64,
         );
-        let home = crate::home_dir::home_dir();
+        let home = self.env().home_dir();
         let text = crate::diagnostics::compose(&crate::diagnostics::Inputs {
             generated,
             app_version,
