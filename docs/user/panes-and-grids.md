@@ -75,8 +75,9 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. A m
 sent while Claude is working is delivered at once and Claude reads it after its current
 step. One message is limited to 256 KiB. While Claude works, the button reads **Stop**;
 the pane menu offers the same action. Stop ends Claude and the tools it started. The
-answer it was writing stays visible, marked "Stopped · Claude will not remember this
-partial answer": the next message resumes the conversation without it.
+answer it was writing stays in the thread, marked "Stopped · Claude will not remember
+this partial answer": the next message resumes the conversation without it. The pane
+menu's text size and Handoff actions apply to terminal panes only.
 
 Expand a tool card to see its input and output. Shell commands show the command and its
 output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and
@@ -85,7 +86,8 @@ machine, up to 20,000 events or 8 MiB, removing the oldest first with a note in 
 thread; the history is deleted when you close the pane. A pane shows the latest
 messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.
 The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
-a terminal pane.
+a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it
+from that address only when you choose **Load image**.
 
 ## Splitting and stacking
 
