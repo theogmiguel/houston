@@ -386,7 +386,8 @@ process and its foreground jobs, and detached background processes may keep runn
 pane that cannot be restored shows its reason without holding back the other panes.
 Pending missions still require explicit resume.
 
-Saved terminal output follows an automatically restored pane. Output since the last
-checkpoint can be lost after an abrupt daemon exit, and provider conversation history
+Saved terminal output follows an automatically restored pane. Output is saved every 30
+seconds while a pane is producing it, so an abrupt daemon exit loses about the last 30
+seconds of a pane's output; provider conversation history
 depends on the provider's own storage. A power failure can also lose recent writes that
 had not reached storage; recovery does not promise to repeat or complete interrupted tools.
