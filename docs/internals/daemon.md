@@ -755,7 +755,15 @@ transcript directory only to satisfy the GC sweep's `last_listing_ok` gate.
 The tick runs on `spawn_blocking`; the delay between
 rounds comes from `fs_watch::PollLadder`, a pure state machine: 1 s during a burst (5 polls,
 re-armed by any yielding round), otherwise 7.5 s or 30 s with a healthy watcher — depending
-on whether a client is attached — and 2 s or 5 s with a dead one.
+on whether a client is attached — and 2 s or 5 s with a dead one. Health requires more
+than a watcher that started and a directory that lists: a delivery canary writes one
+reserved `houston-canary.probe` into the channel's drop directory every 30 s and requires
+the watcher's event counter to advance within 15 s. The probe's own event wakes the loop,
+so a live watcher clears it at once. A watcher that goes silent after starting, or a drop
+directory that vanished, is held at the dead rungs — drops still arrive, but at poll
+latency — until a probe is delivered again. The canary never restarts the watcher or
+recreates the directory; the probe is invisible to the drop pass and never becomes an
+inbox row.
 
 A filesystem-watcher event fires `swarm_mail_wake` (a `tokio::sync::Notify`) which cuts a
 sleep short — never lengthens one. Mailbox GC retention is 24 h, wire-settable.
