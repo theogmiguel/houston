@@ -2,9 +2,15 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness } from './test/appTestHarness'
+import { flushLayoutSaves } from './layout/tree'
 
 const WS = '/tmp/project'
 const LAYOUT_KEY = `tr-layout:${WS}::g-default`
+
+function storedLayout(): string | null {
+  flushLayoutSaves()
+  return localStorage.getItem(LAYOUT_KEY)
+}
 
 const SEEDED = {
   cols: 2,
@@ -33,7 +39,7 @@ function press(key: string): void {
 }
 
 function savedTree(): Record<string, unknown> {
-  return JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null')?.tree
+  return JSON.parse(storedLayout() ?? 'null')?.tree
 }
 
 function order(): (string | number)[] {

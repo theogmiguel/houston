@@ -191,9 +191,14 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 947,037 bytes (one boot chunk) with the same small headroom:",
+    "layout saves are debounced, and the pending-write map, its flush on hide and",
+    "pagehide, and the read-through that keeps loads current live in",
+    "`layout/tree.ts`, which every boot path imports."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947250,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
