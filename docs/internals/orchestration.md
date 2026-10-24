@@ -17,7 +17,9 @@ branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and st
 pane there, including an independent pane when combined with `handoff: true`.
 The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
 it does not follow the caller's feature branch. `branch` names the new branch, not its
-base; `pane_spawn` has no base override. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
+base; `pane_spawn` has no base override. The exception is a `branch` that only one remote
+has: it starts from that remote branch and tracks it. A derived `houston/<slug>` never
+does, so a reused slug cannot pick up an old pushed branch. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
 that cannot be removed keeps its branch and record. Removing a worktree from the Changes
 pane drops its record, and a new worktree at a recorded path replaces the stale record, so

@@ -174,6 +174,47 @@ pub fn create_on_branch(
     add_worktree(repo, &branch, &base, dest)
 }
 
+/// A branch the caller named that exists on exactly one remote and not locally
+/// continues that remote branch and tracks it, as `git switch <branch>` does;
+/// otherwise it is a fresh branch off `base`, never guessing between remotes.
+pub fn create_on_named_branch(
+    repo: &Path,
+    branch: &str,
+    base: Option<&str>,
+    dest: &Path,
+) -> Result<Worktree> {
+    ensure_git_repo(repo)?;
+    crate::git::validate_branch_name(branch)?;
+    let remote = if branch_exists(repo, branch) {
+        None
+    } else {
+        sole_remote_branch(repo, branch)
+    };
+    let Some(remote) = remote else {
+        return create_on_branch(repo, branch, base, dest);
+    };
+    let tree = create_on_branch(repo, branch, Some(&remote), dest)?;
+    // Tracking is a convenience: the tree already holds the remote's commits.
+    let upstream = format!("--set-upstream-to={remote}");
+    if let Err(e) = run_git(repo, &["branch", &upstream, branch]) {
+        tracing::warn!("worktree branch {branch:?} continues {remote} but tracks nothing: {e:#}");
+    }
+    Ok(tree)
+}
+
+/// `refs/remotes/<remote>/<branch>` when exactly one remote has `branch`.
+fn sole_remote_branch(repo: &Path, branch: &str) -> Option<String> {
+    let remotes = run_git(repo, &["remote"]).ok()?;
+    let mut found = remotes
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| format!("refs/remotes/{name}/{branch}"))
+        .filter(|reference| ref_exists(repo, reference));
+    let first = found.next()?;
+    found.next().is_none().then_some(first)
+}
+
 fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Worktree> {
     let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
@@ -212,9 +253,9 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
     })
 }
 
-/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same
-/// branch checked out again at the same path when its earlier tree is gone.
-/// The caller handles a tree that is already there and on the branch.
+/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same branch
+/// checked out again (or continued from the one remote still holding it) when its
+/// earlier tree is gone. The caller handles a tree already there and on the branch.
 pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -> Result<Worktree> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
@@ -226,7 +267,7 @@ pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -
         );
     }
     if !branch_exists(repo, branch) {
-        return create_on_branch(repo, branch, base, dest);
+        return create_on_named_branch(repo, branch, base, dest);
     }
     let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
@@ -514,6 +555,99 @@ mod tests {
         std::fs::write(dir.join("README.md"), "hello\n").unwrap();
         git(dir, &["add", "-A"]);
         git(dir, &["commit", "-m", "init"]);
+    }
+
+    fn git_out(dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A bare remote `name` holding `main` and a `branch` one commit ahead of it,
+    /// fetched into `repo`, which never had `branch` locally.
+    fn remote_with_branch(root: &Path, repo: &Path, name: &str, branch: &str) -> String {
+        let bare = root.join(format!("{name}.git"));
+        git(
+            root,
+            &["init", "--bare", "-b", "main", bare.to_str().unwrap()],
+        );
+        git(repo, &["remote", "add", name, bare.to_str().unwrap()]);
+        git(repo, &["push", name, "main"]);
+        let other = root.join(format!("{name}-clone"));
+        git(
+            root,
+            &["clone", bare.to_str().unwrap(), other.to_str().unwrap()],
+        );
+        git(&other, &["config", "user.email", "t@t.local"]);
+        git(&other, &["config", "user.name", "t"]);
+        git(&other, &["switch", "-c", branch]);
+        std::fs::write(other.join("remote.txt"), "pushed\n").unwrap();
+        git(&other, &["add", "remote.txt"]);
+        git(&other, &["commit", "-m", "remote work"]);
+        git(&other, &["push", "origin", branch]);
+        git(repo, &["fetch", name]);
+        git_out(repo, &["rev-parse", &format!("{name}/{branch}")])
+    }
+
+    #[test]
+    fn a_task_branch_only_on_its_remote_continues_it_and_tracks_it() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let pushed = remote_with_branch(root.path(), &repo, "origin", "feat/resume");
+
+        let dest = root.path().join("wt");
+        create_task(&repo, "feat/resume", None, &dest).unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), pushed);
+        std::fs::write(dest.join("local.txt"), "more\n").unwrap();
+        git(&dest, &["add", "local.txt"]);
+        git(&dest, &["commit", "-m", "local work"]);
+        let sync = crate::git::sync(&dest);
+        assert_eq!(sync.upstream.as_deref(), Some("origin/feat/resume"));
+        assert_eq!((sync.ahead, sync.behind), (1, 0));
+    }
+
+    #[test]
+    fn a_branch_on_two_remotes_is_not_guessed_between() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let main = git_out(&repo, &["rev-parse", "main"]);
+        remote_with_branch(root.path(), &repo, "origin", "feat/both");
+        remote_with_branch(root.path(), &repo, "fork", "feat/both");
+
+        let dest = root.path().join("wt");
+        create_task(&repo, "feat/both", None, &dest).unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_new_branch_off_a_remote_default_base_tracks_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        remote_with_branch(root.path(), &repo, "origin", "feat/other");
+        git(&repo, &["remote", "set-head", "origin", "main"]);
+
+        let dest = root.path().join("wt");
+        create_task(&repo, "feat/fresh", None, &dest).unwrap();
+
+        assert_eq!(
+            git_out(&dest, &["rev-parse", "HEAD"]),
+            git_out(&repo, &["rev-parse", "origin/main"])
+        );
+        assert_eq!(crate::git::sync(&dest).upstream, None);
     }
 
     #[test]
