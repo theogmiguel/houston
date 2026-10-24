@@ -4,6 +4,8 @@ import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { IconArrowUp, IconStopCircle } from '../icons'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
+import { Select } from '../ui/Select'
+import { Text } from '../ui/Text'
 import {
   ThreadAssistantBlock,
   ThreadCaption,
@@ -11,6 +13,7 @@ import {
   ThreadComposerFrame,
   ThreadComposerInput,
   ThreadEmpty,
+  ThreadHeaderBar,
   ThreadHistoryControl,
   ThreadNotice,
   ThreadPlainText,
@@ -19,10 +22,11 @@ import {
   ThreadSurface,
   ThreadUserMessage
 } from '../ui/Thread'
-import { ThreadToolRow } from './ThreadToolCard'
+import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
-import { sendThreadMessage, stopThread, useThread } from '../../thread/threadStore'
+import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
+import type { ThreadPermissionMode } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
 
@@ -39,7 +43,15 @@ function useMarkdownPipeline(): PipelineModule | null {
   return mod
 }
 
-const ThreadRow = memo(function ThreadRow({ item, markdown }: { item: ThreadItem; markdown: PipelineModule | null }): React.JSX.Element {
+type AnswerApproval = (requestId: string, allow: boolean) => void
+
+const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, onAnswer }: {
+  item: ThreadItem
+  markdown: PipelineModule | null
+  answering: boolean
+  connected: boolean
+  onAnswer: AnswerApproval
+}): React.JSX.Element {
   switch (item.kind) {
     case 'user':
       return <ThreadUserMessage>{item.text}</ThreadUserMessage>
@@ -58,8 +70,46 @@ const ThreadRow = memo(function ThreadRow({ item, markdown }: { item: ThreadItem
       return <ThreadNotice tone="stop">{item.text}</ThreadNotice>
     case 'stopped':
       return <ThreadStoppedMarker />
+    case 'approval':
+      return <ThreadApprovalRow item={item} answering={answering} connected={connected} onAnswer={onAnswer} />
   }
-}, (a, b) => a.markdown === b.markdown && sameThreadItem(a.item, b.item))
+}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.answering === b.answering && a.connected === b.connected && sameThreadItem(a.item, b.item))
+
+const PERMISSION_MODES: readonly { value: ThreadPermissionMode; label: string }[] = [
+  { value: 'default', label: 'Ask before tools' },
+  { value: 'accept_edits', label: 'Accept edits' },
+  { value: 'plan', label: 'Plan only' },
+  { value: 'auto', label: 'Auto' },
+  { value: 'bypass', label: 'Bypass permissions' }
+]
+
+/** Why the mode cannot change now: whenever Stop is offered, since the change restarts Claude. */
+export function permissionModeLockedReason(info: SessionInfo, connected: boolean, events: Parameters<typeof turnOpen>[0]): string | null {
+  const unavailable = composerDisabledReason(info, connected)
+  if (unavailable !== null) return unavailable
+  if (info.status === 'needs-input') return 'Claude is waiting for an answer; change the mode after it'
+  if (threadStoppable(info, events)) return `A turn is running (status ${info.status ?? 'unknown'}); change the mode when it ends or after Stop`
+  return null
+}
+
+function ThreadPermissionControl({ client, info, connected, events }: { client: HoustonClient; info: SessionInfo; connected: boolean; events: Parameters<typeof turnOpen>[0] }): React.JSX.Element {
+  const locked = permissionModeLockedReason(info, connected, events)
+  return (
+    <ThreadHeaderBar>
+      <Text as="span" size="small" tone="muted" className="flex-none">Permissions</Text>
+      <Select
+        data-testid="thread-permission-mode"
+        aria-label="Permission mode"
+        variant="property-chip"
+        value={info.permission_mode ?? 'default'}
+        options={PERMISSION_MODES}
+        disabled={locked !== null}
+        title={locked ?? 'Changing the mode restarts Claude in this conversation'}
+        onChange={(mode) => setThreadPermissionMode(client, info.id, mode as ThreadPermissionMode)}
+      />
+    </ThreadHeaderBar>
+  )
+}
 
 function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length
@@ -186,6 +236,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
   }
   return (
     <ThreadSurface>
+      <ThreadPermissionControl client={client} info={info} connected={connected} events={thread.events} />
       {thread.failure && <Notice tone="danger" inset="compact-inline" className="flex-none" action={{ label: 'Retry', onClick: thread.retry }}>{thread.failure}</Notice>}
       <ThreadScroll ref={scroll} onScroll={onScroll}>
         {(start > 0 || thread.hasMore) && (
@@ -196,7 +247,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
           </ThreadHistoryControl>
         )}
         {thread.loaded && thread.items.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
-        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} />)}
+        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} onAnswer={thread.answer} />)}
         {win.end !== null && (
           <ThreadHistoryControl>
             <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(thread.items, current))}>Show later</Button>

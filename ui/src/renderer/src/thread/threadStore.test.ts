@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildThreadItems } from './threadModel'
 import { THREAD_HISTORY_PAGE, THREAD_RETAINED_EVENTS, ThreadSessionStore } from './threadStore'
 import type { ThreadClientMsg, ThreadEvent, ThreadEventKind } from './threadTypes'
 
@@ -26,6 +27,18 @@ describe('ThreadSessionStore', () => {
     s.onEvents(live([ev(2, delta('m', 'a')), ev(3, delta('m', 'b'))]))
     s.onEvents(live([ev(4, { type: 'assistant_message', message_id: 'm', text: 'ab', truncated: false })]))
     expect(s.getSnapshot().events.map((event) => event.kind.type)).toEqual(['user_message', 'assistant_message'])
+  })
+
+  it('keeps approval events through delta dropping and pairs a request with a resolution from a later page', () => {
+    const { store: s } = store()
+    s.attach()
+    s.onHistory(history([ev(5, { type: 'approval_resolved', request_id: 'r1', decision: 'allowed', reason: null })], null, true))
+    s.onEvents(live([ev(6, delta('m', 'a')), ev(7, { type: 'approval_request', request_id: 'r2', tool_use_id: 't2', tool_name: 'Bash', input: '{}', truncated: false, input_bytes: 16 })]))
+    s.onEvents(live([ev(8, { type: 'assistant_message', message_id: 'm', text: 'a', truncated: false })]))
+    s.loadEarlier()
+    s.onHistory(history([ev(4, { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Write', input: '{}', truncated: false, input_bytes: 16 })], 5))
+    const approvals = buildThreadItems(s.getSnapshot().events).filter((item) => item.kind === 'approval')
+    expect(approvals.map((item) => item.kind === 'approval' && [item.requestId, item.state])).toEqual([['r1', 'allowed'], ['r2', 'pending']])
   })
 
   it('bridges the history request with a bounded buffer', () => {

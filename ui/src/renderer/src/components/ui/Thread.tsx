@@ -1,5 +1,5 @@
 import type { ReactNode, Ref, TextareaHTMLAttributes } from 'react'
-import { IconChevronDown, IconChevronRight, IconInfo, IconStopCircle, IconWrench, type IconComponent } from '../icons'
+import { IconCheck, IconChevronDown, IconChevronRight, IconInfo, IconShieldAlert, IconStopCircle, IconWrench, type IconComponent } from '../icons'
 import { Button } from './Button'
 import { Icon } from './Icon'
 import { Prose } from './Prose'
@@ -66,6 +66,60 @@ export function ThreadToolCard({ glyph = IconWrench, name, summary, state, open,
         {word && <Text as="span" size="small" tone={state === 'error' ? 'stop' : state === 'running' ? 'info' : 'faint'} className="flex-none">{word}</Text>}
       </button>
       {open && <div className="flex flex-col gap-[var(--space-2)] border-t border-[var(--divider)] p-[var(--space-2)]">{children}</div>}
+    </div>
+  )
+}
+
+export type ThreadApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
+
+const APPROVAL_WORD: Record<ThreadApprovalState, string> = { pending: 'Waiting for you', allowed: 'Allowed', denied: 'Denied', withdrawn: 'Not answered' }
+
+/** Claude asks to run a tool: the request, its input and, while pending, the answers. */
+/** A line under an approval card's input, wrapped so no word is left alone on a line. */
+export function ThreadApprovalNote({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="small" tone="faint" className="[text-wrap:pretty]">{children}</Text>
+}
+
+export function ThreadApprovalCard({ name, summary, state, reason, status, actions, children }: {
+  name: string
+  summary: string
+  state: ThreadApprovalState
+  reason?: string | null
+  /** Replaces the pending state's words, for example while an answer is on its way. */
+  status?: string
+  actions?: ReactNode
+  children?: ReactNode
+}): React.JSX.Element {
+  const pending = state === 'pending'
+  return (
+    <section
+      data-thread-item="approval"
+      data-approval-state={state}
+      aria-label={`Permission request: ${name}`}
+      className={`min-w-0 overflow-hidden rounded-[var(--tr-radius-button)] border bg-[var(--card-bg)] ${pending ? 'border-[var(--warn)]' : 'border-[var(--border)]'}`}
+    >
+      <div className="flex min-h-[var(--h-ctl)] min-w-0 items-center gap-[var(--space-2)] px-[var(--space-2)]">
+        <Icon glyph={pending ? IconShieldAlert : state === 'allowed' ? IconCheck : IconStopCircle} role="small" className={`flex-none ${pending ? 'text-[var(--warn)]' : 'text-[var(--text-faint)]'}`} />
+        <Text as="span" size="small" tone="secondary" className="flex-none">Claude asks to use</Text>
+        <Text as="span" size="small" weight="semibold" tone="primary" className="flex-none">{name}</Text>
+        <Text as="span" size="small" tone="muted" mono className="min-w-0 flex-1 truncate">{summary}</Text>
+      </div>
+      {children && <div className="flex flex-col gap-[var(--space-2)] border-t border-[var(--divider)] p-[var(--space-2)]">{children}</div>}
+      <div className="flex min-w-0 items-center gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--space-2)] py-[var(--space-1-5)]">
+        <Text as="div" role="status" size="small" tone={pending ? 'secondary' : 'muted'} className="min-w-0 flex-1 break-words [text-wrap:pretty]">
+          {pending ? status ?? APPROVAL_WORD.pending : APPROVAL_WORD[state]}{!pending && reason ? ` · ${reason}` : ''}
+        </Text>
+        {pending && actions}
+      </div>
+    </section>
+  )
+}
+
+/** The strip above a thread's timeline: session-wide controls such as the permission mode. */
+export function ThreadHeaderBar({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex flex-none items-center gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-4)] py-[var(--space-1-5)]">
+      <div className="mx-auto flex w-full max-w-[var(--w-thread-column)] min-w-0 items-center gap-[var(--space-2)]">{children}</div>
     </div>
   )
 }
@@ -155,6 +209,11 @@ export function ThreadSpecimen(): React.JSX.Element {
       <ThreadNotice>Earlier messages were removed: the thread keeps 20,000 events.</ThreadNotice>
       <ThreadNotice tone="stop">Claude exited with code 1.</ThreadNotice>
       <ThreadStoppedMarker />
+      <ThreadApprovalCard name="Bash" summary="rm -rf build" state="pending" actions={<><Button variant="secondary" size="sm">Deny</Button><Button variant="primary" size="sm">Allow</Button></>}>
+        <ThreadToolSection label="Command"><ThreadCodeBlock>rm -rf build</ThreadCodeBlock></ThreadToolSection>
+        <ThreadApprovalNote>12 KiB more input is not shown; Allow approves it too.</ThreadApprovalNote>
+      </ThreadApprovalCard>
+      <ThreadApprovalCard name="Write" summary="notes.txt" state="denied" reason="Stopped in Houston before anyone answered." />
       <ThreadComposerFrame>
         <ThreadComposerInput rows={1} placeholder="Message Claude" />
         <ThreadComposerActions hint="Enter sends · Shift+Enter adds a line"><Button variant="primary" size="sm">Send</Button></ThreadComposerActions>

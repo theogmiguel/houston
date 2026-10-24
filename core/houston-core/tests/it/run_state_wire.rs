@@ -79,6 +79,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        permission_mode: None,
     })
     .unwrap();
 }

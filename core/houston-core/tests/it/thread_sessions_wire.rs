@@ -19,6 +19,7 @@ const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/thre
 
 struct Rig {
     daemon: Arc<Daemon>,
+    addr: std::net::SocketAddr,
     ws: WsStream,
     project: tempfile::TempDir,
     scratch: tempfile::TempDir,
@@ -62,6 +63,7 @@ impl Rig {
         let _ = next_control(&mut ws).await;
         Rig {
             daemon,
+            addr,
             ws,
             project: tempfile::tempdir().unwrap(),
             scratch,
@@ -761,6 +763,7 @@ fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
         slept_at_ms: None,
         limit: None,
         view: proto::SessionView::Thread,
+        permission_mode: None,
     }
 }
 
@@ -1243,4 +1246,564 @@ async fn with_hooks_off_every_stream_result_ends_its_turn() {
             "after {turn}, the stream result marked hooks as seen and disabled the fallback"
         );
     }
+}
+
+impl Rig {
+    async fn approve(
+        &mut self,
+        session: u32,
+        request_id: &str,
+        allow: bool,
+        message: Option<&str>,
+    ) {
+        self.send(
+            json!({"type":"thread_approve","session":session,"request_id":request_id,
+            "allow":allow,"message":message}),
+        )
+        .await;
+    }
+
+    /// Asks for a tool that needs permission and returns the held request's id.
+    async fn ask(&mut self, session: u32, command: &str) -> String {
+        self.say(session, &format!("ask:Bash:{command}")).await;
+        let (events, _) = self
+            .events_until(session, |e| {
+                matches!(e.kind, ThreadEventKind::ApprovalRequest { .. })
+            })
+            .await;
+        match &events.last().unwrap().kind {
+            ThreadEventKind::ApprovalRequest {
+                request_id,
+                tool_name,
+                input,
+                tool_use_id,
+                truncated,
+                ..
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert!(tool_use_id.starts_with("toolu_ask_"), "{tool_use_id}");
+                assert!(!truncated);
+                let input: Value = serde_json::from_str(input).unwrap();
+                assert_eq!(input["command"], command);
+                request_id.clone()
+            }
+            other => panic!("expected an approval request, got {other:?}"),
+        }
+    }
+
+    async fn mcp(&self, session: u32, body: Value) -> Value {
+        let token = self
+            .daemon
+            .mcp_creds
+            .issue(houston_core::mcp_creds::McpScope {
+                session_id: session,
+                workspace_id: self.project.path().display().to_string(),
+            });
+        reqwest::Client::new()
+            .post(format!("http://{}/mcp", self.addr))
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    }
+}
+
+fn resolution(events: &[ThreadEvent], id: &str) -> (proto::ApprovalDecision, Option<String>) {
+    events
+        .iter()
+        .find_map(|e| match &e.kind {
+            ThreadEventKind::ApprovalResolved {
+                request_id,
+                decision,
+                reason,
+            } if request_id == id => Some((*decision, reason.clone())),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no resolution of {id} in {events:?}"))
+}
+
+fn tool_result(events: &[ThreadEvent]) -> (bool, String) {
+    events
+        .iter()
+        .find_map(|e| match &e.kind {
+            ThreadEventKind::ToolResult {
+                is_error, output, ..
+            } => Some((*is_error, output.clone())),
+            _ => None,
+        })
+        .expect("a tool result")
+}
+
+#[tokio::test]
+async fn a_held_permission_request_is_answered_allow_and_deny() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let launch = &rig.launches()[0].1;
+    assert_eq!(
+        arg_after(launch, "--permission-prompt-tool").as_deref(),
+        Some("mcp__houston__thread_permission"),
+        "{launch:?}"
+    );
+
+    let allowed = rig.ask(id, "touch allowed.txt").await;
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "a held request asks for input"
+    );
+    rig.approve(id, &allowed, true, None).await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    assert_eq!(
+        resolution(&events, &allowed),
+        (proto::ApprovalDecision::Allowed, None)
+    );
+    assert_eq!(
+        tool_result(&events),
+        (false, "ran: touch allowed.txt".into())
+    );
+
+    let denied = rig.ask(id, "rm -rf build").await;
+    rig.approve(id, &denied, false, Some("not that directory"))
+        .await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    assert_eq!(
+        resolution(&events, &denied),
+        (
+            proto::ApprovalDecision::Denied,
+            Some("not that directory".into())
+        )
+    );
+    assert_eq!(tool_result(&events), (true, "not that directory".into()));
+    wait_until("the turn to settle", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+
+    rig.approve(id, &denied, true, None).await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains(&format!("no pending permission request {denied:?}")),
+        "{message}"
+    );
+    assert_eq!(context, Some(format!("session:{id}")));
+
+    let (history, _) = rig.history(id).await;
+    let kinds: Vec<&str> = history
+        .iter()
+        .filter_map(|e| match &e.kind {
+            ThreadEventKind::ApprovalRequest { .. } => Some("request"),
+            ThreadEventKind::ApprovalResolved { .. } => Some("resolved"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, ["request", "resolved", "request", "resolved"]);
+}
+
+#[tokio::test]
+async fn a_pending_request_is_denied_when_the_session_is_stopped_or_killed() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let stopped = rig.ask(id, "make deploy").await;
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    let (decision, reason) = resolution(&events, &stopped);
+    assert_eq!(decision, proto::ApprovalDecision::Denied);
+    assert!(reason.unwrap().contains("Stopped"));
+    assert!(matches!(
+        events.last().unwrap().kind,
+        ThreadEventKind::TurnEnd {
+            outcome: TurnOutcome::Interrupted,
+            ..
+        }
+    ));
+    wait_until("Stop to settle the session", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+
+    let killed = rig.ask(id, "make deploy").await;
+    let (claude, _) = rig.launches().last().unwrap().clone();
+    rig.daemon.kill(id).unwrap();
+    wait_until("Claude to end", || {
+        !houston_core::pid::process_is_alive(claude)
+    })
+    .await;
+    let (history, _) = rig.history(id).await;
+    let (decision, reason) = resolution(&history, &killed);
+    assert_eq!(decision, proto::ApprovalDecision::Denied);
+    assert!(reason.unwrap().contains("session ended"));
+}
+
+#[tokio::test]
+async fn houston_answers_permission_prompts_for_threads_only() {
+    let mut rig = Rig::new().await;
+    let thread = rig.thread().await;
+    let shell = rig.create("shell", "terminal").await.unwrap().id;
+    let tool_names = |listed: &Value| -> Vec<String> {
+        listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let list = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
+    assert!(
+        tool_names(&rig.mcp(thread, list.clone()).await).contains(&"thread_permission".to_string())
+    );
+    assert!(!tool_names(&rig.mcp(shell, list).await).contains(&"thread_permission".to_string()));
+
+    let call = rig
+        .mcp(
+            shell,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"thread_permission",
+                "arguments":{"tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"toolu_x"}}}),
+        )
+        .await;
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    let text = call["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("never for a terminal pane") && text.contains(&format!("session {shell}")),
+        "{text}"
+    );
+    rig.approve(shell, "any", true, None).await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("thread_approve refused") && message.contains("view terminal"),
+        "{message}"
+    );
+}
+
+#[tokio::test]
+async fn changing_the_permission_mode_restarts_an_idle_thread_with_resume() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let info = rig.daemon.list().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(
+        info.permission_mode,
+        Some(proto::ThreadPermissionMode::Default)
+    );
+    rig.turn(id, "replay:warm").await;
+    let conversation = arg_after(&rig.launches()[0].1, "--session-id").unwrap();
+
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"accept_edits"}))
+        .await;
+    let updated = loop {
+        if let proto::ServerMsg::SessionUpdated { info } = next_control(&mut rig.ws).await {
+            if info.id == id {
+                break info;
+            }
+        }
+    };
+    assert_eq!(
+        updated.permission_mode,
+        Some(proto::ThreadPermissionMode::AcceptEdits)
+    );
+    wait_until("the restarted process", || rig.launches().len() == 2).await;
+    let restarted = &rig.launches()[1].1;
+    assert_eq!(
+        arg_after(restarted, "--permission-mode").as_deref(),
+        Some("acceptEdits")
+    );
+    assert_eq!(arg_after(restarted, "--resume"), Some(conversation));
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_approval_mode(id).unwrap().as_deref(),
+        Some("accept_edits"),
+        "a respawn keeps the mode"
+    );
+
+    let pending = rig.ask(id, "ls").await;
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"bypass"}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("thread_set_permission_mode refused")
+            && message.contains("waiting for input"),
+        "{message}"
+    );
+    assert_eq!(rig.launches().len(), 2, "a refused change restarts nothing");
+    rig.approve(id, &pending, true, None).await;
+}
+
+fn hook(rig: &Rig, event: &str, session: u32, tool: &str, tool_use_id: &str) {
+    let drop = houston_core::hook_drop::HookDrop {
+        v: houston_core::hook_drop::DROP_V,
+        event: event.to_string(),
+        session,
+        tool_name: Some(tool.to_string()),
+        tool_use_id: Some(tool_use_id.to_string()),
+        ..Default::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(rig._state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+}
+
+#[tokio::test]
+async fn a_mode_change_is_refused_while_a_turn_is_open() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.say(id, "slow:1500").await;
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"bypass"}))
+        .await;
+    let (message, _) = tokio::time::timeout(Duration::from_secs(20), rig.error())
+        .await
+        .expect("the mode change was accepted while a turn was open");
+    assert!(
+        message.contains("thread_set_permission_mode refused")
+            && message.contains("a turn is open"),
+        "{message}"
+    );
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.kind, ThreadEventKind::AssistantMessage { text, .. } if text == "slow")
+        ),
+        "the turn the change would have killed finished: {events:?}"
+    );
+    assert_eq!(rig.launches().len(), 1, "no restart");
+}
+
+#[tokio::test]
+async fn tool_activity_and_late_permission_hooks_leave_approval_status_alone() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask(id, "touch held.txt").await;
+    hook(&rig, "PostToolUse", id, "Read", "toolu_other_read");
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "another tool's activity does not hide a held request"
+    );
+
+    rig.approve(id, &held, true, None).await;
+    rig.events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    wait_until("the turn to settle", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+    hook(&rig, "PermissionRequest", id, "Bash", "toolu_late");
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::Idle),
+        "Claude's own permission hook never asks for input in a thread"
+    );
+}
+
+#[tokio::test]
+async fn ask_user_question_is_answered_with_a_reply_instruction() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let events = rig.turn(id, "ask:AskUserQuestion:red or blue").await;
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e.kind, ThreadEventKind::ApprovalRequest { .. })),
+        "{events:?}"
+    );
+    let (is_error, output) = tool_result(&events);
+    assert!(is_error);
+    assert_eq!(
+        output,
+        "Ask the question in your reply; this thread cannot show choices yet."
+    );
+}
+
+#[tokio::test]
+async fn the_permission_mode_follows_what_claude_reports() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"plan"}))
+        .await;
+    wait_until("the plan restart", || rig.launches().len() == 2).await;
+    assert_eq!(
+        arg_after(&rig.launches()[1].1, "--permission-mode").as_deref(),
+        Some("plan")
+    );
+
+    rig.turn(id, "mode:default").await;
+    wait_until("the reported mode", || {
+        rig.daemon
+            .list()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.permission_mode)
+            == Some(proto::ThreadPermissionMode::Default)
+    })
+    .await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_approval_mode(id).unwrap().as_deref(),
+        Some("default")
+    );
+
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    rig.turn(id, "replay:warm").await;
+    let restarted = rig.launches().last().unwrap().1.clone();
+    assert!(
+        !restarted.iter().any(|arg| arg == "--permission-mode"),
+        "a restart after leaving plan mode does not return to it: {restarted:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_daemon_shutdown_withdraws_a_held_request() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask(id, "make deploy").await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || daemon.manage_shutdown().map(|_| ()))
+        .await
+        .unwrap()
+        .map_err(|failure| format!("{failure:?}"))
+        .unwrap();
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let (history, _) = db.thread_events_page(id, None, 500).unwrap();
+    let (decision, reason) = resolution(&history, &held);
+    assert_eq!(decision, proto::ApprovalDecision::Withdrawn);
+    assert!(reason.unwrap().contains("Houston restarted"));
+}
+
+#[tokio::test]
+async fn a_truncated_request_reports_its_full_size_and_requests_are_capped() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let big = "y".repeat(proto::THREAD_APPROVAL_INPUT_MAX_BYTES + 100);
+    rig.say(id, &format!("ask:Bash:{big}")).await;
+    let (events, _) = rig
+        .events_until(id, |e| {
+            matches!(e.kind, ThreadEventKind::ApprovalRequest { .. })
+        })
+        .await;
+    match &events.last().unwrap().kind {
+        ThreadEventKind::ApprovalRequest {
+            input,
+            truncated,
+            input_bytes,
+            ..
+        } => {
+            assert!(*truncated);
+            assert_eq!(input.len(), proto::THREAD_APPROVAL_INPUT_MAX_BYTES);
+            assert!(*input_bytes as usize > proto::THREAD_APPROVAL_INPUT_MAX_BYTES + 100);
+        }
+        other => panic!("expected an approval request, got {other:?}"),
+    }
+
+    let token = rig
+        .daemon
+        .mcp_creds
+        .issue(houston_core::mcp_creds::McpScope {
+            session_id: id,
+            workspace_id: rig.project.path().display().to_string(),
+        });
+    let held: Vec<_> = (1..houston_core::thread_session::APPROVALS_PENDING_MAX)
+        .map(|at| {
+            let request = reqwest::Client::new()
+                .post(format!("http://{}/mcp", rig.addr))
+                .bearer_auth(token.clone())
+                .json(
+                    &json!({"jsonrpc":"2.0","id":at,"method":"tools/call","params":{
+                    "name":"thread_permission",
+                    "arguments":{"tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t"}}}),
+                );
+            tokio::spawn(async move { request.send().await })
+        })
+        .collect();
+    wait_until("the requests to be held", || {
+        rig.daemon.list().iter().any(|s| s.id == id) && held.iter().all(|call| !call.is_finished())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        held.iter().all(|call| !call.is_finished()),
+        "held, not answered"
+    );
+    let refused = rig
+        .mcp(
+            id,
+            json!({"jsonrpc":"2.0","id":99,"method":"tools/call","params":{
+                "name":"thread_permission",
+                "arguments":{"tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t"}}}),
+        )
+        .await;
+    let text = refused["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("limit is 16") && text.contains("APPROVALS_PENDING_MAX"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn interactive_tool_hooks_neither_ask_for_input_nor_open_an_episode_in_a_thread() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.turn(id, "ask:AskUserQuestion:red or blue").await;
+    let question = format!("toolu_ask_{}", rig.launches()[0].0);
+    hook(&rig, "PreToolUse", id, "AskUserQuestion", &question);
+    hook(&rig, "PreToolUse", id, "ExitPlanMode", "toolu_plan");
+    assert_ne!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "the prompt tool owns a thread's interactive tools; their hooks ask for nothing"
+    );
+    assert_eq!(rig.daemon.open_permission_episodes_for_test(id), 0);
+}
+
+/// Stop denies a held request and reports the status under the thread's operation lock;
+/// a Restart or shutdown closing the thread meanwhile must not hold a lock that report takes.
+#[cfg(feature = "test-barriers")]
+async fn close_while_stop_denies_a_held_request(during: DuringStop) {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask(id, "make deploy").await;
+    let barrier = TestBarrier::arm("thread-approvals-report");
+    let daemon = Arc::clone(&rig.daemon);
+    let stop = std::thread::spawn(move || daemon.thread_stop(id));
+    barrier.reached(id).await;
+    both_finish(&rig, id, stop, during, || barrier.release()).await;
+    // A Restart moves the history to its replacement session.
+    let owner = rig
+        .daemon
+        .list()
+        .into_iter()
+        .filter(|s| s.view == proto::SessionView::Thread)
+        .map(|s| s.id)
+        .max()
+        .unwrap_or(id);
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let (history, _) = db.thread_events_page(owner, None, 500).unwrap();
+    let (decision, reason) = resolution(&history, &held);
+    assert_eq!(decision, proto::ApprovalDecision::Denied);
+    assert!(reason.unwrap().contains("Stopped"));
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_restart_while_stop_denies_a_held_request_finishes() {
+    close_while_stop_denies_a_held_request(restart).await;
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_shutdown_while_stop_denies_a_held_request_finishes() {
+    close_while_stop_denies_a_held_request(shut_down).await;
 }

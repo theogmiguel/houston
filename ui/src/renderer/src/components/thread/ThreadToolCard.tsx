@@ -1,10 +1,12 @@
 import { memo, useState } from 'react'
 import { IconFileDiff, IconFileText, IconSearch, IconSquareTerminal, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
-import { ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
+import { Button } from '../ui/Button'
+import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
 import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
+type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
 
 const INPUT_CAP_NOTE = 'Input cut at 8 KiB by Houston.'
 const OUTPUT_CAP_NOTE = 'Output cut at 16 KiB by Houston.'
@@ -104,6 +106,48 @@ function ToolBody({ item }: { item: ToolItem }): React.JSX.Element {
     <OutputSection item={item} />
   </>
 }
+
+function formatKiB(bytes: number): string {
+  return `${Math.max(1, Math.ceil(bytes / 1024)).toLocaleString()} KiB`
+}
+
+/** Bytes of the request's input the card does not show; Allow still approves them. */
+export function hiddenInputBytes(item: Pick<ApprovalItem, 'input' | 'inputTruncated' | 'inputBytes'>): number {
+  if (!item.inputTruncated) return 0
+  return Math.max(0, item.inputBytes - new TextEncoder().encode(item.input).length)
+}
+
+/** A held permission request: the tool's input as its tool card shows it, then Allow / Deny. */
+export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answering, connected, onAnswer }: {
+  item: ApprovalItem
+  answering: boolean
+  connected: boolean
+  onAnswer: (requestId: string, allow: boolean) => void
+}): React.JSX.Element {
+  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, result: null, settled: true }
+  const hidden = hiddenInputBytes(item)
+  const locked = answering || !connected
+  return (
+    <ThreadApprovalCard
+      name={item.name}
+      summary={toolSummary(item.input)}
+      state={item.state}
+      reason={item.reason}
+      status={answering ? 'Sending your answer…' : connected ? undefined : 'Reconnecting to the daemon'}
+      actions={<>
+        <Button data-testid="thread-approval-deny" variant="secondary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, false)}>Deny</Button>
+        <Button data-testid="thread-approval-allow" variant="primary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, true)}>
+          {hidden > 0 ? `Allow (${formatKiB(hidden)} not shown)` : 'Allow'}
+        </Button>
+      </>}
+    >
+      {item.state === 'pending' ? <>
+        <ToolBody item={asTool} />
+        {hidden > 0 && <ThreadApprovalNote>{formatKiB(hidden)} more input is not shown; Allow approves it too.</ThreadApprovalNote>}
+      </> : null}
+    </ThreadApprovalCard>
+  )
+})
 
 export const ThreadToolRow = memo(function ThreadToolRow({ item }: { item: ToolItem }): React.JSX.Element {
   const [open, setOpen] = useState(false)

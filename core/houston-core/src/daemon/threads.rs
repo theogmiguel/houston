@@ -1,5 +1,5 @@
 use super::*;
-use crate::thread_session::{Conversation, ThreadHandle, ThreadHost, ThreadLaunch};
+use crate::thread_session::{ApprovalAnswer, Conversation, ThreadHandle, ThreadHost, ThreadLaunch};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -101,6 +101,58 @@ impl ThreadHost for DaemonThreadHost {
             tracing::warn!("clearing thread session {session}'s process group: {error:#}");
         }
     }
+    fn approvals_pending(&self, session: u32, pending: bool) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        let event = if pending {
+            crate::agent_events::AgentEvent::NeedsInput
+        } else {
+            crate::agent_events::AgentEvent::InputResolved
+        };
+        daemon.apply_agent_event(session, THREAD_APPROVAL_SOURCE, event, false, false, None);
+    }
+
+    fn permission_mode_reported(&self, session: u32, mode: proto::ThreadPermissionMode) {
+        if let Some(daemon) = self.daemon.upgrade() {
+            if let Err(error) = daemon.persist_thread_permission_mode(session, mode) {
+                tracing::warn!("recording session {session}'s permission mode: {error:#}");
+            }
+            daemon.broadcast_thread_info(session);
+        }
+    }
+}
+
+/// How `thread_permission` answers a prompt: at once, or after the user decides.
+pub(crate) enum PermissionPrompt {
+    Answered(ApprovalAnswer),
+    Held(
+        tokio::sync::oneshot::Receiver<ApprovalAnswer>,
+        ApprovalGuard,
+    ),
+}
+
+/// Claude's question tool needs answers the card cannot collect yet, so it is refused
+/// with a message that sends the question into Claude's reply.
+const ASK_USER_QUESTION: &str = "AskUserQuestion";
+const ASK_IN_REPLY: &str = "Ask the question in your reply; this thread cannot show choices yet.";
+
+/// The status source of a permission request Houston itself holds for a thread.
+const THREAD_APPROVAL_SOURCE: &str = "thread_approval";
+
+/// The deny message Claude reads when the user gives no reason.
+const DENIED_IN_HOUSTON: &str = "The user denied this tool call in Houston.";
+
+/// Withdraws a held request when the MCP call ends without an answer.
+pub(crate) struct ApprovalGuard {
+    handle: Arc<ThreadHandle>,
+    request_id: String,
+}
+
+impl Drop for ApprovalGuard {
+    fn drop(&mut self) {
+        self.handle.withdraw_approval(&self.request_id);
+    }
 }
 
 /// What `spawn_session` hands over once a thread session's command is assembled.
@@ -171,6 +223,161 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn thread_approve(
+        &self,
+        id: u32,
+        request_id: &str,
+        allow: bool,
+        message: Option<String>,
+    ) -> Result<()> {
+        let handle = self.thread_handle(id, "thread_approve")?;
+        let answer = if allow {
+            ApprovalAnswer::Allow
+        } else {
+            ApprovalAnswer::Deny(
+                message
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| DENIED_IN_HOUSTON.to_string()),
+            )
+        };
+        handle.answer_approval(request_id, answer)
+    }
+
+    /// Restarts an idle thread with the new mode's flags and records the mode for respawn.
+    pub fn thread_set_permission_mode(
+        self: &Arc<Self>,
+        id: u32,
+        mode: proto::ThreadPermissionMode,
+    ) -> Result<()> {
+        let handle = self.thread_handle(id, "thread_set_permission_mode")?;
+        if let Ok(Some(status @ (proto::AgentStatus::Working | proto::AgentStatus::NeedsInput))) =
+            self.session_status(id)
+        {
+            bail!(
+                "thread_set_permission_mode refused for session {id}: it is {}; change the \
+                 permission mode once the turn ends or after Stop",
+                status_name(status)
+            );
+        }
+        if mode == proto::ThreadPermissionMode::Auto {
+            if let Some(model) = self
+                .db
+                .session_launch_selections(id)?
+                .and_then(|selections| selections.model)
+                .filter(|model| {
+                    crate::launch::model_blocks_auto_mode(proto::AgentKind::Claude, model)
+                })
+            {
+                bail!(
+                    "thread_set_permission_mode refused for session {id}: model {model:?} \
+                     cannot run in auto mode; choose another mode"
+                );
+            }
+        }
+        if handle.permission_mode() == mode {
+            return Ok(());
+        }
+        handle.set_permission_mode(mode)?;
+        self.persist_thread_permission_mode(id, mode)
+            .with_context(|| {
+                format!(
+                    "session {id} now runs in mode {} but Restart would not keep it",
+                    mode.as_str()
+                )
+            })?;
+        self.broadcast_thread_info(id);
+        Ok(())
+    }
+
+    /// Records a thread's mode where Restart and restore read it.
+    fn persist_thread_permission_mode(
+        &self,
+        id: u32,
+        mode: proto::ThreadPermissionMode,
+    ) -> Result<()> {
+        let approval = crate::launch::ApprovalMode::from_thread(mode);
+        match self.db.session_launch_selections(id)? {
+            Some(mut selections) => {
+                selections.approval = approval;
+                self.db.set_session_launch_selections(id, &selections)
+            }
+            None => self.db.session_set_approval_mode(id, approval.as_str()),
+        }
+    }
+
+    fn broadcast_thread_info(&self, id: u32) {
+        if let Ok(session) = self.get(id) {
+            let mut info = session.snapshot_info();
+            info.compactions = self.compactions_of(&info);
+            self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        }
+    }
+
+    /// True while Houston holds a permission request of this thread: its status is
+    /// NeedsInput and no tool activity may override it.
+    pub(super) fn thread_approvals_pending(&self, id: u32) -> bool {
+        self.get(id).is_ok_and(|session| {
+            matches!(&session.backend, Backend::Thread(handle) if handle.has_pending_approvals())
+        })
+    }
+
+    /// Holds Claude's permission prompt for a thread session until the user answers it.
+    pub(crate) fn thread_permission_request(
+        &self,
+        id: u32,
+        args: &serde_json::Value,
+    ) -> Result<(PermissionPrompt, serde_json::Value)> {
+        let handle = match self.get(id).map(|session| match &session.backend {
+            Backend::Thread(handle) => Some(Arc::clone(handle)),
+            _ => None,
+        }) {
+            Ok(Some(handle)) => handle,
+            _ => bail!(
+                "{} refused for session {id}: Houston answers permission prompts for thread \
+                 sessions only, never for a terminal pane",
+                crate::thread_session::PERMISSION_TOOL
+            ),
+        };
+        let tool_name = args
+            .get("tool_name")
+            .and_then(serde_json::Value::as_str)
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                anyhow!(
+                    "{} needs a string \"tool_name\" and an object \"input\"; got {}",
+                    crate::thread_session::PERMISSION_TOOL,
+                    one_line(&args.to_string(), 200)
+                )
+            })?;
+        let input = args
+            .get("input")
+            .filter(|input| input.is_object())
+            .cloned()
+            .ok_or_else(|| {
+                anyhow!(
+                    "{} needs an object \"input\" with the tool's arguments; got {}",
+                    crate::thread_session::PERMISSION_TOOL,
+                    one_line(&args.to_string(), 200)
+                )
+            })?;
+        let tool_use_id = args
+            .get("tool_use_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if tool_name == ASK_USER_QUESTION {
+            return Ok((
+                PermissionPrompt::Answered(ApprovalAnswer::Deny(ASK_IN_REPLY.into())),
+                input,
+            ));
+        }
+        let (request_id, receiver) = handle.request_approval(tool_name, tool_use_id, &input)?;
+        Ok((
+            PermissionPrompt::Held(receiver, ApprovalGuard { handle, request_id }),
+            input,
+        ))
+    }
+
     pub fn thread_history(
         &self,
         id: u32,
@@ -234,6 +441,15 @@ impl Daemon {
                 proto::ThreadEventKind::Notice { text } => {
                     format!("[notice] {}", one_line(&text, 200))
                 }
+                proto::ThreadEventKind::ApprovalRequest {
+                    tool_name, input, ..
+                } => format!("[permission request {tool_name}] {}", one_line(&input, 200)),
+                proto::ThreadEventKind::ApprovalResolved {
+                    decision, reason, ..
+                } => match reason {
+                    Some(reason) => format!("[permission {decision:?}] {}", one_line(&reason, 200)),
+                    None => format!("[permission {decision:?}]"),
+                },
                 proto::ThreadEventKind::UserMessage { .. }
                 | proto::ThreadEventKind::AssistantDelta { .. } => continue,
             };
@@ -342,6 +558,7 @@ impl Daemon {
         });
         let handle = ThreadHandle::start(id, launch, conversation, next_seq, host)?;
         info.view = proto::SessionView::Thread;
+        info.permission_mode = Some(handle.permission_mode());
         self.session_checkout_metadata(&mut info);
         let agent = info.agent;
         let session = Arc::new(Session {
@@ -446,6 +663,10 @@ impl Daemon {
                 || Ok(()),
             )
             .context(orchestrate::MutationMayHaveActed)?;
+        match self.db.thread_unresolved_approvals(id) {
+            Ok(orphans) => handle.settle_orphaned_approvals(orphans),
+            Err(error) => tracing::warn!("reading unanswered approvals of session {id}: {error:#}"),
+        }
         // The first process started before its row existed.
         if let Some(pid) = handle.pid() {
             self.record_thread_group(id, pid);
@@ -487,6 +708,14 @@ impl Daemon {
             })
             .context(orchestrate::MutationMayHaveActed)?;
         Ok(info)
+    }
+}
+
+fn status_name(status: proto::AgentStatus) -> &'static str {
+    match status {
+        proto::AgentStatus::Working => "working",
+        proto::AgentStatus::NeedsInput => "waiting for input",
+        _ => "busy",
     }
 }
 

@@ -1390,6 +1390,9 @@ impl Session {
         }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info.limit = self.limit.lock().expect("limit lock").clone();
+        if let Backend::Thread(handle) = &self.backend {
+            info.permission_mode = Some(handle.permission_mode());
+        }
         info
     }
 
@@ -1567,6 +1570,7 @@ mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod threads;
+pub(crate) use threads::PermissionPrompt;
 mod title_generation;
 mod view_switch;
 mod worktree_pass;
@@ -3784,6 +3788,9 @@ impl Daemon {
         daemon
             .mcp_tools
             .register(Arc::new(crate::mcp_tasks::TasksTools::new(&daemon)));
+        daemon.mcp_tools.register(Arc::new(
+            crate::mcp_thread_permission::ThreadPermissionTools::new(&daemon),
+        ));
         if let Some(adopted) = adopted {
             for (session, reader) in adopted {
                 let id = session.info.id;
@@ -4936,6 +4943,7 @@ impl Daemon {
             *session.state.lock().expect("state lock") = proto::SessionState::Interrupted;
         }
         if let Some(thread) = session.thread() {
+            thread.withdraw_for_restart();
             thread.note_close_cause(if self.is_shutting_down() {
                 "the daemon was shutting down; it resumes the conversation on restart"
             } else {
@@ -8385,6 +8393,15 @@ impl Daemon {
         ) {
             tracing::warn!("recording unconfirmed startup for pane {id}: {error}");
         }
+    }
+
+    #[doc(hidden)]
+    pub fn open_permission_episodes_for_test(&self, id: u32) -> usize {
+        self.permission_episodes
+            .lock()
+            .expect("episodes lock")
+            .get(&id)
+            .map_or(0, |episodes| episodes.open_count())
     }
 
     #[doc(hidden)]
@@ -11892,6 +11909,7 @@ impl Daemon {
                 slept_at_ms: None,
                 limit: None,
                 view,
+                permission_mode: None,
             };
             if let Some(cues) = replacement
                 .as_ref()
@@ -12129,6 +12147,7 @@ impl Daemon {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
 
         if let Some(cues) = replacement
@@ -12788,6 +12807,7 @@ impl Daemon {
                 slept_at_ms: None,
                 limit: None,
                 view: Default::default(),
+                permission_mode: None,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -16375,10 +16395,14 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let blocks = match provider {
-                proto::AgentKind::Claude => d
-                    .tool_name
-                    .as_deref()
-                    .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name)),
+                // A thread's interactive tools are answered through its prompt tool, which
+                // owns their status: AskUserQuestion at once, ExitPlanMode through a hold.
+                proto::AgentKind::Claude => {
+                    d.tool_name
+                        .as_deref()
+                        .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name))
+                        && self.session_view(d.session) != proto::SessionView::Thread
+                }
                 proto::AgentKind::Codex => d.tool_name.as_deref() == Some("request_user_input"),
                 proto::AgentKind::Zcode => d.tool_name.as_deref() == Some("AskUserQuestion"),
                 _ => false,
@@ -16559,6 +16583,10 @@ impl Daemon {
             if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
+            // A thread's prompt goes to Houston's prompt tool, which owns its status.
+            if self.session_view(d.session) == proto::SessionView::Thread {
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
             let pending = episodes.entry(d.session).or_default();
             let (key, _) = pending.open_with_fingerprint(
@@ -16679,6 +16707,16 @@ impl Daemon {
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
 
+        if ev == Some(crate::agent_events::AgentEvent::NeedsInput)
+            && d.event == "Notification"
+            && d.notification_type.as_deref() == Some("permission_prompt")
+            && self.session_view(d.session) == proto::SessionView::Thread
+        {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
         if ev == Some(crate::agent_events::AgentEvent::NeedsInput) && d.event == "Notification" {
             if let Some(kind) = d.notification_type.as_deref() {
                 if !Self::notification_is_a_block(kind) {
@@ -16769,7 +16807,8 @@ impl Daemon {
             .lock()
             .expect("episodes lock")
             .get(&d.session)
-            .is_some_and(|episodes| episodes.open_count() > 0);
+            .is_some_and(|episodes| episodes.open_count() > 0)
+            || self.thread_approvals_pending(d.session);
         if !blocked {
             self.apply_agent_event(
                 d.session,
@@ -27593,6 +27632,7 @@ mod kill_teardown_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -27951,6 +27991,7 @@ mod shell_restore_bookkeeping_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         }
     }
 
@@ -28219,6 +28260,7 @@ mod force_respawn_guard_tests {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),

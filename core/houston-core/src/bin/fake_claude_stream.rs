@@ -38,6 +38,10 @@ fn main() {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        if let Some(spec) = text.strip_prefix("ask:") {
+            ask(spec, &args, &conversation);
+            continue;
+        }
         turn(&text, &conversation, fixtures.as_deref());
     }
 }
@@ -86,6 +90,15 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
             "delta":{"type":"text_delta","text":"working"}},"parent_tool_use_id":null,"api_message_id":"msg_hang"}),
         );
+    } else if let Some(ms) = text.strip_prefix("slow:") {
+        std::thread::sleep(Duration::from_millis(ms.parse().expect("slow:<ms>")));
+        emit_value(
+            json!({"type":"assistant","message":{"id":"msg_slow","content":[{"type":"text","text":"slow"}]},"parent_tool_use_id":null}),
+        );
+        result(conversation);
+    } else if let Some(mode) = text.strip_prefix("mode:") {
+        emit_value(json!({"type":"system","subtype":"status","permissionMode":mode}));
+        result(conversation);
     } else if text == "deaf" {
         delta("msg_deaf", "deaf");
         // Stops reading stdin for good, as a frozen Claude would.
@@ -138,6 +151,86 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
         );
         result(conversation);
     }
+}
+
+/// `ask:<tool>:<command>`: a tool call that needs permission, asked of the
+/// `--permission-prompt-tool` over the MCP server in `--mcp-config`, as Claude Code does.
+fn ask(spec: &str, args: &[String], conversation: &str) {
+    let (tool, command) = spec.split_once(':').expect("ask:<tool>:<command>");
+    let tool_use_id = format!("toolu_ask_{}", std::process::id());
+    let input = json!({ "command": command });
+    emit_value(
+        json!({"type":"assistant","message":{"id":"msg_ask","content":[
+        {"type":"tool_use","id":tool_use_id,"name":tool,"input":input}]},"parent_tool_use_id":null}),
+    );
+    let (is_error, output) = match permission(args, tool, &tool_use_id, &input) {
+        Ok(decision) if decision["behavior"] == "allow" => (false, format!("ran: {command}")),
+        Ok(decision) => (
+            true,
+            decision["message"].as_str().unwrap_or_default().to_string(),
+        ),
+        Err(error) => (true, format!("Error calling tool ({tool}): {error}")),
+    };
+    emit_value(json!({"type":"user","message":{"role":"user","content":[
+        {"type":"tool_result","tool_use_id":tool_use_id,"content":output,"is_error":is_error}]},
+        "parent_tool_use_id":null}));
+    result(conversation);
+}
+
+fn permission(
+    args: &[String],
+    tool: &str,
+    tool_use_id: &str,
+    input: &Value,
+) -> Result<Value, String> {
+    let after = |flag: &str| {
+        args.windows(2)
+            .find(|pair| pair[0] == flag)
+            .map(|pair| pair[1].clone())
+    };
+    let prompt_tool = after("--permission-prompt-tool").ok_or_else(|| {
+        format!("Claude requested permissions to use {tool}, but you haven't granted it yet.")
+    })?;
+    let config: Value = serde_json::from_str(&after("--mcp-config").ok_or("no --mcp-config")?)
+        .map_err(|e| e.to_string())?;
+    let server = &config["mcpServers"]["houston"];
+    let name = prompt_tool
+        .strip_prefix("mcp__houston__")
+        .ok_or("not a houston tool")?;
+    let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+        "name":name,
+        "arguments":{"tool_name":tool,"input":input,"tool_use_id":tool_use_id},
+        "_meta":{"progressToken":1}}});
+    let body = reqwest::blocking::Client::builder()
+        .timeout(None)
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(server["url"].as_str().ok_or("no url")?)
+        .header(
+            "Authorization",
+            server["headers"]["Authorization"]
+                .as_str()
+                .unwrap_or_default(),
+        )
+        .header("Accept", "application/json, text/event-stream")
+        .json(&request)
+        .send()
+        .and_then(|response| response.text())
+        .map_err(|e| e.to_string())?;
+    let reply = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: ").or(Some(line)))
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|value| value.get("result").is_some())
+        .ok_or_else(|| format!("no tools/call result in {body:?}"))?;
+    let text = reply
+        .pointer("/result/content/0/text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("no text content in {reply}"))?;
+    if reply.pointer("/result/isError") == Some(&Value::Bool(true)) {
+        return Err(text.to_string());
+    }
+    serde_json::from_str(text).map_err(|e| format!("{e}: {text}"))
 }
 
 fn delta(message: &str, text: &str) {

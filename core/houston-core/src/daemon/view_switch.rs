@@ -138,6 +138,14 @@ impl Daemon {
                 view.as_str()
             );
         }
+        if let Some(handle) = session.thread() {
+            if handle.has_pending_approvals() {
+                bail!(
+                    "{verb} refused for session {id}: Claude is waiting for an answer to a \
+                     permission request; allow or deny it first"
+                );
+            }
+        }
         let status = *session.status.lock().expect("status lock");
         if let Some(
             status @ (proto::AgentStatus::Working

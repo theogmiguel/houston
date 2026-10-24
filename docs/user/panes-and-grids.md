@@ -89,6 +89,25 @@ The conversation itself goes to Anthropic through the Claude CLI exactly as it d
 a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it
 from that address only when you choose **Load image**.
 
+When Claude needs permission to run a tool, the thread shows an approval card with the
+tool and its input. Choose **Allow** to run it or **Deny** to refuse it; Claude reads the
+answer and continues. The pane shows waiting for input until you answer. The card shows up
+to 64 KiB of the input; when more is hidden it says how much, and **Allow** names the
+hidden amount because it approves all of it. Stopping or closing the thread denies a
+request nobody answered; if Houston itself restarts, the card shows it was not answered.
+Houston answers these requests only in threads; in a terminal pane Claude asks in its own
+prompt.
+
+A thread cannot show multiple-choice questions yet. When Claude wants to ask one, Houston
+tells it to ask in its reply instead, and you answer in the message box.
+
+The **Permissions** menu above the timeline shows how the thread asks: **Ask before
+tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
+**Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
+conversation with the new mode and keeps it across Restart. The menu is unavailable while
+a turn runs or Claude waits for an answer. When Claude changes its own mode, for example
+by leaving **Plan only** after you allow its plan, the menu shows the new mode.
+
 ### Moving a conversation between views
 
 The pane menu of a Claude session offers **Open as thread** on a terminal and **Open in
@@ -97,8 +116,9 @@ same conversation by its exact ID; the pane keeps its name and its resume handle
 thread keeps its history. If the conversation cannot be resumed (for example, its working
 directory changed, or Houston never received its resume handle), the session starts
 fresh in the new view and the pane says why. Switching is refused while Claude's status
-is Working, Starting or Needs input, while a thread turn is still open, while the session
-is sleeping or not running, and while it has live child panes. Messages and keystrokes
+is Working, Starting or Needs input, while a thread turn is still open or an approval card
+waits for an answer, while the session is sleeping or not running, and while it has live
+child panes. Messages and keystrokes
 sent to the pane during the switch are refused rather than lost to the restart.
 
 Turns taken while a session is a terminal are not shown in its thread. Houston counts

@@ -542,3 +542,50 @@ async fn a_turn_that_starts_during_a_switch_refuses_it_and_rolls_the_view_back()
     assert_eq!(still.state, proto::SessionState::Running);
     rig.daemon.close(terminal.id).unwrap();
 }
+
+#[tokio::test]
+async fn a_switch_is_refused_while_an_approval_is_held() {
+    let mut rig = Rig::new().await;
+    let thread = rig.create("thread").await;
+    rig.send(json!({"type":"thread_send","session":thread.id,"text":"ask:Bash:touch held.txt"}))
+        .await;
+    let request_id = loop {
+        if let proto::ServerMsg::ThreadEvents { session, events } = next_control(&mut rig.ws).await
+        {
+            if session != thread.id {
+                continue;
+            }
+            if let Some(id) = events.iter().find_map(|e| match &e.kind {
+                ThreadEventKind::ApprovalRequest { request_id, .. } => Some(request_id.clone()),
+                _ => None,
+            }) {
+                break id;
+            }
+        }
+    };
+    rig.send(json!({"type":"session_set_view","session":thread.id,"view":"terminal"}))
+        .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains("Open in terminal refused")
+            && message.contains("waiting for an answer to a permission request"),
+        "{message}"
+    );
+    assert_eq!(
+        context.as_deref(),
+        Some(format!("session:{}", thread.id).as_str())
+    );
+    let still = rig
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == thread.id)
+        .unwrap();
+    assert_eq!(still.view, proto::SessionView::Thread, "nothing moved");
+    rig.send(
+        json!({"type":"thread_approve","session":thread.id,"request_id":request_id,
+        "allow":false,"message":null}),
+    )
+    .await;
+    rig.daemon.close(thread.id).unwrap();
+}

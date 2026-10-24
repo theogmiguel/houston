@@ -219,6 +219,7 @@ fn stored_session(id: u32, dir: &Path) -> proto::SessionInfo {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        permission_mode: None,
     }
 }
 
