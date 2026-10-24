@@ -153,6 +153,7 @@ impl Daemon {
             bail!("thread_send refused for session {id}: it is {state:?}; restart it first");
         }
         self.ensure_not_closing(id, "thread_send")?;
+        self.ensure_not_switching(id, "thread_send")?;
         handle.send(text)
     }
 

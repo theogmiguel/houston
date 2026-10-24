@@ -61,13 +61,68 @@ impl Db {
         Ok(())
     }
 
-    /// Removes one stored thread event, undoing a notice a failed switch had written.
-    pub fn thread_event_delete(&self, session: u32, seq: u64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
-            "DELETE FROM thread_events WHERE session_id = ?1 AND seq = ?2",
-            rusqlite::params![session, seq as i64],
+    /// Flips a session's view and, with `notice`, stores it after the session's history, in
+    /// one transaction. Returns the notice's seq.
+    pub fn begin_view_switch(
+        &self,
+        id: u32,
+        view: proto::SessionView,
+        notice: Option<&str>,
+        now_ms: u64,
+    ) -> Result<Option<u64>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let seq = match notice {
+            Some(text) => {
+                let max: Option<i64> = tx.query_row(
+                    "SELECT MAX(seq) FROM thread_events WHERE session_id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )?;
+                let seq = max.map_or(1, |max| max as u64 + 1);
+                let kind = serde_json::to_string(&proto::ThreadEventKind::Notice {
+                    text: text.to_string(),
+                })?;
+                tx.execute(
+                    "INSERT INTO thread_events (session_id, seq, at_ms, kind) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![id, seq as i64, now_ms as i64, kind],
+                )?;
+                Some(seq)
+            }
+            None => None,
+        };
+        let changed = tx.execute(
+            "UPDATE sessions SET view = ?2 WHERE id = ?1",
+            rusqlite::params![id, view.as_str()],
         )?;
+        if changed == 0 {
+            anyhow::bail!("session {id} has no row to store view {} on", view.as_str());
+        }
+        tx.commit()
+            .with_context(|| format!("storing view {} for session {id}", view.as_str()))?;
+        Ok(seq)
+    }
+
+    /// Undoes `begin_view_switch` after a failed respawn, in one transaction.
+    pub fn undo_view_switch(
+        &self,
+        id: u32,
+        view: proto::SessionView,
+        notice_seq: Option<u64>,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        if let Some(seq) = notice_seq {
+            tx.execute(
+                "DELETE FROM thread_events WHERE session_id = ?1 AND seq = ?2",
+                rusqlite::params![id, seq as i64],
+            )?;
+        }
+        tx.execute(
+            "UPDATE sessions SET view = ?2 WHERE id = ?1",
+            rusqlite::params![id, view.as_str()],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 }
@@ -96,6 +151,29 @@ mod tests {
         db.add_terminal_turn(4).unwrap();
         assert_eq!(db.terminal_turns(4).unwrap(), 2);
         assert_eq!(db.session_view(4).unwrap(), proto::SessionView::Thread);
+    }
+
+    #[test]
+    fn a_view_switch_writes_its_notice_with_the_view_and_undoes_both() {
+        let (_dir, db) = db_with_session(4, proto::SessionView::Terminal);
+        let seq = db
+            .begin_view_switch(4, proto::SessionView::Thread, Some("2 turns"), 9)
+            .unwrap();
+        assert_eq!(seq, Some(1));
+        assert_eq!(db.session_view(4).unwrap(), proto::SessionView::Thread);
+        db.undo_view_switch(4, proto::SessionView::Terminal, seq)
+            .unwrap();
+        assert_eq!(db.session_view(4).unwrap(), proto::SessionView::Terminal);
+        assert_eq!(db.thread_max_seq(4).unwrap(), None);
+        let missing = db
+            .begin_view_switch(9, proto::SessionView::Thread, Some("lost"), 9)
+            .unwrap_err();
+        assert!(missing.to_string().contains("session 9"), "{missing:#}");
+        assert_eq!(
+            db.thread_max_seq(9).unwrap(),
+            None,
+            "the notice rolls back with the view"
+        );
     }
 
     #[test]

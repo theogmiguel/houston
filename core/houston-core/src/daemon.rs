@@ -1756,6 +1756,8 @@ pub struct Daemon {
     respawned_as: Mutex<HashMap<u32, u32>>,
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
+    /// Sessions moving to another view; their input is refused until the switch lands.
+    switching_views: Mutex<HashSet<u32>>,
     session_startup_lock: Mutex<()>,
     shutdown_preserved: Mutex<HashSet<u32>>,
     sleeping_sessions: Mutex<HashSet<u32>>,
@@ -3541,6 +3543,7 @@ impl Daemon {
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
+            switching_views: Mutex::new(HashSet::new()),
             session_startup_lock: Mutex::new(()),
             shutdown_preserved: Mutex::new(HashSet::new()),
             sleeping_sessions: Mutex::new(HashSet::new()),
@@ -9835,10 +9838,34 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        self.respawn_checked(
+            old_id,
+            shell_integration,
+            cwd_override,
+            shell_override,
+            force,
+            conversation,
+            &|| Ok(()),
+        )
+    }
+
+    /// `respawn_with` that runs `precheck` under the lifecycle lock, before anything stops.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn respawn_checked(
+        self: &Arc<Self>,
+        old_id: u32,
+        shell_integration: bool,
+        cwd_override: Option<PathBuf>,
+        shell_override: Option<String>,
+        force: bool,
+        conversation: RespawnConversation,
+        precheck: &dyn Fn() -> Result<()>,
+    ) -> Result<proto::SessionInfo> {
         let _lifecycle = self
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        precheck()?;
         self.ensure_not_sleeping(old_id)?;
         self.ensure_not_shell_restoring(old_id)?;
         let children: Vec<_> = self
@@ -10263,6 +10290,7 @@ impl Daemon {
                     })
             })
             .unwrap_or((None, None, None, None));
+        let mut resumed_conversation = false;
         let (mut extra_args, resume_handle, resume_notice) = match conversation {
             RespawnConversation::Fresh => (Vec::new(), None, None),
             RespawnConversation::Fallback(notice) => (Vec::new(), handle, Some(notice)),
@@ -10289,7 +10317,10 @@ impl Daemon {
                         missing_profile.as_deref(),
                     )
                 } {
-                    Ok(args) => (args, handle, None),
+                    Ok(args) => {
+                        resumed_conversation = true;
+                        (args, handle, None)
+                    }
                     Err(reason) => {
                         if strict_resume {
                             bail!("Wake refused for session {old_id}: {reason}. Choose fresh explicitly to start a new conversation.");
@@ -10451,7 +10482,8 @@ impl Daemon {
             .lock()
             .expect("respawned_as lock")
             .insert(old_id, spawned.id);
-        if spawned.view == proto::SessionView::Terminal {
+        // Only the same conversation, resumed, contains the turns the count describes.
+        if spawned.view == proto::SessionView::Terminal && resumed_conversation {
             let carried = self
                 .db
                 .terminal_turns(old_id)
@@ -13529,6 +13561,8 @@ impl Daemon {
         written: Option<StdinWritten>,
     ) -> std::result::Result<(), StdinWriteError> {
         self.ensure_not_closing(id, "stdin")
+            .map_err(StdinWriteError::nothing)?;
+        self.ensure_not_switching(id, "stdin")
             .map_err(StdinWriteError::nothing)?;
         if self.refusing_mutations() {
             return Err(StdinWriteError::nothing(anyhow!(

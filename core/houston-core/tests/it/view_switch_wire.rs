@@ -356,3 +356,233 @@ async fn the_default_view_setting_round_trips_and_leaves_plain_creates_terminal(
     );
     rig.daemon.close(plain.id).unwrap();
 }
+
+impl Rig {
+    fn history(&self, session: u32) -> Vec<proto::ThreadEvent> {
+        match self.daemon.thread_history(session, None, 500).unwrap() {
+            proto::ServerMsg::ThreadHistory { events, .. } => events,
+            other => panic!("expected history, got {other:?}"),
+        }
+    }
+
+    async fn thread_turn(&mut self, session: u32, text: &str) {
+        self.send(json!({"type":"thread_send","session":session,"text":text}))
+            .await;
+        loop {
+            match next_control(&mut self.ws).await {
+                proto::ServerMsg::ThreadEvents { session: s, events }
+                    if s == session
+                        && events
+                            .iter()
+                            .any(|e| matches!(e.kind, ThreadEventKind::TurnEnd { .. })) =>
+                {
+                    return
+                }
+                proto::ServerMsg::Error { message, .. } => panic!("turn refused: {message}"),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn notices(events: &[proto::ThreadEvent]) -> Vec<(u64, String)> {
+    events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            ThreadEventKind::Notice { text } => Some((e.seq, text.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_switch_is_refused_while_a_thread_turn_is_open() {
+    let mut rig = Rig::new().await;
+    let thread = rig.create("thread").await;
+    let pidfile = rig.scratch.path().join("sleeper.pid");
+    rig.send(json!({"type":"thread_send","session":thread.id,
+        "text":format!("hang:{}", pidfile.display())}))
+        .await;
+    wait_until("the turn's tool to start", || pidfile.is_file()).await;
+    rig.send(json!({"type":"session_set_view","session":thread.id,"view":"terminal"}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("Open in terminal refused")
+            && (message.contains("a thread turn is still open")
+                || message.contains("status is Working")),
+        "{message}"
+    );
+    assert!(
+        rig.daemon.list().iter().any(|s| s.id == thread.id),
+        "the thread stays"
+    );
+    rig.send(json!({"type":"thread_stop","session":thread.id}))
+        .await;
+    rig.daemon.close(thread.id).unwrap();
+}
+
+#[tokio::test]
+async fn a_round_trip_puts_the_turns_notice_after_the_old_history() {
+    let mut rig = Rig::new().await;
+    let thread = rig.create("thread").await;
+    rig.thread_turn(thread.id, "replay:tools").await;
+    let conversation = launch_conversation(
+        rig.launches()
+            .iter()
+            .find(|argv| argv.iter().any(|arg| arg == "-p"))
+            .unwrap(),
+    );
+    rig.give_conversation(thread.id, &conversation);
+    let before = rig.history(thread.id);
+    let last_old = before.last().unwrap().seq;
+
+    let terminal = rig.switched(thread.id, "terminal").await;
+    rig.hook("SessionStart", terminal.id, &conversation).await;
+    for _ in 0..2 {
+        rig.hook("UserPromptSubmit", terminal.id, &conversation)
+            .await;
+        rig.hook("Stop", terminal.id, &conversation).await;
+    }
+    rig.give_conversation(terminal.id, &conversation);
+    let back = rig.switched(terminal.id, "thread").await;
+
+    let history = rig.history(back.id);
+    assert!(history.windows(2).all(|pair| pair[0].seq < pair[1].seq));
+    let (seq, text) = notices(&history).pop().expect("the turns notice");
+    assert_eq!(
+        text,
+        "2 turns happened in the terminal; this thread does not show them."
+    );
+    assert!(seq > last_old, "the notice follows the old history");
+    assert_eq!(
+        history
+            .iter()
+            .filter(|e| e.seq <= last_old)
+            .map(|e| e.seq)
+            .collect::<Vec<_>>(),
+        before.iter().map(|e| e.seq).collect::<Vec<_>>(),
+        "the old history moved intact"
+    );
+    rig.thread_turn(back.id, "replay:warm").await;
+    let after = rig.history(back.id);
+    let warm = after
+        .iter()
+        .find(|e| matches!(&e.kind, ThreadEventKind::UserMessage { text } if text == "replay:warm"))
+        .expect("the new turn's message");
+    assert!(warm.seq > seq, "new events follow the notice");
+    assert!(after.last().unwrap().seq > seq);
+    rig.daemon.close(back.id).unwrap();
+}
+
+/// Pauses a switch after its first check; the barrier directory is this process's.
+#[cfg(feature = "test-barriers")]
+struct Barrier {
+    dir: tempfile::TempDir,
+}
+
+#[cfg(feature = "test-barriers")]
+impl Barrier {
+    fn install() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        set_test_barrier_dir(dir.path());
+        Barrier { dir }
+    }
+
+    fn arm(&self, point: &str) {
+        std::fs::write(self.dir.path().join("armed"), point).unwrap();
+    }
+
+    async fn reached(&self) {
+        let reached = self.dir.path().join("reached");
+        wait_until("the switch to reach its barrier", || reached.is_file()).await;
+    }
+
+    fn release(&self) {
+        std::fs::remove_file(self.dir.path().join("armed")).unwrap();
+    }
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_message_sent_during_a_switch_is_refused_and_no_turn_is_killed() {
+    let barrier = Barrier::install();
+    let mut rig = Rig::new().await;
+    let thread = rig.create("thread").await;
+    rig.give_conversation(thread.id, "conv-race");
+    barrier.arm("view-switch-checked");
+    let daemon = Arc::clone(&rig.daemon);
+    let id = thread.id;
+    let switch = tokio::task::spawn_blocking(move || {
+        daemon.set_session_view(id, proto::SessionView::Terminal)
+    });
+    barrier.reached().await;
+
+    let pidfile = rig.scratch.path().join("raced.pid");
+    rig.send(json!({"type":"thread_send","session":thread.id,
+        "text":format!("hang:{}", pidfile.display())}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("thread_send refused") && message.contains("moving to another view"),
+        "{message}"
+    );
+    barrier.release();
+    let terminal = switch.await.unwrap().unwrap();
+    assert_eq!(terminal.view, proto::SessionView::Terminal);
+    assert!(
+        !pidfile.exists(),
+        "the refused message never started a turn"
+    );
+    rig.daemon.close(terminal.id).unwrap();
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_turn_that_starts_during_a_switch_refuses_it_and_rolls_the_view_back() {
+    let barrier = Barrier::install();
+    let mut rig = Rig::new().await;
+    let terminal = rig.create("terminal").await;
+    let conversation = launch_conversation(&rig.launches()[0]);
+    rig.hook("SessionStart", terminal.id, &conversation).await;
+    rig.hook("UserPromptSubmit", terminal.id, &conversation)
+        .await;
+    rig.hook("Stop", terminal.id, &conversation).await;
+    rig.give_conversation(terminal.id, &conversation);
+    barrier.arm("view-switch-checked");
+    let daemon = Arc::clone(&rig.daemon);
+    let id = terminal.id;
+    let switch = tokio::task::spawn_blocking(move || {
+        daemon.set_session_view(id, proto::SessionView::Thread)
+    });
+    barrier.reached().await;
+    // Typed into the terminal before the switch's lock: Claude reports the turn it started.
+    rig.hook("UserPromptSubmit", terminal.id, &conversation)
+        .await;
+    barrier.release();
+
+    let refused = format!("{:#}", switch.await.unwrap().unwrap_err());
+    assert!(
+        refused.contains("Open as thread refused") && refused.contains("status is Working"),
+        "{refused}"
+    );
+    let db = rig.db();
+    assert_eq!(
+        db.session_view(terminal.id).unwrap(),
+        proto::SessionView::Terminal,
+        "the view rolls back"
+    );
+    assert_eq!(
+        db.thread_max_seq(terminal.id).unwrap(),
+        None,
+        "no turns notice is left behind"
+    );
+    let still = rig
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == terminal.id)
+        .expect("the terminal keeps running");
+    assert_eq!(still.state, proto::SessionState::Running);
+    rig.daemon.close(terminal.id).unwrap();
+}

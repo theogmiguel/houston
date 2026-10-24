@@ -61,11 +61,31 @@ impl Daemon {
         }
     }
 
-    /// Checks a switch before anything stops: the session must be an idle Claude conversation
-    /// in the other view.
+    /// Refuses input to a session while it moves to another view.
+    pub(super) fn ensure_not_switching(&self, id: u32, operation: &str) -> Result<()> {
+        if self
+            .switching_views
+            .lock()
+            .expect("switching views lock")
+            .contains(&id)
+        {
+            bail!("{operation} refused: session {id} is moving to another view");
+        }
+        Ok(())
+    }
+
+    /// Checks a switch: the session must be a live, idle Claude conversation in the other
+    /// view that a respawn may replace. Runs before the switch and again under the lifecycle
+    /// lock just before the old process stops.
     fn ensure_switchable(&self, id: u32, view: proto::SessionView) -> Result<proto::SessionView> {
         let verb = verb(view);
-        let session = self.get(id).with_context(|| format!("{verb} refused"))?;
+        let session = match self.get(id) {
+            Ok(session) => session,
+            Err(_) if self.dead.lock().expect("dead lock").contains_key(&id) => bail!(
+                "{verb} refused for session {id}: it is not running; restart or wake it first"
+            ),
+            Err(error) => return Err(error.context(format!("{verb} refused"))),
+        };
         let agent = session.info.agent;
         if agent != proto::AgentKind::Claude {
             bail!(
@@ -79,6 +99,37 @@ impl Daemon {
         }
         if session.custom_cmd.is_some() {
             bail!("{verb} refused for session {id}: it runs a custom command, which has no thread view");
+        }
+        if session.info.hidden {
+            bail!("{verb} refused for session {id}: it is a hidden helper session");
+        }
+        let state = *session.state.lock().expect("state lock");
+        if state == proto::SessionState::Sleeping
+            || self
+                .sleeping_sessions
+                .lock()
+                .expect("sleeping sessions lock")
+                .contains(&id)
+        {
+            bail!("{verb} refused for session {id}: it is sleeping; wake it first");
+        }
+        if !state.is_live() {
+            bail!("{verb} refused for session {id}: it is {state:?}; restart it first");
+        }
+        if let Some(agent) = self.db.swarm_agent_by_session(id)? {
+            bail!(
+                "{verb} refused for session {id}: it is swarm agent {} of swarm {}, which \
+                 resumes through its swarm",
+                agent.id,
+                agent.swarm
+            );
+        }
+        let (live_children, _) = self.child_counts_of(id);
+        if live_children > 0 {
+            bail!(
+                "{verb} refused for session {id}: {live_children} live child pane(s) would lose \
+                 their handback target; close or wait for them first"
+            );
         }
         let current = session.info.view;
         if current == view {
@@ -118,30 +169,31 @@ impl Daemon {
         id: u32,
         view: proto::SessionView,
     ) -> Result<proto::SessionInfo> {
+        let _switching = SwitchingMark::claim(self, id, verb(view))?;
         let current = self.ensure_switchable(id, view)?;
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("view-switch-checked", id);
         let turns = if view == proto::SessionView::Thread {
             self.db.terminal_turns(id)?
         } else {
             0
         };
-        let notice_seq = if turns > 0 {
-            let seq = self.db.thread_max_seq(id)?.map_or(1, |max| max + 1);
-            self.db.thread_event_insert(
-                id,
-                &proto::ThreadEvent {
-                    seq,
-                    at_ms: now_ms(),
-                    kind: proto::ThreadEventKind::Notice {
-                        text: terminal_turns_notice(turns),
-                    },
-                },
-            )?;
-            Some(seq)
+        // Without a handle the new view starts a new conversation; say so when context existed.
+        let conversation = if self.db.session_resume_handle(id)?.is_none()
+            && (turns > 0 || self.db.thread_usage(id)?.0 > 0)
+        {
+            RespawnConversation::Fallback(format!(
+                "Started a fresh CLI: session {id} has no resume handle"
+            ))
         } else {
-            None
+            RespawnConversation::Resume
         };
-        self.db.set_session_view(id, view)?;
-        match self.respawn_with(id, true, None, None, true, RespawnConversation::Resume) {
+        let notice = (turns > 0).then(|| terminal_turns_notice(turns));
+        let notice_seq = self
+            .db
+            .begin_view_switch(id, view, notice.as_deref(), now_ms())?;
+        let precheck = || self.ensure_switchable(id, view).map(|_| ());
+        match self.respawn_checked(id, true, None, None, true, conversation, &precheck) {
             Ok(info) => {
                 if let Err(error) = self.db.set_terminal_turns(info.id, 0) {
                     tracing::warn!(
@@ -152,22 +204,45 @@ impl Daemon {
                 Ok(info)
             }
             Err(error) => {
-                if let Err(undo) = self.db.set_session_view(id, current) {
+                if let Err(undo) = self.db.undo_view_switch(id, current, notice_seq) {
                     tracing::warn!(
                         "restoring view {} of session {id}: {undo:#}",
                         current.as_str()
                     );
                 }
-                if let Some(seq) = notice_seq {
-                    if let Err(undo) = self.db.thread_event_delete(id, seq) {
-                        tracing::warn!(
-                            "removing the terminal turns notice of session {id}: {undo:#}"
-                        );
-                    }
-                }
                 Err(error.context(format!("{} failed for session {id}", verb(view))))
             }
         }
+    }
+}
+
+/// Marks a session as switching for the life of the switch.
+struct SwitchingMark<'a> {
+    daemon: &'a Daemon,
+    id: u32,
+}
+
+impl<'a> SwitchingMark<'a> {
+    fn claim(daemon: &'a Daemon, id: u32, verb: &str) -> Result<Self> {
+        if !daemon
+            .switching_views
+            .lock()
+            .expect("switching views lock")
+            .insert(id)
+        {
+            bail!("{verb} refused for session {id}: it is already moving to another view");
+        }
+        Ok(Self { daemon, id })
+    }
+}
+
+impl Drop for SwitchingMark<'_> {
+    fn drop(&mut self) {
+        self.daemon
+            .switching_views
+            .lock()
+            .expect("switching views lock")
+            .remove(&self.id);
     }
 }
 
