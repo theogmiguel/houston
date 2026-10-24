@@ -2715,11 +2715,7 @@ async fn dispatch(
             let models = Arc::clone(daemon);
             tokio::spawn(async move { models.refresh_model_catalog(false).await });
             let daemon = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || {
-                let providers = daemon.agent_hooks_state_rescanned();
-                daemon.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
-                daemon.send_control_to(conn_id, &daemon.agent_accounts_state());
-            });
+            tokio::task::spawn_blocking(move || daemon.answer_agent_hooks(conn_id));
             Ok(())
         }
         proto::ClientMsg::AgentHooksSet { provider, enabled } => {
