@@ -197,7 +197,10 @@ async fn a_worktree_check_names_changes_commits_and_panes_before_removal() {
     assert!(busy.gaps.is_empty(), "{:?}", busy.gaps);
     let panes: Vec<u32> = busy.panes.iter().map(|p| p.session).collect();
     assert_eq!(panes, vec![pane.id]);
-    assert_eq!(busy.panes[0].title, "Renamed worker", "the title the rail shows");
+    assert_eq!(
+        busy.panes[0].title, "Renamed worker",
+        "the title the rail shows"
+    );
     daemon.kill(pane.id).ok();
 }
 
