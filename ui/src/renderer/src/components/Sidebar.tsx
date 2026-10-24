@@ -431,6 +431,7 @@ interface Props {
   onAddWorkspace: () => void;
   onRemoveWorkspace: (path: string) => void;
   onRenameStart: (path: string) => void;
+  onLocateStart?: (path: string) => void;
   onOpenExternalError?: (message: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
@@ -1230,6 +1231,7 @@ export function Sidebar({
   onAddWorkspace,
   onRemoveWorkspace,
   onRenameStart,
+  onLocateStart,
   onOpenExternalError,
   onRenameSubmit,
   onRenameCancel,
@@ -1684,6 +1686,8 @@ export function Sidebar({
     e.preventDefault();
     setGridMenu(null);
     setNavMenu(null);
+    // A folder moved while the app ran shows as missing once the daemon restats it.
+    if (onLocateStart) railClient?.send({ type: "workspace_list" });
     setMenu({
       x: e.clientX,
       y: e.clientY,
@@ -1798,11 +1802,12 @@ export function Sidebar({
 
   const menuEl = menu && (
     <WorkspaceContextMenu
-      menu={menu}
+      menu={{ ...menu, missing: workspaces.find((w) => w.path === menu.path)?.missing }}
       onClose={() => setMenu(null)}
       onAddGrid={onAddGrid}
       onRenameStart={onRenameStart}
       onRemoveWorkspace={onRemoveWorkspace}
+      onLocateStart={onLocateStart}
       onOpenExternalError={onOpenExternalError}
       onTogglePin={undoable.togglePinWorkspace}
     />
