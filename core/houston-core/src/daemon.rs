@@ -881,7 +881,8 @@ enum Backend {
 
 fn thread_refuses_terminal_input(id: u32) -> anyhow::Error {
     anyhow!(
-        "session {id} is a thread session (view thread): terminal input is refused; send          messages with thread_send, or open it in a terminal"
+        "session {id} is a thread session (view thread): terminal input is refused; send \
+         messages with thread_send, or open it in a terminal"
     )
 }
 
@@ -4913,7 +4914,7 @@ impl Daemon {
         if session.info.agent == proto::AgentKind::Custom || session.info.hidden {
             return self.kill_unlocked(id);
         }
-        let _cleanup = self
+        let cleanup = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
@@ -4929,6 +4930,16 @@ impl Daemon {
                 .expect("shutdown preserved lock")
                 .insert(id);
             *session.state.lock().expect("state lock") = proto::SessionState::Interrupted;
+        }
+        if let Some(thread) = session.thread() {
+            thread.note_close_cause(if self.is_shutting_down() {
+                "the daemon was shutting down; it resumes the conversation on restart"
+            } else {
+                "the session was restarted"
+            });
+            // As in kill_unlocked: closing waits for a Stop or exit in progress, whose
+            // status settle takes the cleanup lock.
+            drop(cleanup);
         }
         if let Err(error) = session
             .backend
@@ -8373,6 +8384,12 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn lifecycle_hook_seen_for_test(&self, id: u32) -> bool {
+        self.get(id)
+            .is_ok_and(|s| s.lifecycle_hook_seen.load(Ordering::Acquire))
+    }
+
+    #[doc(hidden)]
     pub fn expire_spawn_grace_for_test(&self, id: u32) {
         self.expire_spawn_grace(id);
     }
@@ -8669,7 +8686,7 @@ impl Daemon {
                 return;
             }
             // Provider tool hooks can map to lifecycle effects outside the status table.
-            if event != "ACP" {
+            if event != "ACP" && !event.starts_with("thread_") {
                 session.lifecycle_hook_seen.store(true, Ordering::Release);
             }
             let mut current = session.status.lock().expect("status lock");
@@ -13757,6 +13774,9 @@ impl Daemon {
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("kill-admitted", id);
         let live = session.state.lock().expect("state lock").is_live();
+        if let Some(thread) = session.thread() {
+            thread.note_close_cause("the session was killed");
+        }
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
@@ -14188,6 +14208,7 @@ impl Daemon {
     /// or closed: escaped descendants of an exited root, or a previous daemon's orphans.
     /// Only the daemon holding the channel lock reaches this; adoption never calls it.
     fn reclaim_previous_workload(&self, id: u32) -> Result<()> {
+        self.reclaim_thread_group(id)?;
         let Some(identity) = self.db.previous_process_identity(id)? else {
             return Ok(());
         };
@@ -22829,7 +22850,13 @@ impl Daemon {
             }
             let was_live = session.state.lock().expect("state lock").is_live();
             if was_live {
-                if let Err(error) =
+                if let Some(thread) = session.thread() {
+                    // A Stop or exit in progress settles status under the cleanup lock
+                    // held here; the next watch tick retries.
+                    if !thread.try_close() {
+                        return None;
+                    }
+                } else if let Err(error) =
                     session
                         .backend
                         .kill(child, session.pid, self.channel.as_deref())
