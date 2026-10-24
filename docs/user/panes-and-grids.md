@@ -89,6 +89,27 @@ The conversation itself goes to Anthropic through the Claude CLI exactly as it d
 a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it
 from that address only when you choose **Load image**.
 
+### Moving a conversation between views
+
+The pane menu of a Claude session offers **Open as thread** on a terminal and **Open in
+terminal** on a thread. Houston restarts the session in the other view and resumes the
+same conversation by its exact ID; the pane keeps its name, its child panes and its
+resume handle, and a thread keeps its history. If the conversation cannot be resumed
+(for example, its working directory changed), the session starts fresh in the new view
+and the pane says why. Switching is refused while Claude's status is Working, Starting
+or Needs input, or while a thread turn is still open; wait for the turn to end or stop
+it first. Child panes started by an agent must close before their parent switches.
+
+Turns taken while a session is a terminal are not shown in its thread. Houston counts
+them from Claude's turn-end reports and, when the session opens as a thread, adds one
+note such as "3 turns happened in the terminal; this thread does not show them." It
+never reads Claude's transcript files to fill the thread.
+
+New Claude sessions from the pane **+** menu, an empty grid and the command palette open
+in the view chosen in **Settings ▸ Agents ▸ CLIs ▸ Default view** (Terminal unless you
+change it). The **Thread** entry always opens a thread, and child panes started by an
+agent always open as terminals.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a
