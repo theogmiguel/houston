@@ -1217,6 +1217,11 @@ const NO_BRANCHES: ReadonlyMap<number, string> = new Map();
 const NO_GRIDS: Record<string, GridItem[]> = {};
 const NO_PATHS: ReadonlySet<string> = new Set();
 
+// The open menu offers Locate only while the daemon reports its folder missing.
+function withMissing(menu: CtxMenu, workspaces: readonly Workspace[]): CtxMenu {
+  return { ...menu, missing: workspaces.find((w) => w.path === menu.path)?.missing };
+}
+
 export function Sidebar({
   mascotFirstRun = false,
   mascotWorkspacesEmpty,
@@ -1802,7 +1807,7 @@ export function Sidebar({
 
   const menuEl = menu && (
     <WorkspaceContextMenu
-      menu={{ ...menu, missing: workspaces.find((w) => w.path === menu.path)?.missing }}
+      menu={withMissing(menu, workspaces)}
       onClose={() => setMenu(null)}
       onAddGrid={onAddGrid}
       onRenameStart={onRenameStart}

@@ -10,6 +10,7 @@ import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
 import type { RelocateState } from "./workspaceRelocate";
+import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
@@ -1693,12 +1694,6 @@ export function App(): React.JSX.Element {
           case "history_count":
             setHistoryCount(msg.count);
             break;
-          case "workspace_relocated":
-            void import("./workspaceRelocate").then((m) => {
-              if (relocateStateRef.current) m.moveWorkspaceLocalState(msg.from, msg.to, relocateStateRef.current);
-              pushNotice(m.relocatedNotice(msg));
-            });
-            break;
           case "error": {
             if (msg.context === USAGE_SUMMARY_ERROR_CONTEXT || msg.context === USAGE_ACTIVITY_ERROR_CONTEXT || msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
               setUsageLoading(false);
@@ -2916,6 +2911,7 @@ export function App(): React.JSX.Element {
     setWsColors, setLayouts, setGridsByWs, setSelectedGridByWs,
     setWsPinned, setWsOrder, setWsRenaming, setSelectedWs,
   };
+  useWorkspaceRelocated(conn, relocateStateRef, pushNotice);
 
   const locateWorkspace = useCallback(async (path: string): Promise<void> => {
     if (conn.kind !== "ready") return;
