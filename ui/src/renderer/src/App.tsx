@@ -73,7 +73,7 @@ import type { SkillToolState } from "./houston/generated/SkillToolState";
 import type { SkillPushRecord } from "./houston/generated/SkillPushRecord";
 import type { ProfileChoice } from "./houston/generated/ProfileChoice";
 import type { SessionView } from "./thread/threadTypes";
-import { newSessionView, useDefaultView } from "./thread/useDefaultView";
+import { newSessionViewFields, useDefaultView } from "./thread/useDefaultView";
 import {
   isLive,
   LIVE_CHILDREN_MARKER,
@@ -2987,14 +2987,13 @@ export function App(): React.JSX.Element {
       if (conn.kind !== "ready") return;
       if (selectedWs === "all") return;
       setExpandedId(null);
-      const opened = newSessionView(agent, view, defaultView);
       conn.client.createSession({
         ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
         agent,
         project_dir: selectedWs,
         shell_integration: shellIntegration,
         profile,
-        ...(opened === "thread" ? { view: opened } : {}),
+        ...newSessionViewFields(agent, view, defaultView),
       });
     },
     [conn, selectedWs, shellIntegration, defaultView],
@@ -3071,10 +3070,11 @@ export function App(): React.JSX.Element {
         project_dir: info.project_dir,
         cwd_from: source.session,
         prompt: packet,
+        ...newSessionViewFields(agent, undefined, defaultView),
       });
       setPaneHandoff(null);
     },
-    [paneHandoff, conn, selectedWs, pushError],
+    [paneHandoff, conn, selectedWs, pushError, defaultView],
   );
 
   const openSshConnect = useCallback(() => {
@@ -4164,6 +4164,7 @@ export function App(): React.JSX.Element {
                           agent,
                           project_dir: worktree,
                           prompt,
+                          ...newSessionViewFields(agent, undefined, defaultView),
                         });
                       }}
                     />

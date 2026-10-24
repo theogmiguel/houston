@@ -19,3 +19,8 @@ export function newSessionView(agent: string, chosen: SessionView | undefined, f
   if (chosen) return chosen
   return agent === 'claude' ? fallback : 'terminal'
 }
+
+/** The `view` field for `session_create`: present only when the session opens as a thread. */
+export function newSessionViewFields(agent: string, chosen: SessionView | undefined, fallback: SessionView): { view?: SessionView } {
+  return newSessionView(agent, chosen, fallback) === 'thread' ? { view: 'thread' } : {}
+}

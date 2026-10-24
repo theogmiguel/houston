@@ -22,7 +22,7 @@ export function DefaultViewSetting({ client }: { client: HoustonClient | null | 
   return <>
     <SubHead>Claude sessions</SubHead>
     <SettingsList>
-      <Row title="Default view" desc="How a new Claude session opens from the new pane menu or an empty grid. Child panes started by an agent open as terminals.">
+      <Row title="Default view" desc="How a Claude session you open from the new pane menu, an empty grid, the command palette or a handoff starts. Review and check agents and panes started by an agent open as terminals.">
         <Segmented<SessionView>
           aria-label="Default view"
           value={view ?? undefined}

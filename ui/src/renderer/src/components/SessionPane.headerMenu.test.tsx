@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
-import { SessionPane } from './SessionPane'
+import { SessionPane, viewSwitchRefusal } from './SessionPane'
 import type { HandoffSource } from './PaneHandoff'
 import { ghosttySurfaceMockModule } from '../test/ghosttySurfaceMock'
 
@@ -386,6 +386,16 @@ describe('pane ··· menu', () => {
     render(makeSession({ agent: 'codex', status: 'idle' }))
     openPaneMenu()
     expect(rows().some((b) => b.textContent?.includes('Open as thread'))).toBe(false)
+  })
+
+  it('names why a stopped or sleeping Claude session cannot change view', () => {
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))).toBe('The session is exited; restart it first')
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'sleeping', status: 'idle' }))).toBe('The session is sleeping; wake it first')
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'needs-input' }))).toBe("Claude's status is Needs input; wait for the turn to end or stop it first")
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle' }))).toBeNull()
+    render(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))
+    openPaneMenu()
+    expect(row('Open as thread').disabled).toBe(true)
   })
 
 })

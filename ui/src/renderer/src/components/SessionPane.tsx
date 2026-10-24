@@ -535,6 +535,14 @@ function TextAndHandoffRows({ thread, keymapOverrides, menuItem, onZoom, onHando
 
 const TURN_STATUS_WORD: Partial<Record<AgentStatus, string>> = { working: 'Working', spawning: 'Starting', 'needs-input': 'Needs input' }
 
+/** Why the pane cannot move to the other view right now, in the daemon's words; `null` when it can. */
+export function viewSwitchRefusal(info: SessionInfo): string | null {
+  if (info.state === 'sleeping') return 'The session is sleeping; wake it first'
+  if (!isLive(info.state)) return `The session is ${info.state}; restart it first`
+  const busy = info.status ? TURN_STATUS_WORD[info.status] : undefined
+  return busy ? `Claude's status is ${busy}; wait for the turn to end or stop it first` : null
+}
+
 /** Moves a Claude conversation to the other view; the daemon refuses while a turn runs, and so does the row. */
 function ViewSwitchRow({ info, client, menuItem }: {
   info: SessionInfo
@@ -543,13 +551,13 @@ function ViewSwitchRow({ info, client, menuItem }: {
 }): React.JSX.Element | null {
   if (info.agent !== 'claude' || info.acp != null) return null
   const target = info.view === 'thread' ? 'terminal' : 'thread'
-  const busy = info.status ? TURN_STATUS_WORD[info.status] : undefined
+  const reason = viewSwitchRefusal(info)
   return (
     <CtxRow
       glyph={target === 'thread' ? IconMessageSquare : IconSquareTerminal}
       label={target === 'thread' ? 'Open as thread' : 'Open in terminal'}
-      disabled={busy !== undefined}
-      disabledReason={`Claude's status is ${busy}; wait for the turn to end or stop it first`}
+      disabled={reason !== null}
+      disabledReason={reason ?? undefined}
       onClick={menuItem(() => client.send({ type: 'session_set_view', session: info.id, view: target }))}
     />
   )
