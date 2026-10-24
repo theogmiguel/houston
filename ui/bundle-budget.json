@@ -191,9 +191,15 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 947,727 bytes (one boot chunk) with the same small headroom:",
+    "a workspace whose folder moved offers Locate moved folder… in the rail's",
+    "context menu, the WSL mux routes the request by its source path, and App",
+    "starts the folder pick; moving the renderer's own state and the notice",
+    "wording load on the first relocation from `workspaceRelocate.ts`."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947900,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
