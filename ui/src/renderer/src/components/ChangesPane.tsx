@@ -39,6 +39,8 @@ import { useGitStatusSubscription, type DiffState } from './git/useGitStatusSubs
 import { usePrSubscription, type PrState } from './git/usePrSubscription'
 import { useReviewSubscription, type ReviewNotice } from './git/useReviewSubscription'
 import { ReviewProviderModal } from './git/ReviewProviderModal'
+import { buildResolveBrief, pausedOperationBanner, pausedOperationLabel } from './git/pausedOperation'
+import type { GitOperation } from '../houston/generated/GitOperation'
 import { useGitToolsSubscription } from './git/useGitToolsSubscription'
 import { useGitErrorRouter } from './git/useGitErrorRouter'
 import { GitToolsBar } from './git/GitToolsBar'
@@ -464,6 +466,16 @@ function ReviewNoticeLine({ reviewNotice }: { reviewNotice: ReviewNotice | null 
   )
 }
 
+function PausedOperationLine({ operation, conflicted, onResolve }: { operation: GitOperation | null; conflicted: number; onResolve: (() => void) | null }): React.JSX.Element | null {
+  if (!operation) return null
+  return (
+    <ScmNotice tone="warn" testId="changes-paused-operation">
+      {pausedOperationBanner(operation, conflicted)}{' '}
+      {onResolve && <Button variant="muted-link" size="sm" data-testid="changes-resolve-with-agent" onClick={onResolve}>Resolve with agent</Button>}
+    </ScmNotice>
+  )
+}
+
 function ScmErrorLine({ text, testId }: { text: string; testId: string }): React.JSX.Element {
   return <ScmNotice tone="danger" testId={testId}>{text}</ScmNotice>
 }
@@ -549,8 +561,9 @@ function CompactChangesBody({ splitDiff, toolbar, notice, toolsNotice, toolsErro
   </>
 }
 
-function LoadingChangesBody({ toolbar, toolsNotice, toolsError, commitError, fileList, commitBox, prLine }: {
+function LoadingChangesBody({ toolbar, banner, toolsNotice, toolsError, commitError, fileList, commitBox, prLine }: {
   toolbar: React.ReactNode
+  banner: React.ReactNode
   toolsNotice: string | null
   toolsError: string | null
   commitError: string | null
@@ -560,6 +573,7 @@ function LoadingChangesBody({ toolbar, toolsNotice, toolsError, commitError, fil
 }): React.JSX.Element {
   return <>
     {toolbar}
+    {banner}
     <ToolsNoticeLine notice={toolsNotice} error={toolsError} />
     {commitError && <ScmErrorLine text={commitError} testId="changes-commit-error" />}
     {fileList}
@@ -674,6 +688,8 @@ export function ChangesPane({
   const [defaultBase, setDefaultBase] = useState<string | null>(null)
   const counts = useGitComparisonCounts(client, repoDir, defaultBase)
   const [notARepo, setNotARepo] = useState(false)
+  const [operation, setOperation] = useState<GitOperation | null>(null)
+  const [resolvePickerOpen, setResolvePickerOpen] = useState(false)
   const [scope, setScope] = useState<'working' | 'branch'>('working')
   const [stagedOnly, setStagedOnly] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
@@ -786,6 +802,7 @@ export function ChangesPane({
     setUpstream,
     setDefaultBase,
     setNotARepo,
+    setOperation,
     setStatusError,
     setCommitError,
     setCommitting,
@@ -924,6 +941,21 @@ export function ChangesPane({
     [client, repoDir, reviewBusy]
   )
 
+  const conflictedPaths = useMemo(() => (files ?? []).filter((file) => file.status === 'conflicted').map((file) => file.path), [files])
+
+  const startResolve = useCallback(
+    (agent: AgentKind): void => {
+      setResolvePickerOpen(false)
+      if (!client || !repoDir || !operation) return
+      client.createSession({
+        agent,
+        project_dir: repoDir,
+        prompt: buildResolveBrief({ operation, dir: repoDir, branch, conflicted: conflictedPaths })
+      })
+    },
+    [client, repoDir, operation, branch, conflictedPaths]
+  )
+
   const doCommit = useCallback(
     (thenPush: boolean, amend = false): void => {
       if (!client || !repoDir || committing || staged === 0) return
@@ -1013,6 +1045,14 @@ export function ChangesPane({
           onStart={startReview}
         />
       )}
+      {resolvePickerOpen && operation && (
+        <ReviewProviderModal
+          heading={`Resolve the paused ${pausedOperationLabel(operation)}`}
+          startLabel="Start agent"
+          onCancel={() => setResolvePickerOpen(false)}
+          onStart={startResolve}
+        />
+      )}
       {confirmDiscard && (
         <ConfirmModal
           title="DISCARD"
@@ -1051,7 +1091,8 @@ export function ChangesPane({
 
   const stripChrome = <ChangesToolbar compact={compact === true} strip={strip} />
 
-  const notice = <ReviewNoticeLine reviewNotice={reviewNotice} />
+  const pausedLine = <PausedOperationLine operation={operation} conflicted={conflictedPaths.length} onResolve={client && repoDir ? () => setResolvePickerOpen(true) : null} />
+  const notice = <>{pausedLine}<ReviewNoticeLine reviewNotice={reviewNotice} /></>
   const fileList = (
     <ChangesPanelFileList
       compact={compact}
@@ -1153,12 +1194,13 @@ export function ChangesPane({
       <GitChangesFileListFrame>{fileList}</GitChangesFileListFrame>
       {commitBox}
     </>}>
+      {pausedLine}
       <ChangesErrorLines reviewError={reviewError} commitError={commitError} prMessage={prMessage} />
       {diffPane}
       <ChangesReviewFooter index={visibleRows.length === 0 ? 0 : visibleRows.findIndex((row) => row.path === selected) + 1} count={visibleRows.length} />
     </ChangesReviewWorkspace> : compact ? <CompactChangesBody splitDiff={splitDiff} toolbar={<>{branchHeader}{compactToolbar}</>} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} commitBox={commitBox} />
     : paneState === 'loading' || paneState === 'empty'
-      ? <LoadingChangesBody toolbar={stripChrome} toolsNotice={toolsNotice} toolsError={toolsError} commitError={commitError} fileList={fileList} commitBox={commitBox} prLine={prLine} />
+      ? <LoadingChangesBody toolbar={stripChrome} banner={pausedLine} toolsNotice={toolsNotice} toolsError={toolsError} commitError={commitError} fileList={fileList} commitBox={commitBox} prLine={prLine} />
       : <ReadyChangesBody toolbar={stripChrome} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} fileList={fileList} commitBox={commitBox} prLine={prLine} diffPane={diffPane} client={client} repoDir={activeRepoDir} compact={compact} />
 
   return shell(body)

@@ -13,9 +13,13 @@ import { GitDialogShell } from './GitDialogShell'
 const REVIEW_PROVIDERS: readonly AgentKind[] = COMPOSER_AGENTS.filter((a) => a !== 'shell')
 
 export function ReviewProviderModal({
+  heading = 'Review with agent',
+  startLabel = 'Start review',
   onCancel,
   onStart
 }: {
+  heading?: string
+  startLabel?: string
   onCancel: () => void
   onStart: (agent: AgentKind) => void
 }): React.JSX.Element {
@@ -23,7 +27,7 @@ export function ReviewProviderModal({
 
   return (
     <GitDialogShell
-      heading="Review with agent"
+      heading={heading}
       testid="review-provider-modal"
       onClose={onCancel}
       footer={
@@ -39,7 +43,7 @@ export function ReviewProviderModal({
               if (pick !== null) onStart(pick)
             }}
           >
-            Start review
+            {startLabel}
           </Button>
         </>
       }

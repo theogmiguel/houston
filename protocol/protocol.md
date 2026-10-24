@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -472,7 +472,7 @@ every refusal names the setting.
 | `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
-| `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
+| `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?`, `not_a_repo`, `operation?: GitOperation` | direct reply to `git_status` and to every mutating git message. `operation` (`merge`, `rebase`, `cherry_pick`) is a git operation paused in the checkout, read from the markers in its own git dir (`rebase-merge/`, `rebase-apply/` without `applying`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`); absent when none is paused |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
 | `git_branch` | `dir`, `branch?`, `toplevel?`, `common_dir?` | direct reply to `git_branch`; the branch comes from the checkout's HEAD and one `rev-parse --show-toplevel --path-format=absolute --git-common-dir` answers the identity. `toplevel` names the work tree (equal means one checkout), `common_dir` the repository (equal means main checkout plus worktree); both null outside a work tree |
 | `git_branch_commits` | `dir`, `commits: GitBranchCommit[]`, `total`, `truncated` | direct reply to `git_branch_commits`; each `GitBranchCommit` carries a short `sha`, `subject` and `author_time_ms` |
@@ -1400,6 +1400,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **The Changes panel names a paused merge, rebase or cherry-pick.** `git_status` gains `operation?: GitOperation` (`merge`, `rebase`, `cherry_pick`), read from the checkout's git dir on every status reply. Existing messages are otherwise unchanged |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

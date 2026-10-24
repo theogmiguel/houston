@@ -4,7 +4,7 @@ import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
-import { ChangesStory } from './changesStories'
+import { ChangesPausedRebaseStory, ChangesStory } from './changesStories'
 import { ChangesFindStory, PrFilesFindCapture } from './diffFindStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
@@ -283,6 +283,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'changes/maximized': () => <ChangesStory ready maximized />,
   'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
+  'changes/paused-rebase': () => <ChangesPausedRebaseStory />,
   'changes/find': () => <ChangesFindStory />,
   'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,

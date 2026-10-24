@@ -4459,7 +4459,13 @@ async fn send_git_status(
         // A missing directory stays an error; one that exists without git is
         // a workspace the panel reports as such, not a failed request.
         if d.is_dir() && !crate::git::probe_repo(&d)? {
-            return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
+            return anyhow::Ok((
+                Vec::new(),
+                crate::git::SyncStatus::default(),
+                None,
+                true,
+                None,
+            ));
         }
         let files = match b.as_deref() {
             Some(base) => crate::git::status_vs_base(&d, base)?,
@@ -4467,13 +4473,14 @@ async fn send_git_status(
         };
         let sync = crate::git::sync(&d);
         let default_base = crate::git::default_base(&d);
-        anyhow::Ok((files, sync, default_base, false))
+        let operation = crate::git::paused_operation(&d);
+        anyhow::Ok((files, sync, default_base, false, operation))
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")));
     // The rail and overview poll every workspace in the background, so the
     // context lets clients keep these failures out of global notices.
-    let (files, sync, default_base, not_a_repo) = match probed {
+    let (files, sync, default_base, not_a_repo, operation) = match probed {
         Ok(status) => status,
         Err(e) => {
             send_error(
@@ -4497,6 +4504,7 @@ async fn send_git_status(
             base,
             default_base,
             not_a_repo,
+            operation,
         },
     )
     .await;

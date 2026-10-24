@@ -13,6 +13,7 @@ import type { GitBranchCommit } from "./GitBranchCommit";
 import type { GitBranchInfo } from "./GitBranchInfo";
 import type { GitCheckpointInfo } from "./GitCheckpointInfo";
 import type { GitFileStatus } from "./GitFileStatus";
+import type { GitOperation } from "./GitOperation";
 import type { GitPullStatus } from "./GitPullStatus";
 import type { GitReviewSection } from "./GitReviewSection";
 import type { GitWorktreeInfo } from "./GitWorktreeInfo";
@@ -124,7 +125,11 @@ hand_off?: MergeQueueHandOffInfo | null, message?: string | null, } | { "type": 
 /**
  * `dir` exists but is outside any work tree; every other field is empty.
  */
-not_a_repo: boolean, } | { "type": "git_diff", dir: string, path: string | null, patch: string, truncated: boolean, base: string | null, } | { "type": "git_branch", dir: string, branch: string | null,
+not_a_repo: boolean,
+/**
+ * A merge, rebase or cherry-pick paused in this checkout, read from its git dir.
+ */
+operation?: GitOperation | null, } | { "type": "git_diff", dir: string, path: string | null, patch: string, truncated: boolean, base: string | null, } | { "type": "git_branch", dir: string, branch: string | null,
 /**
  * The work tree's root, absent outside one; two panes share a checkout
  * exactly when this is equal.
