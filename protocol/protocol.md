@@ -203,8 +203,8 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh` |
-| `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape |
+| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer |
+| `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape, plus a second reply for each directory first answered from the stored file |
 | `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
 | `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |

@@ -141,6 +141,17 @@ pub fn pr_status_cached(dir: &Path) -> PrStatus {
     value
 }
 
+/// The in-memory cache is process-wide; an in-process restart test empties it to
+/// stand in for a new daemon process.
+#[doc(hidden)]
+pub fn clear_pr_status_cache_for_test() {
+    PR_STATUS_CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .expect("PR status cache poisoned")
+        .clear();
+}
+
 pub fn pr_status(dir: &Path) -> PrStatus {
     let gh = state(dir);
     let has_upstream = crate::git::sync(dir).upstream.is_some();
