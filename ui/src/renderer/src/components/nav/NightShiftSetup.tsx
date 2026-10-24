@@ -209,7 +209,7 @@ function OutputFields({ draft, set, refusal, appCheck }: {
           onChange={(e) => set({ pr_size: { kind: 'related', max_changes: Math.min(20, Math.max(2, Number(e.target.value) || 2)) } })} />
       )}
     </Card.Field>
-    <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
+    <Card.Field label="Screenshots"><Toggle aria-label="Screenshots for visible changes" on={draft.screenshots || draft.focus.ui_polish !== 'off'} disabled={draft.focus.ui_polish !== 'off'} onChange={(screenshots) => set({ screenshots })} /></Card.Field>
     <Card.Field label="App check">
       <div className="grid gap-[var(--space-1)]">
         <TextInput aria-label="App start command" placeholder="Start command, for example bun run dev" value={draft.app_check?.start_command ?? ''}

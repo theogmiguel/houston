@@ -55,6 +55,8 @@ export const WORKER_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode', 'zc
 export const ORCHESTRATOR_PROVIDERS: AgentKind[] = ['claude', 'codex', 'opencode']
 export const ZCODE_ORCHESTRATOR_REFUSAL = 'ZCode cannot orchestrate: a pull request watch cannot wake it, so the CI stage would be off.'
 
+export const UI_POLISH_SCREENSHOTS = 'UI and UX polish needs screenshots: its changes are visible.'
+
 export function clockLabel(c: NightClock): string {
   return `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`
 }
@@ -139,6 +141,7 @@ export function settingsProblems(s: NightShiftSettings): string[] {
   for (const w of s.workers) {
     if (NO_LIMIT_SIGNAL.includes(w.provider)) out.push(`${engineLabel(w.provider)} cannot be a worker: it reports no usage limit.`)
   }
+  if (s.focus.ui_polish !== 'off' && !s.screenshots) out.push(UI_POLISH_SCREENSHOTS)
   if (s.focus.competitor_gaps !== 'off' && s.competitor_sources.length === 0) out.push('Competitor gaps needs at least one competitor source.')
   return out
 }

@@ -105,6 +105,9 @@ updates from elsewhere; if the settings changed in another window meanwhile, **S
 refused and **Discard changes** loads the current ones. The routine is changed and started
 only here: the generic routine edit and Run now refuse a Night shift routine.
 
+While UI and UX polish is on, screenshots stay on: its changes are visible, and Houston
+refuses the settings with screenshots off.
+
 **Merge queue** output hands ready pull requests to the workspace's merge queue; it is
 refused until the workspace has a merge queue verification command and Night shift has an
 App check. With **Pull requests only**, the run's panes cannot add a pull request to the

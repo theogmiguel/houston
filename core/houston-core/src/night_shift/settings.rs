@@ -325,6 +325,12 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
             bail!("a model name is {len} characters; the limit is {MODEL_MAX}");
         }
     }
+    if s.focus.ui_polish != NightFocusLevel::Off && !s.screenshots {
+        bail!(
+            "UI and UX polish is on but screenshots are off; its changes are visible, so turn \
+             screenshots on or turn UI and UX polish off"
+        );
+    }
     if s.focus.competitor_gaps != NightFocusLevel::Off && s.competitor_sources.is_empty() {
         bail!("competitor gaps is on but no competitor source is listed; add one or turn it off");
     }
@@ -399,6 +405,23 @@ mod tests {
         assert_eq!(one.pr_size, NightPrSize::One);
         let v2 = serde_json::to_string(&defaults()).unwrap();
         assert_eq!(parse(&v2).unwrap(), defaults());
+    }
+
+    #[test]
+    fn ui_polish_needs_screenshots() {
+        let mut s = defaults();
+        s.focus.ui_polish = NightFocusLevel::Low;
+        s.screenshots = false;
+        let err = format!("{:#}", validate(&s, &facts()).unwrap_err());
+        assert!(
+            err.contains("UI and UX polish") && err.contains("screenshots"),
+            "{err}"
+        );
+        s.screenshots = true;
+        validate(&s, &facts()).unwrap();
+        s.focus.ui_polish = NightFocusLevel::Off;
+        s.screenshots = false;
+        validate(&s, &facts()).unwrap();
     }
 
     #[test]
