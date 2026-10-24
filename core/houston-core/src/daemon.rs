@@ -20242,20 +20242,6 @@ impl Daemon {
             .compose(1, kind)
             .map_err(|e| anyhow!("spawn refused: {e}"))?;
         let project_dir = self.resolve_spawn_workspace(caller, target_workspace.as_deref())?;
-        // A slug whose old checkout left Claude history at its path is renamed before
-        // anything downstream (reservation, tree, branch, row) derives from it.
-        let mut worktree = worktree;
-        let mut slug_history_note = None;
-        if let Some(SpawnWorktreeRequest::Create(ask)) = &mut worktree {
-            if let Some(resolved) = self.resolve_slug_history(&ask.slug, |name| {
-                crate::worktrees::spawn_path(&project_dir, name)
-            })? {
-                crate::worktrees::validate_slug(&resolved)
-                    .map_err(|e| anyhow!("spawn refused: {e}"))?;
-                slug_history_note = Some(slug_history_note_message(&ask.slug, &resolved));
-                ask.slug = resolved;
-            }
-        }
         let ws = project_dir.display().to_string();
         if !self.orchestration_enabled() {
             bail!(
@@ -20265,6 +20251,24 @@ impl Daemon {
                  and runs code unattended - a spawned pane defaults to its CLI's auto \
                  mode, so it does not stop for routine approvals"
             );
+        }
+        // A Claude slug whose old checkout left history at its path is renamed before anything
+        // downstream (reservation, tree, branch, row) derives from it. Other providers do not
+        // read that history, so they keep the slug they asked for.
+        let mut worktree = worktree;
+        let mut slug_history_note = None;
+        if let Some(SpawnWorktreeRequest::Create(ask)) = worktree
+            .as_mut()
+            .filter(|_| kind == proto::AgentKind::Claude)
+        {
+            if let Some(resolved) = self.resolve_slug_history(&ask.slug, |name| {
+                crate::worktrees::spawn_path(&project_dir, name)
+            })? {
+                crate::worktrees::validate_slug(&resolved)
+                    .map_err(|e| anyhow!("spawn refused: {e}"))?;
+                slug_history_note = Some(slug_history_note_message(&ask.slug, &resolved));
+                ask.slug = resolved;
+            }
         }
         match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => orchestrate::seed_skill_everywhere(&home),

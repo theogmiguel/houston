@@ -244,7 +244,9 @@ checkout's history to the new one. When the slug's directory is free but Claude 
 for that path survives (under `~/.claude/projects`, `CLAUDE_CONFIG_DIR` or an agent
 profile), Houston creates the worktree as `SLUG-2` (or the next free number) and names the
 rename in the `pane_spawn` result (a `worktree_slug_history` warning) or in the Changes
-pane's message. The old history is never modified.
+pane's message. `pane_spawn` renames only for a Claude pane; other providers keep the slug
+they asked for. A worktree added from the Changes pane is always checked, since any agent
+may open there later. The old history is never modified.
 
 While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
 whether their committed branches would conflict with their base or with each other. A
