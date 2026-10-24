@@ -57,6 +57,10 @@ async fn relocate(
         match next_control(ws).await {
             proto::ServerMsg::WorkspaceRelocated { moved, .. } => return Ok(moved),
             proto::ServerMsg::Error { message, .. } => return Err(message),
+            // A client moves its layouts on workspace_relocated, before any pane leaves.
+            proto::ServerMsg::SessionReparented { session, .. } => {
+                panic!("session_reparented for {session} arrived before workspace_relocated")
+            }
             _ => continue,
         }
     }

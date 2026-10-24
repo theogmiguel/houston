@@ -9365,12 +9365,6 @@ impl Daemon {
         }
         drop(checkouts);
         moved.sessions = reparented.len() as u32;
-        for (session, project_dir) in reparented {
-            self.broadcast_control(&proto::ServerMsg::SessionReparented {
-                session,
-                project_dir,
-            });
-        }
         self.install_workspace_hooks(to);
 
         if !present.is_empty() {
@@ -9387,6 +9381,18 @@ impl Daemon {
                 }
                 Err(e) => moved.notes.push(format!("{e:#}")),
             }
+        }
+        // First, so a client moves its layouts before a pane leaves the old workspace.
+        self.broadcast_control(&proto::ServerMsg::WorkspaceRelocated {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            moved: moved.clone(),
+        });
+        for (session, project_dir) in reparented {
+            self.broadcast_control(&proto::ServerMsg::SessionReparented {
+                session,
+                project_dir,
+            });
         }
         Ok(moved)
     }
