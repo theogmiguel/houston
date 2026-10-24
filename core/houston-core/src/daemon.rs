@@ -570,6 +570,8 @@ pub struct Session {
     state: Mutex<proto::SessionState>,
     title: Mutex<String>,
     project_dir: Mutex<String>,
+    // Spawn cwd; `info.cwd` keeps the original, and relocation re-roots this one.
+    cwd: Mutex<String>,
     detected: Mutex<Option<proto::AgentKind>>,
     running: Mutex<Option<proto::AgentKind>>,
     blocks: Option<Mutex<BlockTracker>>,
@@ -1283,6 +1285,10 @@ impl Backend {
 }
 
 impl Session {
+    fn cwd(&self) -> String {
+        self.cwd.lock().expect("cwd lock").clone()
+    }
+
     fn remove_shell_token_file(&self) {
         let Some(path) = &self.shell_token_file else {
             return;
@@ -1337,6 +1343,7 @@ impl Session {
         info.state = *self.state.lock().expect("state lock");
         (info.title, info.title_source) = self.snapshot_title();
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
+        info.cwd = self.cwd();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.running_agent = *self.running.lock().expect("running lock");
         info.status = *self.status.lock().expect("status lock");
@@ -5464,6 +5471,7 @@ impl Daemon {
             state: Mutex::new(m.state),
             title: Mutex::new(m.title.clone()),
             project_dir: Mutex::new(m.project_dir.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -5620,7 +5628,7 @@ impl Daemon {
                 status: *s.status.lock().expect("status lock"),
                 hidden: s.info.hidden,
                 project_dir: s.project_dir.lock().expect("project dir lock").clone(),
-                cwd: s.info.cwd.clone(),
+                cwd: s.cwd(),
                 title,
                 title_source: Some(title_source),
                 codename: s.info.codename.clone(),
@@ -9306,28 +9314,56 @@ impl Daemon {
         };
         self.db.relocate_workspace(from, to, &name, &worktrees)?;
         moved.worktrees = worktrees.len() as u32;
+        let re_root = |slot: &mut String| match relocated(from, to, slot) {
+            Some(path) => {
+                *slot = path;
+                true
+            }
+            None => false,
+        };
         let mut reparented = Vec::new();
         for session in self.sessions.lock().expect("sessions lock").values() {
             let mut project_dir = session.project_dir.lock().expect("project_dir lock");
-            if let Some(dir) = relocated(from, to, &project_dir) {
-                *project_dir = dir;
+            let mut hit = re_root(&mut project_dir);
+            hit |= re_root(&mut session.cwd.lock().expect("cwd lock"));
+            if let Some(cwd) = session.hook_cwd.lock().expect("hook_cwd lock").as_mut() {
+                hit |= re_root(cwd);
+            }
+            let mut osc = session.osc_cwd.lock().expect("osc_cwd lock");
+            if let Some(dir) = osc
+                .as_deref()
+                .and_then(|d| relocated(from, to, &d.to_string_lossy()))
+            {
+                *osc = Some(PathBuf::from(dir));
+                hit = true;
+            }
+            if hit {
                 reparented.push((session.info.id, project_dir.clone()));
             }
         }
         for info in self.dead.lock().expect("dead lock").values_mut() {
-            let project_dir = relocated(from, to, &info.project_dir);
-            let cwd = relocated(from, to, &info.cwd);
-            if project_dir.is_none() && cwd.is_none() {
-                continue;
+            let mut hit = re_root(&mut info.project_dir);
+            hit |= re_root(&mut info.cwd);
+            if let Some(root) = info.checkout_root.as_mut() {
+                hit |= re_root(root);
             }
-            if let Some(dir) = project_dir {
-                info.project_dir = dir;
+            if let Some(worktree) = info.worktree.as_mut() {
+                hit |= re_root(&mut worktree.path);
+                hit |= re_root(&mut worktree.repo_common_dir);
             }
-            if let Some(cwd) = cwd {
-                info.cwd = cwd;
+            if let Some(checkout) = info.checkout.as_mut() {
+                hit |= re_root(&mut checkout.root);
             }
-            reparented.push((info.id, info.project_dir.clone()));
+            if hit {
+                reparented.push((info.id, info.project_dir.clone()));
+            }
         }
+        // As in `reparent_session`: the HEAD watcher re-resolves each moved checkout.
+        let mut checkouts = self.checkouts.lock().expect("checkouts lock");
+        for (id, _) in &reparented {
+            checkouts.insert(*id, None);
+        }
+        drop(checkouts);
         moved.sessions = reparented.len() as u32;
         for (session, project_dir) in reparented {
             self.broadcast_control(&proto::ServerMsg::SessionReparented {
@@ -9817,7 +9853,7 @@ impl Daemon {
                 Some(s) => (
                     s.pid,
                     s.osc_cwd.lock().expect("osc_cwd lock").clone(),
-                    PathBuf::from(&s.info.cwd),
+                    PathBuf::from(s.cwd()),
                 ),
                 None => {
                     let dead = self.dead.lock().expect("dead lock");
@@ -9855,7 +9891,7 @@ impl Daemon {
             return Ok(dir.display().to_string());
         }
         if let Some(s) = self.sessions.lock().expect("sessions lock").get(&id) {
-            return Ok(s.info.cwd.clone());
+            return Ok(s.cwd());
         }
         if let Some(info) = self.dead.lock().expect("dead lock").get(&id) {
             return Ok(info.cwd.clone());
@@ -10156,7 +10192,7 @@ impl Daemon {
                     .lock()
                     .expect("hook_cwd lock")
                     .clone()
-                    .unwrap_or_else(|| old.info.cwd.clone()),
+                    .unwrap_or_else(|| old.cwd()),
                 old.custom_cmd.clone(),
                 title,
                 title_source,
@@ -12070,6 +12106,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(detected_agent.filter(|kind| detection_relabels(agent, *kind))),
             running: Mutex::new(hosted_provider),
             blocks: shellint_token.as_ref().map(|token| {
@@ -12717,6 +12754,7 @@ impl Daemon {
                 state: Mutex::new(proto::SessionState::Running),
                 title: Mutex::new(title),
                 project_dir: Mutex::new(info.project_dir.clone()),
+                cwd: Mutex::new(info.cwd.clone()),
                 detected: Mutex::new(None),
                 running: Mutex::new(None),
                 blocks: None,
@@ -13824,7 +13862,7 @@ impl Daemon {
                 .lock()
                 .expect("hook cwd lock")
                 .clone()
-                .unwrap_or_else(|| session.info.cwd.clone());
+                .unwrap_or_else(|| session.cwd());
             self.resume_check(
                 id,
                 resume_agent,
@@ -20449,7 +20487,7 @@ impl Daemon {
                         .lock()
                         .expect("hook_cwd lock")
                         .clone()
-                        .unwrap_or_else(|| parent.info.cwd.clone())
+                        .unwrap_or_else(|| parent.cwd())
                 })
                 .map(PathBuf::from)
                 .filter(|cwd| {
@@ -20838,7 +20876,7 @@ impl Daemon {
             .filter(|id| *id != child)
             .filter(|id| {
                 self.get(*id).ok().is_some_and(|session| {
-                    crate::git::checkout_facts(Path::new(&session.info.cwd))
+                    crate::git::checkout_facts(Path::new(&session.cwd()))
                         .toplevel
                         .as_deref()
                         == Some(root.as_str())
@@ -21709,7 +21747,7 @@ impl Daemon {
             let sessions = self.sessions.lock().expect("sessions lock");
             sessions
                 .get(&child)
-                .map(|s| PathBuf::from(s.info.cwd.clone()))
+                .map(|s| PathBuf::from(s.cwd()))
                 .unwrap_or_else(|| root.clone())
         };
         let mut out = Vec::with_capacity(artifacts.len());
@@ -27469,6 +27507,7 @@ mod kill_teardown_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("ssh".into()),
             project_dir: Mutex::new(project.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -28093,6 +28132,7 @@ mod force_respawn_guard_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("custom".into()),
             project_dir: Mutex::new(project),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,

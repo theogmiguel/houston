@@ -180,3 +180,110 @@ async fn a_moved_workspace_is_relocated_with_its_worktrees_only_to_the_same_repo
         moved_dir.join(".git").canonicalize().unwrap()
     );
 }
+
+async fn wait_exited(ws: &mut WsStream, session: u32) {
+    loop {
+        match next_control(ws).await {
+            proto::ServerMsg::SessionState {
+                session: s, state, ..
+            } if s == session && !state.is_live() => return,
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_exited_pane_in_a_subfolder_respawns_there_after_relocation() {
+    let (addr, _state) = start_daemon().await;
+    let tmp = houston_core::fixture_dirs::tempdir_outside_git();
+    let original = tmp.path().join("proj");
+    init_repo(&original);
+    std::fs::create_dir(original.join("sub")).unwrap();
+    let from = original.display().to_string();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::WorkspaceAdd { path: from.clone() },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::WorkspaceList { workspaces } if !workspaces.is_empty() => break,
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+    ws.send(Message::text(create_custom_msg(
+        vec!["git", "--version"],
+        &original.join("sub"),
+    )))
+    .await
+    .unwrap();
+    let source = expect_created(&mut ws).await.id;
+    wait_exited(&mut ws, source).await;
+    // A pane rooted in the workspace whose cwd is a folder inside it, like a worktree pane.
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionCreate {
+            request: None,
+            agent: proto::AgentKind::Custom,
+            project_dir: from.clone(),
+            cmd: Some(vec!["git".into(), "--version".into()]),
+            cols: Some(80),
+            rows: Some(24),
+            cwd_from: Some(source),
+            shell_integration: None,
+            auto_approve: None,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        },
+    )
+    .await;
+    let pane = expect_created(&mut ws).await;
+    assert_eq!(Path::new(&pane.cwd), original.join("sub"));
+    wait_exited(&mut ws, pane.id).await;
+
+    let moved_dir = tmp.path().join("proj-moved");
+    std::fs::rename(&original, &moved_dir).unwrap();
+    let moved = relocate(&mut ws, &from, &moved_dir.display().to_string())
+        .await
+        .unwrap();
+    assert_eq!(moved.sessions, 2, "{moved:?}");
+
+    send(&mut ws, &proto::ClientMsg::SessionList).await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::SessionList { sessions, .. } => {
+                let listed = sessions.iter().find(|s| s.id == pane.id).unwrap();
+                assert_eq!(Path::new(&listed.cwd), moved_dir.join("sub"));
+                break;
+            }
+            _ => continue,
+        }
+    }
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionRespawn {
+            session: pane.id,
+            shell_integration: None,
+            cwd: None,
+            shell: None,
+            force: None,
+            fresh: None,
+        },
+    )
+    .await;
+    let respawned = expect_created(&mut ws).await;
+    assert_eq!(respawned.project_dir, moved_dir.display().to_string());
+    assert_eq!(
+        Path::new(&respawned.cwd),
+        moved_dir.join("sub"),
+        "the respawned pane keeps its folder inside the moved workspace"
+    );
+}

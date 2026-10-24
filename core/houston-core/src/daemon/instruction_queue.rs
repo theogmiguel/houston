@@ -32,7 +32,7 @@ impl Daemon {
         }
         let cwd = self
             .live_cwd(target)
-            .unwrap_or_else(|| PathBuf::from(&session.info.cwd));
+            .unwrap_or_else(|| PathBuf::from(session.cwd()));
         Ok(serde_json::json!({
             "target": target,
             "origin": self.db.session_origin(target)?,
