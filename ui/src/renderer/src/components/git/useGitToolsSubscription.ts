@@ -5,6 +5,7 @@ import type { GitCheckpointInfo } from '../../houston/generated/GitCheckpointInf
 import type { GitWorktreeInfo } from '../../houston/generated/GitWorktreeInfo'
 import { defaultCheckpointLabel } from './checkpoints'
 import type { WorktreeCleanupView } from './worktreeCleanup'
+import type { WorktreeCheckView } from './worktrees'
 import type { CheckpointInspect } from './CheckpointsDialog'
 
 export type GitToolKind = 'branches' | 'worktrees' | 'checkpoints'
@@ -27,6 +28,7 @@ export interface GitTools {
   defaultBranch: string | null
   worktrees: GitWorktreeInfo[]
   cleanup: WorktreeCleanupView
+  removeCheck: WorktreeCheckView | null
   checkpoints: GitCheckpointInfo[]
   inspecting: CheckpointInspect | null
   ensure: (kind: GitToolKind) => void
@@ -40,6 +42,7 @@ export interface GitTools {
   renameBranch: (from: string, to: string) => void
   deleteBranch: (name: string, force: boolean) => void
   createWorktree: (name: string, base: string | null) => void
+  checkWorktree: (path: string) => void
   removeWorktree: (path: string, force: boolean) => void
   pruneWorktrees: () => void
   checkCleanup: () => void
@@ -69,6 +72,7 @@ export function useGitToolsSubscription({
   const [defaultBranch, setDefaultBranch] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([])
   const [cleanup, setCleanup] = useState<WorktreeCleanupView>({ status: 'pending' })
+  const [removeCheck, setRemoveCheck] = useState<WorktreeCheckView | null>(null)
   const [checkpoints, setCheckpoints] = useState<GitCheckpointInfo[]>([])
   const [inspecting, setInspecting] = useState<CheckpointInspect | null>(null)
 
@@ -114,6 +118,14 @@ export function useGitToolsSubscription({
       }
       setCleanup({ status: 'ready', entries: msg.entries })
     })
+    const unsubCheck = client.subscribe('worktree_check', (msg) => {
+      if (msg.dir !== repoDir) return
+      pendingTools.current = null
+      setToolsBusy(false)
+      setRemoveCheck((c) =>
+        c?.path === msg.path ? { path: msg.path, status: 'ready', check: msg.check } : c
+      )
+    })
     const unsubCheckpoints = client.subscribe('git_checkpoints', (msg) => {
       if (msg.dir !== repoDir) return
       pendingTools.current = null
@@ -152,6 +164,7 @@ export function useGitToolsSubscription({
       unsubBranches()
       unsubWorktrees()
       unsubCleanup()
+      unsubCheck()
       unsubCheckpoints()
       unsubDiff()
       unsubPull()
@@ -173,12 +186,35 @@ export function useGitToolsSubscription({
     }
   }, [toolsError])
 
+  // A check the daemon could not answer still has to unblock the confirm, and says why.
+  useEffect(() => {
+    if (toolsError === null) return
+    setRemoveCheck((c) =>
+      c?.status === 'pending'
+        ? {
+            path: c.path,
+            status: 'ready',
+            check: {
+              dirty_files: null,
+              newest_change_ms: null,
+              base: null,
+              ahead: null,
+              unpushed: null,
+              panes: [],
+              gaps: (['changes', 'commits', 'unpushed'] as const).map((part) => ({ part, reason: toolsError }))
+            }
+          }
+        : c
+    )
+  }, [toolsError])
+
   useEffect(() => {
     asked.current.clear()
     setBranches([])
     setRemotes([])
     setWorktrees([])
     setCleanup({ status: 'pending' })
+    setRemoveCheck(null)
     setCheckpoints([])
     setInspecting(null)
   }, [repoDir])
@@ -236,6 +272,7 @@ export function useGitToolsSubscription({
     defaultBranch,
     worktrees,
     cleanup,
+    removeCheck,
     checkpoints,
     inspecting,
     ensure,
@@ -250,6 +287,11 @@ export function useGitToolsSubscription({
     renameBranch: (from, to) => withDir((dir) => client?.gitBranchRename(dir, from, to)),
     deleteBranch: (name, force) => withDir((dir) => client?.gitBranchDelete(dir, name, force)),
     createWorktree: (name, base) => withDir((dir) => client?.gitWorktreeCreate(dir, name, base)),
+    checkWorktree: (path) =>
+      withDir((dir) => {
+        setRemoveCheck({ path, status: 'pending' })
+        client?.worktreeCheck(dir, path)
+      }),
     removeWorktree: (path, force) => withDir((dir) => client?.gitWorktreeRemove(dir, path, force)),
     pruneWorktrees: () => withDir((dir) => client?.gitWorktreePrune(dir)),
     checkCleanup: () =>

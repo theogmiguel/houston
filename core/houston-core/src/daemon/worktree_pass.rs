@@ -499,7 +499,7 @@ impl Daemon {
             .remove(path);
     }
 
-    fn live_session_cwds(&self) -> Vec<(u32, PathBuf)> {
+    pub(super) fn live_session_cwds(&self) -> Vec<(u32, PathBuf)> {
         let ids: Vec<u32> = self
             .sessions
             .lock()

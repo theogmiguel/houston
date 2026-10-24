@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle } from './ui'
 import { IconAlertTriangle } from './icons'
 import { Icon } from './ui/Icon'
@@ -8,6 +8,9 @@ interface Props {
   confirmLabel?: string
   title?: string
   destructive?: boolean
+  /** Shown under the message, such as what the action would lose. */
+  details?: ReactNode
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -17,6 +20,8 @@ export function ConfirmModal({
   confirmLabel = 'Confirm',
   title = 'CONFIRM',
   destructive = true,
+  details,
+  confirmDisabled = false,
   onConfirm,
   onCancel
 }: Props): React.JSX.Element {
@@ -64,10 +69,11 @@ export function ConfirmModal({
         <DialogTitle>{title}</DialogTitle>
         <DialogBody>
           <DialogDescription id="confirm-modal-msg">{message}</DialogDescription>
+          {details}
         </DialogBody>
         <DialogActions>
           <Button ref={cancelRef} variant="legacy-ghost" onClick={onCancel}>Cancel</Button>
-          <Button ref={confirmRef} variant={destructive ? "legacy-danger-solid" : "legacy-primary"} onClick={onConfirm}>{destructive && <Icon glyph={IconAlertTriangle} role="ui" />}{confirmLabel}</Button>
+          <Button ref={confirmRef} variant={destructive ? "legacy-danger-solid" : "legacy-primary"} disabled={confirmDisabled} onClick={onConfirm}>{destructive && <Icon glyph={IconAlertTriangle} role="ui" />}{confirmLabel}</Button>
         </DialogActions>
       </DialogPanel>
     </DialogBackdrop>

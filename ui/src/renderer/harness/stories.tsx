@@ -102,7 +102,8 @@ import {
   LegacyShortcutStory,
   LegacySshStory,
   LegacyTagsStory,
-  LegacyUpdateStory
+  LegacyUpdateStory,
+  WorktreeRemoveCheckStory
 } from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { TagPopoverHost } from '../src/components/tags/TagPopover'
@@ -328,6 +329,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'ui-primitives': () => <UiPrimitivesStory />,
   'ui-primitives/phone-pairing': () => <PhonePairingSpecimen />,
   'git/worktree-stale': () => <StaleWorktreesStory />,
+  'git/worktree-remove-check': () => <WorktreeRemoveCheckStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,

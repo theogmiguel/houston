@@ -94,6 +94,7 @@ pub mod updates;
 pub mod usage;
 pub mod voice;
 pub mod vt;
+pub mod worktree_check;
 pub mod worktree_cleanup;
 pub mod worktree_include;
 pub mod worktrees;
