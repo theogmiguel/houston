@@ -368,7 +368,8 @@ factor and snaps to the nearest bundled size.
 turned the setting off (Settings → Daemon → Background, default on, stored in
 `<state_dir>/tray.json`). The webview keeps running while hidden, which is what keeps the
 tray fed. WebView2 still reports the page visible while the window is hidden, so the hide
-and every show path emit `tray://window-hidden`, and the renderer's own background polls
+emits `tray://window-hidden` with `true`, and both show paths (`tray::show_main_window` and
+the `window_focus` command) emit it with `false`. The renderer's own background polls
 (rail `git_status`, a browser pane's local servers, `host_info`) skip their ticks until
 the window is shown. Tray data is pushed by the daemon and is unaffected. The app quits
 from the tray's "Quit Houston…" (which stops the daemon first) or from an in-app quit —
