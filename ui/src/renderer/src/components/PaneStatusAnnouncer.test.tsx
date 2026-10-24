@@ -68,6 +68,17 @@ describe('StatusAnnouncerRegion', () => {
     expect(region.textContent).toBe('api finished.')
   })
 
+  it('announces on time while the title changes faster than the settle window', () => {
+    const { region, push } = mount(snap())
+    push(snap({ status: 'working' }))
+    for (let step = 1; step <= 3; step++) {
+      act(() => { vi.advanceTimersByTime(400) })
+      push(snap({ status: 'working', title: `api · step ${step}` }))
+    }
+    act(() => { vi.advanceTimersByTime(ANNOUNCE_SETTLE_MS - 1200) })
+    expect(region.textContent).toBe('api · step 3 is working.')
+  })
+
   it('says nothing for a status that flips back inside the settle window', () => {
     const { region, push } = mount(snap({ status: 'working' }))
     push(snap({ status: 'idle' }))

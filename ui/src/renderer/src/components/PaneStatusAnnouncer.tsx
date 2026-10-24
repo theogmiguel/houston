@@ -62,7 +62,8 @@ export function StatusAnnouncerRegion({ snapshot }: { snapshot: AnnouncerSnapsho
   const spoken = useRef(snapshot)
   const latest = useRef(snapshot)
   latest.current = snapshot
-  const { pane, title, status, othersNeedingYou } = snapshot
+  // The title is read when the timer fires, not watched: CLI titles can update faster than the settle window.
+  const { pane, status, othersNeedingYou } = snapshot
   useEffect(() => {
     if (spoken.current.pane !== pane) {
       spoken.current = latest.current
@@ -74,7 +75,7 @@ export function StatusAnnouncerRegion({ snapshot }: { snapshot: AnnouncerSnapsho
       if (next !== null) setMessage(next)
     }, ANNOUNCE_SETTLE_MS)
     return () => window.clearTimeout(settle)
-  }, [pane, title, status, othersNeedingYou])
+  }, [pane, status, othersNeedingYou])
   useEffect(() => {
     if (message === '') return
     const clear = window.setTimeout(() => setMessage(''), ANNOUNCE_CLEAR_MS)
