@@ -1714,6 +1714,7 @@ pub struct Daemon {
     last_inbox_retention: AtomicU64,
     mcp_checks: Mutex<HashMap<String, (String, proto::McpConnectionCheck)>>,
     cli_probes: Mutex<crate::cli_probe::ProbeCache>,
+    cli_sweep: crate::cli_probe::SweepGate,
     model_catalog: Arc<crate::model_catalog::ModelCatalog>,
     db: Db,
     next_id: AtomicU32,
@@ -3493,6 +3494,7 @@ impl Daemon {
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
             mcp_checks: Mutex::new(HashMap::new()),
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
+            cli_sweep: crate::cli_probe::SweepGate::default(),
             model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
             remote: crate::remote::Runtime::new(),
@@ -7964,19 +7966,41 @@ impl Daemon {
     }
 
     pub fn agent_hooks_state_rescanned(&self) -> Vec<proto::AgentHookState> {
-        self.cli_probes.lock().expect("cli probe cache").clear();
+        self.rescan_cli_probes();
         self.agent_hooks_state()
     }
 
-    fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
-        match crate::cli_probe::binary_name(provider) {
-            Some(binary) => self
-                .cli_probes
+    /// Re-probes every spawnable provider's CLI and swaps the answers in at once. A call
+    /// while a sweep runs waits for that sweep instead of starting another.
+    pub fn rescan_cli_probes(&self) {
+        self.cli_sweep.run_or_join(|| {
+            let env = self.env();
+            let fresh = crate::cli_probe::probe_all(&env);
+            self.cli_probes
                 .lock()
                 .expect("cli probe cache")
-                .get(&self.env(), binary),
-            None => crate::cli_probe::CliPresence::default(),
-        }
+                .replace(&env, fresh);
+        });
+    }
+
+    fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
+        let Some(binary) = crate::cli_probe::binary_name(provider) else {
+            return crate::cli_probe::CliPresence::default();
+        };
+        let env = self.env();
+        let cached = self
+            .cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .cached(&env, binary);
+        cached.unwrap_or_else(|| {
+            let fresh = crate::cli_probe::probe_in(&env, binary);
+            self.cli_probes
+                .lock()
+                .expect("cli probe cache")
+                .insert(&env, binary, fresh.clone());
+            fresh
+        })
     }
 
     fn agent_hooks_state_with_error(

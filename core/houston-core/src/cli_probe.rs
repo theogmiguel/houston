@@ -104,6 +104,8 @@ fn read_version_within(
     parse_version(&text)
 }
 
+/// Holds answers only; callers probe without holding it, because a probe can take
+/// `VERSION_PROBE_TIMEOUT` and spawns and `workspace_info` read the cache meanwhile.
 #[derive(Debug, Default)]
 pub struct ProbeCache {
     path: std::ffi::OsString,
@@ -111,14 +113,42 @@ pub struct ProbeCache {
 }
 
 impl ProbeCache {
-    pub fn get(&mut self, env: &crate::host_env::HostEnv, binary: &'static str) -> CliPresence {
+    pub fn cached(
+        &mut self,
+        env: &crate::host_env::HostEnv,
+        binary: &'static str,
+    ) -> Option<CliPresence> {
         self.discard_if_path_changed(env);
-        if let Some(hit) = self.entries.get(binary) {
-            return hit.clone();
-        }
-        let fresh = probe_in(env, binary);
-        self.entries.insert(binary, fresh.clone());
-        fresh
+        self.entries.get(binary).cloned()
+    }
+
+    /// Records a probe made under `env`.
+    pub fn insert(
+        &mut self,
+        env: &crate::host_env::HostEnv,
+        binary: &'static str,
+        presence: CliPresence,
+    ) {
+        self.discard_if_path_changed(env);
+        self.entries.insert(binary, presence);
+    }
+
+    /// Swaps in a whole sweep made under `env`.
+    pub fn replace(
+        &mut self,
+        env: &crate::host_env::HostEnv,
+        entries: HashMap<&'static str, CliPresence>,
+    ) {
+        self.discard_if_path_changed(env);
+        self.entries = entries;
+    }
+
+    /// Whether every spawnable provider's CLI has an answer under `env`'s PATH.
+    pub fn holds_all(&mut self, env: &crate::host_env::HostEnv) -> bool {
+        self.discard_if_path_changed(env);
+        PROBED
+            .iter()
+            .all(|binary| self.entries.contains_key(binary))
     }
 
     pub fn cached_presence(
@@ -140,16 +170,74 @@ impl ProbeCache {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
-
     fn discard_if_path_changed(&mut self, env: &crate::host_env::HostEnv) {
         let now = env.var_os("PATH").unwrap_or_default().to_os_string();
         if now != self.path {
             self.path = now;
             self.entries.clear();
         }
+    }
+}
+
+/// The CLIs of the spawnable providers, which a sweep probes.
+pub const PROBED: [&str; 5] = ["claude", "codex", "agy", "opencode", "zcode"];
+
+/// Probes every spawnable provider's CLI, one after another.
+pub fn probe_all(env: &crate::host_env::HostEnv) -> HashMap<&'static str, CliPresence> {
+    PROBED
+        .iter()
+        .map(|binary| (*binary, probe_in(env, binary)))
+        .collect()
+}
+
+/// Runs one sweep at a time: a caller arriving while one runs waits for it to finish
+/// instead of starting another, so a burst of requests costs one sweep.
+#[derive(Debug, Default)]
+pub struct SweepGate {
+    state: std::sync::Mutex<GateState>,
+    finished: std::sync::Condvar,
+}
+
+#[derive(Debug, Default)]
+struct GateState {
+    running: bool,
+    completed: u64,
+    joined: usize,
+}
+
+impl SweepGate {
+    pub fn run_or_join(&self, sweep: impl FnOnce()) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.running {
+            let awaited = state.completed + 1;
+            state.joined += 1;
+            while state.completed < awaited {
+                state = self.finished.wait(state).unwrap_or_else(|e| e.into_inner());
+            }
+            state.joined -= 1;
+            return;
+        }
+        state.running = true;
+        drop(state);
+        let _done = SweepDone(self);
+        sweep();
+    }
+
+    #[cfg(test)]
+    fn joined(&self) -> usize {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).joined
+    }
+}
+
+/// Releases the joiners even when the sweep panics.
+struct SweepDone<'a>(&'a SweepGate);
+
+impl Drop for SweepDone<'_> {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.running = false;
+        state.completed += 1;
+        self.0.finished.notify_all();
     }
 }
 
@@ -237,7 +325,6 @@ fn codex_local_models(path: &std::path::Path) -> (Option<Vec<String>>, &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     use std::time::Instant;
 
     #[cfg(unix)]
@@ -405,30 +492,95 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
-    fn the_cache_answers_from_one_probe_and_re_probes_after_clear() {
-        let dir = tempfile::tempdir().unwrap();
-        let name: &'static str = Box::leak(
-            dir.path()
-                .join("houston-cached-cli")
-                .display()
-                .to_string()
-                .into_boxed_str(),
-        );
+    fn the_cache_keeps_answers_until_path_changes_or_a_sweep_replaces_them() {
+        let env = crate::host_env::HostEnv::capture().with("PATH", Some("/one"));
+        let found = |version: &str| CliPresence {
+            present: true,
+            version: Some(version.to_string()),
+        };
         let mut cache = ProbeCache::default();
-        let env = crate::host_env::HostEnv::capture();
-
-        assert!(!cache.get(&env, name).present, "nothing written yet");
-        fake_cli(dir.path(), "houston-cached-cli", "1.2.3");
+        assert_eq!(cache.cached(&env, "codex"), None);
+        cache.insert(&env, "codex", found("1.0.0"));
+        assert_eq!(cache.cached(&env, "codex"), Some(found("1.0.0")));
         assert!(
-            !cache.get(&env, name).present,
-            "the cached answer stands until something asks for a rescan"
+            !cache.holds_all(&env),
+            "one CLI of {PROBED:?} is not a sweep"
         );
 
-        cache.clear();
-        let fresh = cache.get(&env, name);
-        assert!(fresh.present);
-        assert_eq!(fresh.version.as_deref(), Some("1.2.3"));
+        let swept = PROBED
+            .iter()
+            .map(|binary| (*binary, CliPresence::default()))
+            .chain([("codex", found("2.0.0"))])
+            .collect();
+        cache.replace(&env, swept);
+        assert!(cache.holds_all(&env));
+        assert_eq!(cache.cached(&env, "codex"), Some(found("2.0.0")));
+
+        let moved = env.with("PATH", Some("/two"));
+        assert!(
+            !cache.holds_all(&moved),
+            "answers under another PATH are stale"
+        );
+        assert_eq!(cache.cached(&env, "codex"), None);
+    }
+
+    #[test]
+    fn every_spawnable_provider_is_probed() {
+        let expected: Vec<&str> = crate::remote::SPAWNABLE_KINDS
+            .iter()
+            .filter_map(|kind| binary_name(*kind))
+            .collect();
+        assert_eq!(PROBED.to_vec(), expected);
+    }
+
+    #[test]
+    fn a_caller_arriving_during_a_sweep_joins_it() {
+        let gate = std::sync::Arc::new(SweepGate::default());
+        let sweeps = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let first = std::thread::spawn({
+            let (gate, sweeps) = (gate.clone(), sweeps.clone());
+            move || {
+                gate.run_or_join(|| {
+                    sweeps.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                })
+            }
+        });
+        started_rx.recv().unwrap();
+        let joiners: Vec<_> = (0..3)
+            .map(|_| {
+                let (gate, sweeps) = (gate.clone(), sweeps.clone());
+                std::thread::spawn(move || {
+                    gate.run_or_join(|| {
+                        sweeps.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    })
+                })
+            })
+            .collect();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while gate.joined() < joiners.len() {
+            assert!(Instant::now() < deadline, "joiners never reached the gate");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(joiners.iter().all(|j| !j.is_finished()));
+        release_tx.send(()).unwrap();
+        first.join().unwrap();
+        for joiner in joiners {
+            joiner.join().unwrap();
+        }
+        assert_eq!(sweeps.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        gate.run_or_join(|| {
+            sweeps.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        assert_eq!(
+            sweeps.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "a caller after the sweep ended starts a new one"
+        );
     }
 
     fn wait_until_gone(pid: u32) -> bool {

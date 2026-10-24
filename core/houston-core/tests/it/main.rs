@@ -16,6 +16,7 @@ mod checkpoints_wire;
 mod claude_global_hooks;
 mod claude_turns_wire;
 mod cli_accounts_wire;
+mod cli_probe_wire;
 mod codex_hook_defaults;
 mod codex_pane_wire;
 mod codex_shell_mcp;
