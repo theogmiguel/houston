@@ -99,6 +99,35 @@ pub fn spawn_path(workspace: &Path, slug: &str) -> PathBuf {
         .join(slug)
 }
 
+/// How many `-<n>` names a history-colliding slug tries before the create is refused;
+/// bounds the filesystem probes per create.
+pub const SLUG_HISTORY_ATTEMPTS: u32 = 50;
+
+/// A `-<n>` slug when `slug`'s directory is free but Claude history survives at its path,
+/// so the new checkout never adopts it. `None` keeps `slug`, including an occupied one
+/// (refused downstream as before).
+pub fn resolve_slug_history_collision(
+    slug: &str,
+    dir_taken: impl Fn(&str) -> bool,
+    history_kept: impl Fn(&str) -> bool,
+) -> Result<Option<String>> {
+    if dir_taken(slug) || !history_kept(slug) {
+        return Ok(None);
+    }
+    for suffix in 2..=SLUG_HISTORY_ATTEMPTS {
+        let candidate = format!("{slug}-{suffix}");
+        if !dir_taken(&candidate) && !history_kept(&candidate) {
+            return Ok(Some(candidate));
+        }
+    }
+    bail!(
+        "worktree slug {slug:?} is refused: Claude history survives at its path and all {} \
+         suffixed names tried ({slug}-2..{slug}-{SLUG_HISTORY_ATTEMPTS}) are taken or keep \
+         history too; choose another slug",
+        SLUG_HISTORY_ATTEMPTS - 1
+    )
+}
+
 /// A slug becomes one directory name under `.houston/worktrees/`, so anything that could
 /// climb out of it or split it is refused rather than rewritten.
 pub fn validate_slug(slug: &str) -> Result<()> {
@@ -738,6 +767,45 @@ mod tests {
         remove(&repo, &dest, true).unwrap();
         assert!(!dest.exists());
         assert!(list(&repo).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn a_free_slug_with_surviving_history_is_suffixed_and_a_clean_one_is_kept() {
+        let dirs = ["demo-2"];
+        let history = ["demo", "demo-2"];
+        let resolved =
+            resolve_slug_history_collision("demo", |s| dirs.contains(&s), |s| history.contains(&s))
+                .unwrap();
+        assert_eq!(
+            resolved.as_deref(),
+            Some("demo-3"),
+            "the suffix skips a taken directory that also keeps history"
+        );
+        assert_eq!(
+            resolve_slug_history_collision("clean", |_| false, |_| false).unwrap(),
+            None,
+            "no history means the asked-for slug stands"
+        );
+    }
+
+    #[test]
+    fn an_occupied_directory_leaves_the_refusal_to_the_caller() {
+        assert_eq!(
+            resolve_slug_history_collision("demo", |_| true, |_| true).unwrap(),
+            None,
+            "a live directory is refused downstream, not suffixed away"
+        );
+    }
+
+    #[test]
+    fn every_suffixed_name_taken_refuses_naming_the_limit() {
+        let error = resolve_slug_history_collision("demo", |s| s != "demo", |s| s == "demo")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("50") && error.contains("demo-2") && error.contains("demo"),
+            "the refusal names the limit and the names tried: {error}"
+        );
     }
 }
 

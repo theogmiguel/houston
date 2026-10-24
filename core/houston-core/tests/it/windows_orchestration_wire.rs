@@ -667,3 +667,43 @@ async fn canonical_workspace_spawns_a_recorded_worktree_over_http_and_mcp() {
         assert_eq!(recorded.1, format!("houston/{slug}"));
     }
 }
+
+#[tokio::test]
+async fn a_slug_whose_claude_history_survives_spawns_under_a_fresh_name() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.parent();
+    let token = rig.token(parent.id);
+    let tree = houston_core::worktrees::spawn_path(&rig.repo, "demo");
+    let bucket = fixture()
+        .join("home")
+        .join(".claude")
+        .join("projects")
+        .join(houston_core::harness::digest::claude_slug(Path::new(
+            &houston_core::launch::brief_display_path(&tree),
+        )));
+    std::fs::create_dir_all(&bucket).unwrap();
+    std::fs::write(
+        bucket.join("session.jsonl"),
+        "{}
+",
+    )
+    .unwrap();
+
+    let ask = json!({"kind":"codex", "prompt":"go", "worktree":"demo"});
+    let (status, body) = rig.post(&token, "/orchestrate/spawn", ask).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["warnings"].as_array().is_some_and(|warnings| warnings
+            .iter()
+            .any(|w| w["code"] == "worktree_slug_history")),
+        "the collision must be named in the spawn result: {body}"
+    );
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    let suffixed = tree.with_file_name("demo-2").canonicalize().unwrap();
+    assert_eq!(rig.child_cwd(child).await, suffixed);
+    assert!(!tree.exists(), "the history-keeping path stays unused");
+    assert!(bucket.is_dir(), "the old history bucket stays put");
+    rig.daemon.close(child).unwrap();
+    rig.daemon.close(parent.id).unwrap();
+}

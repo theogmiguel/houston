@@ -239,6 +239,13 @@ supplied. Existing branches and occupied paths are refused. If creation or provi
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 
+Claude keeps its conversation history per directory, so a reused slug could hand an old
+checkout's history to the new one. When the slug's directory is free but Claude history
+for that path survives (under `~/.claude/projects`, `CLAUDE_CONFIG_DIR` or an agent
+profile), Houston creates the worktree as `SLUG-2` (or the next free number) and names the
+rename in the `pane_spawn` result (a `worktree_slug_history` warning) or in the Changes
+pane's message. The old history is never modified.
+
 While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
 whether their committed branches would conflict with their base or with each other. A
 new predicted conflict arrives once in the orchestrator's inbox, naming the branches and
