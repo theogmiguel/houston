@@ -48,17 +48,20 @@ export function useRailGitFacts(client: HoustonClient | null, dirs: readonly str
       setFacts((current) => new Map(current).set(message.dir, totals(message.files, message.ahead, message.behind)))
     })
     let lastPollAt = 0
-    const refresh = (): void => {
+    const refresh = (userInitiated: boolean): void => {
       lastPollAt = Date.now()
-      poller.current?.request(requestedDirs)
+      // A returning user asks for fresh facts; only background beats wait out a
+      // directory's failure backoff.
+      if (userInitiated) poller.current?.requestNow(requestedDirs)
+      else poller.current?.request(requestedDirs)
     }
     const onFocus = (): void => {
       if (Date.now() - lastPollAt < FOCUS_REFRESH_MIN_MS) return
-      refresh()
+      refresh(true)
     }
-    refresh()
+    refresh(false)
     window.addEventListener('focus', onFocus)
-    const timer = window.setInterval(refresh, 60_000)
+    const timer = window.setInterval(() => refresh(false), 60_000)
     return () => {
       unsubscribe()
       poller.current?.dropQueued()

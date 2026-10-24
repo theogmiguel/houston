@@ -132,3 +132,44 @@ describe('useRailGitFacts request bound', () => {
     expect(client.sent).toHaveLength(6)
   })
 })
+
+describe('useRailGitFacts failure backoff', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { cleanup(); vi.useRealTimers() })
+
+  test('a failing directory skips one tick, then two, four and eight, capped at fifteen minutes, until a reply resets the ladder', () => {
+    const { client } = mount(dirsOf(1))
+    const pollAfterFailure = (ticks: number): void => {
+      act(() => client.fail('git_status'))
+      const sent = client.sent.length
+      act(() => { vi.advanceTimersByTime(ticks * 60_000) })
+      expect(client.sent).toHaveLength(sent + 1)
+    }
+    pollAfterFailure(1)
+    pollAfterFailure(2)
+    pollAfterFailure(4)
+    pollAfterFailure(8)
+    // The next rung would be 16 minutes; the cap lets the 15-minute tick through.
+    pollAfterFailure(15)
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    act(() => { vi.advanceTimersByTime(14 * 60_000) })
+    expect(client.sent).toHaveLength(sent)
+    act(() => client.reply(dirsOf(1)[0]))
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(client.sent).toHaveLength(sent + 1)
+  })
+
+  test('a focus refresh is never delayed by the failure ladder', () => {
+    const { client } = mount(dirsOf(1))
+    drain(client)
+    act(() => { vi.advanceTimersByTime(60_000) })
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    act(() => {
+      vi.advanceTimersByTime(FOCUS_REFRESH_MIN_MS)
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(client.sent).toHaveLength(sent + 1)
+  })
+})
