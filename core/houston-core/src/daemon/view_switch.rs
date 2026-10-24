@@ -100,7 +100,7 @@ impl Daemon {
                 status_word(status)
             );
         }
-        if let Backend::Thread(handle) = &session.backend {
+        if let Some(handle) = session.thread() {
             if handle.turn_open() {
                 bail!(
                     "{verb} refused for session {id}: a thread turn is still open; wait for it \
