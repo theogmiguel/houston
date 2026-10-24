@@ -382,7 +382,10 @@ recording over the limit.
 
 While you are using the Houston window on the computer, phone notifications wait: a
 notification whose delay has ended is held until the window loses focus, is hidden, or
-receives no input for about three minutes, and is then sent once. A pane answered or
+receives no input for about three minutes, and is then sent once. Clicking into the
+built-in browser docked in a pane counts as using the window, but Houston cannot see input
+inside the page, so reading there for more than about three minutes sends held
+notifications. A browser detached into its own window counts as away. A pane answered or
 resumed at the desk in the meantime sends nothing. When Houston is closed or not connected,
 notifications are sent as usual.
 
