@@ -62,6 +62,31 @@ open waits up to one second for EOF and refuses if it stays open. Restart follow
 rule. A daemon handoff asks you to close Exited panes that still retain
 output readers.
 
+## Threads
+
+A **thread** shows a Claude session as a conversation instead of a terminal: your
+messages, Claude's answers rendered as Markdown, and one collapsed card per tool call.
+Open one from the pane **+** menu under **Thread**, or choose **Claude thread** in an
+empty grid. Threads sit in the grid beside terminal panes, keep the same pane header and
+menu, and run at the same time. Only Claude supports the thread view; other agents open
+as terminals.
+
+Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. A message
+sent while Claude is working is delivered at once and Claude reads it after its current
+step. One message is limited to 256 KiB. While Claude works, the button reads **Stop**;
+the pane menu offers the same action. Stop ends Claude and the tools it started. The
+answer it was writing stays visible, marked "Stopped · Claude will not remember this
+partial answer": the next message resumes the conversation without it.
+
+Expand a tool card to see its input and output. Shell commands show the command and its
+output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and
+output at 16 KiB and says so on the card. Houston keeps each thread's history on this
+machine, up to 20,000 events or 8 MiB, removing the oldest first with a note in the
+thread; the history is deleted when you close the pane. A pane shows the latest
+messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.
+The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
+a terminal pane.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a
