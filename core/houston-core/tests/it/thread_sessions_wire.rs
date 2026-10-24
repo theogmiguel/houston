@@ -605,6 +605,115 @@ async fn a_restarted_daemon_restores_the_thread_with_its_history() {
     daemon.close(restored.id).unwrap();
 }
 
+/// A daemon that dies mid-turn leaves a user message with no turn end and a running row.
+#[tokio::test]
+async fn a_turn_left_open_by_a_daemon_crash_ends_on_restore() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    let project = rig.project.path();
+    let transcript = rig.scratch.path().join("conversation.jsonl");
+    std::fs::write(&transcript, "{}\n").unwrap();
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.insert_session(&proto::SessionInfo {
+            state: proto::SessionState::Running,
+            ..thread_row(7, project)
+        })
+        .unwrap();
+        db.set_session_resume_handle(7, Some(("conv-7", Some(transcript.to_str().unwrap()))))
+            .unwrap();
+        let open_turn = [
+            ThreadEventKind::UserMessage {
+                text: "question".into(),
+            },
+            ThreadEventKind::ToolCall {
+                tool_use_id: "toolu_1".into(),
+                name: "Bash".into(),
+                input: "{}".into(),
+                truncated: false,
+            },
+        ];
+        for (seq, kind) in (1..).zip(open_turn) {
+            db.thread_event_insert(
+                7,
+                &ThreadEvent {
+                    seq,
+                    at_ms: seq,
+                    kind,
+                },
+            )
+            .unwrap();
+        }
+    }
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path,
+        rig.env.clone(),
+    ))
+    .unwrap();
+    wait_until("the thread to be restored", || {
+        daemon
+            .list()
+            .iter()
+            .any(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+    })
+    .await;
+    let restored = daemon
+        .list()
+        .into_iter()
+        .find(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+        .unwrap();
+    let history = history_of(&daemon, restored.id);
+    let tail: Vec<(u64, &ThreadEventKind)> =
+        history.iter().skip(2).map(|e| (e.seq, &e.kind)).collect();
+    assert_eq!(
+        tail,
+        [
+            (
+                3,
+                &ThreadEventKind::TurnEnd {
+                    outcome: TurnOutcome::Interrupted,
+                    error: None
+                }
+            ),
+            (
+                4,
+                &ThreadEventKind::Notice {
+                    text: "Houston restarted while this turn ran.".into()
+                }
+            ),
+        ],
+        "{history:?}"
+    );
+    daemon.close(restored.id).unwrap();
+}
+
+/// Only a daemon crash leaves a thread's process group recorded for the next daemon.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_group_record_is_cleared_whenever_the_daemon_ends_the_tree() {
+    let mut rig = Rig::new().await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let id = rig.thread().await;
+    let recorded = |db: &Db| db.thread_group(id).unwrap().is_some();
+    wait_until("the first process's group record", || recorded(&db)).await;
+    rig.daemon.thread_stop(id).unwrap();
+    assert!(!recorded(&db), "Stop ended the tree");
+    rig.turn(id, "crash").await;
+    wait_until("the crash to clear the record", || {
+        rig.launches().len() == 2 && !recorded(&db)
+    })
+    .await;
+    rig.turn(id, "hello").await;
+    assert!(recorded(&db), "the restarted process is recorded");
+    let daemon = Arc::clone(&rig.daemon);
+    within("kill", Duration::from_secs(10), move || daemon.kill(id))
+        .await
+        .unwrap();
+    assert!(!recorded(&db), "Kill closed the thread and ended the tree");
+}
+
 fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
     let dir: PathBuf = project.to_path_buf();
     proto::SessionInfo {

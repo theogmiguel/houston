@@ -87,6 +87,32 @@ impl Db {
         Ok(())
     }
 
+    /// The daemon ended the thread's process tree itself; nothing is left to reclaim.
+    pub fn clear_thread_group(&self, id: u32) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET thread_group = NULL WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the stored history ends inside a turn: a user message with no later turn end.
+    pub fn thread_turn_left_open(&self, session: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let last_of = |kind: &str| -> Result<Option<i64>> {
+            Ok(conn.query_row(
+                "SELECT MAX(seq) FROM thread_events \
+                 WHERE session_id = ?1 AND json_extract(kind, '$.type') = ?2",
+                rusqlite::params![session, kind],
+                |row| row.get(0),
+            )?)
+        };
+        let message = last_of("user_message")?;
+        let end = last_of("turn_end")?;
+        Ok(message.is_some_and(|message| end.is_none_or(|end| end < message)))
+    }
+
     pub fn thread_group(&self, id: u32) -> Result<Option<String>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn

@@ -331,10 +331,13 @@ Stop, start and exit handling are serialised per thread, so a message sent durin
 starts its process only after the old tree is reaped, and a write blocked on a Claude that
 stopped reading never holds up Stop, Kill or shutdown. Stop and exit settle the status
 while the thread is held, so code that closes a thread must not hold
-`temporary_cleanup_lock` while it waits. A daemon crash on Windows ends the
-tree with the Job handle. On Linux the session row records the group (pgid, the daemon's
-session id, the boot id); restore, Restart and Close kill the processes still in that pgid
-and session on the same boot, which only the dead daemon launched.
+`temporary_cleanup_lock` while it waits. A daemon crash on Windows ends the tree with the
+Job handle. On Linux the session row records the group (pgid, the daemon's session id, the
+boot id and the leader's creation token) until the daemon ends the tree itself, so only a
+crash leaves a record. Restore, Restart and Close then kill the processes still in that
+pgid and session id on the same boot, unless a new process holds the leader's pid. A
+restored thread whose history ends inside a turn records that turn as interrupted before
+it takes a message.
 The thread's history is Houston's own `thread_events` log, written from the stream as it
 arrives; Houston never reads Claude's transcript files to fill it and never writes the
 `control_request` protocol. A thread takes no terminal input: stdin frames,

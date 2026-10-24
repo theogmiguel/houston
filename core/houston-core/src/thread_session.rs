@@ -51,6 +51,8 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn settle(&self, session: u32, outcome: TurnOutcome);
     /// A new Claude process leads the thread's process group.
     fn process_started(&self, session: u32, pid: u32);
+    /// Stop, an exit or close ended the process tree, so nothing of it is left to reclaim.
+    fn process_gone(&self, session: u32);
 }
 
 /// The launch a thread restarts from: the session's assembled Claude command without its
@@ -891,6 +893,7 @@ impl ThreadHandle {
         };
         process.stopping.store(true, Ordering::Release);
         process.end_tree(true);
+        self.host.process_gone(self.session);
         let events = self
             .state
             .lock()
@@ -901,6 +904,20 @@ impl ThreadHandle {
         crate::test_barriers::pause("thread-stop-settle", self.session);
         self.host.settle(self.session, TurnOutcome::Interrupted);
         true
+    }
+
+    /// Records the end of a turn that stored history left open, with `notice` as its cause.
+    pub fn end_stored_turn(&self, notice: &str) {
+        let _op = self.op.lock().expect("thread operation lock");
+        self.emit(vec![
+            ThreadEventKind::TurnEnd {
+                outcome: TurnOutcome::Interrupted,
+                error: None,
+            },
+            ThreadEventKind::Notice {
+                text: notice.to_string(),
+            },
+        ]);
     }
 
     /// Names why the next `close` happens, for the notice it records mid-turn.
@@ -940,6 +957,7 @@ impl ThreadHandle {
         if let Some(process) = &process {
             process.stopping.store(true, Ordering::Release);
             process.end_tree(false);
+            self.host.process_gone(self.session);
         }
         let mut state = self.state.lock().expect("thread state lock");
         let was_open = state.turn_open;
@@ -1087,6 +1105,7 @@ impl ThreadHandle {
             state.process = None;
         }
         let code = process.end_tree(false);
+        self.host.process_gone(self.session);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
             || "no exit code".to_string(),
@@ -1200,6 +1219,9 @@ pub struct ThreadGroup {
     pub pgid: u32,
     pub sid: u32,
     pub system: String,
+    /// `pid::process_creation_token` of the leader, so a reused pgid is told apart.
+    #[serde(default)]
+    pub leader_creation: Option<u64>,
 }
 
 impl ThreadGroup {
@@ -1212,6 +1234,7 @@ impl ThreadGroup {
             pgid: leader,
             sid: sid as u32,
             system,
+            leader_creation: crate::pid::process_creation_token(leader),
         })
     }
 
@@ -1221,12 +1244,14 @@ impl ThreadGroup {
     }
 
     /// Kills what is left of the group after its daemon died: every process still in this
-    /// pgid and session on this boot. A pgid cannot be reissued while any member lives, and
-    /// the old daemon's session holds only what it launched. Returns how many were signalled.
+    /// pgid and session id on this boot, unless a new process now holds the leader's pid.
+    /// Returns how many were signalled.
     #[cfg(target_os = "linux")]
     pub fn reclaim(&self) -> Result<usize> {
         let current = crate::recovery_process::system_identity()?;
-        if current.as_deref() != Some(self.system.as_str()) {
+        if current.as_deref() != Some(self.system.as_str())
+            || self.reused(crate::pid::process_creation_token(self.pgid))
+        {
             return Ok(0);
         }
         let mut stats = Vec::new();
@@ -1270,6 +1295,12 @@ impl ThreadGroup {
         Ok(0)
     }
 
+    /// A live process with the leader's pid but another creation token means every member
+    /// exited and the pgid number was issued again.
+    pub fn reused(&self, live_leader: Option<u64>) -> bool {
+        matches!((self.leader_creation, live_leader), (Some(was), Some(now)) if was != now)
+    }
+
     /// The processes of `stats` (pid, pgrp, session) that belong to this group.
     pub fn members(&self, stats: &[(u32, u32, u32)], me: u32) -> Vec<u32> {
         if self.pgid <= 1 || self.sid <= 1 {
@@ -1302,6 +1333,7 @@ mod tests {
             pgid: 400,
             sid: 30,
             system: "linux:x".into(),
+            leader_creation: Some(7),
         };
         let stats = [
             (400, 400, 30),
@@ -1331,6 +1363,48 @@ mod tests {
         let group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
         assert!(group.reclaim().unwrap() >= 1);
         assert_eq!(sleeper.wait().unwrap().signal(), Some(libc::SIGKILL));
+    }
+
+    #[test]
+    fn a_group_is_reused_only_when_a_different_leader_holds_its_pid() {
+        let group = ThreadGroup {
+            pgid: 400,
+            sid: 30,
+            system: "linux:x".into(),
+            leader_creation: Some(7),
+        };
+        assert!(group.reused(Some(8)));
+        assert!(!group.reused(Some(7)), "the original leader still runs");
+        assert!(
+            !group.reused(None),
+            "the leader exited; its members may remain"
+        );
+        let recorded_before_tokens = ThreadGroup {
+            leader_creation: None,
+            ..group
+        };
+        assert!(!recorded_before_tokens.reused(Some(8)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reclaim_leaves_a_group_whose_pgid_was_issued_again() {
+        use std::os::unix::process::CommandExt;
+        let mut sleeper = crate::spawn::command("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
+        let token = group.leader_creation.expect("the leader's creation token");
+        group.leader_creation = Some(token + 1);
+        assert_eq!(group.reclaim().unwrap(), 0);
+        assert!(
+            sleeper.try_wait().unwrap().is_none(),
+            "the new group was killed"
+        );
+        sleeper.kill().unwrap();
+        sleeper.wait().unwrap();
     }
 
     fn kinds(lines: &str) -> Vec<ThreadEventKind> {
