@@ -16,12 +16,6 @@ pub const TOKEN: &str = "test-token-0000-0000-000000000000";
 
 /// The test process's own environment: re-exec markers and what a fixture must forward.
 /// Anything the daemon should see goes through `HostEnv` instead.
-/// Points the daemon's `test-barriers` pauses at `dir` for this test process.
-#[cfg(feature = "test-barriers")]
-pub fn set_test_barrier_dir(dir: &std::path::Path) {
-    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", dir);
-}
-
 pub fn process_var_os(name: &str) -> Option<std::ffi::OsString> {
     std::env::var_os(name)
 }

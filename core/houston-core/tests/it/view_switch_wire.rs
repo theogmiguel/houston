@@ -30,23 +30,9 @@ impl Rig {
     async fn new() -> Self {
         let shim = tempfile::tempdir().unwrap();
         let scratch = tempfile::tempdir().unwrap();
-        let name = if cfg!(windows) {
-            "claude.exe"
-        } else {
-            "claude"
-        };
-        std::fs::copy(
-            env!("CARGO_BIN_EXE_fake_claude_stream"),
-            shim.path().join(name),
-        )
-        .unwrap();
-        let inherited = process_var_os("PATH").unwrap_or_default();
-        let path = std::env::join_paths(
-            std::iter::once(shim.path().to_path_buf()).chain(std::env::split_paths(&inherited)),
-        )
-        .unwrap();
-        let env = base_env()
-            .with("PATH", Some(path))
+        install_fake_claude(shim.path());
+        // Only the fake can resolve as `claude`: a test that loses it must not reach the real CLI.
+        let env = hermetic_claude_env(shim.path())
             .with(
                 "HOUSTON_FAKE_CLAUDE_LOG",
                 Some(scratch.path().join("launches.jsonl")),
@@ -475,48 +461,19 @@ async fn a_round_trip_puts_the_turns_notice_after_the_old_history() {
     rig.daemon.close(back.id).unwrap();
 }
 
-/// Pauses a switch after its first check; the barrier directory is this process's.
-#[cfg(feature = "test-barriers")]
-struct Barrier {
-    dir: tempfile::TempDir,
-}
-
-#[cfg(feature = "test-barriers")]
-impl Barrier {
-    fn install() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        set_test_barrier_dir(dir.path());
-        Barrier { dir }
-    }
-
-    fn arm(&self, point: &str) {
-        std::fs::write(self.dir.path().join("armed"), point).unwrap();
-    }
-
-    async fn reached(&self) {
-        let reached = self.dir.path().join("reached");
-        wait_until("the switch to reach its barrier", || reached.is_file()).await;
-    }
-
-    fn release(&self) {
-        std::fs::remove_file(self.dir.path().join("armed")).unwrap();
-    }
-}
-
 #[cfg(feature = "test-barriers")]
 #[tokio::test]
 async fn a_message_sent_during_a_switch_is_refused_and_no_turn_is_killed() {
-    let barrier = Barrier::install();
     let mut rig = Rig::new().await;
     let thread = rig.create("thread").await;
     rig.give_conversation(thread.id, "conv-race");
-    barrier.arm("view-switch-checked");
+    let barrier = TestBarrier::arm("view-switch-checked");
     let daemon = Arc::clone(&rig.daemon);
     let id = thread.id;
     let switch = tokio::task::spawn_blocking(move || {
         daemon.set_session_view(id, proto::SessionView::Terminal)
     });
-    barrier.reached().await;
+    barrier.reached(thread.id).await;
 
     let pidfile = rig.scratch.path().join("raced.pid");
     rig.send(json!({"type":"thread_send","session":thread.id,
@@ -540,7 +497,6 @@ async fn a_message_sent_during_a_switch_is_refused_and_no_turn_is_killed() {
 #[cfg(feature = "test-barriers")]
 #[tokio::test]
 async fn a_turn_that_starts_during_a_switch_refuses_it_and_rolls_the_view_back() {
-    let barrier = Barrier::install();
     let mut rig = Rig::new().await;
     let terminal = rig.create("terminal").await;
     let conversation = launch_conversation(&rig.launches()[0]);
@@ -549,13 +505,13 @@ async fn a_turn_that_starts_during_a_switch_refuses_it_and_rolls_the_view_back()
         .await;
     rig.hook("Stop", terminal.id, &conversation).await;
     rig.give_conversation(terminal.id, &conversation);
-    barrier.arm("view-switch-checked");
+    let barrier = TestBarrier::arm("view-switch-checked");
     let daemon = Arc::clone(&rig.daemon);
     let id = terminal.id;
     let switch = tokio::task::spawn_blocking(move || {
         daemon.set_session_view(id, proto::SessionView::Thread)
     });
-    barrier.reached().await;
+    barrier.reached(terminal.id).await;
     // Typed into the terminal before the switch's lock: Claude reports the turn it started.
     rig.hook("UserPromptSubmit", terminal.id, &conversation)
         .await;
