@@ -124,6 +124,8 @@ Environment set on the child, in order:
 | user pairs | from the create request | applied before the helper `PATH` |
 | `PATH` | helper `bin` dir prepended | skipped for hidden panes and SSH |
 | `HOUSTON_SESSION` | session id | what marks a process as running in a pane |
+| `HOUSTON_WORKSPACE` | the pane's workspace path | the `workspace_id` key, in DOS syntax on Windows |
+| `HOUSTON_WORKTREE_SLUG` | the managed worktree's directory name | removed when the pane's directory is in no recorded managed worktree, so an inherited value never leaks |
 | `HOUSTON_CHANNEL` | the owning channel | |
 | `TR_SESSION` | session id | what a hook client reads to correlate |
 | `HOUSTON_SHELL_INTEGRATION_TOKEN_FILE` | path to the marker capability | shell panes with integration on; the rc reads it once and unlinks it |
