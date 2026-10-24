@@ -179,6 +179,8 @@ const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
     ("sessions", "project_dir"),
     ("sessions", "cwd"),
     ("command_history", "cwd"),
+    ("backlog_task_runs", "worktree_path"),
+    ("harness_reviews", "run_dir"),
 ];
 
 /// Settings stored per workspace as `<prefix><workspace path>`.
@@ -7306,6 +7308,7 @@ mod tests {
         ("managed_worktrees", "repo_common_dir"),
         // Relocation is refused while a swarm is rooted in the workspace.
         ("swarms", "root_dir"),
+        ("swarms", "worktree_dir"),
         ("swarm_agents", "worktree_dir"),
         ("swarm_agents", "config_dir"),
         // Provider and Houston state outside any workspace.
