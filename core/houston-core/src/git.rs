@@ -108,9 +108,12 @@ fn parse_status_v2(raw: &str) -> Result<(Vec<proto::GitFileStatus>, SyncStatus)>
             Some(("u", _)) => status_v2_fields(record, 11)?,
             Some(("?", path)) => ("??", path),
             Some(("!", _)) => continue,
-            _ => bail!(
-                "unparseable git status entry {record:?}: expected a porcelain v2 record starting with 1, 2, u, ? or !"
-            ),
+            _ => {
+                tracing::warn!(
+                    "skipping git status entry {record:?}: expected a porcelain v2 record starting with 1, 2, u, ? or !"
+                );
+                continue;
+            }
         };
         let xy = xy.as_bytes();
         let is_sensitive = is_sensitive_path(path);
@@ -2488,11 +2491,14 @@ mod tests {
             err.contains("\"1 M\"") && err.contains("9 space-separated fields"),
             "{err}"
         );
-        let err = parse_status_v2("X junk\0").unwrap_err().to_string();
-        assert!(
-            err.contains("\"X junk\"") && err.contains("porcelain v2"),
-            "{err}"
-        );
+    }
+
+    #[test]
+    fn an_unknown_status_record_type_is_skipped_not_fatal() {
+        let (files, _) = parse_status_v2("X junk\0? new.txt\0").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new.txt");
+        assert_eq!(files[0].status, proto::GitFileState::Untracked);
     }
 
     #[test]
