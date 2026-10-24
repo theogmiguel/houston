@@ -4,6 +4,7 @@ import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { IconArrowUp, IconStopCircle } from '../icons'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
+import { Tooltip } from '../ui/Tooltip'
 import { Select } from '../ui/Select'
 import { Text } from '../ui/Text'
 import {
@@ -97,16 +98,17 @@ function ThreadPermissionControl({ client, info, connected, events }: { client: 
   return (
     <ThreadHeaderBar>
       <Text as="span" size="small" tone="muted" className="flex-none">Permissions</Text>
-      <Select
-        data-testid="thread-permission-mode"
-        aria-label="Permission mode"
-        variant="property-chip"
-        value={info.permission_mode ?? 'default'}
-        options={PERMISSION_MODES}
-        disabled={locked !== null}
-        title={locked ?? 'Changing the mode restarts Claude in this conversation'}
-        onChange={(mode) => setThreadPermissionMode(client, info.id, mode as ThreadPermissionMode)}
-      />
+      <Tooltip label={locked ?? 'Changing the mode restarts Claude in this conversation'} className="inline-flex">
+        <Select
+          data-testid="thread-permission-mode"
+          aria-label="Permission mode"
+          variant="property-chip"
+          value={info.permission_mode ?? 'default'}
+          options={PERMISSION_MODES}
+          disabled={locked !== null}
+          onChange={(mode) => setThreadPermissionMode(client, info.id, mode as ThreadPermissionMode)}
+        />
+      </Tooltip>
     </ThreadHeaderBar>
   )
 }
