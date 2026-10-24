@@ -293,6 +293,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            permission_mode: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {
