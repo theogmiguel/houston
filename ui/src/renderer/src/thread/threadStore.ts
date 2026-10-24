@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadItems, type ThreadItem } from './threadModel'
-import type { ThreadClientMsg, ThreadEvent, ThreadEventsMsg, ThreadHistoryMsg } from './threadTypes'
+import type { ThreadClientMsg, ThreadEvent, ThreadEventsMsg, ThreadHistoryMsg, ThreadPermissionMode } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -146,6 +146,14 @@ export function sendThreadMessage(client: HoustonClient, session: number, text: 
 
 export function stopThread(client: HoustonClient, session: number): void {
   client.send({ type: 'thread_stop', session })
+}
+
+export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean): void {
+  client.send({ type: 'thread_approve', session, request_id: requestId, allow })
+}
+
+export function setThreadPermissionMode(client: HoustonClient, session: number, mode: ThreadPermissionMode): void {
+  client.send({ type: 'thread_set_permission_mode', session, mode })
 }
 
 export interface ThreadView extends ThreadSnapshot {

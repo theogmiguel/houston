@@ -1,10 +1,12 @@
 import { memo, useState } from 'react'
 import { IconFileDiff, IconFileText, IconSearch, IconSquareTerminal, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
-import { ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
+import { Button } from '../ui/Button'
+import { ThreadApprovalCard, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
 import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
+type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
 
 const INPUT_CAP_NOTE = 'Input cut at 8 KiB by Houston.'
 const OUTPUT_CAP_NOTE = 'Output cut at 16 KiB by Houston.'
@@ -104,6 +106,25 @@ function ToolBody({ item }: { item: ToolItem }): React.JSX.Element {
     <OutputSection item={item} />
   </>
 }
+
+/** A held permission request: the tool's input as its tool card shows it, then Allow / Deny. */
+export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, onAnswer }: { item: ApprovalItem; onAnswer: (requestId: string, allow: boolean) => void }): React.JSX.Element {
+  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: item.inputTruncated, result: null, settled: true }
+  return (
+    <ThreadApprovalCard
+      name={item.name}
+      summary={toolSummary(item.input)}
+      state={item.state}
+      reason={item.reason}
+      actions={<>
+        <Button data-testid="thread-approval-deny" variant="secondary" size="sm" onClick={() => onAnswer(item.requestId, false)}>Deny</Button>
+        <Button data-testid="thread-approval-allow" variant="primary" size="sm" onClick={() => onAnswer(item.requestId, true)}>Allow</Button>
+      </>}
+    >
+      {item.state === 'pending' ? <ToolBody item={asTool} /> : null}
+    </ThreadApprovalCard>
+  )
+})
 
 export const ThreadToolRow = memo(function ThreadToolRow({ item }: { item: ToolItem }): React.JSX.Element {
   const [open, setOpen] = useState(false)

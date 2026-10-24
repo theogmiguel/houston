@@ -113,7 +113,7 @@ import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { ThreadIdleStory, ThreadLongStory, ThreadStatesStory, ThreadStoppedStory, ThreadStreamingStory, ThreadToolsStory } from './threadStories'
+import { ThreadApprovalStory, ThreadIdleStory, ThreadLongStory, ThreadStatesStory, ThreadStoppedStory, ThreadStreamingStory, ThreadToolsStory } from './threadStories'
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
@@ -577,6 +577,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'panes/thread-stopped': () => <ThreadStoppedStory />,
   'panes/thread-tools': () => <ThreadToolsStory />,
   'panes/thread-long': () => <ThreadLongStory />,
+  'panes/thread-approval': () => <ThreadApprovalStory />,
   'panes/limited': () => <PaneLimitedStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,

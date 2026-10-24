@@ -21,6 +21,21 @@ function events(kinds: ThreadEventKind[]): ThreadEvent[] {
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 
 describe('buildThreadItems', () => {
+  it('folds a permission request and its resolution into one approval row', () => {
+    const items = buildThreadItems(events([
+      { type: 'tool_call', tool_use_id: 't1', name: 'Bash', input: '{"command":"ls"}', truncated: false },
+      { type: 'approval_request', request_id: 'r1', tool_use_id: 't1', tool_name: 'Bash', input: '{"command":"ls"}', truncated: false },
+      { type: 'approval_request', request_id: 'r2', tool_use_id: 't2', tool_name: 'Write', input: '{}', truncated: true },
+      { type: 'approval_resolved', request_id: 'r1', decision: 'denied', reason: 'not now' },
+      { type: 'approval_resolved', request_id: 'unknown', decision: 'allowed', reason: null }
+    ]))
+    expect(items.slice(1)).toEqual([
+      { kind: 'approval', key: '2', requestId: 'r1', name: 'Bash', input: '{"command":"ls"}', inputTruncated: false, state: 'denied', reason: 'not now' },
+      { kind: 'approval', key: '3', requestId: 'r2', name: 'Write', input: '{}', inputTruncated: true, state: 'pending', reason: null }
+    ])
+    expect(sameThreadItem(items[1]!, { ...items[1]!, state: 'allowed' } as ThreadItem)).toBe(false)
+  })
+
   it('appends live deltas to one streaming block per message', () => {
     const items = buildThreadItems(events([{ type: 'user_message', text: 'hi' }, delta('m1', 'Hel'), delta('m1', 'lo')]))
     expect(items).toEqual([

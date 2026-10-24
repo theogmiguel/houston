@@ -6,6 +6,9 @@ export interface ToolResultView {
   truncated: boolean
 }
 
+/** A permission request's state: `withdrawn` when Claude stopped waiting or Houston restarted. */
+export type ApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
+
 export type ThreadItem =
   | { kind: 'user'; key: string; text: string }
   | { kind: 'assistant'; key: string; text: string; streaming: boolean; truncated: boolean }
@@ -13,12 +16,14 @@ export type ThreadItem =
   | { kind: 'notice'; key: string; text: string }
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
+  | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; state: ApprovalState; reason: string | null }
 
 // Folds the event log into rows. Deltas no `assistant_message` superseded stay one row
 // per message; a turn end freezes them: the partial answer a Stop leaves behind.
 export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
   const items: ThreadItem[] = []
   const tools = new Map<string, number>()
+  const approvals = new Map<string, number>()
   let open: { messageId: string; index: number } | null = null
   const settle = (): void => {
     for (const at of tools.values()) {
@@ -88,6 +93,17 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
         freeze()
         items.push({ kind: 'notice', key, text: kind.text })
         break
+      case 'approval_request':
+        freeze()
+        approvals.set(kind.request_id, items.length)
+        items.push({ kind: 'approval', key, requestId: kind.request_id, name: kind.tool_name, input: kind.input, inputTruncated: kind.truncated, state: 'pending', reason: null })
+        break
+      case 'approval_resolved': {
+        const at = approvals.get(kind.request_id)
+        const item = at === undefined ? undefined : items[at]
+        if (item?.kind === 'approval' && at !== undefined) items[at] = { ...item, state: kind.decision, reason: kind.reason ?? null }
+        break
+      }
     }
   }
   return items
@@ -113,6 +129,10 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
     }
     case 'stopped':
       return true
+    case 'approval': {
+      const other = b as typeof a
+      return a.requestId === other.requestId && a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.state === other.state && a.reason === other.reason
+    }
   }
 }
 

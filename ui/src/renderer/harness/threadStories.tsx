@@ -155,6 +155,20 @@ export function ThreadToolsStory(): React.JSX.Element {
   return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={TOOL_HEAVY} info={threadInfo({ title: 'Notes file' })} expandTools={3} /></div>
 }
 
+const APPROVALS: ThreadEventKind[] = [
+  user('Clean the build output and regenerate the protocol types.'),
+  call('a1', 'Write', { file_path: 'notes.txt', content: 'draft' }),
+  { type: 'approval_request', request_id: 'r1', tool_use_id: 'a1', tool_name: 'Write', input: JSON.stringify({ file_path: 'notes.txt', content: 'draft' }), truncated: false },
+  { type: 'approval_resolved', request_id: 'r1', decision: 'denied', reason: 'Not that file.' },
+  result('a1', 'Not that file.', true),
+  call('a2', 'Bash', { command: 'rm -rf ui/out && bash scripts/gen-protocol-types.sh', description: 'Remove the build output and regenerate types' }),
+  { type: 'approval_request', request_id: 'r2', tool_use_id: 'a2', tool_name: 'Bash', input: JSON.stringify({ command: 'rm -rf ui/out && bash scripts/gen-protocol-types.sh', description: 'Remove the build output and regenerate types' }), truncated: false }
+]
+
+export function ThreadApprovalStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={APPROVALS} info={threadInfo({ status: 'needs-input', title: 'Build cleanup', permission_mode: 'default' })} /></div>
+}
+
 /** One long thread, for measuring the rendered DOM against the row window. */
 export function ThreadLongStory(): React.JSX.Element {
   const events = React.useMemo(() => Array.from({ length: 1000 }, (_, i) => i % 2 === 0 ? user(`Question ${i / 2 + 1}`) : said(`l${i}`, `Answer ${(i + 1) / 2} with **some** Markdown.`)), [])
