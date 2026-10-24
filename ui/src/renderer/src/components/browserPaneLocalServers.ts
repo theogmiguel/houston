@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { HoustonClient } from '../houston/client'
 import type { LocalServer } from '../houston/generated/LocalServer'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
+import { useWindowParked } from '../windowParked'
 
 type LocalServerReply = Extract<ServerMsg, { type: 'workspace_local_servers' }>
 
@@ -20,9 +21,10 @@ export function useBrowserPaneLocalServers(
   gridHidden: boolean
 ): { servers: LocalServer[]; unsupported: string | null; truncated: boolean } {
   const [reply, setReply] = useState<LocalServerReply | null>(null)
+  const windowHidden = useWindowParked()
 
   useEffect(() => {
-    if (!client || !fresh || hiddenByExpand || gridHidden) return
+    if (!client || !fresh || hiddenByExpand || gridHidden || windowHidden) return
     let signature: string | null = null
     let identical = 0
     let timer = 0
@@ -44,7 +46,7 @@ export function useBrowserPaneLocalServers(
       unsubscribe()
       window.clearTimeout(timer)
     }
-  }, [client, fresh, gridHidden, hiddenByExpand, workspaceDir])
+  }, [client, fresh, gridHidden, hiddenByExpand, windowHidden, workspaceDir])
 
   const matching = reply?.workspace === workspaceDir
   return {

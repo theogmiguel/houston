@@ -33,6 +33,10 @@ const MENU_ID_GROUP_PREFIX: &str = "tray:group:";
 const MENU_ID_SESSION_PREFIX: &str = "tray:session:";
 
 pub const EVENT_FOCUS_PANE: &str = "tray://focus-pane";
+/// WebView2 keeps reporting the page visible while its window is hidden, so the
+/// renderer learns from this event (`true` on a hide to the tray, `false` on show)
+/// when to park its polling.
+pub const EVENT_WINDOW_HIDDEN: &str = "tray://window-hidden";
 
 static QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -162,6 +166,9 @@ pub(crate) fn show_main_window(app: &AppHandle) {
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();
+    if let Err(err) = window.emit_to("main", EVENT_WINDOW_HIDDEN, false) {
+        eprintln!("houston-tauri: could not tell the renderer the window is shown ({err}); its polls resume on focus");
+    }
 }
 
 pub fn quit(app: &AppHandle) {

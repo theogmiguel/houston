@@ -392,6 +392,7 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity, stackFullMessage } from "./paneCaps";
+import { windowParked } from "./windowParked";
 import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/ui/Icon";
 import {
@@ -2036,7 +2037,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (conn.kind !== "ready") return;
     conn.client.hostInfoGet();
-    const timer = setInterval(() => conn.client.hostInfoGet(), 30_000);
+    const timer = setInterval(() => {
+      if (!windowParked()) conn.client.hostInfoGet();
+    }, 30_000);
     return () => clearInterval(timer);
   }, [conn]);
 

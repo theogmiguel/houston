@@ -129,6 +129,8 @@ pub fn window_toggle_fullscreen<R: Runtime>(window: Window<R>) -> Result<(), Str
 trait FocusOps {
     fn show(&self) -> Result<(), String>;
     fn set_focus(&self) -> Result<(), String>;
+    /// Unparks the renderer's background polls: WebView2 reports a hidden window visible.
+    fn announce_shown(&self);
 }
 
 impl<R: Runtime> FocusOps for Window<R> {
@@ -149,10 +151,23 @@ impl<R: Runtime> FocusOps for Window<R> {
             )
         })
     }
+
+    fn announce_shown(&self) {
+        use tauri::Emitter;
+        if let Err(err) = self.emit_to(self.label(), crate::tray::EVENT_WINDOW_HIDDEN, false) {
+            eprintln!(
+                "houston-tauri: could not tell window {:?} it is shown ({err}); its polls resume on focus",
+                self.label()
+            );
+        }
+    }
 }
 
+/// Announces the show before focusing: Windows may refuse focus to a background
+/// process, and then no `focus` event would unpark the renderer either.
 fn focus_via<W: FocusOps>(window: &W) -> Result<(), String> {
     window.show()?;
+    window.announce_shown();
     window.set_focus()
 }
 
@@ -529,15 +544,22 @@ mod tests {
             self.calls.borrow_mut().push("set_focus");
             Ok(())
         }
+
+        fn announce_shown(&self) {
+            self.calls.borrow_mut().push("announce_shown");
+        }
     }
 
     #[test]
-    fn focus_via_calls_show_then_set_focus_in_order() {
+    fn focus_via_shows_announces_then_focuses_in_order() {
         let spy = FocusSpy {
             calls: std::cell::RefCell::new(Vec::new()),
         };
         focus_via(&spy).expect("focus_via must succeed");
-        assert_eq!(spy.calls.into_inner(), vec!["show", "set_focus"]);
+        assert_eq!(
+            spy.calls.into_inner(),
+            vec!["show", "announce_shown", "set_focus"]
+        );
     }
 
     #[test]
@@ -548,6 +570,25 @@ mod tests {
         assert!(
             response.is_ok(),
             "window_focus must succeed against the mock runtime: {response:?}"
+        );
+    }
+
+    #[test]
+    fn window_focus_tells_the_renderer_the_window_is_shown() {
+        use tauri::Listener;
+        let window =
+            build_mock_window(|b| b.invoke_handler(tauri::generate_handler![window_focus]));
+        let (shown, heard) = std::sync::mpsc::channel();
+        window.listen(crate::tray::EVENT_WINDOW_HIDDEN, move |event| {
+            let _ = shown.send(event.payload().to_string());
+        });
+        invoke(&window, "window_focus", serde_json::json!({})).expect("window_focus resolves");
+        assert_eq!(
+            heard
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .as_deref(),
+            Ok("false"),
+            "a window focused by command must unpark the renderer's polls"
         );
     }
 
