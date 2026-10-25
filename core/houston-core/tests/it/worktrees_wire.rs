@@ -204,3 +204,97 @@ async fn a_daemon_managed_worktree_initialises_submodules_and_reports_a_failure(
         warnings[0]
     );
 }
+
+/// A daemon against a throwaway home, so the Claude history probe reads a bucket the
+/// test planted instead of the account's real `~/.claude/projects`.
+fn history_daemon(
+    home: &Path,
+) -> (
+    std::sync::Arc<houston_core::daemon::Daemon>,
+    tempfile::TempDir,
+) {
+    let state = houston_core::fixture_dirs::tempdir_outside_git();
+    let env = crate::common::capture_env()
+        .with("HOME", Some(home))
+        .with("USERPROFILE", Some(home))
+        .without("CLAUDE_CONFIG_DIR");
+    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
+        "slug-history-wire".into(),
+        state.path().join("test.db"),
+        env,
+    ))
+    .unwrap();
+    (daemon, state)
+}
+
+/// Claude names its history bucket after the plain cwd it was started in.
+fn plant_history(home: &Path, dir: &Path) -> PathBuf {
+    let bucket =
+        home.join(".claude")
+            .join("projects")
+            .join(houston_core::harness::digest::claude_slug(Path::new(
+                &houston_core::launch::brief_display_path(dir),
+            )));
+    std::fs::create_dir_all(&bucket).unwrap();
+    std::fs::write(bucket.join("session.jsonl"), "{}\n").unwrap();
+    bucket
+}
+
+#[test]
+fn a_reused_slug_whose_history_survives_is_created_under_a_fresh_name() {
+    let f = fixture();
+    let home = tempfile::tempdir().unwrap();
+    let (daemon, state) = history_daemon(home.path());
+
+    let first = daemon.git_worktree_create(&f.repo, "demo", None).unwrap().0;
+    let bucket = plant_history(home.path(), &first.path);
+    daemon
+        .git_worktree_remove(&f.repo, &first.path, false)
+        .unwrap();
+    run_git(&f.repo, &["branch", "-D", "houston/demo"]);
+
+    let (second, notes) = daemon.git_worktree_create(&f.repo, "demo", None).unwrap();
+    let expected = first.path.with_file_name("demo-2");
+    assert_eq!(
+        second.path, expected,
+        "the fresh name must spend a new history bucket"
+    );
+    assert_eq!(second.branch.as_deref(), Some("houston/demo-2"));
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("demo") && note.contains("demo-2")),
+        "the result must name the collision: {notes:?}"
+    );
+    assert!(
+        bucket.is_dir(),
+        "the old checkout's history stays where it was"
+    );
+    drop(daemon);
+    drop(state);
+}
+
+#[test]
+fn a_slug_whose_history_is_gone_is_reused_unchanged() {
+    let f = fixture();
+    let home = tempfile::tempdir().unwrap();
+    let (daemon, state) = history_daemon(home.path());
+
+    let first = daemon
+        .git_worktree_create(&f.repo, "fresh", None)
+        .unwrap()
+        .0;
+    daemon
+        .git_worktree_remove(&f.repo, &first.path, false)
+        .unwrap();
+    run_git(&f.repo, &["branch", "-D", "houston/fresh"]);
+
+    let (second, notes) = daemon.git_worktree_create(&f.repo, "fresh", None).unwrap();
+    assert_eq!(second.path, first.path, "a clean path reuses the slug");
+    assert!(
+        notes.iter().all(|note| !note.contains("fresh")),
+        "no collision is named when no history survives: {notes:?}"
+    );
+    drop(daemon);
+    drop(state);
+}
