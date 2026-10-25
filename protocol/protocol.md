@@ -1,4 +1,4 @@
-# Wire protocol v153
+# Wire protocol v154
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -108,6 +108,7 @@ failure not given a typed refusal comes back as `error`.
 | `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank; the same limit applies to orchestration deliveries) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. Sent at once during a turn; Claude queues it |
 | `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
 | `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v151: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones; the refusal starts `thread_approve refused for session <id>`. `message` is cut at 4 KiB |
+| `thread_answer` | `session`, `request_id`, `answers?: QuestionAnswer[]` (absent or `null` skips the question) | v154: `thread_events` (bcast) with `question_resolved`; the held `AskUserQuestion` call returns to Claude as an allow whose `updatedInput` is Claude's input plus `answers` (question text to the chosen labels and the user's own text, joined with `, `), or, for a skip, as a deny reading "The user skipped the question.". Refused by name for a terminal session and for a `request_id` that is not a held question; refused when an answer names no question of the request, leaves a question unanswered, answers one twice, chooses a label that is not an option, chooses more than one answer for a single-choice question, or types more than `THREAD_QUESTION_OTHER_MAX_BYTES` (4 KiB). The refusal starts `thread_answer refused for session <id>` and the question stays held |
 | `thread_set_permission_mode` | `session`, `mode: ThreadPermissionMode` | v151: `session_updated` (bcast) with the new `permission_mode`; restarts a running process with the mode's flags and `--resume`, then records the mode for Restart and restore. Refused while the session is working or waiting for input (naming the status), while a turn is open or while a permission request waits (naming the cause); `auto` is refused for a model that cannot run it. Refused by name for a terminal session. `permission_mode` also changes, with `session_updated`, when Claude reports another mode in `system/init` or `system/status` (for example after ExitPlanMode) |
 | `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v150: `thread_history` (direct), oldest first, echoing `before_seq`. A refusal is an `error` with `context: "session:<id>"` whose message starts `thread_history refused for session <id>` and names the cause: a terminal session, an unknown session or a limit outside the range |
 | `session_set_view` | `session`, `view: SessionView` | v152: moves a Claude session's conversation to the other view with an exact-ID respawn (the reply is the respawn's: `session_removed` for the old id and `session_created` for its replacement, which keeps its name, children and resume handle; a thread keeps its history). Going to `thread` stores one `notice` counting the `Stop` hooks the session reported in terminal view, when there were any. An `error` with `context: "session:<id>"` refuses, by name: another agent, an ACP slug or custom command, the view the session already has, a status of Working, Starting or Needs input, or an open thread turn |
@@ -676,7 +677,18 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    is cut at `THREAD_APPROVAL_INPUT_MAX_BYTES` (64 KiB) and `input_bytes` is the
                    whole input's size; names and ids are cut at 256 bytes) |
                    approval_resolved{request_id, decision: ApprovalDecision, reason?} (v151;
-                   `reason` is the denial message or why nobody answered).
+                   `reason` is the denial message or why nobody answered) |
+                   question_request{request_id, tool_use_id, questions: ThreadQuestion[],
+                   truncated} (v154: Claude's `AskUserQuestion`, held like an approval; a header
+                   or option description is cut at `THREAD_QUESTION_TEXT_MAX_BYTES` (2 KiB) and
+                   `truncated` says so; a longer question or label, more than
+                   `THREAD_QUESTIONS_MAX` (8) questions or `THREAD_QUESTION_OPTIONS_MAX` (16)
+                   options, a repeated question or label, or a missing field makes the input
+                   malformed, and Claude is told to ask in its reply instead) |
+                   question_resolved{request_id, outcome: QuestionOutcome, answers:
+                   QuestionAnswer[], reason?} (v154: `answers` are what the user chose, one per
+                   question, and are empty unless `answered`; `reason` says why nobody
+                   answered).
                    Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB,
                    reasoning 64 KiB; `truncated` says a cap applied
 ToolSummary        kind: ToolKind, target (path, command, pattern, URL or `server · tool`, cut at
@@ -687,6 +699,12 @@ ToolKind           read | search | web | command | edit | write | todo | questio
 TurnOutcome        completed | interrupted | error
 ApprovalDecision   allowed | denied | withdrawn (Claude ended the call, or Houston restarted,
                    before an answer; the tool did not run)
+ThreadQuestion     question, header, options: ThreadQuestionOption[], multi_select
+ThreadQuestionOption label, description
+QuestionAnswer     question (the question's text), selected (option labels), other? (the user's
+                   own text)
+QuestionOutcome    answered | skipped | denied (Stop, Kill, Close or the process's exit came
+                   first) | withdrawn (Claude ended the call, or Houston restarted, first)
 ThreadPermissionMode default | accept_edits | plan | auto | bypass (Claude's `--permission-mode`
                    default, acceptEdits, plan, auto, and `--dangerously-skip-permissions`)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
@@ -1453,6 +1471,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 154 | **Threads ask questions with choices.** `ThreadEventKind` gains `question_request` (`ThreadQuestion`, `ThreadQuestionOption`) and `question_resolved` (`QuestionOutcome`, `QuestionAnswer`). New `thread_answer` answers or skips a held question. Claims v154 after v153; renumber at merge. |
 | 153 | **Threads show their work log.** `ThreadEventKind` gains `reasoning` (stored, with duration and token estimate; any text cut at `THREAD_REASONING_MAX_BYTES`) and `reasoning_delta` (live only). `tool_call` gains `summary?: ToolSummary` (`ToolKind`, a target cut at `THREAD_TOOL_TARGET_MAX_BYTES`, edit line counts) computed before the input cap. `pane_read` of a thread adds no reasoning text. Claims v153 after v152; renumber at merge. |
 | 152 | **A conversation moves between thread and terminal views.** New `session_set_view {session, view}`, answered like a respawn and refused by name while the agent works. New `default_view_get {}` / `default_view_set {view}` and the `default_view {view}` broadcast. Claims v152 after PR 3's v151; renumber at merge. |
 | 151 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |

@@ -40,6 +40,10 @@ fn main() {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        if let Some(spec) = text.strip_prefix("askq:") {
+            ask_question(spec, &args, &conversation);
+            continue;
+        }
         if let Some(spec) = text.strip_prefix("ask:") {
             ask(spec, &args, &conversation);
             continue;
@@ -167,6 +171,47 @@ fn ask(spec: &str, args: &[String], conversation: &str) {
     );
     let (is_error, output) = match permission(args, tool, &tool_use_id, &input) {
         Ok(decision) if decision["behavior"] == "allow" => (false, format!("ran: {command}")),
+        Ok(decision) => (
+            true,
+            decision["message"].as_str().unwrap_or_default().to_string(),
+        ),
+        Err(error) => (true, format!("Error calling tool ({tool}): {error}")),
+    };
+    emit_value(json!({"type":"user","message":{"role":"user","content":[
+        {"type":"tool_result","tool_use_id":tool_use_id,"content":output,"is_error":is_error}]},
+        "parent_tool_use_id":null}));
+    result(conversation);
+}
+
+/// `askq:<json>`: `AskUserQuestion` with `<json>` as its input, asked of the prompt tool.
+/// The tool result reads the decision's `updatedInput.answers` as Claude Code does.
+fn ask_question(spec: &str, args: &[String], conversation: &str) {
+    let input: Value = serde_json::from_str(spec).expect("askq:<AskUserQuestion input JSON>");
+    let tool = "AskUserQuestion";
+    let tool_use_id = format!("toolu_askq_{}", std::process::id());
+    emit_value(
+        json!({"type":"assistant","message":{"id":"msg_askq","content":[
+        {"type":"tool_use","id":tool_use_id,"name":tool,"input":input}]},"parent_tool_use_id":null}),
+    );
+    let (is_error, output) = match permission(args, tool, &tool_use_id, &input) {
+        Ok(decision) if decision["behavior"] == "allow" => {
+            let answers = decision["updatedInput"]["answers"]
+                .as_object()
+                .map(|answers| {
+                    answers
+                        .iter()
+                        .map(|(question, answer)| {
+                            format!("{question:?}={:?}", answer.as_str().unwrap_or_default())
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            (
+                false,
+                format!("Your questions have been answered: {answers}. You can now continue with these answers in mind."),
+            )
+        }
         Ok(decision) => (
             true,
             decision["message"].as_str().unwrap_or_default().to_string(),

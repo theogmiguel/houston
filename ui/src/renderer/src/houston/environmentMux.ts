@@ -92,6 +92,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   thread_send: SESSION,
   thread_stop: SESSION,
   thread_approve: SESSION,
+  thread_answer: SESSION,
   thread_set_permission_mode: SESSION,
   thread_history: SESSION,
   session_list: 'list',

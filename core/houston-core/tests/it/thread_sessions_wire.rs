@@ -1607,7 +1607,7 @@ async fn tool_activity_and_late_permission_hooks_leave_approval_status_alone() {
 }
 
 #[tokio::test]
-async fn ask_user_question_is_answered_with_a_reply_instruction() {
+async fn a_malformed_ask_user_question_is_answered_with_a_reply_instruction() {
     let mut rig = Rig::new().await;
     let id = rig.thread().await;
     let events = rig.turn(id, "ask:AskUserQuestion:red or blue").await;
@@ -1621,7 +1621,37 @@ async fn ask_user_question_is_answered_with_a_reply_instruction() {
     assert!(is_error);
     assert_eq!(
         output,
-        "Ask the question in your reply; this thread cannot show choices yet."
+        "Ask the question in your reply; Houston cannot show it as choices: \"questions\" must be a non-empty array."
+    );
+}
+
+#[tokio::test]
+async fn thread_answer_is_refused_unless_it_names_a_held_question() {
+    let mut rig = Rig::new().await;
+    let thread = rig.thread().await;
+    let shell = rig.create("shell", "terminal").await.unwrap().id;
+    rig.send(json!({"type":"thread_answer","session":shell,"request_id":"q1"}))
+        .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.starts_with(&format!("thread_answer refused for session {shell}"))
+            && message.contains("view terminal"),
+        "{message}"
+    );
+    assert_eq!(
+        context.as_deref(),
+        Some(format!("session:{shell}").as_str())
+    );
+    rig.send(
+        json!({"type":"thread_answer","session":thread,"request_id":"q1",
+        "answers":[{"question":"Which colour?","selected":["Blue"]}]}),
+    )
+    .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.starts_with(&format!("thread_answer refused for session {thread}"))
+            && message.contains("no held question \"q1\""),
+        "{message}"
     );
 }
 

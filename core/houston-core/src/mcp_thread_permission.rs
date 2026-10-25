@@ -3,7 +3,7 @@
 //! card. Terminal panes never get it: Houston answers no permission prompt there.
 use std::sync::{Arc, Weak};
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::daemon::{Daemon, PermissionPrompt};
 use crate::mcp_creds::McpScope;
@@ -54,6 +54,16 @@ fn decision(answer: ApprovalAnswer, input: Value) -> Value {
         ApprovalAnswer::Allow => json!({ "behavior": "allow", "updatedInput": input }),
         ApprovalAnswer::Deny(message) => json!({ "behavior": "deny", "message": message }),
     }
+}
+
+/// The `updatedInput` that answers `AskUserQuestion`: Claude's own input plus `answers`,
+/// question text to answer text. Claude reads it as the user's choice.
+pub(crate) fn answered_input(input: &Value, answers: Map<String, Value>) -> Value {
+    let mut input = input.clone();
+    if let Some(fields) = input.as_object_mut() {
+        fields.insert("answers".into(), Value::Object(answers));
+    }
+    input
 }
 
 impl ToolProvider for ThreadPermissionTools {
@@ -136,6 +146,22 @@ mod tests {
         assert_eq!(
             decision(ApprovalAnswer::Deny("no".into()), input),
             json!({ "behavior": "deny", "message": "no" })
+        );
+    }
+
+    #[test]
+    fn answers_extend_the_question_input_as_the_cli_reads_them() {
+        let questions = json!([{"question":"Which colour do you prefer?","header":"Colour",
+            "multiSelect":false,"options":[{"label":"Blue","description":"Choose blue"}]}]);
+        let mut answers = Map::new();
+        answers.insert("Which colour do you prefer?".into(), json!("Blue"));
+        assert_eq!(
+            decision(
+                ApprovalAnswer::Allow,
+                answered_input(&json!({ "questions": questions }), answers)
+            ),
+            json!({"behavior":"allow","updatedInput":{"questions":questions,
+                "answers":{"Which colour do you prefer?":"Blue"}}})
         );
     }
 }
