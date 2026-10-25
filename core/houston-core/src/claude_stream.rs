@@ -41,33 +41,108 @@ pub const HEADLESS_COMMANDS: [&str; 11] = [
     "security-review",
 ];
 
-/// Never sent from a thread, even when listed as a skill: they change persistent CLI state
-/// or read the user's Claude configuration and transcripts.
-const NEVER_SENT: [&str; 10] = [
+/// Never sent from a thread, even when listed as a skill: they change persistent CLI state,
+/// bill, change consent, or read or edit Claude's own configuration and transcripts.
+const NEVER_SENT: [&str; 18] = [
     "model",
     "config",
     "login",
     "logout",
     "mcp",
     "doctor",
+    "effort",
+    "fast",
+    "ultrareview",
+    "extra-usage",
+    "design-consent",
+    "design-revoke",
     "permissions",
     "plugin",
     "plugins",
     "reload-plugins",
+    "fewer-permission-prompts",
+    "schedule",
+];
+
+/// Words in a skill or command name that say it edits Claude's settings, permissions or
+/// plugins; names are user- and plugin-provided, so no fixed list covers them.
+const NEVER_SENT_WORDS: [&str; 3] = ["config", "permission", "plugin"];
+
+/// The other built-ins the captures listed: unprobed or not headless. Before a thread's first
+/// `system/init` there is no list from Claude, so these stay terminal only by name.
+const TERMINAL_BUILTINS: [&str; 15] = [
+    "advisor",
+    "auto-mode-setup",
+    "autocompact",
+    "color",
+    "focus",
+    "goal",
+    "heapdump",
+    "import",
+    "insights",
+    "output-style",
+    "skill-doctor",
+    "team-onboarding",
+    "usage-credits",
+    "workflow-launch-exec",
+    "__remote-workflow",
 ];
 
 const COMMAND_NAME_MAX_BYTES: usize = 128;
+
+fn valid_command_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= COMMAND_NAME_MAX_BYTES
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+}
+
+fn never_sent(name: &str) -> bool {
+    NEVER_SENT.contains(&name) || NEVER_SENT_WORDS.iter().any(|word| name.contains(word))
+}
+
+/// Why a thread must not send `text` to Claude, or `None`. A message whose first word is a
+/// command Claude would run headless is refused when that command runs only in a terminal,
+/// and when it carries quoted selections, which would push the command off the first line.
+pub fn command_refusal(
+    text: &str,
+    has_excerpts: bool,
+    listed: Option<&ThreadCommandList>,
+) -> Option<String> {
+    let name = text.split_whitespace().next()?.strip_prefix('/')?;
+    if !valid_command_name(name) {
+        return None;
+    }
+    let known = |list: &[String]| list.iter().any(|known| known == name);
+    let terminal = never_sent(name)
+        || match listed {
+            Some(list) => known(&list.terminal_only),
+            None => TERMINAL_BUILTINS.contains(&name),
+        };
+    if terminal {
+        return Some(format!(
+            "/{name} runs only in a terminal pane; open this conversation there with /terminal to \
+             run it"
+        ));
+    }
+    let command = match listed {
+        Some(list) => known(&list.commands) || known(&list.skills),
+        None => HEADLESS_COMMANDS.contains(&name),
+    };
+    (has_excerpts && command).then(|| {
+        format!(
+            "/{name} is a command, and a command cannot carry quoted selections; remove them or \
+             send the command alone"
+        )
+    })
+}
 
 /// The names under `key` that a composer can show: bounded, deduplicated, in Claude's order.
 fn command_names(init: &Value, key: &str) -> Option<Vec<String>> {
     let mut names: Vec<String> = Vec::new();
     for name in init.get(key)?.as_array()?.iter().filter_map(Value::as_str) {
-        let valid = !name.is_empty()
-            && name.len() <= COMMAND_NAME_MAX_BYTES
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
-        if valid && !names.iter().any(|known| known == name) {
+        if valid_command_name(name) && !names.iter().any(|known| known == name) {
             names.push(name.to_string());
         }
         if names.len() == THREAD_COMMANDS_MAX {
@@ -77,13 +152,13 @@ fn command_names(init: &Value, key: &str) -> Option<Vec<String>> {
     Some(names)
 }
 
-/// Sorts `system/init`'s commands: its own `terminal_slash_commands` and `NEVER_SENT` stay in
-/// the terminal, skills are sent as `/name args`, and verified built-ins as text.
+/// Sorts `system/init`'s commands: its own `terminal_slash_commands` and the never-sent names
+/// stay in the terminal, skills are sent as `/name args`, and verified built-ins as text.
 fn command_list(init: &Value) -> Option<ThreadCommandList> {
     let all = command_names(init, "slash_commands")?;
     let skills = command_names(init, "skills").unwrap_or_default();
     let terminal = command_names(init, "terminal_slash_commands").unwrap_or_default();
-    let blocked = |name: &String| terminal.contains(name) || NEVER_SENT.contains(&name.as_str());
+    let blocked = |name: &String| terminal.contains(name) || never_sent(name);
     let sendable_skills: Vec<String> = skills.iter().filter(|n| !blocked(n)).cloned().collect();
     let commands: Vec<String> = all
         .iter()
@@ -255,6 +330,14 @@ impl ProviderAdapter for ClaudeStreamJson {
         }
         spec.args.extend(THREAD_FLAGS.map(Into::into));
         Ok(spec)
+    }
+
+    fn message_refusal(
+        &self,
+        message: &OutgoingMessage,
+        commands: Option<&ThreadCommandList>,
+    ) -> Option<String> {
+        command_refusal(&message.text, !message.excerpts.is_empty(), commands)
     }
 
     fn open(&self) -> Box<dyn ProviderStream> {
@@ -676,6 +759,10 @@ mod tests {
             "reload-plugins",
             "color",
             "focus",
+            "update-config",
+            "fewer-permission-prompts",
+            "plugin-authoring",
+            "schedule",
         ] {
             assert!(
                 !list.skills.iter().any(|s| s == never),
@@ -693,6 +780,48 @@ mod tests {
             list.commands.len() + list.skills.len() + list.terminal_only.len(),
             55,
             "every listed command lands in one group"
+        );
+    }
+
+    #[test]
+    fn a_thread_refuses_commands_that_must_not_run_headless() {
+        let listed = ThreadCommandList {
+            commands: vec!["compact".into()],
+            skills: vec!["code-review".into()],
+            terminal_only: vec!["advisor".into(), "insights".into()],
+        };
+        let refused = |text: &str, excerpts: bool, list: Option<&ThreadCommandList>| {
+            command_refusal(text, excerpts, list).unwrap_or_default()
+        };
+        for text in [
+            "/model claude-opus-5-5",
+            "  /doctor",
+            "/insights",
+            "/update-config x",
+        ] {
+            assert!(
+                refused(text, false, Some(&listed)).contains("runs only in a terminal pane"),
+                "{text}"
+            );
+        }
+        assert!(refused("/advisor", false, None).contains("/advisor runs only"));
+        assert!(refused("/ultrareview", false, None).contains("/ultrareview"));
+        for text in [
+            "/compact",
+            "/code-review src",
+            "hello /model",
+            "/etc/hosts is wrong",
+            "/",
+        ] {
+            assert_eq!(command_refusal(text, false, Some(&listed)), None, "{text}");
+        }
+        assert_eq!(command_refusal("/compact", false, None), None);
+        assert!(refused("/code-review", true, Some(&listed)).contains("cannot carry quoted"));
+        assert!(refused("/compact", true, None).contains("cannot carry quoted"));
+        assert_eq!(
+            command_refusal("/not-a-command look", true, Some(&listed)),
+            None,
+            "an unknown name is text to Claude"
         );
     }
 

@@ -25,6 +25,11 @@ fn main() {
         .find(|pair| pair[0] == "--session-id" || pair[0] == "--resume")
         .map(|pair| pair[1].clone())
         .unwrap_or_else(|| FIXTURE_SESSION.to_string());
+    // As Claude does for a conversation it does not have.
+    if args.iter().any(|arg| arg == "--resume") && conversation.starts_with("rejected-") {
+        eprintln!("No conversation found with session ID: {conversation}");
+        std::process::exit(1);
+    }
     let fixtures = std::env::var_os("HOUSTON_FAKE_CLAUDE_FIXTURES").map(PathBuf::from);
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {

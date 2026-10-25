@@ -192,6 +192,41 @@ async fn a_thread_opens_in_a_terminal_resuming_its_conversation() {
     rig.daemon.close(terminal.id).unwrap();
 }
 
+/// After `/clear` Claude holds a new session id. No hook names it here, so the id the stream
+/// reports is the resume handle: Open in terminal resumes the new conversation, never the
+/// cleared one, and a handle with no transcript still resumes.
+#[tokio::test]
+async fn after_clear_a_thread_opens_in_a_terminal_on_the_new_conversation() {
+    const AFTER_CLEAR: &str = "2211971a-3405-8c6b-d26e-809a0d13d0b8";
+    let mut rig = Rig::new().await;
+    let thread = rig.create("thread").await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || daemon.thread_send(thread.id, "replay:clear", false, &[]))
+        .await
+        .unwrap()
+        .unwrap();
+    wait_until("the post-clear id to become the resume handle", || {
+        rig.db()
+            .session_resume_handle(thread.id)
+            .ok()
+            .flatten()
+            .is_some_and(|(conversation, _)| conversation == AFTER_CLEAR)
+    })
+    .await;
+    wait_until("the thread to be idle", || {
+        rig.daemon.session_status(thread.id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+    let terminal = rig.switched(thread.id, "terminal").await;
+    let argv = rig
+        .launches()
+        .into_iter()
+        .rfind(|argv| !argv.iter().any(|arg| arg == "-p"))
+        .expect("a terminal launch of claude");
+    assert_eq!(arg_after(&argv, "--resume").as_deref(), Some(AFTER_CLEAR));
+    rig.daemon.close(terminal.id).unwrap();
+}
+
 #[tokio::test]
 async fn a_terminal_opens_as_a_thread_with_a_notice_for_its_terminal_turns() {
     let mut rig = Rig::new().await;

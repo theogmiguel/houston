@@ -6,7 +6,7 @@ import type { TurnOutcome } from "./TurnOutcome";
 
 export type ThreadEventKind = { "type": "user_message", text: string, delivery: MessageDelivery,
 /**
- * Terminal selections sent with `text`; Claude read them as fenced blocks before it.
+ * Terminal selections sent with `text`; Claude reads them as fenced blocks before it.
  */
 excerpts: Array<ThreadExcerpt>, } | { "type": "assistant_delta", message_id: string, text: string, } | { "type": "assistant_message", message_id: string, text: string, truncated: boolean, } | { "type": "tool_call", tool_use_id: string, name: string, input: string, truncated: boolean, } | { "type": "tool_result", tool_use_id: string, is_error: boolean, output: string, truncated: boolean, } | { "type": "turn_end", outcome: TurnOutcome, error?: string | null, } | { "type": "notice", text: string, } | { "type": "approval_request", request_id: string, tool_use_id: string, tool_name: string, input: string, truncated: boolean,
 /**

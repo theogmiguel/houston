@@ -3146,7 +3146,7 @@ impl Db {
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3, resume_from_stream = 0,
                 resume_agent = CASE WHEN ?2 IS NULL THEN NULL WHEN agent = 'shell' THEN detected_agent ELSE agent END,
                 resume_cwd = CASE WHEN ?2 IS NULL THEN NULL ELSE cwd END WHERE id = ?1",
             rusqlite::params![id, handle.map(|h| h.0), handle.and_then(|h| h.1)],

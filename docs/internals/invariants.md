@@ -527,6 +527,16 @@ handles; it does not perform per-pane Kill.
 Wake is stricter: it must resume the exact stored conversation and never falls back to a
 fresh CLI. A failed Wake remains resumable with the stored handle.
 
+Carve-out for structured sessions (threads): the session id the provider's documented
+stream reports (Claude's `system/init` and `result`) is the handle whenever it changes,
+so `/clear` and a thread without hooks resume the conversation the provider holds. Such a
+handle is marked while no hook has named its transcript, and the resume check skips only
+the transcript test for it; the folder binding and the profile checks still apply. A hook
+that names the same id supplies the transcript and clears the mark. A thread whose resume
+the provider refuses starts a new conversation once, with a notice naming the id; a
+terminal resume of a marked handle takes the fallback above. This does not apply to
+terminal panes, whose handle comes from hooks only.
+
 Routine and harness-review runs always start fresh, and orchestrated children cannot be
 respawned without their mission. Unsupported providers are refused by name in
 `launch::resume_args`. There is no transcript scan or history ledger; the handle lives

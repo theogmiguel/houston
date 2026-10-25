@@ -1625,7 +1625,7 @@ pub enum ThreadEventKind {
         text: String,
         #[serde(default)]
         delivery: MessageDelivery,
-        /// Terminal selections sent with `text`; Claude read them as fenced blocks before it.
+        /// Terminal selections sent with `text`; Claude reads them as fenced blocks before it.
         #[serde(default)]
         excerpts: Vec<ThreadExcerpt>,
     },
@@ -5587,7 +5587,8 @@ pub enum ServerMsg {
         /// Claude built-ins verified to run in a thread; sent as `/name` text.
         commands: Vec<String>,
         skills: Vec<String>,
-        /// Every other command Claude lists: offered only in a terminal pane.
+        /// Every other command Claude lists, and skills that edit its settings, permissions or
+        /// plugins: never sent from a thread; a message starting with one is refused by name.
         terminal_only: Vec<String>,
     },
     Scrollback {

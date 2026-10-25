@@ -121,7 +121,8 @@ before_seq?: number | null, events: Array<ThreadEvent>, has_more: boolean, } | {
  */
 commands: Array<string>, skills: Array<string>,
 /**
- * Every other command Claude lists: offered only in a terminal pane.
+ * Every other command Claude lists, and skills that edit its settings, permissions or
+ * plugins: never sent from a thread; a message starting with one is refused by name.
  */
 terminal_only: Array<string>, } | { "type": "scrollback", session: number, data: string, generation: number, replayed_bytes: number, bytes_seen: number, attempt: number, } | { "type": "attach_snapshot", session: number, generation: number, attempt: number, output_offset: number, format_version: number, state: string, } | { "type": "workspace_list", workspaces: Array<Workspace>, } | { "type": "workspace_focus", path: string, } | { "type": "workspace_local_servers", workspace: string, servers: Array<LocalServer>, unsupported: string | null, truncated: boolean, } | { "type": "session_resized", session: number, cols: number, rows: number, } | { "type": "session_renamed", session: number, title: string, title_source: TitleSource, } | { "type": "session_tags_set", session: number, tags: Array<number>, } | { "type": "session_resumable", session: number, resumable: boolean, } | { "type": "pr_watch_changed", session: number, watches: Array<PrWatchInfo>, } | { "type": "merge_queue", workspace: string, dir?: string | null, entries: Array<MergeQueueEntry>,
 /**

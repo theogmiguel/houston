@@ -148,12 +148,35 @@ impl ThreadHost for DaemonThreadHost {
         *last = Some(list);
     }
 
+    fn stored_commands(&self, session: u32) -> Option<ThreadCommandList> {
+        let daemon = self.daemon.upgrade()?;
+        let mut last = self.commands.lock().expect("thread commands lock");
+        if last.is_none() {
+            *last = daemon.db.thread_commands(session).unwrap_or_else(|error| {
+                tracing::warn!("reading session {session}'s thread commands: {error:#}");
+                None
+            });
+        }
+        last.clone()
+    }
+
     fn title_reported(&self, session: u32, title: &str) {
         let Some(daemon) = self.daemon.upgrade() else {
             return;
         };
         if let Ok(live) = daemon.get(session) {
             daemon.name_pane_from_cli_title(session, &live, title);
+        }
+    }
+
+    fn conversation_reported(&self, session: u32, conversation: &str) {
+        if let Some(daemon) = self.daemon.upgrade() {
+            if let Err(error) = daemon.adopt_thread_conversation(session, conversation) {
+                tracing::warn!(
+                    "recording session {session}'s conversation {conversation} as its resume \
+                     handle: {error:#}"
+                );
+            }
         }
     }
 
@@ -335,6 +358,7 @@ impl Daemon {
         excerpts: &[proto::ThreadExcerpt],
     ) -> Result<()> {
         ensure_excerpts(id, "thread_send", text, excerpts)?;
+        self.ensure_thread_command(id, "thread_send", text, excerpts)?;
         let handle = self.thread_message_target(id, "thread_send")?;
         if steer {
             handle.send_steered(text, excerpts)
@@ -561,17 +585,67 @@ impl Daemon {
 
     pub fn thread_queue_edit(&self, id: u32, message: &str, text: &str) -> Result<()> {
         self.ensure_thread_session(id, "thread_queue_edit")?;
-        ensure_message_text(id, "thread_queue_edit", text)?;
-        let items = self
-            .db
-            .thread_queue_edit(id, message, text)?
-            .ok_or_else(|| {
-                anyhow!(
+        let not_queued = || {
+            anyhow!(
                 "thread_queue_edit refused for session {id}: message {message:?} is not in its \
                  queue; it was sent or removed"
             )
-            })?;
+        };
+        let excerpts = self
+            .db
+            .thread_queue(id)?
+            .into_iter()
+            .find(|row| row.id == message)
+            .ok_or_else(not_queued)?
+            .excerpts;
+        ensure_excerpts(id, "thread_queue_edit", text, &excerpts)?;
+        self.ensure_thread_command(id, "thread_queue_edit", text, &excerpts)?;
+        let items = self
+            .db
+            .thread_queue_edit(id, message, text)?
+            .ok_or_else(not_queued)?;
         self.broadcast_thread_queue(id, items);
+        Ok(())
+    }
+
+    /// Refuses, by name, a message that would make Claude run a command that must not run
+    /// from a thread (`claude_stream::command_refusal`), using the commands it last reported.
+    pub(crate) fn ensure_thread_command(
+        &self,
+        id: u32,
+        verb: &str,
+        text: &str,
+        excerpts: &[proto::ThreadExcerpt],
+    ) -> Result<()> {
+        let listed = self.db.thread_commands(id)?;
+        match crate::claude_stream::command_refusal(text, !excerpts.is_empty(), listed.as_ref()) {
+            Some(reason) => bail!("{verb} refused for session {id}: {reason}"),
+            None => Ok(()),
+        }
+    }
+
+    /// The session id Claude's stream reports becomes the resume handle that Restart, restore,
+    /// a view switch and a handoff use, so `/clear` and a thread without hooks resume it. A
+    /// hook that reported a transcript for the same id supplies it.
+    fn adopt_thread_conversation(&self, id: u32, conversation: &str) -> Result<()> {
+        let held = self.db.session_resume_handle(id)?;
+        if let Some((current, transcript)) = &held {
+            if current == conversation
+                && (transcript.is_some() || self.db.session_resume_from_stream(id)?)
+            {
+                return Ok(());
+            }
+        }
+        let (transcript, native) = self.db.session_transcript_link(id)?;
+        let transcript = transcript.filter(|_| native.as_deref() == Some(conversation));
+        self.db
+            .set_session_stream_resume_handle(id, conversation, transcript.as_deref())?;
+        if held.is_none() {
+            self.broadcast_control(&proto::ServerMsg::SessionResumable {
+                session: id,
+                resumable: true,
+            });
+        }
         Ok(())
     }
 

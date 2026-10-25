@@ -265,6 +265,9 @@ impl Daemon {
         };
         let text = text.trim();
         anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
+        if self.session_view(target) == proto::SessionView::Thread {
+            self.ensure_thread_command(target, "pane_prompt", text, &[])?;
+        }
         let receipt = MessageReceipt::new(
             caller,
             key.map(str::to_string),

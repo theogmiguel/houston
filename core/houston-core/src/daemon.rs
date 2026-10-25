@@ -10813,7 +10813,11 @@ impl Daemon {
                 cwd.display()
             ));
         }
-        if crate::launch::resume_needs_transcript(agent) {
+        // A handle a thread's stream reported has no transcript until a hook names one; the
+        // early-exit fallback covers a conversation the CLI no longer has.
+        let from_stream =
+            transcript.is_none() && self.db.session_resume_from_stream(old_id).unwrap_or(false);
+        if crate::launch::resume_needs_transcript(agent) && !from_stream {
             let Some(transcript) = transcript else {
                 return Err(format!(
                     "no transcript was reported for conversation {conversation}"
@@ -10948,8 +10952,16 @@ impl Daemon {
             }
             return;
         }
+        let conversation = self
+            .db
+            .session_resume_handle(id)
+            .ok()
+            .flatten()
+            .map_or_else(String::new, |(conversation, _)| {
+                format!(", so conversation {conversation} was not resumed")
+            });
         let notice = format!(
-            "Started a fresh CLI: the resumed agent exited with {code} within {} s",
+            "Started a fresh CLI: the resumed agent exited with {code} within {} s{conversation}",
             RESUME_EARLY_EXIT.as_secs()
         );
         tracing::info!("session {id}: {notice}");

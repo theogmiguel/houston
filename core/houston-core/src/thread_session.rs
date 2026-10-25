@@ -62,7 +62,14 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn permission_mode_reported(&self, session: u32, mode: ThreadPermissionMode);
     /// The provider listed its commands; it does so at the start of every turn.
     fn commands_reported(&self, session: u32, list: ThreadCommandList);
+    /// The commands last reported, kept across processes and restarts.
+    fn stored_commands(&self, _session: u32) -> Option<ThreadCommandList> {
+        None
+    }
     fn title_reported(&self, session: u32, title: &str);
+    /// The stream named the conversation the provider now holds, for the first time in this
+    /// runtime or after it changed (`/clear`): the session's resume handle.
+    fn conversation_reported(&self, _session: u32, _conversation: &str) {}
     /// Appends `text` and its excerpts to the session's queue as `queued`. A host without a
     /// queue refuses.
     fn queue_push(&self, session: u32, _text: &str, _excerpts: &[ThreadExcerpt]) -> Result<()> {
@@ -127,6 +134,15 @@ pub trait ProviderAdapter: Send + Sync + 'static {
     ) -> Result<ProcessSpec>;
     /// One codec per process: decoders keep per-process state (block indices, request ids).
     fn open(&self) -> Box<dyn ProviderStream>;
+    /// Why this message must not reach the provider from a thread, such as a command that
+    /// runs only in its terminal interface; `commands` is the list it last reported.
+    fn message_refusal(
+        &self,
+        _message: &OutgoingMessage,
+        _commands: Option<&ThreadCommandList>,
+    ) -> Option<String> {
+        None
+    }
 }
 
 pub trait ProviderStream: Send {
@@ -489,6 +505,10 @@ struct HandleState {
     close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
     partial: Option<(String, String)>,
+    /// The conversation last handed to `ThreadHost::conversation_reported`.
+    reported_conversation: Option<String>,
+    /// The conversation the running process was started to resume, until the stream names it.
+    unconfirmed_resume: Option<String>,
 }
 
 impl HandleState {
@@ -576,6 +596,8 @@ impl StructuredRuntime {
                 closed: false,
                 close_cause: None,
                 partial: None,
+                reported_conversation: None,
+                unconfirmed_resume: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
             outbox: Arc::clone(&outbox),
@@ -858,7 +880,7 @@ impl StructuredRuntime {
     /// Sends `text` at once while no turn is open and no message is queued; otherwise it
     /// joins the queue. Held messages wait for the user, so they do not hold it back.
     pub fn send(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
-        self.check_size(text, excerpts)?;
+        self.admit(text, excerpts)?;
         let pending = {
             let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.open_state()?;
@@ -873,7 +895,7 @@ impl StructuredRuntime {
 
     /// Sends `text` ahead of the queue, stopping an open turn first.
     pub fn send_steered(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
-        self.check_size(text, excerpts)?;
+        self.admit(text, excerpts)?;
         let pending = {
             let op = self.op.lock().expect("thread operation lock");
             let open = self.open_state()?.turn_open;
@@ -941,7 +963,7 @@ impl StructuredRuntime {
     /// only while no turn is open and nothing is queued, so the user's queued messages go
     /// first. A refusal leaves it to its caller, which retries once the thread is idle.
     pub fn deliver_now(self: &Arc<Self>, text: &str) -> Result<()> {
-        self.check_size(text, &[])?;
+        self.admit(text, &[])?;
         let pending = {
             let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.open_state()?;
@@ -972,6 +994,25 @@ impl StructuredRuntime {
             Ok(waiting) => Some(format!("{waiting} queued message(s) of the user go first")),
             Err(error) => Some(format!("its queue cannot be read: {error:#}")),
         }
+    }
+
+    /// Whether the message may go to the provider: within the size limit, composed, and not
+    /// a command the adapter refuses. Every delivery checks it again before it writes.
+    fn admit(&self, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.check_size(text, excerpts)?;
+        let message = OutgoingMessage {
+            text: text.to_string(),
+            excerpts: excerpts.to_vec(),
+            delivery: MessageDelivery::Direct,
+        };
+        let commands = self.host.stored_commands(self.session);
+        if let Some(reason) = self.adapter.message_refusal(&message, commands.as_ref()) {
+            bail!(
+                "message refused for thread session {}: {reason}",
+                self.session
+            );
+        }
+        Ok(())
     }
 
     /// The message as the provider reads it, excerpts included, fits `THREAD_USER_MESSAGE_MAX_BYTES`.
@@ -1027,14 +1068,17 @@ impl StructuredRuntime {
             excerpts: excerpts.to_vec(),
             delivery,
         };
-        let prepared = self.ensure_process(state).and_then(|process| {
-            let line = process
-                .stream
-                .lock()
-                .expect("thread stream lock")
-                .user_message(&message)?;
-            Ok((process, line))
-        });
+        let prepared = self
+            .admit(text, excerpts)
+            .and_then(|()| self.ensure_process(state))
+            .and_then(|process| {
+                let line = process
+                    .stream
+                    .lock()
+                    .expect("thread stream lock")
+                    .user_message(&message)?;
+                Ok((process, line))
+            });
         let (process, line) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -1291,6 +1335,10 @@ impl StructuredRuntime {
             return Ok(Arc::clone(process));
         }
         state.generation += 1;
+        state.unconfirmed_resume = match &state.conversation {
+            Some(Conversation::Resume(id)) => Some(id.clone()),
+            _ => None,
+        };
         let (process, stdout, stderr) = ThreadProcess::spawn(
             self.adapter.as_ref(),
             state.conversation.as_ref(),
@@ -1350,6 +1398,7 @@ impl StructuredRuntime {
 
     fn on_decoded(self: &Arc<Self>, generation: u64, mapped: Decoded) {
         let mut reported_mode = None;
+        let mut reported_conversation = None;
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
@@ -1362,6 +1411,11 @@ impl StructuredRuntime {
             }
             // Resume only once the stream shows the provider holds the conversation.
             if let Some(id) = mapped.conversation {
+                state.unconfirmed_resume = None;
+                if state.reported_conversation.as_deref() != Some(id.as_str()) {
+                    state.reported_conversation = Some(id.clone());
+                    reported_conversation = Some(id.clone());
+                }
                 state.conversation = Some(Conversation::Resume(id));
             } else if mapped.turn_end.is_some() {
                 if let Some(Conversation::New(id)) = &state.conversation {
@@ -1382,6 +1436,9 @@ impl StructuredRuntime {
         }
         if let Some(mode) = reported_mode {
             self.host.permission_mode_reported(self.session, mode);
+        }
+        if let Some(id) = reported_conversation {
+            self.host.conversation_reported(self.session, &id);
         }
         if let Some(list) = mapped.commands {
             self.host.commands_reported(self.session, list);
@@ -1434,6 +1491,7 @@ impl StructuredRuntime {
             true,
         );
         let code = process.end_tree(false);
+        let exited_with_error = code != Some(0);
         self.host.process_gone(self.session);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
@@ -1441,14 +1499,34 @@ impl StructuredRuntime {
             |code| format!("exit code {code}"),
         );
         let provider = process.provider;
-        let mut events = self.state.lock().expect("thread state lock").end_open_turn(
-            TurnOutcome::Error,
-            Some(format!("{provider} exited during the turn ({code})")),
-        );
+        let (mut events, rejected) = {
+            let mut state = self.state.lock().expect("thread state lock");
+            let events = state.end_open_turn(
+                TurnOutcome::Error,
+                Some(format!("{provider} exited during the turn ({code})")),
+            );
+            // A resume the provider refused would fail again on every message: the next
+            // process starts a new conversation instead, once, and says so.
+            let rejected = state
+                .unconfirmed_resume
+                .take()
+                .filter(|_| exited_with_error);
+            if rejected.is_some() {
+                state.conversation = None;
+            }
+            (events, rejected)
+        };
+        let next = match &rejected {
+            Some(id) => format!(
+                "{provider} could not resume conversation {id}; the next message starts a new \
+                 conversation."
+            ),
+            None => "the next message starts it again.".to_string(),
+        };
         let text = if stderr.is_empty() {
-            format!("{provider} exited ({code}); the next message starts it again.")
+            format!("{provider} exited ({code}); {next}")
         } else {
-            format!("{provider} exited ({code}); the next message starts it again. Its last output:\n{stderr}")
+            format!("{provider} exited ({code}); {next} Its last output:\n{stderr}")
         };
         events.push(ThreadEventKind::Notice { text });
         self.emit(events);

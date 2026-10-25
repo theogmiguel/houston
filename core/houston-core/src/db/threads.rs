@@ -15,6 +15,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "view TEXT NOT NULL DEFAULT 'terminal'",
     )?;
     super::add_column_if_missing(conn, "sessions", "thread_group", "thread_group TEXT")?;
+    super::add_column_if_missing(
+        conn,
+        "sessions",
+        "resume_from_stream",
+        "resume_from_stream INTEGER NOT NULL DEFAULT 0",
+    )?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS thread_events (
             session_id INTEGER NOT NULL,
@@ -144,8 +150,16 @@ fn ensure_queue_room(
     Ok(())
 }
 
-/// A replacement row takes its predecessor's history and queue before the predecessor is closed.
+/// A replacement row takes its predecessor's history and queue before the predecessor is
+/// closed, and the mark of a stream-reported resume handle it took over.
 pub(super) fn move_history(conn: &Connection, old: u32, new: u32) -> Result<()> {
+    conn.execute(
+        "UPDATE sessions SET resume_from_stream =
+             (SELECT resume_from_stream FROM sessions WHERE id = ?1)
+         WHERE id = ?2 AND resume_transcript_path IS NULL
+           AND resume_session_id IS (SELECT resume_session_id FROM sessions WHERE id = ?1)",
+        [old, new],
+    )?;
     conn.execute(
         "UPDATE thread_events SET session_id = ?2 WHERE session_id = ?1",
         [old, new],
@@ -197,6 +211,35 @@ impl Db {
             )
             .optional()?
             .is_some())
+    }
+
+    /// A resume handle a structured session's stream reported. With no transcript known it is
+    /// marked, so a resume skips only the transcript check; a hook naming it clears the mark.
+    pub fn set_session_stream_resume_handle(
+        &self,
+        id: u32,
+        conversation: &str,
+        transcript: Option<&str>,
+    ) -> Result<()> {
+        self.set_session_resume_handle(id, Some((conversation, transcript)))?;
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET resume_from_stream = ?2 WHERE id = ?1",
+            rusqlite::params![id, transcript.is_none()],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_resume_from_stream(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT resume_from_stream FROM sessions WHERE id = ?1",
+                [id],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()?
+            .unwrap_or(false))
     }
 
     /// The process group of the thread's current Claude, as JSON (`ThreadGroup`).

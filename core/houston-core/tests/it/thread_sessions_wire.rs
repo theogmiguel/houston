@@ -394,6 +394,348 @@ async fn after_clear_the_next_process_resumes_the_new_session() {
     );
 }
 
+fn thread_params(project: &Path) -> houston_core::daemon::CreateParams {
+    houston_core::daemon::CreateParams {
+        agent: proto::AgentKind::Claude,
+        project_dir: project.to_path_buf(),
+        cmd: None,
+        cols: 80,
+        rows: 24,
+        cwd_from: None,
+        shell_integration: false,
+        auto_approve: false,
+        acp: None,
+        profile: None,
+        prompt: None,
+        model: None,
+        effort: None,
+    }
+}
+
+/// Sends `text` and waits for its turn to end in the stored history.
+async fn stored_turn(daemon: &Arc<Daemon>, id: u32, text: &str) {
+    let ends = |daemon: &Daemon| {
+        history_of(daemon, id)
+            .iter()
+            .filter(|e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+            .count()
+    };
+    let before = ends(daemon);
+    let sender = Arc::clone(daemon);
+    let text = text.to_string();
+    tokio::task::spawn_blocking(move || sender.thread_send(id, &text, false, &[]))
+        .await
+        .unwrap()
+        .unwrap();
+    wait_until("the turn to end", || ends(daemon) > before).await;
+}
+
+/// Shuts `daemon` down cleanly and starts the next one on the same database; returns it and
+/// the session its thread was restored into.
+async fn restarted(rig: &Rig, daemon: Arc<Daemon>, db_path: &Path, id: u32) -> (Arc<Daemon>, u32) {
+    let shutting = Arc::clone(&daemon);
+    within("shutdown", Duration::from_secs(20), move || {
+        shutting.manage_shutdown().map(|_| ()).map_err(|e| e.reason)
+    })
+    .await
+    .unwrap();
+    drop(daemon);
+    let next = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.to_path_buf(),
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let restored = |daemon: &Daemon| {
+        daemon
+            .list()
+            .into_iter()
+            .find(|s| s.session_origin == Some(id) && s.state == proto::SessionState::Running)
+    };
+    wait_until("the thread to be restored", || restored(&next).is_some()).await;
+    let restored = restored(&next).unwrap().id;
+    (next, restored)
+}
+
+/// With no hooks, the session id Claude's stream reports is the resume handle: a daemon
+/// restart resumes the thread's conversation, and after `/clear` the new one.
+#[tokio::test]
+async fn a_thread_without_hooks_resumes_the_conversation_its_stream_reported() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    let first = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let id = first
+        .create_session_in_view(
+            thread_params(rig.project.path()),
+            proto::SessionView::Thread,
+        )
+        .unwrap()
+        .id;
+    stored_turn(&first, id, "hello").await;
+    let started = arg_after(&rig.launches()[0].1, "--session-id").unwrap();
+
+    let (second, restored) = restarted(&rig, first, &db_path, id).await;
+    let argv = rig.launches().last().unwrap().1.clone();
+    assert_eq!(arg_after(&argv, "--resume"), Some(started), "{argv:?}");
+
+    stored_turn(&second, restored, "replay:clear").await;
+    let (third, again) = restarted(&rig, second, &db_path, id).await;
+    let argv = rig.launches().last().unwrap().1.clone();
+    assert_eq!(
+        arg_after(&argv, "--resume").as_deref(),
+        Some("2211971a-3405-8c6b-d26e-809a0d13d0b8"),
+        "the cleared conversation is not resumed"
+    );
+    third.close(again).unwrap();
+}
+
+/// A stream-reported id that Claude no longer has falls back to a new conversation once,
+/// with a notice naming the id; the next message does not try it again.
+#[tokio::test]
+async fn a_rejected_stream_reported_resume_falls_back_fresh_once() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.insert_session(&thread_row(7, rig.project.path()))
+            .unwrap();
+        db.set_session_stream_resume_handle(7, "rejected-7", None)
+            .unwrap();
+    }
+    std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path,
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let restored = || {
+        daemon
+            .list()
+            .into_iter()
+            .find(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+    };
+    wait_until("the thread to be restored", || restored().is_some()).await;
+    let id = restored().unwrap().id;
+    let rejected = |daemon: &Daemon| {
+        history_of(daemon, id)
+            .iter()
+            .filter(|e| {
+                matches!(&e.kind, ThreadEventKind::Notice { text }
+                if text.contains("could not resume conversation rejected-7"))
+            })
+            .count()
+    };
+    wait_until("the fallback notice", || rejected(&daemon) == 1).await;
+    stored_turn(&daemon, id, "hello").await;
+    let launches = rig.launches();
+    let tried: Vec<_> = launches
+        .iter()
+        .filter(|(_, argv)| arg_after(argv, "--resume").as_deref() == Some("rejected-7"))
+        .collect();
+    assert_eq!(tried.len(), 1, "{launches:?}");
+    assert_eq!(arg_after(&launches.last().unwrap().1, "--resume"), None);
+    assert_eq!(rejected(&daemon), 1);
+    daemon.close(id).unwrap();
+}
+
+/// A queued message stored before this daemon checked commands is refused when it would be
+/// sent, and stays held with the reason, so Send, steer and the drain never write it.
+#[tokio::test]
+async fn a_stored_queued_command_is_refused_when_sent() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    let transcript = rig.scratch.path().join("conversation.jsonl");
+    std::fs::write(&transcript, "{}\n").unwrap();
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.insert_session(&thread_row(7, rig.project.path()))
+            .unwrap();
+        db.set_session_resume_handle(7, Some(("conv-7", Some(transcript.to_str().unwrap()))))
+            .unwrap();
+        db.thread_queue_push(7, "thread_send", &queued_row("q1", "/doctor"))
+            .unwrap();
+    }
+    std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path,
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let restored = || {
+        daemon
+            .list()
+            .into_iter()
+            .find(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+    };
+    wait_until("the thread to be restored", || restored().is_some()).await;
+    let id = restored().unwrap().id;
+    let sender = Arc::clone(&daemon);
+    let error = tokio::task::spawn_blocking(move || sender.thread_queue_send(id, "q1"))
+        .await
+        .unwrap()
+        .expect_err("a stored command is not sent")
+        .to_string();
+    assert!(
+        error.contains("/doctor runs only in a terminal pane"),
+        "{error}"
+    );
+    match daemon.thread_queue_list(id).unwrap() {
+        proto::ServerMsg::ThreadQueue { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].state, proto::QueuedState::Held);
+            assert!(
+                items[0]
+                    .hold_reason
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("/doctor"),
+                "{items:?}"
+            );
+        }
+        other => panic!("expected the queue, got {other:?}"),
+    }
+    assert!(
+        !rig.stdin_texts()
+            .iter()
+            .any(|text| text.contains("/doctor")),
+        "{:?}",
+        rig.stdin_texts()
+    );
+    daemon.close(id).unwrap();
+}
+
+/// A command that runs only in a terminal (it changes Claude's settings, bills or reads its
+/// configuration) never reaches Claude from a thread: typed, edited into a queued message or
+/// sent by an orchestrator, before and after Claude listed its commands.
+#[tokio::test]
+async fn terminal_only_commands_are_refused_on_every_path() {
+    let mut rig = Rig::new().await;
+    let parent = rig.create("shell", "terminal").await.unwrap().id;
+    let id = rig.thread().await;
+    let refused = |message: &str, verb: &str, command: &str| {
+        message.starts_with(&format!(
+            "{verb} refused for session {id}: /{command} runs only"
+        ))
+    };
+
+    rig.say(id, "/model claude-opus-5-5").await;
+    let (message, context) = rig.error().await;
+    assert!(refused(&message, "thread_send", "model"), "{message}");
+    assert_eq!(context.as_deref(), Some(format!("session:{id}").as_str()));
+    rig.say(id, "/advisor").await;
+    let (message, _) = rig.error().await;
+    assert!(
+        refused(&message, "thread_send", "advisor"),
+        "before any list: {message}"
+    );
+
+    rig.turn(id, "replay:rename").await;
+    rig.say(id, "  /insights now").await;
+    let (message, _) = rig.error().await;
+    assert!(refused(&message, "thread_send", "insights"), "{message}");
+    rig.send(json!({"type":"thread_send","session":id,"text":"/compact",
+        "excerpts":[{"source":"build","text":"error"}]}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("cannot carry quoted selections"),
+        "{message}"
+    );
+
+    let (_gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "later").await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    rig.send(json!({"type":"thread_queue_edit","session":id,"id":queued[0].id,"text":"/config"}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        refused(&message, "thread_queue_edit", "config"),
+        "{message}"
+    );
+
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    db.delegation_create(
+        parent,
+        id,
+        Some("worker"),
+        "task",
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.orchestration_set(true).unwrap();
+    let daemon = Arc::clone(&rig.daemon);
+    let prompt = tokio::task::spawn_blocking(move || {
+        daemon.orchestrate_instruction_request(parent, id, "/doctor", None, None)
+    })
+    .await
+    .unwrap()
+    .expect_err("pane_prompt refused")
+    .to_string();
+    assert!(refused(&prompt, "pane_prompt", "doctor"), "{prompt}");
+
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the queued message to be answered", || {
+        rig.stdin_texts().iter().any(|text| text == "later")
+    })
+    .await;
+    assert!(
+        !rig.stdin_texts().iter().any(|text| text.contains("/model")
+            || text.contains("/advisor")
+            || text.contains("/insights")
+            || text.contains("/config")
+            || text.contains("/doctor")
+            || text.contains("/compact")),
+        "{:?}",
+        rig.stdin_texts()
+    );
+}
+
+/// An edit keeps a queued message's excerpts, so the composed message must still fit.
+#[tokio::test]
+async fn editing_a_queued_message_checks_the_message_with_its_excerpts() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_gate, _open) = rig.gated_turn(id, "a").await;
+    let excerpts: Vec<_> = (0..proto::THREAD_EXCERPTS_MAX)
+        .map(|n| json!({"source":format!("pane {n}"),"text":"x".repeat(proto::THREAD_EXCERPT_MAX_BYTES)}))
+        .collect();
+    rig.send(json!({"type":"thread_send","session":id,"text":"why?","excerpts":excerpts}))
+        .await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    let long = "z".repeat(proto::THREAD_USER_MESSAGE_MAX_BYTES - 1_000);
+    rig.send(json!({"type":"thread_queue_edit","session":id,"id":queued[0].id,"text":long}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.starts_with(&format!("thread_queue_edit refused for session {id}"))
+            && message.contains("with its excerpts")
+            && message.contains("THREAD_USER_MESSAGE_MAX_BYTES"),
+        "{message}"
+    );
+    rig.send(json!({"type":"thread_queue_edit","session":id,"id":queued[0].id,"text":""}))
+        .await;
+    let edited = rig
+        .queue_until(id, |items| {
+            items.first().is_some_and(|item| item.text.is_empty())
+        })
+        .await;
+    assert_eq!(
+        edited[0].excerpts.len(),
+        proto::THREAD_EXCERPTS_MAX,
+        "an excerpt may carry the message, so its text may be emptied"
+    );
+}
+
 /// Commands from `system/init` reach clients once per change and survive in the database;
 /// `/rename`'s title names the pane through the CLI-title path.
 #[tokio::test]
