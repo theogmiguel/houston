@@ -1,5 +1,6 @@
 use super::*;
-use crate::thread_session::{Conversation, ThreadHandle, ThreadHost, ThreadLaunch};
+use crate::claude_stream::ClaudeStreamJson;
+use crate::thread_session::{Conversation, StructuredRuntime, ThreadHost};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -123,11 +124,11 @@ pub(super) struct ThreadSpawn<'a> {
 
 impl Daemon {
     /// The refusal every thread-only request gives a terminal session, naming its view.
-    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<ThreadHandle>> {
+    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
         let session = self.get(id)?;
-        match &session.backend {
-            Backend::Thread(handle) => Ok(Arc::clone(handle)),
-            _ => bail!(
+        match session.thread() {
+            Some(handle) => Ok(Arc::clone(handle)),
+            None => bail!(
                 "{verb} refused for session {id}: it is a terminal session (view {}); \
                  {verb} applies to thread sessions only",
                 session.info.view.as_str()
@@ -326,7 +327,7 @@ impl Daemon {
         if let Some(replacement) = &replacement {
             self.reclaim_thread_group(replacement.id)?;
         }
-        let (launch, assembled) = ThreadLaunch::from_command(&cmd)?;
+        let (adapter, assembled) = ClaudeStreamJson::from_command(&cmd)?;
         let conversation = assembled.or_else(|| preassigned.clone().map(Conversation::New));
         let history_owner = replacement
             .as_ref()
@@ -339,7 +340,7 @@ impl Daemon {
             daemon: Arc::downgrade(self),
             usage: Mutex::new(None),
         });
-        let handle = ThreadHandle::start(id, launch, conversation, next_seq, host)?;
+        let handle = StructuredRuntime::start(id, Arc::new(adapter), conversation, next_seq, host)?;
         info.view = proto::SessionView::Thread;
         self.session_checkout_metadata(&mut info);
         let agent = info.agent;
@@ -373,6 +374,7 @@ impl Daemon {
             tags: Mutex::new(info.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::default()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(true),
@@ -383,11 +385,7 @@ impl Daemon {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
             input_intervention: AtomicBool::new(false),
             input_pending: AtomicBool::new(false),
             input_current_id: Mutex::new(None),
@@ -404,13 +402,7 @@ impl Daemon {
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
-            backend: Backend::Thread(Arc::clone(&handle)),
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(true), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(true), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+            runtime: SessionRuntime::Structured(Arc::clone(&handle)),
         });
         startup.session = Some(Arc::clone(&session));
         let conversation_link = if resumed {

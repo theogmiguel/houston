@@ -899,7 +899,7 @@ export class HoustonClient {
     return request
   }
 
-  /** Merges the queue head, pinned to the head commit the user saw. */
+  /** Merges the entry that goes next, pinned to the head commit the user saw. */
   mergeQueueMergeHead(dir: string, number: number, expectedHeadSha: string, method: PrMergeMethod): number {
     const request = this.nextPrRequest()
     this.send({ type: 'merge_queue_merge_head', dir, number, expected_head_sha: expectedHeadSha, method, request })

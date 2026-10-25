@@ -557,6 +557,14 @@ cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^perf
   50 MiB target it never met), but ~1.5× the measured baseline peak: wide
   enough not to flap, tight enough to catch a new unbounded buffer. Ten
   concurrent 8 MiB floods drive it.
+- **Thread isolation**: `thread_streams_leave_terminals_alone` runs the 64 MiB flood and
+  200 keystroke echoes through `cat`, three times without threads and three times with four
+  `fake_claude_stream` threads streaming, interleaved. With threads streaming, median
+  throughput stays at or above 0.9 × the run without them and the floor, echo p95 stays
+  within 1.5 × (or 5 ms over) it, no connection lags, and every stored thread event arrives
+  live exactly once. Four idle threads with 200 stored events each add at most 10 MiB RSS
+  and 1 % of a core. The comparison is relative within one run; no release numbers are
+  recorded for it yet.
 
 Run at **normal priority** (`nice` would starve its drain loop) and on an
 **idle machine only** — it is load-sensitive by roughly 90×, so a failing

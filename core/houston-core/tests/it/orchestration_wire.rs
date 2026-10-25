@@ -7238,6 +7238,113 @@ async fn a_paste_is_confirmed_by_its_delivery_id() {
     );
 }
 
+fn pasted_inbox_text(acc: &str) -> String {
+    const END: &str = "--- End Inbox ---";
+    let start = acc
+        .find("--- Houston Inbox:")
+        .expect("the paste's header frame");
+    let end = start + acc[start..].find(END).expect("the paste's closing frame") + END.len();
+    acc[start..end].replace('\r', "")
+}
+
+#[tokio::test]
+async fn a_paste_claude_reports_inside_pasted_content_is_confirmed_and_not_replayed() {
+    let _guard = serial().await;
+    let r = rig("paste-confirm-wrapped").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "Stop").await;
+
+    let mut rx = r.daemon.observe();
+    r.daemon
+        .orchestrate_submit(kid, "WRAPPED-CONFIRM the task is done".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), kid, "Stop").await;
+    let acc = collect_broadcast_until(&mut rx, pane.id, "--- End Inbox ---").await;
+    wait_row_delivered(&r.daemon, pane.id).await;
+
+    // Claude Code 2.1.307 reports a bracketed paste to UserPromptSubmit in this wrapper,
+    // so the receipt header is the prompt's second line.
+    let prompt = format!(
+        "<pasted_content id=\"3d98\">\n{}\n</pasted_content>",
+        pasted_inbox_text(&acc)
+    );
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "UserPromptSubmit".into(),
+            session: pane.id,
+            prompt: Some(prompt.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert!(
+        rows[0].confirmed_at.is_some(),
+        "the wrapped receipt proves the paste: {prompt:?} {rows:?}"
+    );
+
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let recovery = db.inbox_recover_after_restart(&[pane.id, kid]).unwrap();
+    assert_eq!(recovery.pastes_requeued, 0, "{recovery:?}");
+    assert_eq!(
+        db.inbox_pending_count(pane.id).unwrap(),
+        0,
+        "a confirmed paste is not pasted again after a restart"
+    );
+}
+
+#[tokio::test]
+async fn restarts_stop_replaying_an_unconfirmed_paste_at_the_attempt_cap() {
+    let _guard = serial().await;
+    let r = rig("paste-replay-cap").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "Stop").await;
+
+    let mut rx = r.daemon.observe();
+    r.daemon
+        .orchestrate_submit(kid, "REPLAY-CAP the task is done".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), kid, "Stop").await;
+    collect_broadcast_until(&mut rx, pane.id, "REPLAY-CAP").await;
+    wait_row_delivered(&r.daemon, pane.id).await;
+
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let max = houston_core::orchestrate::PASTE_ATTEMPTS_MAX;
+    for attempt in 2..=max {
+        db.inbox_recover_after_restart(&[pane.id, kid]).unwrap();
+        r.daemon.inbox_deliver_now(pane.id).unwrap();
+        collect_broadcast_until(&mut rx, pane.id, &format!("attempt {attempt} at")).await;
+        wait_row_delivered(&r.daemon, pane.id).await;
+    }
+    let recovery = db.inbox_recover_after_restart(&[pane.id, kid]).unwrap();
+    r.daemon.inbox_deliver_now(pane.id).unwrap();
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(recovery.pastes_requeued, 0, "{recovery:?} {rows:?}");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        rows[0].attempts, max,
+        "no paste beyond the {max}-attempt cap: {rows:?}"
+    );
+    assert!(
+        rows[0].delivered_at.is_some() && rows[0].delivered_via.as_deref() == Some("paste"),
+        "the last submitted paste stands as the delivery: {rows:?}"
+    );
+}
+
 #[tokio::test]
 async fn a_second_request_to_the_same_child_keeps_both_results() {
     let _guard = serial().await;
