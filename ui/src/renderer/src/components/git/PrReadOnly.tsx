@@ -1,10 +1,8 @@
 import type { PrDetail } from '../../houston/client'
-import { BTN_SECONDARY } from '../buttonChrome'
+import { Button } from '../ui/Button'
+import { PullRequestRole } from '../ui/PullRequestRoles'
+import { Text } from '../ui/Text'
 import { ScmNotice } from './ScmNotice'
-
-const SMALL = 'text-[length:var(--tr-text-small-size)]'
-const ROW = 'flex flex-col gap-0.5 px-3 py-1.5 border-t border-t-[var(--divider)] first:border-t-0'
-const BODY = `${SMALL} text-[var(--text-secondary)] whitespace-pre-wrap break-words`
 
 /** The tab's own association with the pull request, which is Houston's to
  * change even when the pull request itself is not. */
@@ -30,26 +28,26 @@ export function PrReadOnlyNotice({
 }): React.JSX.Element {
   return (
     <ScmNotice tone="info" testId="pr-read-only">
-      <span className="flex flex-wrap items-center gap-2">
+      <span className="flex flex-wrap items-center gap-[var(--space-2)]">
         <span>{reason}</span>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           data-testid={link.linked ? 'pr-unlink' : 'pr-link-detected'}
-          className={`btn ${BTN_SECONDARY}`}
           disabled={link.busy}
           onClick={() => (link.linked ? link.onUnlink() : link.onLink(link.number))}
         >
           {link.linked ? 'Unlink' : `Link #${link.number}`}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
           data-testid="pr-open-forge"
-          className={`btn ${BTN_SECONDARY}`}
           disabled={!onOpenUrlInPane}
           onClick={() => onOpenUrlInPane?.(url)}
         >
           Open on Bitbucket
-        </button>
+        </Button>
       </span>
     </ScmNotice>
   )
@@ -58,40 +56,55 @@ export function PrReadOnlyNotice({
 /** Inline threads and general comments, with no composer, reply or reaction. */
 export function PrReadOnlyDiscussion({ detail }: { detail: PrDetail }): React.JSX.Element {
   return (
-    <div className="flex flex-col" data-testid="pr-read-only-discussion">
+    <PullRequestRole as="div" role="summary-content" data-testid="pr-read-only-discussion">
       {detail.threads.map((thread, index) => (
-        <div key={thread.id || index} className={ROW} data-testid="pr-thread">
-          <span className={`font-mono ${SMALL} text-[var(--text-faint)]`}>
+        <PullRequestRole key={thread.id || index} as="div" role="review-row" data-testid="pr-thread">
+          <PullRequestRole as="span" role="branch-summary">
             {thread.path ?? 'file'}
             {thread.line !== null && thread.line !== undefined ? `:${thread.line}` : ''}
             {thread.resolved ? ' · resolved' : ''}
-          </span>
+          </PullRequestRole>
           {thread.comments.map((comment, at) => (
-            <span key={comment.id || at} className={BODY}>
-              <span className="text-[var(--text-primary)]">{comment.author}</span> {comment.body}
-            </span>
+            <Text key={comment.id || at} as="span" size="small" tone="secondary">
+              <Text as="span" size="small" tone="primary">
+                {comment.author}
+              </Text>{' '}
+              {comment.body}
+            </Text>
           ))}
-        </div>
+        </PullRequestRole>
       ))}
       {detail.comments.map((comment, index) => (
-        <div key={comment.id ?? index} className={ROW} data-testid="pr-comment">
-          <span className={`${SMALL} text-[var(--text-primary)]`}>{comment.author}</span>
-          <span className={BODY}>{comment.body}</span>
-        </div>
+        <PullRequestRole key={comment.id ?? index} as="div" role="review-row" data-testid="pr-comment">
+          <PullRequestRole as="span" role="review-author">
+            {comment.author}
+          </PullRequestRole>
+          <Text as="span" size="small" tone="secondary">
+            {comment.body}
+          </Text>
+        </PullRequestRole>
       ))}
       {detail.comments_total > detail.comments.length && (
-        <div className={`${ROW} ${SMALL} text-[var(--text-muted)]`}>
-          Showing {detail.comments.length} of {detail.comments_total} comments.
-        </div>
+        <PullRequestRole as="div" role="review-row">
+          <Text as="span" size="small" tone="muted">
+            Showing {detail.comments.length} of {detail.comments_total} comments.
+          </Text>
+        </PullRequestRole>
       )}
       {detail.threads_message !== null && detail.threads_message !== undefined && (
-        <div className={`${ROW} ${SMALL} text-[var(--text-muted)]`} data-testid="pr-threads-message">
-          {detail.threads_message}
-        </div>
+        <PullRequestRole as="div" role="review-row" data-testid="pr-threads-message">
+          <Text as="span" size="small" tone="muted">
+            {detail.threads_message}
+          </Text>
+        </PullRequestRole>
       )}
       {detail.threads.length === 0 && detail.comments.length === 0 && (
-        <div className={`${ROW} ${SMALL} text-[var(--text-muted)]`}>No comments yet.</div>
+        <PullRequestRole as="div" role="review-row">
+          <Text as="span" size="small" tone="muted">
+            No comments yet.
+          </Text>
+        </PullRequestRole>
       )}
-    </div>
+    </PullRequestRole>
   )
 }

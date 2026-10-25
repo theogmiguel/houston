@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { HoustonClient } from '../../houston/client'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentAccountIdentity } from '../../houston/generated/AgentAccountIdentity'
 import type { AgentKind } from '../../houston/generated/AgentKind'
@@ -18,6 +19,7 @@ import { Text } from '../ui/Text'
 import { PaneHeaderButton } from '../ui/PaneHeaderButton'
 import { CenteredStatus, EmptyPanel, HookNotice, HookPath } from '../ui/SettingsStatus'
 import { Switch } from '../ui/Switch'
+import { BitbucketAccount } from './BitbucketAccount'
 
 export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
   claude: {
@@ -44,6 +46,7 @@ export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
 
 export interface AgentStatusSectionProps {
   providers: AgentHookState[] | null
+  client?: HoustonClient | null
   onSet: (provider: AgentKind, enabled: boolean) => void
   onRefresh: () => void
   checkedAt?: number | null
@@ -174,6 +177,7 @@ function AgentDetail({ state, pending, onSet }: { state: AgentHookState; pending
 
 export function AgentStatusSection({
   providers,
+  client = null,
   agentAccounts = null,
   onSet,
   onRefresh,
@@ -247,6 +251,7 @@ export function AgentStatusSection({
       {providers.map((state) => <ProviderRow key={state.provider} state={state} agentProfiles={agentProfiles} agentAccounts={agentAccounts ?? null} pending={pending[state.provider] !== undefined} onSet={handleSet} onOpen={() => setSelected(state.provider)} />)}
     </Card>}
     {agentProfiles ? <AgentProfiles accounts={agentAccounts ?? null} profiles={agentProfiles?.profiles ?? []} active={agentProfiles?.active ?? []} onUpsert={onAgentProfileUpsert ?? (() => {})} onDelete={onAgentProfileDelete ?? (() => {})} onSetActive={onAgentProfileSetActive ?? (() => {})} /> : <Text size="small" tone="muted">Reading accounts…</Text>}
+    <BitbucketAccount client={client} />
     {detail && <DialogBackdrop onMouseDown={() => setSelected(null)}><DialogPanel size="wide" role="dialog" aria-modal="true" aria-labelledby="cli-detail-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setSelected(null) }}><DialogTitle id="cli-detail-title">{copyFor(detail).label}</DialogTitle><DialogBody>{!detail.present && <Text as="p" size="small" tone="secondary">Install {copyFor(detail).label} using its official CLI instructions, then choose Check again. Houston looks for its executable on this computer's PATH.</Text>}<AgentDetail state={detail} pending={pending[detail.provider] !== undefined} onSet={handleSet} /></DialogBody><DialogActions variant="row"><Button variant="ghost" onClick={() => setSelected(null)}>Close</Button></DialogActions></DialogPanel></DialogBackdrop>}
   </div>
 }

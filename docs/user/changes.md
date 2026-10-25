@@ -400,7 +400,7 @@ To turn it on:
 1. In your Atlassian account settings, create an API token with the
    `read:pullrequest:bitbucket` and `read:repository:bitbucket` scopes. Bitbucket makes
    the token expire within a year; create a new one when it does.
-2. In Settings ▸ Accounts ▸ Bitbucket Cloud, enter your Atlassian account e-mail and the
+2. In Settings ▸ Agents ▸ CLIs ▸ Bitbucket Cloud, enter your Atlassian account e-mail and the
    token, and turn on **Read Bitbucket Cloud pull requests** (off by default).
 
 The token is stored in your OS keychain, never in Houston's settings or logs, and is not

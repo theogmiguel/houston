@@ -77,4 +77,8 @@ cross_repository: boolean,
  * What GitHub said about its merge queue and auto-merge for this pull
  * request; absent when the access read failed.
  */
-github_merge?: PrGitHubMerge | null, };
+github_merge?: PrGitHubMerge | null,
+/**
+ * Why Houston offers no write here, when the forge is read-only.
+ */
+read_only?: string | null, };

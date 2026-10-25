@@ -351,6 +351,7 @@ function SectionDispatch({
         {section === 'agents-clis' && (
           <>
             <AgentStatusSection
+              client={daemonClient ?? null}
               providers={agentHooks}
               agentAccounts={agentAccounts}
               onSet={onAgentHooksSet}

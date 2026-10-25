@@ -31,13 +31,13 @@ export function forgeBlocked(access: ForgeAccess, hint: string | null): ForgeBlo
           return {
             kind: 'off',
             headline: 'Bitbucket Cloud pull requests are off',
-            body: 'Houston sends nothing to Bitbucket until you turn on Read Bitbucket Cloud pull requests in Settings ▸ Accounts.'
+            body: 'Houston sends nothing to Bitbucket until you turn on Read Bitbucket Cloud pull requests in Settings ▸ Agents ▸ CLIs.'
           }
         case 'no_token':
           return {
             kind: 'no_token',
             headline: 'No Bitbucket API token',
-            body: 'Add a Bitbucket API token in Settings ▸ Accounts, then press Retry.'
+            body: 'Add a Bitbucket API token in Settings ▸ Agents ▸ CLIs, then press Retry.'
           }
         case 'keychain_unavailable':
           return {

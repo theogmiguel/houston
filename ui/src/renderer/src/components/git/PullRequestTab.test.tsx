@@ -742,7 +742,7 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
   })
 
   it.each([
-    [{ forge: 'bitbucket', state: 'off' }, null, 'Bitbucket Cloud pull requests are off', 'Settings ▸ Accounts'],
+    [{ forge: 'bitbucket', state: 'off' }, null, 'Bitbucket Cloud pull requests are off', 'Settings ▸ Agents ▸ CLIs'],
     [{ forge: 'bitbucket', state: 'no_token' }, null, 'No Bitbucket API token', 'Add a Bitbucket API token'],
     [
       { forge: 'bitbucket', state: 'keychain_unavailable' },
@@ -776,7 +776,7 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
           viewer: null,
           read_only: reason,
           merge_disabled_reason: reason,
-          comments: [{ id: '101', author: 'Rui', body: 'Looks close.', created_at: 1, url: null, reactions: [] }],
+          comments: [{ id: '101', author: 'Rui', body: 'Looks close.', created_at: 1, url: null, reactions: [], bot: false }],
           comments_total: 1,
           reviews: [{ id: null, author: 'Cris', state: 'CHANGES_REQUESTED', body: '', submitted_at: 1, reactions: [] }],
           reviews_total: 1,
@@ -787,7 +787,7 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
               line: 42,
               resolved: true,
               outdated: false,
-              comments: [{ id: '102', author: 'Cris', body: 'Rename this?', created_at: 1, url: null, reactions: [] }]
+              comments: [{ id: '102', author: 'Cris', body: 'Rename this?', created_at: 1, url: null, reactions: [], bot: false }]
             }
           ]
         })

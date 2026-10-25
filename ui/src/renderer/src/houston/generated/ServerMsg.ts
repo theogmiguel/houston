@@ -8,6 +8,7 @@ import type { AgentProfileActive } from "./AgentProfileActive";
 import type { AgentStatus } from "./AgentStatus";
 import type { DelegationInfo } from "./DelegationInfo";
 import type { DelegationResult } from "./DelegationResult";
+import type { ForgeAccess } from "./ForgeAccess";
 import type { GhState } from "./GhState";
 import type { GitBranchCommit } from "./GitBranchCommit";
 import type { GitBranchInfo } from "./GitBranchInfo";
@@ -157,7 +158,7 @@ common_dir?: string | null, } | { "type": "git_branch_commits", dir: string, com
  * Echoes the request; a detail pushed after link/unlink/merge carries
  * that mutation's id, so a client can drop anything it has superseded.
  */
-request: number, gh: GhState, has_upstream: boolean,
+request: number, access: ForgeAccess, has_upstream: boolean,
 /**
  * The pull request on screen: the manually linked one when one exists,
  * else the branch's own. `None` when nothing resolves.
@@ -223,7 +224,11 @@ child_cap: number, detected: NightDetected, } | { "type": "night_shift_run_event
 /**
  * The started tasks' keys, in the order they were picked.
  */
-started: Array<string>, refused: Array<TaskQueueRefusal>, ready_count: number, free_children: number, } | { "type": "tasks_access", workspace: string, access: TasksAccess, } | { "type": "voice_settings", settings: VoiceSettings, cloud_key_present: boolean, keyring_error: string | null, models: Array<VoiceModelState>, } | { "type": "voice_devices", devices: Array<VoiceDevice>, } | { "type": "voice_state", state: VoiceState, } | { "type": "voice_transcript", session: number, text: string,
+started: Array<string>, refused: Array<TaskQueueRefusal>, ready_count: number, free_children: number, } | { "type": "tasks_access", workspace: string, access: TasksAccess, } | { "type": "voice_settings", settings: VoiceSettings, cloud_key_present: boolean, keyring_error: string | null, models: Array<VoiceModelState>, } | { "type": "forge_settings", bitbucket_enabled: boolean,
+/**
+ * The e-mail the stored token belongs to; `None` when none is stored.
+ */
+bitbucket_account: string | null, keyring_error: string | null, } | { "type": "voice_devices", devices: Array<VoiceDevice>, } | { "type": "voice_state", state: VoiceState, } | { "type": "voice_transcript", session: number, text: string,
 /**
  * What to insert into the pane's prompt, assembled by the daemon: the
  * trimmed text, the agent preamble on the pane's first English-output

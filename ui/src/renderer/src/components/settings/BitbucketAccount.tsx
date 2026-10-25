@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import { BITBUCKET_EMAIL_LEN_MAX, BITBUCKET_TOKEN_LEN_MAX } from '../../houston/generated/DEFAULTS'
-import { BTN_GHOST } from '../buttonChrome'
-import { Toggle } from '../settingsPrimitives'
+import { Button, Text, TextInput, Toggle } from '../ui'
 import { Row, SubHead } from './shared'
-
-const FIELD =
-  'w-[200px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-input)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2'
 
 interface ForgeSettingsView {
   enabled: boolean
@@ -61,7 +57,7 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
           on={enabled}
           disabled={settings === null}
           data-testid="bitbucket-enabled"
-          onChange={(on) => client?.send({ type: 'bitbucket_enabled_set', enabled: on })}
+          onChange={(on: boolean) => client?.send({ type: 'bitbucket_enabled_set', enabled: on })}
         />
       </Row>
       <Row
@@ -75,10 +71,11 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
         }
         indent
       >
-        <div className="flex flex-wrap items-center gap-2" data-testid="bitbucket-token-row">
-          <input
+        <div className="flex flex-wrap items-center gap-[var(--space-2)]" data-testid="bitbucket-token-row">
+          <TextInput
             type="email"
-            className={FIELD}
+            width="medium"
+            density="compact"
             spellCheck={false}
             autoComplete="off"
             aria-label="Atlassian account e-mail"
@@ -87,9 +84,11 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <input
+          <TextInput
             type="password"
-            className={`${FIELD} font-mono`}
+            width="medium"
+            density="compact"
+            font="mono"
             spellCheck={false}
             autoComplete="off"
             aria-label="Bitbucket API token"
@@ -98,9 +97,9 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={email.trim() === '' || token === '' || client === null}
             onClick={() => {
               setRefusal(null)
@@ -108,20 +107,20 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
             }}
           >
             Save token
-          </button>
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={account === null}
             onClick={() => client?.send({ type: 'bitbucket_token_clear' })}
           >
             Disconnect
-          </button>
+          </Button>
         </div>
         {refusal !== null && (
-          <div role="alert" data-testid="bitbucket-refusal" className="pt-[var(--space-1-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]">
+          <Text as="div" role="alert" data-testid="bitbucket-refusal" size="small" tone="danger" className="pt-[var(--space-1-5)]">
             {refusal}
-          </div>
+          </Text>
         )}
       </Row>
     </>
