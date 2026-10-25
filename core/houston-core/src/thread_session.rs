@@ -401,8 +401,8 @@ impl HandleState {
     }
 }
 
-/// The thread backend of one session.
-pub struct ThreadHandle {
+/// The structured runtime of one thread session: its provider process, turns and events.
+pub struct StructuredRuntime {
     session: u32,
     adapter: Arc<dyn ProviderAdapter>,
     host: Arc<dyn ThreadHost>,
@@ -415,7 +415,7 @@ pub struct ThreadHandle {
     closed: (Mutex<bool>, Condvar),
 }
 
-impl ThreadHandle {
+impl StructuredRuntime {
     /// Starts the first process at once; it waits on stdin for the first message.
     pub fn start(
         session: u32,
@@ -800,7 +800,7 @@ impl ThreadHandle {
     }
 }
 
-impl Drop for ThreadHandle {
+impl Drop for StructuredRuntime {
     fn drop(&mut self) {
         self.outbox.close();
     }
@@ -817,7 +817,7 @@ fn drain_stderr(mut stderr: std::process::ChildStderr, tail: &Mutex<Tail>) {
 }
 
 fn read_stdout(
-    handle: Weak<ThreadHandle>,
+    handle: Weak<StructuredRuntime>,
     process: Arc<ThreadProcess>,
     stdout: std::process::ChildStdout,
 ) {
@@ -1211,7 +1211,7 @@ mod tests {
     fn a_second_adapter_drives_a_turn_without_claude_flags() {
         let adapter = Arc::new(EchoAdapter::default());
         let host = Arc::new(StoredEvents::default());
-        let handle = ThreadHandle::start(7, adapter.clone(), None, 1, host.clone()).unwrap();
+        let handle = StructuredRuntime::start(7, adapter.clone(), None, 1, host.clone()).unwrap();
         handle.send("hello").unwrap();
         let events = host.events.lock().unwrap();
         let (events, wait) = host

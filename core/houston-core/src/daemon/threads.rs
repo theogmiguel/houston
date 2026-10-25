@@ -1,6 +1,6 @@
 use super::*;
 use crate::claude_stream::ClaudeStreamJson;
-use crate::thread_session::{Conversation, ThreadHandle, ThreadHost};
+use crate::thread_session::{Conversation, StructuredRuntime, ThreadHost};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -124,7 +124,7 @@ pub(super) struct ThreadSpawn<'a> {
 
 impl Daemon {
     /// The refusal every thread-only request gives a terminal session, naming its view.
-    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<ThreadHandle>> {
+    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
         let session = self.get(id)?;
         match session.thread() {
             Some(handle) => Ok(Arc::clone(handle)),
@@ -340,7 +340,7 @@ impl Daemon {
             daemon: Arc::downgrade(self),
             usage: Mutex::new(None),
         });
-        let handle = ThreadHandle::start(id, Arc::new(adapter), conversation, next_seq, host)?;
+        let handle = StructuredRuntime::start(id, Arc::new(adapter), conversation, next_seq, host)?;
         info.view = proto::SessionView::Thread;
         self.session_checkout_metadata(&mut info);
         let agent = info.agent;

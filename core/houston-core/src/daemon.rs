@@ -629,7 +629,7 @@ pub struct Session {
 
 enum SessionRuntime {
     Pty(PtyRuntime),
-    Structured(Arc<crate::thread_session::ThreadHandle>),
+    Structured(Arc<crate::thread_session::StructuredRuntime>),
 }
 
 struct PtyRuntime {
@@ -995,7 +995,7 @@ struct StdinQueue {
 }
 
 impl Session {
-    fn thread(&self) -> Option<&Arc<crate::thread_session::ThreadHandle>> {
+    fn thread(&self) -> Option<&Arc<crate::thread_session::StructuredRuntime>> {
         match &self.runtime {
             SessionRuntime::Structured(handle) => Some(handle),
             SessionRuntime::Pty(_) => None,
