@@ -62,6 +62,15 @@ Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
 review; Cancel sends nothing at all.
 
+When a merge, rebase or cherry-pick stops part-way in the checkout, Changes shows a banner
+naming the operation and its conflicted files. **Resolve with agent** opens the same engine
+picker and starts the chosen agent in a new pane in that checkout. Its brief lists the
+conflicted files and the command that continues the operation without opening an editor,
+and tells the agent to run `git diff --check`, never to reset, restore, clean, stash or
+abort, and to report what it resolved. The banner leaves once git no longer reports the
+operation. A paused revert, or a cherry-pick range whose current commit was already made
+by hand, shows no banner.
+
 ## Pull requests
 
 Open **Pull requests** from the rail or press the prefix key followed by `R` to browse

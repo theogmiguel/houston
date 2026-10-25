@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import type { GitFileStatus, HoustonClient } from '../../houston/client'
+import type { GitOperation } from '../../houston/generated/GitOperation'
 
 export interface DiffState {
   path: string
@@ -24,6 +25,7 @@ export interface GitStatusSubscriptionParams {
   setUpstream: Dispatch<SetStateAction<string | null>>
   setDefaultBase: Dispatch<SetStateAction<string | null>>
   setNotARepo: Dispatch<SetStateAction<boolean>>
+  setOperation: Dispatch<SetStateAction<GitOperation | null>>
   setStatusError: Dispatch<SetStateAction<string | null>>
   setCommitError: Dispatch<SetStateAction<string | null>>
   setCommitting: Dispatch<SetStateAction<boolean>>
@@ -49,6 +51,7 @@ export function useGitStatusSubscription({
   setUpstream,
   setDefaultBase,
   setNotARepo,
+  setOperation,
   setStatusError,
   setCommitError,
   setCommitting,
@@ -61,6 +64,7 @@ export function useGitStatusSubscription({
     setDiff(null)
     setSelected(null)
     setNotARepo(false)
+    setOperation(null)
     setStatusError(null)
     setCommitError(null)
     if (!client || !repoDir) return
@@ -76,6 +80,7 @@ export function useGitStatusSubscription({
       setUpstream(msg.upstream ?? null)
       setDefaultBase(msg.default_base ?? null)
       setNotARepo(msg.not_a_repo)
+      setOperation(msg.operation ?? null)
       setPushAfterCommit(false)
       // `git_push` has no reply of its own — a fresh `git_status` broadcast IS
       // the push's receipt, which is why pendingPush clears here.

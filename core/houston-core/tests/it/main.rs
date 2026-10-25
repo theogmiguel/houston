@@ -34,6 +34,7 @@ mod generated_titles;
 mod git_base_scope_wire;
 mod git_discard_wire;
 mod git_fixture_isolation;
+mod git_paused_operation_wire;
 mod git_tools_wire;
 mod git_wire;
 mod handoff_start_order_wire;

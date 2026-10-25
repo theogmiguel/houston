@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2801,6 +2801,16 @@ pub struct LocalServer {
     pub pane_title: String,
 }
 
+/// A git operation stopped part-way in a checkout, waiting for the user to continue it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum GitOperation {
+    Merge,
+    Rebase,
+    CherryPick,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -5446,6 +5456,10 @@ pub enum ServerMsg {
         /// `dir` exists but is outside any work tree; every other field is empty.
         #[serde(default)]
         not_a_repo: bool,
+        /// A merge, rebase or cherry-pick paused in this checkout, read from its git dir.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        operation: Option<GitOperation>,
     },
     GitDiff {
         dir: String,
@@ -6779,6 +6793,7 @@ mod tests {
             base: None,
             default_base: Some("main".into()),
             not_a_repo: false,
+            operation: Some(GitOperation::CherryPick),
         };
         let value = serde_json::to_value(&msg).unwrap();
         let obj = value.as_object().unwrap();
@@ -6796,8 +6811,10 @@ mod tests {
             "base",
             "default_base",
             "not_a_repo",
+            "operation",
         ];
         expected.sort_unstable();
+        assert_eq!(obj["operation"], serde_json::json!("cherry_pick"));
         assert_eq!(keys, expected);
         assert_eq!(obj["base"], serde_json::json!(null));
         assert_eq!(obj["default_base"], serde_json::json!("main"));
