@@ -220,6 +220,7 @@ import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { handleNightShiftNotice, setNightShiftFocus } from "./nightShiftNav";
+import { handleDefectNotice } from "./defectNotice";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -1421,6 +1422,11 @@ export function App(): React.JSX.Element {
         handleNightShiftNotice(msg, pushNotice, workspacesRef.current, (workspace, runId) => {
           setNightShiftFocus({ workspace, runId });
           setRailView("routines");
+        });
+        handleDefectNotice(msg, pushNotice, workspacesRef.current, (workspace) => {
+          setSelectedWs(workspace);
+          setSettingsSection("agents-review");
+          setSettings(true);
         });
         switch (msg.type) {
           case "hello_ok":

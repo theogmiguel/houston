@@ -90,6 +90,27 @@ and your decisions are kept per workspace and remain after Houston restarts.
 - **Full report** opens a review's `report.md`, and opens it or `findings.json` in the editor
   or in the file manager.
 
+## Suspected defects
+
+Agents can report defects they find in Houston itself, and Houston's own detectors add
+suspicious state they observe, such as a reply that was delivered but asked again. These join
+the review's **Suspected defects** section with their evidence, source, destination, occurrence
+count and last-seen date. Nothing is sent anywhere while they are collected.
+
+Use **Dismiss** or **Not a bug** to record a decision; **Reopen** withdraws it. A dismissed
+defect that occurs again reopens as **recurred**.
+
+**Open issue** prepares a draft for the destination repository: Houston's own repository for a
+Houston defect, or this workspace's GitHub remote. The draft has an editable title and body with
+workspace-relative paths and secrets already redacted. It lists matching open issues so you can
+choose **Comment on #N instead**. Before you confirm, the drawer states exactly what will be sent,
+to which repository and under which `gh` account. **Create issue** or **Add comment to #N** is
+the only action that sends it; closing the drawer sends nothing. A GitHub rate-limit pause leaves
+the draft usable and says so.
+
+Settings ▸ Agents ▸ Review counts undecided suspected defects with the review's attention. At
+most once a day, a workspace-top notice names a new suspected defect; **Review** opens it.
+
 ## Removing reviews
 
 Delete the routine in **Routines** to stop runs. Delete `<workspace>/.houston/harness/` to

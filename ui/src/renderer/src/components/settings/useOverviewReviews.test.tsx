@@ -12,7 +12,7 @@ it('reads bounded workspace details on opening and refreshes only reported chang
   const off = vi.fn()
   const harnessState = vi.fn()
   const client = { harnessState, subscribe: (kind: string, callback: (message: ServerMsg) => void) => { callbacks.set(kind, callback); return off } } as unknown as HoustonClient
-  const attention = agentAttentionFor({ agentHooks: [], skills: [], checks: [], reviews: Array.from({ length: 12 }, (_, index) => ({ workspace: `/ws/${index}`, attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 })) })
+  const attention = agentAttentionFor({ agentHooks: [], skills: [], checks: [], reviews: Array.from({ length: 12 }, (_, index) => ({ workspace: `/ws/${index}`, attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, seen_review_id: 0 })) })
   const { result, rerender, unmount } = renderHook(() => useOverviewReviews(client, attention))
   expect(harnessState).toHaveBeenCalledTimes(8)
   rerender()

@@ -14,6 +14,7 @@ import type { ServerMsg } from './generated/ServerMsg'
 import type { ChatEffort } from './generated/ChatEffort'
 import type { ChatPermissionMode } from './generated/ChatPermissionMode'
 import type { Cadence } from './generated/Cadence'
+import type { DefectDecision } from './generated/DefectDecision'
 import type { HarnessFindingState } from './generated/HarnessFindingState'
 import type { NightShiftSettings } from './generated/NightShiftSettings'
 import type { TaskPatch } from './generated/TaskPatch'
@@ -1673,6 +1674,40 @@ export class HoustonClient {
 
   harnessSeen(workspace: string, reviewId: number): void {
     this.send({ type: 'harness_seen', workspace, review_id: reviewId })
+  }
+
+  defectsGet(workspace: string): void {
+    this.send({ type: 'defects_get', workspace })
+  }
+
+  defectDecide(workspace: string, key: string, decision: DefectDecision): void {
+    this.send({ type: 'defect_decide', workspace, key, decision })
+  }
+
+  defectIssueDraft(workspace: string, key: string, request: number): void {
+    this.send({ type: 'defect_issue_draft', workspace, key, request })
+  }
+
+  /** The only message that creates an issue or a comment. */
+  defectIssueFile(
+    workspace: string,
+    key: string,
+    request: number,
+    title: string,
+    body: string,
+    destinationRepo: string,
+    commentOn: number | null = null
+  ): void {
+    this.send({
+      type: 'defect_issue_file',
+      workspace,
+      key,
+      request,
+      title,
+      body,
+      destination_repo: destinationRepo,
+      comment_on: commentOn
+    })
   }
 
   nightShiftCreate(workspace: string): void {

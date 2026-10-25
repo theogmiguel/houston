@@ -708,7 +708,7 @@ export function SettingsSearchStory(): React.JSX.Element {
   return <SettingsScreen section="workspaces" />
 }
 
-export const settingsAgentAttentionFixture = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
+export const settingsAgentAttentionFixture = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, seen_review_id: 0 }] })
 
 export function SettingsAgentsOverview({ healthy = false }: { healthy?: boolean } = {}): React.JSX.Element {
   const attention = healthy ? agentAttentionFor({ agentHooks: [], skills: [], checks: [], reviews: [] }) : settingsAgentAttentionFixture

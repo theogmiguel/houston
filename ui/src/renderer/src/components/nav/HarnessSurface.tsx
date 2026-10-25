@@ -8,6 +8,8 @@ import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
 import type { ChatPermissionMode } from '../../houston/generated/ChatPermissionMode'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
+import type { DefectDecision } from '../../houston/generated/DefectDecision'
+import type { SuspectedDefect } from '../../houston/generated/SuspectedDefect'
 import { IconHistory, IconPlay } from '../icons'
 import { ReviewSummary } from '../ui/ReviewSummary'
 import { Select } from '../ui/Select'
@@ -16,6 +18,7 @@ import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { routineEngineOptions } from './routineEngines'
 import { HarnessFindings } from './HarnessFindings'
+import { HarnessDefects } from './HarnessDefects'
 import { HarnessReviewHistory } from './HarnessReviewHistory'
 import {
   SCHEDULE_OPTIONS,
@@ -48,6 +51,10 @@ export interface HarnessSurfaceProps {
   onCreateRoutine: (setup: HarnessSetupValue) => void
   onRunNow: (routineId: number) => void
   onDecide: (key: string, state: HarnessFindingState) => void
+  /** The workspace's suspected defects, including those raised without a review routine. */
+  defects?: SuspectedDefect[]
+  onDecideDefect?: (key: string, decision: DefectDecision) => void
+  onOpenDefectIssue?: (key: string) => void
   attention?: HarnessAttention | null
   onSeen: (workspace: string, reviewId: number) => void
   onCreateTask: (key: string, engine: AgentKind, prompt: string) => void
@@ -142,8 +149,12 @@ function HarnessWorkspaceContent({
   }
   if (!state) return <Text as="p" role="status" aria-busy="true" tone="muted" flush>Reading this workspace&apos;s reviews…</Text>
   if (!state.routine) {
-    if (props.embedded) return <Card shape="card" padding="page"><EmptyState icon={IconHistory} heading="No review set up" description="Create a weekly review for this workspace in Routines. It reads recent sessions and lists what to change." action={{ label: 'Open Routines', onClick: props.onOpenRoutines ?? (() => {}) }} /></Card>
-    return <FirstRun models={state.models} engineRefusals={state.engineRefusals} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
+    return <>
+      {props.embedded
+        ? <Card shape="card" padding="page"><EmptyState icon={IconHistory} heading="No review set up" description="Create a weekly review for this workspace in Routines. It reads recent sessions and lists what to change." action={{ label: 'Open Routines', onClick: props.onOpenRoutines ?? (() => {}) }} /></Card>
+        : <FirstRun models={state.models} engineRefusals={state.engineRefusals} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />}
+      <SuspectedDefectsSection props={props} />
+    </>
   }
   const published = state.reviews.filter((review) => review.status === 'published')
   const trend = reviewTrendValues(published, props.trendValues)
@@ -289,6 +300,7 @@ function HarnessBody(
           {routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>}
         </Caption>
       </div>}
+      <SuspectedDefectsSection props={props} />
       <HarnessFindings
         workspace={state.workspace}
         findings={state.findings}
@@ -314,6 +326,11 @@ function HarnessBody(
       </Caption>
     </div>
   )
+}
+
+function SuspectedDefectsSection({ props }: { props: HarnessSurfaceProps }): React.JSX.Element | null {
+  if (!props.onDecideDefect || !props.onOpenDefectIssue) return null
+  return <HarnessDefects defects={props.defects ?? []} onDecide={props.onDecideDefect} onOpenIssue={props.onOpenDefectIssue} />
 }
 
 function reviewTrendHeading(latest: HarnessState['reviews'][number] | null, trend: number[]): string {
