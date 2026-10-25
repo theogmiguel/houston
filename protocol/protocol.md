@@ -318,6 +318,26 @@ failure not given a typed refusal comes back as `error`.
 | `harness_overview_get` | — | `harness_overview` (direct), one row per workspace with Harness reviews |
 | `harness_seen` | `workspace`, `review_id` | `harness_changed` (bcast); the stored cursor advances monotonically and is capped at the latest published review |
 
+### Night shift
+
+A workspace has at most one Night shift routine. It is listed with `routine_list` and
+deleted with `routine_delete`; `routine_update` and `routine_run_now` refuse it, naming
+`night_shift_update` and `night_shift_run_now`, so the routine row and its settings stay one
+value. Its settings and runs use these messages. Every refusal of one is an `error` with
+`context: "night_shift"` (`night_shift_report:<run_id>` for `night_shift_report`).
+
+| Message | Fields | Reply |
+|---|---|---|
+| `night_shift_create` | `workspace` | `night_shift_state` (direct) for the existing routine, or for a new paused one with the default settings; `routines` (bcast) when created; `error` when the workspace is not a git repository |
+| `night_shift_state` | `workspace`, `preflight_until_ms?` (also run preflight for a start lasting until then) | `night_shift_state` (direct) |
+| `night_shift_update` | `routine_id`, `settings: NightShiftSettings`, `expected_revision` | `night_shift_state` (bcast); `error` naming both revisions when stale, naming each missing setting for `merge_queue` output without a verification command or App QA on with a start command, naming UI and UX polish with screenshots off, naming a worker provider that reports no usage limit, and naming the values and the limit for a wrap-up not before the hard stop or a window over `NIGHT_SHIFT_WINDOW_MAX_MINUTES` |
+| `night_shift_run_now` | `routine_id`, `until_ms` (the hard stop; wrap-up is `NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES` before it, or 75 % of a run under one hour) | `night_shift_run_event` (bcast); a blocking preflight, or any failure to launch, records a `refused` run carrying every item and its reason and opens no pane; `error` while the routine has a run in flight or starting |
+| `night_shift_wrap_up` | `run_id` | as reaching wrap-up now: one wrap-up instruction to the orchestrator |
+| `night_shift_stop` | `run_id` | as reaching the hard stop now: every pane the run started, then the orchestrator, is closed and the run settles |
+| `night_shift_decide` | `entry_id`, `choice` | `night_shift_run_event` (bcast); `error` for a second answer, naming the first |
+| `night_shift_qa_passed` | `entry_id` | `night_shift_run_event` (bcast) once the PR is enqueued (after the nearest earlier PR of the run's `merge_order` that is queued) and then marked; `error` unless the output is `merge_queue`, Hold for my QA is on and the PR is visible, and when the enqueue fails, which leaves the PR held |
+| `night_shift_report` | `run_id` | `night_shift_report` (direct); `error` when the run has no `report.md` or it is not a regular file |
+
 ### Tasks
 
 Task writes need the workspace's Tasks access to be `write`; reads need `off` to
@@ -532,6 +552,10 @@ every refusal names the setting.
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
 | `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]`, `engine_refusals: RoutineEngineRefusal[]` | direct reply to `harness_state` |
+| `night_shift_state` | `workspace`, `routine?: Routine`, `settings: NightShiftSettings` (the defaults when there is no routine), `revision`, `runs: NightRun[]` (newest first, at most `NIGHT_SHIFT_RUNS_PAGE`), `preflight?: PreflightItem[]` (the restart items judge the window of a start lasting until `preflight_until_ms`), `machine: NightMachine`, `merge_verify_command` (whether the workspace's merge queue has a verification command), `child_cap` (the global child panes per agent; a run's orchestrator has its own limit, live workers plus two), `detected: NightDetected` (what Setup offers from the workspace) | direct reply to `night_shift_state` and `night_shift_create`; bcast after `night_shift_update` |
+| `night_shift_run_event` | `run: NightRun` | bcast — a run started, was refused, wrapped up, wrote its ledger or settled |
+| `night_shift_notice` | `workspace`, `run_id`, `headline` (PR and open decision counts, or why a refused run did not start) | bcast — once per settled run |
+| `night_shift_report` | `run_id`, `markdown`, `truncated` | direct reply to `night_shift_report` |
 | `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
@@ -780,7 +804,7 @@ AgentProfile       id, agent (claude | codex), name, config_dir
 AgentProfileActive agent, id
 ProfileChoice      tag "kind": default | profile{id}
 
-RoutineKind        user | harness_review
+RoutineKind        user | harness_review | night_shift
 Routine            id, name, prompt, cadence, kind: RoutineKind (default user),
                    enabled,
                    workspace_id? (the routine's own working directory — where a run starts,
@@ -804,6 +828,49 @@ RoutineErrorKind   conflict | duplicate_name | limit | not_found | already_runni
 RoutineEngineRefusal engine: AgentKind, permission_mode: ChatPermissionMode, reason
                    (a pair `routine_create`/`routine_update` refuse whatever the model;
                    pickers show the engine disabled with `reason`)
+NightShiftSettings v (2; a stored v1 document is upgraded on read), enabled, window: NightWindow, focus: NightFocus, direction,
+                   competitors: NightCompetitor[], orchestrator: NightAgent, workers: NightAgent[] (fallback
+                   order), live_workers, reviewer?: NightAgent (absent = the orchestrator's),
+                   output: prs | merge_queue, pr_size: {kind: one} | {kind: related,
+                   max_changes: 2..20}, screenshots,
+                   app_qa: NightAppQa, hold_for_qa, checks: NightCheck[], verification: light | standard,
+                   questions: park
+NightCheck         command, source (`ci.yml · core-checks`, `package.json`, `AGENTS.md` or
+                   `added by you`)
+NightDetected      checks: NightCheck[] (found in the workspace, runnable on this machine),
+                   start_command?: NightCheck, apps: {name, version, path}[], apps_note? (why
+                   this platform lists no apps)
+NightWindow        start, wrap_up, hard_stop: NightClock{hour, minute} (local), nights: u8[]
+                   (1 = Sunday … 7 = Saturday)
+NightFocus         reliability, performance, ui_polish, competitor_gaps, docs_accuracy,
+                   test_gaps: off | low | normal | high
+NightAgent         provider: AgentKind, model?
+NightCompetitor    {kind: repo, repo (owner/repo)} | {kind: app, name, version, path}
+NightAppQa         enabled, start_command, source, address (empty: each change opens what it
+                   touches), smoke_flows: string[]
+PreflightItem      id, status: ok | warn | block, label, detail, limit?, actual?
+NightRun           run_id, routine_id, workspace, trigger: RoutineTrigger,
+                   phase: refused | running | wrapping_up | settled, session_id?,
+                   started_at_ms, wrap_up_at_ms, hard_stop_at_ms, ended_at_ms?, report_path,
+                   report_published, summary?, stop_reason?: report | hard_stop | stopped |
+                   pane_exited | restart, stop_detail?,
+                   interruptions: NightInterruption[], cost: NightCost, limited: AgentKind[],
+                   preflight: PreflightItem[], keep_awake: off | held | unavailable,
+                   merge_order: u32[], entries: NightEntry[], crew: NightCrewMember[]
+NightEntry         id, run_id, kind: plan | pr | lesson | decision | deferred | flaky | studied,
+                   title,
+                   theme?, status?, pr_number?, visible, qa_passed, body, gates: NightGates,
+                   created_at_ms, decided_at_ms?, choice?, detail: NightEntryDetail
+NightGates         checks, review, qa, ci, verify: none | pending | passed | failed, reruns
+                   (checks, ci and verify are facts Houston records; review and qa are
+                   agents' verdicts)
+NightEntryDetail   claims: {claim, proof}[] (plan), plans: u32[], head_sha?, built_by: u32[],
+                   checks_run: {command, passed, code?, tail}[], verdicts: {plan, claim,
+                   passed, evidence, fault?, verifier}[] (pull request)
+NightInterruption  at_ms, resumed_at_ms, detail, resumed
+NightCost          pane_hours, panes, per_provider: {provider, panes, pane_hours}[]
+NightCrewMember    session_id, provider, role?, status?, started_at_ms, limited
+NightMachine       memory_free_mib?, disk_free_mib?, on_battery?, keep_awake
 HarnessReview      id, workspace, routine_id, run_id, session_id?, status: HarnessReviewStatus,
                    started_at_ms, ended_at_ms?, run_dir (`<dir>/.houston/harness/r<run_id>`),
                    window?: [since, until], sessions?, prompts?, cost_usd?, finding_count,
@@ -1414,6 +1481,7 @@ Only the current window; older bumps live in git history.
 | Version | What changed |
 |---|---|
 | 150 | **Seven additive features: a paused-git banner, worktree removal facts, desktop-aware phone alerts, a diagnostics file, rail status notes and workspace relocation.** `git_status` gains `operation?: GitOperation` (`merge`, `rebase`, `cherry_pick`), read from the checkout's git dir. New read-only `worktree_check{dir, path}`, answered by `worktree_check{dir, path, check: WorktreeCheckResult}` (uncommitted files and the newest change, commits ahead of the base and not on any remote, and the panes inside the tree; a part that could not look names why in `gaps`). New `desktop_presence {active}` client message with no reply: while a recent `true` report stands, due ntfy notifications are held and are sent once on the holding connection's `false`, on its disconnect, or when the report lapses after `DESKTOP_AWAY_SECS`. New `diagnostics_collect {app_version}`, answered by `diagnostics_collected {path?, bytes, error?}`: the daemon writes a redacted file under `<state_dir>/diagnostics/`, keeps the five newest, caps each at 1 MiB and includes no terminal output. `SessionInfo` gains `note?: PaneNote` (`text`, `phase?: PanePhase`, `at_ms`); new `session_note_clear{session}` and the `session_note{session, note?}` broadcast; agents write the note through the `pane_note` MCP tool or `hs-pane note`, and a note over 512 bytes is refused naming the limit. `Workspace` gains `missing?`, true when the folder is gone on disk; new `workspace_relocate{from, to}` checks that `to` is the same repository, re-points every row keyed by the path in one transaction, relinks worktrees with `git worktree repair`, and answers `workspace_relocated{from, to, moved: WorkspaceRelocateMoved}` plus `workspace_list` (both bcast). Existing messages are otherwise unchanged |
+| 151 | **Night shift runs an orchestrator for a window and leaves a morning report.** `RoutineKind` gains `night_shift`. New `night_shift_create`, `night_shift_state`, `night_shift_update`, `night_shift_run_now`, `night_shift_wrap_up`, `night_shift_stop`, `night_shift_decide`, `night_shift_qa_passed` and `night_shift_report`, answered by `night_shift_state` (with `revision`, `machine: NightMachine` and `merge_verify_command`), `night_shift_run_event`, `night_shift_notice` and `night_shift_report`. New types: `NightShiftSettings`, `NightWindow`, `NightClock`, `NightFocus`, `NightFocusLevel`, `NightAgent`, `NightAppCheck`, `NightOutput`, `NightQuestions`, `NightRun`, `NightRunPhase`, `NightStopReason`, `NightEntry`, `NightEntryKind`, `NightGates`, `NightGate`, `NightInterruption`, `NightCost`, `NightCostLine`, `NightCrewMember`, `NightKeepAwake`, `NightMachine`, `PreflightItem` and `PreflightStatus`. Refusals carry `context: "night_shift"`; `routine_update` and `routine_run_now` refuse a Night shift routine |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

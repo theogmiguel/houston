@@ -216,6 +216,7 @@ import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
+import { handleNightShiftNotice, setNightShiftFocus } from "./nightShiftNav";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -1412,6 +1413,10 @@ export function App(): React.JSX.Element {
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
         if (voice.handleMessage(msg)) return;
+        handleNightShiftNotice(msg, pushNotice, workspacesRef.current, (workspace, runId) => {
+          setNightShiftFocus({ workspace, runId });
+          setRailView("routines");
+        });
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;

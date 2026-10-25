@@ -37,10 +37,30 @@ pub(super) struct Running {
     pub workspace: String,
     pub number: u32,
     pub started_at_ms: i64,
+    /// Set when `hs-pane heavy` holds the slot instead of a verification.
+    pub lease: Option<crate::build_slot::Lease>,
+    /// Night shift running a pull request's checks instead of a verification.
+    pub night: bool,
+}
+
+impl Running {
+    fn holder(&self) -> String {
+        match &self.lease {
+            Some(l) => format!("hs-pane heavy in pane {}", l.session),
+            None if self.night => format!(
+                "Night shift running the checks of PR #{} of {}",
+                self.number, self.workspace
+            ),
+            None => format!(
+                "the merge queue verifying PR #{} of {}",
+                self.number, self.workspace
+            ),
+        }
+    }
 }
 
 /// Frees the slot however a verification ends.
-struct Slot<'a>(&'a Daemon);
+pub(super) struct Slot<'a>(&'a Daemon);
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
@@ -138,20 +158,134 @@ impl Daemon {
     /// Takes the slot for `number` of `workspace`, or `None` while another
     /// verification holds it; that head shows Waiting for a slot meanwhile.
     fn merge_queue_take_slot(&self, workspace: &str, number: u32) -> Option<Slot<'_>> {
+        if crate::build_slot::memory_hold(self.night_memory_free_mib()).is_some() {
+            return None;
+        }
         let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
-        if slot.is_some() {
+        let now = now_unix_ms();
+        if slot
+            .as_ref()
+            .is_some_and(|r| r.lease.as_ref().is_none_or(|l| !l.expired(now)))
+        {
             return None;
         }
         *slot = Some(Running {
             workspace: workspace.to_string(),
             number,
-            started_at_ms: now_unix_ms(),
+            started_at_ms: now,
+            lease: None,
+            night: false,
         });
         *self
             .merge_queue_cursor
             .lock()
             .expect("merge queue cursor lock") = Some(workspace.to_string());
         Some(Slot(self))
+    }
+
+    /// The slot for Night shift's checks of `number`, or `None` while another
+    /// build holds it or memory is below the floor.
+    pub(super) fn night_take_build_slot(&self, workspace: &str, number: u32) -> Option<Slot<'_>> {
+        if crate::build_slot::memory_hold(self.night_memory_free_mib()).is_some() {
+            return None;
+        }
+        let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
+        let now = now_unix_ms();
+        if slot
+            .as_ref()
+            .is_some_and(|r| r.lease.as_ref().is_none_or(|l| !l.expired(now)))
+        {
+            return None;
+        }
+        *slot = Some(Running {
+            workspace: workspace.to_string(),
+            number,
+            started_at_ms: now,
+            lease: None,
+            night: true,
+        });
+        Some(Slot(self))
+    }
+
+    /// `hs-pane heavy`'s door: `acquire` answers a lease or the current
+    /// holder; `renew` and `release` act on the caller's own lease.
+    pub fn build_slot_request(
+        &self,
+        session: u32,
+        action: &str,
+        lease: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
+        let now = now_unix_ms();
+        let expires_at_ms = now + crate::build_slot::LEASE_TTL_MS;
+        let held = |slot: &Option<Running>| {
+            slot.as_ref()
+                .and_then(|r| r.lease.as_ref())
+                .is_some_and(|l| Some(l.id.as_str()) == lease && l.session == session)
+        };
+        match action {
+            "acquire" => {
+                if let Some(r) = slot.as_ref() {
+                    if r.lease.as_ref().is_none_or(|l| !l.expired(now)) {
+                        return Ok(serde_json::json!({ "holder": r.holder() }));
+                    }
+                }
+                if let Some(hold) = crate::build_slot::memory_hold(self.night_memory_free_mib()) {
+                    return Ok(serde_json::json!({ "holder": hold }));
+                }
+                let id = uuid::Uuid::new_v4().to_string();
+                *slot = Some(Running {
+                    workspace: String::new(),
+                    number: 0,
+                    started_at_ms: now,
+                    lease: Some(crate::build_slot::Lease {
+                        session,
+                        id: id.clone(),
+                        expires_at_ms,
+                    }),
+                    night: false,
+                });
+                Ok(serde_json::json!({ "lease": id }))
+            }
+            "renew" if held(&slot) => {
+                if let Some(l) = slot.as_mut().and_then(|r| r.lease.as_mut()) {
+                    l.expires_at_ms = expires_at_ms;
+                }
+                Ok(serde_json::json!({ "renewed": true }))
+            }
+            "release" if held(&slot) => {
+                *slot = None;
+                Ok(serde_json::json!({ "released": true }))
+            }
+            "renew" | "release" => bail!(
+                "lease {:?} of pane {session} no longer holds the build slot",
+                lease.unwrap_or_default()
+            ),
+            other => bail!("build slot action {other:?}; expected acquire, renew or release"),
+        }
+    }
+
+    /// Who holds the build slot now, if anyone.
+    pub fn build_slot_holder(&self) -> Option<String> {
+        let now = now_unix_ms();
+        self.merge_queue_slot
+            .lock()
+            .expect("merge queue slot lock")
+            .as_ref()
+            .filter(|r| r.lease.as_ref().is_none_or(|l| !l.expired(now)))
+            .map(Running::holder)
+    }
+
+    /// Holds the slot as a verification would, until the release call.
+    #[doc(hidden)]
+    pub fn hold_build_slot_for_test(&self, hold: bool) {
+        *self.merge_queue_slot.lock().expect("merge queue slot lock") = hold.then(|| Running {
+            workspace: "/test".into(),
+            number: 7,
+            started_at_ms: now_unix_ms(),
+            lease: None,
+            night: false,
+        });
     }
 
     /// Moves the workspace's head one step: verify it, fail it, or land it.

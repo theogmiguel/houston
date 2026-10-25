@@ -233,6 +233,10 @@ Need a tint? `color-mix` against an existing token, never a new hex —
 All three are self-hosted; there is no network font fetch at runtime. Serif ships
 weights 400/500/600 only — display-only means 700 has no consumer.
 
+A wrapped line never holds a single word. `base.css` sets `text-wrap: pretty` on the body
+and `balance` on headings; copy is shortened so a short label fits one line rather than
+wrapping.
+
 ### The semantic scale
 
 Eight steps, each with size + weight + tracking-or-leading. Use the step, not a
@@ -560,7 +564,10 @@ all implemented — extend it rather than rolling a listbox.
 6px offset, 8px viewport margin; flips vertically, clamps horizontally; dismisses on
 Escape, pointerdown, scroll, resize and blur.
 
-- **Use one when** an icon-only button or a truncated label needs a name.
+- **Use one when** an icon-only button or a truncated label needs a name, or to explain
+  a field: `InfoTip` (an info button whose tooltip also opens on click) holds a
+  self-sufficient explanation, so the field carries no inline hint line. Inline text
+  next to a control is for its state, a consequence or an action needed, on the same line.
 - **Don't** when the control already has a visible label, or when the message is
   critical — errors and blocking warnings go inline.
 - **Never pass both `label` and a native `title`** on the same child; they double

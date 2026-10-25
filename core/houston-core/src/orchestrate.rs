@@ -3033,6 +3033,9 @@ hs-pane — a Houston pane controlling sibling agent panes
                 [--output-format \"…\"] [--boundaries \"…\"]
                                        (the brief: shape of the answer, and
                                         what the child must not do)
+  hs-pane heavy -- <command…>            (runs it only while holding the build
+                                          slot the merge queue verifies in;
+                                          prints how long it waited)
   hs-pane list
   hs-pane prompt <id> <text…> [--mode queue|steer|restart] [--client-request-id KEY] [--wait] [--timeout MS]
   hs-pane wait [--session ID] [--kind KIND] [--timeout-ms MS] [--stall-guard]
@@ -3077,6 +3080,15 @@ pub fn run_pane_cli(args: &[String]) -> i32 {
 }
 
 pub fn run_pane_cli_in(env: &crate::host_env::HostEnv, args: &[String]) -> i32 {
+    if args.first().map(String::as_str) == Some("heavy") {
+        return match heavy_cli(env, &args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("{e:#}");
+                1
+            }
+        };
+    }
     match pane_cli_inner(env, args) {
         Ok(()) => 0,
         Err(e) => {
@@ -3084,6 +3096,25 @@ pub fn run_pane_cli_in(env: &crate::host_env::HostEnv, args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// `hs-pane heavy -- <cmd>`: the command's own exit code, after the slot.
+fn heavy_cli(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Result<i32> {
+    let base = cli_base_url(env.var("HOUSTON_MCP_URL").as_deref())?;
+    let token = env.var("HOUSTON_MCP_TOKEN").ok_or_else(|| {
+        anyhow::anyhow!("HOUSTON_MCP_TOKEN is not set — hs-pane only works inside a Houston pane")
+    })?;
+    let call = |body: serde_json::Value| {
+        cli_call(
+            &base,
+            &token,
+            "POST",
+            "/orchestrate/build-slot",
+            Some(body),
+            CLI_HTTP_TIMEOUT,
+        )
+    };
+    crate::build_slot::run(args, &call)
 }
 
 pub(crate) fn parse_flags(

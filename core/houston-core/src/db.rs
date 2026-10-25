@@ -11,6 +11,7 @@ mod harness;
 mod instructions;
 mod intake;
 mod merge_queue;
+mod night_shift;
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
@@ -24,6 +25,7 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
+pub use night_shift::{NightEntryWrite, NightMember, NightRunRow};
 mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
@@ -912,7 +914,7 @@ fn close_stale_routine_runs(conn: &Connection) -> Result<()> {
         "UPDATE routine_runs SET status = 'failed', \
              error = 'the daemon stopped while this run was in flight', \
              ended_at_ms = MAX(started_at_ms, unixepoch() * 1000) \
-         WHERE status = 'running'",
+         WHERE status = 'running' AND id NOT IN              (SELECT run_id FROM night_runs WHERE ended_at_ms IS NULL)",
         [],
     )?;
     if closed > 0 {
@@ -1151,6 +1153,7 @@ pub struct AgentProfileRow {
     pub config_dir: String,
 }
 
+#[derive(Clone)]
 pub struct RoutineRow {
     pub kind: proto::RoutineKind,
     pub id: u32,
@@ -1416,7 +1419,7 @@ fn map_routine_row(r: &rusqlite::Row) -> rusqlite::Result<RoutineRow> {
         rusqlite::Error::FromSqlConversionFailure(
             18,
             rusqlite::types::Type::Text,
-            format!("routines {id} has unknown kind {kind_raw:?}: expected user or harness_review")
+            format!("routines {id} has unknown kind {kind_raw:?}: expected user, harness_review or night_shift")
                 .into(),
         )
     })?;
@@ -2063,6 +2066,7 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        night_shift::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
@@ -4497,6 +4501,10 @@ impl Db {
         let changed = conn.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
         conn.execute(
             "DELETE FROM harness_routines WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM night_shift_settings WHERE routine_id = ?1",
             rusqlite::params![id],
         )?;
         Ok(changed > 0)

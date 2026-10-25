@@ -416,6 +416,81 @@ pub fn verify(request: &Request<'_>) -> Result<Outcome> {
     })
 }
 
+/// One command's result in a scratch worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandRun {
+    pub command: String,
+    pub passed: bool,
+    pub code: Option<i32>,
+    pub tail: String,
+}
+
+/// The full commit `rev` names in `repo`.
+pub fn resolve_commit(repo: &Path, rev: &str) -> Result<String> {
+    git_ok(
+        repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{rev}^{{commit}}"),
+        ],
+        GIT_LOCAL_TIMEOUT,
+    )
+    .with_context(|| format!("{rev:?} is not a commit in {}", repo.display()))
+}
+
+/// Runs every command, in order, in a scratch worktree at `sha`, each within
+/// `limit`; one failing does not skip the rest. The worktree is removed.
+pub fn run_at(
+    repo: &Path,
+    scratch: &Path,
+    sha: &str,
+    commands: &[String],
+    limit: Duration,
+) -> Result<Vec<CommandRun>> {
+    let scratch = Scratch::create(repo, scratch, sha)?;
+    let mut out = Vec::new();
+    for command in commands {
+        let run = match crate::spawn::tail_within(
+            shell(command, &scratch.path),
+            limit,
+            OUTPUT_KEEP_BYTES,
+        ) {
+            Ok(run) => run,
+            Err(e) => {
+                out.push(CommandRun {
+                    command: command.clone(),
+                    passed: false,
+                    code: None,
+                    tail: format!("could not start: {e}"),
+                });
+                continue;
+            }
+        };
+        let tail = report_tail(&run.tail);
+        out.push(match run.status {
+            None => CommandRun {
+                command: command.clone(),
+                passed: false,
+                code: None,
+                tail: format!("timed out after {} s\n{tail}", limit.as_secs()),
+            },
+            Some(status) => CommandRun {
+                command: command.clone(),
+                passed: status.success(),
+                code: status.code(),
+                tail: if status.success() {
+                    String::new()
+                } else {
+                    tail
+                },
+            },
+        });
+    }
+    Ok(out)
+}
+
 /// The platform shell running `command` in `dir`: `sh -c` on Linux, `cmd /c`
 /// on Windows, as a person would type it.
 fn shell(command: &str, dir: &Path) -> std::process::Command {

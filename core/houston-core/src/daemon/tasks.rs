@@ -3993,7 +3993,7 @@ impl Daemon {
                     .to_string(),
             ));
         }
-        let cap = self.orchestration_max_live_children();
+        let cap = self.child_cap_of(caller);
         let live = self.active_children_of(caller).len() as u32;
         if live.saturating_add(requested) > cap {
             return Some(Self::task_child_cap_refused(
@@ -4733,7 +4733,7 @@ impl Daemon {
                 ),
             ));
         }
-        let cap = self.orchestration_max_live_children();
+        let cap = self.child_cap_of(orchestrator_session);
         let live = self.active_children_of(orchestrator_session).len() as u32;
         let free = cap.saturating_sub(live);
         if free < count {
@@ -5710,6 +5710,7 @@ impl Daemon {
             let Ok(session) = self.get(row.session_id) else {
                 continue;
             };
+            let mut check_runs: Vec<(String, Option<u64>)> = Vec::new();
             let info = session.snapshot_info();
             let target = Path::new(&info.project_dir);
             let result = match self.pr_reads.tick_read(
@@ -5727,6 +5728,11 @@ impl Daemon {
             };
             let evaluation = match result {
                 Ok((link, detail)) => {
+                    check_runs = detail
+                        .checks
+                        .iter()
+                        .map(|c| (c.name.clone(), c.run_id))
+                        .collect();
                     let own_login = row.state.own_login.clone();
                     crate::pull_requests::watch::evaluate(
                         row.state,
@@ -5754,6 +5760,13 @@ impl Daemon {
                     }
                 }
             };
+            self.night_shift_pr_changes(
+                row.session_id,
+                target,
+                row.link.number,
+                &evaluation.changes,
+                &check_runs,
+            );
             let body = crate::pull_requests::watch::message(row.link.number, &evaluation.changes);
             if let Some(state) = &evaluation.state {
                 if let Err(e) = self.db.pr_watch_set(row.session_id, &row.link, state) {

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod night_shift;
+pub use night_shift::*;
 pub mod task_trackers;
 pub use task_trackers::{
     TaskExternalLink, TaskExternalLinkSource, TaskTrackerConflictResolution,
@@ -232,6 +234,8 @@ pub enum RoutineKind {
     #[default]
     User,
     HarnessReview,
+    /// At most one per workspace; its settings live beside the routine row.
+    NightShift,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4885,6 +4889,48 @@ pub enum ClientMsg {
     HarnessReport {
         review_id: u32,
     },
+    /// Creates the workspace's paused Night shift routine, or answers the
+    /// existing one; answers `night_shift_state`.
+    NightShiftCreate {
+        workspace: String,
+    },
+    /// `preflight_until_ms` also runs preflight for a start lasting until then.
+    NightShiftState {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        preflight_until_ms: Option<i64>,
+    },
+    NightShiftUpdate {
+        routine_id: u32,
+        settings: NightShiftSettings,
+        expected_revision: String,
+    },
+    /// Starts a run now whose hard stop is `until_ms`.
+    NightShiftRunNow {
+        routine_id: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+    },
+    NightShiftWrapUp {
+        run_id: u32,
+    },
+    NightShiftStop {
+        run_id: u32,
+    },
+    /// Answers a parked decision; a decision is answered once.
+    NightShiftDecide {
+        entry_id: u32,
+        choice: String,
+    },
+    /// Marks a held PR as QA passed, releasing it to the merge queue.
+    NightShiftQaPassed {
+        entry_id: u32,
+    },
+    /// A run's `report.md`, at most `NIGHT_SHIFT_REPORT_MAX_BYTES`.
+    NightShiftReport {
+        run_id: u32,
+    },
     /// Records the operator's decision on a finding; `open` withdraws it.
     HarnessDecide {
         workspace: String,
@@ -6035,6 +6081,47 @@ pub enum ServerMsg {
         provider_coverage: Vec<HarnessProviderCoverage>,
         #[serde(default)]
         engine_refusals: Vec<RoutineEngineRefusal>,
+    },
+    /// Newest run first, at most `NIGHT_SHIFT_RUNS_PAGE`. `revision` guards
+    /// `night_shift_update`.
+    NightShiftState {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        routine: Option<Routine>,
+        settings: NightShiftSettings,
+        revision: String,
+        runs: Vec<NightRun>,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        preflight: Option<Vec<PreflightItem>>,
+        machine: NightMachine,
+        /// Whether the workspace's merge queue has a verification command,
+        /// which merge queue output needs.
+        #[serde(default)]
+        merge_verify_command: bool,
+        /// The global child panes per agent; a run's orchestrator has its own
+        /// limit of live workers plus two instead.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        child_cap: u32,
+        #[serde(default)]
+        detected: NightDetected,
+    },
+    /// One run changed (started, wrap-up, ledger, settled); broadcast.
+    NightShiftRunEvent {
+        run: NightRun,
+    },
+    /// One per settled run, for the morning: "7 draft PRs, 2 decisions".
+    NightShiftNotice {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u32,
+        headline: String,
+    },
+    NightShiftReport {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u32,
+        markdown: String,
+        truncated: bool,
     },
     HarnessOverview {
         rows: Vec<HarnessAttention>,
@@ -7407,6 +7494,253 @@ mod tests {
             }
             other => panic!("expected session_attach, got {other:?}"),
         }
+    }
+
+    fn night_settings_sample() -> NightShiftSettings {
+        let at = |hour, minute| NightClock { hour, minute };
+        NightShiftSettings {
+            v: NIGHT_SHIFT_SETTINGS_VERSION,
+            enabled: false,
+            window: NightWindow {
+                start: at(23, 30),
+                wrap_up: at(6, 45),
+                hard_stop: at(7, 30),
+                nights: vec![2, 3],
+            },
+            focus: NightFocus {
+                reliability: NightFocusLevel::Normal,
+                performance: NightFocusLevel::High,
+                ui_polish: NightFocusLevel::Off,
+                competitor_gaps: NightFocusLevel::Low,
+                docs_accuracy: NightFocusLevel::Off,
+                test_gaps: NightFocusLevel::Off,
+            },
+            direction: "faster attach".into(),
+            competitors: vec![
+                NightCompetitor::Repo {
+                    repo: "pingdotgg/t3code".into(),
+                },
+                NightCompetitor::App {
+                    name: "Orca".into(),
+                    version: "1.4.238".into(),
+                    path: "/opt/orca/orca".into(),
+                },
+            ],
+            orchestrator: NightAgent {
+                provider: AgentKind::Claude,
+                model: Some("opus".into()),
+            },
+            workers: vec![NightAgent {
+                provider: AgentKind::Zcode,
+                model: None,
+            }],
+            live_workers: 4,
+            reviewer: None,
+            output: NightOutput::MergeQueue,
+            pr_size: NightPrSize::Related { max_changes: 5 },
+            screenshots: true,
+            app_qa: NightAppQa {
+                enabled: true,
+                start_command: "scripts/dev.sh".into(),
+                source: "AGENTS.md".into(),
+                address: String::new(),
+                smoke_flows: vec!["open a pane".into()],
+            },
+            hold_for_qa: true,
+            checks: vec![NightCheck {
+                command: "cargo test".into(),
+                source: "added by you".into(),
+            }],
+            verification: NightVerification::Standard,
+            questions: NightQuestions::Park,
+        }
+    }
+
+    #[test]
+    fn night_shift_round_trip() {
+        let settings = night_settings_sample();
+        let item = PreflightItem {
+            id: "memory".into(),
+            status: PreflightStatus::Block,
+            label: "Free memory".into(),
+            detail: "4 GiB free".into(),
+            limit: Some("6144 MiB".into()),
+            actual: Some("4096 MiB".into()),
+        };
+        let entry = NightEntry {
+            id: 9,
+            run_id: 3,
+            kind: NightEntryKind::Pr,
+            title: "Faster attach".into(),
+            theme: Some("performance".into()),
+            status: Some("draft".into()),
+            pr_number: Some(41),
+            visible: true,
+            qa_passed: false,
+            body: String::new(),
+            gates: NightGates {
+                checks: NightGate::Passed,
+                review: NightGate::Passed,
+                qa: NightGate::Pending,
+                ci: NightGate::Failed,
+                verify: NightGate::Passed,
+                reruns: 1,
+            },
+            created_at_ms: 5,
+            decided_at_ms: None,
+            choice: None,
+            detail: NightEntryDetail {
+                claims: Vec::new(),
+                plans: vec![8],
+                head_sha: Some("abc123".into()),
+                built_by: vec![12],
+                checks_run: vec![NightCheckRun {
+                    command: "cargo fmt --check".into(),
+                    passed: false,
+                    code: Some(1),
+                    tail: "Diff in src/lib.rs".into(),
+                }],
+                verdicts: vec![NightVerdict {
+                    plan: 8,
+                    claim: 0,
+                    passed: true,
+                    evidence: "core/tests/attach.rs:42 passed".into(),
+                    fault: None,
+                    verifier: 13,
+                }],
+            },
+        };
+        let run = NightRun {
+            run_id: 3,
+            routine_id: 2,
+            workspace: "/w".into(),
+            trigger: RoutineTrigger::Manual,
+            phase: NightRunPhase::WrappingUp,
+            session_id: Some(7),
+            started_at_ms: 1,
+            wrap_up_at_ms: 2,
+            hard_stop_at_ms: 3,
+            ended_at_ms: None,
+            report_path: "/s/night-shift/3/report.md".into(),
+            report_published: false,
+            summary: None,
+            stop_reason: Some(NightStopReason::HardStop),
+            stop_detail: Some("07:30".into()),
+            interruptions: vec![NightInterruption {
+                at_ms: 1,
+                resumed_at_ms: 2,
+                detail: "daemon restart".into(),
+                resumed: true,
+            }],
+            cost: NightCost {
+                pane_hours: 1.5,
+                panes: 2,
+                per_provider: vec![NightCostLine {
+                    provider: AgentKind::Claude,
+                    panes: 2,
+                    pane_hours: 1.5,
+                }],
+            },
+            limited: vec![AgentKind::Claude],
+            preflight: vec![item.clone()],
+            keep_awake: NightKeepAwake::Held,
+            merge_order: vec![41],
+            entries: vec![entry],
+            crew: vec![NightCrewMember {
+                session_id: 7,
+                provider: AgentKind::Claude,
+                role: None,
+                status: Some(AgentStatus::Working),
+                started_at_ms: 1,
+                limited: false,
+            }],
+        };
+        let client = [
+            ClientMsg::NightShiftCreate {
+                workspace: "/w".into(),
+            },
+            ClientMsg::NightShiftState {
+                workspace: "/w".into(),
+                preflight_until_ms: Some(10),
+            },
+            ClientMsg::NightShiftUpdate {
+                routine_id: 2,
+                settings: settings.clone(),
+                expected_revision: "r".into(),
+            },
+            ClientMsg::NightShiftRunNow {
+                routine_id: 2,
+                until_ms: 10,
+            },
+            ClientMsg::NightShiftWrapUp { run_id: 3 },
+            ClientMsg::NightShiftStop { run_id: 3 },
+            ClientMsg::NightShiftDecide {
+                entry_id: 9,
+                choice: "ship".into(),
+            },
+            ClientMsg::NightShiftQaPassed { entry_id: 9 },
+            ClientMsg::NightShiftReport { run_id: 3 },
+        ];
+        for msg in client {
+            let json = serde_json::to_string(&msg).unwrap();
+            let back: ClientMsg = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), json);
+            assert!(json.contains("\"type\":\"night_shift_"), "{json}");
+        }
+        let server = [
+            ServerMsg::NightShiftState {
+                workspace: "/w".into(),
+                routine: None,
+                settings,
+                revision: "r".into(),
+                runs: vec![run.clone()],
+                preflight: Some(vec![item]),
+                machine: NightMachine {
+                    memory_free_mib: Some(1),
+                    disk_free_mib: None,
+                    on_battery: Some(false),
+                    keep_awake: NightKeepAwake::Off,
+                },
+                merge_verify_command: true,
+                child_cap: 6,
+                detected: NightDetected {
+                    checks: vec![NightCheck {
+                        command: "cargo fmt --check".into(),
+                        source: "ci.yml · core-checks".into(),
+                    }],
+                    start_command: Some(NightCheck {
+                        command: "node ui/harness/shot.mjs <story> <out.png>".into(),
+                        source: "ui/harness/shot.mjs".into(),
+                    }),
+                    apps: vec![NightInstalledApp {
+                        name: "Orca".into(),
+                        version: String::new(),
+                        path: "/opt/orca/orca".into(),
+                    }],
+                    apps_note: None,
+                },
+            },
+            ServerMsg::NightShiftRunEvent { run },
+            ServerMsg::NightShiftNotice {
+                workspace: "/w".into(),
+                run_id: 3,
+                headline: "1 draft PR, 0 decisions".into(),
+            },
+            ServerMsg::NightShiftReport {
+                run_id: 3,
+                markdown: "# Night".into(),
+                truncated: false,
+            },
+        ];
+        for msg in server {
+            let json = serde_json::to_string(&msg).unwrap();
+            let back: ServerMsg = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), json);
+        }
+        let kind: RoutineKind = serde_json::from_str("\"night_shift\"").unwrap();
+        assert_eq!(kind, RoutineKind::NightShift);
+        let stored = serde_json::to_value(night_settings_sample()).unwrap();
+        assert_eq!(stored["v"], serde_json::json!(2));
     }
 
     #[test]
