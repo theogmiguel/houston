@@ -506,6 +506,59 @@ impl Daemon {
         Ok(())
     }
 
+    /// Restores the thread sessions a handoff closed, resuming each conversation as a
+    /// restart does: on the new generation, or here when the handoff failed.
+    pub fn restore_handed_over_threads(self: &Arc<Self>, ids: &[u32]) {
+        if ids.is_empty() {
+            return;
+        }
+        match self.db.list_interrupted() {
+            Ok(rows) => {
+                let rows: Vec<_> = rows
+                    .into_iter()
+                    .filter(|info| ids.contains(&info.id) && !self.sessions_contain(info.id))
+                    .collect();
+                let mut dead = self.dead.lock().expect("dead lock");
+                for info in rows {
+                    dead.insert(info.id, info);
+                }
+            }
+            Err(error) => {
+                tracing::warn!("handoff: reading thread sessions {ids:?} to restore: {error:#}");
+            }
+        }
+        for &id in ids {
+            self.shutdown_preserved
+                .lock()
+                .expect("shutdown preserved lock")
+                .remove(&id);
+            // A parent's restore may already have restored this one as its child.
+            let dead = self.dead.lock().expect("dead lock").contains_key(&id);
+            if !dead && !self.sessions_contain(id) {
+                continue;
+            }
+            if let Err(error) =
+                self.respawn_with(id, true, None, None, false, RespawnConversation::Restore)
+            {
+                tracing::warn!("handoff: restoring thread session {id} failed: {error:#}");
+                if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
+                    info.restore_deferred = Some(proto::RestoreReason::SpawnFailed);
+                    info.resume_notice = Some(format!(
+                        "Thread session {id} was not restored after the daemon handoff: \
+                         {error:#}"
+                    ));
+                }
+            }
+        }
+    }
+
+    fn sessions_contain(&self, id: u32) -> bool {
+        self.sessions
+            .lock()
+            .expect("sessions lock")
+            .contains_key(&id)
+    }
+
     /// The daemon ended the process itself, so no turn is running any more.
     fn thread_settle(
         self: &Arc<Self>,
