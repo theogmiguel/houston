@@ -7602,9 +7602,10 @@ pub(crate) mod tests {
             .unwrap()
             .collect::<std::result::Result<_, _>>()
             .unwrap();
+        assert_eq!(checkouts[0].0, "t1");
         assert_eq!(
-            checkouts[0],
-            ("t1".to_owned(), "/b/proj/.houston/worktrees/x".to_owned())
+            Path::new(&checkouts[0].1),
+            Path::new("/b/proj/.houston/worktrees/x")
         );
         assert_eq!(
             checkouts[1],
