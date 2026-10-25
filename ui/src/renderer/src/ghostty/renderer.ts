@@ -11,6 +11,8 @@ export interface GhosttyCellMetrics {
   readonly width: number;
   readonly height: number;
   readonly baseline: number;
+  /** The font's unsnapped advance of one ASCII cell, before snapping to device pixels. */
+  readonly advance?: number;
 }
 
 export interface GhosttyCellRange {
@@ -71,7 +73,6 @@ let cachedFontFamily = "";
 let fontCacheKey = "";
 let rowMask = new Uint8Array(0);
 const fontCache = new Map<number, string>();
-const asciiAdvanceCache = new Map<string, number>();
 
 function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): string {
   if (fontSize !== cachedFontSize || fontFamily !== cachedFontFamily) {
@@ -79,7 +80,6 @@ function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): s
     cachedFontFamily = fontFamily;
     fontCacheKey = `${fontSize}px ${fontFamily}`;
     fontCache.clear();
-    asciiAdvanceCache.clear();
   }
   const variant = (cell.italic ? 1 : 0) | (cell.bold ? 2 : 0);
   const hit = fontCache.get(variant);
@@ -89,15 +89,6 @@ function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): s
   const value = `${style} ${weight} ${fontCacheKey}`;
   fontCache.set(variant, value);
   return value;
-}
-
-function asciiCellAdvance(context: CanvasRenderingContext2D, font: string): number {
-  const hit = asciiAdvanceCache.get(font);
-  if (hit !== undefined) return hit;
-  context.font = font;
-  const advance = context.measureText("M").width;
-  asciiAdvanceCache.set(font, advance);
-  return advance;
 }
 
 export function snapToDevice(value: number, dpr: number): number {
@@ -125,6 +116,7 @@ export function measureGhosttyCell(
     width: Math.max(minimum, snapToDevice(Math.max(1, widthMeasurement.width), devicePixelRatio)),
     height: Math.max(minimum, snapToDevice(height, devicePixelRatio)),
     baseline: snapToDevice(Math.round((height - glyphHeight) / 2 + ascent), devicePixelRatio),
+    advance: widthMeasurement.width,
   };
 }
 
@@ -324,7 +316,7 @@ export function renderGhosttySnapshot(options: {
            * Only one-code-unit ASCII cells share an exact advance. */
           const onGrid =
             asciiCells &&
-            Math.abs(asciiCellAdvance(context, font) - metrics.width) * runCols <=
+            Math.abs((metrics.advance ?? metrics.width) - metrics.width) * runCols <=
               0.5 / devicePixelRatio;
           if (onGrid) {
             context.fillText(

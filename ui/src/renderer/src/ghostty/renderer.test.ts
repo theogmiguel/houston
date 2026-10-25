@@ -62,19 +62,8 @@ function snapshot(overrides: Partial<GhosttySnapshot> & { rowData: readonly Ghos
 
 type RecordedCall = { op: string; args: readonly unknown[]; style?: string; font?: string };
 
-function recordingContext(
-  canvasWidth = 400,
-  canvasHeight = 300,
-  options: {
-    advance?: number;
-    measureText?: (text: string) => number;
-  } = {},
-) {
+function recordingContext(canvasWidth = 400, canvasHeight = 300) {
   const calls: RecordedCall[] = [];
-  const measured: string[] = [];
-  const advance = options.advance ?? 6;
-  const measureAdvance =
-    options.measureText ?? ((text: string) => (text === "M" ? advance : text.length * 6));
   let fillStyle = "";
   let strokeStyle = "";
   let font = "";
@@ -110,16 +99,13 @@ function recordingContext(
     fillRect: (...args: number[]) => calls.push({ op: "fillRect", args, style: fillStyle }),
     strokeRect: (...args: number[]) => calls.push({ op: "strokeRect", args, style: strokeStyle }),
     fillText: (...args: unknown[]) => calls.push({ op: "fillText", args, style: fillStyle, font }),
-    measureText: (text: string) => {
-      measured.push(text);
-      return {
-        width: measureAdvance(text),
-        actualBoundingBoxAscent: 10,
-        actualBoundingBoxDescent: 3,
-      };
-    },
+    measureText: (text: string) => ({
+      width: text.length * 6,
+      actualBoundingBoxAscent: 10,
+      actualBoundingBoxDescent: 3,
+    }),
   };
-  return { context: context as unknown as CanvasRenderingContext2D, calls, measured };
+  return { context: context as unknown as CanvasRenderingContext2D, calls };
 }
 
 function fillRects(calls: readonly RecordedCall[]): RecordedCall[] {
@@ -202,6 +188,13 @@ describe("measureGhosttyCell", () => {
     const context = measuringContext(8, 2, 10.2);
     const result = measureGhosttyCell(context, 10, "monospace", 1.5);
     expect(result.width).toBe(snapToDevice(10.2, 1.5));
+  });
+
+  it("reports the raw unsnapped advance of one ASCII cell", () => {
+    const context = measuringContext(8, 2, 7.15);
+    const result = measureGhosttyCell(context, 10, "monospace");
+    expect(result.width).toBe(7);
+    expect(result.advance).toBe(7.15);
   });
 });
 
@@ -536,7 +529,7 @@ describe("renderGhosttySnapshot", () => {
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 6, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace",
       padding: 4,
@@ -551,11 +544,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("keeps a single fillText for a run whose advance matches the grid", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" }), cell({ text: "c" })];
-    const { context, calls, measured } = recordingContext(400, 300, { advance: 7 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-exact",
       padding: 4,
@@ -565,7 +558,24 @@ describe("renderGhosttySnapshot", () => {
     const texts = drawnTexts(calls);
     expect(texts).toHaveLength(1);
     expect(texts[0]?.args).toEqual(["abc", 4, 18, 21]);
-    expect(measured).toEqual(["M"]);
+  });
+
+  it("keeps a single fillText for an ASCII run when the advance is absent", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" }), cell({ text: "c" })];
+    const { context, calls } = recordingContext();
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-no-advance",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]?.args).toEqual(["abc", 4, 18, 21]);
   });
 
   it("draws a run on the grid when a fallback glyph is wider than its cell", () => {
@@ -574,7 +584,7 @@ describe("renderGhosttySnapshot", () => {
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 6, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace",
       padding: 4,
@@ -598,7 +608,7 @@ describe("renderGhosttySnapshot", () => {
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 6, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace",
       padding: 4,
@@ -613,16 +623,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("places every glyph on the grid when a wide fallback glyph is offset by narrower ones", () => {
     const rowCells = [cell({ text: "⏺" }), cell({ text: "l" })];
-    const { context, calls } = recordingContext(400, 300, {
-      measureText: (text) =>
-        text === "M"
-          ? 7
-          : [...text].reduce((sum, char) => sum + (char === "⏺" ? 10.5 : 3.5), 0),
-    });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-cancellation",
       padding: 4,
@@ -637,11 +642,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("draws cell by cell past the device-pixel tolerance over the run at DPR 2", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
-    const { context, calls } = recordingContext(400, 300, { advance: 7.3 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7.3, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-dpr2-far",
       padding: 4,
@@ -657,11 +662,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("draws cell by cell at DPR 2 for a difference a whole-pixel tolerance would accept", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
-    const { context, calls } = recordingContext(400, 300, { advance: 7.2 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7.2, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-dpr2-mid",
       padding: 4,
@@ -677,11 +682,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("keeps one fillText within the device-pixel tolerance over the run at DPR 2", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
-    const { context, calls } = recordingContext(400, 300, { advance: 7.1 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7.1, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-dpr2-near",
       padding: 4,
@@ -696,11 +701,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("draws cell by cell past the device-pixel tolerance over the run at DPR 1", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
-    const { context, calls } = recordingContext(400, 300, { advance: 7.3 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7.3, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-dpr1-far",
       padding: 4,
@@ -716,11 +721,11 @@ describe("renderGhosttySnapshot", () => {
 
   it("keeps one fillText within the device-pixel tolerance over the run at DPR 1", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
-    const { context, calls } = recordingContext(400, 300, { advance: 7.2 });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 7.2, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-dpr1-near",
       padding: 4,
@@ -739,7 +744,7 @@ describe("renderGhosttySnapshot", () => {
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
-      metrics: metrics({ width: 7, height: 20 }),
+      metrics: metrics({ width: 7, advance: 6, height: 20 }),
       fontSize: 12,
       fontFamily: "monospace-whitespace",
       padding: 4,
