@@ -1,5 +1,6 @@
 use super::*;
-use crate::thread_session::{Conversation, ThreadHandle, ThreadHost, ThreadLaunch};
+use crate::claude_stream::ClaudeStreamJson;
+use crate::thread_session::{Conversation, ThreadHandle, ThreadHost};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -326,7 +327,7 @@ impl Daemon {
         if let Some(replacement) = &replacement {
             self.reclaim_thread_group(replacement.id)?;
         }
-        let (launch, assembled) = ThreadLaunch::from_command(&cmd)?;
+        let (adapter, assembled) = ClaudeStreamJson::from_command(&cmd)?;
         let conversation = assembled.or_else(|| preassigned.clone().map(Conversation::New));
         let history_owner = replacement
             .as_ref()
@@ -339,7 +340,7 @@ impl Daemon {
             daemon: Arc::downgrade(self),
             usage: Mutex::new(None),
         });
-        let handle = ThreadHandle::start(id, launch, conversation, next_seq, host)?;
+        let handle = ThreadHandle::start(id, Arc::new(adapter), conversation, next_seq, host)?;
         info.view = proto::SessionView::Thread;
         self.session_checkout_metadata(&mut info);
         let agent = info.agent;

@@ -1,14 +1,12 @@
-//! A Claude session in thread view: `claude -p` with stream-json on pipes, not a PTY.
-//! Stop ends the whole process tree (process group / Job object); the next message
-//! resumes the conversation in a new process. See docs/internals/invariants.md.
+//! A session in thread view: a provider CLI on pipes, decoded by a `ProviderAdapter`
+//! (Claude's: `claude_stream.rs`). Stop ends the process tree (process group / Job object);
+//! the next message resumes the conversation in a new process. See docs/internals/invariants.md.
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    ThreadEvent, ThreadEventKind, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
+    AgentKind, ThreadEvent, ThreadEventKind, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
+    THREAD_USER_MESSAGE_MAX_BYTES,
 };
-use serde_json::Value;
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -18,27 +16,16 @@ use std::time::Duration;
 #[cfg(any(target_os = "linux", windows))]
 use std::time::Instant;
 
-/// Flags that turn an interactive Claude launch into a headless thread process.
-pub const THREAD_FLAGS: [&str; 7] = [
-    "-p",
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-];
-
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
 /// One stdout line above this is skipped whole, with a notice: a single tool result can
 /// be megabytes, and at most 256 KiB of any event is kept anyway.
 const STDOUT_LINE_MAX_BYTES: usize = 4 * 1024 * 1024;
 const STDERR_TAIL_BYTES: usize = 4 * 1024;
-/// Time a stopped Claude gets to exit on SIGTERM before its group is killed.
+/// Time a stopped provider process gets to exit on SIGTERM before its group is killed.
 #[cfg(unix)]
 const STOP_GRACE: Duration = Duration::from_millis(1000);
-/// Bounds the system-wide thread snapshot walk that resumes a suspended Claude; it
+/// Bounds the system-wide thread snapshot walk that resumes a suspended process; it
 /// normally takes milliseconds.
 #[cfg(windows)]
 const RESUME_TIMEOUT: Duration = Duration::from_secs(5);
@@ -53,95 +40,55 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn turn_ended(&self, session: u32, outcome: TurnOutcome);
     /// Stop or an exit ended the process, so no turn is running any more.
     fn settle(&self, session: u32, outcome: TurnOutcome);
-    /// A new Claude process leads the thread's process group.
+    /// A new provider process leads the thread's process group.
     fn process_started(&self, session: u32, pid: u32);
     /// Stop, an exit or close ended the process tree, so nothing of it is left to reclaim.
     fn process_gone(&self, session: u32);
 }
 
-/// The launch a thread restarts from: the session's assembled Claude command without its
-/// conversation arguments, which change between the first start and a resume.
+/// The provider-specific half of a structured session.
+pub trait ProviderAdapter: Send + Sync + 'static {
+    /// Names the provider in notices and refusals.
+    fn provider(&self) -> AgentKind;
+    /// The process for `conversation`.
+    fn command(&self, conversation: Option<&Conversation>) -> Result<ProcessSpec>;
+    /// One codec per process: decoders keep per-process state (block indices, request ids).
+    fn open(&self) -> Box<dyn ProviderStream>;
+}
+
+pub trait ProviderStream: Send {
+    /// Lines written before the first message: none for Claude; an `initialize` request
+    /// for a JSON-RPC provider.
+    fn handshake(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The stdin line that starts a turn.
+    fn user_message(&mut self, text: &str) -> Result<String>;
+    /// One stdout line. Unknown types decode to nothing.
+    fn decode(&mut self, line: &str) -> Decoded;
+}
+
+/// What one stdout line produced besides events.
+#[derive(Debug, Default, PartialEq)]
+pub struct Decoded {
+    pub events: Vec<ThreadEventKind>,
+    pub turn_end: Option<TurnOutcome>,
+    pub conversation: Option<String>,
+}
+
+/// A provider process: started with exactly this environment and piped stdio.
 #[derive(Clone, Debug)]
-pub struct ThreadLaunch {
+pub struct ProcessSpec {
     pub program: OsString,
     pub args: Vec<OsString>,
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Conversation {
-    /// `--session-id`: nothing has been sent in it yet.
-    New(String),
-    /// `--resume`: the conversation has at least one turn.
-    Resume(String),
-}
-
-impl ThreadLaunch {
-    /// Splits `--session-id <id>` and `--resume <id>` out of an assembled command.
-    pub fn from_command(
-        cmd: &portable_pty::CommandBuilder,
-    ) -> Result<(Self, Option<Conversation>)> {
-        let argv = cmd.get_argv();
-        let program = argv
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow!("thread launch has an empty argv (expected the claude path)"))?;
-        let mut args = Vec::new();
-        let mut conversation = None;
-        let mut rest = argv[1..].iter();
-        while let Some(arg) = rest.next() {
-            let kind = match arg.to_str() {
-                Some("--session-id") => Some(false),
-                Some("--resume") => Some(true),
-                _ => None,
-            };
-            match kind {
-                Some(resume) => {
-                    let id = rest
-                        .next()
-                        .and_then(|id| id.to_str())
-                        .ok_or_else(|| {
-                            anyhow!("thread launch: {arg:?} must be followed by a conversation id")
-                        })?
-                        .to_string();
-                    conversation = Some(if resume {
-                        Conversation::Resume(id)
-                    } else {
-                        Conversation::New(id)
-                    });
-                }
-                None => args.push(arg.clone()),
-            }
-        }
-        let env = cmd
-            .iter_full_env_as_str()
-            .map(|(key, value)| (key.to_string(), value.to_string()))
-            .collect();
-        Ok((
-            Self {
-                program,
-                args,
-                env,
-                cwd: cmd.get_cwd().map(PathBuf::from),
-            },
-            conversation,
-        ))
-    }
-
-    fn command(&self, conversation: Option<&Conversation>) -> std::process::Command {
+impl ProcessSpec {
+    fn command(&self) -> std::process::Command {
         let mut command = crate::spawn::command(&self.program);
         command.args(&self.args);
-        match conversation {
-            Some(Conversation::New(id)) => {
-                command.args(["--session-id", id]);
-            }
-            Some(Conversation::Resume(id)) => {
-                command.args(["--resume", id]);
-            }
-            None => {}
-        }
-        command.args(THREAD_FLAGS);
         command.env_clear();
         command.envs(self.env.iter().map(|(k, v)| (k, v)));
         if let Some(cwd) = &self.cwd {
@@ -155,6 +102,14 @@ impl ThreadLaunch {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Conversation {
+    /// `--session-id`: nothing has been sent in it yet.
+    New(String),
+    /// `--resume`: the conversation has at least one turn.
+    Resume(String),
+}
+
 /// Cuts `text` to at most `max` bytes on a character boundary.
 pub fn cap_text(mut text: String, max: usize) -> (String, bool) {
     if text.len() <= max {
@@ -166,219 +121,6 @@ pub fn cap_text(mut text: String, max: usize) -> (String, bool) {
     }
     text.truncate(end);
     (text, true)
-}
-
-/// What one stdout line produced besides events.
-#[derive(Debug, Default, PartialEq)]
-pub struct Mapped {
-    pub events: Vec<ThreadEventKind>,
-    pub turn_end: Option<TurnOutcome>,
-    pub conversation: Option<String>,
-}
-
-/// Maps stream-json lines to thread events. One per process: block indices restart with it.
-#[derive(Default)]
-pub struct StreamMapper {
-    open_text_block: HashMap<String, u64>,
-}
-
-impl StreamMapper {
-    pub fn map_line(&mut self, line: &str) -> Mapped {
-        let mut out = Mapped::default();
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            tracing::debug!("thread stdout line is not JSON; ignored");
-            return out;
-        };
-        // Sub-agent traffic (a Task tool's own turns) carries its parent tool use; the
-        // thread shows that tool's call and result, not its inner turns.
-        if value
-            .get("parent_tool_use_id")
-            .is_some_and(|parent| !parent.is_null())
-        {
-            return out;
-        }
-        match value.get("type").and_then(Value::as_str) {
-            Some("stream_event") => self.map_stream_event(&value, &mut out),
-            Some("assistant") => self.map_assistant(&value, &mut out),
-            Some("user") => map_tool_results(&value, &mut out),
-            Some("result") => {
-                let is_error = value
-                    .get("is_error")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let outcome = if is_error {
-                    TurnOutcome::Error
-                } else {
-                    TurnOutcome::Completed
-                };
-                let error = is_error.then(|| result_error(&value));
-                out.events.push(ThreadEventKind::TurnEnd { outcome, error });
-                out.turn_end = Some(outcome);
-            }
-            Some("system") => {
-                if value.get("subtype").and_then(Value::as_str) == Some("init") {
-                    out.conversation = value
-                        .get("session_id")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                }
-            }
-            other => tracing::debug!("thread stream event {other:?} ignored"),
-        }
-        out
-    }
-
-    fn map_stream_event(&mut self, value: &Value, out: &mut Mapped) {
-        let Some(event) = value.get("event") else {
-            return;
-        };
-        let message = value
-            .get("api_message_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let index = event.get("index").and_then(Value::as_u64).unwrap_or(0);
-        match event.get("type").and_then(Value::as_str) {
-            Some("content_block_start") => {
-                let kind = event.pointer("/content_block/type").and_then(Value::as_str);
-                if kind == Some("text") {
-                    self.open_text_block.insert(message.to_string(), index);
-                }
-            }
-            Some("content_block_delta") => {
-                if event.pointer("/delta/type").and_then(Value::as_str) != Some("text_delta") {
-                    return;
-                }
-                let text = event
-                    .pointer("/delta/text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                if !text.is_empty() {
-                    out.events.push(ThreadEventKind::AssistantDelta {
-                        message_id: block_key(message, index),
-                        text: text.to_string(),
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn map_assistant(&mut self, value: &Value, out: &mut Mapped) {
-        let message = value
-            .pointer("/message/id")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let Some(blocks) = value.pointer("/message/content").and_then(Value::as_array) else {
-            return;
-        };
-        for block in blocks {
-            match block.get("type").and_then(Value::as_str) {
-                Some("text") => {
-                    let text = block
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string();
-                    let index = self.open_text_block.get(message).copied().unwrap_or(0);
-                    let (text, truncated) = cap_text(text, THREAD_ASSISTANT_TEXT_MAX_BYTES);
-                    out.events.push(ThreadEventKind::AssistantMessage {
-                        message_id: block_key(message, index),
-                        text,
-                        truncated,
-                    });
-                }
-                Some("tool_use") => {
-                    let input = block
-                        .get("input")
-                        .map(Value::to_string)
-                        .unwrap_or_else(|| "{}".to_string());
-                    let (input, truncated) = cap_text(input, THREAD_TOOL_INPUT_MAX_BYTES);
-                    out.events.push(ThreadEventKind::ToolCall {
-                        tool_use_id: str_field(block, "id"),
-                        name: str_field(block, "name"),
-                        input,
-                        truncated,
-                    });
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-/// Deltas and their final message share this key: one text block of one model message.
-fn block_key(message: &str, index: u64) -> String {
-    format!("{message}:{index}")
-}
-
-fn str_field(value: &Value, name: &str) -> String {
-    value
-        .get(name)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn map_tool_results(value: &Value, out: &mut Mapped) {
-    let Some(blocks) = value.pointer("/message/content").and_then(Value::as_array) else {
-        return;
-    };
-    for block in blocks {
-        if block.get("type").and_then(Value::as_str) != Some("tool_result") {
-            continue;
-        }
-        let output = match block.get("content") {
-            Some(Value::String(text)) => text.clone(),
-            Some(Value::Array(parts)) => parts
-                .iter()
-                .filter_map(|part| part.get("text").and_then(Value::as_str))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Some(other) if !other.is_null() => other.to_string(),
-            _ => String::new(),
-        };
-        let (output, truncated) = cap_text(output, THREAD_TOOL_OUTPUT_MAX_BYTES);
-        out.events.push(ThreadEventKind::ToolResult {
-            tool_use_id: str_field(block, "tool_use_id"),
-            is_error: block
-                .get("is_error")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            output,
-            truncated,
-        });
-    }
-}
-
-fn result_error(value: &Value) -> String {
-    let text = value
-        .get("result")
-        .and_then(Value::as_str)
-        .filter(|text| !text.trim().is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            value
-                .get("errors")
-                .and_then(Value::as_array)
-                .map(|errors| {
-                    errors
-                        .iter()
-                        .map(|e| e.as_str().map_or_else(|| e.to_string(), str::to_string))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                })
-                .filter(|text| !text.is_empty())
-        })
-        .unwrap_or_else(|| {
-            format!(
-                "turn ended with {}",
-                value
-                    .get("subtype")
-                    .and_then(Value::as_str)
-                    .unwrap_or("an error")
-            )
-        });
-    cap_text(text, THREAD_TOOL_OUTPUT_MAX_BYTES).0
 }
 
 /// Merges adjacent deltas of one block so a burst becomes one entry with the later `seq`.
@@ -475,19 +217,22 @@ impl Tail {
 #[cfg(windows)]
 fn adopt_suspended(job: &crate::pid::OwnedJob, child: &std::process::Child) -> Result<()> {
     job.assign(child)
-        .with_context(|| format!("assigning Claude pid {} to its Job object", child.id()))?;
+        .with_context(|| format!("assigning thread pid {} to its Job object", child.id()))?;
     crate::pid::resume_owned_child(child, Instant::now(), RESUME_TIMEOUT)
-        .with_context(|| format!("resuming suspended Claude pid {}", child.id()))
+        .with_context(|| format!("resuming suspended thread pid {}", child.id()))
 }
 
-/// One run of the Claude process. A Stop or a crash ends it; the handle starts the next.
+/// One run of the provider process. A Stop or a crash ends it; the handle starts the next.
 struct ThreadProcess {
     generation: u64,
+    provider: AgentKind,
     pid: u32,
     child: Mutex<Option<std::process::Child>>,
     /// Held only by writers: ending the tree never waits for it, so a write blocked on a
-    /// Claude that stopped reading cannot hold up Stop, Kill or shutdown.
+    /// process that stopped reading cannot hold up Stop, Kill or shutdown.
     stdin: Mutex<Option<std::process::ChildStdin>>,
+    /// Locked per line by the stdout reader and per message by `send`, never across a write.
+    stream: Mutex<Box<dyn ProviderStream>>,
     stopping: AtomicBool,
     stderr: Arc<Mutex<Tail>>,
     #[cfg(windows)]
@@ -496,7 +241,7 @@ struct ThreadProcess {
 
 impl ThreadProcess {
     fn spawn(
-        launch: &ThreadLaunch,
+        adapter: &dyn ProviderAdapter,
         conversation: Option<&Conversation>,
         generation: u64,
     ) -> Result<(
@@ -504,7 +249,9 @@ impl ThreadProcess {
         std::process::ChildStdout,
         std::process::ChildStderr,
     )> {
-        let mut command = launch.command(conversation);
+        let provider = adapter.provider();
+        let spec = adapter.command(conversation)?;
+        let mut command = spec.command();
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -519,8 +266,8 @@ impl ThreadProcess {
         };
         let mut child = command.spawn().with_context(|| {
             format!(
-                "starting {} for a thread session (expected the claude CLI on PATH)",
-                launch.program.to_string_lossy()
+                "starting {} for a thread session (expected the {provider:?} CLI on PATH)",
+                spec.program.to_string_lossy()
             )
         })?;
         #[cfg(windows)]
@@ -534,9 +281,11 @@ impl ThreadProcess {
         let stderr = child.stderr.take().expect("piped stderr");
         let process = Arc::new(Self {
             generation,
+            provider,
             pid: child.id(),
             child: Mutex::new(Some(child)),
             stdin: Mutex::new(stdin),
+            stream: Mutex::new(adapter.open()),
             stopping: AtomicBool::new(false),
             stderr: Arc::new(Mutex::new(Tail { bytes: Vec::new() })),
             #[cfg(windows)]
@@ -549,11 +298,11 @@ impl ThreadProcess {
         let mut stdin = self.stdin.lock().expect("thread stdin lock");
         let pipe = stdin
             .as_mut()
-            .ok_or_else(|| anyhow!("Claude pid {} has no open stdin", self.pid))?;
+            .ok_or_else(|| anyhow!("{:?} pid {} has no open stdin", self.provider, self.pid))?;
         pipe.write_all(line.as_bytes())
             .and_then(|()| pipe.write_all(b"\n"))
             .and_then(|()| pipe.flush())
-            .with_context(|| format!("writing a message to Claude pid {}", self.pid))
+            .with_context(|| format!("writing a message to {:?} pid {}", self.provider, self.pid))
     }
 
     /// Ends every process in the tree and reaps the root. Returns its exit code if known.
@@ -655,7 +404,7 @@ impl HandleState {
 /// The thread backend of one session.
 pub struct ThreadHandle {
     session: u32,
-    launch: ThreadLaunch,
+    adapter: Arc<dyn ProviderAdapter>,
     host: Arc<dyn ThreadHost>,
     /// Serialises process start, Stop, exit handling and close, with their events and the
     /// daemon's status settle, so a message sent during a Stop waits for the old tree.
@@ -670,7 +419,7 @@ impl ThreadHandle {
     /// Starts the first process at once; it waits on stdin for the first message.
     pub fn start(
         session: u32,
-        launch: ThreadLaunch,
+        adapter: Arc<dyn ProviderAdapter>,
         conversation: Option<Conversation>,
         next_seq: u64,
         host: Arc<dyn ThreadHost>,
@@ -678,7 +427,7 @@ impl ThreadHandle {
         let outbox = Arc::new(Outbox::default());
         let handle = Arc::new(Self {
             session,
-            launch,
+            adapter,
             host: Arc::clone(&host),
             op: Mutex::new(()),
             state: Mutex::new(HandleState {
@@ -712,7 +461,7 @@ impl ThreadHandle {
         self.session
     }
 
-    /// The running Claude's pid, if a process is running.
+    /// The provider process pid, if a process is running.
     pub fn pid(&self) -> Option<u32> {
         let state = self.state.lock().expect("thread state lock");
         state.process.as_ref().map(|process| process.pid)
@@ -747,7 +496,7 @@ impl ThreadHandle {
                 THREAD_USER_MESSAGE_MAX_BYTES
             );
         }
-        let process = {
+        let (process, line) = {
             let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.state.lock().expect("thread state lock");
             if state.closed {
@@ -757,29 +506,33 @@ impl ThreadHandle {
                 );
             }
             let process = self.ensure_process(&mut state)?;
+            let line = process
+                .stream
+                .lock()
+                .expect("thread stream lock")
+                .user_message(text)?;
             state.turn_open = true;
             drop(state);
             self.emit(vec![ThreadEventKind::UserMessage {
                 text: text.to_string(),
             }]);
-            process
+            (process, line)
         };
-        let line = serde_json::json!({
-            "type": "user",
-            "message": {"role": "user", "content": text},
-        })
-        .to_string();
-        // Written outside every lock: Claude may be writing a long answer to stdout while
-        // this blocks on a full stdin pipe, and the stdout reader must keep draining.
+        // Written outside every lock: the provider may be writing a long answer to stdout
+        // while this blocks on a full stdin pipe, and the stdout reader must keep draining.
         if let Err(error) = process.write_line(&line) {
             if process.stopping.load(Ordering::Acquire) {
                 bail!(
-                    "thread session {} stopped before this message reached Claude",
-                    self.session
+                    "thread session {} stopped before this message reached {:?}",
+                    self.session,
+                    process.provider
                 );
             }
             self.emit(vec![ThreadEventKind::Notice {
-                text: format!("This message did not reach Claude: {error:#}"),
+                text: format!(
+                    "This message did not reach {:?}: {error:#}",
+                    process.provider
+                ),
             }]);
             return Err(error);
         }
@@ -893,8 +646,11 @@ impl ThreadHandle {
             return Ok(Arc::clone(process));
         }
         state.generation += 1;
-        let (process, stdout, stderr) =
-            ThreadProcess::spawn(&self.launch, state.conversation.as_ref(), state.generation)?;
+        let (process, stdout, stderr) = ThreadProcess::spawn(
+            self.adapter.as_ref(),
+            state.conversation.as_ref(),
+            state.generation,
+        )?;
         let tail = Arc::clone(&process.stderr);
         let stderr_reader = std::thread::Builder::new()
             .name(format!("thread-stderr-{}", self.session))
@@ -907,6 +663,17 @@ impl ThreadHandle {
         if let Err(error) = stderr_reader.and(stdout_reader) {
             process.end_tree(false);
             return Err(error).context("starting the thread's output readers");
+        }
+        let handshake = process
+            .stream
+            .lock()
+            .expect("thread stream lock")
+            .handshake();
+        for line in handshake {
+            if let Err(error) = process.write_line(&line) {
+                process.end_tree(false);
+                return Err(error);
+            }
         }
         self.host.process_started(self.session, process.pid);
         state.process = Some(Arc::clone(&process));
@@ -937,12 +704,16 @@ impl ThreadHandle {
         self.outbox.push(events);
     }
 
-    fn on_line(&self, generation: u64, mapper: &mut StreamMapper, line: &str) {
-        let mapped = mapper.map_line(line);
-        self.on_mapped(generation, mapped);
+    fn on_line(&self, process: &ThreadProcess, line: &str) {
+        let decoded = process
+            .stream
+            .lock()
+            .expect("thread stream lock")
+            .decode(line);
+        self.on_decoded(process.generation, decoded);
     }
 
-    fn on_mapped(&self, generation: u64, mapped: Mapped) {
+    fn on_decoded(&self, generation: u64, mapped: Decoded) {
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
@@ -953,7 +724,7 @@ impl ThreadHandle {
             {
                 return;
             }
-            // `--resume` only once the stream shows Claude holds the conversation.
+            // Resume only once the stream shows the provider holds the conversation.
             if let Some(id) = mapped.conversation {
                 state.conversation = Some(Conversation::Resume(id));
             } else if mapped.turn_end.is_some() {
@@ -972,18 +743,19 @@ impl ThreadHandle {
         }
     }
 
-    fn line_skipped(&self, generation: u64, bytes: usize) {
-        self.on_mapped(
-            generation,
-            Mapped {
+    fn line_skipped(&self, process: &ThreadProcess, bytes: usize) {
+        self.on_decoded(
+            process.generation,
+            Decoded {
                 events: vec![ThreadEventKind::Notice {
                     text: format!(
-                        "Skipped one {bytes} byte line of Claude's output: over the {} MiB \
+                        "Skipped one {bytes} byte line of {:?}'s output: over the {} MiB \
                          limit for a thread line, so an event of this turn is missing.",
+                        process.provider,
                         STDOUT_LINE_MAX_BYTES / (1024 * 1024)
                     ),
                 }],
-                ..Mapped::default()
+                ..Decoded::default()
             },
         );
     }
@@ -1012,14 +784,15 @@ impl ThreadHandle {
             || "no exit code".to_string(),
             |code| format!("exit code {code}"),
         );
+        let provider = process.provider;
         let mut events = self.state.lock().expect("thread state lock").end_open_turn(
             TurnOutcome::Error,
-            Some(format!("Claude exited during the turn ({code})")),
+            Some(format!("{provider:?} exited during the turn ({code})")),
         );
         let text = if stderr.is_empty() {
-            format!("Claude exited ({code}); the next message starts it again.")
+            format!("{provider:?} exited ({code}); the next message starts it again.")
         } else {
-            format!("Claude exited ({code}); the next message starts it again. Its last output:\n{stderr}")
+            format!("{provider:?} exited ({code}); the next message starts it again. Its last output:\n{stderr}")
         };
         events.push(ThreadEventKind::Notice { text });
         self.emit(events);
@@ -1049,7 +822,6 @@ fn read_stdout(
     stdout: std::process::ChildStdout,
 ) {
     let mut reader = BufReader::with_capacity(64 * 1024, stdout);
-    let mut mapper = StreamMapper::default();
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -1065,13 +837,9 @@ fn read_stdout(
                 "thread pid {}: skipped a {bytes} byte stdout line over {STDOUT_LINE_MAX_BYTES}",
                 process.pid
             );
-            handle.line_skipped(process.generation, bytes);
+            handle.line_skipped(&process, bytes);
         } else {
-            handle.on_line(
-                process.generation,
-                &mut mapper,
-                &String::from_utf8_lossy(&line),
-            );
+            handle.on_line(&process, &String::from_utf8_lossy(&line));
         }
     }
     if let Some(handle) = handle.upgrade() {
@@ -1112,7 +880,7 @@ fn read_bounded_line(
     }
 }
 
-/// A thread's process group as a later daemon can find it: Claude leads the group, inside
+/// A thread's process group as a later daemon can find it: the provider leads the group, inside
 /// the daemon's session, on one boot. Windows needs none: its Job object kills the tree
 /// when the daemon's handle closes, crash included.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1308,103 +1076,6 @@ mod tests {
         sleeper.wait().unwrap();
     }
 
-    fn kinds(lines: &str) -> Vec<ThreadEventKind> {
-        let mut mapper = StreamMapper::default();
-        lines
-            .lines()
-            .flat_map(|line| mapper.map_line(line).events)
-            .collect()
-    }
-
-    #[test]
-    fn deltas_and_their_final_message_share_a_block_key() {
-        let events = kinds(concat!(
-            r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}},"parent_tool_use_id":null,"api_message_id":"msg_1"}"#,
-            "\n",
-            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Hel"}},"parent_tool_use_id":null,"api_message_id":"msg_1"}"#,
-            "\n",
-            r#"{"type":"assistant","message":{"id":"msg_1","content":[{"type":"text","text":"Hello"}]},"parent_tool_use_id":null}"#,
-        ));
-        assert_eq!(
-            events,
-            vec![
-                ThreadEventKind::AssistantDelta {
-                    message_id: "msg_1:1".into(),
-                    text: "Hel".into()
-                },
-                ThreadEventKind::AssistantMessage {
-                    message_id: "msg_1:1".into(),
-                    text: "Hello".into(),
-                    truncated: false
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn sub_agent_traffic_and_unknown_types_map_to_nothing() {
-        let events = kinds(concat!(
-            r#"{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"inner"}]},"parent_tool_use_id":"toolu_1"}"#,
-            "\n",
-            r#"{"type":"rate_limit_event","rate_limit_info":{}}"#,
-            "\n",
-            r#"{"type":"something_new"}"#,
-            "\n",
-            "not json",
-        ));
-        assert!(events.is_empty(), "{events:?}");
-    }
-
-    #[test]
-    fn caps_name_their_truncation() {
-        let input = "x".repeat(THREAD_TOOL_INPUT_MAX_BYTES * 2);
-        let line = serde_json::json!({"type":"assistant","message":{"id":"m","content":[
-            {"type":"tool_use","id":"t","name":"Write","input":{"content":input}}]}})
-        .to_string();
-        let output = "é".repeat(THREAD_TOOL_OUTPUT_MAX_BYTES);
-        let result = serde_json::json!({"type":"user","message":{"content":[
-            {"type":"tool_result","tool_use_id":"t","content":[{"type":"text","text":output}],"is_error":true}]}})
-        .to_string();
-        let events = kinds(&format!("{line}\n{result}"));
-        match &events[0] {
-            ThreadEventKind::ToolCall {
-                input, truncated, ..
-            } => {
-                assert!(*truncated);
-                assert_eq!(input.len(), THREAD_TOOL_INPUT_MAX_BYTES);
-            }
-            other => panic!("expected a tool call, got {other:?}"),
-        }
-        match &events[1] {
-            ThreadEventKind::ToolResult {
-                output,
-                truncated,
-                is_error,
-                ..
-            } => {
-                assert!(*truncated && *is_error);
-                assert!(output.len() <= THREAD_TOOL_OUTPUT_MAX_BYTES);
-            }
-            other => panic!("expected a tool result, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn an_error_result_carries_its_text() {
-        let mut mapper = StreamMapper::default();
-        let mapped = mapper.map_line(
-            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: overloaded"}"#,
-        );
-        assert_eq!(mapped.turn_end, Some(TurnOutcome::Error));
-        assert_eq!(
-            mapped.events,
-            vec![ThreadEventKind::TurnEnd {
-                outcome: TurnOutcome::Error,
-                error: Some("API Error: overloaded".into())
-            }]
-        );
-    }
-
     #[test]
     fn coalescing_merges_adjacent_deltas_of_one_block() {
         let delta = |seq, id: &str, text: &str| ThreadEvent {
@@ -1449,15 +1120,137 @@ mod tests {
         assert_eq!(read_bounded_line(&mut reader, &mut line, 10).unwrap(), None);
     }
 
+    /// A provider that is not Claude: one plain line in, `reply:<line>` out, then it exits.
+    #[derive(Default)]
+    struct EchoAdapter {
+        spawned: Mutex<Vec<ProcessSpec>>,
+    }
+
+    impl ProviderAdapter for EchoAdapter {
+        fn provider(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        fn command(&self, conversation: Option<&Conversation>) -> Result<ProcessSpec> {
+            assert_eq!(conversation, None);
+            #[cfg(unix)]
+            let (program, args) = ("sh", ["-c", "read line; echo \"reply:$line\""].as_slice());
+            #[cfg(windows)]
+            let (program, args) = (
+                "cmd",
+                ["/v:on", "/d", "/c", "set /p line=&echo reply:!line!"].as_slice(),
+            );
+            let host = crate::host_env::HostEnv::capture();
+            let spec = ProcessSpec {
+                program: program.into(),
+                args: args.iter().map(OsString::from).collect(),
+                env: host
+                    .names()
+                    .filter_map(|name| name.to_str())
+                    .filter_map(|name| Some((name.to_string(), host.var(name)?)))
+                    .collect(),
+                cwd: None,
+            };
+            self.spawned.lock().unwrap().push(spec.clone());
+            Ok(spec)
+        }
+
+        fn open(&self) -> Box<dyn ProviderStream> {
+            Box::new(EchoStream)
+        }
+    }
+
+    struct EchoStream;
+
+    impl ProviderStream for EchoStream {
+        fn user_message(&mut self, text: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+
+        fn decode(&mut self, line: &str) -> Decoded {
+            let Some(text) = line.trim_end().strip_prefix("reply:") else {
+                return Decoded::default();
+            };
+            Decoded {
+                events: vec![
+                    ThreadEventKind::AssistantMessage {
+                        message_id: "reply:0".into(),
+                        text: text.into(),
+                        truncated: false,
+                    },
+                    ThreadEventKind::TurnEnd {
+                        outcome: TurnOutcome::Completed,
+                        error: None,
+                    },
+                ],
+                turn_end: Some(TurnOutcome::Completed),
+                conversation: None,
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct StoredEvents {
+        events: Mutex<Vec<ThreadEventKind>>,
+        changed: Condvar,
+    }
+
+    impl ThreadHost for StoredEvents {
+        fn store(&self, _session: u32, event: &ThreadEvent) {
+            self.events.lock().unwrap().push(event.kind.clone());
+            self.changed.notify_all();
+        }
+        fn broadcast(&self, _session: u32, _events: Vec<ThreadEvent>) {}
+        fn turn_ended(&self, _session: u32, _outcome: TurnOutcome) {}
+        fn settle(&self, _session: u32, _outcome: TurnOutcome) {}
+        fn process_started(&self, _session: u32, _pid: u32) {}
+        fn process_gone(&self, _session: u32) {}
+    }
+
     #[test]
-    fn launch_splits_out_the_conversation_arguments() {
-        let mut cmd = portable_pty::CommandBuilder::new("claude");
-        cmd.args(["--resume", "abc", "--mcp-config", "{}"]);
-        let (launch, conversation) = ThreadLaunch::from_command(&cmd).unwrap();
-        assert_eq!(conversation, Some(Conversation::Resume("abc".into())));
-        assert_eq!(
-            launch.args,
-            vec![OsString::from("--mcp-config"), OsString::from("{}")]
+    fn a_second_adapter_drives_a_turn_without_claude_flags() {
+        let adapter = Arc::new(EchoAdapter::default());
+        let host = Arc::new(StoredEvents::default());
+        let handle = ThreadHandle::start(7, adapter.clone(), None, 1, host.clone()).unwrap();
+        handle.send("hello").unwrap();
+        let events = host.events.lock().unwrap();
+        let (events, wait) = host
+            .changed
+            .wait_timeout_while(events, Duration::from_secs(30), |events| {
+                !events
+                    .iter()
+                    .any(|event| matches!(event, ThreadEventKind::TurnEnd { .. }))
+            })
+            .unwrap();
+        assert!(!wait.timed_out(), "no turn end: {events:?}");
+        assert!(
+            matches!(&events[0], ThreadEventKind::UserMessage { text, .. } if text == "hello"),
+            "{events:?}"
         );
+        assert!(
+            matches!(&events[1], ThreadEventKind::AssistantMessage { text, .. } if text == "hello"),
+            "{events:?}"
+        );
+        assert!(
+            matches!(
+                &events[2],
+                ThreadEventKind::TurnEnd {
+                    outcome: TurnOutcome::Completed,
+                    ..
+                }
+            ),
+            "{events:?}"
+        );
+        drop(events);
+        assert!(!handle.turn_open());
+        let spawned = adapter.spawned.lock().unwrap();
+        assert_eq!(spawned.len(), 1);
+        assert!(
+            !spawned[0].args.iter().any(|arg| arg == "--input-format"),
+            "{:?}",
+            spawned[0].args
+        );
+        drop(spawned);
+        handle.close();
     }
 }

@@ -310,10 +310,11 @@ be delegated to, via #3 — identity is still not status.
 
 ### A thread's status stays hook-driven; the daemon ends only turns it ended
 
-A thread session (`thread_session.rs`) runs Claude with the documented
-`--print --input-format stream-json --output-format stream-json` flags on pipes. Claude's
-lifecycle hooks fire in this mode with the session's ids, so they own `AgentStatus`
-exactly as for a terminal pane. Three additions, and no other status source:
+A thread session (`thread_session.rs`, with Claude's adapter in `claude_stream.rs`) runs
+Claude with the documented `--print --input-format stream-json --output-format stream-json`
+flags on pipes. Claude's lifecycle hooks fire in this mode with the session's ids, so
+they own `AgentStatus` exactly as for a terminal pane. Three additions, and no other
+status source:
 
 - The stream's `result` event ends a turn only while the session has delivered no
   lifecycle hook; once one arrives, its `Stop` hook owns turn ends.

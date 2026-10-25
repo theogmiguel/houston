@@ -13,6 +13,7 @@ pub mod browser_servers;
 pub mod checkout_watch;
 pub mod checkpoints;
 pub mod claude_hooks;
+pub mod claude_stream;
 pub mod claude_turns;
 pub mod cli_accounts;
 pub mod cli_probe;
