@@ -1,6 +1,6 @@
 import { useVoiceSettings } from "./voice/useVoiceSettings";
 import { useAgentSettingsReads } from './useAgentSettingsReads'
-import { useAgentAttention } from './useAgentAttention'
+import { useAgentAttention, harnessAttentionCount } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
@@ -691,9 +691,10 @@ function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: 
   return null;
 }
 
-function harnessAttentionFor(overview: readonly { workspace: string; attention: number }[], workspace: string): number {
-  if (workspace === "all") return overview.reduce((total, row) => total + row.attention, 0);
-  return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
+function harnessAttentionFor(overview: readonly { workspace: string; attention: number; suspected_defects: number }[], workspace: string): number {
+  if (workspace === "all") return overview.reduce((total, row) => total + harnessAttentionCount(row), 0);
+  const row = overview.find((entry) => entry.workspace === workspace);
+  return row ? harnessAttentionCount(row) : 0;
 }
 
 function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
