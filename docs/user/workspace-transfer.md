@@ -45,7 +45,7 @@ the passphrase can read them.
    and replaces an existing file only when you confirmed replacing that file in the save
    dialog.
 
-Export is refused, before any pane stops, while an untracked file has a name the other
+Export is refused, before any pane stops, when an untracked file has a name the other
 computer cannot carry: a `:` `?` `*` `<` `>` `"` `|` or `\` character, a trailing dot or
 space, a Windows device name such as `con` or `aux`, or two names that differ only by letter
 case. The refusal lists each; rename, ignore or delete each listed file, then export again.
