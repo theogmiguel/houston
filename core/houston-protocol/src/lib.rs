@@ -539,12 +539,87 @@ pub struct HarnessAttention {
     pub resolved: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub dismissed: u32,
+    /// Suspected defects without a decision; they also count in `attention`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub suspected_defects: u32,
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub latest_published_review_id: Option<u32>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub seen_review_id: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub attention: u32,
+}
+
+/// Where a suspected defect was seen: an agent's report, or a daemon detector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum DefectSource {
+    Agent,
+    Detector,
+}
+
+/// Where an issue for a suspected defect belongs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum DefectDestination {
+    /// Houston's own repository.
+    Houston,
+    /// The workspace's GitHub remote.
+    Workspace,
+}
+
+/// The operator's answer to a suspected defect; `reopen` withdraws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum DefectDecision {
+    Dismiss,
+    NotABug,
+    Reopen,
+}
+
+/// One suspected defect, as the Harness view shows it. `state` is the operator's
+/// decision unless a later occurrence reopened it (`recurred`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SuspectedDefect {
+    pub workspace: String,
+    pub key: String,
+    pub title: String,
+    pub source: DefectSource,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub detector: Option<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    pub destination: DefectDestination,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub count: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub first_seen_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub last_seen_ms: i64,
+    pub state: HarnessFindingState,
+    pub recurred: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub issue_url: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub decided_at_ms: Option<i64>,
+}
+
+/// An open issue the draft found for the same words as the defect title.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct DefectIssueMatch {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -5195,6 +5270,34 @@ pub enum ClientMsg {
         workspace: String,
         review_id: u32,
     },
+    /// A workspace's suspected defects, newest occurrence first.
+    DefectsGet {
+        workspace: String,
+    },
+    /// Records the operator's decision on a suspected defect; `reopen` withdraws it.
+    DefectDecide {
+        workspace: String,
+        key: String,
+        decision: DefectDecision,
+    },
+    /// Prefills an issue draft and searches open issues once for duplicates.
+    DefectIssueDraft {
+        workspace: String,
+        key: String,
+        request: u32,
+    },
+    /// Creates the issue or comment, only on this explicit action.
+    DefectIssueFile {
+        workspace: String,
+        key: String,
+        request: u32,
+        title: String,
+        body: String,
+        destination_repo: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        comment_on: Option<u32>,
+    },
     /// Global task summaries scoped to all, unassigned or a workspace path.
     TaskSnapshot {
         scope: String,
@@ -6413,6 +6516,51 @@ pub enum ServerMsg {
     HarnessChanged {
         workspace: String,
     },
+    /// A workspace's suspected defects, newest occurrence first; a direct reply
+    /// to `defects_get` and a broadcast on every change.
+    SuspectedDefects {
+        workspace: String,
+        defects: Vec<SuspectedDefect>,
+    },
+    /// A prefilled, redacted issue draft. `request` echoes `defect_issue_draft`.
+    DefectIssueDraft {
+        workspace: String,
+        key: String,
+        request: u32,
+        destination: DefectDestination,
+        destination_repo: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        account: Option<String>,
+        title: String,
+        body: String,
+        /// Exactly what sending will transmit, to which repository and account.
+        transmits: String,
+        duplicates: Vec<DefectIssueMatch>,
+        /// Why the duplicate search did not run or returned nothing; still fileable.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        note: Option<String>,
+    },
+    /// The issue or comment a defect was filed as. `request` echoes `defect_issue_file`.
+    DefectIssueFiled {
+        workspace: String,
+        key: String,
+        request: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        issue_url: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        note: Option<String>,
+    },
+    /// At most one per workspace per UTC day: a new undecided defect appeared.
+    DefectNotice {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        count: u32,
+        title: String,
+    },
     /// Scoped global task summaries (archived included, flagged by
     /// `archived_at_ms`) and per-status counts of the non-archived ones.
     TaskSnapshot {
@@ -6989,6 +7137,21 @@ pub const BITBUCKET_EMAIL_LEN_MAX: u32 = 254;
 /// Far above an Atlassian API token's length, low enough to refuse a paste of
 /// something else.
 pub const BITBUCKET_TOKEN_LEN_MAX: u32 = 1024;
+
+/// A defect title is a line the user can scan and an issue title can carry.
+pub const SUSPECTED_DEFECT_TITLE_MAX: u32 = 120;
+/// Evidence names message ids, branches or lines; ten covers one occurrence.
+pub const SUSPECTED_DEFECT_EVIDENCE_MAX: u32 = 10;
+/// One evidence item is one identifier or refusal, not a transcript.
+pub const SUSPECTED_DEFECT_EVIDENCE_LEN_MAX: u32 = 500;
+/// Bounds the per-workspace store; the oldest decided defect is pruned first.
+pub const SUSPECTED_DEFECTS_PER_WORKSPACE_MAX: u32 = 200;
+/// GitHub's own issue title limit.
+pub const DEFECT_ISSUE_TITLE_MAX: u32 = 256;
+/// Matches the pull request body cap; an issue body is the user's to edit.
+pub const DEFECT_ISSUE_BODY_MAX: u32 = 60_000;
+/// The draft lists the first page of likely duplicates, no more.
+pub const DEFECT_ISSUE_DUPLICATES_MAX: u32 = 10;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 

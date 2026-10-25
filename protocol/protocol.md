@@ -334,6 +334,15 @@ Every pull-request write (`pr_merge`, `pr_action`, `pr_edit`, `pr_comment`, `pr_
 | `harness_overview_get` | — | `harness_overview` (direct), one row per workspace with Harness reviews |
 | `harness_seen` | `workspace`, `review_id` | `harness_changed` (bcast); the stored cursor advances monotonically and is capped at the latest published review |
 
+### Suspected defects
+
+| Message | Fields | Reply |
+|---|---|---|
+| `defects_get` | `workspace` | `suspected_defects` (direct) |
+| `defect_decide` | `workspace`, `key`, `decision: DefectDecision` (`reopen` withdraws the decision) | `suspected_defects` (bcast); `error` when the workspace has no defect with that key |
+| `defect_issue_draft` | `workspace`, `key`, `request` | `defect_issue_draft` (direct), correlated by `request`. One `gh search issues` call looks for open duplicates; the reply carries the redacted title and body, the destination repository, the gh account and a `transmits` sentence. A GitHub rate-limit pause returns no duplicates and a `note`, and leaves the draft fileable |
+| `defect_issue_file` | `workspace`, `key`, `request`, `title` (1–`DEFECT_ISSUE_TITLE_MAX` bytes), `body` (1–`DEFECT_ISSUE_BODY_MAX` bytes), `destination_repo` (`owner/name`), `comment_on?` (an open issue number) | `defect_issue_filed` (direct), correlated by `request`; this is the only message that creates an issue or comment. `error` for a refused repository, a non-GitHub workspace remote by name, or an empty/oversized title or body |
+
 ### Night shift
 
 A workspace has at most one Night shift routine. It is listed with `routine_list` and
@@ -586,6 +595,10 @@ A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_cle
 | `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
+| `suspected_defects` | `workspace`, `defects: SuspectedDefect[]` (newest occurrence first, at most `SUSPECTED_DEFECTS_PER_WORKSPACE_MAX`) | direct reply to `defects_get`; bcast when a defect is recorded, decided, reopened or filed |
+| `defect_issue_draft` | `workspace`, `key`, `request`, `destination: DefectDestination`, `destination_repo`, `account?` (the gh login), `title`, `body`, `transmits` (exactly what sending transmits, to which repository and account), `duplicates: DefectIssueMatch[]` (at most `DEFECT_ISSUE_DUPLICATES_MAX`), `note?` | direct reply to `defect_issue_draft` |
+| `defect_issue_filed` | `workspace`, `key`, `request`, `number`, `issue_url`, `note?` | direct reply to `defect_issue_file`; the defect becomes `resolved` with the issue recorded |
+| `defect_notice` | `workspace`, `count` (undecided defects), `title` (newest) | bcast — at most once per workspace per UTC day, when a new undecided defect is recorded |
 | `task_snapshot` | `scope`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
 | `task_projects_state` | `workspace`, `projects: TaskProject[]` | reply to `task_projects_list` |
 | `task_project_state` | `project?: TaskProject` | reply to `task_project_get` |
@@ -927,9 +940,18 @@ HarnessFindingPhase open | fixing | awaiting_verification | not_seen | resolved 
 HarnessFindingTask task_id, key (`HOU-<number>`), status: TaskStatus, landed_at_ms?
 HarnessVerification review_id, verdict: HarnessVerdict, sessions_after, quotes
 HarnessVerdict gone | still_present | inconclusive
-HarnessAttention workspace, counts for each finding phase, latest_published_review_id?,
-                 seen_review_id, attention
+HarnessAttention workspace, counts for each finding phase, suspected_defects (undecided
+                  defects, also counted in attention), latest_published_review_id?,
+                  seen_review_id, attention
 HarnessProviderCoverage agent: AgentKind (OpenCode, Cursor, Grok or Antigravity), sessions
+DefectSource       agent | detector
+DefectDestination  houston | workspace
+DefectDecision     dismiss | not_a_bug | reopen
+SuspectedDefect    workspace, key, title, source: DefectSource, detector?, evidence[],
+                   destination: DefectDestination, count, first_seen_ms, last_seen_ms,
+                   state: HarnessFindingState, recurred, issue_url?, decided_at_ms?
+DefectIssueMatch   number, title, url
+
 
 TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number>`), title,
                    status: TaskStatus, priority: TaskPriority,
@@ -1550,7 +1572,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 152 | **The Pull request tab reads a Bitbucket Cloud pull request (opt-in, read-only).** `pr_detail`'s reply replaces `gh: GhState` with `access: ForgeAccess`; `PrDetail` gains `read_only?`. New `forge_settings_get`, `bitbucket_enabled_set`, `bitbucket_token_set` and `bitbucket_token_clear`, answered by `forge_settings`; a refused change is an `error` with `context = "forge_settings"`. Every pull-request write and GitHub-only read refuses a remote on a forge known not to be GitHub by forge and operation |
+| 152 | **The Pull request tab reads a Bitbucket Cloud pull request (opt-in, read-only).** `pr_detail`'s reply replaces `gh: GhState` with `access: ForgeAccess`; `PrDetail` gains `read_only?`. New `forge_settings_get`, `bitbucket_enabled_set`, `bitbucket_token_set` and `bitbucket_token_clear`, answered by `forge_settings`; a refused change is an `error` with `context = "forge_settings"`. Every pull-request write and GitHub-only read refuses a remote on a forge known not to be GitHub by forge and operation. **Suspected defects.** New `defects_get`, `defect_decide`, `defect_issue_draft` and `defect_issue_file`, answered by `suspected_defects`, `defect_issue_draft`, `defect_issue_filed` and the once-daily `defect_notice`; new `SuspectedDefect`, `DefectSource`, `DefectDestination`, `DefectDecision` and `DefectIssueMatch`; `HarnessAttention` gains `suspected_defects`; `pane_report` gains the `finding` kind with `title`, `evidence[]` and `destination` |
 | 151 | **Night shift runs an orchestrator for a window and leaves a morning report; a workspace moves to another computer in an encrypted file.** `RoutineKind` gains `night_shift`. New `night_shift_create`, `night_shift_state`, `night_shift_update`, `night_shift_run_now`, `night_shift_wrap_up`, `night_shift_stop`, `night_shift_decide`, `night_shift_qa_passed` and `night_shift_report`, answered by `night_shift_state` (with `revision`, `machine: NightMachine` and `merge_verify_command`), `night_shift_run_event`, `night_shift_notice` and `night_shift_report`. New types: `NightShiftSettings`, `NightWindow`, `NightClock`, `NightFocus`, `NightFocusLevel`, `NightAgent`, `NightAppCheck`, `NightOutput`, `NightQuestions`, `NightRun`, `NightRunPhase`, `NightStopReason`, `NightEntry`, `NightEntryKind`, `NightGates`, `NightGate`, `NightInterruption`, `NightCost`, `NightCostLine`, `NightCrewMember`, `NightKeepAwake`, `NightMachine`, `PreflightItem` and `PreflightStatus`. Refusals carry `context: "night_shift"`; `routine_update` and `routine_run_now` refuse a Night shift routine. Workspace transfer: New `transfer_export`, `transfer_inspect` and `transfer_import`, answered by `transfer_progress`, `transfer_exported`, `transfer_inspected`, `transfer_imported` and `transfer_refused`, with `TransferPassphrase`, `TransferStage`, `TransferRefusalCode`, `TransferRefusal`, `TransferPane`, `TransferSkipped`, `TransferCliVersion`, `TransferExportSummary`, `TransferProfileNeed`, `TransferFileSummary`, `TransferProfileChoice`, `TransferSessionMapping` and `TransferImportResult`. `SessionInfo` gains `transferred_at_ms?` and `transfer_fork?`. Existing messages are unchanged |
 | 150 | **Seven additive features: a paused-git banner, worktree removal facts, desktop-aware phone alerts, a diagnostics file, rail status notes and workspace relocation.** `git_status` gains `operation?: GitOperation` (`merge`, `rebase`, `cherry_pick`), read from the checkout's git dir. New read-only `worktree_check{dir, path}`, answered by `worktree_check{dir, path, check: WorktreeCheckResult}` (uncommitted files and the newest change, commits ahead of the base and not on any remote, and the panes inside the tree; a part that could not look names why in `gaps`). New `desktop_presence {active}` client message with no reply: while a recent `true` report stands, due ntfy notifications are held and are sent once on the holding connection's `false`, on its disconnect, or when the report lapses after `DESKTOP_AWAY_SECS`. New `diagnostics_collect {app_version}`, answered by `diagnostics_collected {path?, bytes, error?}`: the daemon writes a redacted file under `<state_dir>/diagnostics/`, keeps the five newest, caps each at 1 MiB and includes no terminal output. `SessionInfo` gains `note?: PaneNote` (`text`, `phase?: PanePhase`, `at_ms`); new `session_note_clear{session}` and the `session_note{session, note?}` broadcast; agents write the note through the `pane_note` MCP tool or `hs-pane note`, and a note over 512 bytes is refused naming the limit. `Workspace` gains `missing?`, true when the folder is gone on disk; new `workspace_relocate{from, to}` checks that `to` is the same repository, re-points every row keyed by the path in one transaction, relinks worktrees with `git worktree repair`, and answers `workspace_relocated{from, to, moved: WorkspaceRelocateMoved}` plus `workspace_list` (both bcast). Existing messages are otherwise unchanged |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |

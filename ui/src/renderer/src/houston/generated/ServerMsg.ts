@@ -6,6 +6,8 @@ import type { AgentKind } from "./AgentKind";
 import type { AgentProfile } from "./AgentProfile";
 import type { AgentProfileActive } from "./AgentProfileActive";
 import type { AgentStatus } from "./AgentStatus";
+import type { DefectDestination } from "./DefectDestination";
+import type { DefectIssueMatch } from "./DefectIssueMatch";
 import type { DelegationInfo } from "./DelegationInfo";
 import type { DelegationResult } from "./DelegationResult";
 import type { ForgeAccess } from "./ForgeAccess";
@@ -81,6 +83,7 @@ import type { SkillToolState } from "./SkillToolState";
 import type { SlackInfo } from "./SlackInfo";
 import type { SshConfigHost } from "./SshConfigHost";
 import type { SshProfile } from "./SshProfile";
+import type { SuspectedDefect } from "./SuspectedDefect";
 import type { SwarmAgentInfo } from "./SwarmAgentInfo";
 import type { SwarmMessage } from "./SwarmMessage";
 import type { TagInfo } from "./TagInfo";
@@ -220,7 +223,15 @@ merge_verify_command: boolean,
  * The global child panes per agent; a run's orchestrator has its own
  * limit of live workers plus two instead.
  */
-child_cap: number, detected: NightDetected, } | { "type": "night_shift_run_event", run: NightRun, } | { "type": "night_shift_notice", workspace: string, run_id: number, headline: string, } | { "type": "night_shift_report", run_id: number, markdown: string, truncated: boolean, } | { "type": "harness_overview", rows: Array<HarnessAttention>, } | { "type": "harness_report", review_id: number, markdown: string, truncated: boolean, } | { "type": "harness_changed", workspace: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, } | { "type": "task_queue_result", workspace: string,
+child_cap: number, detected: NightDetected, } | { "type": "night_shift_run_event", run: NightRun, } | { "type": "night_shift_notice", workspace: string, run_id: number, headline: string, } | { "type": "night_shift_report", run_id: number, markdown: string, truncated: boolean, } | { "type": "harness_overview", rows: Array<HarnessAttention>, } | { "type": "harness_report", review_id: number, markdown: string, truncated: boolean, } | { "type": "harness_changed", workspace: string, } | { "type": "suspected_defects", workspace: string, defects: Array<SuspectedDefect>, } | { "type": "defect_issue_draft", workspace: string, key: string, request: number, destination: DefectDestination, destination_repo: string, account?: string | null, title: string, body: string,
+/**
+ * Exactly what sending will transmit, to which repository and account.
+ */
+transmits: string, duplicates: Array<DefectIssueMatch>,
+/**
+ * Why the duplicate search did not run or returned nothing; still fileable.
+ */
+note?: string | null, } | { "type": "defect_issue_filed", workspace: string, key: string, request: number, number: number, issue_url: string, note?: string | null, } | { "type": "defect_notice", workspace: string, count: number, title: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, } | { "type": "task_queue_result", workspace: string,
 /**
  * The started tasks' keys, in the order they were picked.
  */
