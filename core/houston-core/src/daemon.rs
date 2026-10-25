@@ -548,8 +548,6 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
 const SLEEP_CUE_MAX_CHARS: usize = 2000;
-/// Claude's `StopFailure` error class for a plan or rate limit.
-const CLAUDE_LIMIT_ERROR: &str = "rate_limit";
 
 pub(crate) fn bounded_hook_text(value: &str) -> String {
     crate::sanitize::redact_secrets(value)
@@ -16036,34 +16034,18 @@ impl Daemon {
         matches!(kind, "permission_prompt" | "agent_needs_input") || kind.starts_with("elicitation")
     }
 
-    /// Claude's root `StopFailure` with `error: rate_limit` is the only limit a hook reports;
-    /// it carries no reset time.
-    fn reported_limit(
-        provider: proto::AgentKind,
-        d: &crate::hook_drop::HookDrop,
-    ) -> Option<proto::SessionLimit> {
-        (provider == proto::AgentKind::Claude
-            && d.event == "StopFailure"
-            && d.agent_id.is_none()
-            && d.error.as_deref() == Some(CLAUDE_LIMIT_ERROR))
-        .then(|| proto::SessionLimit {
-            error: CLAUDE_LIMIT_ERROR.to_string(),
-            details: d
-                .error_details
-                .as_deref()
-                .map(bounded_hook_text)
-                .filter(|details| !details.is_empty()),
-            since_ms: now_ms(),
-        })
-    }
-
+    /// A provider's typed limit hook, or the notification that ends Claude's
+    /// hold: quota resets are never spent automatically.
     fn ends_limit(provider: proto::AgentKind, d: &crate::hook_drop::HookDrop) -> bool {
-        provider == proto::AgentKind::Claude
-            && d.agent_id.is_none()
+        matches!(
+            provider,
+            proto::AgentKind::Claude | proto::AgentKind::Opencode
+        ) && d.agent_id.is_none()
             && d.subagent_type.is_none()
             && (crate::agent_events::AgentEvent::from_provider(provider, &d.event)
                 == Some(crate::agent_events::AgentEvent::PromptSubmitted)
-                || (d.event == "Notification"
+                || (provider == proto::AgentKind::Claude
+                    && d.event == "Notification"
                     && d.notification_type.as_deref() == Some("quota_auto_resume_fired")))
     }
 
@@ -16211,12 +16193,16 @@ impl Daemon {
             if !session.state.lock().expect("state lock").is_live() {
                 return crate::hook_drop::DropVerdict::Applied;
             }
-            let limit = Self::reported_limit(provider, d);
+            let limit = crate::limits::hook_limit(provider, d);
             let limit_started = limit
                 .clone()
                 .is_some_and(|limit| self.mark_limited(d.session, &session, limit));
             if limit_started {
-                self.night_shift_provider_limited(d.session, provider, "StopFailure rate_limit");
+                self.night_shift_provider_limited(
+                    d.session,
+                    provider,
+                    &format!("{} {}", d.event, crate::limits::LIMIT_ERROR),
+                );
             }
             if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
                 let name = crate::agent_hooks::provider_slug(provider);

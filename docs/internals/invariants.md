@@ -192,7 +192,11 @@ Status mutations use guarded live-session paths in `daemon.rs`. Lifecycle hooks
 app-server also supplies startup readiness through a SessionStart drop; it never reads
 terminal content or changes the thread. See [agent lifecycle](agent-lifecycle.md).
 The Limited detail follows the same rule: only a provider's typed limit report sets it,
-never terminal text or the free-text details of a hook.
+never terminal text or the free-text details of a hook. Claude's `StopFailure` and
+OpenCode's `session.error` carry the typed error class, Codex reports a usage-limit
+notification on its app-server connection, and the process exit of a one-word headless
+probe is the declared substitute where a provider has no typed signal (ZCode everywhere,
+Codex on Windows).
 
 The documented [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
 (revision 0.3, OSC 7501) is a fallback for programs that explicitly report state. Native

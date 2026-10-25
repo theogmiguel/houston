@@ -1836,6 +1836,72 @@ async fn claude_limit_marks_provider() {
 }
 
 #[tokio::test]
+async fn opencode_limit_marks_provider() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|s| {
+        s.workers = vec![
+            proto::NightAgent {
+                provider: proto::AgentKind::Opencode,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Claude,
+                model: None,
+            },
+        ];
+    });
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(o, "opencode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    for _ in 0..2 {
+        r.drop_hook(HookDrop {
+            session: child,
+            agent: Some("opencode".into()),
+            event: "message.updated".into(),
+            ..Default::default()
+        })
+        .await;
+        r.drop_hook(HookDrop {
+            session: child,
+            agent: Some("opencode".into()),
+            event: "session.error".into(),
+            error: Some("rate_limit".into()),
+            error_details: Some("usage limit reached".into()),
+            ..Default::default()
+        })
+        .await;
+    }
+    assert_eq!(r.run(run.run_id).limited, [proto::AgentKind::Opencode]);
+    assert_eq!(
+        r.notes(o, "Night shift: opencode limited"),
+        1,
+        "the orchestrator is told once"
+    );
+    let note = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("Night shift: opencode limited"))
+        .expect("the Night shift note");
+    assert!(
+        note.body.contains("session.error"),
+        "names the provider's own event: {}",
+        note.body
+    );
+    let (status, body) = r.spawn_child(o, "opencode").await;
+    assert_eq!(status, 200, "{body}");
+    let next = body["session_id"].as_u64().unwrap() as u32;
+    assert_eq!(
+        r.daemon.agent_kind_of(next),
+        Some(proto::AgentKind::Claude),
+        "the limited provider was swapped"
+    );
+}
+
+#[tokio::test]
 async fn spawn_substitutes_next_provider() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();

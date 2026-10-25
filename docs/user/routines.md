@@ -188,6 +188,16 @@ and their status, the machine's free memory and disk and the plan board. When a 
 provider reports its usage limit, later spawns in the run use the next worker provider and
 the orchestrator is told once. Houston never spends a provider's quota reset.
 
+Houston learns a limit from a provider's own typed report:
+
+| Provider | Limit detection |
+| --- | --- |
+| Claude | `StopFailure` hook with `error: rate_limit` |
+| OpenCode | `session.error` with a typed `APIError` status 429 or 402 |
+| Codex | app-server limit notification on Linux; a stall probe on Windows |
+| ZCode | a stall probe, since it reports no turn end for a failed turn |
+| Cursor, Antigravity, Grok | none; they are refused as workers and reviewers |
+
 ZCode reports no usage limit, so Houston probes it: when a run whose workers include ZCode
 starts, and when a ZCode pane has been Working for 20 minutes without ending a turn, it runs
 one `zcode -p` request with the prompt "Reply with the single word OK." and no tools. A

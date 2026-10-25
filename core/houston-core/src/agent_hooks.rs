@@ -1035,7 +1035,12 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         const id = p?.sessionID ?? \"\"\n\
          \x20         if (!id || await parentOf(id)) return\n\
          \x20         const message = p?.error?.data?.message ?? \"Session error\"\n\
-         \x20         await run(t, {{ session_id: id, message }})\n\
+         \x20         // Only the typed provider error carries a usage-limit class.\n\
+         \x20         const code = p?.error?.data?.statusCode\n\
+         \x20         const limited = p?.error?.name === \"APIError\" && (code === 429 || code === 402)\n\
+         \x20         await run(t, limited\n\
+         \x20           ? {{ session_id: id, message, error: \"rate_limit\", error_details: message }}\n\
+         \x20           : {{ session_id: id, message }})\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"session.compacted\") {{\n\
@@ -1940,6 +1945,48 @@ console.log(JSON.stringify(calls))
                 "session.idle"
             ],
             "{calls:?}"
+        );
+    }
+
+    #[test]
+    fn the_opencode_plugin_forwards_a_typed_quota_error_as_rate_limit() {
+        let error = |session: &str, name: &str, code: u16, text: &str| {
+            serde_json::json!({"type": "session.error", "properties": {
+                "sessionID": session,
+                "error": {"name": name, "data": {"statusCode": code, "message": text}}}})
+        };
+        let events = serde_json::json!([
+            error("ses_root", "APIError", 429, "usage limit reached"),
+            error("ses_root", "APIError", 402, "payment required"),
+            error("ses_root", "APIError", 500, "server error"),
+            error("child_1", "APIError", 429, "child usage limit"),
+            error("ses_root", "ProviderAuthError", 429, "token expired"),
+        ]);
+        let Some(calls) = drive_plugin(&events) else {
+            return;
+        };
+        let names: Vec<&str> = calls.iter().map(|c| c["cmd"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "session.error",
+                "session.error",
+                "session.error",
+                "session.error"
+            ],
+            "a child's error is not the pane's: {calls:?}"
+        );
+        assert_eq!(calls[0]["payload"]["error"], "rate_limit");
+        assert_eq!(calls[0]["payload"]["error_details"], "usage limit reached");
+        assert_eq!(calls[1]["payload"]["error"], "rate_limit");
+        assert_eq!(calls[2]["payload"]["message"], "server error");
+        assert!(
+            calls[2]["payload"].get("error").is_none(),
+            "a 500 is a plain failed turn: {calls:?}"
+        );
+        assert!(
+            calls[3]["payload"].get("error").is_none(),
+            "only an APIError carries the quota status: {calls:?}"
         );
     }
 
