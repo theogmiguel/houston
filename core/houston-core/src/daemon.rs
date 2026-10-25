@@ -5977,6 +5977,44 @@ impl Daemon {
         Ok(())
     }
 
+    /// What removing `worktree` would interrupt or lose. Never fails: a part that could
+    /// not look is reported as a gap.
+    pub fn worktree_check(
+        &self,
+        repo: &std::path::Path,
+        worktree: &std::path::Path,
+    ) -> proto::WorktreeCheckResult {
+        let key = worktree
+            .canonicalize()
+            .unwrap_or_else(|_| worktree.to_path_buf());
+        let recorded_base = self
+            .db
+            .managed_worktrees()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|row| std::path::Path::new(&row.path) == key)
+            .and_then(|row| row.base_branch);
+        let mut check = crate::worktree_check::check(repo, worktree, recorded_base);
+        let in_tree: Vec<u32> = self
+            .live_session_cwds()
+            .into_iter()
+            .filter(|(_, cwd)| cwd.starts_with(&key))
+            .map(|(id, _)| id)
+            .collect();
+        let sessions = self.sessions.lock().expect("sessions lock");
+        check.panes = in_tree
+            .into_iter()
+            .filter_map(|id| {
+                let session = sessions.get(&id)?;
+                Some(proto::WorktreeCheckPane {
+                    session: id,
+                    title: session.snapshot_title().0,
+                })
+            })
+            .collect();
+        check
+    }
+
     fn broadcast_live_children(&self, parent: u32) {
         self.broadcast_child_counts(parent);
         self.mcp_notify.tools_changed_for_session(parent);

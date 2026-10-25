@@ -172,6 +172,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   git_worktree_create: DIR,
   git_worktree_remove: DIR,
   git_worktree_prune: DIR,
+  worktree_check: DIR,
   worktree_cleanup_set: 'local',
   worktree_cleanup_status: DIR,
   worktree_cleanup_run: DIR,
@@ -414,6 +415,10 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   git_branches: 'forward',
   git_worktrees: 'forward',
   worktree_cleanup: 'forward',
+  worktree_check: (msg, tag) => {
+    const check = msg.check as { panes: Array<Record<string, number>> }
+    for (const pane of check.panes) pane.session = tag(pane.session)
+  },
   worktree_idle_removal_days: 'drop',
   git_checkpoints: 'forward',
   git_checkpoint_diff: 'forward',

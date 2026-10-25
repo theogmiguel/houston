@@ -297,8 +297,11 @@ workspace:
   says what would be lost. A branch that another worktree has checked out says so instead
   of offering the switch.
 - **Worktrees** adds a worktree beside the repository (Houston names its branch
-  `houston/<name>`), removes one — a worktree with uncommitted changes asks first — and
-  prunes registrations whose directory is already gone. A new worktree receives the ignored
+  `houston/<name>`), removes one, and prunes registrations whose directory is already
+  gone. Before a removal is confirmed, Houston lists what it would interrupt or lose:
+  uncommitted files and how recently the newest changed, commits not on the base branch or
+  on any remote, and the panes working inside the worktree. A check that could not look
+  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree receives the ignored
   files listed in `.worktreeinclude` (see [orchestration](orchestration.md)). "Add as workspace" turns a
   worktree into a workspace you can open panes in.
 - **Checkpoints** captures the working tree and staging area as a snapshot you can come
