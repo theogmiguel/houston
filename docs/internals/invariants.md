@@ -310,10 +310,11 @@ be delegated to, via #3 — identity is still not status.
 
 ### A thread's status stays hook-driven; the daemon ends only turns it ended
 
-A thread session (`thread_session.rs`) runs Claude with the documented
-`--print --input-format stream-json --output-format stream-json` flags on pipes. Claude's
-lifecycle hooks fire in this mode with the session's ids, so they own `AgentStatus`
-exactly as for a terminal pane. Four additions, and no other status source:
+A thread session (`thread_session.rs`, with Claude's adapter in `claude_stream.rs`) runs
+Claude with the documented `--print --input-format stream-json --output-format stream-json`
+flags on pipes. Claude's lifecycle hooks fire in this mode with the session's ids, so
+they own `AgentStatus` exactly as for a terminal pane. Four additions, and no other
+status source:
 
 - The stream's `result` event ends a turn only while the session has delivered no
   lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
@@ -512,6 +513,38 @@ Routine and harness-review runs always start fresh, and orchestrated children ca
 respawned without their mission. Unsupported providers are refused by name in
 `launch::resume_args`. There is no transcript scan or history ledger; the handle lives
 on the session row and metadata validation never drives status.
+
+## Views
+
+### A terminal pane stays a PTY; a thread never wraps one
+
+A session's runtime is a PTY (`SessionRuntime::Pty`: local, SSH or adopted) or a structured
+process on pipes (`SessionRuntime::Structured`), and its view follows: a PTY is drawn as a
+terminal pane, a structured process as a thread. A thread renders typed events decoded by a
+provider adapter from the provider's documented stream; it never reads, parses or re-renders
+terminal output, and no terminal pane is replaced by a chat view. Moving a conversation to
+the other view restarts the session with an exact-id resume, so one conversation never runs
+in both views at once.
+
+**Why.** Terminal fidelity is what makes a pane trustworthy: every key reaches the CLI and
+every byte it writes is shown. A view built from terminal bytes would be faithful to neither.
+**Enforced by** `view_switch_wire` and review.
+
+### Thread traffic never shares the terminal byte path
+
+Thread events travel as typed control messages (`thread_events`), coalesced to at most one
+message per `THREAD_EVENTS_MIN_INTERVAL` per session. They never pass through `frame_queue`,
+`vt.rs` or a session's scrollback ring, and terminal frames never carry thread data. Live
+deltas are never stored; an event is written to `thread_events` when it is complete.
+
+**Why.** The frame queue and the ring are sized for terminal bytes (4 MiB each) and the
+frame queue drops under pressure; a terminal recovers by repainting, a thread cannot recover
+a lost event, and a talkative agent must not evict terminal history. Control messages are
+not dropped: a connection that falls `OUTBOUND_CAPACITY` messages behind is closed and
+resyncs, so the coalescing bound is what keeps threads from closing terminal connections.
+**Enforced by** `perf_smoke::thread_streams_leave_terminals_alone`: terminal throughput and
+echo latency with four threads streaming stay within the stated margin of the terminal-only
+run, with no control lag.
 
 ## Wire
 

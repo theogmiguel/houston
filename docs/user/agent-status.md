@@ -44,6 +44,11 @@ neutral gray for ready, amber for needs input, and a hollow gray dot when status
 unavailable. Green is reserved for successful completion and red for failure. A grid's
 tooltip lists the contributing pane states, so the indicator does not rely on color alone.
 
+Screen readers announce the focused pane's reported status when it changes: working, needs
+your input, finished, or ready. They also announce how many other panes need you when that
+number changes. Moving focus to another pane announces nothing; a status that changes back
+within 1.5 seconds is not announced. Terminal output is never announced.
+
 ### Plan and rate limits
 
 A Claude pane whose turn ends with a reported rate limit (`StopFailure` with
@@ -106,7 +111,9 @@ multiplexer may suppress the probe or reports; then the program cannot negotiate
 
 ## Settings ▸ Agents ▸ CLIs
 
-This screen lists every CLI Houston knows how to wire, and what each row means:
+This screen lists every CLI Houston knows how to wire, and what each row means. It
+opens with the result of the last check, which Houston also makes when it starts, and
+updates in place when checking again finds a CLI installed, removed or upgraded:
 
 - **Not found on PATH** — the CLI is not installed on this machine, so there is nothing
   to turn on.

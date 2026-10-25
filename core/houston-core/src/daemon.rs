@@ -594,6 +594,9 @@ pub struct Session {
     tags: Mutex<Vec<u32>>,
     acp: Option<Mutex<crate::acp::AcpDecoder>>,
     scrollback: Mutex<Scrollback>,
+    /// The ring's `(generation, bytes_seen)` when its file was last written,
+    /// so the periodic checkpoint skips sessions with nothing new.
+    scrollback_checkpointed: Mutex<Option<(u32, u64)>>,
     ws_attaches: AtomicU32,
     vt: Mutex<Option<crate::vt::Emulator>>,
     vt_refused: AtomicBool,
@@ -604,11 +607,7 @@ pub struct Session {
     activity: Mutex<crate::session_activity::Tracker>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
-    stdin_writes_in_flight: AtomicU32,
-    stdin_queue: Mutex<StdinQueue>,
     lifecycle_hook_seen: AtomicBool,
-    #[cfg(unix)]
-    native_input_recovery: Option<adoption::NativeInputSnapshot>,
     input_intervention: AtomicBool,
     input_pending: AtomicBool,
     input_current_id: Mutex<Option<String>>,
@@ -625,7 +624,23 @@ pub struct Session {
     slept_at_ms: Mutex<Option<u64>>,
     limit: Mutex<Option<proto::SessionLimit>>,
     geometry: AtomicU32,
-    backend: Backend,
+    runtime: SessionRuntime,
+}
+
+// One per session: a few hundred bytes per thread session do not justify boxing the PTY
+// variant and adding an indirection to every PTY access.
+#[allow(clippy::large_enum_variant)]
+enum SessionRuntime {
+    Pty(PtyRuntime),
+    Structured(Arc<crate::thread_session::StructuredRuntime>),
+}
+
+struct PtyRuntime {
+    backend: PtyBackend,
+    stdin_writes_in_flight: AtomicU32,
+    stdin_queue: Mutex<StdinQueue>,
+    #[cfg(unix)]
+    native_input_recovery: Option<adoption::NativeInputSnapshot>,
     supervisor_wait: Mutex<SupervisorWaitState>,
     park: Arc<ParkState>,
     reader_done: Arc<(Mutex<bool>, std::sync::Condvar)>,
@@ -863,8 +878,8 @@ struct SupervisorWaitState {
     exit: Option<(Option<i32>, Option<i32>)>,
 }
 
-enum Backend {
-    Pty {
+enum PtyBackend {
+    Local {
         writer: Mutex<Option<Box<dyn Write + Send>>>,
         master: Mutex<Option<Box<dyn MasterPty + Send>>>,
         killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
@@ -875,8 +890,7 @@ enum Backend {
     },
     Ssh(crate::ssh::SshHandle),
     #[cfg(unix)]
-    AdoptedPty(crate::adoption::RawMasterPty),
-    Thread(Arc<crate::thread_session::ThreadHandle>),
+    Adopted(crate::adoption::RawMasterPty),
 }
 
 fn thread_refuses_terminal_input(id: u32) -> anyhow::Error {
@@ -984,22 +998,45 @@ struct StdinQueue {
 }
 
 impl Session {
-    fn thread(&self) -> Option<&Arc<crate::thread_session::ThreadHandle>> {
-        match &self.backend {
-            Backend::Thread(handle) => Some(handle),
-            _ => None,
+    fn thread(&self) -> Option<&Arc<crate::thread_session::StructuredRuntime>> {
+        let thread = match &self.runtime {
+            SessionRuntime::Structured(handle) => Some(handle),
+            SessionRuntime::Pty(_) => None,
+        };
+        debug_assert_eq!(
+            thread.is_some(),
+            self.info.view == proto::SessionView::Thread,
+            "session {}: a structured runtime is exactly a thread view",
+            self.info.id
+        );
+        thread
+    }
+
+    fn pty(&self) -> Option<&PtyRuntime> {
+        match &self.runtime {
+            SessionRuntime::Pty(pty) => Some(pty),
+            SessionRuntime::Structured(_) => None,
         }
     }
 
+    fn pty_backend(&self) -> Option<&PtyBackend> {
+        self.pty().map(|pty| &pty.backend)
+    }
+
     fn cancel_pty_reader(&self) {
-        self.reader_cancel.store(true, Ordering::Release);
+        let Some(pty) = self.pty() else {
+            return;
+        };
+        pty.reader_cancel.store(true, Ordering::Release);
         #[cfg(unix)]
-        self.park.resume();
+        pty.park.resume();
     }
 
     fn has_retained_reader(&self) -> bool {
-        matches!(self.backend, Backend::Pty { .. })
-            && !*self.reader_done.0.lock().expect("reader done lock")
+        self.pty().is_some_and(|pty| {
+            matches!(pty.backend, PtyBackend::Local { .. })
+                && !*pty.reader_done.0.lock().expect("reader done lock")
+        })
     }
 
     fn enqueue_stdin(
@@ -1011,7 +1048,10 @@ impl Session {
         prepare: Option<Box<dyn FnOnce() + Send>>,
         written: Option<StdinWritten>,
     ) -> std::result::Result<(), StdinWriteError> {
-        let mut queue = self.stdin_queue.lock().expect("stdin queue lock");
+        let Some(pty) = self.pty() else {
+            return Err(StdinWriteError::nothing(thread_refuses_terminal_input(id)));
+        };
+        let mut queue = pty.stdin_queue.lock().expect("stdin queue lock");
         if data.len() > STDIN_QUEUE_BYTES.saturating_sub(queue.bytes)
             || queue.jobs >= STDIN_QUEUE_JOBS
         {
@@ -1030,9 +1070,10 @@ impl Session {
                         let Some(session) = session.upgrade() else {
                             break;
                         };
+                        let pty = session.pty().expect("PTY runtime");
                         let result = if let Some(cap) = job.partial_after {
                             let head = cap.min(job.data.len());
-                            match session.backend.write_stdin_counting(id, &job.data[..head]) {
+                            match session.runtime.write_stdin_counting(id, &job.data[..head]) {
                                 Ok(()) => Err(StdinWriteError {
                                     written: Some(head),
                                     error: anyhow!("injected partial write for session {id}"),
@@ -1040,7 +1081,7 @@ impl Session {
                                 Err(error) => Err(error),
                             }
                         } else {
-                            session.backend.write_stdin_counting(id, &job.data)
+                            session.runtime.write_stdin_counting(id, &job.data)
                         };
                         if let Some(written) = job.written {
                             written(&result);
@@ -1060,7 +1101,7 @@ impl Session {
                         let bytes = job.data.len();
                         drop(job.data);
                         {
-                            let mut queue = session.stdin_queue.lock().expect("stdin queue lock");
+                            let mut queue = pty.stdin_queue.lock().expect("stdin queue lock");
                             queue.bytes -= bytes;
                             queue.jobs -= 1;
                         }
@@ -1075,7 +1116,7 @@ impl Session {
                 })?;
             queue.sender = Some(sender);
         }
-        self.stdin_writes_in_flight.fetch_add(1, Ordering::AcqRel);
+        pty.stdin_writes_in_flight.fetch_add(1, Ordering::AcqRel);
         queue.bytes += data.len();
         queue.jobs += 1;
         if let Some(prepare) = prepare {
@@ -1099,14 +1140,62 @@ impl Session {
     }
 }
 
-impl Backend {
+impl SessionRuntime {
     fn write_stdin_counting(
         &self,
         id: u32,
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
         match self {
-            Backend::Pty {
+            SessionRuntime::Pty(pty) => pty.backend.write_stdin_counting(id, data),
+            SessionRuntime::Structured(_) => {
+                Err(StdinWriteError::nothing(thread_refuses_terminal_input(id)))
+            }
+        }
+    }
+
+    fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {
+        match self {
+            SessionRuntime::Pty(pty) => pty.backend.resize(id, cols, rows),
+            // A thread has no terminal; the size is echoed and never reaches Claude.
+            SessionRuntime::Structured(_) => Ok((cols, rows)),
+        }
+    }
+
+    fn release(&self) {
+        match self {
+            SessionRuntime::Pty(pty) => pty.backend.release(),
+            SessionRuntime::Structured(handle) => handle.close(),
+        }
+    }
+
+    fn kill(&self, id: u32, pid: Option<u32>, channel: Option<&str>) -> Result<()> {
+        match self {
+            SessionRuntime::Pty(pty) => pty.backend.kill(id, pid, channel),
+            SessionRuntime::Structured(handle) => {
+                handle.close();
+                Ok(())
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn adoption_master_fd(&self) -> Option<std::os::fd::RawFd> {
+        match self {
+            SessionRuntime::Pty(pty) => pty.backend.adoption_master_fd(),
+            SessionRuntime::Structured(_) => None,
+        }
+    }
+}
+
+impl PtyBackend {
+    fn write_stdin_counting(
+        &self,
+        id: u32,
+        data: &[u8],
+    ) -> std::result::Result<(), StdinWriteError> {
+        match self {
+            PtyBackend::Local {
                 writer,
                 #[cfg(unix)]
                 interrupt,
@@ -1137,10 +1226,9 @@ impl Backend {
                 w.flush().ok();
                 Ok(())
             }
-            Backend::Ssh(h) => h.write_stdin(data),
-            Backend::Thread(_) => Err(StdinWriteError::nothing(thread_refuses_terminal_input(id))),
+            PtyBackend::Ssh(h) => h.write_stdin(data),
             #[cfg(unix)]
-            Backend::AdoptedPty(raw) => {
+            PtyBackend::Adopted(raw) => {
                 raw.write_all_counting(data)
                     .map_err(|(written, error)| StdinWriteError {
                         written: Some(written),
@@ -1152,7 +1240,7 @@ impl Backend {
 
     fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {
         match self {
-            Backend::Pty { master, .. } => {
+            PtyBackend::Local { master, .. } => {
                 let m = master.lock().expect("master lock");
                 let Some(m) = m.as_ref() else {
                     bail!("session {id} has no live pty (already killed)");
@@ -1169,22 +1257,20 @@ impl Backend {
                 })?;
                 Ok((actual.cols, actual.rows))
             }
-            Backend::Ssh(h) => {
+            PtyBackend::Ssh(h) => {
                 h.resize(cols, rows)
                     .with_context(|| format!("resizing ssh session {id}"))?;
                 Ok((cols, rows))
             }
-            // A thread has no terminal; the size is echoed and never reaches Claude.
-            Backend::Thread(_) => Ok((cols, rows)),
             #[cfg(unix)]
-            Backend::AdoptedPty(raw) => raw
+            PtyBackend::Adopted(raw) => raw
                 .resize(cols, rows)
                 .with_context(|| format!("resizing adopted session {id} to {cols}x{rows}")),
         }
     }
 
-    fn release_pty(&self) {
-        if let Backend::Pty {
+    fn release(&self) {
+        if let PtyBackend::Local {
             writer,
             master,
             #[cfg(unix)]
@@ -1201,11 +1287,8 @@ impl Backend {
             *master.lock().expect("master lock") = None;
         }
         #[cfg(unix)]
-        if let Backend::AdoptedPty(raw) = self {
+        if let PtyBackend::Adopted(raw) = self {
             raw.release();
-        }
-        if let Backend::Thread(handle) = self {
-            handle.close();
         }
     }
 
@@ -1213,7 +1296,7 @@ impl Backend {
         #[cfg(not(target_os = "linux"))]
         let _ = channel;
         match self {
-            Backend::Pty {
+            PtyBackend::Local {
                 writer,
                 master,
                 killer,
@@ -1278,13 +1361,9 @@ impl Backend {
                 *master.lock().expect("master lock") = None;
                 Ok(())
             }
-            Backend::Ssh(h) => h.kill(),
-            Backend::Thread(handle) => {
-                handle.close();
-                Ok(())
-            }
+            PtyBackend::Ssh(h) => h.kill(),
             #[cfg(unix)]
-            Backend::AdoptedPty(raw) => {
+            PtyBackend::Adopted(raw) => {
                 raw.kill(id, channel)
                     .with_context(|| format!("killing adopted session {id}"))?;
                 raw.release();
@@ -1296,13 +1375,13 @@ impl Backend {
     #[cfg(unix)]
     fn adoption_master_fd(&self) -> Option<std::os::fd::RawFd> {
         match self {
-            Backend::Pty { master, .. } => master
+            PtyBackend::Local { master, .. } => master
                 .lock()
                 .expect("master lock")
                 .as_ref()
                 .and_then(|m| m.as_raw_fd()),
-            Backend::Ssh(_) | Backend::Thread(_) => None,
-            Backend::AdoptedPty(raw) => raw.as_raw_fd(),
+            PtyBackend::Ssh(_) => None,
+            PtyBackend::Adopted(raw) => raw.as_raw_fd(),
         }
     }
 }
@@ -1390,7 +1469,7 @@ impl Session {
         }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info.limit = self.limit.lock().expect("limit lock").clone();
-        if let Backend::Thread(handle) = &self.backend {
+        if let Some(handle) = self.thread() {
             info.permission_mode = Some(handle.permission_mode());
         }
         info
@@ -1566,6 +1645,7 @@ mod merge_queue_runner;
 mod provider_deny;
 mod remote;
 mod remote_phone;
+mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
@@ -1744,6 +1824,7 @@ pub struct Daemon {
     last_inbox_retention: AtomicU64,
     mcp_checks: Mutex<HashMap<String, (String, proto::McpConnectionCheck)>>,
     cli_probes: Mutex<crate::cli_probe::ProbeCache>,
+    cli_sweep: crate::cli_probe::SweepGate,
     model_catalog: Arc<crate::model_catalog::ModelCatalog>,
     db: Db,
     next_id: AtomicU32,
@@ -1839,8 +1920,9 @@ pub struct Daemon {
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
-    /// `.worktreeinclude` warnings of a spawn's new worktree, until its result takes them.
-    spawn_include_warnings: Mutex<HashMap<u32, Vec<String>>>,
+    /// Notes of a spawn's new worktree (what `.worktreeinclude` could not copy, a slug
+    /// renamed for surviving history), until its result takes them.
+    spawn_include_warnings: Mutex<HashMap<u32, Vec<proto::PaneSpawnWarning>>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     shell_child_restore_observer_for_test: Mutex<Option<SpawnObserver>>,
@@ -1884,6 +1966,7 @@ pub struct Daemon {
     recovery_metadata_blocked: Mutex<HashMap<u32, String>>,
     hook_drop_watch: Arc<crate::fs_watch::MailWatchState>,
     _hook_drop_watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    hook_drop_canary: Mutex<crate::hook_drop_canary::CanaryState>,
     port: Mutex<Option<u16>>,
     run_state_started_at: u64,
     run_state_expected_restart: AtomicBool,
@@ -1908,7 +1991,9 @@ struct StdinWriteAdmission(Arc<Session>);
 
 impl Drop for StdinWriteAdmission {
     fn drop(&mut self) {
-        self.0.stdin_writes_in_flight.fetch_sub(1, Ordering::AcqRel);
+        if let Some(pty) = self.0.pty() {
+            pty.stdin_writes_in_flight.fetch_sub(1, Ordering::AcqRel);
+        }
     }
 }
 
@@ -2566,12 +2651,10 @@ impl Drop for SessionStartup {
             }
         }
         if let Some(session) = &self.session {
-            session.backend.release_pty();
+            session.runtime.release();
             if let Some(worker) = session
-                .reader_worker
-                .lock()
-                .expect("reader worker lock")
-                .take()
+                .pty()
+                .and_then(|pty| pty.reader_worker.lock().expect("reader worker lock").take())
             {
                 let _ = worker.join();
             }
@@ -3524,6 +3607,7 @@ impl Daemon {
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
             mcp_checks: Mutex::new(HashMap::new()),
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
+            cli_sweep: crate::cli_probe::SweepGate::default(),
             model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
             remote: crate::remote::Runtime::new(),
@@ -3646,8 +3730,8 @@ impl Daemon {
                             .iter()
                             .filter_map(|(session, _)| {
                                 session
-                                    .native_input_recovery
-                                    .as_ref()
+                                    .pty()
+                                    .and_then(|pty| pty.native_input_recovery.as_ref())
                                     .and_then(|snapshot| snapshot.last_prompt_id.clone())
                                     .map(|id| (session.info.id, id))
                             })
@@ -3672,8 +3756,8 @@ impl Daemon {
                             .iter()
                             .filter_map(|(session, _)| {
                                 session
-                                    .native_input_recovery
-                                    .as_ref()
+                                    .pty()
+                                    .and_then(|pty| pty.native_input_recovery.as_ref())
                                     .map(|snapshot| (session.info.id, snapshot.episodes.clone()))
                             })
                             .collect()
@@ -3692,8 +3776,8 @@ impl Daemon {
                             .iter()
                             .filter_map(|(session, _)| {
                                 session
-                                    .native_input_recovery
-                                    .as_ref()
+                                    .pty()
+                                    .and_then(|pty| pty.native_input_recovery.as_ref())
                                     .and_then(|snapshot| snapshot.antigravity_root.clone())
                                     .map(|id| (session.info.id, id))
                             })
@@ -3722,6 +3806,7 @@ impl Daemon {
             recovery_metadata_blocked: Mutex::new(HashMap::new()),
             hook_drop_watch: crate::fs_watch::MailWatchState::new(swarm_mail_wake),
             _hook_drop_watcher: Mutex::new(None),
+            hook_drop_canary: Mutex::new(crate::hook_drop_canary::CanaryState::default()),
             update_state: Mutex::new(proto::UpdateState::Unknown),
             update_wake: Arc::new(tokio::sync::Notify::new()),
             update_check_lock: tokio::sync::Mutex::new(()),
@@ -4395,29 +4480,50 @@ impl Daemon {
     }
 
     fn persist_scrollback_result(&self, id: u32) -> Result<()> {
+        self.persist_scrollback_inner(id, false).map(|_| ())
+    }
+
+    /// Returns whether the file was written; `only_dirty` skips a ring whose
+    /// `(generation, bytes_seen)` already matches its last write.
+    fn persist_scrollback_inner(&self, id: u32, only_dirty: bool) -> Result<bool> {
         let session = match self.sessions.lock().expect("sessions lock").get(&id) {
             Some(s) => Arc::clone(s),
-            None => return Ok(()),
+            None => return Ok(false),
         };
-        if *session.state.lock().expect("state lock") == proto::SessionState::Killed
-            && !self.is_shutting_down()
-        {
-            // Kill released this pane's scrollback file; the EOF drain must not
-            // re-create it. Shutdown's own kills keep theirs for the restart.
-            return Ok(());
-        }
         let _writes = self
             .scrollback_writes
             .lock()
             .expect("scrollback writes lock");
-        let snapshot = {
+        // Checked under the write lock that removal also takes, so a kill or close that
+        // lands mid-pass cannot have its released file re-created. Shutdown's own kills
+        // keep theirs for the restart.
+        if session.removed.load(Ordering::Acquire)
+            || (*session.state.lock().expect("state lock") == proto::SessionState::Killed
+                && !self.is_shutting_down())
+        {
+            return Ok(false);
+        }
+        let (mark, snapshot) = {
             let ring = session.scrollback.lock().expect("scrollback lock");
-            if ring.bytes_seen() == 0 {
-                return Ok(());
+            let mark = (ring.generation(), ring.bytes_seen());
+            if mark.1 == 0
+                || (only_dirty
+                    && *session
+                        .scrollback_checkpointed
+                        .lock()
+                        .expect("scrollback checkpointed lock")
+                        == Some(mark))
+            {
+                return Ok(false);
             }
-            ring.snapshot()
+            (mark, ring.snapshot())
         };
-        crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
+        crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)?;
+        *session
+            .scrollback_checkpointed
+            .lock()
+            .expect("scrollback checkpointed lock") = Some(mark);
+        Ok(true)
     }
 
     fn persist_scrollback(&self, id: u32) {
@@ -4696,7 +4802,7 @@ impl Daemon {
                 .expect("sessions lock")
                 .iter()
                 .filter(|(_, s)| {
-                    matches!(s.backend, Backend::Ssh(_))
+                    matches!(s.pty_backend(), Some(PtyBackend::Ssh(_)))
                         && s.state.lock().expect("state lock").is_live()
                 })
                 .map(|(id, _)| *id)
@@ -4950,7 +5056,7 @@ impl Daemon {
             drop(cleanup);
         }
         if let Err(error) = session
-            .backend
+            .runtime
             .kill(id, session.pid, self.channel.as_deref())
         {
             if preserve {
@@ -5047,8 +5153,8 @@ impl Daemon {
     fn resume_sessions(&self, ids: &[u32]) {
         let sessions = self.sessions.lock().expect("sessions lock");
         for id in ids {
-            if let Some(s) = sessions.get(id) {
-                s.park.resume();
+            if let Some(pty) = sessions.get(id).and_then(|s| s.pty()) {
+                pty.park.resume();
             }
         }
     }
@@ -5129,7 +5235,7 @@ impl Daemon {
             sessions
                 .iter()
                 .filter(|(_, s)| {
-                    matches!(s.backend, Backend::Ssh(_))
+                    matches!(s.pty_backend(), Some(PtyBackend::Ssh(_)))
                         && s.state.lock().expect("state lock").is_live()
                 })
                 .map(|(id, _)| *id)
@@ -5270,7 +5376,7 @@ impl Daemon {
                 .iter()
                 .filter(|(_, s)| {
                     s.state.lock().expect("state lock").is_live()
-                        && !matches!(s.backend, Backend::Ssh(_))
+                        && !matches!(s.pty_backend(), Some(PtyBackend::Ssh(_)))
                 })
                 .map(|(id, _)| *id)
                 .collect()
@@ -5286,13 +5392,14 @@ impl Daemon {
                 .get(id)
                 .cloned();
             let Some(session) = session else { continue };
-            if session
+            let Some(pty) = session.pty() else { continue };
+            if pty
                 .park
                 .request_and_wait(Duration::from_millis(adoption::QUIESCE_PARK_TIMEOUT_MS))
             {
                 parked.push(*id);
             } else {
-                session.park.resume();
+                pty.park.resume();
                 abort_reason = Some(format!(
                     "session {id} did not quiesce within {}ms",
                     adoption::QUIESCE_PARK_TIMEOUT_MS
@@ -5370,7 +5477,7 @@ impl Daemon {
             for id in &live_ids {
                 let Some(fd) = sessions
                     .get(id)
-                    .and_then(|s| s.backend.adoption_master_fd())
+                    .and_then(|s| s.runtime.adoption_master_fd())
                 else {
                     self.resume_sessions(&parked);
                     return Err(format!("session {id} has no live master fd to transfer"));
@@ -5442,13 +5549,13 @@ impl Daemon {
             crate::adoption::RawMasterPty::from_owned_fd(master_fd, m.pid.map(|p| p as i32))
                 .context("reconstructing adopted PTY backend")?;
         Ok((
-            Self::adopted_session(m, Backend::AdoptedPty(raw)),
+            Self::adopted_session(m, PtyBackend::Adopted(raw)),
             Box::new(reader_file),
         ))
     }
 
     #[cfg(unix)]
-    fn adopted_session(m: &crate::adoption::SessionManifest, backend: Backend) -> Arc<Session> {
+    fn adopted_session(m: &crate::adoption::SessionManifest, backend: PtyBackend) -> Arc<Session> {
         let title_source = m.title_source.unwrap_or_else(|| {
             if m.title == m.codename || crate::pane_name::is_codename(&m.title) {
                 TitleSource::Codename
@@ -5534,6 +5641,7 @@ impl Daemon {
             tags: Mutex::new(m.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(vt),
             vt_refused: AtomicBool::new(false),
@@ -5544,15 +5652,11 @@ impl Daemon {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(
                 m.native_input
                     .as_ref()
                     .is_some_and(|snapshot| snapshot.lifecycle_hook_seen),
             ),
-            #[cfg(unix)]
-            native_input_recovery: m.native_input.clone(),
             input_intervention: AtomicBool::new(
                 m.native_input
                     .as_ref()
@@ -5577,13 +5681,19 @@ impl Daemon {
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
-            backend,
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+            runtime: SessionRuntime::Pty(PtyRuntime {
+                backend,
+                stdin_writes_in_flight: AtomicU32::new(0),
+                stdin_queue: Mutex::new(StdinQueue::default()),
+                #[cfg(unix)]
+                native_input_recovery: m.native_input.clone(),
+                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                park: Arc::new(ParkState::default()),
+                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                reader_cancel: AtomicBool::new(false),
+                reader_worker: Mutex::new(None),
+            }),
         })
     }
 
@@ -5593,7 +5703,10 @@ impl Daemon {
         let sources = db.child_input_pending_provider_sources(id)?;
         let status = *session.status.lock().expect("status lock");
         let needs_input = status == Some(proto::AgentStatus::NeedsInput);
-        let Some(snapshot) = &session.native_input_recovery else {
+        let Some(snapshot) = session
+            .pty()
+            .and_then(|pty| pty.native_input_recovery.as_ref())
+        else {
             anyhow::ensure!(!needs_input && sources.is_empty(),
                 "native input handoff refused for session {id}: pending input has no recovery snapshot; leave the old daemon running and let the operator resolve input before retrying");
             return Ok(());
@@ -5642,7 +5755,9 @@ impl Daemon {
             else {
                 continue;
             };
-            if s.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
+            if s.pty()
+                .is_some_and(|pty| pty.stdin_writes_in_flight.load(Ordering::Acquire) != 0)
+            {
                 return Err(format!(
                     "handoff refused for session {id}: stdin delivery is still in progress"
                 ));
@@ -5765,6 +5880,10 @@ impl Daemon {
             }
         }
         let path = self.scrollback_path(id);
+        let _writes = self
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
                 tracing::warn!("removing persisted scrollback of session {id}: {e}");
@@ -5898,7 +6017,7 @@ impl Daemon {
 
     /// A panel-created worktree under the daemon's own state dir, beside task
     /// worktrees: branch `houston/<slug>` off `base`, so it cannot collide with
-    /// a task's directory. Also returns what `.worktreeinclude` could not copy.
+    /// a task's directory. Also returns its notes (`.worktreeinclude`, history rename).
     pub fn git_worktree_create(
         &self,
         repo: &std::path::Path,
@@ -5909,9 +6028,19 @@ impl Daemon {
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "repo".to_string());
-        let dest = crate::worktrees::default_path(&self.state_dir, &project, name);
+        let asked = crate::git::ref_slug(name);
+        let (slug, history_note) = match self.resolve_slug_history(&asked, |name| {
+            crate::worktrees::default_path(&self.state_dir, &project, name)
+        })? {
+            Some(resolved) => {
+                let note = slug_history_note_message(&asked, &resolved);
+                (resolved, Some(note))
+            }
+            None => (asked, None),
+        };
+        let dest = crate::worktrees::default_path(&self.state_dir, &project, &slug);
         let common_dir = crate::git::checkout_facts(repo).common_dir.filter(|dir| !dir.is_empty()).ok_or_else(|| anyhow!("repo_common_dir for {} is unavailable; expected a non-empty git common directory", repo.display()))?;
-        let wt = crate::worktrees::create_named(repo, name, base, &dest)?;
+        let wt = crate::worktrees::create_named(repo, &slug, base, &dest)?;
         let path = wt.path.canonicalize().unwrap_or_else(|_| wt.path.clone());
         let row = crate::db::ManagedWorktreeRow {
             path: path.display().to_string(),
@@ -5931,8 +6060,12 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        let include = crate::worktree_include::carry_over(repo, &path);
-        Ok((wt, include.warnings))
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&path);
+        warnings.extend(crate::worktree_include::carry_over(repo, &path).warnings);
+        if let Some(note) = history_note {
+            warnings.push(note);
+        }
+        Ok((wt, warnings))
     }
 
     /// Drops the row with the tree, so the path and its slug are free again.
@@ -8011,19 +8144,68 @@ impl Daemon {
     }
 
     pub fn agent_hooks_state_rescanned(&self) -> Vec<proto::AgentHookState> {
-        self.cli_probes.lock().expect("cli probe cache").clear();
+        self.rescan_cli_probes();
         self.agent_hooks_state()
     }
 
-    fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
-        match crate::cli_probe::binary_name(provider) {
-            Some(binary) => self
-                .cli_probes
+    /// Answers one client's hooks request. With every CLI cached it replies at once, then
+    /// rescans and replies again only if the listing changed; otherwise it replies once,
+    /// after the rescan, so no reply carries a CLI that was never probed.
+    pub fn answer_agent_hooks(&self, conn_id: u64) {
+        let cached = self.cli_probes_primed().then(|| self.agent_hooks_state());
+        if let Some(providers) = &cached {
+            let providers = providers.clone();
+            self.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+            self.send_control_to(conn_id, &self.agent_accounts_state());
+        }
+        let providers = self.agent_hooks_state_rescanned();
+        if cached.as_ref() != Some(&providers) {
+            self.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
+        }
+        if cached.is_none() {
+            self.send_control_to(conn_id, &self.agent_accounts_state());
+        }
+    }
+
+    /// Re-probes every spawnable provider's CLI and swaps the answers in at once. A call
+    /// while a sweep runs waits for the next one, which every such call shares.
+    pub fn rescan_cli_probes(&self) {
+        self.cli_sweep.run_or_join(|| {
+            let env = self.env();
+            let fresh = crate::cli_probe::probe_all(&env);
+            self.cli_probes
                 .lock()
                 .expect("cli probe cache")
-                .get(&self.env(), binary),
-            None => crate::cli_probe::CliPresence::default(),
-        }
+                .replace(&env, fresh);
+        });
+    }
+
+    /// Whether every spawnable provider's CLI has a cached answer under the current PATH.
+    pub fn cli_probes_primed(&self) -> bool {
+        self.cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .holds_all(&self.env())
+    }
+
+    fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
+        let Some(binary) = crate::cli_probe::binary_name(provider) else {
+            return crate::cli_probe::CliPresence::default();
+        };
+        let env = self.env();
+        let cached = self
+            .cli_probes
+            .lock()
+            .expect("cli probe cache")
+            .cached(&env, binary);
+        cached.unwrap_or_else(|| {
+            let fresh = crate::cli_probe::probe_in(&env, binary);
+            self.cli_probes
+                .lock()
+                .expect("cli probe cache")
+                .insert(&env, binary, fresh.clone());
+            fresh
+        })
     }
 
     fn agent_hooks_state_with_error(
@@ -11074,7 +11256,9 @@ impl Daemon {
         // drain them. The same bounded FIFO still serializes all PTY writes;
         // termination interrupts its writer, including replies admitted concurrently.
         if self.refusing_mutations()
-            || session.reader_cancel.load(Ordering::Acquire)
+            || session
+                .pty()
+                .is_some_and(|pty| pty.reader_cancel.load(Ordering::Acquire))
             || session.removed.load(Ordering::Acquire)
             || !session.state.lock().expect("state lock").is_live()
         {
@@ -11219,7 +11403,11 @@ impl Daemon {
         &self,
         id: u32,
     ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
-        let done = Arc::clone(&self.get(id)?.reader_done);
+        let session = self.get(id)?;
+        let pty = session
+            .pty()
+            .ok_or_else(|| anyhow!("session {id}: no PTY reader"))?;
+        let done = Arc::clone(&pty.reader_done);
         Ok(Box::new(move || *done.0.lock().expect("reader done lock")))
     }
 
@@ -11239,15 +11427,20 @@ impl Daemon {
     #[doc(hidden)]
     pub fn stdin_jobs_for_test(&self, id: u32) -> Result<usize> {
         let session = self.get(id)?;
-        let jobs = session.stdin_queue.lock().expect("stdin queue lock").jobs;
+        let jobs = session.pty().map_or(0, |pty| {
+            pty.stdin_queue.lock().expect("stdin queue lock").jobs
+        });
         Ok(jobs)
     }
 
     #[cfg(feature = "test-barriers")]
     #[doc(hidden)]
     pub fn pty_cleanup_started_for_test(&self, id: u32) -> bool {
-        self.get(id)
-            .is_ok_and(|session| session.reader_cancel.load(Ordering::Acquire))
+        self.get(id).is_ok_and(|session| {
+            session
+                .pty()
+                .is_some_and(|pty| pty.reader_cancel.load(Ordering::Acquire))
+        })
     }
 
     #[cfg(all(unix, feature = "test-barriers"))]
@@ -11260,20 +11453,29 @@ impl Daemon {
     #[cfg(all(unix, feature = "test-barriers"))]
     #[doc(hidden)]
     pub fn pty_reader_poll_returns_for_test(&self, id: u32) -> Result<u64> {
-        Ok(self.get(id)?.park.poll_returns.load(Ordering::Relaxed))
+        Ok(self.test_pty_park(id)?.poll_returns.load(Ordering::Relaxed))
     }
 
     #[cfg(all(unix, feature = "test-barriers"))]
     #[doc(hidden)]
     pub fn park_pty_reader_for_test(&self, id: u32, timeout: Duration) -> Result<bool> {
-        Ok(self.get(id)?.park.request_and_wait(timeout))
+        Ok(self.test_pty_park(id)?.request_and_wait(timeout))
     }
 
     #[cfg(all(unix, feature = "test-barriers"))]
     #[doc(hidden)]
     pub fn resume_pty_reader_for_test(&self, id: u32) -> Result<()> {
-        self.get(id)?.park.resume();
+        self.test_pty_park(id)?.resume();
         Ok(())
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    fn test_pty_park(&self, id: u32) -> Result<Arc<ParkState>> {
+        let session = self.get(id)?;
+        let pty = session
+            .pty()
+            .ok_or_else(|| anyhow!("session {id}: no PTY reader"))?;
+        Ok(Arc::clone(&pty.park))
     }
 
     #[cfg(feature = "test-barriers")]
@@ -11294,7 +11496,12 @@ impl Daemon {
         let worker = self
             .prepare_pty_reader_thread(id, session, reader, None)
             .expect("spawn pty reader thread");
-        *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
+        *session
+            .pty()
+            .expect("PTY runtime")
+            .reader_worker
+            .lock()
+            .expect("reader worker lock") = Some(worker);
     }
 
     fn prepare_pty_reader_thread(
@@ -11304,11 +11511,16 @@ impl Daemon {
         reader: Box<dyn Read + Send>,
         gate: Option<Arc<StartupGate>>,
     ) -> std::io::Result<std::thread::JoinHandle<()>> {
+        if session.pty().is_none() {
+            return Err(std::io::Error::other(format!(
+                "session {id}: a PTY reader requires a terminal session"
+            )));
+        }
         #[cfg(unix)]
         let wake = Arc::new(ReaderWake::new()?);
         #[cfg(unix)]
         let poll_fd = session
-            .backend
+            .runtime
             .adoption_master_fd()
             .map(|fd| {
                 // SAFETY: the backend retains its master throughout reader preparation.
@@ -11328,14 +11540,10 @@ impl Daemon {
                 if gate.is_some_and(|gate| !gate.wait()) {
                     return;
                 }
+                let pty = reader_session.pty().expect("PTY runtime");
                 #[cfg(unix)]
                 {
-                    reader_session
-                        .park
-                        .inner
-                        .lock()
-                        .expect("park lock")
-                        .reader_wake = Some(Arc::clone(&wake));
+                    pty.park.inner.lock().expect("park lock").reader_wake = Some(Arc::clone(&wake));
                 }
                 let mut reader = reader;
                 let mut buf = vec![0u8; PTY_READ_BUF];
@@ -11343,12 +11551,12 @@ impl Daemon {
                 let mut drain_started = None;
                 loop {
                     #[cfg(unix)]
-                    reader_session.park.check_and_wait_if_requested();
+                    pty.park.check_and_wait_if_requested();
                     #[cfg(unix)]
                     {
                         use std::os::fd::AsRawFd;
                         let fd = &poll_fd;
-                        let cancelling = reader_session.reader_cancel.load(Ordering::Acquire);
+                        let cancelling = pty.reader_cancel.load(Ordering::Acquire);
                         if cancelling && drain_started.is_none() {
                             drain_started = Some(Instant::now());
                         }
@@ -11378,10 +11586,7 @@ impl Daemon {
                             )
                         };
                         #[cfg(feature = "test-barriers")]
-                        reader_session
-                            .park
-                            .poll_returns
-                            .fetch_add(1, Ordering::Relaxed);
+                        pty.park.poll_returns.fetch_add(1, Ordering::Relaxed);
                         if ready == 0 && cancelling {
                             break;
                         }
@@ -11409,16 +11614,11 @@ impl Daemon {
                         Ok(n) if !daemon.process_chunk(id, &reader_session, &buf[..n]) => break,
                         Ok(_) => {}
                     }
-                    reader_session.park.check_and_wait_if_requested();
+                    pty.park.check_and_wait_if_requested();
                 }
                 #[cfg(unix)]
                 {
-                    reader_session
-                        .park
-                        .inner
-                        .lock()
-                        .expect("park lock")
-                        .reader_wake = None;
+                    pty.park.inner.lock().expect("park lock").reader_wake = None;
                 }
                 daemon.flush_shell_token_redactor(id, &reader_session);
                 let is_hidden = daemon
@@ -11438,7 +11638,7 @@ impl Daemon {
                 drop(poll_fd);
                 #[cfg(all(windows, feature = "test-barriers"))]
                 crate::test_barriers::pause("pty-reader-eof", id);
-                let (done, changed) = &*reader_session.reader_done;
+                let (done, changed) = &*pty.reader_done;
                 *done.lock().expect("reader done lock") = true;
                 changed.notify_all();
             })
@@ -11752,6 +11952,17 @@ impl Daemon {
             }
         }
         cmd.env("HOUSTON_SESSION", id.to_string());
+        let worktrees = self.db.managed_worktrees().unwrap_or_else(|e| {
+            tracing::warn!("reading managed worktrees for session {id}'s environment: {e:#}");
+            Vec::new()
+        });
+        let (workspace, slug) = pane_identity_env(&project_dir, &cwd, &worktrees);
+        cmd.env(WORKSPACE_ENV, workspace);
+        // Only a pane inside a managed worktree has a slug; never pass an inherited one on.
+        match slug {
+            Some(slug) => cmd.env(WORKTREE_SLUG_ENV, slug),
+            None => cmd.env_remove(WORKTREE_SLUG_ENV),
+        }
         cmd.env(
             crate::claude_hooks::TOOL_BOUNDARY_CONTEXT_ENV,
             self.tool_boundary_signal_path(id).display().to_string(),
@@ -12163,6 +12374,7 @@ impl Daemon {
                 .as_ref()
                 .map(|_| Mutex::new(crate::acp::AcpDecoder::new())),
             scrollback: Mutex::new(scrollback_seed.unwrap_or_default()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -12173,11 +12385,7 @@ impl Daemon {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
             input_intervention: AtomicBool::new(false),
             input_pending: AtomicBool::new(false),
             input_current_id: Mutex::new(None),
@@ -12194,21 +12402,27 @@ impl Daemon {
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
-            backend: Backend::Pty {
+            runtime: SessionRuntime::Pty(PtyRuntime {
+                backend: PtyBackend::Local {
+                    #[cfg(unix)]
+                    pid_creation: pid.and_then(crate::pid::process_creation_token),
+                    writer: Mutex::new(Some(writer)),
+                    master: Mutex::new(Some(pair.master)),
+                    killer: Mutex::new(Some(killer)),
+                    #[cfg(unix)]
+                    interrupt: WriteInterrupt::default(),
+                },
+                stdin_writes_in_flight: AtomicU32::new(0),
+                stdin_queue: Mutex::new(StdinQueue::default()),
                 #[cfg(unix)]
-                pid_creation: pid.and_then(crate::pid::process_creation_token),
-                writer: Mutex::new(Some(writer)),
-                master: Mutex::new(Some(pair.master)),
-                killer: Mutex::new(Some(killer)),
-                #[cfg(unix)]
-                interrupt: WriteInterrupt::default(),
-            },
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+                native_input_recovery: None,
+                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                park: Arc::new(ParkState::default()),
+                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                reader_cancel: AtomicBool::new(false),
+                reader_worker: Mutex::new(None),
+            }),
         });
         startup.session = Some(Arc::clone(&session));
         if carries_scrollback && replacement.is_some() {
@@ -12218,13 +12432,16 @@ impl Daemon {
                 .scrollback_writes
                 .lock()
                 .expect("scrollback writes lock");
-            let snapshot = session
-                .scrollback
-                .lock()
-                .expect("scrollback lock")
-                .snapshot();
+            let (mark, snapshot) = {
+                let ring = session.scrollback.lock().expect("scrollback lock");
+                ((ring.generation(), ring.bytes_seen()), ring.snapshot())
+            };
             crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
                 .context(orchestrate::MutationMayHaveActed)?;
+            *session
+                .scrollback_checkpointed
+                .lock()
+                .expect("scrollback checkpointed lock") = Some(mark);
         }
         let prepare = || -> Result<()> {
             #[cfg(feature = "test-barriers")]
@@ -12232,7 +12449,12 @@ impl Daemon {
             let worker = self
                 .prepare_pty_reader_thread(id, &session, reader, Some(Arc::clone(&startup.gate)))
                 .context("starting PTY reader worker")?;
-            *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
+            *session
+                .pty()
+                .expect("PTY runtime")
+                .reader_worker
+                .lock()
+                .expect("reader worker lock") = Some(worker);
             let daemon = Arc::clone(self);
             let child = Arc::clone(&startup.child);
             let owned_session = Arc::clone(&session);
@@ -12325,9 +12547,10 @@ impl Daemon {
                     }
                     {
                         let session = owned_session;
+                        let pty = session.pty().expect("PTY runtime");
                         #[cfg(target_os = "linux")]
                         {
-                            let (done, changed) = &*session.reader_done;
+                            let (done, changed) = &*pty.reader_done;
                             let mut done = done.lock().expect("reader done lock");
                             while !*done {
                                 done = changed.wait(done).expect("reader done wait");
@@ -12338,7 +12561,7 @@ impl Daemon {
                                 return;
                             }
                             // Holding master excludes close/kill while the root anchor is reaped.
-                            if let Backend::Pty { master, .. } = &session.backend {
+                            if let PtyBackend::Local { master, .. } = &pty.backend {
                                 let mut master = master.lock().expect("master lock");
                                 if let Err(error) = child.wait() {
                                     tracing::error!("session {id}: PTY root reap failed; ownership remains registered: {error}");
@@ -12347,8 +12570,8 @@ impl Daemon {
                                 *master = None;
                             }
                         }
-                        session.backend.release_pty();
-                        let (done, changed) = &*session.pty_reaped;
+                        session.runtime.release();
+                        let (done, changed) = &*pty.pty_reaped;
                         *done.lock().expect("PTY reap lock") = true;
                         changed.notify_all();
                     }
@@ -12559,11 +12782,11 @@ impl Daemon {
         else {
             return;
         };
+        let Some(pty) = session.pty() else {
+            return;
+        };
         let paired_exit = {
-            let mut w = session
-                .supervisor_wait
-                .lock()
-                .expect("supervisor wait lock");
+            let mut w = pty.supervisor_wait.lock().expect("supervisor wait lock");
             w.eof = true;
             w.exit
         };
@@ -12588,11 +12811,11 @@ impl Daemon {
         if session.backend_exited.load(Ordering::Acquire) {
             return;
         }
+        let Some(pty) = session.pty() else {
+            return;
+        };
         let paired_eof = {
-            let mut w = session
-                .supervisor_wait
-                .lock()
-                .expect("supervisor wait lock");
+            let mut w = pty.supervisor_wait.lock().expect("supervisor wait lock");
             w.exit = Some((report.code, report.signal));
             w.eof
         };
@@ -12796,6 +13019,7 @@ impl Daemon {
                 osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
                 acp: None,
                 scrollback: Mutex::new(Scrollback::new()),
+                scrollback_checkpointed: Mutex::new(None),
                 ws_attaches: AtomicU32::new(0),
                 vt: Mutex::new(None),
                 vt_refused: AtomicBool::new(false),
@@ -12806,11 +13030,7 @@ impl Daemon {
                 activity: Mutex::new(crate::session_activity::Tracker::default()),
                 removed: AtomicBool::new(false),
                 backend_exited: AtomicBool::new(false),
-                stdin_writes_in_flight: AtomicU32::new(0),
-                stdin_queue: Mutex::new(StdinQueue::default()),
                 lifecycle_hook_seen: AtomicBool::new(false),
-                #[cfg(unix)]
-                native_input_recovery: None,
                 input_intervention: AtomicBool::new(false),
                 input_pending: AtomicBool::new(false),
                 input_current_id: Mutex::new(None),
@@ -12827,13 +13047,19 @@ impl Daemon {
                 slept_at_ms: Mutex::new(None),
                 limit: Mutex::new(None),
                 geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
-                backend: Backend::Ssh(handle),
-                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-                park: Arc::new(ParkState::default()),
-                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-                reader_cancel: AtomicBool::new(false),
-                reader_worker: Mutex::new(None),
+                runtime: SessionRuntime::Pty(PtyRuntime {
+                    backend: PtyBackend::Ssh(handle),
+                    stdin_writes_in_flight: AtomicU32::new(0),
+                    stdin_queue: Mutex::new(StdinQueue::default()),
+                    #[cfg(unix)]
+                    native_input_recovery: None,
+                    supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                    park: Arc::new(ParkState::default()),
+                    reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                    pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                    reader_cancel: AtomicBool::new(false),
+                    reader_worker: Mutex::new(None),
+                }),
             });
             self.sessions
                 .lock()
@@ -12942,8 +13168,8 @@ impl Daemon {
             .get(&session)
             .cloned()
             .ok_or_else(|| anyhow!("no session {session} to upload to"))?;
-        let rx = match &s.backend {
-            Backend::Ssh(h) => h.upload(path.clone(), name)?,
+        let rx = match s.pty_backend() {
+            Some(PtyBackend::Ssh(h)) => h.upload(path.clone(), name)?,
             _ => bail!(
                 "session {session} is a local session ({:?}), not an SSH session — \
                  there is no remote host to upload to",
@@ -13133,7 +13359,9 @@ impl Daemon {
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(&mail, swarms.is_empty());
         drop(mail);
 
-        let watcher_healthy = watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok;
+        let delivery_ok = self.hook_drop_canary_tick();
+        let watcher_healthy =
+            watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok && delivery_ok;
 
         let mut ladder = self
             .swarm_mail_ladder
@@ -13339,11 +13567,13 @@ impl Daemon {
     }
 
     fn swarm_mail_error_delay(&self, drop_applied: usize, drop_listed_ok: bool) -> Duration {
+        let delivery_ok = self.hook_drop_canary_tick();
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(
             &self.swarm_mail.lock().expect("swarm_mail lock"),
             false,
         ) && drop_listed_ok
-            && self.hook_drop_watch.healthy();
+            && self.hook_drop_watch.healthy()
+            && delivery_ok;
         let view_active = self.tx.receiver_count() > 0;
         let mut ladder = self
             .swarm_mail_ladder
@@ -13728,7 +13958,9 @@ impl Daemon {
     #[doc(hidden)]
     pub fn stdin_write_in_progress_for_test(&self, session: u32) -> bool {
         match self.get(session) {
-            Ok(session) => session.stdin_writes_in_flight.load(Ordering::Acquire) != 0,
+            Ok(session) => session
+                .pty()
+                .is_some_and(|pty| pty.stdin_writes_in_flight.load(Ordering::Acquire) != 0),
             Err(_) => false,
         }
     }
@@ -13740,17 +13972,17 @@ impl Daemon {
         id: u32,
     ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
         let session = self.get(id)?;
-        Ok(Box::new(move || match &session.backend {
-            Backend::Pty { interrupt, .. } => interrupt.active_for_test(),
-            Backend::AdoptedPty(raw) => raw.writer_active_for_test(),
-            Backend::Ssh(_) | Backend::Thread(_) => false,
+        Ok(Box::new(move || match session.pty_backend() {
+            Some(PtyBackend::Local { interrupt, .. }) => interrupt.active_for_test(),
+            Some(PtyBackend::Adopted(raw)) => raw.writer_active_for_test(),
+            Some(PtyBackend::Ssh(_)) | None => false,
         }))
     }
 
     #[doc(hidden)]
     pub fn stdin_cleanup_for_test(&self, id: u32) -> Result<Box<dyn FnOnce() + Send>> {
         let session = self.get(id)?;
-        Ok(Box::new(move || session.backend.release_pty()))
+        Ok(Box::new(move || session.runtime.release()))
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {
@@ -13762,7 +13994,7 @@ impl Daemon {
         if !state.is_live() {
             return Ok((cols, rows));
         }
-        let applied = session.backend.resize(id, cols, rows)?;
+        let applied = session.runtime.resize(id, cols, rows)?;
         session.set_geometry(applied.0, applied.1);
         Ok(applied)
     }
@@ -13799,7 +14031,7 @@ impl Daemon {
             thread.note_close_cause("the session was killed");
         }
         session
-            .backend
+            .runtime
             .kill(id, session.pid, self.channel.as_deref())?;
         if !live {
             self.reclaim_after_teardown(id);
@@ -13929,9 +14161,9 @@ impl Daemon {
             }
             let cue_snapshot = session.snapshot_info();
             self.persist_scrollback_result(id)?;
-            let creation = match &session.backend {
-                Backend::Pty { pid_creation, .. } => *pid_creation,
-                Backend::Ssh(_) | Backend::AdoptedPty(_) | Backend::Thread(_) => {
+            let creation = match session.pty_backend() {
+                Some(PtyBackend::Local { pid_creation, .. }) => *pid_creation,
+                Some(PtyBackend::Ssh(_) | PtyBackend::Adopted(_)) | None => {
                     bail!("Sleep refused for session {id}: this pane has no supported CLI process identity")
                 }
             };
@@ -14350,13 +14582,13 @@ impl Daemon {
     }
 
     fn drain_session_reader(&self, id: u32, session: &Session) -> Result<()> {
-        if session
-            .reader_worker
-            .lock()
-            .expect("reader worker lock")
-            .as_ref()
-            .is_some_and(|worker| worker.thread().id() == std::thread::current().id())
-        {
+        if session.pty().is_some_and(|pty| {
+            pty.reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .as_ref()
+                .is_some_and(|worker| worker.thread().id() == std::thread::current().id())
+        }) {
             bail!("session {id}: PTY cleanup refused from its own reader; ownership remains registered");
         }
         let live = session.state.lock().expect("state lock").is_live();
@@ -14364,7 +14596,7 @@ impl Daemon {
         if !live && session.has_retained_reader() {
             // An owned stop can publish its ended state before the reader records EOF.
             // Wait only for that receipt; never signal an unproven exited workload.
-            let (done, changed) = &*session.reader_done;
+            let (done, changed) = &*session.pty().expect("PTY runtime").reader_done;
             let done = done.lock().expect("reader done lock");
             let (done, _) = changed
                 .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
@@ -14374,19 +14606,22 @@ impl Daemon {
             }
         }
         #[cfg(target_os = "linux")]
-        let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
+        let retained = matches!(session.pty_backend(), Some(PtyBackend::Local { master, .. }) if master.lock().expect("master lock").is_some());
         #[cfg(not(target_os = "linux"))]
         let retained = false;
         if live || retained {
             session
-                .backend
+                .runtime
                 .kill(id, session.pid, self.channel.as_deref())?;
         }
         session.cancel_pty_reader();
         #[cfg(windows)]
-        session.backend.release_pty();
-        if matches!(&session.backend, Backend::Pty { .. }) {
-            let (done, changed) = &*session.reader_done;
+        session.runtime.release();
+        if let Some(pty) = session
+            .pty()
+            .filter(|pty| matches!(pty.backend, PtyBackend::Local { .. }))
+        {
+            let (done, changed) = &*pty.reader_done;
             let done = done.lock().expect("reader done lock");
             let (done, _) = changed
                 .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
@@ -14395,12 +14630,7 @@ impl Daemon {
                 bail!("session {id}: PTY reader exceeded cleanup drain limit 1000 ms; ownership remains registered");
             }
             drop(done);
-            if let Some(worker) = session
-                .reader_worker
-                .lock()
-                .expect("reader worker lock")
-                .take()
-            {
+            if let Some(worker) = pty.reader_worker.lock().expect("reader worker lock").take() {
                 worker
                     .join()
                     .map_err(|_| anyhow!("session {id}: PTY reader panicked during cleanup"))?;
@@ -14411,8 +14641,11 @@ impl Daemon {
 
     fn cleanup_session_ownership(&self, id: u32, session: &Session) -> Result<()> {
         self.drain_session_reader(id, session)?;
-        if matches!(&session.backend, Backend::Pty { .. }) {
-            let (done, changed) = &*session.pty_reaped;
+        if let Some(pty) = session
+            .pty()
+            .filter(|pty| matches!(pty.backend, PtyBackend::Local { .. }))
+        {
+            let (done, changed) = &*pty.pty_reaped;
             let done = done.lock().expect("PTY reap lock");
             let (done, _) = changed
                 .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
@@ -15507,7 +15740,10 @@ impl Daemon {
         self.ensure_not_closing(id, "Sleep")?;
         let session = self.get(id)?;
         self.ensure_not_shell_restoring(id)?;
-        if session.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
+        if session
+            .pty()
+            .is_some_and(|pty| pty.stdin_writes_in_flight.load(Ordering::Acquire) != 0)
+        {
             bail!("Sleep refused for session {id}: stdin delivery is still in progress");
         }
         if !self
@@ -16924,7 +17160,13 @@ impl Daemon {
 
     fn confirm_paste_from_prompt(&self, session: u32, prompt: Option<&str>) {
         let Some(prompt) = prompt else { return };
-        let head = prompt.lines().next().unwrap_or("");
+        // Claude Code reports a pasted prompt inside `<pasted_content id=…>`, so the
+        // receipt header is not necessarily the prompt's first line.
+        let head = prompt
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("--- Houston"))
+            .unwrap_or("");
         if let Some((_, suffix)) = head.split_once(", delivery ") {
             let receipt = suffix.trim_end_matches(" ---");
             if receipt.len() == 32 && receipt.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -17435,6 +17677,50 @@ impl Daemon {
     #[doc(hidden)]
     pub fn hook_drop_boot_for_test(self: &Arc<Self>) {
         self.hook_drop_boot();
+    }
+
+    /// One delivery-canary round against the channel's watched drop directory.
+    /// Its verdict feeds `watcher_healthy`, so a miss selects the ladder's
+    /// watcher-dead rungs.
+    fn hook_drop_canary_tick(&self) -> bool {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let mut canary = self.hook_drop_canary.lock().expect("hook drop canary lock");
+        crate::hook_drop_canary::check(
+            &mut canary,
+            &dir,
+            &self.hook_drop_watch,
+            std::time::Instant::now(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn set_hook_drop_canary_timing_for_test(&self, every: Duration, deadline: Duration) {
+        self.hook_drop_canary
+            .lock()
+            .expect("hook drop canary lock")
+            .set_timing_for_test(every, deadline);
+    }
+
+    /// Drops the hook-drop watcher so the OS stops delivering events while
+    /// `hook_drop_watch.healthy()` stays true: the silent-delivery-death shape
+    /// the canary exists to catch.
+    #[doc(hidden)]
+    pub fn stop_hook_drop_watcher_for_test(&self) {
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = None;
+        crate::hook_drop_canary::wait_for_quiet_for_test(&self.hook_drop_watch);
+    }
+
+    #[doc(hidden)]
+    pub fn restart_hook_drop_watcher_for_test(&self) {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let watcher = crate::fs_watch::start_watcher(&dir, Arc::clone(&self.hook_drop_watch));
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = watcher;
     }
 
     pub fn mcp_progress_tick(&self) -> Duration {
@@ -20259,16 +20545,13 @@ impl Daemon {
                 self.spawn_checkout_warning(session.id)
             };
             let mut warnings = self.spawn_warnings(&session, isolated);
-            let include = self
-                .spawn_include_warnings
-                .lock()
-                .expect("spawn include warnings lock")
-                .remove(&session.id)
-                .unwrap_or_default();
-            warnings.extend(include.into_iter().map(|message| proto::PaneSpawnWarning {
-                code: "worktree_include".into(),
-                message,
-            }));
+            warnings.extend(
+                self.spawn_include_warnings
+                    .lock()
+                    .expect("spawn include warnings lock")
+                    .remove(&session.id)
+                    .unwrap_or_default(),
+            );
             Ok(orchestrate::SpawnOutcome {
                 session,
                 warning,
@@ -20507,6 +20790,24 @@ impl Daemon {
                  and runs code unattended - a spawned pane defaults to its CLI's auto \
                  mode, so it does not stop for routine approvals"
             );
+        }
+        // A Claude slug whose old checkout left history at its path is renamed before anything
+        // downstream (reservation, tree, branch, row) derives from it. Other providers do not
+        // read that history, so they keep the slug they asked for.
+        let mut worktree = worktree;
+        let mut slug_history_note = None;
+        if let Some(SpawnWorktreeRequest::Create(ask)) = worktree
+            .as_mut()
+            .filter(|_| kind == proto::AgentKind::Claude)
+        {
+            if let Some(resolved) = self.resolve_slug_history(&ask.slug, |name| {
+                crate::worktrees::spawn_path(&project_dir, name)
+            })? {
+                crate::worktrees::validate_slug(&resolved)
+                    .map_err(|e| anyhow!("spawn refused: {e}"))?;
+                slug_history_note = Some(slug_history_note_message(&ask.slug, &resolved));
+                ask.slug = resolved;
+            }
         }
         match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => orchestrate::seed_skill_everywhere(&home),
@@ -20838,14 +21139,25 @@ impl Daemon {
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(sid, text, Some(caller), true);
         }
-        if let Some(created) = created
-            .as_ref()
-            .filter(|c| created_here && !c.include_warnings.is_empty())
-        {
-            self.spawn_include_warnings
-                .lock()
-                .expect("spawn include warnings lock")
-                .insert(sid, created.include_warnings.clone());
+        if let Some(created) = created.as_ref().filter(|_| created_here) {
+            let mut notes = created
+                .include_warnings
+                .iter()
+                .map(|message| proto::PaneSpawnWarning {
+                    code: "worktree_include".into(),
+                    message: message.clone(),
+                })
+                .collect::<Vec<_>>();
+            notes.extend(slug_history_note.map(|message| proto::PaneSpawnWarning {
+                code: "worktree_slug_history".into(),
+                message,
+            }));
+            if !notes.is_empty() {
+                self.spawn_include_warnings
+                    .lock()
+                    .expect("spawn include warnings lock")
+                    .insert(sid, notes);
+            }
         }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
@@ -20942,6 +21254,49 @@ impl Daemon {
         (!siblings.is_empty()).then(|| format!("shared checkout_root {root:?}: child {child} shares the checkout with live sibling panes {siblings:?}; parallel writes may conflict; use worktree for isolation"))
     }
 
+    /// Whether a Claude projects root this daemon knows of (`CLAUDE_CONFIG_DIR`, the
+    /// home, agent profiles) keeps history for `dir`, under its plain or verbatim name.
+    fn claude_history_survives(&self, dir: &Path) -> bool {
+        let mut roots = self
+            .usage_sources()
+            .into_iter()
+            .filter(|source| source.provider == proto::UsageProvider::Claude)
+            .map(|source| source.root)
+            .collect::<Vec<_>>();
+        if let Some(config_dir) = self
+            .env()
+            .var_os("CLAUDE_CONFIG_DIR")
+            .filter(|v| !v.is_empty())
+        {
+            roots.push(crate::usage::root_under_config_dir(
+                proto::UsageProvider::Claude,
+                Path::new(&config_dir),
+            ));
+        }
+        let plain = PathBuf::from(crate::launch::brief_display_path(dir));
+        let names = [
+            crate::harness::digest::claude_slug(dir),
+            crate::harness::digest::claude_slug(&plain),
+        ];
+        roots
+            .iter()
+            .any(|root| names.iter().any(|name| root.join(name).exists()))
+    }
+
+    /// The suffixed slug to create in place of `slug` when its directory is free but an
+    /// old checkout's Claude history survives at it; `None` keeps `slug`.
+    fn resolve_slug_history(
+        &self,
+        slug: &str,
+        dest_for: impl Fn(&str) -> PathBuf,
+    ) -> Result<Option<String>> {
+        crate::worktrees::resolve_slug_history_collision(
+            slug,
+            |name| dest_for(name).exists(),
+            |name| self.claude_history_survives(&dest_for(name)),
+        )
+    }
+
     /// `caller` is the pane whose spawn asked for the tree; a task Start has no
     /// caller pane, so its provenance keeps no session.
     fn create_spawn_worktree(
@@ -20980,8 +21335,18 @@ impl Daemon {
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
-        crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
-            .context("spawn refused")?;
+        if ask.branch.is_some() {
+            crate::worktrees::create_on_named_branch(
+                project_dir,
+                &branch,
+                None,
+                &dest,
+                &self.merge_tree_scratch(),
+            )
+        } else {
+            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
+        }
+        .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
         let mut created = CreatedWorktree {
             repo: project_dir.to_path_buf(),
@@ -21006,8 +21371,9 @@ impl Daemon {
                 .context("spawn refused")
                 .context(orchestrate::MutationMayHaveActed);
         }
-        created.include_warnings =
-            crate::worktree_include::carry_over(project_dir, &created.path).warnings;
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&created.path);
+        warnings.extend(crate::worktree_include::carry_over(project_dir, &created.path).warnings);
+        created.include_warnings = warnings;
         Ok(created)
     }
 
@@ -22658,15 +23024,17 @@ impl Daemon {
         // A reader that recorded EOF has already put every chunk in the ring. The
         // supervisor path can run this on that reader itself, before it marks
         // `reader_done`, so waiting there would only burn the whole bound.
-        let eof_seen = session
-            .supervisor_wait
-            .lock()
-            .expect("supervisor wait lock")
-            .eof;
-        if !eof_seen {
-            let (done, changed) = &*session.reader_done;
-            let done = done.lock().expect("reader done lock");
-            let _ = changed.wait_timeout_while(done, EXIT_TAIL_READER_WAIT, |done| !*done);
+        if let Some(pty) = session.pty() {
+            let eof_seen = pty
+                .supervisor_wait
+                .lock()
+                .expect("supervisor wait lock")
+                .eof;
+            if !eof_seen {
+                let (done, changed) = &*pty.reader_done;
+                let done = done.lock().expect("reader done lock");
+                let _ = changed.wait_timeout_while(done, EXIT_TAIL_READER_WAIT, |done| !*done);
+            }
         }
         // More raw lines than the bound, because a repainting CLI can leave several
         // blank or drawn lines after the words that explain the exit.
@@ -22898,7 +23266,7 @@ impl Daemon {
                     }
                 } else if let Err(error) =
                     session
-                        .backend
+                        .runtime
                         .kill(child, session.pid, self.channel.as_deref())
                 {
                     tracing::warn!("terminating settled child {child}: {error}");
@@ -25010,6 +25378,14 @@ pub(crate) struct CreatedWorktree {
     pub(crate) include_warnings: Vec<String>,
 }
 
+fn slug_history_note_message(asked: &str, resolved: &str) -> String {
+    format!(
+        "worktree slug {asked:?} was created as {resolved:?}: Claude history from the old \
+         checkout survives at the first path, so the suffix keeps the new checkout from \
+         adopting it"
+    )
+}
+
 /// Where a spawn's worktree comes from: `Create` asks git for the slug/branch
 /// the caller named, `Existing` adopts a tree a task run already opened and
 /// recorded (with a delegation still created for the child).
@@ -25036,6 +25412,106 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     write_helper_wrapper(&bin_dir, "hs-harness", "hs-harness")?;
     write_helper_wrapper(&bin_dir, "hs-task", "hs-task")?;
     Ok((prompts_dir, bin_dir))
+}
+
+pub(crate) const WORKSPACE_ENV: &str = "HOUSTON_WORKSPACE";
+pub(crate) const WORKTREE_SLUG_ENV: &str = "HOUSTON_WORKTREE_SLUG";
+
+/// The pane's workspace path and, when `cwd` is inside a managed worktree, that worktree's
+/// directory name, which is the slug its checkout chip shows.
+fn pane_identity_env(
+    project_dir: &Path,
+    cwd: &Path,
+    worktrees: &[crate::db::ManagedWorktreeRow],
+) -> (String, Option<String>) {
+    #[cfg(windows)]
+    let workspace = crate::paths::windows_command_path(project_dir);
+    #[cfg(not(windows))]
+    let workspace = project_dir.to_path_buf();
+    let resolved = cwd.canonicalize().ok();
+    let slug = worktrees
+        .iter()
+        .map(|row| Path::new(&row.path))
+        .filter(|root| {
+            cwd.starts_with(root) || resolved.as_ref().is_some_and(|r| r.starts_with(root))
+        })
+        // A worktree can hold its own managed worktrees; the innermost one is the pane's.
+        .max_by_key(|root| root.components().count())
+        .and_then(|root| root.file_name())
+        .map(|name| name.to_string_lossy().into_owned());
+    (workspace.display().to_string(), slug)
+}
+
+#[cfg(test)]
+mod pane_identity_env_tests {
+    use super::*;
+
+    fn row(path: &Path) -> crate::db::ManagedWorktreeRow {
+        crate::db::ManagedWorktreeRow {
+            path: path.display().to_string(),
+            repo_common_dir: String::new(),
+            branch: "houston/feature".into(),
+            base_branch: None,
+            provenance: crate::db::WorktreeProvenance::PaneSpawn,
+            created_by_session: None,
+            created_at_ms: 0,
+            bytes: None,
+            measured_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_pane_in_a_managed_worktree_carries_its_slug_and_others_carry_none() {
+        let workspace = tempfile::tempdir().unwrap();
+        let tree = workspace.path().join(".houston/worktrees/feature");
+        let sibling = workspace.path().join(".houston/worktrees/feature-two");
+        std::fs::create_dir_all(tree.join("src")).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let rows = [row(&tree.canonicalize().unwrap())];
+        let expected = {
+            #[cfg(windows)]
+            let path = crate::paths::windows_command_path(workspace.path());
+            #[cfg(not(windows))]
+            let path = workspace.path().to_path_buf();
+            path.display().to_string()
+        };
+
+        assert_eq!(
+            pane_identity_env(workspace.path(), workspace.path(), &rows),
+            (expected.clone(), None)
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &tree.join("src"), &rows),
+            (expected.clone(), Some("feature".into()))
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &sibling, &rows).1,
+            None,
+            "a directory that only shares the worktree's name prefix is not inside it"
+        );
+        assert_eq!(pane_identity_env(workspace.path(), &tree, &[]).1, None);
+    }
+
+    #[test]
+    fn a_pane_in_a_nested_managed_worktree_carries_the_innermost_slug() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outer = workspace.path().join(".houston/worktrees/outer");
+        let inner = outer.join(".houston/worktrees/inner");
+        std::fs::create_dir_all(inner.join("src")).unwrap();
+        let rows = [
+            row(&outer.canonicalize().unwrap()),
+            row(&inner.canonicalize().unwrap()),
+        ];
+
+        assert_eq!(
+            pane_identity_env(&outer, &inner.join("src"), &rows).1,
+            Some("inner".into())
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &outer, &rows).1,
+            Some("outer".into())
+        );
+    }
 }
 
 fn path_with(bin_dir: &Path, base: Option<&str>) -> String {
@@ -25572,6 +26048,8 @@ mod pr_watch_stall_tests {
                     head_sha: "abc".into(),
                     failed_checks: Default::default(),
                     passed: false,
+                    checks_awaited_since_ms: None,
+                    no_checks_woken: false,
                     comments_through: 1,
                     comment_ids: Default::default(),
                     conflicting: false,
@@ -27019,7 +27497,7 @@ mod idle_profile_tests {
         let killed = killed_rx.recv_timeout(Duration::from_secs(2));
         if killed.is_err() {
             session
-                .backend
+                .runtime
                 .kill(child, Some(pid), daemon.channel.as_deref())
                 .unwrap();
         }
@@ -27133,6 +27611,70 @@ mod idle_profile_tests {
     }
 
     #[test]
+    fn a_paste_wrapped_in_claude_pasted_content_confirms_its_delivery() {
+        let (daemon, state) = test_daemon();
+        let parent = 7;
+        let now = now_ms();
+        let id = daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().to_string_lossy().into_owned(),
+                    from_session: None,
+                    request_id: None,
+                    kind: "operator_note".into(),
+                    urgent: false,
+                    summary: "message".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now,
+            )
+            .unwrap();
+        let (receipt, rows) = daemon
+            .db
+            .inbox_reserve(parent, now, 8, 8000)
+            .unwrap()
+            .unwrap();
+        let entries: Vec<_> = rows
+            .into_iter()
+            .map(|row| orchestrate::InboxEntry {
+                row,
+                from_label: "Houston".into(),
+                excerpt: None,
+            })
+            .collect();
+        let pasted = orchestrate::compose_inbox(&entries, &receipt);
+        daemon
+            .db
+            .inbox_mark_delivered(&receipt, "paste", now)
+            .unwrap();
+        daemon
+            .paste_confirmations
+            .lock()
+            .unwrap()
+            .insert(parent, (receipt, now));
+        // Claude Code 2.1.307 reports a bracketed paste to UserPromptSubmit in this wrapper.
+        let prompt = format!("<pasted_content id=\"3d98\">\n{pasted}\n</pasted_content>");
+        daemon.confirm_paste_from_prompt(parent, Some(&prompt));
+        assert!(
+            daemon
+                .db
+                .inbox_get(id)
+                .unwrap()
+                .unwrap()
+                .confirmed_at
+                .is_some(),
+            "the receipt on the wrapped header line proves the paste: {prompt}"
+        );
+    }
+
+    #[test]
     fn provider_activity_does_not_advance_a_delegation_round() {
         let (daemon, _state) = test_daemon();
         daemon
@@ -27209,7 +27751,7 @@ mod handoff_refusal_tests {
         manifest.project_dir = state.display().to_string();
         manifest.cwd = manifest.project_dir.clone();
         let session =
-            Daemon::adopted_session(&manifest, Backend::Ssh(crate::ssh::SshHandle::stub()));
+            Daemon::adopted_session(&manifest, PtyBackend::Ssh(crate::ssh::SshHandle::stub()));
         daemon.db.insert_session(&session.info).unwrap();
         daemon
             .sessions
@@ -27229,7 +27771,8 @@ mod handoff_refusal_tests {
         let mut json = serde_json::to_value(&manifest).unwrap();
         json.as_object_mut().unwrap().remove("title_source");
         let legacy = serde_json::from_value(json).unwrap();
-        let session = Daemon::adopted_session(&legacy, Backend::Ssh(crate::ssh::SshHandle::stub()));
+        let session =
+            Daemon::adopted_session(&legacy, PtyBackend::Ssh(crate::ssh::SshHandle::stub()));
         daemon
             .db
             .insert_session_with_title_source(&session.info, Some("user"))
@@ -27352,7 +27895,7 @@ mod handoff_refusal_tests {
         let (daemon, _state) = test_daemon();
         let session = Daemon::adopted_session(
             &manifest_entry(7),
-            Backend::Ssh(crate::ssh::SshHandle::stub()),
+            PtyBackend::Ssh(crate::ssh::SshHandle::stub()),
         );
         daemon
             .sessions
@@ -27616,6 +28159,7 @@ mod kill_teardown_tests {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -27626,11 +28170,7 @@ mod kill_teardown_tests {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
             input_intervention: AtomicBool::new(false),
             input_pending: AtomicBool::new(false),
             input_current_id: Mutex::new(None),
@@ -27647,13 +28187,19 @@ mod kill_teardown_tests {
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
-            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+            runtime: SessionRuntime::Pty(PtyRuntime {
+                backend: PtyBackend::Ssh(crate::ssh::SshHandle::stub()),
+                stdin_writes_in_flight: AtomicU32::new(0),
+                stdin_queue: Mutex::new(StdinQueue::default()),
+                #[cfg(unix)]
+                native_input_recovery: None,
+                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                park: Arc::new(ParkState::default()),
+                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                reader_cancel: AtomicBool::new(false),
+                reader_worker: Mutex::new(None),
+            }),
         });
         daemon.db.insert_session(&session.info).unwrap();
         daemon
@@ -27717,6 +28263,72 @@ mod kill_teardown_tests {
         writer.join().unwrap().unwrap();
         let saved = Scrollback::load(&daemon.scrollback_path(7)).unwrap();
         assert_eq!(saved.tail_lines(1), ["first checkpoint"]);
+    }
+
+    #[test]
+    fn the_periodic_checkpoint_writes_only_rings_with_new_output() {
+        let (daemon, state) = test_daemon();
+        let busy = stub_ssh_session(&daemon, state.path(), 7);
+        stub_ssh_session(&daemon, state.path(), 8);
+        let push = |bytes: &[u8]| busy.scrollback.lock().expect("scrollback lock").push(bytes);
+
+        push(b"first output");
+        assert_eq!(
+            daemon.checkpoint_dirty_scrollback(),
+            1,
+            "an empty ring is never written"
+        );
+        assert!(!daemon.scrollback_path(8).exists());
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 0, "nothing new");
+
+        push(b"\nsecond output");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 1, "new output");
+        let saved = Scrollback::load(&daemon.scrollback_path(7)).unwrap();
+        assert_eq!(saved.tail_lines(1), ["second output"]);
+
+        daemon.kill(7).unwrap();
+        push(b"\nafter the kill");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 0);
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a killed pane's released file is not re-created"
+        );
+    }
+
+    #[test]
+    fn a_kill_during_the_periodic_checkpoint_does_not_re_create_the_file() {
+        let (daemon, state) = test_daemon();
+        let busy = stub_ssh_session(&daemon, state.path(), 7);
+        let push = |bytes: &[u8]| busy.scrollback.lock().expect("scrollback lock").push(bytes);
+        push(b"first output");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 1);
+        push(
+            b"
+second output",
+        );
+
+        // Holding the write lock parks the pass after it has read the pane as Running.
+        let writes = daemon
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
+        let pass = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.checkpoint_dirty_scrollback())
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        let kill = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.kill(7))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        drop(writes);
+        kill.join().unwrap().unwrap();
+        pass.join().unwrap();
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a kill that lands mid-pass keeps its scrollback file released"
+        );
     }
 
     #[test]
@@ -28117,7 +28729,7 @@ mod exit_tail_tests {
             vt_format_version: 0,
         };
         let session =
-            Daemon::adopted_session(&manifest, Backend::Ssh(crate::ssh::SshHandle::stub()));
+            Daemon::adopted_session(&manifest, PtyBackend::Ssh(crate::ssh::SshHandle::stub()));
         daemon
             .sessions
             .lock()
@@ -28131,6 +28743,8 @@ mod exit_tail_tests {
         // The supervisor path's order: the reader recorded EOF and is the thread asking,
         // so it has not set `reader_done` yet.
         session
+            .pty()
+            .expect("PTY runtime")
             .supervisor_wait
             .lock()
             .expect("supervisor wait lock")
@@ -28244,6 +28858,7 @@ mod force_respawn_guard_tests {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -28254,11 +28869,7 @@ mod force_respawn_guard_tests {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
             input_intervention: AtomicBool::new(false),
             input_pending: AtomicBool::new(false),
             input_current_id: Mutex::new(None),
@@ -28275,13 +28886,19 @@ mod force_respawn_guard_tests {
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(80u16) << 16) | u32::from(24u16)),
-            backend: Backend::Ssh(crate::ssh::SshHandle::stub()),
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+            runtime: SessionRuntime::Pty(PtyRuntime {
+                backend: PtyBackend::Ssh(crate::ssh::SshHandle::stub()),
+                stdin_writes_in_flight: AtomicU32::new(0),
+                stdin_queue: Mutex::new(StdinQueue::default()),
+                #[cfg(unix)]
+                native_input_recovery: None,
+                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                park: Arc::new(ParkState::default()),
+                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                reader_cancel: AtomicBool::new(false),
+                reader_worker: Mutex::new(None),
+            }),
         });
         daemon.db.insert_session(&session.info).unwrap();
         daemon

@@ -32,7 +32,7 @@ use shells::ShellEntry;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use tauri::webview::PageLoadEvent;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[tauri::command]
 async fn detect_available_shells(
@@ -464,11 +464,7 @@ fn main() {
                          {channel_label:?} (already owned by this instance); focusing the \
                          existing window"
                     );
-                    if let Some(window) = app.get_window("main") {
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    tray::show_main_window(app);
                 })
                 .build(),
         )
@@ -689,6 +685,10 @@ fn main() {
                         if let Err(err) = window.hide() {
                             eprintln!(
                                 "houston-tauri: could not hide the window to the tray ({err}); leaving it open"
+                            );
+                        } else if let Err(err) = window.emit_to("main", tray::EVENT_WINDOW_HIDDEN, true) {
+                            eprintln!(
+                                "houston-tauri: could not tell the renderer the window is hidden ({err}); its polls keep running"
                             );
                         }
                         return;

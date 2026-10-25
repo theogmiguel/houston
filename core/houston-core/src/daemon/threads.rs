@@ -1,5 +1,6 @@
 use super::*;
-use crate::thread_session::{ApprovalAnswer, Conversation, ThreadHandle, ThreadHost, ThreadLaunch};
+use crate::claude_stream::ClaudeStreamJson;
+use crate::thread_session::{ApprovalAnswer, Conversation, StructuredRuntime, ThreadHost};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -145,7 +146,7 @@ const DENIED_IN_HOUSTON: &str = "The user denied this tool call in Houston.";
 
 /// Withdraws a held request when the MCP call ends without an answer.
 pub(crate) struct ApprovalGuard {
-    handle: Arc<ThreadHandle>,
+    handle: Arc<StructuredRuntime>,
     request_id: String,
 }
 
@@ -175,11 +176,11 @@ pub(super) struct ThreadSpawn<'a> {
 
 impl Daemon {
     /// The refusal every thread-only request gives a terminal session, naming its view.
-    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<ThreadHandle>> {
+    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
         let session = self.get(id)?;
-        match &session.backend {
-            Backend::Thread(handle) => Ok(Arc::clone(handle)),
-            _ => bail!(
+        match session.thread() {
+            Some(handle) => Ok(Arc::clone(handle)),
+            None => bail!(
                 "{verb} refused for session {id}: it is a terminal session (view {}); \
                  {verb} applies to thread sessions only",
                 session.info.view.as_str()
@@ -317,7 +318,9 @@ impl Daemon {
     /// NeedsInput and no tool activity may override it.
     pub(super) fn thread_approvals_pending(&self, id: u32) -> bool {
         self.get(id).is_ok_and(|session| {
-            matches!(&session.backend, Backend::Thread(handle) if handle.has_pending_approvals())
+            session
+                .thread()
+                .is_some_and(|handle| handle.has_pending_approvals())
         })
     }
 
@@ -327,10 +330,7 @@ impl Daemon {
         id: u32,
         args: &serde_json::Value,
     ) -> Result<(PermissionPrompt, serde_json::Value)> {
-        let handle = match self.get(id).map(|session| match &session.backend {
-            Backend::Thread(handle) => Some(Arc::clone(handle)),
-            _ => None,
-        }) {
+        let handle = match self.get(id).map(|session| session.thread().cloned()) {
             Ok(Some(handle)) => handle,
             _ => bail!(
                 "{} refused for session {id}: Houston answers permission prompts for thread \
@@ -542,7 +542,7 @@ impl Daemon {
         if let Some(replacement) = &replacement {
             self.reclaim_thread_group(replacement.id)?;
         }
-        let (launch, assembled) = ThreadLaunch::from_command(&cmd)?;
+        let (adapter, assembled) = ClaudeStreamJson::from_command(&cmd)?;
         let conversation = assembled.or_else(|| preassigned.clone().map(Conversation::New));
         let history_owner = replacement
             .as_ref()
@@ -555,7 +555,15 @@ impl Daemon {
             daemon: Arc::downgrade(self),
             usage: Mutex::new(None),
         });
-        let handle = ThreadHandle::start(id, launch, conversation, next_seq, host)?;
+        let permission_mode = adapter.permission_mode;
+        let handle = StructuredRuntime::start(
+            id,
+            Arc::new(adapter),
+            conversation,
+            permission_mode,
+            next_seq,
+            host,
+        )?;
         info.view = proto::SessionView::Thread;
         info.permission_mode = Some(handle.permission_mode());
         self.session_checkout_metadata(&mut info);
@@ -590,6 +598,7 @@ impl Daemon {
             tags: Mutex::new(info.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::default()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(true),
@@ -600,11 +609,7 @@ impl Daemon {
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
             input_intervention: AtomicBool::new(false),
             input_pending: AtomicBool::new(false),
             input_current_id: Mutex::new(None),
@@ -621,13 +626,7 @@ impl Daemon {
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
-            backend: Backend::Thread(Arc::clone(&handle)),
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(true), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(true), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
+            runtime: SessionRuntime::Structured(Arc::clone(&handle)),
         });
         startup.session = Some(Arc::clone(&session));
         let conversation_link = if resumed {
