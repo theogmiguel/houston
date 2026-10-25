@@ -7511,9 +7511,7 @@ impl Daemon {
         // The dev channel's stand-in fires no hooks, so no UserPromptSubmit could
         // confirm a pasted prompt; it is pasted here, unconfirmed.
         let unconfirmed = dev_cmd.is_some();
-        let pasted = if !(unconfirmed && !crate::launch::prompt_in_argv(row.engine)) {
-            None
-        } else {
+        let pasted = if unconfirmed && !crate::launch::prompt_in_argv(row.engine) {
             let (text, file) = crate::launch::prompt_text(
                 &prompt,
                 Some(&init_prompts_dir(Path::new(dir))?),
@@ -7524,6 +7522,8 @@ impl Daemon {
                     .with_context(|| format!("writing prompt file {}", path.display()))?;
             }
             Some(text)
+        } else {
+            None
         };
         let (cmd, approval) = match test_cmd.or(dev_cmd) {
             Some(cmd) => {
@@ -19759,7 +19759,9 @@ impl Daemon {
         self.deliver_first_prompts(session, text, sender, submit, true);
     }
 
-    /// `text` waits for confirmation only with `confirm`.
+    /// Pastes `text` once the composer takes input, submits it with Enter when `submit`
+    /// is set, and waits for the CLI's own UserPromptSubmit to confirm delivery only
+    /// with `confirm`.
     pub(crate) fn deliver_first_prompts(
         self: &Arc<Self>,
         session: u32,
