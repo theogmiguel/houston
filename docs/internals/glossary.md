@@ -141,6 +141,7 @@ named.
 | **hooks** | The CLI's own lifecycle events Houston subscribes to. Claude: `SessionStart`, `UserPromptSubmit`, `Stop`, `Notification`. | `claude_hooks.rs`, `agent_hooks.rs` |
 | **drop file** | How a hook reaches the daemon: one JSON file under `hooks/drop/`, claimed by hard-link, applied by the poll loop. | `hook_drop.rs` |
 | **quarantined drop** | A drop file that boot recovery could not read or validate, renamed with the `.quarantined` suffix so no pass reads it again. At most 64 are kept; later invalid drops are deleted. | `hook_drop.rs` |
+| **delivery canary** | The reserved `houston-canary.probe` file the poll loop writes into the drop directory to prove the watcher still delivers events. A probe without an event before its deadline holds the poll ladder at the watcher-dead rungs. | `hook_drop_canary.rs` |
 | **managed marker** | The `--houston-managed[=<channel>]` sentinel that identifies Houston's entries in another tool's config, so uninstall removes exactly ours. | `claude_hooks.rs` |
 | **`AgentStatus`** | `Spawning`, `Working`, `Idle`, `NeedsInput`. Set only by `Daemon::set_status`, sourced from hooks or ACP. | `proto::AgentStatus` |
 | **`hooks_seen`** | Per-session flag: at least one hook event has arrived. Stands the spawn-grace watchdog down. | `daemon.rs::Session` |

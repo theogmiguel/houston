@@ -36,6 +36,7 @@ pub mod handoff;
 pub mod harness;
 pub mod home_dir;
 pub mod hook_drop;
+pub mod hook_drop_canary;
 pub mod hook_state;
 pub mod host_env;
 pub mod keychain;
