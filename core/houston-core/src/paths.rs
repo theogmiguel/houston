@@ -41,6 +41,23 @@ pub fn relocated(from: &str, to: &str, path: &str) -> Option<String> {
     })
 }
 
+/// Whether `path` is `base` or lies inside it, comparing by components. On Windows a
+/// verbatim prefix, either separator and letter case name the same folder.
+pub fn contains(base: &Path, path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let key = |path: &Path| -> Vec<String> {
+            windows_command_path(path)
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
+                .collect()
+        };
+        key(path).starts_with(&key(base))
+    }
+    #[cfg(not(windows))]
+    path.starts_with(base)
+}
+
 pub const CHANNEL_ENV: &str = "HOUSTON_CHANNEL";
 pub const BASE_DIR: &str = ".houston";
 // Bounded so a channel name can never become a path bomb or an unreadable dir name.
@@ -267,6 +284,33 @@ mod tests {
         for path in [r"C:\dev\proj\wt", "C:/dev/proj/wt", r"\\?\C:\dev\proj\wt"] {
             let out = relocated(r"C:\dev\proj", to, path).unwrap();
             assert_eq!(Path::new(&out), Path::new(r"D:\moved\wt"), "{path}");
+        }
+    }
+
+    #[test]
+    fn contains_accepts_the_folder_and_its_subfolders_only() {
+        assert!(contains(Path::new("/a/proj"), Path::new("/a/proj")));
+        assert!(contains(Path::new("/a/proj"), Path::new("/a/proj/core/x")));
+        assert!(!contains(Path::new("/a/proj"), Path::new("/a/project")));
+        assert!(!contains(Path::new("/a/proj"), Path::new("/a")));
+        assert!(!contains(Path::new("/a/proj"), Path::new("/b/proj")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn contains_ignores_verbatim_prefix_separators_and_case() {
+        for base in [r"C:\dev\Proj", r"\\?\C:\dev\Proj", "c:/DEV/proj"] {
+            for path in [
+                r"C:\dev\Proj",
+                r"\\?\C:\dev\Proj\core",
+                r"c:\dev\proj\core\houston-core",
+                "C:/Dev/PROJ/core",
+            ] {
+                assert!(contains(Path::new(base), Path::new(path)), "{base} {path}");
+            }
+            for path in [r"C:\dev\Proj2", r"\\?\D:\dev\Proj\core", r"C:\dev"] {
+                assert!(!contains(Path::new(base), Path::new(path)), "{base} {path}");
+            }
         }
     }
 
