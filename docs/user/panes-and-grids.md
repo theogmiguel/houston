@@ -32,9 +32,10 @@ git repository: each of its managed worktrees must belong to the folder you pick
 sessions, worktrees, tasks, the merge queue, saved actions and the grid layout follow the
 folder, and `git worktree repair` relinks the worktrees. A workspace whose name was its
 folder name takes the new folder name. Close the workspace's running sessions and remove a
-swarm rooted there first. A Codex pane resumes its conversation at the new path. Claude and
-ZCode store conversations per folder, so a relocated Claude or ZCode pane starts a new
-conversation and says why.
+swarm rooted there first. Relocation is also refused while a Night shift run of the
+workspace is in flight; stop or wait for the run first. A Codex pane resumes its
+conversation at the new path. Claude and ZCode store conversations per folder, so a
+relocated Claude or ZCode pane starts a new conversation and says why.
 
 ## Launching sessions
 

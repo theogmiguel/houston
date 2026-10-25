@@ -9525,6 +9525,17 @@ impl Daemon {
                 facts.toplevel.as_deref().unwrap_or("none")
             ),
         };
+        if let Some(run) = self
+            .db
+            .night_runs_in_flight()?
+            .into_iter()
+            .find(|r| relocated(from, to, &r.workspace).is_some())
+        {
+            bail!(
+                "Night shift run {} is in flight in {from}; stop or wait for the run first",
+                run.run_id
+            );
+        }
         let live = self
             .sessions
             .lock()
