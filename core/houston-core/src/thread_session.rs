@@ -174,11 +174,13 @@ pub fn coalesce(events: Vec<ThreadEvent>) -> Vec<ThreadEvent> {
                         message_id: last_id,
                         text: last_text,
                         estimated_tokens: last_tokens,
+                        ..
                     },
                     ThreadEventKind::ReasoningDelta {
                         message_id,
                         text,
                         estimated_tokens,
+                        ..
                     },
                 ) if last_id == message_id => {
                     last_text.push_str(text);
@@ -411,8 +413,15 @@ struct HandleState {
     close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
     partial: Option<(String, String)>,
-    /// The reasoning block streaming now: its id, first delta and latest estimate.
-    reasoning: Option<(String, Instant, Option<u32>)>,
+    reasoning: Option<LiveReasoning>,
+}
+
+/// The reasoning block streaming now.
+struct LiveReasoning {
+    message_id: String,
+    first_delta: Instant,
+    estimated_tokens: Option<u32>,
+    redacted: bool,
 }
 
 impl HandleState {
@@ -423,14 +432,19 @@ impl HandleState {
                 ThreadEventKind::ReasoningDelta {
                     message_id,
                     estimated_tokens,
+                    redacted,
                     ..
                 } => match &mut self.reasoning {
-                    Some((open, _, tokens)) if open == message_id => {
-                        *tokens = estimated_tokens.or(*tokens);
+                    Some(open) if open.message_id == *message_id => {
+                        open.estimated_tokens = estimated_tokens.or(open.estimated_tokens);
                     }
                     _ => {
-                        self.reasoning =
-                            Some((message_id.clone(), Instant::now(), *estimated_tokens));
+                        self.reasoning = Some(LiveReasoning {
+                            message_id: message_id.clone(),
+                            first_delta: Instant::now(),
+                            estimated_tokens: *estimated_tokens,
+                            redacted: *redacted,
+                        });
                     }
                 },
                 ThreadEventKind::Reasoning {
@@ -438,10 +452,11 @@ impl HandleState {
                     duration_ms,
                     ..
                 } => {
-                    if let Some((_, started, _)) =
-                        self.reasoning.take_if(|(open, _, _)| open == message_id)
+                    if let Some(open) = self
+                        .reasoning
+                        .take_if(|open| open.message_id == *message_id)
                     {
-                        duration_ms.get_or_insert_with(|| elapsed_ms(started));
+                        duration_ms.get_or_insert_with(|| elapsed_ms(open.first_delta));
                     }
                 }
                 ThreadEventKind::AssistantDelta { message_id, text } => match &mut self.partial {
@@ -480,14 +495,14 @@ impl HandleState {
                 truncated: true,
             });
         }
-        if let Some((message_id, started, estimated_tokens)) = self.reasoning.take() {
+        if let Some(open) = self.reasoning.take() {
             events.push(ThreadEventKind::Reasoning {
-                message_id,
+                message_id: open.message_id,
                 text: String::new(),
                 truncated: true,
-                duration_ms: Some(elapsed_ms(started)),
-                estimated_tokens,
-                redacted: false,
+                duration_ms: Some(elapsed_ms(open.first_delta)),
+                estimated_tokens: open.estimated_tokens,
+                redacted: open.redacted,
             });
         }
         if std::mem::take(&mut self.turn_open) {
@@ -1623,6 +1638,7 @@ mod tests {
                 message_id: "r".into(),
                 text: String::new(),
                 estimated_tokens: tokens,
+                redacted: false,
             },
         };
         assert_eq!(
@@ -1668,6 +1684,7 @@ mod tests {
             message_id: "r".into(),
             text: String::new(),
             estimated_tokens: Some(50),
+            redacted: false,
         }]);
         std::thread::sleep(Duration::from_millis(30));
         let mut events = [reasoning("r", None), reasoning("other", None)];
@@ -1685,18 +1702,20 @@ mod tests {
     }
 
     #[test]
-    fn a_reasoning_block_cut_off_by_stop_is_stored_as_truncated() {
+    fn a_reasoning_block_cut_off_by_stop_is_stored_as_truncated_and_stays_redacted() {
         let mut state = idle_state();
         state.track_partial(&mut [
             ThreadEventKind::ReasoningDelta {
                 message_id: "r".into(),
                 text: String::new(),
                 estimated_tokens: Some(50),
+                redacted: true,
             },
             ThreadEventKind::ReasoningDelta {
                 message_id: "r".into(),
                 text: String::new(),
                 estimated_tokens: None,
+                redacted: true,
             },
         ]);
         let events = state.end_open_turn(TurnOutcome::Interrupted, None);
@@ -1709,6 +1728,7 @@ mod tests {
                         truncated: true,
                         duration_ms: Some(_),
                         estimated_tokens: Some(50),
+                        redacted: true,
                         ..
                     },
                     ThreadEventKind::TurnEnd {

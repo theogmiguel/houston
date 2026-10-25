@@ -196,7 +196,7 @@ const WORK_LOG: ThreadEventKind[] = [
   said('w1', 'Both sorts now use the pane id, so a finishing pane stays in place. The typecheck caught a missing import, which I added; the 19 affected tests pass.'),
   done,
   user('Does the overview grid sort the same way?'),
-  { type: 'reasoning_delta', message_id: 'k2', text: '', estimated_tokens: 50 },
+  { type: 'reasoning_delta', message_id: 'k2', text: '', estimated_tokens: 50, redacted: false },
   call('r3', 'Read', { file_path: '/home/dev/code/houston/ui/src/renderer/src/components/Overview.tsx' })
 ]
 

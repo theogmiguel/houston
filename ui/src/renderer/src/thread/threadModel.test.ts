@@ -84,19 +84,19 @@ describe('buildThreadItems', () => {
   it('streams reasoning into one row that its stored block replaces, beside the answer', () => {
     const items = buildThreadItems(events([
       { type: 'user_message', text: 'why?' },
-      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50 },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50, redacted: false },
       delta('m1', 'Because'),
-      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: null },
-      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 196 }
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: null, redacted: false },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 196, redacted: false }
     ]))
     expect(items.slice(1)).toEqual([
       { kind: 'reasoning', key: 'delta-2', streaming: true, redacted: false, durationMs: null, tokens: 196 },
       { kind: 'assistant', key: 'delta-3', text: 'Because', streaming: true, truncated: false }
     ])
     const stored = buildThreadItems(events([
-      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50 },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50, redacted: false },
       { type: 'reasoning', message_id: 'r0', text: '', truncated: false, duration_ms: 14_000, estimated_tokens: 812, redacted: false },
-      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 900 }
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 900, redacted: false }
     ]))
     expect(stored).toEqual([{ kind: 'reasoning', key: '2', streaming: false, redacted: false, durationMs: 14_000, tokens: 812 }])
   })
@@ -104,7 +104,7 @@ describe('buildThreadItems', () => {
   it('stops a reasoning row streaming when its turn ends', () => {
     const items = buildThreadItems(events([
       { type: 'user_message', text: 'go' },
-      { type: 'reasoning_delta', message_id: 'r1', text: '' },
+      { type: 'reasoning_delta', message_id: 'r1', text: '', redacted: false },
       { type: 'turn_end', outcome: 'completed', error: null }
     ]))
     expect(items[1]).toMatchObject({ kind: 'reasoning', streaming: false, tokens: null })

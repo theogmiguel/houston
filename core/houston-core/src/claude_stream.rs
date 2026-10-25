@@ -190,6 +190,7 @@ struct OpenReasoning {
     index: u64,
     from_system: u32,
     from_deltas: u32,
+    redacted: bool,
 }
 
 impl OpenReasoning {
@@ -202,6 +203,19 @@ impl OpenReasoning {
             message_id: block_key(&self.message, self.index),
             text: String::new(),
             estimated_tokens: self.estimate(),
+            redacted: self.redacted,
+        }
+    }
+
+    /// The stored form of a block whose own `assistant` line never arrived.
+    fn cut_off(self) -> ThreadEventKind {
+        ThreadEventKind::Reasoning {
+            message_id: block_key(&self.message, self.index),
+            text: String::new(),
+            truncated: true,
+            duration_ms: None,
+            estimated_tokens: self.estimate(),
+            redacted: self.redacted,
         }
     }
 }
@@ -250,6 +264,9 @@ impl StreamMapper {
                     TurnOutcome::Completed
                 };
                 let error = is_error.then(|| result_error(&value));
+                if let Some(open) = self.open_reasoning.take() {
+                    out.events.push(open.cut_off());
+                }
                 out.events.push(ThreadEventKind::TurnEnd { outcome, error });
                 out.turn_end = Some(outcome);
             }
@@ -299,12 +316,13 @@ impl StreamMapper {
                         self.open_text_block.insert(message.to_string(), index);
                     }
                     // Starts the block's live row, and with it the runtime's clock.
-                    Some("thinking" | "redacted_thinking") => {
+                    Some(kind @ ("thinking" | "redacted_thinking")) => {
                         let open = OpenReasoning {
                             message: message.to_string(),
                             index,
                             from_system: 0,
                             from_deltas: 0,
+                            redacted: kind == "redacted_thinking",
                         };
                         out.events.push(open.delta());
                         self.open_reasoning = Some(open);
@@ -816,6 +834,7 @@ mod tests {
             message_id: id.into(),
             text: String::new(),
             estimated_tokens: tokens,
+            redacted: false,
         }
     }
 
@@ -865,7 +884,12 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                reasoning_delta("msg_r:2", None),
+                ThreadEventKind::ReasoningDelta {
+                    message_id: "msg_r:2".into(),
+                    text: String::new(),
+                    estimated_tokens: None,
+                    redacted: true,
+                },
                 ThreadEventKind::Reasoning {
                     message_id: "msg_r:2".into(),
                     text: String::new(),
@@ -875,6 +899,40 @@ mod tests {
                     redacted: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_turn_end_stores_the_open_block_as_cut_off_and_forgets_it() {
+        let events = kinds(concat!(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"x"}},"parent_tool_use_id":null,"api_message_id":"msg_e"}"#,
+            "
+",
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":40,"estimated_tokens_delta":40}"#,
+            "
+",
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: overloaded"}"#,
+            "
+",
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":12,"estimated_tokens_delta":12}"#,
+        ));
+        let cut_off = ThreadEventKind::Reasoning {
+            message_id: "msg_e:0".into(),
+            text: String::new(),
+            truncated: true,
+            duration_ms: None,
+            estimated_tokens: Some(40),
+            redacted: true,
+        };
+        let stored_at = events.iter().position(|event| *event == cut_off);
+        let end_at = events
+            .iter()
+            .position(|event| matches!(event, ThreadEventKind::TurnEnd { .. }));
+        assert!(stored_at.is_some() && stored_at < end_at, "{events:?}");
+        assert_eq!(
+            events.last(),
+            end_at.map(|at| &events[at]),
+            "the next turn's estimate names no block: {events:?}"
         );
     }
 
