@@ -213,9 +213,14 @@
     "`workspace_relocated` hook runs in App, while the move itself stays behind one",
     "`import()` in `workspaceRelocate.ts`; the desktop presence hook mounts in App and",
     "loads its watcher on demand; the client and the environment mux carry the new",
-    "message routes."
+    "message routes.",
+    "",
+    "Re-cut against 950,652 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the pane status announcer is a live region that must already be mounted when",
+    "the focused pane's first status change arrives, so it and its settle logic are",
+    "boot-path code."
   ],
-  "maxBootBytes": 950700,
+  "maxBootBytes": 951000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

@@ -5962,11 +5962,12 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        let mut include = crate::worktree_include::carry_over(repo, &path);
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&path);
+        warnings.extend(crate::worktree_include::carry_over(repo, &path).warnings);
         if let Some(note) = history_note {
-            include.warnings.push(note);
+            warnings.push(note);
         }
-        Ok((wt, include.warnings))
+        Ok((wt, warnings))
     }
 
     /// Drops the row with the tree, so the path and its slug are free again.
@@ -11984,6 +11985,17 @@ impl Daemon {
             }
         }
         cmd.env("HOUSTON_SESSION", id.to_string());
+        let worktrees = self.db.managed_worktrees().unwrap_or_else(|e| {
+            tracing::warn!("reading managed worktrees for session {id}'s environment: {e:#}");
+            Vec::new()
+        });
+        let (workspace, slug) = pane_identity_env(&project_dir, &cwd, &worktrees);
+        cmd.env(WORKSPACE_ENV, workspace);
+        // Only a pane inside a managed worktree has a slug; never pass an inherited one on.
+        match slug {
+            Some(slug) => cmd.env(WORKTREE_SLUG_ENV, slug),
+            None => cmd.env_remove(WORKTREE_SLUG_ENV),
+        }
         cmd.env(
             crate::claude_hooks::TOOL_BOUNDARY_CONTEXT_ENV,
             self.tool_boundary_signal_path(id).display().to_string(),
@@ -21296,8 +21308,18 @@ impl Daemon {
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
-        crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
-            .context("spawn refused")?;
+        if ask.branch.is_some() {
+            crate::worktrees::create_on_named_branch(
+                project_dir,
+                &branch,
+                None,
+                &dest,
+                &self.merge_tree_scratch(),
+            )
+        } else {
+            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
+        }
+        .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
         let mut created = CreatedWorktree {
             repo: project_dir.to_path_buf(),
@@ -21322,8 +21344,9 @@ impl Daemon {
                 .context("spawn refused")
                 .context(orchestrate::MutationMayHaveActed);
         }
-        created.include_warnings =
-            crate::worktree_include::carry_over(project_dir, &created.path).warnings;
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&created.path);
+        warnings.extend(crate::worktree_include::carry_over(project_dir, &created.path).warnings);
+        created.include_warnings = warnings;
         Ok(created)
     }
 
@@ -25331,6 +25354,106 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     write_helper_wrapper(&bin_dir, "hs-harness", "hs-harness")?;
     write_helper_wrapper(&bin_dir, "hs-task", "hs-task")?;
     Ok((prompts_dir, bin_dir))
+}
+
+pub(crate) const WORKSPACE_ENV: &str = "HOUSTON_WORKSPACE";
+pub(crate) const WORKTREE_SLUG_ENV: &str = "HOUSTON_WORKTREE_SLUG";
+
+/// The pane's workspace path and, when `cwd` is inside a managed worktree, that worktree's
+/// directory name, which is the slug its checkout chip shows.
+fn pane_identity_env(
+    project_dir: &Path,
+    cwd: &Path,
+    worktrees: &[crate::db::ManagedWorktreeRow],
+) -> (String, Option<String>) {
+    #[cfg(windows)]
+    let workspace = crate::paths::windows_command_path(project_dir);
+    #[cfg(not(windows))]
+    let workspace = project_dir.to_path_buf();
+    let resolved = cwd.canonicalize().ok();
+    let slug = worktrees
+        .iter()
+        .map(|row| Path::new(&row.path))
+        .filter(|root| {
+            cwd.starts_with(root) || resolved.as_ref().is_some_and(|r| r.starts_with(root))
+        })
+        // A worktree can hold its own managed worktrees; the innermost one is the pane's.
+        .max_by_key(|root| root.components().count())
+        .and_then(|root| root.file_name())
+        .map(|name| name.to_string_lossy().into_owned());
+    (workspace.display().to_string(), slug)
+}
+
+#[cfg(test)]
+mod pane_identity_env_tests {
+    use super::*;
+
+    fn row(path: &Path) -> crate::db::ManagedWorktreeRow {
+        crate::db::ManagedWorktreeRow {
+            path: path.display().to_string(),
+            repo_common_dir: String::new(),
+            branch: "houston/feature".into(),
+            base_branch: None,
+            provenance: crate::db::WorktreeProvenance::PaneSpawn,
+            created_by_session: None,
+            created_at_ms: 0,
+            bytes: None,
+            measured_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_pane_in_a_managed_worktree_carries_its_slug_and_others_carry_none() {
+        let workspace = tempfile::tempdir().unwrap();
+        let tree = workspace.path().join(".houston/worktrees/feature");
+        let sibling = workspace.path().join(".houston/worktrees/feature-two");
+        std::fs::create_dir_all(tree.join("src")).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let rows = [row(&tree.canonicalize().unwrap())];
+        let expected = {
+            #[cfg(windows)]
+            let path = crate::paths::windows_command_path(workspace.path());
+            #[cfg(not(windows))]
+            let path = workspace.path().to_path_buf();
+            path.display().to_string()
+        };
+
+        assert_eq!(
+            pane_identity_env(workspace.path(), workspace.path(), &rows),
+            (expected.clone(), None)
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &tree.join("src"), &rows),
+            (expected.clone(), Some("feature".into()))
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &sibling, &rows).1,
+            None,
+            "a directory that only shares the worktree's name prefix is not inside it"
+        );
+        assert_eq!(pane_identity_env(workspace.path(), &tree, &[]).1, None);
+    }
+
+    #[test]
+    fn a_pane_in_a_nested_managed_worktree_carries_the_innermost_slug() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outer = workspace.path().join(".houston/worktrees/outer");
+        let inner = outer.join(".houston/worktrees/inner");
+        std::fs::create_dir_all(inner.join("src")).unwrap();
+        let rows = [
+            row(&outer.canonicalize().unwrap()),
+            row(&inner.canonicalize().unwrap()),
+        ];
+
+        assert_eq!(
+            pane_identity_env(&outer, &inner.join("src"), &rows).1,
+            Some("inner".into())
+        );
+        assert_eq!(
+            pane_identity_env(workspace.path(), &outer, &rows).1,
+            Some("outer".into())
+        );
+    }
 }
 
 fn path_with(bin_dir: &Path, base: Option<&str>) -> String {

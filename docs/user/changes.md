@@ -301,8 +301,9 @@ workspace:
   gone. Before a removal is confirmed, Houston lists what it would interrupt or lose:
   uncommitted files and how recently the newest changed, commits not on the base branch or
   on any remote, and the panes working inside the worktree. A check that could not look
-  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree receives the ignored
-  files listed in `.worktreeinclude` (see [orchestration](orchestration.md)). "Add as workspace" turns a
+  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree
+  receives the ignored files listed in `.worktreeinclude` and has its declared submodules
+  initialised (see [orchestration](orchestration.md)). "Add as workspace" turns a
   worktree into a workspace you can open panes in.
 - **Checkpoints** captures the working tree and staging area as a snapshot you can come
   back to. Inspect shows what a checkpoint would change; Restore replaces the current
