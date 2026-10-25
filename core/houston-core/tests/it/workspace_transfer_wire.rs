@@ -758,6 +758,46 @@ async fn a_respawned_transferred_pane_is_a_fork_and_blocks_the_return_trip() {
 }
 
 #[tokio::test]
+async fn an_untracked_name_import_cannot_carry_refuses_before_stopping_panes() {
+    let _serial = SERIAL.lock().await;
+    let world = tempfile::tempdir().unwrap();
+    let origin = origin(world.path());
+    let mut a = Computer::new(&origin, "2.1.310", "0.142.3").await;
+    let (pane, _, _) = a.claude_pane(&a.workspace).await;
+    let file = world.path().join("t.houston-transfer");
+
+    write(&a.workspace.join("aux.md"), "aux\n");
+    let refusal = a.export(&file, "{}").await.unwrap_err();
+    assert_eq!(refusal.code, Code::DirtyCheckout);
+    assert!(
+        refusal.items.iter().any(|item| item.contains("aux.md")),
+        "{refusal:?}"
+    );
+    assert!(
+        a.info(pane.id).state.is_live(),
+        "a refused export stops nothing"
+    );
+    assert!(!file.exists());
+
+    std::fs::remove_file(a.workspace.join("aux.md")).unwrap();
+    write(&a.workspace.join("Notes.md"), "one\n");
+    write(&a.workspace.join("notes.md"), "two\n");
+    let refusal = a.export(&file, "{}").await.unwrap_err();
+    assert_eq!(refusal.code, Code::DirtyCheckout);
+    assert!(
+        refusal
+            .items
+            .iter()
+            .any(|item| item.contains("Notes.md") && item.contains("notes.md")),
+        "{refusal:?}"
+    );
+    assert!(
+        a.info(pane.id).state.is_live(),
+        "a refused export stops nothing"
+    );
+}
+
+#[tokio::test]
 async fn refusals_name_what_is_wrong_and_the_steps_that_remove_it() {
     let _serial = SERIAL.lock().await;
     let world = tempfile::tempdir().unwrap();

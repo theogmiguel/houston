@@ -150,6 +150,19 @@ pub fn tree_state(dir: &Path) -> Result<TreeState> {
     Ok(TreeState { head, paths })
 }
 
+/// The untracked regular files `capture` will carry, checked before panes stop.
+pub fn untracked_files(dir: &Path) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    for relative in untracked(dir)? {
+        let meta = std::fs::symlink_metadata(path_of(dir, &relative))
+            .with_context(|| format!("reading {relative} in {}", dir.display()))?;
+        if meta.is_file() && !meta.file_type().is_symlink() {
+            files.push(relative);
+        }
+    }
+    Ok(files)
+}
+
 /// The non-ignored paths `git status` reports: anything import would have to overwrite.
 pub fn dirty_paths(dir: &Path) -> Result<Vec<String>> {
     let raw = git(

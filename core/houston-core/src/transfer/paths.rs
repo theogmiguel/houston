@@ -5,7 +5,7 @@
 use super::manifest::Manifest;
 use anyhow::{bail, Context, Result};
 use houston_protocol as proto;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// `path` without Windows' verbatim prefix: `\\?\C:\x` is `C:\x` and `\\?\UNC\h\s` is
@@ -99,6 +99,26 @@ fn unique_folded<'a>(paths: impl Iterator<Item = &'a str>) -> std::result::Resul
     Ok(())
 }
 
+/// Every way import's rules reject `paths`, one entry per offending path.
+pub fn untracked_problems(paths: &[String]) -> Vec<String> {
+    let mut problems: Vec<String> = paths.iter().filter_map(|p| relative(p).err()).collect();
+    let mut seen = HashMap::new();
+    for path in paths {
+        if let Some(first) = seen.insert(path.to_lowercase(), path) {
+            problems.push(format!("{path:?} and {first:?} differ only in letter case"));
+        }
+    }
+    problems
+}
+
+/// Import's rules for the untracked paths a checkout carries.
+pub fn validate_untracked(paths: &[String]) -> std::result::Result<(), String> {
+    match untracked_problems(paths).into_iter().next() {
+        Some(problem) => Err(problem),
+        None => Ok(()),
+    }
+}
+
 /// Every path the manifest names, before any of them is used.
 pub fn validate_manifest(manifest: &Manifest) -> std::result::Result<(), String> {
     let mut keys = HashSet::new();
@@ -117,10 +137,7 @@ pub fn validate_manifest(manifest: &Manifest) -> std::result::Result<(), String>
         if !numbered(&checkout.archive_dir, "checkouts/") {
             return Err(format!("checkout folder {:?}", checkout.archive_dir));
         }
-        for path in &checkout.untracked {
-            relative(path)?;
-        }
-        unique_folded(checkout.untracked.iter().map(String::as_str))?;
+        validate_untracked(&checkout.untracked)?;
     }
     for pane in &manifest.panes {
         conversation(&pane.conversation)?;
@@ -268,5 +285,16 @@ mod tests {
     fn case_folded_duplicates_are_refused() {
         assert!(unique_folded(["Readme.md", "README.md"].into_iter()).is_err());
         assert!(unique_folded(["a.md", "b.md"].into_iter()).is_ok());
+    }
+
+    #[test]
+    fn untracked_names_are_checked_by_imports_rules() {
+        assert!(validate_untracked(&["notes:v2.txt".into()]).is_err());
+        assert!(validate_untracked(&["aux.md".into()]).is_err());
+        assert!(validate_untracked(&["trailing.".into()]).is_err());
+        let problems = untracked_problems(&["Readme.md".into(), "README.md".into()]);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("Readme.md") && problems[0].contains("README.md"));
+        assert!(validate_untracked(&["src/lib.rs".into(), "notes/todo.txt".into()]).is_ok());
     }
 }

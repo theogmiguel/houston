@@ -575,6 +575,21 @@ impl Daemon {
                 roots.push(&c.checkout_root);
             }
         }
+        let mut invalid = Vec::new();
+        for tree in &roots {
+            let files = checkout::untracked_files(tree)?;
+            for problem in crate::transfer::paths::untracked_problems(&files) {
+                invalid.push(format!("{problem} (in {})", display_path(tree)));
+            }
+        }
+        if !invalid.is_empty() {
+            return Err(refuse(
+                Code::DirtyCheckout,
+                "Some untracked files have names a transfer to another computer cannot carry.",
+                invalid,
+                vec!["Rename, ignore or delete each listed file, then export again.".into()],
+            ));
+        }
         for tree in roots {
             for path in checkout::partially_staged(tree)? {
                 partial.push(format!("{path} (in {})", display_path(tree)));
@@ -1431,7 +1446,13 @@ impl Daemon {
                 if tip != head {
                     checkout::fast_forward_ref(repo, branch, &tip, head)?;
                 }
-                crate::worktrees::create_task(repo, branch, None, &dest, &self.merge_tree_scratch())?;
+                crate::worktrees::create_task(
+                    repo,
+                    branch,
+                    None,
+                    &dest,
+                    &self.merge_tree_scratch(),
+                )?;
             }
         }
         let path = dest.canonicalize().unwrap_or(dest);
