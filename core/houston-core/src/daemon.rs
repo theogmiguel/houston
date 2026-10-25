@@ -1860,6 +1860,7 @@ pub struct Daemon {
     recovery_metadata_blocked: Mutex<HashMap<u32, String>>,
     hook_drop_watch: Arc<crate::fs_watch::MailWatchState>,
     _hook_drop_watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    hook_drop_canary: Mutex<crate::hook_drop_canary::CanaryState>,
     port: Mutex<Option<u16>>,
     run_state_started_at: u64,
     run_state_expected_restart: AtomicBool,
@@ -3698,6 +3699,7 @@ impl Daemon {
             recovery_metadata_blocked: Mutex::new(HashMap::new()),
             hook_drop_watch: crate::fs_watch::MailWatchState::new(swarm_mail_wake),
             _hook_drop_watcher: Mutex::new(None),
+            hook_drop_canary: Mutex::new(crate::hook_drop_canary::CanaryState::default()),
             update_state: Mutex::new(proto::UpdateState::Unknown),
             update_wake: Arc::new(tokio::sync::Notify::new()),
             update_check_lock: tokio::sync::Mutex::new(()),
@@ -13002,7 +13004,9 @@ impl Daemon {
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(&mail, swarms.is_empty());
         drop(mail);
 
-        let watcher_healthy = watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok;
+        let delivery_ok = self.hook_drop_canary_tick();
+        let watcher_healthy =
+            watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok && delivery_ok;
 
         let mut ladder = self
             .swarm_mail_ladder
@@ -13208,11 +13212,13 @@ impl Daemon {
     }
 
     fn swarm_mail_error_delay(&self, drop_applied: usize, drop_listed_ok: bool) -> Duration {
+        let delivery_ok = self.hook_drop_canary_tick();
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(
             &self.swarm_mail.lock().expect("swarm_mail lock"),
             false,
         ) && drop_listed_ok
-            && self.hook_drop_watch.healthy();
+            && self.hook_drop_watch.healthy()
+            && delivery_ok;
         let view_active = self.tx.receiver_count() > 0;
         let mut ladder = self
             .swarm_mail_ladder
@@ -17280,6 +17286,50 @@ impl Daemon {
     #[doc(hidden)]
     pub fn hook_drop_boot_for_test(self: &Arc<Self>) {
         self.hook_drop_boot();
+    }
+
+    /// One delivery-canary round against the channel's watched drop directory.
+    /// Its verdict feeds `watcher_healthy`, so a miss selects the ladder's
+    /// watcher-dead rungs.
+    fn hook_drop_canary_tick(&self) -> bool {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let mut canary = self.hook_drop_canary.lock().expect("hook drop canary lock");
+        crate::hook_drop_canary::check(
+            &mut canary,
+            &dir,
+            &self.hook_drop_watch,
+            std::time::Instant::now(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn set_hook_drop_canary_timing_for_test(&self, every: Duration, deadline: Duration) {
+        self.hook_drop_canary
+            .lock()
+            .expect("hook drop canary lock")
+            .set_timing_for_test(every, deadline);
+    }
+
+    /// Drops the hook-drop watcher so the OS stops delivering events while
+    /// `hook_drop_watch.healthy()` stays true: the silent-delivery-death shape
+    /// the canary exists to catch.
+    #[doc(hidden)]
+    pub fn stop_hook_drop_watcher_for_test(&self) {
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = None;
+        crate::hook_drop_canary::wait_for_quiet_for_test(&self.hook_drop_watch);
+    }
+
+    #[doc(hidden)]
+    pub fn restart_hook_drop_watcher_for_test(&self) {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let watcher = crate::fs_watch::start_watcher(&dir, Arc::clone(&self.hook_drop_watch));
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = watcher;
     }
 
     pub fn mcp_progress_tick(&self) -> Duration {
