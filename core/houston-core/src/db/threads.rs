@@ -5,6 +5,7 @@ use houston_protocol as proto;
 use rusqlite::{Connection, OptionalExtension};
 
 use super::Db;
+use crate::thread_session::ThreadCommandList;
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {
     super::add_column_if_missing(
@@ -41,9 +42,31 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         CREATE TRIGGER IF NOT EXISTS thread_queue_closed AFTER UPDATE OF state ON sessions
             WHEN NEW.state = 'closed' BEGIN DELETE FROM thread_queue WHERE session_id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS thread_queue_deleted AFTER DELETE ON sessions
-            BEGIN DELETE FROM thread_queue WHERE session_id = OLD.id; END;",
+            BEGIN DELETE FROM thread_queue WHERE session_id = OLD.id; END;
+        CREATE TABLE IF NOT EXISTS thread_meta (
+            session_id INTEGER PRIMARY KEY,
+            commands TEXT NOT NULL
+        );
+        DELETE FROM thread_meta WHERE session_id NOT IN (SELECT id FROM sessions WHERE state != 'closed');
+        CREATE TRIGGER IF NOT EXISTS thread_meta_closed AFTER UPDATE OF state ON sessions
+            WHEN NEW.state = 'closed' BEGIN DELETE FROM thread_meta WHERE session_id = NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS thread_meta_deleted AFTER DELETE ON sessions
+            BEGIN DELETE FROM thread_meta WHERE session_id = OLD.id; END;",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "thread_queue",
+        "excerpts",
+        "excerpts TEXT NOT NULL DEFAULT '[]'",
     )?;
     Ok(())
+}
+
+/// The excerpt text a queued row holds, counted against `THREAD_QUEUE_MAX_BYTES` with its text.
+const EXCERPT_BYTES_SQL: &str = "(SELECT COALESCE(SUM(LENGTH(CAST(json_extract(value, '$.text') AS BLOB))), 0) FROM json_each(excerpts))";
+
+fn excerpt_bytes(excerpts: &[proto::ThreadExcerpt]) -> usize {
+    excerpts.iter().map(|excerpt| excerpt.text.len()).sum()
 }
 
 /// Why a message left `queued` when its daemon stopped.
@@ -58,7 +81,7 @@ fn queue_state_name(state: proto::QueuedState) -> &'static str {
 
 fn queue_rows(conn: &Connection, session: u32) -> Result<Vec<proto::ThreadQueuedMessage>> {
     let mut stmt = conn.prepare(
-        "SELECT id, text, state, hold_reason, created_at_ms FROM thread_queue
+        "SELECT id, text, state, hold_reason, created_at_ms, excerpts FROM thread_queue
          WHERE session_id = ?1 ORDER BY position",
     )?;
     let rows = stmt
@@ -72,6 +95,13 @@ fn queue_rows(conn: &Connection, session: u32) -> Result<Vec<proto::ThreadQueued
                 },
                 hold_reason: row.get(3)?,
                 created_at_ms: row.get::<_, i64>(4)? as u64,
+                excerpts: serde_json::from_str(&row.get::<_, String>(5)?).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        5,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -79,17 +109,19 @@ fn queue_rows(conn: &Connection, session: u32) -> Result<Vec<proto::ThreadQueued
 }
 
 /// Refuses a queue that would exceed `THREAD_QUEUE_MAX_ITEMS` or `THREAD_QUEUE_MAX_BYTES`;
-/// `replaced` is a message whose text `text` replaces.
+/// `replaced` is a message whose text and excerpts, `added` bytes in all, replace its own.
 fn ensure_queue_room(
     conn: &Connection,
     session: u32,
     verb: &str,
     replaced: Option<&str>,
-    text: &str,
+    added: usize,
 ) -> Result<()> {
     let (items, bytes): (i64, i64) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(text AS BLOB))), 0) FROM thread_queue
-         WHERE session_id = ?1 AND id IS NOT ?2",
+        &format!(
+            "SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(text AS BLOB)) + {EXCERPT_BYTES_SQL}), 0)
+             FROM thread_queue WHERE session_id = ?1 AND id IS NOT ?2"
+        ),
         rusqlite::params![session, replaced],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
@@ -101,7 +133,7 @@ fn ensure_queue_room(
             proto::THREAD_QUEUE_MAX_ITEMS
         );
     }
-    let total = bytes as usize + text.len();
+    let total = bytes as usize + added;
     if total > proto::THREAD_QUEUE_MAX_BYTES {
         bail!(
             "{verb} refused for session {session}: the queue would hold {total} bytes, over the \
@@ -120,6 +152,11 @@ pub(super) fn move_history(conn: &Connection, old: u32, new: u32) -> Result<()> 
     )?;
     conn.execute(
         "UPDATE thread_queue SET session_id = ?2 WHERE session_id = ?1",
+        [old, new],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO thread_meta (session_id, commands)
+         SELECT ?2, commands FROM thread_meta WHERE session_id = ?1",
         [old, new],
     )?;
     Ok(())
@@ -341,18 +378,25 @@ impl Db {
     ) -> Result<Vec<proto::ThreadQueuedMessage>> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        ensure_queue_room(&tx, session, verb, None, &message.text)?;
+        ensure_queue_room(
+            &tx,
+            session,
+            verb,
+            None,
+            message.text.len() + excerpt_bytes(&message.excerpts),
+        )?;
         tx.execute(
-            "INSERT INTO thread_queue (session_id, id, position, text, state, hold_reason, created_at_ms)
+            "INSERT INTO thread_queue (session_id, id, position, text, state, hold_reason, created_at_ms, excerpts)
              VALUES (?1, ?2, (SELECT COALESCE(MAX(position), 0) + 1 FROM thread_queue WHERE session_id = ?1),
-                     ?3, ?4, ?5, ?6)",
+                     ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 session,
                 message.id,
                 message.text,
                 queue_state_name(message.state),
                 message.hold_reason,
-                message.created_at_ms as i64
+                message.created_at_ms as i64,
+                serde_json::to_string(&message.excerpts)?
             ],
         )
         .with_context(|| format!("queueing message {} of session {session}", message.id))?;
@@ -377,7 +421,20 @@ impl Db {
         if changed == 0 {
             return Ok(None);
         }
-        ensure_queue_room(&tx, session, "thread_queue_edit", Some(id), text)?;
+        let kept: i64 = tx.query_row(
+            &format!(
+                "SELECT {EXCERPT_BYTES_SQL} FROM thread_queue WHERE session_id = ?1 AND id = ?2"
+            ),
+            rusqlite::params![session, id],
+            |row| row.get(0),
+        )?;
+        ensure_queue_room(
+            &tx,
+            session,
+            "thread_queue_edit",
+            Some(id),
+            text.len() + kept as usize,
+        )?;
         let rows = queue_rows(&tx, session)?;
         tx.commit()?;
         Ok(Some(rows))
@@ -441,15 +498,16 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             "INSERT OR REPLACE INTO thread_queue
-                 (session_id, id, position, text, state, hold_reason, created_at_ms)
+                 (session_id, id, position, text, state, hold_reason, created_at_ms, excerpts)
              VALUES (?1, ?2, (SELECT COALESCE(MIN(position), 1) - 1 FROM thread_queue WHERE session_id = ?1),
-                     ?3, 'held', ?4, ?5)",
+                     ?3, 'held', ?4, ?5, ?6)",
             rusqlite::params![
                 session,
                 message.id,
                 message.text,
                 reason,
-                message.created_at_ms as i64
+                message.created_at_ms as i64,
+                serde_json::to_string(&message.excerpts)?
             ],
         )?;
         let rows = queue_rows(&tx, session)?;
@@ -473,6 +531,34 @@ impl Db {
             return Ok(None);
         }
         Ok(Some(queue_rows(&conn, session)?))
+    }
+
+    /// The `/` commands Claude last reported for the thread; `None` before its first turn.
+    pub fn thread_commands(&self, session: u32) -> Result<Option<ThreadCommandList>> {
+        let conn = self.conn.lock().expect("db lock");
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT commands FROM thread_meta WHERE session_id = ?1",
+                [session],
+                |row| row.get(0),
+            )
+            .optional()?;
+        stored
+            .map(|json| {
+                serde_json::from_str(&json).with_context(|| {
+                    format!("reading the stored commands of session {session}: {json:.200}")
+                })
+            })
+            .transpose()
+    }
+
+    pub fn set_thread_commands(&self, session: u32, list: &ThreadCommandList) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT OR REPLACE INTO thread_meta (session_id, commands) VALUES (?1, ?2)",
+            rusqlite::params![session, serde_json::to_string(list)?],
+        )?;
+        Ok(())
     }
 
     /// Daemon start: nothing a previous daemon queued is sent until the user sends it.
@@ -550,6 +636,7 @@ mod tests {
             state: proto::QueuedState::Queued,
             hold_reason: None,
             created_at_ms: 1,
+            excerpts: Vec::new(),
         }
     }
 
@@ -621,6 +708,60 @@ mod tests {
             "x",
             "a refused edit changes nothing"
         );
+    }
+
+    #[test]
+    fn a_queued_message_keeps_its_excerpts_and_they_count_against_the_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let mut message = queued("a", "why?");
+        message.excerpts = vec![proto::ThreadExcerpt {
+            source: "build".into(),
+            session: Some(7),
+            text: "e".repeat(1000),
+        }];
+        db.thread_queue_push(4, "thread_send", &message).unwrap();
+        let (taken, _) = db.thread_queue_take(4, Some("a")).unwrap().unwrap();
+        assert_eq!(taken.excerpts, message.excerpts);
+        let rows = db.thread_queue_restore(4, &taken, "write failed").unwrap();
+        assert_eq!(rows[0].excerpts, message.excerpts, "a held row keeps them");
+        let fill = "y".repeat(proto::THREAD_QUEUE_MAX_BYTES - 1000);
+        let over = db
+            .thread_queue_push(4, "thread_send", &queued("b", &fill))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            over.contains(&format!("{} bytes", proto::THREAD_QUEUE_MAX_BYTES + 4)),
+            "{over}"
+        );
+        assert!(db.thread_queue_edit(4, "a", &fill).unwrap().is_some());
+        let edit = db
+            .thread_queue_edit(4, "a", &format!("{fill}z"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            edit.contains(&format!("{} bytes", proto::THREAD_QUEUE_MAX_BYTES + 1)),
+            "the kept excerpts count too: {edit}"
+        );
+    }
+
+    #[test]
+    fn thread_commands_are_kept_per_session() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        assert_eq!(db.thread_commands(4).unwrap(), None);
+        let list = ThreadCommandList {
+            commands: vec!["compact".into()],
+            skills: vec!["review".into()],
+            terminal_only: vec!["model".into()],
+        };
+        db.set_thread_commands(4, &list).unwrap();
+        assert_eq!(db.thread_commands(4).unwrap(), Some(list.clone()));
+        {
+            let conn = db.conn.lock().unwrap();
+            move_history(&conn, 4, 9).unwrap();
+        }
+        assert_eq!(db.thread_commands(9).unwrap(), Some(list));
     }
 
     #[test]

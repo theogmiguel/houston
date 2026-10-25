@@ -1,6 +1,8 @@
 use super::*;
 use crate::claude_stream::ClaudeStreamJson;
-use crate::thread_session::{ApprovalAnswer, Conversation, StructuredRuntime, ThreadHost};
+use crate::thread_session::{
+    ApprovalAnswer, Conversation, StructuredRuntime, ThreadCommandList, ThreadHost,
+};
 use std::sync::Weak;
 
 /// Per-session history cap: whichever of these is reached first prunes the oldest events.
@@ -12,6 +14,8 @@ const THREAD_PRUNE_TO_PERCENT: u64 = 90;
 struct DaemonThreadHost {
     daemon: Weak<Daemon>,
     usage: Mutex<Option<(u64, u64)>>,
+    /// The last stored list, so the report at every turn's start writes only a change.
+    commands: Mutex<Option<ThreadCommandList>>,
 }
 
 impl ThreadHost for DaemonThreadHost {
@@ -122,6 +126,45 @@ impl ThreadHost for DaemonThreadHost {
             daemon.broadcast_thread_info(session);
         }
     }
+
+    fn commands_reported(&self, session: u32, list: ThreadCommandList) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        let mut last = self.commands.lock().expect("thread commands lock");
+        if last.is_none() {
+            *last = daemon.db.thread_commands(session).unwrap_or_else(|error| {
+                tracing::warn!("reading session {session}'s thread commands: {error:#}");
+                None
+            });
+        }
+        if last.as_ref() == Some(&list) {
+            return;
+        }
+        if let Err(error) = daemon.db.set_thread_commands(session, &list) {
+            tracing::warn!("recording session {session}'s thread commands: {error:#}");
+        }
+        daemon.broadcast_control(&thread_commands_msg(session, &list));
+        *last = Some(list);
+    }
+
+    fn title_reported(&self, session: u32, title: &str) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        if let Ok(live) = daemon.get(session) {
+            daemon.name_pane_from_cli_title(session, &live, title);
+        }
+    }
+}
+
+fn thread_commands_msg(session: u32, list: &ThreadCommandList) -> proto::ServerMsg {
+    proto::ServerMsg::ThreadCommands {
+        session,
+        commands: list.commands.clone(),
+        skills: list.skills.clone(),
+        terminal_only: list.terminal_only.clone(),
+    }
 }
 
 /// How `thread_permission` answers a prompt: at once, or after the user decides.
@@ -197,8 +240,13 @@ impl Daemon {
             .unwrap_or(proto::SessionView::Terminal)
     }
 
-    pub fn thread_send(self: &Arc<Self>, id: u32, text: &str) -> Result<()> {
-        ensure_message_text(id, "thread_send", text)?;
+    pub fn thread_send(
+        self: &Arc<Self>,
+        id: u32,
+        text: &str,
+        excerpts: &[proto::ThreadExcerpt],
+    ) -> Result<()> {
+        ensure_excerpts(id, "thread_send", text, excerpts)?;
         let handle = self.thread_handle(id, "thread_send")?;
         let state = *self.get(id)?.state.lock().expect("state lock");
         if !state.is_live() {
@@ -206,7 +254,7 @@ impl Daemon {
         }
         self.ensure_not_closing(id, "thread_send")?;
         self.ensure_not_switching(id, "thread_send")?;
-        handle.send(text)
+        handle.send(text, excerpts)
     }
 
     pub fn thread_stop(self: &Arc<Self>, id: u32) -> Result<()> {
@@ -394,6 +442,13 @@ impl Daemon {
             session: id,
             items: self.db.thread_queue(id)?,
         })
+    }
+
+    /// Empty lists before the thread's first turn: Claude reports its commands as a turn starts.
+    pub fn thread_commands_list(&self, id: u32) -> Result<proto::ServerMsg> {
+        self.ensure_thread_session(id, "thread_commands_list")?;
+        let list = self.db.thread_commands(id)?.unwrap_or_default();
+        Ok(thread_commands_msg(id, &list))
     }
 
     pub fn thread_queue_edit(&self, id: u32, message: &str, text: &str) -> Result<()> {
@@ -601,6 +656,7 @@ impl Daemon {
         let host = Arc::new(DaemonThreadHost {
             daemon: Arc::downgrade(self),
             usage: Mutex::new(None),
+            commands: Mutex::new(None),
         });
         let permission_mode = adapter.permission_mode;
         let handle = StructuredRuntime::start(
@@ -768,6 +824,66 @@ fn ensure_message_text(id: u32, verb: &str, text: &str) -> Result<()> {
     }
     if text.trim().is_empty() {
         bail!("{verb} refused for session {id}: the message is empty");
+    }
+    Ok(())
+}
+
+/// Pane names are short; a longer source is not a pane name.
+const EXCERPT_SOURCE_MAX_BYTES: usize = 256;
+
+/// A message with terminal excerpts: within `THREAD_EXCERPTS_MAX` and
+/// `THREAD_EXCERPT_MAX_BYTES`, and, composed for Claude, within `THREAD_USER_MESSAGE_MAX_BYTES`.
+/// Its text may be blank when an excerpt carries the question.
+fn ensure_excerpts(
+    id: u32,
+    verb: &str,
+    text: &str,
+    excerpts: &[proto::ThreadExcerpt],
+) -> Result<()> {
+    if excerpts.is_empty() {
+        return ensure_message_text(id, verb, text);
+    }
+    if excerpts.len() > proto::THREAD_EXCERPTS_MAX {
+        bail!(
+            "{verb} refused for session {id}: the message has {} excerpts, the limit \
+             (THREAD_EXCERPTS_MAX) is {}; remove one to send it",
+            excerpts.len(),
+            proto::THREAD_EXCERPTS_MAX
+        );
+    }
+    for (at, excerpt) in excerpts.iter().enumerate() {
+        let source = one_line(&excerpt.source, 60);
+        if excerpt.source.trim().is_empty() || excerpt.source.len() > EXCERPT_SOURCE_MAX_BYTES {
+            bail!(
+                "{verb} refused for session {id}: excerpt {} names its pane as {source:?} ({} \
+                 bytes); expected a pane name of 1 to {EXCERPT_SOURCE_MAX_BYTES} bytes",
+                at + 1,
+                excerpt.source.len()
+            );
+        }
+        if excerpt.text.trim().is_empty() {
+            bail!(
+                "{verb} refused for session {id}: excerpt {} from pane {source:?} is empty",
+                at + 1
+            );
+        }
+        if excerpt.text.len() > proto::THREAD_EXCERPT_MAX_BYTES {
+            bail!(
+                "{verb} refused for session {id}: excerpt {} from pane {source:?} is {} bytes, \
+                 over the {} byte limit (THREAD_EXCERPT_MAX_BYTES)",
+                at + 1,
+                excerpt.text.len(),
+                proto::THREAD_EXCERPT_MAX_BYTES
+            );
+        }
+    }
+    let composed = crate::thread_session::compose_message(text, excerpts).len();
+    if composed > proto::THREAD_USER_MESSAGE_MAX_BYTES {
+        bail!(
+            "{verb} refused for session {id}: the message with its excerpts is {composed} bytes, \
+             over the {} byte limit (THREAD_USER_MESSAGE_MAX_BYTES)",
+            proto::THREAD_USER_MESSAGE_MAX_BYTES
+        );
     }
     Ok(())
 }

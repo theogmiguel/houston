@@ -2,12 +2,13 @@
 //! stdout. The generic half (process tree, turns, coalescing) is `thread_session.rs`.
 
 use crate::thread_session::{
-    cap_text, Conversation, Decoded, ProcessSpec, ProviderAdapter, ProviderStream, PERMISSION_TOOL,
+    cap_text, Conversation, Decoded, ProcessSpec, ProviderAdapter, ProviderStream,
+    ThreadCommandList, PERMISSION_TOOL,
 };
 use anyhow::{anyhow, bail, Result};
 use houston_protocol::{
     AgentKind, ThreadEventKind, ThreadPermissionMode, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    THREAD_COMMANDS_MAX, THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -23,6 +24,89 @@ pub const THREAD_FLAGS: [&str; 7] = [
     "--verbose",
     "--include-partial-messages",
 ];
+
+/// Built-ins a headless Claude ran as plain `/name` text in the captures (CLI 2.1.310); a
+/// thread offers every other built-in in a terminal pane only.
+pub const HEADLESS_COMMANDS: [&str; 11] = [
+    "context",
+    "usage",
+    "recap",
+    "rename",
+    "list-agents",
+    "reload-skills",
+    "agents",
+    "compact",
+    "clear",
+    "init",
+    "security-review",
+];
+
+/// Never sent from a thread, even when listed as a skill: they change persistent CLI state
+/// or read the user's Claude configuration and transcripts.
+const NEVER_SENT: [&str; 10] = [
+    "model",
+    "config",
+    "login",
+    "logout",
+    "mcp",
+    "doctor",
+    "permissions",
+    "plugin",
+    "plugins",
+    "reload-plugins",
+];
+
+const COMMAND_NAME_MAX_BYTES: usize = 128;
+
+/// The names under `key` that a composer can show: bounded, deduplicated, in Claude's order.
+fn command_names(init: &Value, key: &str) -> Option<Vec<String>> {
+    let mut names: Vec<String> = Vec::new();
+    for name in init.get(key)?.as_array()?.iter().filter_map(Value::as_str) {
+        let valid = !name.is_empty()
+            && name.len() <= COMMAND_NAME_MAX_BYTES
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+        if valid && !names.iter().any(|known| known == name) {
+            names.push(name.to_string());
+        }
+        if names.len() == THREAD_COMMANDS_MAX {
+            break;
+        }
+    }
+    Some(names)
+}
+
+/// Sorts `system/init`'s commands: its own `terminal_slash_commands` and `NEVER_SENT` stay in
+/// the terminal, skills are sent as `/name args`, and verified built-ins as text.
+fn command_list(init: &Value) -> Option<ThreadCommandList> {
+    let all = command_names(init, "slash_commands")?;
+    let skills = command_names(init, "skills").unwrap_or_default();
+    let terminal = command_names(init, "terminal_slash_commands").unwrap_or_default();
+    let blocked = |name: &String| terminal.contains(name) || NEVER_SENT.contains(&name.as_str());
+    let sendable_skills: Vec<String> = skills.iter().filter(|n| !blocked(n)).cloned().collect();
+    let commands: Vec<String> = all
+        .iter()
+        .filter(|name| HEADLESS_COMMANDS.contains(&name.as_str()))
+        .filter(|name| !blocked(name) && !sendable_skills.contains(name))
+        .cloned()
+        .collect();
+    let mut terminal_only: Vec<String> = Vec::new();
+    for name in all.iter().chain(skills.iter()) {
+        if !sendable_skills.contains(name)
+            && !commands.contains(name)
+            && !terminal_only.contains(name)
+            && terminal_only.len() < THREAD_COMMANDS_MAX
+        {
+            terminal_only.push(name.clone());
+        }
+    }
+    Some(ThreadCommandList {
+        commands,
+        skills: sendable_skills,
+        terminal_only,
+    })
+}
 
 /// The `--permission-mode` / bypass arguments of a mode; `Default` passes none.
 pub fn permission_mode_args(mode: ThreadPermissionMode) -> Vec<&'static str> {
@@ -226,13 +310,32 @@ impl StreamMapper {
                 let error = is_error.then(|| result_error(&value));
                 out.events.push(ThreadEventKind::TurnEnd { outcome, error });
                 out.turn_end = Some(outcome);
+                out.conversation = session_id(&value);
             }
+            // `new_conversation_id` is not the session id that `--resume` takes; the
+            // `init` and `result` after it carry that one.
+            Some("conversation_reset") => out.events.push(ThreadEventKind::Notice {
+                text: "Claude cleared its conversation: it no longer remembers the messages above."
+                    .into(),
+            }),
             Some("system") => {
-                if value.get("subtype").and_then(Value::as_str) == Some("init") {
-                    out.conversation = value
-                        .get("session_id")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
+                match value.get("subtype").and_then(Value::as_str) {
+                    Some("init") => {
+                        out.conversation = session_id(&value);
+                        out.commands = command_list(&value);
+                    }
+                    Some("session_title_changed") => {
+                        out.title = value
+                            .get("title")
+                            .and_then(Value::as_str)
+                            .filter(|title| !title.trim().is_empty())
+                            .map(str::to_string);
+                    }
+                    Some("compact_boundary") => out.events.push(ThreadEventKind::Notice {
+                        text: "Claude compacted its conversation: earlier messages are now a summary in its context."
+                            .into(),
+                    }),
+                    _ => {}
                 }
                 // `init` opens every turn and `status` follows a change such as ExitPlanMode.
                 out.permission_mode = value
@@ -321,6 +424,14 @@ impl StreamMapper {
             }
         }
     }
+}
+
+fn session_id(value: &Value) -> Option<String> {
+    value
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
 }
 
 /// Deltas and their final message share this key: one text block of one model message.
@@ -532,6 +643,105 @@ mod tests {
         let unknown =
             mapper.map_line(r#"{"type":"system","subtype":"status","permissionMode":"dontAsk"}"#);
         assert_eq!(unknown.permission_mode, None);
+    }
+
+    fn decode_fixture(body: &str) -> Vec<Decoded> {
+        let mut mapper = StreamMapper::default();
+        body.lines().map(|line| mapper.map_line(line)).collect()
+    }
+
+    #[test]
+    fn init_sorts_commands_into_sendable_skills_and_terminal_only() {
+        let decoded = decode_fixture(include_str!("../tests/fixtures/threads/commands.jsonl"));
+        let list = decoded[0].commands.clone().expect("init lists commands");
+        let mut verified = list.commands.clone();
+        verified.sort();
+        let mut expected = HEADLESS_COMMANDS.map(String::from).to_vec();
+        expected.sort();
+        assert_eq!(verified, expected, "every verified built-in is in this CLI");
+        assert!(list.skills.contains(&"code-review".to_string()));
+        for never in [
+            "doctor",
+            "model",
+            "config",
+            "mcp",
+            "reload-plugins",
+            "color",
+            "focus",
+        ] {
+            assert!(
+                !list.skills.iter().any(|s| s == never),
+                "{never} is sendable"
+            );
+            assert!(list.terminal_only.iter().any(|s| s == never), "{never}");
+        }
+        for name in list.commands.iter().chain(&list.skills) {
+            assert!(
+                !list.terminal_only.contains(name),
+                "{name} is in two groups"
+            );
+        }
+        assert_eq!(
+            list.commands.len() + list.skills.len() + list.terminal_only.len(),
+            55,
+            "every listed command lands in one group"
+        );
+    }
+
+    #[test]
+    fn command_names_are_bounded_and_checked() {
+        let names: Vec<String> = (0..THREAD_COMMANDS_MAX + 10)
+            .map(|n| format!("c{n}"))
+            .chain(["bad name".into(), "x".repeat(200), "c1".into()])
+            .collect();
+        let init = serde_json::json!({"slash_commands": names, "skills": ["c1"]});
+        let list = command_list(&init).unwrap();
+        assert_eq!(list.skills, ["c1"]);
+        assert_eq!(list.terminal_only.len(), THREAD_COMMANDS_MAX - 1);
+        assert!(!list
+            .terminal_only
+            .iter()
+            .any(|name| name.contains(' ') || name.len() > 128));
+        assert_eq!(
+            command_list(&serde_json::json!({"subtype": "init"})),
+            None,
+            "an init without the list keeps the last one"
+        );
+    }
+
+    #[test]
+    fn clear_resumes_the_session_id_claude_reports_after_the_reset() {
+        let decoded = decode_fixture(include_str!("../tests/fixtures/threads/clear.jsonl"));
+        let reset = &decoded[0];
+        assert_eq!(
+            reset.conversation, None,
+            "new_conversation_id is not a resume id"
+        );
+        assert!(matches!(
+            &reset.events[..],
+            [ThreadEventKind::Notice { text }] if text.starts_with("Claude cleared")
+        ));
+        let adopted: Vec<_> = decoded
+            .iter()
+            .filter_map(|d| d.conversation.clone())
+            .collect();
+        assert_eq!(
+            adopted, ["2211971a-3405-8c6b-d26e-809a0d13d0b8"; 2],
+            "init and result both carry the new session id"
+        );
+    }
+
+    #[test]
+    fn rename_and_compact_report_their_effect() {
+        let decoded = decode_fixture(include_str!("../tests/fixtures/threads/rename.jsonl"));
+        assert_eq!(decoded[0].title.as_deref(), Some("capture-probe"));
+        let compact = StreamMapper::default().map_line(
+            r#"{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"manual"}}"#,
+        );
+        assert!(matches!(
+            &compact.events[..],
+            [ThreadEventKind::Notice { text }] if text.starts_with("Claude compacted")
+        ));
     }
 
     #[test]

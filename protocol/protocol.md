@@ -1,4 +1,4 @@
-# Wire protocol v155
+# Wire protocol v156
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -105,11 +105,12 @@ failure not given a typed refusal comes back as `error`.
 | `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
-| `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank; the same limit applies to orchestration deliveries) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. v155: `steer` (default false). Without `steer`, sent at once (`delivery: direct`) only while no turn is open and nothing is queued; otherwise it joins the queue as `queued` and `thread_queue` (bcast) follows. With `steer`, an open turn is stopped (`turn_end{interrupted}`) and this message is sent first, ahead of the queue (`delivery: steered`); with no turn open it is sent at once and the queue stays as it is. The daemon never writes a message to Claude while a turn is open |
+| `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank; the same limit applies to orchestration deliveries) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. v155: `steer` (default false). Without `steer`, sent at once (`delivery: direct`) only while no turn is open and nothing is queued; otherwise it joins the queue as `queued` and `thread_queue` (bcast) follows. With `steer`, an open turn is stopped (`turn_end{interrupted}`) and this message is sent first, ahead of the queue (`delivery: steered`); with no turn open it is sent at once and the queue stays as it is. The daemon never writes a message to Claude while a turn is open. v156: `excerpts: ThreadExcerpt[]` (default empty; at most `THREAD_EXCERPTS_MAX` (4), each `text` non-blank and at most `THREAD_EXCERPT_MAX_BYTES` (16 KiB), `source` 1 to 256 bytes); with an excerpt `text` may be blank. Claude reads each excerpt as a fenced block headed `Terminal selection from pane "<source>":` before `text`, and the composed message must fit `THREAD_USER_MESSAGE_MAX_BYTES`; the stored `user_message` and a queued message keep `text` and `excerpts` apart. Refusals name the limit and the size. A message whose text starts with `/name` is a Claude command; Claude runs it in the thread as text |
 | `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
 | `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v151: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones; the refusal starts `thread_approve refused for session <id>`. `message` is cut at 4 KiB |
 | `thread_set_permission_mode` | `session`, `mode: ThreadPermissionMode` | v151: `session_updated` (bcast) with the new `permission_mode`; restarts a running process with the mode's flags and `--resume`, then records the mode for Restart and restore. Refused while the session is working or waiting for input (naming the status), while a turn is open or while a permission request waits (naming the cause); `auto` is refused for a model that cannot run it. Refused by name for a terminal session. `permission_mode` also changes, with `session_updated`, when Claude reports another mode in `system/init` or `system/status` (for example after ExitPlanMode) |
 | `thread_queue_list` | `session` | v155: `thread_queue` (direct). Refused by name for a terminal or unknown session |
+| `thread_commands_list` | `session` | v156: `thread_commands` (direct), from the database; empty lists before the thread's first turn. Refused by name for a terminal or unknown session |
 | `thread_queue_edit` | `session`, `id`, `text` (non-blank, ≤ `THREAD_USER_MESSAGE_MAX_BYTES`) | v155: `thread_queue` (bcast); the message keeps its place and state. Refused for an `id` that is no longer queued (sent or removed) and past `THREAD_QUEUE_MAX_BYTES`, naming the limit and the size |
 | `thread_queue_remove` | `session`, `id` | v155: `thread_queue` (bcast). Refused for an `id` that is no longer queued |
 | `thread_queue_send` | `session`, `id` | v155: sends a `queued` or `held` message now (`delivery: queued`): `thread_queue` (bcast) without it, then `thread_events`. While a turn is open the message becomes `queued` instead |
@@ -444,6 +445,7 @@ every refusal names the setting.
 | `session_removed` | `session` | bcast — the session is gone from the roster |
 | `thread_events` | `session`, `events: ThreadEvent[]` | v150: bcast. A thread session's live timeline, coalesced to at most 30 messages a second per session; deltas within a batch stay in order. Never on a binary frame. Kill, Restart or a daemon stop during a turn records the streamed partial answer, `turn_end{interrupted}` and a `notice` naming the cause; an exit records `turn_end{error}` and a `notice` with the exit code; a skipped oversized output line (over 4 MiB) records a `notice` naming its size |
 | `thread_queue` | `session`, `items: ThreadQueuedMessage[]` | v155: the whole queue, oldest first. Bcast after every change; direct reply to `thread_queue_list`. After a completed turn the daemon sends the head when it is `queued`; after Stop, an error turn or an exit, the queued messages become `held` with the reason, and nothing is sent until the user sends one. A message whose write fails returns to the head as `held` with the error; it is never retried silently. Refusals of the queue requests are an `error` with `context: "session:<id>"` whose message starts `<request> refused for session <id>` |
+| `thread_commands` | `session`, `commands`, `skills`, `terminal_only` (names without `/`, each list at most `THREAD_COMMANDS_MAX` (512)) | v156: the `/` commands Claude listed in its last `system/init`, sorted for a thread: `commands` are the Claude built-ins verified to run headless, `skills` are sent as `/name args`, and `terminal_only` holds every other name, including Claude's own `terminal_slash_commands` and commands that change persistent CLI state or read its configuration (`model`, `config`, `login`, `logout`, `mcp`, `doctor`, plugin and permission commands), even when listed as a skill. Bcast when the list changes (Claude reports it as every turn starts); kept per session across restarts; direct reply to `thread_commands_list` |
 | `thread_history` | `session`, `before_seq?` (the request's, echoed), `events: ThreadEvent[]`, `has_more` | v150: direct reply to `thread_history`, oldest first, never an `assistant_delta`; `has_more` means earlier events remain. A client that attaches asks for the newest page, then appends live events whose `seq` exceeds its last |
 | `scrollback` | `session`, `data` (base64), `generation`, `replayed_bytes`, `bytes_seen`, `attempt` (how many `session_attach` for this session this socket has sent, this one included) | direct reply to `session_attach`; honoured only when `attempt` matches the client's own count |
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
@@ -663,13 +665,14 @@ SessionView        terminal | thread
 ThreadEvent        seq (per session, increasing; not reused within one daemon run, so a client
                    reloads history after reconnecting), at_ms (epoch ms), kind: ThreadEventKind
 ThreadEventKind    tag `type`: user_message{text, delivery: MessageDelivery (v155; absent reads as
-                   `direct`)} | assistant_delta{message_id, text} (live only,
+                   `direct`), excerpts: ThreadExcerpt[] (v156; absent reads as empty)} | assistant_delta{message_id, text} (live only,
                    never stored) | assistant_message{message_id, text, truncated} (supersedes the
                    deltas with its `message_id`, which names one text block of one model message) |
                    tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
                    tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
                    `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
-                   turn_end{outcome: TurnOutcome, error?} | notice{text} |
+                   turn_end{outcome: TurnOutcome, error?} | notice{text} (v156 also when Claude
+                   clears or compacts its conversation) |
                    approval_request{request_id, tool_use_id, tool_name, input, truncated,
                    input_bytes} (v151: Claude asks to run a tool; Houston holds the call; `input`
                    is cut at `THREAD_APPROVAL_INPUT_MAX_BYTES` (64 KiB) and `input_bytes` is the
@@ -681,7 +684,10 @@ ThreadEventKind    tag `type`: user_message{text, delivery: MessageDelivery (v15
 TurnOutcome        completed | interrupted | error
 MessageDelivery    direct (no turn open, nothing queued) | queued (waited in the thread's queue) |
                    steered (stopped the open turn and went first)
-ThreadQueuedMessage id, text, state: QueuedState, hold_reason?, created_at_ms (epoch ms). A
+ThreadExcerpt      source (the pane's name), session?, text: a terminal selection quoted into a
+                   thread message (v156)
+ThreadQueuedMessage id, text, state: QueuedState, hold_reason?, created_at_ms (epoch ms),
+                   excerpts: ThreadExcerpt[] (v156; counted against the byte cap with `text`). A
                    session's queue holds at most `THREAD_QUEUE_MAX_ITEMS` (16) messages and
                    `THREAD_QUEUE_MAX_BYTES` (1 MiB) of text; it follows the session through
                    respawn and restore and goes when the session closes. A daemon start turns
@@ -1457,6 +1463,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 156 | **A thread's composer offers Claude's `/` commands and quotes terminal selections.** `thread_send`, `user_message` and `ThreadQueuedMessage` gain `excerpts: ThreadExcerpt[]`. New `thread_commands_list`, answered by `thread_commands` (bcast on change). New caps `THREAD_EXCERPTS_MAX` and `THREAD_EXCERPT_MAX_BYTES` in `DEFAULTS.ts`. Claims v156 after v155 on the composer branches; renumber at merge. |
 | 155 | **A thread queues messages written during a turn.** `thread_send` gains `steer`; `user_message` gains `delivery: MessageDelivery`. New `thread_queue_list`, `thread_queue_edit`, `thread_queue_remove`, `thread_queue_send` and `thread_steer`, answered by `thread_queue` (`ThreadQueuedMessage`, `QueuedState`). New caps `THREAD_QUEUE_MAX_ITEMS` and `THREAD_QUEUE_MAX_BYTES` in `DEFAULTS.ts`. Claims v155 after v153 and v154 on the timeline branches; renumber at merge. |
 | 152 | **A conversation moves between thread and terminal views.** New `session_set_view {session, view}`, answered like a respawn and refused by name while the agent works. New `default_view_get {}` / `default_view_set {view}` and the `default_view {view}` broadcast. Claims v152 after PR 3's v151; renumber at merge. |
 | 151 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |

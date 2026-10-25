@@ -4,8 +4,8 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    AgentKind, ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadPermissionMode, TurnOutcome,
-    THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
+    AgentKind, ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadExcerpt, ThreadPermissionMode,
+    TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
     THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
@@ -60,6 +60,9 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn approvals_pending(&self, session: u32, pending: bool);
     /// The stream reported a permission mode other than the recorded one.
     fn permission_mode_reported(&self, session: u32, mode: ThreadPermissionMode);
+    /// The provider listed its commands; it does so at the start of every turn.
+    fn commands_reported(&self, session: u32, list: ThreadCommandList);
+    fn title_reported(&self, session: u32, title: &str);
 }
 
 /// What `thread_approve` tells a held permission request.
@@ -106,6 +109,44 @@ pub struct Decoded {
     pub turn_end: Option<TurnOutcome>,
     pub conversation: Option<String>,
     pub permission_mode: Option<ThreadPermissionMode>,
+    pub commands: Option<ThreadCommandList>,
+    /// The provider named its session, for example after `/rename`.
+    pub title: Option<String>,
+}
+
+/// The `/` commands a provider reports, sorted by how a thread may use them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThreadCommandList {
+    pub commands: Vec<String>,
+    pub skills: Vec<String>,
+    pub terminal_only: Vec<String>,
+}
+
+/// What the provider reads: each excerpt as a fenced block under its pane's name, then the
+/// user's text. The timeline keeps the parts; only the provider sees this composition.
+pub fn compose_message(text: &str, excerpts: &[ThreadExcerpt]) -> String {
+    let mut out = String::new();
+    for excerpt in excerpts {
+        let (mut longest, mut run) = (0, 0);
+        for c in excerpt.text.chars() {
+            run = if c == '`' { run + 1 } else { 0 };
+            longest = longest.max(run);
+        }
+        // Longer than any backtick run inside, so the selection cannot close the fence.
+        let fence = "`".repeat((longest + 1).max(3));
+        let source: String = excerpt
+            .source
+            .chars()
+            .map(|c| if c == '"' || c.is_control() { ' ' } else { c })
+            .collect();
+        out.push_str(&format!(
+            "Terminal selection from pane \"{}\":\n{fence}\n{}\n{fence}\n\n",
+            source.trim(),
+            excerpt.text.trim_end_matches(['\r', '\n'])
+        ));
+    }
+    out.push_str(text);
+    out
 }
 
 /// A provider process: started with exactly this environment and piped stdio.
@@ -748,15 +789,16 @@ impl StructuredRuntime {
         }
     }
 
-    /// Records `text` and delivers it as one stream-json user message, starting a process
-    /// that resumes the conversation first when none runs.
-    pub fn send(self: &Arc<Self>, text: &str) -> Result<()> {
-        if text.len() > THREAD_USER_MESSAGE_MAX_BYTES {
+    /// Records `text` and delivers it with its excerpts as one stream-json user message,
+    /// starting a process that resumes the conversation first when none runs.
+    pub fn send(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        let composed = compose_message(text, excerpts);
+        if composed.len() > THREAD_USER_MESSAGE_MAX_BYTES {
             bail!(
                 "message refused for thread session {}: it is {} bytes, over the {} byte limit \
                  (THREAD_USER_MESSAGE_MAX_BYTES)",
                 self.session,
-                text.len(),
+                composed.len(),
                 THREAD_USER_MESSAGE_MAX_BYTES
             );
         }
@@ -774,12 +816,13 @@ impl StructuredRuntime {
                 .stream
                 .lock()
                 .expect("thread stream lock")
-                .user_message(text)?;
+                .user_message(&composed)?;
             state.turn_open = true;
             drop(state);
             self.emit(vec![ThreadEventKind::UserMessage {
                 text: text.to_string(),
                 delivery: houston_protocol::MessageDelivery::Direct,
+                excerpts: excerpts.to_vec(),
             }]);
             (process, line)
         };
@@ -1016,6 +1059,12 @@ impl StructuredRuntime {
         }
         if let Some(mode) = reported_mode {
             self.host.permission_mode_reported(self.session, mode);
+        }
+        if let Some(list) = mapped.commands {
+            self.host.commands_reported(self.session, list);
+        }
+        if let Some(title) = mapped.title {
+            self.host.title_reported(self.session, &title);
         }
         if let Some(outcome) = mapped.turn_end {
             self.host.turn_ended(self.session, outcome);
@@ -1491,6 +1540,30 @@ mod tests {
         fn process_gone(&self, _session: u32) {}
         fn approvals_pending(&self, _session: u32, _pending: bool) {}
         fn permission_mode_reported(&self, _session: u32, _mode: ThreadPermissionMode) {}
+        fn commands_reported(&self, _session: u32, _list: ThreadCommandList) {}
+        fn title_reported(&self, _session: u32, _title: &str) {}
+    }
+
+    #[test]
+    fn excerpts_go_first_in_fences_they_cannot_close() {
+        let excerpts = [
+            ThreadExcerpt {
+                source: "build \"main\"".into(),
+                session: Some(4),
+                text: "error\n```\nnot the end\n".into(),
+            },
+            ThreadExcerpt {
+                source: "tests".into(),
+                session: None,
+                text: "ok".into(),
+            },
+        ];
+        assert_eq!(
+            compose_message("Why does it fail?", &excerpts),
+            "Terminal selection from pane \"build  main\":\n````\nerror\n```\nnot the end\n````\n\n\
+             Terminal selection from pane \"tests\":\n```\nok\n```\n\nWhy does it fail?"
+        );
+        assert_eq!(compose_message("plain", &[]), "plain");
     }
 
     #[test]
@@ -1506,7 +1579,7 @@ mod tests {
             host.clone(),
         )
         .unwrap();
-        handle.send("hello").unwrap();
+        handle.send("hello", &[]).unwrap();
         let events = host.events.lock().unwrap();
         let (events, wait) = host
             .changed

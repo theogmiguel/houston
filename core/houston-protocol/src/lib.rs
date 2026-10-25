@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 155;
+pub const PROTOCOL_VERSION: u32 = 156;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1592,6 +1592,12 @@ pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
 pub const THREAD_QUEUE_MAX_ITEMS: usize = 16;
 /// Text bytes waiting in one thread's queue, which also bounds a `thread_queue` snapshot.
 pub const THREAD_QUEUE_MAX_BYTES: usize = 1_048_576;
+/// Terminal excerpts attached to one thread message.
+pub const THREAD_EXCERPTS_MAX: usize = 4;
+/// One excerpt's text; the composed message must still fit `THREAD_USER_MESSAGE_MAX_BYTES`.
+pub const THREAD_EXCERPT_MAX_BYTES: usize = 16_384;
+/// Names in each `thread_commands` list; the CLI reports a few dozen.
+pub const THREAD_COMMANDS_MAX: usize = 512;
 pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
@@ -1619,6 +1625,9 @@ pub enum ThreadEventKind {
         text: String,
         #[serde(default)]
         delivery: MessageDelivery,
+        /// Terminal selections sent with `text`; Claude read them as fenced blocks before it.
+        #[serde(default)]
+        excerpts: Vec<ThreadExcerpt>,
     },
     /// Live only, never stored: the `AssistantMessage` with the same
     /// `message_id` supersedes every delta before it.
@@ -1675,6 +1684,18 @@ pub enum ThreadEventKind {
     },
 }
 
+/// A terminal selection quoted into a thread message, as the user saw it before sending.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadExcerpt {
+    /// The pane's name when the selection was taken.
+    pub source: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub session: Option<u32>,
+    pub text: String,
+}
+
 /// How a user message reached Claude.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -1711,6 +1732,8 @@ pub struct ThreadQueuedMessage {
     pub hold_reason: Option<String>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: u64,
+    #[serde(default)]
+    pub excerpts: Vec<ThreadExcerpt>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4180,6 +4203,9 @@ pub enum ClientMsg {
         text: String,
         #[serde(default)]
         steer: bool,
+        /// At most `THREAD_EXCERPTS_MAX`; `text` may be blank when there is one.
+        #[serde(default)]
+        excerpts: Vec<ThreadExcerpt>,
     },
     ThreadStop {
         session: u32,
@@ -4238,6 +4264,10 @@ pub enum ClientMsg {
     ThreadSteer {
         session: u32,
         id: String,
+    },
+    /// Answered with a `thread_commands` reply to this connection.
+    ThreadCommandsList {
+        session: u32,
     },
     SessionList,
     PrWatchList,
@@ -5550,6 +5580,15 @@ pub enum ServerMsg {
     ThreadQueue {
         session: u32,
         items: Vec<ThreadQueuedMessage>,
+    },
+    /// The `/` commands Claude last reported for this thread; broadcast when they change.
+    ThreadCommands {
+        session: u32,
+        /// Claude built-ins verified to run in a thread; sent as `/name` text.
+        commands: Vec<String>,
+        skills: Vec<String>,
+        /// Every other command Claude lists: offered only in a terminal pane.
+        terminal_only: Vec<String>,
     },
     Scrollback {
         session: u32,
@@ -7809,7 +7848,8 @@ mod tests {
             message,
             ThreadEventKind::UserMessage {
                 text: "hi".into(),
-                delivery: MessageDelivery::Direct
+                delivery: MessageDelivery::Direct,
+                excerpts: Vec::new(),
             },
             "events stored before v155 read as direct"
         );
@@ -7821,13 +7861,48 @@ mod tests {
                 state: QueuedState::Held,
                 hold_reason: Some("stopped".into()),
                 created_at_ms: 5,
+                excerpts: Vec::new(),
             }],
         })
         .unwrap();
         assert_eq!(
             queue,
-            r#"{"type":"thread_queue","session":3,"items":[{"id":"q1","text":"next","state":"held","hold_reason":"stopped","created_at_ms":5}]}"#
+            r#"{"type":"thread_queue","session":3,"items":[{"id":"q1","text":"next","state":"held","hold_reason":"stopped","created_at_ms":5,"excerpts":[]}]}"#
         );
+    }
+
+    #[test]
+    fn composer_messages_keep_their_wire_shape() {
+        let send: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_send","session":3,"text":"why?","excerpts":[{"source":"build","session":4,"text":"error[E0308]"}]}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            send,
+            ClientMsg::ThreadSend { ref excerpts, .. }
+                if excerpts == &[ThreadExcerpt { source: "build".into(), session: Some(4), text: "error[E0308]".into() }]
+        ));
+        let older: ThreadQueuedMessage =
+            serde_json::from_str(r#"{"id":"q1","text":"next","state":"queued","created_at_ms":5}"#)
+                .unwrap();
+        assert!(
+            older.excerpts.is_empty(),
+            "rows written before v156 have none"
+        );
+        let commands = serde_json::to_string(&ServerMsg::ThreadCommands {
+            session: 3,
+            commands: vec!["compact".into()],
+            skills: vec!["review".into()],
+            terminal_only: vec!["model".into()],
+        })
+        .unwrap();
+        assert_eq!(
+            commands,
+            r#"{"type":"thread_commands","session":3,"commands":["compact"],"skills":["review"],"terminal_only":["model"]}"#
+        );
+        let list: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_commands_list","session":3}"#).unwrap();
+        assert!(matches!(list, ClientMsg::ThreadCommandsList { session: 3 }));
     }
 
     #[test]

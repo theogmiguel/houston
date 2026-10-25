@@ -860,6 +860,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
         proto::ClientMsg::SessionList
             | proto::ClientMsg::ThreadHistory { .. }
             | proto::ClientMsg::ThreadQueueList { .. }
+            | proto::ClientMsg::ThreadCommandsList { .. }
             | proto::ClientMsg::SkillSync
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
@@ -1721,6 +1722,7 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::ThreadQueueRemove { session, .. }
         | proto::ClientMsg::ThreadQueueSend { session, .. }
         | proto::ClientMsg::ThreadSteer { session, .. }
+        | proto::ClientMsg::ThreadCommandsList { session }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
         _ => None,
     }
@@ -1962,9 +1964,10 @@ async fn dispatch(
             session,
             text,
             steer: _,
+            excerpts,
         } => {
             let d = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || d.thread_send(session, &text))
+            tokio::task::spawn_blocking(move || d.thread_send(session, &text, &excerpts))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("thread send panicked: {e}")))
         }
@@ -2019,6 +2022,15 @@ async fn dispatch(
             send_msg(sink, &reply)
                 .await
                 .map_err(|_| anyhow::anyhow!("sending thread queue failed"))
+        }
+        proto::ClientMsg::ThreadCommandsList { session } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.thread_commands_list(session))
+                .await
+                .map_err(|e| anyhow::anyhow!("thread commands read panicked: {e}"))??;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending thread commands failed"))
         }
         proto::ClientMsg::ThreadQueueEdit { session, id, text } => {
             let d = Arc::clone(daemon);

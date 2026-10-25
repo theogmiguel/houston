@@ -9808,7 +9808,7 @@ impl Daemon {
             self.deliver_first_prompt(info.id, text, None, true);
         }
         if let Some(text) = first_message {
-            if let Err(error) = self.thread_send(info.id, &text) {
+            if let Err(error) = self.thread_send(info.id, &text, &[]) {
                 tracing::warn!(
                     "delivering thread session {}'s first message: {error:#}",
                     info.id
@@ -19612,7 +19612,7 @@ impl Daemon {
         }
         if let Some(thread) = self.get(session_id).ok().and_then(|s| s.thread().cloned()) {
             thread
-                .send(text)
+                .send(text, &[])
                 .with_context(|| format!("sending a message to thread session {session_id}"))?;
             return Ok(true);
         }
@@ -24998,7 +24998,7 @@ impl Daemon {
         }
         let thread = self.get(parent).ok().and_then(|s| s.thread().cloned());
         if let Some(thread) = thread {
-            if let Err(error) = thread.send(&composed) {
+            if let Err(error) = thread.send(&composed, &[]) {
                 let error = StdinWriteError {
                     written: Some(0),
                     error,

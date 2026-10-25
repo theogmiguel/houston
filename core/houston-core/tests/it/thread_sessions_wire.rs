@@ -371,6 +371,173 @@ async fn stop_ends_the_whole_process_tree_and_the_next_message_resumes() {
     ));
 }
 
+/// `/clear` gives Claude a new session id; the next process resumes that one, never the
+/// cleared conversation, and never the reset event's own `new_conversation_id`.
+#[tokio::test]
+async fn after_clear_the_next_process_resumes_the_new_session() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    assert_idle_and_running(&rig.daemon, id).await;
+    let events = rig.turn(id, "replay:clear").await;
+    assert!(events.iter().any(|e| matches!(
+        &e.kind,
+        ThreadEventKind::Notice { text } if text.starts_with("Claude cleared its conversation")
+    )));
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    rig.turn(id, "after the clear").await;
+    let launches = rig.launches();
+    assert_eq!(launches.len(), 2, "Stop ended the first process");
+    assert!(arg_after(&launches[0].1, "--session-id").is_some());
+    assert_eq!(
+        arg_after(&launches[1].1, "--resume").as_deref(),
+        Some("2211971a-3405-8c6b-d26e-809a0d13d0b8")
+    );
+}
+
+/// Commands from `system/init` reach clients once per change and survive in the database;
+/// `/rename`'s title names the pane through the CLI-title path.
+#[tokio::test]
+async fn init_commands_reach_clients_and_a_rename_names_the_pane() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let commands = |msg: &proto::ServerMsg| match msg {
+        proto::ServerMsg::ThreadCommands {
+            session,
+            commands,
+            skills,
+            terminal_only,
+        } if *session == id => Some((commands.clone(), skills.clone(), terminal_only.clone())),
+        _ => None,
+    };
+    rig.send(json!({"type":"thread_commands_list","session":id}))
+        .await;
+    let before = loop {
+        if let Some(list) = commands(&next_control(&mut rig.ws).await) {
+            break list;
+        }
+    };
+    assert_eq!(before, (vec![], vec![], vec![]), "nothing before a turn");
+
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        rig.say(id, "replay:rename").await;
+        let mut lists = 0;
+        loop {
+            let msg = next_control(&mut rig.ws).await;
+            if let Some(list) = commands(&msg) {
+                lists += 1;
+                seen.push(list);
+            }
+            if let proto::ServerMsg::ThreadEvents { session, events } = &msg {
+                if *session == id
+                    && events
+                        .iter()
+                        .any(|e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+                {
+                    break;
+                }
+            }
+        }
+        assert!(lists <= 1);
+    }
+    assert_eq!(
+        seen.len(),
+        1,
+        "the second turn's identical list is not sent"
+    );
+    let (sendable, skills, terminal_only) = &seen[0];
+    assert!(sendable.iter().any(|name| name == "compact"));
+    assert!(skills.iter().any(|name| name == "code-review"));
+    assert!(terminal_only.iter().any(|name| name == "doctor"));
+    assert!(terminal_only.iter().any(|name| name == "model"));
+    let first = seen[0].clone();
+    rig.send(json!({"type":"thread_commands_list","session":id}))
+        .await;
+    let stored = loop {
+        if let Some(list) = commands(&next_control(&mut rig.ws).await) {
+            break list;
+        }
+    };
+    assert_eq!(stored, first, "the reply reads the stored list");
+
+    wait_until("the pane to take Claude's session title", || {
+        rig.daemon
+            .list()
+            .into_iter()
+            .any(|s| s.id == id && s.title == "capture-probe")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn excerpts_reach_claude_fenced_and_stay_parts_in_history() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let excerpt = json!({"source":"build","session":9,"text":"error[E0308]: mismatched types\n"});
+    rig.send(json!({"type":"thread_send","session":id,"text":"Why?","excerpts":[excerpt]}))
+        .await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    let sent = ThreadEventKind::UserMessage {
+        text: "Why?".into(),
+        delivery: proto::MessageDelivery::Direct,
+        excerpts: vec![proto::ThreadExcerpt {
+            source: "build".into(),
+            session: Some(9),
+            text: "error[E0308]: mismatched types\n".into(),
+        }],
+    };
+    assert_eq!(events[0].kind, sent);
+    assert!(events.iter().any(|e| matches!(
+        &e.kind,
+        ThreadEventKind::AssistantMessage { text, .. } if text
+            == "echo: Terminal selection from pane \"build\":\n```\nerror[E0308]: mismatched types\n```\n\nWhy?"
+    )));
+    assert!(rig.history(id).await.0.iter().any(|e| e.kind == sent));
+
+    let only = json!({"source":"tests","text":"FAILED"});
+    rig.send(json!({"type":"thread_send","session":id,"text":"","excerpts":[only]}))
+        .await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    assert!(
+        matches!(&events[0].kind, ThreadEventKind::UserMessage { text, excerpts, .. } if text.is_empty() && excerpts.len() == 1),
+        "an excerpt may carry the whole message"
+    );
+
+    let five = vec![json!({"source":"p","text":"x"}); proto::THREAD_EXCERPTS_MAX + 1];
+    rig.send(json!({"type":"thread_send","session":id,"text":"t","excerpts":five}))
+        .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains("has 5 excerpts") && message.contains("THREAD_EXCERPTS_MAX"),
+        "{message}"
+    );
+    assert_eq!(context.as_deref(), Some(format!("session:{id}").as_str()));
+    let big = "y".repeat(proto::THREAD_EXCERPT_MAX_BYTES + 1);
+    rig.send(json!({"type":"thread_send","session":id,"text":"t",
+        "excerpts":[{"source":"log","text":big}]}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains(&format!("{} bytes", proto::THREAD_EXCERPT_MAX_BYTES + 1))
+            && message.contains("THREAD_EXCERPT_MAX_BYTES"),
+        "{message}"
+    );
+    let near = "z".repeat(proto::THREAD_USER_MESSAGE_MAX_BYTES - 100);
+    rig.send(json!({"type":"thread_send","session":id,"text":near,
+        "excerpts":[{"source":"log","text":"w".repeat(200)}]}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("with its excerpts") && message.contains("THREAD_USER_MESSAGE_MAX_BYTES"),
+        "{message}"
+    );
+    assert_eq!(rig.launches().len(), 1, "no refused message reached Claude");
+}
+
 #[tokio::test]
 async fn a_crash_is_a_notice_and_the_next_message_starts_claude_again() {
     let mut rig = Rig::new().await;
@@ -616,6 +783,7 @@ fn queued_row(id: &str, text: &str) -> proto::ThreadQueuedMessage {
         state: proto::QueuedState::Queued,
         hold_reason: None,
         created_at_ms: 1,
+        excerpts: Vec::new(),
     }
 }
 
@@ -788,6 +956,7 @@ async fn a_turn_left_open_by_a_daemon_crash_ends_on_restore() {
             ThreadEventKind::UserMessage {
                 text: "question".into(),
                 delivery: Default::default(),
+                excerpts: Vec::new(),
             },
             ThreadEventKind::ToolCall {
                 tool_use_id: "toolu_1".into(),
@@ -1018,7 +1187,7 @@ async fn stop_and_kill_finish_while_a_message_write_is_blocked() {
     // Larger than any pipe buffer: the write blocks because Claude no longer reads.
     let big = "y".repeat(200 * 1024);
     let daemon = Arc::clone(&rig.daemon);
-    let blocked = std::thread::spawn(move || daemon.thread_send(id, &big));
+    let blocked = std::thread::spawn(move || daemon.thread_send(id, &big, &[]));
     tokio::time::sleep(Duration::from_millis(300)).await;
     let daemon = Arc::clone(&rig.daemon);
     within("thread_stop", Duration::from_secs(10), move || {
@@ -1051,7 +1220,7 @@ async fn a_message_sent_during_stop_waits_for_the_old_process() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let daemon = Arc::clone(&rig.daemon);
     within("thread_send", Duration::from_secs(10), move || {
-        daemon.thread_send(id, "replay:warm")
+        daemon.thread_send(id, "replay:warm", &[])
     })
     .await
     .unwrap();
@@ -1159,7 +1328,7 @@ async fn a_daemon_shutdown_mid_turn_is_recorded_and_restored() {
         .id;
     let pidfile = rig.scratch.path().join("sleeper.pid");
     first
-        .thread_send(id, &format!("hang:{}", pidfile.display()))
+        .thread_send(id, &format!("hang:{}", pidfile.display()), &[])
         .unwrap();
     wait_until("the tool process to start", || pidfile.is_file()).await;
     // The fake streams its partial answer as it starts the tool process.
