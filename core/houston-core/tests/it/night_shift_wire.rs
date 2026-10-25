@@ -1949,11 +1949,13 @@ async fn spawn_substitutes_next_provider() {
     assert!(text.contains("claude") && text.contains("codex"), "{text}");
 }
 
-/// A stand-in `zcode -p`: `ok` answers; otherwise it fails as a spent quota
-/// does, with the provider error ZCode prints. It records its arguments.
-fn zcode_probe_script(dir: &Path, ok: bool) -> PathBuf {
+/// A stand-in provider CLI: `ok` answers; otherwise it fails as a spent quota
+/// does, with the provider error ZCode prints. It records its arguments in
+/// `<name>-args`, so a test can tell one provider's probes from another's.
+fn probe_script(dir: &Path, name: &str, ok: bool) -> (PathBuf, PathBuf) {
     use std::os::unix::fs::PermissionsExt;
-    let path = dir.join(if ok { "zcode-ok" } else { "zcode-spent" });
+    let path = dir.join(name);
+    let args = dir.join(format!("{name}-args"));
     let body = if ok {
         "echo OK"
     } else {
@@ -1961,14 +1963,47 @@ fn zcode_probe_script(dir: &Path, ok: bool) -> PathBuf {
     };
     std::fs::write(
         &path,
-        format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\n{body}\n",
-            dir.join("probe-args").display()
-        ),
+        format!("#!/bin/sh\necho \"$*\" >> '{}'\n{body}\n", args.display()),
     )
     .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
+    (path, args)
+}
+
+/// Answers every start probe except `failing`'s, so a test never runs a real
+/// CLI and never spends quota. Answers the answer and the failure's arg logs.
+fn probe_scripts(
+    r: &Rig,
+    dir: &Path,
+    failing: Option<proto::AgentKind>,
+) -> (PathBuf, Option<PathBuf>) {
+    let (answer, answer_args) = probe_script(dir, "answer", true);
+    let spent = failing.map(|provider| {
+        let (script, args) = probe_script(
+            dir,
+            &format!(
+                "spent-{}",
+                houston_core::agent_hooks::provider_slug(provider)
+            ),
+            false,
+        );
+        (provider, script, args)
+    });
+    for provider in [
+        proto::AgentKind::Claude,
+        proto::AgentKind::Codex,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Zcode,
+    ] {
+        let script = spent
+            .as_ref()
+            .filter(|(p, _, _)| *p == provider)
+            .map(|(_, s, _)| s.clone())
+            .unwrap_or_else(|| answer.clone());
+        r.daemon
+            .set_night_shift_probe_for_test(provider, Some(script));
+    }
+    (answer_args, spent.map(|(_, _, args)| args))
 }
 
 #[tokio::test]
@@ -1976,13 +2011,12 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), true)));
+    let (answer_args, _) = probe_scripts(&r, scripts.path(), None);
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 600);
     let o = run.session_id.unwrap();
-    wait_until("the start probe", || {
-        !r.daemon.night_shift_zcode_probing(run.run_id)
+    wait_until("the start probes", || {
+        !r.daemon.night_shift_probing(run.run_id)
     })
     .await;
     assert!(
@@ -1998,26 +2032,32 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     r.daemon.night_shift_tick_at(t0);
     r.daemon.night_shift_tick_at(t0 + 21 * MINUTE);
     wait_until("the stall probe", || {
-        !r.daemon.night_shift_zcode_probing(run.run_id)
+        !r.daemon.night_shift_probing(run.run_id)
     })
     .await;
     assert!(
         r.run(run.run_id).limited.is_empty(),
         "a stall whose probe answers is not a limit"
     );
-    let probes = std::fs::read_to_string(scripts.path().join("probe-args")).unwrap();
+    let probes = std::fs::read_to_string(&answer_args).unwrap();
     assert_eq!(
         probes.lines().count(),
-        2,
-        "one probe at start, one per stall: {probes}"
+        3,
+        "two providers probed at start, one per ZCode stall: {probes}"
     );
+    let zcode_probes: Vec<&str> = probes
+        .lines()
+        .filter(|l| l.contains("--disallowed-tools Bash Edit Write"))
+        .collect();
+    assert_eq!(zcode_probes.len(), 2, "{probes}");
     assert!(
-        probes.contains("-p Reply with the single word OK."),
+        zcode_probes[0].starts_with("-p Reply with the single word OK."),
         "{probes}"
     );
 
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
     r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
     r.daemon.night_shift_tick_at(t0 + 42 * MINUTE);
     wait_until("ZCode to be limited", || {
         r.run(run.run_id).limited == [proto::AgentKind::Zcode]
@@ -2035,22 +2075,103 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         "names the probe's error: {}",
         note.body
     );
+    let failed = std::fs::read_to_string(&spent_args).unwrap();
+    assert_eq!(failed.lines().count(), 1, "{failed}");
     r.daemon.night_shift_tick_at(t0 + 63 * MINUTE);
     assert_eq!(r.notes(o, "Night shift: zcode limited"), 1, "told once");
+}
+
+/// A run probes every distinct worker and reviewer provider that has a typed
+/// limit signal, each with its own headless flags.
+#[tokio::test]
+async fn start_probe_covers_every_worker_provider() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    let (answer_args, spent_args) =
+        probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Codex));
+    let routine = r.ready(|s| {
+        s.workers = vec![
+            proto::NightAgent {
+                provider: proto::AgentKind::Claude,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Codex,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Opencode,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Zcode,
+                model: None,
+            },
+        ];
+    });
+    let run = r.run_now(routine.id, 120);
+    wait_until("every start probe", || {
+        !r.daemon.night_shift_probing(run.run_id)
+    })
+    .await;
+    assert_eq!(
+        r.run(run.run_id).limited,
+        [proto::AgentKind::Codex],
+        "only the failed probe limits a provider"
+    );
+    let preflight = r.run(run.run_id).preflight;
+    let item = |id: &str| {
+        preflight
+            .iter()
+            .find(|i| i.id == id)
+            .unwrap_or_else(|| panic!("{id} missing: {preflight:?}"))
+    };
+    assert_eq!(
+        item("quota:claude").status,
+        proto::PreflightStatus::Ok,
+        "{:?}",
+        item("quota:claude")
+    );
+    assert_eq!(item("quota:claude").detail, "answered a one-word probe");
+    assert_eq!(item("quota:codex").status, proto::PreflightStatus::Warn);
+    assert!(item("quota:codex").detail.contains("[1310]"));
+    assert_eq!(item("quota:opencode").status, proto::PreflightStatus::Ok);
+    assert_eq!(item("quota:zcode").status, proto::PreflightStatus::Ok);
+
+    let args = std::fs::read_to_string(&answer_args).unwrap();
+    assert!(
+        args.contains("-p Reply with the single word OK. --tools"),
+        "{args}"
+    );
+    assert!(
+        args.contains("exec --sandbox read-only --skip-git-repo-check --ephemeral"),
+        "Codex's probe is read-only: {args}"
+    );
+    assert!(
+        args.contains("run Reply with the single word OK. --agent plan --pure"),
+        "OpenCode's probe uses its plan agent: {args}"
+    );
+    assert!(
+        args.contains("--disallowed-tools Bash Edit Write"),
+        "{args}"
+    );
+    let spent = std::fs::read_to_string(spent_args.expect("Codex's arg log")).unwrap();
+    assert_eq!(spent.lines().count(), 1, "{spent}");
 }
 
 #[tokio::test]
 async fn failed_start_probe_limits_zcode_from_the_start() {
     let r = rig().await;
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    let (_, spent_args) = probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Zcode));
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     wait_until("ZCode to be limited", || {
         r.run(run.run_id).limited == [proto::AgentKind::Zcode]
     })
     .await;
+    let spent = std::fs::read_to_string(spent_args.expect("ZCode's arg log")).unwrap();
+    assert_eq!(spent.lines().count(), 1, "{spent}");
     let item = r
         .run(run.run_id)
         .preflight
@@ -2085,8 +2206,7 @@ async fn failed_start_probe_limits_zcode_from_the_start() {
 async fn a_limit_with_no_other_worker_says_spawns_are_refused() {
     let r = rig().await;
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Zcode));
     let routine = r.ready(|s| s.workers.truncate(1));
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();

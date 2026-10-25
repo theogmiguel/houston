@@ -198,12 +198,21 @@ Houston learns a limit from a provider's own typed report:
 | ZCode | a stall probe, since it reports no turn end for a failed turn |
 | Cursor, Antigravity, Grok | none; they are refused as workers and reviewers |
 
-ZCode reports no usage limit, so Houston probes it: when a run whose workers include ZCode
-starts, and when a ZCode pane has been Working for 20 minutes without ending a turn, it runs
-one `zcode -p` request with the prompt "Reply with the single word OK." and no tools. A
-failed probe (a spent quota, a signed-out CLI, or no answer within 90 seconds) marks ZCode
-limited for the run; at the start it is also recorded as a warning on the run. Each probe
-sends that one prompt to your ZCode provider.
+Houston also confirms a provider's quota with one fixed headless request. Every probe sends
+only "Reply with the single word OK.", runs in Houston's own scratch directory and spends a
+little of that provider's plan quota:
+
+| Provider | Probe | When |
+| --- | --- | --- |
+| Claude | `claude -p "Reply with the single word OK." --tools ""` | run start |
+| Codex | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral --color never "Reply with the single word OK."` | run start; after a 20-minute Working stall on Windows |
+| OpenCode | `opencode run "Reply with the single word OK." --agent plan --pure` | run start |
+| ZCode | `zcode -p "Reply with the single word OK." --mode build --disallowed-tools "Bash Edit Write"` | run start; after a 20-minute Working stall |
+
+A failed probe (a spent quota, a signed-out CLI, or no answer within 90 seconds) marks that
+provider limited for the run, so later spawns use the next worker provider; at the start it is
+also recorded as a warning on the run. A probe answered at the start is recorded as an
+answered check, and a provider whose sign-in check already blocked is not probed.
 
 If the daemon restarts during a run, the run continues when the orchestrator pane is still
 running (a Linux daemon handover keeps it), or when the daemon is back before wrap-up and

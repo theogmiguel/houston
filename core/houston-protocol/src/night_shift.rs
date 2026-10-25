@@ -19,8 +19,8 @@ pub const NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES: u32 = 45;
 pub const NIGHT_SHIFT_MEMORY_FLOOR_MIB: u32 = 6 * 1024;
 /// Free disk below this blocks a start: each worker worktree builds its own target.
 pub const NIGHT_SHIFT_DISK_FLOOR_MIB: u32 = 20 * 1024;
-/// A ZCode pane that ends no turn for this long, with a failed quota probe, is limited.
-pub const NIGHT_SHIFT_ZCODE_STALL_MINUTES: u32 = 20;
+/// A Working pane that ends no turn for this long gets a quota probe.
+pub const NIGHT_SHIFT_STALL_MINUTES: u32 = 20;
 /// The ledger digest in a brief keeps at most this many entries.
 pub const NIGHT_SHIFT_DIGEST_ENTRIES_MAX: u32 = 200;
 /// One ledger entry's title; longer titles are refused.
