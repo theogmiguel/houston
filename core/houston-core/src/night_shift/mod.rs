@@ -95,15 +95,17 @@ pub fn fixer_prompt(
     format!(
         "Night shift: fix CI on pull request #{number}.\n\n\
          Failed checks: {checks}\n\
-         The pull request's head is {head}. No branch worktree is recorded for this pull \
-         request, so you start in the run's worktree, which is detached at the workspace's \
-         HEAD. Fetch and check out the pull request's branch here first (gh pr checkout \
-         {number}); do not rewrite published history.\n\n\
+         The pull request's head is {head}. You start in your own fresh worktree at the \
+         workspace's HEAD, so the run's own worktree stays untouched. Fetch the pull \
+         request's head with `git fetch origin pull/{number}/head` and create your fix \
+         branch from `FETCH_HEAD`; do not rewrite published history.\n\n\
          Last lines of the failing log:\n{excerpt}\n\n\
-         Find the cause, fix it and push one commit to the pull request's branch. Run the \
-         checks Houston runs on every pull request: {configured}. Then submit with \
-         pane_submit: the cause, the fix, the commit and each check's result. If you cannot \
-         push, submit with what you found instead of guessing."
+         Find the cause, fix it and push one commit to the pull request's head branch. Read \
+         its name with `gh pr view {number} --json headRefName` and push with \
+         `git push origin HEAD:<headRefName>`. Do not force-push. Run the checks Houston \
+         runs on every pull request: {configured}. Then submit with pane_submit: the cause, \
+         the fix, the commit and each check's result. If you cannot push, submit with what \
+         you found instead of guessing."
     )
 }
 
@@ -217,8 +219,12 @@ mod tests {
             "pull request #12",
             "core-checks, renderer-checks",
             "abc123",
-            "No branch worktree is recorded",
-            "gh pr checkout 12",
+            "own fresh worktree",
+            "git fetch origin pull/12/head",
+            "FETCH_HEAD",
+            "gh pr view 12 --json headRefName",
+            "git push origin HEAD:<headRefName>",
+            "Do not force-push",
             "test pty::resize_race ... FAILED",
             "cargo test -p houston-core",
             "pane_submit",

@@ -3282,9 +3282,9 @@ impl Daemon {
         }
     }
 
-    /// Starts a fixer pane under the run's orchestrator, in the run's worktree.
-    /// Every attempt counts towards `CI_FIXES_PER_PR`, a refused spawn included,
-    /// so a broken provider chain cannot loop all night.
+    /// Starts a fixer pane under the run's orchestrator in its own worktree, so the
+    /// run's worktree keeps its branch. Every attempt counts towards
+    /// `CI_FIXES_PER_PR`, a refused spawn included, so a broken chain cannot loop.
     #[allow(clippy::too_many_arguments)]
     fn night_ci_spawn_fixer(
         self: &Arc<Self>,
@@ -3366,7 +3366,10 @@ impl Daemon {
             None,
             false,
             None,
-            None,
+            Some(crate::worktrees::SpawnWorktree {
+                slug: format!("fix-pr-{number}-{}", fixes + 1),
+                branch: None,
+            }),
         );
         let session = match spawned {
             Ok(s) => s,
@@ -3389,8 +3392,8 @@ impl Daemon {
             &format!("Night shift: fixer started on PR #{number}"),
             &format!(
                 "CI on PR #{number} failed on {}. Houston started pane {} ({slug}) as its \
-                 fixer; it works in the run's worktree, checks out the pull request's branch \
-                 and pushes a fix commit.{cause}{substitute}",
+                 fixer; it works in its own worktree off the workspace HEAD, fetches the \
+                 pull request's head and pushes a fix commit to its head branch.{cause}{substitute}",
                 names_or_unknown(checks),
                 session.id
             ),

@@ -214,8 +214,10 @@ planned changes with the verifier's verdict and evidence. When CI fails, Houston
 asking the orchestrator: a failure on a test the ledger lists as flaky is re-run once by
 Houston, which records the re-run and tells the orchestrator. A failure on any other check, or
 the same flaky failure again, starts a fixer pane under the run's orchestrator. The fixer works
-in the run's worktree, fetches and checks out the pull request's branch, and is asked to push a
-fix commit, run the configured checks and report back through its normal handback. A pull
+in its own fresh worktree at the workspace's HEAD, so the run's own worktree stays on its
+branch; it fetches the pull request's head, branches from it, and is asked to push a fix commit
+to the pull request's head branch, run the configured checks and report back through its normal
+handback. A pull
 request gets at most two fixer panes and at most one live at a time; a refused spawn names its
 limit, and reaching the cap tells the orchestrator to take the failure itself.
 
