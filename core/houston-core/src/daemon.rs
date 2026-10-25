@@ -7226,11 +7226,15 @@ impl Daemon {
                 None,
             ));
         };
-        Self::refuse_night_shift_routine(
-            &row,
-            "routine_delete",
-            "its own settings, since a Night shift routine has no generic delete",
-        )?;
+        if row.kind == proto::RoutineKind::NightShift {
+            if let Some(run) = self.routine_runs.lock().expect("routine run lock").get(&id) {
+                bail!(
+                    "routine_delete refused: Night shift routine {id} has run {} in flight; \
+                     stop or wait for the run first (Routines ▸ Night shift)",
+                    run.run_id
+                );
+            }
+        }
         if row.revision != expected_revision {
             return Ok(Self::routine_refused(
                 Some(id),

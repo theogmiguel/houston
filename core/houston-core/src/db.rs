@@ -4508,16 +4508,27 @@ impl Db {
     }
 
     pub fn delete_routine(&self, id: u32) -> Result<bool> {
-        let conn = self.conn.lock().expect("db lock");
-        let changed = conn.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
-        conn.execute(
-            "DELETE FROM harness_routines WHERE routine_id = ?1",
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM night_entries WHERE run_id IN \
+             (SELECT run_id FROM night_runs WHERE routine_id = ?1)",
             rusqlite::params![id],
         )?;
-        conn.execute(
+        tx.execute(
+            "DELETE FROM night_runs WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
+        tx.execute(
             "DELETE FROM night_shift_settings WHERE routine_id = ?1",
             rusqlite::params![id],
         )?;
+        tx.execute(
+            "DELETE FROM harness_routines WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
+        let changed = tx.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
+        tx.commit()?;
         Ok(changed > 0)
     }
 

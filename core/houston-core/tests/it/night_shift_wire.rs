@@ -388,6 +388,27 @@ fn settings_rows(state: &Path, routine: u32) -> i64 {
     .unwrap()
 }
 
+fn run_rows(state: &Path, routine: u32) -> i64 {
+    let conn = rusqlite::Connection::open(state.join("test.db")).unwrap();
+    conn.query_row(
+        "SELECT COUNT(*) FROM night_runs WHERE routine_id = ?1",
+        [routine],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+fn entry_rows(state: &Path, routine: u32) -> i64 {
+    let conn = rusqlite::Connection::open(state.join("test.db")).unwrap();
+    conn.query_row(
+        "SELECT COUNT(*) FROM night_entries WHERE run_id IN \
+         (SELECT run_id FROM night_runs WHERE routine_id = ?1)",
+        [routine],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 // ---- S1 ----
 
 #[tokio::test]
@@ -502,25 +523,23 @@ async fn merge_output_needs_verify_and_app_qa() {
 }
 
 #[tokio::test]
-async fn delete_refuses_a_night_shift_routine() {
+async fn delete_is_refused_while_a_run_is_in_flight() {
     let r = rig().await;
-    let routine = r.create();
+    let routine = r.ready(|_| {});
     assert_eq!(settings_rows(r.state.path(), routine.id), 1);
-    let listed = match r.daemon.routine_list() {
-        proto::ServerMsg::Routines { routines, .. } => {
-            routines.into_iter().find(|x| x.id == routine.id).unwrap()
-        }
-        _ => unreachable!(),
-    };
-    assert_eq!(listed.kind, proto::RoutineKind::NightShift);
+    let listed = r.state().routine.expect("the routine exists");
+    let run = r.run_now(routine.id, 120);
     let err = r
         .daemon
         .routine_delete(routine.id, &listed.revision)
         .unwrap_err()
         .to_string();
     assert!(err.contains("routine_delete"), "{err}");
-    assert!(err.contains("Night shift"), "{err}");
+    assert!(err.contains(&format!("routine {}", routine.id)), "{err}");
+    assert!(err.contains(&format!("run {}", run.run_id)), "{err}");
+    assert!(err.contains("stop or wait for the run first"), "{err}");
     assert_eq!(settings_rows(r.state.path(), routine.id), 1);
+    assert_eq!(run_rows(r.state.path(), routine.id), 1);
     assert!(r.state().routine.is_some(), "nothing was deleted");
 
     let mut ws = common::connect_and_hello(r.addr, common::TOKEN).await;
@@ -537,12 +556,42 @@ async fn delete_refuses_a_night_shift_routine() {
             .await
             .expect("a reply to routine_delete");
         if let proto::ServerMsg::Error { message, context } = reply {
-            assert!(message.contains("routine_delete"), "{message}");
+            assert!(
+                message.contains("stop or wait for the run first"),
+                "{message}"
+            );
             assert_eq!(context.as_deref(), Some("night_shift"));
             break;
         }
     }
     assert!(r.state().routine.is_some(), "nothing was deleted");
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+}
+
+#[tokio::test]
+async fn delete_removes_the_ledger_when_no_run_is_in_flight() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r
+        .night(o, "plan", json!({ "title": "Keep the ledger" }))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+    wait_until("the run to settle", || !r.in_flight(routine.id)).await;
+    assert_eq!(settings_rows(r.state.path(), routine.id), 1);
+    assert_eq!(run_rows(r.state.path(), routine.id), 1);
+    assert_eq!(entry_rows(r.state.path(), routine.id), 1);
+
+    let listed = r.state().routine.expect("the routine exists");
+    r.daemon
+        .routine_delete(routine.id, &listed.revision)
+        .unwrap();
+    assert_eq!(settings_rows(r.state.path(), routine.id), 0);
+    assert_eq!(run_rows(r.state.path(), routine.id), 0);
+    assert_eq!(entry_rows(r.state.path(), routine.id), 0);
+    assert!(r.state().routine.is_none());
 }
 
 /// The generic routine verbs would desynchronise the routine row from its
