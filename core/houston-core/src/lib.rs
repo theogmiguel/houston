@@ -24,6 +24,7 @@ pub mod daemon;
 pub mod db;
 pub mod env_hygiene;
 pub mod exe_path;
+pub mod first_run_scan;
 #[doc(hidden)]
 pub mod fixture_dirs;
 pub mod frame_queue;
