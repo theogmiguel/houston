@@ -636,6 +636,7 @@ async fn a_turn_left_open_by_a_daemon_crash_ends_on_restore() {
                 name: "Bash".into(),
                 input: "{}".into(),
                 truncated: false,
+                summary: None,
             },
         ];
         for (seq, kind) in (1..).zip(open_turn) {

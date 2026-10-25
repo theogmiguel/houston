@@ -1,4 +1,4 @@
-# Wire protocol v152
+# Wire protocol v153
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -659,7 +659,15 @@ ThreadEvent        seq (per session, increasing; not reused within one daemon ru
 ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, text} (live only,
                    never stored) | assistant_message{message_id, text, truncated} (supersedes the
                    deltas with its `message_id`, which names one text block of one model message) |
-                   tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
+                   reasoning_delta{message_id, text?, estimated_tokens?} (v153: live only, never
+                   stored) | reasoning{message_id, text?, truncated?, duration_ms?,
+                   estimated_tokens?, redacted?} (v153: one reasoning block, superseding its
+                   deltas; `duration_ms` runs from the first delta to the block's end on the
+                   daemon's clock; `estimated_tokens` is the CLI's estimate of the block's size;
+                   `text` is empty because Claude's headless stream sends none) |
+                   tool_call{tool_use_id, name, input (the input JSON as text), truncated,
+                   summary?: ToolSummary} (v153: `summary` is computed from the whole input, so it
+                   survives the input cap; events stored earlier have none) |
                    tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
                    `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
                    turn_end{outcome: TurnOutcome, error?} | notice{text} |
@@ -669,8 +677,13 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    whole input's size; names and ids are cut at 256 bytes) |
                    approval_resolved{request_id, decision: ApprovalDecision, reason?} (v151;
                    `reason` is the denial message or why nobody answered).
-                   Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
-                   `truncated` says a cap applied
+                   Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB,
+                   reasoning 64 KiB; `truncated` says a cap applied
+ToolSummary        kind: ToolKind, target (path, command, pattern, URL or `server · tool`, cut at
+                   `THREAD_TOOL_TARGET_MAX_BYTES`, 512 bytes), added?, removed? (line counts of an
+                   edit or a write)
+ToolKind           read | search | web | command | edit | write | todo | question | plan | task |
+                   mcp | other
 TurnOutcome        completed | interrupted | error
 ApprovalDecision   allowed | denied | withdrawn (Claude ended the call, or Houston restarted,
                    before an answer; the tool did not run)
@@ -1440,6 +1453,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 153 | **Threads show their work log.** `ThreadEventKind` gains `reasoning` (stored, with duration and token estimate; any text cut at `THREAD_REASONING_MAX_BYTES`) and `reasoning_delta` (live only). `tool_call` gains `summary?: ToolSummary` (`ToolKind`, a target cut at `THREAD_TOOL_TARGET_MAX_BYTES`, edit line counts) computed before the input cap. `pane_read` of a thread adds no reasoning text. Claims v153 after v152; renumber at merge. |
 | 152 | **A conversation moves between thread and terminal views.** New `session_set_view {session, view}`, answered like a respawn and refused by name while the agent works. New `default_view_get {}` / `default_view_set {view}` and the `default_view {view}` broadcast. Claims v152 after PR 3's v151; renumber at merge. |
 | 151 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |
 | 150 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct, echoing `before_seq`), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |

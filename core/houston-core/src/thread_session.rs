@@ -392,6 +392,7 @@ impl StreamMapper {
                         name: str_field(block, "name"),
                         input,
                         truncated,
+                        summary: None,
                     });
                 }
                 _ => {}

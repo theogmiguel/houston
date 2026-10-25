@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 152;
+pub const PROTOCOL_VERSION: u32 = 153;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1590,6 +1590,9 @@ pub const THREAD_HISTORY_PAGE_MAX: u32 = 500;
 pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
 pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
+/// A tool summary's target; a full command or URL stays in the tool's input.
+pub const THREAD_TOOL_TARGET_MAX_BYTES: usize = 512;
+pub const THREAD_REASONING_MAX_BYTES: usize = 65_536;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
 /// Larger than a tool card's cap: the user approves this input, so it should be readable.
 pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
@@ -1626,11 +1629,43 @@ pub enum ThreadEventKind {
         #[serde(default)]
         truncated: bool,
     },
+    /// Live only, never stored, like `AssistantDelta`.
+    ReasoningDelta {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        /// The CLI's running estimate of the block's size.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+    },
+    /// One reasoning block. Claude's headless stream sends no reasoning text, so `text` is
+    /// empty unless a documented source provides it; `redacted` blocks never carry text.
+    Reasoning {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        truncated: bool,
+        /// From the block's first delta to its end, on the daemon's clock.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        duration_ms: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+        #[serde(default)]
+        redacted: bool,
+    },
     ToolCall {
         tool_use_id: String,
         name: String,
         input: String,
         truncated: bool,
+        /// Computed from the whole input, so it survives the input cap.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        summary: Option<ToolSummary>,
     },
     ToolResult {
         tool_use_id: String,
@@ -1667,6 +1702,40 @@ pub enum ThreadEventKind {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         reason: Option<String>,
     },
+}
+
+/// What a tool call acts on, for its one-line row and the turn's counts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ToolSummary {
+    pub kind: ToolKind,
+    /// A path, command, pattern, URL or `server · tool`, cut at `THREAD_TOOL_TARGET_MAX_BYTES`.
+    pub target: String,
+    /// Line counts of an edit or a write.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub added: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Read,
+    Search,
+    Web,
+    Command,
+    Edit,
+    Write,
+    Todo,
+    Question,
+    Plan,
+    Task,
+    Mcp,
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -7717,6 +7786,60 @@ mod tests {
             events,
             r#"{"type":"thread_events","session":3,"events":[{"seq":7,"at_ms":1,"kind":{"type":"turn_end","outcome":"interrupted","error":null}}]}"#
         );
+    }
+
+    #[test]
+    fn work_log_events_keep_their_wire_shape() {
+        let reasoning = serde_json::to_string(&ThreadEventKind::Reasoning {
+            message_id: "m1".into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms: Some(14_000),
+            estimated_tokens: Some(812),
+            redacted: false,
+        })
+        .unwrap();
+        assert_eq!(
+            reasoning,
+            r#"{"type":"reasoning","message_id":"m1","text":"","truncated":false,"duration_ms":14000,"estimated_tokens":812,"redacted":false}"#
+        );
+        let call = serde_json::to_string(&ThreadEventKind::ToolCall {
+            tool_use_id: "t1".into(),
+            name: "Edit".into(),
+            input: "{".into(),
+            truncated: true,
+            summary: Some(ToolSummary {
+                kind: ToolKind::Edit,
+                target: "src/a.rs".into(),
+                added: Some(3),
+                removed: Some(1),
+            }),
+        })
+        .unwrap();
+        assert_eq!(
+            call,
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Edit","input":"{","truncated":true,"summary":{"kind":"edit","target":"src/a.rs","added":3,"removed":1}}"#
+        );
+        let stored: ThreadEventKind = serde_json::from_str(
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Read","input":"{}","truncated":false}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(stored, ThreadEventKind::ToolCall { summary: None, .. }),
+            "events stored before v153 have no summary"
+        );
+        let block: ThreadEventKind =
+            serde_json::from_str(r#"{"type":"reasoning","message_id":"m2"}"#).unwrap();
+        assert!(matches!(
+            block,
+            ThreadEventKind::Reasoning {
+                duration_ms: None,
+                estimated_tokens: None,
+                redacted: false,
+                truncated: false,
+                ..
+            }
+        ));
     }
 
     #[test]

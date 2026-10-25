@@ -451,7 +451,9 @@ impl Daemon {
                     None => format!("[permission {decision:?}]"),
                 },
                 proto::ThreadEventKind::UserMessage { .. }
-                | proto::ThreadEventKind::AssistantDelta { .. } => continue,
+                | proto::ThreadEventKind::AssistantDelta { .. }
+                | proto::ThreadEventKind::ReasoningDelta { .. }
+                | proto::ThreadEventKind::Reasoning { .. } => continue,
             };
             out.extend(text.lines().map(str::to_string));
         }
