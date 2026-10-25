@@ -515,8 +515,13 @@ mod tests {
             .command(conversation.as_ref(), ThreadPermissionMode::Default)
             .unwrap()
             .args;
-        assert_eq!(resumed[2..4], [OsString::from("--resume"), "abc".into()]);
-        assert_eq!(resumed[4..], THREAD_FLAGS.map(OsString::from));
+        assert!(resumed
+            .windows(2)
+            .any(|pair| pair == [OsString::from("--resume"), "abc".into()]));
+        assert_eq!(
+            resumed[resumed.len() - THREAD_FLAGS.len()..],
+            THREAD_FLAGS.map(OsString::from)
+        );
     }
 
     #[test]

@@ -223,12 +223,15 @@
     "three new protocol messages; the Default view settings row is on the lazy",
     "Settings chunk.",
     "",
+    "Re-cut against 954,726 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the Changes panel and the app shell listen for a thread's Open diff request and",
+    "select that file; the work log itself loads with the thread pane.",
+    "",
     "Re-cut against 954,798 bytes (one boot chunk, Windows build) with the same small headroom:",
-    "the Changes panel and the app shell listen for a thread's Open diff request and select",
-    "that file, and the WSL route and refusal pattern of thread_answer join the boot path;",
-    "the work log and the question and plan cards load with the thread pane."
+    "the WSL route and refusal pattern of thread_answer join the boot path; the question and",
+    "plan cards load with the thread pane."
   ],
-  "maxBootBytes": 955000,
+  "maxBootBytes": 954992,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
