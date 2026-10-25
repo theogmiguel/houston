@@ -93,6 +93,11 @@ fn healthy_facts() -> Facts {
             hooks_on: true,
             cli_present: true,
             rea: Some(true),
+            logged_in: Some(true),
+            identity: Some(format!(
+                "{}@example.com",
+                houston_core::agent_hooks::provider_slug(provider)
+            )),
         })
         .collect(),
         machine: MachineFacts {
@@ -1567,6 +1572,50 @@ async fn blocking_preflight_refuses_run() {
         panic!("routine_runs_list answers RoutineRuns");
     };
     assert_eq!(runs[0].status, proto::RoutineRunStatus::EngineRefused);
+}
+
+/// A provider whose local files show a signed-out CLI blocks a Run now and
+/// names the command that fixes it.
+#[tokio::test]
+async fn a_signed_out_provider_blocks_run_now() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let mut facts = healthy_facts();
+    for provider in &mut facts.providers {
+        provider.logged_in = Some(true);
+        provider.identity = Some("dev@example.com".into());
+    }
+    facts
+        .providers
+        .iter_mut()
+        .find(|p| p.provider == proto::AgentKind::Claude)
+        .expect("the fixture lists Claude")
+        .logged_in = Some(false);
+    r.daemon.set_night_shift_facts_for_test(Some(facts));
+    let before = r.daemon.list().len();
+    let run = r.run_now(routine.id, 120);
+    assert_eq!(run.phase, proto::NightRunPhase::Refused);
+    assert_eq!(run.session_id, None);
+    assert_eq!(r.daemon.list().len(), before, "no pane opened");
+    let item = run
+        .preflight
+        .iter()
+        .find(|i| i.id == "signin:claude")
+        .expect("Claude's sign-in item");
+    assert_eq!(item.status, proto::PreflightStatus::Block, "{item:?}");
+    assert!(
+        item.detail.contains("run `claude` and sign in"),
+        "{}",
+        item.detail
+    );
+    assert!(
+        run.stop_detail
+            .as_deref()
+            .is_some_and(|d| d.contains("signin:claude")),
+        "the refusal names the blocking item: {:?}",
+        run.stop_detail
+    );
+    assert!(!r.in_flight(routine.id));
 }
 
 /// A pane that cannot be opened leaves a refused run naming why, not a run

@@ -738,16 +738,47 @@ impl Daemon {
                     .any(|s| s.name.eq_ignore_ascii_case("rea"))
             })
         };
+        // Sign-in reads are bounded file reads; the identities carry no token.
+        let login = home.as_ref().map(|home| {
+            let mut profiles = Vec::new();
+            for (agent, slug) in [
+                (proto::AgentKind::Claude, "claude"),
+                (proto::AgentKind::Codex, "codex"),
+            ] {
+                match self.db.list_agent_profiles(slug) {
+                    Ok(rows) => {
+                        profiles.extend(rows.into_iter().map(|r| crate::cli_accounts::ProfileDir {
+                            id: r.id,
+                            agent,
+                            config_dir: crate::agent_accounts::expand_tilde(
+                                &r.config_dir,
+                                &home.home,
+                            ),
+                        }))
+                    }
+                    Err(e) => tracing::warn!("listing {slug} agent profiles: {e:#}"),
+                }
+            }
+            crate::cli_accounts::read_all(&self.env(), home, &profiles)
+        });
         let providers = preflight::providers_of(s)
             .into_iter()
-            .map(|provider| preflight::ProviderFacts {
-                provider,
-                hooks_on: hooks
-                    .iter()
-                    .any(|h| h.provider == provider && h.enabled && h.installed),
-                cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
-                    || self.cli_presence(provider).present,
-                rea: rea(provider),
+            .map(|provider| {
+                let (logged_in, identity) = login
+                    .as_ref()
+                    .map(|rows| preflight::login_fact(rows, provider))
+                    .unwrap_or((None, None));
+                preflight::ProviderFacts {
+                    provider,
+                    hooks_on: hooks
+                        .iter()
+                        .any(|h| h.provider == provider && h.enabled && h.installed),
+                    cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
+                        || self.cli_presence(provider).present,
+                    rea: rea(provider),
+                    logged_in,
+                    identity,
+                }
             })
             .collect();
         let path = self.env().var("PATH");

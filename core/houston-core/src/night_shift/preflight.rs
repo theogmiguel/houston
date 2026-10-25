@@ -1,8 +1,8 @@
 //! Preflight: what blocks or warns before a run starts, from facts the daemon
 //! and the machine report. Evaluation is pure; probes read the platform.
 use houston_protocol::{
-    AgentKind, NightShiftSettings, NightWindow, PreflightItem, PreflightStatus,
-    NIGHT_SHIFT_DISK_FLOOR_MIB, NIGHT_SHIFT_MEMORY_FLOOR_MIB,
+    AgentAccountIdentity, AgentKind, AgentSignIn, NightShiftSettings, NightWindow, PreflightItem,
+    PreflightStatus, NIGHT_SHIFT_DISK_FLOOR_MIB, NIGHT_SHIFT_MEMORY_FLOOR_MIB,
 };
 
 use super::settings::{clock_label, minutes_between};
@@ -27,6 +27,46 @@ pub struct ProviderFacts {
     /// Whether its MCP configuration has a server named `rea`; `None` when
     /// Houston cannot read that configuration.
     pub rea: Option<bool>,
+    /// Whether its local files show a sign-in; `None` when Houston cannot tell
+    /// for this provider.
+    pub logged_in: Option<bool>,
+    /// The identifier those files carry (an email, "API key" or nothing);
+    /// never a token.
+    pub identity: Option<String>,
+}
+
+/// One provider's sign-in state from the identities Houston read. Signed out
+/// only when every readable account says so; unknown when any is inconclusive.
+pub fn login_fact(
+    rows: &[AgentAccountIdentity],
+    provider: AgentKind,
+) -> (Option<bool>, Option<String>) {
+    let mut identity = None;
+    let mut signed_in = false;
+    let mut signed_out = false;
+    let mut unknown = false;
+    let mut seen = false;
+    for row in rows.iter().filter(|r| r.agent == provider) {
+        seen = true;
+        match row.sign_in {
+            AgentSignIn::SignedIn => {
+                signed_in = true;
+                if identity.is_none() {
+                    identity = row.identity.clone();
+                }
+            }
+            AgentSignIn::SignedOut => signed_out = true,
+            AgentSignIn::Unknown => unknown = true,
+        }
+    }
+    let logged_in = if signed_in {
+        Some(true)
+    } else if !seen || unknown || !signed_out {
+        None
+    } else {
+        Some(false)
+    };
+    (logged_in, identity)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +197,11 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
                 format!("{slug} is installed and its hooks are on"),
             ));
         }
+        if f.is_some_and(|f| f.cli_present) {
+            let logged_in = f.and_then(|f| f.logged_in);
+            let identity = f.and_then(|f| f.identity.clone());
+            out.push(sign_in_item(provider, logged_in, identity.as_deref()));
+        }
     }
     let m = &facts.machine;
     out.push(match m.on_battery {
@@ -220,6 +265,48 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
     out.extend(restart_items(m.reboot_pending, m.active_hours, run));
     out.extend(super::awake::inhibitor_item(m.inhibitor_available));
     out
+}
+
+/// What the provider's own local sign-in files say. The detail names the
+/// identifier only; Houston never reads or shows a token.
+fn sign_in_item(
+    provider: AgentKind,
+    logged_in: Option<bool>,
+    identity: Option<&str>,
+) -> PreflightItem {
+    let slug = crate::agent_hooks::provider_slug(provider);
+    match logged_in {
+        Some(true) => item(
+            format!("signin:{slug}"),
+            PreflightStatus::Ok,
+            "Sign-in",
+            match identity {
+                Some(identity) => format!("signed in as {identity}"),
+                None => format!("signed in; {slug} stores no readable identifier"),
+            },
+        ),
+        Some(false) => item(
+            format!("signin:{slug}"),
+            PreflightStatus::Block,
+            "Sign-in",
+            format!("{slug} is signed out, which blocks this run: run `{slug}` and sign in"),
+        ),
+        None if provider == AgentKind::Zcode => item(
+            format!("signin:{slug}"),
+            PreflightStatus::Warn,
+            "Sign-in",
+            "could not tell whether zcode is signed in; the quota probe decides".into(),
+        ),
+        None => item(
+            format!("signin:{slug}"),
+            PreflightStatus::Warn,
+            "Sign-in",
+            format!(
+                "could not tell whether {slug} is signed in; Houston reads only its local \
+                 sign-in files, so start it once and sign in if it asks"
+            ),
+        ),
+    }
 }
 
 /// An installed-app competitor is analysed with REA by the scouts, which run
@@ -564,6 +651,11 @@ mod tests {
                     hooks_on: true,
                     cli_present: true,
                     rea: Some(provider == AgentKind::Claude),
+                    logged_in: Some(true),
+                    identity: Some(format!(
+                        "{}@example.com",
+                        crate::agent_hooks::provider_slug(provider)
+                    )),
                 })
                 .collect(),
             machine,
@@ -590,11 +682,143 @@ mod tests {
         s
     }
 
+    fn all_provider_settings() -> NightShiftSettings {
+        let mut s = settings();
+        s.reviewer = Some(houston_protocol::NightAgent {
+            provider: AgentKind::Codex,
+            model: None,
+        });
+        s.workers = [
+            AgentKind::Opencode,
+            AgentKind::Antigravity,
+            AgentKind::Zcode,
+        ]
+        .into_iter()
+        .map(|provider| houston_protocol::NightAgent {
+            provider,
+            model: None,
+        })
+        .collect();
+        s
+    }
+
+    fn all_provider_facts(logged_in: Option<bool>) -> Facts {
+        Facts {
+            orchestration_enabled: true,
+            providers: providers_of(&all_provider_settings())
+                .into_iter()
+                .map(|provider| ProviderFacts {
+                    provider,
+                    hooks_on: true,
+                    cli_present: true,
+                    rea: None,
+                    logged_in,
+                    identity: (logged_in == Some(true)).then(|| "dev@example.com".to_string()),
+                })
+                .collect(),
+            machine: healthy(),
+        }
+    }
+
     fn blocks(items: &[PreflightItem]) -> Vec<&PreflightItem> {
         items
             .iter()
             .filter(|i| i.status == PreflightStatus::Block)
             .collect()
+    }
+
+    #[test]
+    fn signed_in_providers_report_the_identity_label() {
+        let s = all_provider_settings();
+        let items = evaluate(&s, &all_provider_facts(Some(true)), &s.window);
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            assert_eq!(item.status, PreflightStatus::Ok, "{item:?}");
+            assert_eq!(item.detail, "signed in as dev@example.com");
+        }
+    }
+
+    #[test]
+    fn a_signed_out_provider_blocks_the_run_and_names_its_fix() {
+        let s = all_provider_settings();
+        let f = all_provider_facts(Some(false));
+        let items = evaluate(&s, &f, &s.window);
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            assert_eq!(item.status, PreflightStatus::Block, "{item:?}");
+            assert!(
+                item.detail.contains(&format!("run `{slug}` and sign in")),
+                "{item:?}"
+            );
+            assert!(
+                blocks(&items).iter().any(|b| b.id == item.id),
+                "{slug} is in the blocking list"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_sign_in_warns_and_zcode_names_the_quota_probe() {
+        let s = all_provider_settings();
+        let items = evaluate(&s, &all_provider_facts(None), &s.window);
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        }
+        let zcode = items
+            .iter()
+            .find(|i| i.id == "signin:zcode")
+            .expect("ZCode has a sign-in item");
+        assert_eq!(
+            zcode.detail,
+            "could not tell whether zcode is signed in; the quota probe decides"
+        );
+    }
+
+    #[test]
+    fn login_fact_reads_accounts_of_every_provider() {
+        let row = |agent, sign_in, identity: Option<&str>| houston_protocol::AgentAccountIdentity {
+            agent,
+            profile_id: None,
+            sign_in,
+            identity: identity.map(str::to_string),
+            detail: None,
+            providers: Vec::new(),
+            reason: None,
+            verified: true,
+        };
+        let rows = vec![
+            row(
+                AgentKind::Claude,
+                AgentSignIn::SignedIn,
+                Some("dev@example.com"),
+            ),
+            row(AgentKind::Claude, AgentSignIn::SignedOut, None),
+            row(AgentKind::Codex, AgentSignIn::SignedOut, None),
+            row(AgentKind::Opencode, AgentSignIn::Unknown, None),
+            row(AgentKind::Zcode, AgentSignIn::Unknown, None),
+        ];
+        assert_eq!(
+            login_fact(&rows, AgentKind::Claude),
+            (Some(true), Some("dev@example.com".into()))
+        );
+        assert_eq!(login_fact(&rows, AgentKind::Codex), (Some(false), None));
+        assert_eq!(login_fact(&rows, AgentKind::Opencode), (None, None));
+        assert_eq!(login_fact(&rows, AgentKind::Zcode), (None, None));
+        assert_eq!(login_fact(&rows, AgentKind::Antigravity), (None, None));
     }
 
     /// The restart warning judges the window the run will cover: an

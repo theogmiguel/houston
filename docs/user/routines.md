@@ -155,10 +155,15 @@ its limit and actual value; **Start** stays disabled, naming how many items to f
 item blocks:
 
 - agent spawning is off (Settings ▸ Agents ▸ Orchestration);
-- a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks);
+- a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks), or its
+  local sign-in files show it is signed out; the item names the CLI to run and sign in;
 - the machine is on battery;
 - less than 6 GiB of memory or 20 GiB of disk is free;
 - no check is configured.
+
+Preflight reads each chosen provider's local sign-in files and reports the identifier they
+carry, never a token. When those files cannot prove either way it warns instead of blocking;
+ZCode keeps no local sign-in marker, so its item says the quota probe decides.
 
 On Windows, preflight warns when a restart is pending or when the run's own window (Run
 now's duration, or the nightly window) reaches outside Windows Update active hours. On Linux
