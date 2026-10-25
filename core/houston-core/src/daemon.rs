@@ -1538,6 +1538,7 @@ mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
 mod merge_queue_runner;
+mod pane_notes;
 mod provider_deny;
 mod remote;
 mod remote_phone;
@@ -1724,6 +1725,7 @@ pub struct Daemon {
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
+    notes: Mutex<HashMap<u32, proto::PaneNote>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
     // Listing reads checkout identity from spawn or from here and never runs git: a hello
     // waited on two git processes per session. `None` asks the HEAD watcher to resolve it.
@@ -3365,6 +3367,7 @@ impl Daemon {
         }
         let tag_registry: BTreeMap<u32, proto::TagInfo> =
             db.tag_list()?.into_iter().map(|t| (t.id, t)).collect();
+        let notes: HashMap<u32, proto::PaneNote> = db.session_notes()?.into_iter().collect();
         let adopted_ids: HashSet<u32> = adopted
             .as_ref()
             .map(|v| v.iter().map(|(s, _)| s.info.id).collect())
@@ -3514,6 +3517,7 @@ impl Daemon {
             next_id: AtomicU32::new(next_id),
             sessions: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
+            notes: Mutex::new(notes),
             dead: Mutex::new(dead),
             checkouts: Mutex::new(HashMap::new()),
             dead_geometry: Mutex::new(HashMap::new()),
@@ -5462,6 +5466,7 @@ impl Daemon {
             }
         });
         let info = proto::SessionInfo {
+            note: None,
             title_source,
             checkout: None,
             activity: None,
@@ -9200,6 +9205,7 @@ impl Daemon {
             Vec::new()
         });
         for info in out.iter_mut() {
+            info.note = self.note_of(info.id);
             info.task = bindings
                 .iter()
                 .find(|binding| binding.run.session_id == Some(info.id))
@@ -10121,9 +10127,7 @@ impl Daemon {
             if let Err(error) = self.reclaim_previous_workload(old_id) {
                 *old.recovery_notice.lock().expect("recovery notice lock") =
                     Some(format!("Session {old_id} replacement deferred: {error:#}"));
-                self.broadcast_control(&proto::ServerMsg::SessionUpdated {
-                    info: old.snapshot_info(),
-                });
+                self.broadcast_session_updated(old.snapshot_info());
                 return Err(error);
             }
             // The drained reader may have supplied a final shell cwd. Commit its
@@ -10489,6 +10493,7 @@ impl Daemon {
         self.voice.forget_session(old_id);
         self.frame_taps.forget_session(old_id);
         self.forget_session_visibility(old_id);
+        self.forget_note(old_id);
         self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: old_id });
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
@@ -10742,7 +10747,7 @@ impl Daemon {
             state: proto::SessionState::Sleeping,
             exit_code: None,
         });
-        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        self.broadcast_session_updated(info);
         self.write_run_state();
         Ok(())
     }
@@ -11991,6 +11996,7 @@ impl Daemon {
             .and_then(shell_startup_provider)
             .filter(|_| shellint_token.is_some());
         let mut info = proto::SessionInfo {
+            note: None,
             title_source,
             checkout: None,
             activity: None,
@@ -12344,6 +12350,7 @@ impl Daemon {
             self.record_launch_conversation(id, resumed, conversation_link);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
+            created.note = self.note_of(id);
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
         }
         if let Some(token_file) = shellint_token_file {
@@ -12653,6 +12660,7 @@ impl Daemon {
             let id = self.next_id.fetch_add(1, Ordering::Relaxed);
             let title = self.next_codename();
             let mut info = proto::SessionInfo {
+                note: None,
                 title_source: Default::default(),
                 checkout: None,
                 activity: None,
@@ -13931,7 +13939,7 @@ impl Daemon {
                     state: proto::SessionState::Sleeping,
                     exit_code: None,
                 });
-                self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+                self.broadcast_session_updated(info);
             }
             self.write_run_state();
             Ok(())
@@ -13966,7 +13974,7 @@ impl Daemon {
                     })
                 };
                 if let Some(info) = updated {
-                    self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+                    self.broadcast_session_updated(info);
                 }
                 Err(error)
             }
@@ -14394,6 +14402,7 @@ impl Daemon {
             self.frame_taps.forget_session(id);
             self.voice.forget_session(id);
             self.forget_session_visibility(id);
+            self.forget_note(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             if let Some(parent) = session.info.spawned_by {
                 self.broadcast_live_children(parent);
@@ -14410,6 +14419,7 @@ impl Daemon {
             self.remove_persisted_scrollback(id);
             self.voice.forget_session(id);
             self.forget_session_visibility(id);
+            self.forget_note(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
@@ -27678,6 +27688,7 @@ mod kill_teardown_tests {
         // exists without a local process: the SSH stub keeps the test off the network.
         let project = state.display().to_string();
         let info = proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -28102,6 +28113,7 @@ mod shell_restore_bookkeeping_tests {
 
     fn stub_child(project: &str, id: u32) -> proto::SessionInfo {
         proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -28369,6 +28381,7 @@ mod force_respawn_guard_tests {
         // exists without a local process: the SSH stub keeps the test off the network.
         let project = state.display().to_string();
         let info = proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,

@@ -25,7 +25,8 @@ named.
 | **input episode** | One durable unresolved child input request, identified by an opaque id distinct from the worker's request number. Questions and actual permission prompts start parent-owned; only the operator may approve permissions. |
 | **permission denial** | `pane_deny` targets a pending permission by child and episode id, sends a verified provider denial, and leaves it pending until provider evidence resolves it. |
 | **escalation** | Transfer of an unresolved child request to the user, with a displayed reason. Explicit through `pane_escalate`, or automatic at authoritative parent turn end or parent unavailability. |
-| **card** | A rail item representing one grid, with its status, unread state and optional checkout, pull request, diff, task, agent, context and tag details. | `rail/railCardModel.ts` |
+| **card** | A rail item representing one grid, with its status, unread state and optional checkout, pull request, diff, task, agent, context, note and tag details. | `rail/railCardModel.ts` |
+| **pane note** | The one line, with an optional phase, that a pane's agent writes about its own work with `pane_note`; the card shows its grid's newest. It is reported status, written by the agent, never read from the terminal. | `daemon/pane_notes.rs` |
 | **surface** | A tab in the side panel for Browser, Files, Diff, Pull request or Linked pull requests. Grid layouts do not own these surfaces. | `scmPanel.ts::SurfaceKind` |
 | **headless child** | A live child without a separate grid cell. Its PTY remains available through the orchestrator's roster. |
 | **side panel** | A per-workspace host for pinned Source control and Files tabs and closable overview and browser tabs. Its layout is renderer-local. |

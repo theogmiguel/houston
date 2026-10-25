@@ -888,6 +888,11 @@ function GridRenameRow({ cardMode, selected, initial, onSubmit, onCancel }: {
   );
 }
 
+// The rail card's Clear on a pane note; absent while no daemon is connected.
+function noteClearer(client: HoustonClient | null | undefined): ((session: number) => void) | undefined {
+  return client ? (session) => client.sessionNoteClear(session) : undefined;
+}
+
 function RailTree({
   treeLabel,
   activeFilterCount,
@@ -923,6 +928,7 @@ function RailTree({
   onRenameSubmit,
   onRenameCancel,
   onOpenInspector,
+  onClearNote,
   checkoutBranches,
   railDiffByDir,
   railPrByDir,
@@ -1004,6 +1010,7 @@ function RailTree({
   onToggleGridUnread: (gridId: string, signature: string, unread: boolean) => void;
   isGridUnread: (gridId: string, agents: ReturnType<typeof buildRailCard>['agents']) => { unread: boolean; signature: string };
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
+  onClearNote?: (session: number) => void;
 }): React.JSX.Element {
   const [expandedGrids, setExpandedGrids] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
@@ -1100,6 +1107,7 @@ function RailTree({
           onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
           menuOpen={gridMenuOpen?.path === workspace.path && gridMenuOpen.gridId === grid.id}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+          onClearNote={onClearNote}
         />
       </Suspense>
     )
@@ -1912,6 +1920,7 @@ export function Sidebar({
             activeFilterCount={activeFilterCount}
             onSshConnect={onSshConnect}
             onOpenInspector={onOpenInspector}
+            onClearNote={noteClearer(railClient)}
             checkoutBranches={checkoutBranches}
             railDiffByDir={railDiffByDir}
             railPrByDir={railPrByDir}

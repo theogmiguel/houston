@@ -807,6 +807,10 @@ export class HoustonClient {
     this.send({ type: 'git_worktree_create', dir, name, base })
   }
 
+  sessionNoteClear(session: number): void {
+    this.send({ type: 'session_note_clear', session })
+  }
+
   gitWorktreeRemove(dir: string, path: string, force: boolean): void {
     this.send({ type: 'git_worktree_remove', dir, path, force })
   }

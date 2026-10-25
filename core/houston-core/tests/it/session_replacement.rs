@@ -44,6 +44,7 @@ fn provider() {
 
 fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,

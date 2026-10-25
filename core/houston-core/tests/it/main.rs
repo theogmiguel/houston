@@ -81,6 +81,7 @@ mod orchestration_screen_wire;
 mod orchestration_wire;
 mod orphan_survival_process;
 mod pane_name_wire;
+mod pane_note_wire;
 mod pane_read_source_wire;
 mod pane_title_wire;
 mod perf_smoke;

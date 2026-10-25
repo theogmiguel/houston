@@ -140,11 +140,12 @@ const PANE_ROUTING: &str = concat!(
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
-    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`, `pane_pr_enqueue`, `pane_pr_dequeue`. ",
+    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`, `pane_pr_enqueue`, `pane_pr_dequeue`, `pane_note`. ",
     "A worker sends `pane_report{kind: progress|question|blocked, body, request_id}` during work; question/blocked stays open until its recipient calls `pane_reply{message_id,text}`. The worker then uses `pane_wait` without a session, including without children or spawn authority. These messages do not finish a request; only `pane_submit` does. Parents resolve routine questions within existing authority first. When a child input episode needs a user decision, call `pane_escalate{child,reason}`; prose alone does not escalate. A reply does not grant extra permissions or automatically approve a CLI prompt. Reports/replies allow 8000 characters and 64 outstanding messages per worker; use a stable `client_request_id` for retry. Siblings — live children of the same parent — talk directly with `pane_message{to: role, body}` while both have an open request; `workspace_info.siblings` lists them, the message arrives in the recipient's `pane_wait`, and the parent receives no copy. ",
     "For reusable workers `pane_prompt{mode: queue|steer|restart}` defaults to queue and returns an accepted instruction id and current state, not proof of completion or delivery. Use `pane_instruction_list/get/cancel/resume` for current durable control state: queued, held_after_recovery, delivered, cancelled or uncertain. After restart recovery, held work requires explicit resume; never resume uncertain work. Cancel/resume retries report current truth. Steer delivery and adoption are distinct: adoption starts a separate request round. Restart requires verified interrupt-to-idle (Codex Escape); Claude, Antigravity, OpenCode and ZCode restart is refused. Preserve partial results. Needs-input requires an explicit decision, not paste. ",
     "After receiving a completed child's result, preserve its needed output and artifacts, then close it with `pane_kill` (or `hs-pane kill`) as soon as no further task is planned. Before your final response or handback, close every completed child you no longer need. A reusable flag is not a reason to leave a completed pane open; keep one only for intentional assigned follow-up work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
+    "At meaningful steps, post one line on your pane's rail card with `pane_note{text, phase?}` (at most 512 bytes; it replaces your last note). ",
     "When a PR is ready to land, add it to the workspace merge queue with `pane_pr_enqueue{pr, depends_on?}`; the user merges the entry that goes next. You cannot merge. ",
     "Questions and every actual permission prompt route to the parent first in all launch modes. Parent-owned input stays gray and has an actionable needs_input inbox row. Answer routine questions within authority with pane_reply or pane_send_keys. The parent NEVER approves permissions: every pending permission episode refuses ALL pane_send_keys, including n/Escape. Use pane_deny{child,episode_id} for verified provider denial or pane_escalate{child,reason} for the operator's decision; only the operator may approve. Denial stays pending until provider evidence. Escalation transfers ownership to User with amber notifications. Bare Codex Auto PermissionRequest is non-alerting approval activity. Operator intervention is reported to the parent. Accepted Stop/ACP turn end or parent close/death escalates unanswered input; quiet-settle never does. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
@@ -459,6 +460,29 @@ impl ToolProvider for OrchestrationTools {
                     Ok(ToolOutput::structured(
                         json!({"dequeued": true, "pr": target}),
                     ))
+                }
+                "pane_note" => {
+                    let text = opt_str(args, "text");
+                    let clear = args.get("clear").and_then(Value::as_bool).unwrap_or(false);
+                    let phase = match args.get("phase") {
+                        None | Some(Value::Null) => None,
+                        Some(value) => Some(
+                            serde_json::from_value::<proto::PanePhase>(value.clone()).map_err(
+                                |_| {
+                                    ToolError(format!(
+                                        "phase must be todo, in_progress, in_review or done; got {value}"
+                                    ))
+                                },
+                            )?,
+                        ),
+                    };
+                    let value = tokio::task::spawn_blocking(move || {
+                        daemon.pane_note_request(caller, text.as_deref(), phase, clear)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("pane note task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(value))
                 }
                 "pane_pr_unwatch" => {
                     let count =
@@ -918,6 +942,19 @@ impl OrchestrationTools {
                 annotations: local(Annotations::local_write()),
             },
             ToolSpec {
+                name: "pane_note".into(),
+                title: "Post a status note".into(),
+                description: "Show one line (at most 512 bytes) and an optional phase on this pane's rail card, replacing your last note; clear: true removes it.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    // JSON Schema maxLength counts code points while the daemon counts
+                    // bytes, so the limit is stated here and enforced by the daemon.
+                    "text":{"type":"string","minLength":1,"description":format!("One line, at most {} bytes of UTF-8; the daemon refuses longer notes and non-ASCII characters count several bytes each.", proto::PANE_NOTE_MAX_BYTES)},
+                    "phase":{"type":"string","enum":["todo","in_progress","in_review","done"]},
+                    "clear":{"type":"boolean"}
+                },"additionalProperties":false}),
+                annotations: local(Annotations::local_write()),
+            },
+            ToolSpec {
                 name: "pane_spawn".into(),
                 title: "Spawn an agent pane".into(),
                 description: spawn_description,
@@ -1246,6 +1283,7 @@ mod tests {
                 "pane_pr_unwatch",
                 "pane_pr_enqueue",
                 "pane_pr_dequeue",
+                "pane_note",
                 "pane_spawn",
                 "pane_list",
                 "pane_get",
@@ -1409,6 +1447,7 @@ mod tests {
                     | "pane_pr_unwatch"
                     | "pane_pr_enqueue"
                     | "pane_pr_dequeue"
+                    | "pane_note"
                     | "pane_deny"
                     | "pane_escalate"
                     | "pane_instruction_cancel"

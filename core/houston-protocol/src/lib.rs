@@ -2363,6 +2363,35 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
+    /// The status line the pane's agent last wrote with `pane_note`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub note: Option<PaneNote>,
+}
+
+/// A note longer than this is refused; it is one line on the rail card.
+pub const PANE_NOTE_MAX_BYTES: usize = 512;
+
+/// Where the agent says its work stands, alongside its note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum PanePhase {
+    Todo,
+    InProgress,
+    InReview,
+    Done,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PaneNote {
+    pub text: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub phase: Option<PanePhase>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4098,6 +4127,10 @@ pub enum ClientMsg {
         session: u32,
         title: String,
     },
+    /// Removes the pane's note; answered by the `session_note` broadcast.
+    SessionNoteClear {
+        session: u32,
+    },
     SessionTitleGenerate {
         session: u32,
     },
@@ -5376,6 +5409,11 @@ pub enum ServerMsg {
     SessionTagsSet {
         session: u32,
         tags: Vec<u32>,
+    },
+    /// Broadcast when a pane's note is written or cleared; `None` means cleared.
+    SessionNote {
+        session: u32,
+        note: Option<PaneNote>,
     },
     SessionResumable {
         session: u32,
