@@ -484,6 +484,10 @@ fn hand_off_unsupported(host: &str) -> bool {
 /// How many workspace/base branch answers the rules cache keeps; a daemon that
 /// visits many checkouts stays bounded.
 const BRANCH_RULES_CACHE_MAX_ENTRIES: usize = 64;
+/// A successful answer stays fresh for an hour: base rules change rarely, not never.
+const BRANCH_RULES_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+/// A failure retries after ten minutes: a permission or older-host error can be fixed.
+const BRANCH_RULES_FAILURE_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// The base branch's effective required checks, or why they could not be read.
 type BranchRules = Result<Vec<String>, String>;
@@ -495,25 +499,45 @@ struct BranchRulesEntry {
     answer: BranchRules,
 }
 
-/// One answer per workspace and base branch for the daemon's lifetime: a base
-/// branch's rules change rarely, and the queue must not poll them. Re-reading
-/// when the base changes is the only invalidation.
+/// One answer per workspace and base branch, re-read only when an access read
+/// needs it after its TTL; there is no timer and no polling.
 static BRANCH_RULES_CACHE: std::sync::Mutex<Vec<BranchRulesEntry>> =
     std::sync::Mutex::new(Vec::new());
 
-fn cached_branch_rules(workspace: &Path, base_ref: &str) -> Option<BranchRules> {
-    BRANCH_RULES_CACHE
-        .lock()
-        .expect("branch rules cache poisoned")
+fn branch_rules_ttl(answer: &BranchRules) -> std::time::Duration {
+    match answer {
+        Ok(_) => BRANCH_RULES_TTL,
+        Err(_) => BRANCH_RULES_FAILURE_TTL,
+    }
+}
+
+fn cached_branch_rules(
+    workspace: &Path,
+    base_ref: &str,
+    now: std::time::Instant,
+) -> Option<BranchRules> {
+    let cache = BRANCH_RULES_CACHE.lock().ok()?;
+    cache
         .iter()
-        .find(|e| e.workspace == workspace && e.base_ref == base_ref)
+        .find(|e| {
+            e.workspace == workspace
+                && e.base_ref == base_ref
+                && now.saturating_duration_since(e.at) < branch_rules_ttl(&e.answer)
+        })
         .map(|e| e.answer.clone())
 }
 
-fn remember_branch_rules(workspace: &Path, base_ref: &str, answer: BranchRules) -> BranchRules {
-    let mut cache = BRANCH_RULES_CACHE
-        .lock()
-        .expect("branch rules cache poisoned");
+fn remember_branch_rules(
+    workspace: &Path,
+    base_ref: &str,
+    at: std::time::Instant,
+    answer: BranchRules,
+) -> BranchRules {
+    let Ok(mut cache) = BRANCH_RULES_CACHE.lock() else {
+        // A poisoned lock only loses the cache; the read already has its answer.
+        return answer;
+    };
+    cache.retain(|e| !(e.workspace == workspace && e.base_ref == base_ref));
     if cache.len() >= BRANCH_RULES_CACHE_MAX_ENTRIES {
         if let Some(oldest) = cache
             .iter()
@@ -527,17 +551,18 @@ fn remember_branch_rules(workspace: &Path, base_ref: &str, answer: BranchRules) 
     cache.push(BranchRulesEntry {
         workspace: workspace.to_path_buf(),
         base_ref: base_ref.to_string(),
-        at: std::time::Instant::now(),
+        at,
         answer: answer.clone(),
     });
     answer
 }
 
 /// The checks every `required_status_checks` rule of the base branch requires,
-/// deduplicated. One read per workspace and base branch; a failure is cached
-/// likewise, so an unreadable rule keeps Houston merging instead of retrying.
+/// deduplicated. Cached per workspace and base branch until its TTL; a failure
+/// is cached likewise, so an unreadable rule keeps Houston merging.
 fn rules_required_checks(dir: &Path, repository: &str, base_ref: &str) -> BranchRules {
-    if let Some(cached) = cached_branch_rules(dir, base_ref) {
+    let now = std::time::Instant::now();
+    if let Some(cached) = cached_branch_rules(dir, base_ref, now) {
         return cached;
     }
     let answer = read_branch_rules(dir, repository, base_ref).map_err(|e| {
@@ -547,7 +572,7 @@ fn rules_required_checks(dir: &Path, repository: &str, base_ref: &str) -> Branch
         );
         format!("{e:#}")
     });
-    remember_branch_rules(dir, base_ref, answer)
+    remember_branch_rules(dir, base_ref, now, answer)
 }
 
 fn read_branch_rules(dir: &Path, repository: &str, base_ref: &str) -> Result<Vec<String>> {
@@ -2206,5 +2231,37 @@ mod tests {
         );
         assert_eq!(merged_required_checks(None, vec!["ci".to_string()]), ["ci"]);
         assert!(merged_required_checks(Some(Vec::new()), Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn an_expired_branch_rules_answer_is_read_again() {
+        let at = std::time::Instant::now();
+        let workspace = Path::new("/rules-ttl/success");
+        let _ = remember_branch_rules(workspace, "main", at, Ok(vec!["ci".to_string()]));
+        assert_eq!(
+            cached_branch_rules(workspace, "main", at).unwrap().unwrap(),
+            ["ci"]
+        );
+        assert!(cached_branch_rules(
+            workspace,
+            "main",
+            at + BRANCH_RULES_TTL - std::time::Duration::from_secs(1)
+        )
+        .is_some());
+        assert!(cached_branch_rules(workspace, "main", at + BRANCH_RULES_TTL).is_none());
+
+        // Reading again replaces the key instead of leaving an expired twin behind.
+        let _ = remember_branch_rules(workspace, "main", at + BRANCH_RULES_TTL, Ok(Vec::new()));
+        assert!(cached_branch_rules(workspace, "main", at + BRANCH_RULES_TTL).is_some());
+
+        let failed = Path::new("/rules-ttl/failure");
+        let _ = remember_branch_rules(failed, "main", at, Err("HTTP 403".to_string()));
+        assert!(cached_branch_rules(
+            failed,
+            "main",
+            at + BRANCH_RULES_FAILURE_TTL - std::time::Duration::from_secs(1)
+        )
+        .is_some());
+        assert!(cached_branch_rules(failed, "main", at + BRANCH_RULES_FAILURE_TTL).is_none());
     }
 }

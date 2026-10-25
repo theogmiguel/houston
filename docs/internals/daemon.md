@@ -733,8 +733,9 @@ the renderer finds the next entry by the same rule without a wire field. The con
   branch protection only, so when auto-merge is allowed and it names no check the reader also
   GETs `repos/{owner}/{name}/rules/branches/{branch}` through `gh api`, read-only, and folds
   every `required_status_checks` rule's contexts into the same list. That answer is cached per
-  workspace and base branch for the daemon's lifetime, failures included and logged; a base
-  branch whose rules cannot be read keeps Houston merging and is not retried. Each read refreshes
+  workspace and base branch for an hour, or ten minutes for a failure, and only an access read
+  that needs it checks the TTL; there is no timer. A base branch whose rules cannot be read keeps
+  Houston merging until that TTL passes. Each read refreshes
   the workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
   policy line shows with no read of its own. A field GitHub hides from the viewer counts as
   "Houston merges", never as a hand-off; when GitHub then refuses Houston's merge naming

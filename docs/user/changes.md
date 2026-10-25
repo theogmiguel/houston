@@ -237,8 +237,9 @@ and **Pause** take the pull request back from GitHub first; a paused entry loses
 GitHub's merge queue and is added again when you resume. Houston learns which path applies
 from the pull request reads it already makes. Checks a ruleset requires count like classic
 required checks: Houston reads the base branch's rules through `gh` (`api.github.com`, or your
-GitHub Enterprise host) once per base branch, read-only. If they cannot be read, Houston keeps
-merging itself. If GitHub hides the path from your account, Houston also merges itself; if
+GitHub Enterprise host) at most once an hour per base branch, read-only; a failed read is
+retried after ten minutes. If they cannot be read, Houston keeps merging itself. If GitHub
+hides the path from your account, Houston also merges itself; if
 GitHub then refuses because the branch requires its merge queue, the entry fails with GitHub's
 message and later landings use the merge queue.
 
