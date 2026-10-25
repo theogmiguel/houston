@@ -110,10 +110,8 @@ impl Rig {
     }
 
     fn launches(&self) -> Vec<Vec<String>> {
-        std::fs::read_to_string(self.scratch.path().join("launches.jsonl"))
-            .unwrap_or_default()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        jsonl_records(&self.scratch.path().join("launches.jsonl"))
+            .into_iter()
             .filter_map(|record| serde_json::from_value(record["argv"].clone()).ok())
             .filter(|argv: &Vec<String>| !argv.iter().any(|arg| arg == "--version"))
             .collect()
