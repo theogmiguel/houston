@@ -179,7 +179,7 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
     body = <Stack gap={3}>
       <DialogDescription>Saved {summary.panes.length === 1 ? '1 pane' : `${summary.panes.length} panes`} to <Text mono breakAll tone="primary">{summary.file}</Text> ({sizeLabel(summary.bytes)}). Their agents stopped on this computer; resuming one here starts a fork of the conversation.</DialogDescription>
       <PaneList panes={summary.panes} skipped={summary.skipped} />
-      {summary.skipped_links.length > 0 && <Text as="p" size="small" tone="muted" flush>Symbolic links not carried: {summary.skipped_links.join(', ')}</Text>}
+      {summary.skipped_links.length > 0 && <Text as="p" size="small" tone="muted" flush>Untracked entries not carried: {summary.skipped_links.join(', ')}</Text>}
       <Text as="p" size="small" tone="muted" flush>Move the file to the other computer yourself and import it there with the same passphrase.</Text>
     </Stack>
   } else if (outcome.kind === 'refused') {

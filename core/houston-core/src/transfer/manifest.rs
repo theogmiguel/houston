@@ -22,6 +22,7 @@ pub struct Manifest {
     pub checkouts: Vec<CheckoutEntry>,
     pub panes: Vec<PaneEntry>,
     pub skipped: Vec<proto::TransferSkipped>,
+    /// Untracked entries not carried: symbolic links and other non-regular paths.
     pub skipped_links: Vec<String>,
     /// The renderer's grid entries for the workspace, never interpreted by the daemon.
     pub grids: String,

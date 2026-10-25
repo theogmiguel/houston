@@ -758,6 +758,32 @@ async fn a_respawned_transferred_pane_is_a_fork_and_blocks_the_return_trip() {
 }
 
 #[tokio::test]
+async fn an_untracked_nested_repository_is_skipped_and_named_in_the_summary() {
+    let _serial = SERIAL.lock().await;
+    let world = tempfile::tempdir().unwrap();
+    let origin = origin(world.path());
+    let mut a = Computer::new(&origin, "2.1.310", "0.142.3").await;
+    let (_pane, _, _) = a.claude_pane(&a.workspace).await;
+    let nested = a.workspace.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    git(&nested, &["init", "-q", "-b", "main"]);
+
+    let file = world.path().join("t.houston-transfer");
+    let exported = a
+        .export(&file, "{}")
+        .await
+        .expect("export skips the nested repo");
+    assert!(
+        exported
+            .skipped_links
+            .iter()
+            .any(|entry| entry.ends_with("/nested/")),
+        "{:?}",
+        exported.skipped_links
+    );
+}
+
+#[tokio::test]
 async fn an_untracked_name_import_cannot_carry_refuses_before_stopping_panes() {
     let _serial = SERIAL.lock().await;
     let world = tempfile::tempdir().unwrap();

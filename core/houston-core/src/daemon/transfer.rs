@@ -774,9 +774,9 @@ impl Daemon {
             }
             skipped_links.extend(
                 captured
-                    .links
+                    .skipped
                     .iter()
-                    .map(|link| format!("{}/{link}", display_path(tree))),
+                    .map(|entry| format!("{}/{entry}", display_path(tree))),
             );
             let path = display_path(tree);
             checkouts.push(CheckoutEntry {

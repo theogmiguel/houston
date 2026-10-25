@@ -143,6 +143,9 @@ pub fn tree_state(dir: &Path) -> Result<TreeState> {
                     .with_context(|| format!("reading the link {}", path.display()))?
                     .display()
             ),
+            // `capture` carries only regular files; a nested repository is listed as
+            // `dir/`, and hashing it would fail after the panes stopped.
+            Ok(meta) if !meta.is_file() => continue,
             Ok(_) => sha256_file(&path)?,
         };
         paths.insert(relative, hash);
@@ -150,17 +153,25 @@ pub fn tree_state(dir: &Path) -> Result<TreeState> {
     Ok(TreeState { head, paths })
 }
 
-/// The untracked regular files `capture` will carry, checked before panes stop.
-pub fn untracked_files(dir: &Path) -> Result<Vec<String>> {
+/// The untracked regular files a transfer carries, and the entries it skips.
+fn untracked_entries(dir: &Path) -> Result<(Vec<String>, Vec<String>)> {
     let mut files = Vec::new();
+    let mut skipped = Vec::new();
     for relative in untracked(dir)? {
         let meta = std::fs::symlink_metadata(path_of(dir, &relative))
             .with_context(|| format!("reading {relative} in {}", dir.display()))?;
         if meta.is_file() && !meta.file_type().is_symlink() {
             files.push(relative);
+        } else {
+            skipped.push(relative);
         }
     }
-    Ok(files)
+    Ok((files, skipped))
+}
+
+/// The untracked regular files `capture` will carry, checked before panes stop.
+pub fn untracked_files(dir: &Path) -> Result<Vec<String>> {
+    Ok(untracked_entries(dir)?.0)
 }
 
 /// The non-ignored paths `git status` reports: anything import would have to overwrite.
@@ -190,7 +201,8 @@ pub struct Captured {
     pub diff: Option<PathBuf>,
     /// Untracked regular files, `/`-separated and relative to the checkout.
     pub untracked: Vec<String>,
-    pub links: Vec<String>,
+    /// Untracked entries not carried: symbolic links and other non-regular paths.
+    pub skipped: Vec<String>,
     pub state: TreeState,
 }
 
@@ -233,25 +245,15 @@ pub fn capture(dir: &Path, scratch: &Path) -> Result<Captured> {
         ],
     )?;
     let diff = (std::fs::metadata(&diff_path)?.len() > 0).then_some(diff_path);
-    let mut files = Vec::new();
-    let mut links = Vec::new();
-    for relative in untracked(dir)? {
-        let meta = std::fs::symlink_metadata(path_of(dir, &relative))
-            .with_context(|| format!("reading {relative} in {}", dir.display()))?;
-        if meta.file_type().is_symlink() {
-            links.push(relative);
-        } else if meta.is_file() {
-            files.push(relative);
-        }
-    }
+    let (untracked, skipped) = untracked_entries(dir)?;
     let state = tree_state(dir)?;
     Ok(Captured {
         branch,
         head,
         bundle,
         diff,
-        untracked: files,
-        links,
+        untracked,
+        skipped,
         state,
     })
 }
@@ -733,6 +735,20 @@ mod tests {
 
         assert_eq!(tree_state(clone.path()).unwrap(), captured.state);
         assert_eq!(branch(clone.path()).unwrap().as_deref(), Some("feature"));
+    }
+
+    #[test]
+    fn capture_skips_an_untracked_nested_repository() {
+        let dir = repo();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        run(&nested, &["init", "-q", "-b", "main"]);
+
+        let scratch = tempfile::tempdir().unwrap();
+        let captured = capture(dir.path(), scratch.path()).unwrap();
+        assert!(captured.untracked.is_empty(), "{:?}", captured.untracked);
+        assert_eq!(captured.skipped, vec!["nested/".to_string()]);
+        assert_eq!(tree_state(dir.path()).unwrap(), captured.state);
     }
 
     #[test]

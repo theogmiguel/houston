@@ -2969,7 +2969,8 @@ pub struct TransferExportSummary {
     pub bytes: u64,
     pub panes: Vec<TransferPane>,
     pub skipped: Vec<TransferSkipped>,
-    /// Untracked symbolic links the file does not carry.
+    /// Untracked entries the file does not carry: symbolic links and other
+    /// non-regular paths.
     pub skipped_links: Vec<String>,
 }
 
