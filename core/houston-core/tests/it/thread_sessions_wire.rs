@@ -2392,3 +2392,351 @@ async fn a_steer_racing_the_drain_sends_the_message_once() {
         ]
     );
 }
+
+fn queue_len(daemon: &Daemon, id: u32) -> usize {
+    match daemon.thread_queue_list(id).unwrap() {
+        proto::ServerMsg::ThreadQueue { items, .. } => items.len(),
+        other => panic!("expected the queue, got {other:?}"),
+    }
+}
+
+/// Claude starts a turn by itself (a background task's report): `system/init` opens it, so
+/// a message sent meanwhile waits for its `result` instead of being folded into it.
+#[tokio::test]
+async fn a_message_sent_during_a_turn_claude_started_waits_for_it() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_, open) = rig.gate("woken");
+    let wake = format!("wake:{}", open.display());
+    rig.say(id, &wake).await;
+    rig.events_until(id, |e| {
+        matches!(&e.kind, ThreadEventKind::AssistantDelta { message_id, .. } if message_id.starts_with("msg_wake"))
+    })
+    .await;
+    rig.say(id, "mine").await;
+    wait_until("the message to be queued", || {
+        queue_len(&rig.daemon, id) == 1
+    })
+    .await;
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the queued message to be answered", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{wake} (Direct)"),
+            "end Completed".into(),
+            "end Completed".into(),
+            "mine (Queued)".into(),
+            "end Completed".into(),
+        ]
+    );
+    assert_eq!(rig.stdin_texts(), [wake, "mine".into()]);
+}
+
+/// A `SubagentStart` hook as the CLI writes it.
+fn subagent_hook(rig: &Rig, session: u32, agent_id: &str) {
+    let drop = houston_core::hook_drop::HookDrop {
+        v: houston_core::hook_drop::DROP_V,
+        event: "SubagentStart".to_string(),
+        session,
+        agent_id: Some(agent_id.to_string()),
+        ..Default::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(rig._state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+}
+
+/// Headless Claude runs its Stop hook before `result`: only the status change waits for the
+/// result, so a sub-agent still in flight keeps the thread working past it.
+#[tokio::test]
+async fn a_stop_hook_ahead_of_its_result_keeps_the_sub_agent_hold() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_, open) = rig.gated_turn(id, "a").await;
+    let status = |rig: &Rig| rig.daemon.session_status(id).ok().flatten();
+    lifecycle_hook(&rig, "UserPromptSubmit", id);
+    wait_until("the prompt hook to report working", || {
+        status(&rig) == Some(proto::AgentStatus::Working)
+    })
+    .await;
+    subagent_hook(&rig, id, "agent-1");
+    lifecycle_hook(&rig, "Stop", id);
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the turn to end", || turn_ends(&rig.daemon, id) == 1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        status(&rig),
+        Some(proto::AgentStatus::Working),
+        "a sub-agent in flight holds the turn end"
+    );
+}
+
+/// Stop settles the status itself, so a Stop hook deferred in the stopped turn is not
+/// applied by the next turn's `result`.
+#[tokio::test]
+async fn stop_drops_a_deferred_stop_hook() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let status = |rig: &Rig| rig.daemon.session_status(id).ok().flatten();
+    rig.gated_turn(id, "a").await;
+    lifecycle_hook(&rig, "UserPromptSubmit", id);
+    lifecycle_hook(&rig, "Stop", id);
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    wait_until("the stopped turn to end", || {
+        turn_ends(&rig.daemon, id) == 1
+    })
+    .await;
+    let (_, open_b) = rig.gated_turn(id, "b").await;
+    lifecycle_hook(&rig, "UserPromptSubmit", id);
+    wait_until("the next turn to report working", || {
+        status(&rig) == Some(proto::AgentStatus::Working)
+    })
+    .await;
+    std::fs::write(&open_b, b"").unwrap();
+    wait_until("the next turn to end", || turn_ends(&rig.daemon, id) == 2).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        status(&rig),
+        Some(proto::AgentStatus::Working),
+        "only the next turn's own Stop hook ends it"
+    );
+    lifecycle_hook(&rig, "Stop", id);
+    wait_until("its own Stop hook to report idle", || {
+        status(&rig) == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_steer_that_finds_the_turn_ended_stops_nothing() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let barrier = TestBarrier::arm("thread-steer-stop");
+    let (gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "next").await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    let daemon = Arc::clone(&rig.daemon);
+    let message = queued[0].id.clone();
+    let steer = std::thread::spawn(move || daemon.thread_steer(id, &message));
+    barrier.reached(id).await;
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the turn to end", || turn_ends(&rig.daemon, id) == 1).await;
+    barrier.release();
+    within("thread_steer", Duration::from_secs(10), move || {
+        steer.join().unwrap()
+    })
+    .await
+    .unwrap();
+    wait_until("the steered message to be answered", || {
+        turn_ends(&rig.daemon, id) == 2
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Completed".into(),
+            "next (Queued)".into(),
+            "end Completed".into(),
+        ],
+        "a turn that ended is not stopped, and its message is not labelled steered"
+    );
+    assert_eq!(rig.launches().len(), 1, "the idle process kept running");
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_failed_turn_holds_only_what_was_queued_before_it_ended() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let barrier = TestBarrier::arm("thread-queue-drain");
+    rig.turn(id, "fail").await;
+    barrier.reached(id).await;
+    let (gate, open) = rig.gated_turn(id, "b").await;
+    rig.say(id, "later").await;
+    rig.queue_until(id, |items| items.len() == 1).await;
+    barrier.release();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the message queued during the next turn to go", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            "fail (Direct)".into(),
+            "end Error".into(),
+            format!("{gate} (Direct)"),
+            "end Completed".into(),
+            "later (Queued)".into(),
+            "end Completed".into(),
+        ]
+    );
+}
+
+/// Queue snapshots of the next `count` changes to `session`, in arrival order.
+#[cfg(feature = "test-barriers")]
+async fn queue_snapshots(
+    ws: &mut WsStream,
+    session: u32,
+    count: usize,
+) -> Vec<Vec<proto::ThreadQueuedMessage>> {
+    let mut snapshots = Vec::new();
+    while snapshots.len() < count {
+        match next_control(ws).await {
+            proto::ServerMsg::ThreadQueue { session: s, items } if s == session => {
+                snapshots.push(items)
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("unexpected error: {message}"),
+            _ => {}
+        }
+    }
+    snapshots
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn queue_snapshots_arrive_in_the_order_the_queue_changed() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "first").await;
+    rig.say(id, "second").await;
+    let queued = rig.queue_until(id, |items| items.len() == 2).await;
+    let barrier = TestBarrier::arm("thread-queue-publish");
+    std::fs::write(&open, b"").unwrap();
+    barrier.reached(id).await;
+    rig.send(json!({"type":"thread_queue_remove","session":id,"id":queued[1].id}))
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    barrier.release();
+    let snapshots = queue_snapshots(&mut rig.ws, id, 2).await;
+    let texts: Vec<Vec<&str>> = snapshots
+        .iter()
+        .map(|items| items.iter().map(|item| item.text.as_str()).collect())
+        .collect();
+    assert_eq!(
+        texts,
+        [vec!["second"], vec![]],
+        "the last snapshot is the queue as it is"
+    );
+}
+
+#[tokio::test]
+async fn a_stop_hook_adds_no_inbox_text_ahead_of_queued_messages() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.gated_turn(id, "a").await;
+    rig.say(id, "mine").await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let row = houston_core::db::NewInboxRow {
+        to_session: id,
+        workspace: rig.project.path().display().to_string(),
+        from_session: None,
+        request_id: None,
+        kind: "result".into(),
+        urgent: false,
+        summary: "from a child".into(),
+        body: "child result".into(),
+        artifacts: Vec::new(),
+        provisional: false,
+        corrects: None,
+        reason: None,
+        ready: true,
+    };
+    db.inbox_insert(&row, houston_core::daemon::now_ms())
+        .unwrap();
+    let later = houston_core::daemon::now_ms() + 1_000;
+    assert!(matches!(
+        rig.daemon.inbox_reserve_for_stop_hook(id, later).unwrap(),
+        houston_core::orchestrate::StopHookReserveOutcome::Empty
+    ));
+    rig.daemon.thread_queue_remove(id, &queued[0].id).unwrap();
+    let reserved = rig.daemon.inbox_reserve_for_stop_hook(id, later).unwrap();
+    assert!(
+        matches!(
+            reserved,
+            houston_core::orchestrate::StopHookReserveOutcome::Reserved { .. }
+        ),
+        "{reserved:?}"
+    );
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_prompt_that_loses_the_race_to_a_user_message_waits_for_the_next_idle() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    assert_idle_and_running(&rig.daemon, id).await;
+    let barrier = TestBarrier::arm("thread-paste");
+    let daemon = Arc::clone(&rig.daemon);
+    let paste = std::thread::spawn(move || daemon.paste_text_for_test(id, "from a peer"));
+    barrier.reached(id).await;
+    let (gate, _open) = rig.gated_turn(id, "a").await;
+    barrier.release();
+    let pasted = within("the paste", Duration::from_secs(10), move || {
+        paste.join().unwrap()
+    })
+    .await;
+    assert!(
+        matches!(pasted, Ok(false)),
+        "a busy thread leaves the prompt to be retried: {pasted:?}"
+    );
+    assert_eq!(rig.stdin_texts(), [gate]);
+}
+
+/// A queued message whose write Stop cuts off is held once, and the timeline says so.
+#[tokio::test]
+async fn a_queued_message_stopped_mid_write_goes_back_once_with_a_notice() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_, open) = rig.gate("deaf");
+    let deafen = format!("deafen:{}", open.display());
+    rig.say(id, &deafen).await;
+    wait_until("the fake to read its message", || {
+        rig.stdin_texts().last() == Some(&deafen)
+    })
+    .await;
+    // Larger than any pipe buffer: the write blocks because the fake stops reading.
+    let big = "y".repeat(200 * 1024);
+    rig.say(id, &big).await;
+    rig.queue_until(id, |items| items.len() == 1).await;
+    std::fs::write(&open, b"").unwrap();
+    let is_big = |line: &String| line.starts_with("yyyy") && line.ends_with("(Queued)");
+    wait_until("the queued message to be taken", || {
+        turn_log(&rig.daemon, id).iter().any(is_big)
+    })
+    .await;
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    let held = rig
+        .queue_until(id, |items| {
+            items
+                .first()
+                .is_some_and(|item| item.state == proto::QueuedState::Held)
+        })
+        .await;
+    assert_eq!(held.len(), 1, "the message goes back once");
+    assert_eq!(
+        held[0].hold_reason.as_deref(),
+        Some("Stopped before this message reached Claude.")
+    );
+    let notice = "Stopped before this message reached Claude; it is back in the queue, held.";
+    wait_until("the notice", || {
+        history_of(&rig.daemon, id)
+            .iter()
+            .any(|e| matches!(&e.kind, ThreadEventKind::Notice { text } if text == notice))
+    })
+    .await;
+    assert_eq!(queue_len(&rig.daemon, id), 1);
+}

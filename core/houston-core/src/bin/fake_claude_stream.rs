@@ -110,13 +110,34 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
     } else if let Some(gate) = text.strip_prefix("gate:") {
         // Holds the turn open until the test creates the gate file.
         delta("msg_gate", "waiting");
-        while !std::path::Path::new(gate).exists() {
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        wait_for(gate);
         emit_value(
             json!({"type":"assistant","message":{"id":"msg_gate","content":[{"type":"text","text":"gate opened"}]},"parent_tool_use_id":null}),
         );
         result(conversation);
+    } else if let Some(gate) = text.strip_prefix("wake:") {
+        echo(text, conversation);
+        // Then a turn nobody wrote, as a background task's report starts one, open until
+        // the gate file exists.
+        emit_value(json!({"type":"system","subtype":"init","session_id":conversation}));
+        delta("msg_wake", "woke");
+        wait_for(gate);
+        emit_value(
+            json!({"type":"assistant","message":{"id":"msg_wake","content":[{"type":"text","text":"woke"}]},"parent_tool_use_id":null}),
+        );
+        result(conversation);
+    } else if text == "fail" {
+        emit_value(
+            json!({"type":"result","subtype":"error_during_execution","is_error":true,"result":"fake failure","session_id":conversation}),
+        );
+    } else if let Some(gate) = text.strip_prefix("deafen:") {
+        // Ends its turn when the gate file exists, then stops reading stdin.
+        delta("msg_deafen", "waiting");
+        wait_for(gate);
+        result(conversation);
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
     } else if let Some(mode) = text.strip_prefix("mode:") {
         emit_value(json!({"type":"system","subtype":"status","permissionMode":mode}));
         result(conversation);
@@ -173,10 +194,20 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
         }
         result(conversation);
     } else {
-        emit_value(
-            json!({"type":"assistant","message":{"id":"msg_echo","content":[{"type":"text","text":format!("echo: {text}")}]},"parent_tool_use_id":null}),
-        );
-        result(conversation);
+        echo(text, conversation);
+    }
+}
+
+fn echo(text: &str, conversation: &str) {
+    emit_value(
+        json!({"type":"assistant","message":{"id":"msg_echo","content":[{"type":"text","text":format!("echo: {text}")}]},"parent_tool_use_id":null}),
+    );
+    result(conversation);
+}
+
+fn wait_for(gate: &str) {
+    while !std::path::Path::new(gate).exists() {
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 

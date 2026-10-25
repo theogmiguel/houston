@@ -1900,6 +1900,7 @@ pub struct Daemon {
     swarm_finished_sessions: Mutex<HashSet<u32>>,
     inbox_flush_scheduled: Mutex<HashSet<u32>>,
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
+    thread_queue_publish: Mutex<()>,
     orchestration_retry_lock: Mutex<()>,
     instruction_dispatch_lock: Mutex<()>,
     instruction_writes: Mutex<HashMap<u32, InstructionWriteEvidence>>,
@@ -3717,6 +3718,7 @@ impl Daemon {
             merge_queue_landing: Mutex::new(()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
+            thread_queue_publish: Mutex::new(()),
             orchestration_retry_lock: Mutex::new(()),
             instruction_dispatch_lock: Mutex::new(()),
             instruction_writes: Mutex::new(HashMap::new()),
@@ -16444,6 +16446,15 @@ impl Daemon {
             self.swarm_mirror_hook(d.session, &d.event);
             return crate::hook_drop::DropVerdict::Applied;
         }
+        if self.defer_thread_turn_end(d, provider) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
+                return crate::hook_drop::DropVerdict::NoSession;
+            }
+            self.swarm_mirror_hook(d.session, &d.event);
+            self.note_context_from_hook(d.session, provider, d);
+            drop(lifecycle.take());
+            return crate::hook_drop::DropVerdict::Applied;
+        }
         let ambiguous = d.event == "Notification" && d.notification_type.is_none();
         let verdict = self.handle_hook_from_with(
             d.session,
@@ -16500,6 +16511,41 @@ impl Daemon {
             }
             Err(e) => tracing::warn!("recording session {session}'s transcript link: {e:#}"),
         }
+    }
+
+    /// A thread's Stop hook that arrives while a turn is open (headless Claude runs it before
+    /// `result`, or it is an earlier turn's) leaves the status to that turn's `result`. Only
+    /// the status change waits: the hook's other effects have run by now.
+    fn defer_thread_turn_end(
+        &self,
+        d: &crate::hook_drop::HookDrop,
+        provider: proto::AgentKind,
+    ) -> bool {
+        if d.stop_continued
+            || crate::agent_events::AgentEvent::from_provider(provider, &d.event)
+                != Some(crate::agent_events::AgentEvent::TurnEnded)
+        {
+            return false;
+        }
+        let Some(thread) = self
+            .get(d.session)
+            .ok()
+            .and_then(|session| session.thread().cloned())
+        else {
+            return false;
+        };
+        let deferred = thread.defer_turn_end_hook(crate::thread_session::DeferredHook {
+            prompt_id: d.prompt_id.clone(),
+        });
+        if deferred {
+            tracing::debug!(
+                "session {}: {} arrived while a thread turn is open; its stream turn end applies \
+                 the status",
+                d.session,
+                d.event
+            );
+        }
+        deferred
     }
 
     fn correlate_hook_drop(
@@ -16811,22 +16857,6 @@ impl Daemon {
             return None;
         }
 
-        if correlates
-            && ev == Some(crate::agent_events::AgentEvent::TurnEnded)
-            && !d.stop_continued
-            && self
-                .get(d.session)
-                .ok()
-                .and_then(|session| session.thread().cloned())
-                .is_some_and(|thread| thread.defer_turn_end_hook())
-        {
-            tracing::debug!(
-                "session {}: {} arrived while a thread turn is open; its stream turn end applies it",
-                d.session,
-                d.event
-            );
-            return Some(crate::hook_drop::DropVerdict::Applied);
-        }
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) && !d.stop_continued
         {
             self.maybe_generate_title(d.session);
@@ -19650,6 +19680,12 @@ impl Daemon {
         self.paste_text_with_activity(session_id, text, sender, false)
     }
 
+    /// `Ok(false)`: the pane was held, nothing was written and the caller retries.
+    #[doc(hidden)]
+    pub fn paste_text_for_test(self: &Arc<Self>, session_id: u32, text: &str) -> Result<bool> {
+        self.paste_text(session_id, text, 0)
+    }
+
     fn paste_text_with_activity(
         self: &Arc<Self>,
         session_id: u32,
@@ -19668,10 +19704,16 @@ impl Daemon {
             return Ok(false);
         }
         if let Some(thread) = self.get(session_id).ok().and_then(|s| s.thread().cloned()) {
-            thread
-                .deliver_now(text)
-                .with_context(|| format!("sending a message to thread session {session_id}"))?;
-            return Ok(true);
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("thread-paste", session_id);
+            return match thread.deliver_now(text) {
+                Ok(()) => Ok(true),
+                // A user message won the thread since `hold`: wait for the next idle.
+                Err(error) if error.is::<crate::thread_session::ThreadBusy>() => Ok(false),
+                Err(error) => {
+                    Err(error.context(format!("sending a message to thread session {session_id}")))
+                }
+            };
         }
         match self.write_stdin_counting(session_id, &bracketed_paste(text)) {
             Ok(()) => {}
@@ -22951,6 +22993,11 @@ impl Daemon {
         caller: u32,
         now: u64,
     ) -> Result<orchestrate::StopHookReserveOutcome> {
+        // Text added to a thread's turn would go ahead of the user's queued messages; it
+        // waits for door 3, which pastes behind them.
+        if self.db.thread_queue_waiting(caller)? > 0 {
+            return Ok(orchestrate::StopHookReserveOutcome::Empty);
+        }
         let blocks = self.stop_blocks(caller);
         if blocks >= orchestrate::STOP_BLOCKS_PER_TURN_MAX {
             tracing::debug!(

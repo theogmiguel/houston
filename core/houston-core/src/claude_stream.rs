@@ -234,6 +234,8 @@ impl StreamMapper {
             }
             Some("system") => {
                 if value.get("subtype").and_then(Value::as_str) == Some("init") {
+                    // Also for a turn Claude starts itself, such as a background task's report.
+                    out.turn_start = true;
                     out.conversation = value
                         .get("session_id")
                         .and_then(Value::as_str)
@@ -535,9 +537,11 @@ mod tests {
             r#"{"type":"system","subtype":"init","session_id":"s","permissionMode":"plan"}"#,
         );
         assert_eq!(init.permission_mode, Some(ThreadPermissionMode::Plan));
+        assert!(init.turn_start, "init opens every turn");
         let status =
             mapper.map_line(r#"{"type":"system","subtype":"status","permissionMode":"default"}"#);
         assert_eq!(status.permission_mode, Some(ThreadPermissionMode::Default));
+        assert!(!status.turn_start);
         let unknown =
             mapper.map_line(r#"{"type":"system","subtype":"status","permissionMode":"dontAsk"}"#);
         assert_eq!(unknown.permission_mode, None);
