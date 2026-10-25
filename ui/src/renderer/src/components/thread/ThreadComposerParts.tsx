@@ -1,11 +1,10 @@
-import { useEffect, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { searchFilePaths } from '../../houston/bridge'
-import { atMention, menuToken, SLASH_GROUP_LABEL, slashRows, type MenuToken, type SlashGroup } from '../../thread/composerMenu'
-import { excerptLabel, lineCount } from '../../thread/excerpts'
+import { atMention, insertAtToken, menuToken, SLASH_GROUP_LABEL, slashRows, type MenuToken, type SlashGroup } from '../../thread/composerMenu'
+import { excerptLabel, lineCount, quoteRefusal } from '../../thread/excerpts'
 import type { ThreadCommands, ThreadExcerpt } from '../../thread/threadTypes'
-import type { QuotableSelection } from '../../pane/terminalSelection'
+import { quotableSelections, type QuotableSelection } from '../../pane/terminalSelection'
 import { ThreadComposerMenu, ThreadExcerptChip, ThreadExcerptChips, ThreadExcerptPreview, ThreadMenuGroup, ThreadMenuRow } from '../ui/Thread'
-import { Tooltip } from '../ui/Tooltip'
 
 /** One selectable menu row; `run` acts on it (insert text, open the terminal, quote a pane). */
 export interface MenuEntry {
@@ -116,23 +115,20 @@ export function ComposerMenu({ entries, notice, active, onActive, label }: {
       {entries.map((entry, index) => {
         const heading = entry.group !== group ? entry.group : null
         group = entry.group
-        const row = (
-          <ThreadMenuRow
-            id={`${id}-${index}`}
-            active={index === active}
-            name={entry.name}
-            detail={entry.detail}
-            action={entry.action}
-            disabled={!!entry.disabledReason}
-            onSelect={entry.run}
-            onHover={() => onActive(index)}
-          />
-        )
         return (
-          <div key={entry.key} className="contents">
+          <Fragment key={entry.key}>
             {heading !== null && <ThreadMenuGroup>{heading}</ThreadMenuGroup>}
-            {entry.disabledReason ? <Tooltip label={entry.disabledReason} className="block">{row}</Tooltip> : row}
-          </div>
+            <ThreadMenuRow
+              id={`${id}-${index}`}
+              active={index === active}
+              name={entry.name}
+              detail={entry.detail}
+              action={entry.action}
+              disabledReason={entry.disabledReason ?? null}
+              onSelect={entry.run}
+              onHover={() => onActive(index)}
+            />
+          </Fragment>
         )
       })}
     </ThreadComposerMenu>
@@ -162,3 +158,119 @@ export function ExcerptList({ excerpts, onRemove }: { excerpts: readonly ThreadE
   )
 }
 
+
+const NO_TERMINAL = 'This thread cannot open in a terminal from here'
+
+/** Enter or Tab that picks the active row; an IME confirmation (key code 229 or composing) does not. */
+function picksRow(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+  if (e.key === 'Tab') return true
+  return e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229
+}
+
+export interface ComposerDraft {
+  text: string
+  setText: (text: string) => void
+  excerpts: readonly ThreadExcerpt[]
+  setExcerpts: (excerpts: readonly ThreadExcerpt[]) => void
+  setRefusal: (refusal: string | null) => void
+}
+
+/** The `/` and `@` menus and the Quote selection picker: rows, active row and caret. `onKey` says whether the menu used the key. */
+export function useComposerMenus({ draft, commands, root, terminal, input }: {
+  draft: ComposerDraft
+  commands: ThreadCommands | null
+  root: string
+  terminal?: { refusal: string | null; open: () => void }
+  input: React.RefObject<HTMLTextAreaElement | null>
+}): {
+  menu: React.ReactNode
+  open: boolean
+  onKey: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean
+  onEdit: (caret: number) => void
+  onCaret: (caret: number) => void
+  closePicker: () => void
+  startQuote: () => void
+} {
+  const { text, setText, excerpts, setExcerpts, setRefusal } = draft
+  const [caret, setCaret] = useState(0)
+  const [active, setActive] = useState(0)
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const [quoting, setQuoting] = useState<readonly QuotableSelection[] | null>(null)
+  const pendingCaret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const at = pendingCaret.current
+    if (at === null || !input.current) return
+    pendingCaret.current = null
+    input.current.focus()
+    input.current.setSelectionRange(at, at)
+  })
+  const actions: MenuActions = {
+    insert: (token, insert) => {
+      const next = insertAtToken(text, token, insert)
+      setText(next.text)
+      setCaret(next.caret)
+      pendingCaret.current = next.caret
+    },
+    openInTerminal: () => {
+      setText('')
+      terminal?.open()
+    },
+    terminalRefusal: terminal ? terminal.refusal : NO_TERMINAL
+  }
+  const typed = useComposerMenu({ text, caret, commands, root, actions })
+  const tokenKey = typed.token ? `${typed.token.start}:${typed.token.trigger}` : null
+  const quote = (selection: QuotableSelection): void => {
+    setQuoting(null)
+    const refused = quoteRefusal(excerpts, selection.text)
+    setRefusal(refused)
+    if (refused !== null) return
+    setExcerpts([...excerpts, { source: selection.name, session: selection.session, text: selection.text }])
+    pendingCaret.current = caret
+  }
+  const picker = quoting === null ? null : selectionEntries(quoting, quote)
+  const open = picker !== null || (typed.token !== null && tokenKey !== dismissed && (typed.entries.length > 0 || typed.notice !== null))
+  const entries = picker ?? typed.entries
+  const activeIndex = Math.min(active, Math.max(0, entries.length - 1))
+  const label = picker !== null ? 'Quote selection from' : typed.token?.trigger === '@' ? 'Files' : 'Commands'
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!open) return false
+    if (e.key === 'Escape') {
+      setQuoting(null)
+      setDismissed(tokenKey)
+      return true
+    }
+    if (entries.length === 0) return false
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      setActive((activeIndex + (e.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length)
+      return true
+    }
+    if (!picksRow(e)) return false
+    const entry = entries[activeIndex]
+    if (entry && !entry.disabledReason) {
+      setActive(0)
+      entry.run()
+    }
+    return true
+  }
+  const startQuote = (): void => {
+    const selections = quotableSelections()
+    const only = selections.length === 1 ? selections[0] : undefined
+    if (only) return quote(only)
+    if (selections.length === 0) return setRefusal('Nothing to quote: select text in a terminal pane of this grid first.')
+    setActive(0)
+    setQuoting(selections)
+  }
+  return {
+    menu: open ? <ComposerMenu entries={entries} notice={picker === null ? typed.notice : null} active={activeIndex} onActive={setActive} label={label} /> : null,
+    open,
+    onKey,
+    onEdit: (at) => {
+      setCaret(at)
+      setActive(0)
+      setQuoting(null)
+    },
+    onCaret: setCaret,
+    closePicker: () => setQuoting(null),
+    startQuote
+  }
+}

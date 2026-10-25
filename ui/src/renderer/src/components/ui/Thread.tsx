@@ -6,6 +6,7 @@ import { Chip } from './Chip'
 import { Icon } from './Icon'
 import { OptionCandidateList } from './OptionCandidateList'
 import { ROW_HIGHLIGHT } from './rowState'
+import { Tooltip } from './Tooltip'
 import { Prose } from './Prose'
 import { FOCUS_RING_ACCENT_INSET_45_CLS } from './shadowChrome'
 import { Text } from './Text'
@@ -250,18 +251,19 @@ export function ThreadMenuGroup({ children }: { children: ReactNode }): React.JS
   return <Text as="div" role="presentation" size="label" weight="label" tone="faint" className="px-[var(--space-2)] pt-[var(--space-1-5)] pb-[var(--space-0-5)]">{children}</Text>
 }
 
-/** One menu entry: the name, a muted detail, and a trailing action word such as "Open in terminal". */
-export function ThreadMenuRow({ id, active, name, detail, action, disabled = false, onSelect, onHover }: {
+/** One menu entry: the name, a muted detail, and a trailing action word such as "Open in terminal"; `disabledReason` makes it unavailable and is its tooltip. */
+export function ThreadMenuRow({ id, active, name, detail, action, disabledReason = null, onSelect, onHover }: {
   id: string
   active: boolean
   name: string
   detail?: string
   action?: string
-  disabled?: boolean
+  disabledReason?: string | null
   onSelect: () => void
   onHover: () => void
 }): React.JSX.Element {
-  return (
+  const disabled = disabledReason !== null
+  const row = (
     <button
       type="button"
       id={id}
@@ -279,6 +281,7 @@ export function ThreadMenuRow({ id, active, name, detail, action, disabled = fal
       {action && <Text as="span" size="small" tone="faint" className="ml-auto flex-none">{action}</Text>}
     </button>
   )
+  return disabled ? <Tooltip label={disabledReason} className="block">{row}</Tooltip> : row
 }
 
 /** A quoted terminal selection: the pane and line count; pressing it shows the full text. */
