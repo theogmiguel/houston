@@ -2394,8 +2394,22 @@ async fn dispatch(
             workspace,
             preflight_until_ms,
         } => {
-            let msg = daemon.night_shift_state(&workspace, preflight_until_ms)?;
-            let _ = send_msg(sink, &msg).await;
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || {
+                reader.night_shift_state(&workspace, preflight_until_ms)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the Night shift state failed: {e}")));
+            match read {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some("night_shift".into())).await;
+                }
+            }
             Ok(())
         }
         proto::ClientMsg::NightShiftUpdate {
