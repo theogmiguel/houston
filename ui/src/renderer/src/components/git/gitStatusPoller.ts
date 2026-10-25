@@ -1,7 +1,7 @@
 import type { HoustonClient } from '../../houston/client'
 
-// The daemon admits 16 control handlers per connection and each git_status runs
-// ~6 git subprocesses, so a rail of 16+ checkouts must not fire them all at once.
+// The daemon admits 16 control handlers per connection and each git_status runs 2-4
+// git subprocesses, so a rail of 16+ checkouts must not fire them all at once.
 // 4 keeps the rail refresh well under that cap and leaves room for user actions.
 export const GIT_STATUS_IN_FLIGHT_LIMIT = 4
 
