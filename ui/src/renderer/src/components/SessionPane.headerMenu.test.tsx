@@ -388,12 +388,17 @@ describe('pane ··· menu', () => {
     expect(rows().some((b) => b.textContent?.includes('Open as thread'))).toBe(false)
   })
 
-  it('names why a stopped or sleeping Claude session cannot change view', () => {
+  it('names why a stopped, sleeping or child Claude session cannot change view', () => {
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))).toBe('The session is exited; restart it first')
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'sleeping', status: 'idle' }))).toBe('The session is sleeping; wake it first')
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'needs-input' }))).toBe("Claude's status is Needs input; wait for the turn to end or stop it first")
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle' }))).toBeNull()
+    const child = makeSession({ agent: 'claude', status: 'idle', spawned_by: 7, delegation: { parent: 7, started_at: 1000, state: 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } })
+    expect(viewSwitchRefusal(child)).toBe('It is a child of pane 7, which could not see its questions or permission requests; keep it a terminal')
     render(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))
+    openPaneMenu()
+    expect(row('Open as thread').disabled).toBe(true)
+    render(child)
     openPaneMenu()
     expect(row('Open as thread').disabled).toBe(true)
   })

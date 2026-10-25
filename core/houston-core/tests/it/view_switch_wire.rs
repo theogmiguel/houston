@@ -278,6 +278,42 @@ async fn a_switch_is_refused_while_claude_works_and_names_the_status() {
 }
 
 #[tokio::test]
+async fn a_child_pane_is_refused_open_as_thread_and_names_its_parent() {
+    let mut rig = Rig::new().await;
+    let child = rig.create("terminal").await;
+    let conversation = launch_conversation(&rig.launches()[0]);
+    rig.hook("SessionStart", child.id, &conversation).await;
+    rig.give_conversation(child.id, &conversation);
+    let parent = rig.create("terminal").await;
+    rig.db()
+        .delegation_create(parent.id, child.id, Some("worker"), "brief", 1)
+        .unwrap();
+    rig.send(json!({"type":"session_set_view","session":child.id,"view":"thread"}))
+        .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.contains(&format!(
+            "Open as thread refused for session {}: it is a child of pane {}",
+            child.id, parent.id
+        )) && message.contains("permission requests"),
+        "{message}"
+    );
+    assert_eq!(
+        context.as_deref(),
+        Some(format!("session:{}", child.id).as_str())
+    );
+    let still = rig
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == child.id)
+        .unwrap();
+    assert_eq!(still.view, proto::SessionView::Terminal, "nothing moved");
+    rig.daemon.close(child.id).unwrap();
+    rig.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
 async fn a_shell_is_refused_by_name() {
     let mut rig = Rig::new().await;
     rig.send(json!({"type":"session_create","request":1,"agent":"shell",

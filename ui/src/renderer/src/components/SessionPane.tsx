@@ -539,6 +539,7 @@ const TURN_STATUS_WORD: Partial<Record<AgentStatus, string>> = { working: 'Worki
 export function viewSwitchRefusal(info: SessionInfo): string | null {
   if (info.state === 'sleeping') return 'The session is sleeping; wake it first'
   if (!isLive(info.state)) return `The session is ${info.state}; restart it first`
+  if (info.view !== 'thread' && info.delegation) return `It is a child of pane ${info.delegation.parent}, which could not see its questions or permission requests; keep it a terminal`
   const busy = info.status ? TURN_STATUS_WORD[info.status] : undefined
   return busy ? `Claude's status is ${busy}; wait for the turn to end or stop it first` : null
 }

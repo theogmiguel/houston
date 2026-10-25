@@ -124,6 +124,15 @@ impl Daemon {
                 agent.swarm
             );
         }
+        // A thread's prompt-tool requests open no input episode, so a parent would never hear them.
+        if view == proto::SessionView::Thread {
+            if let Some(parent) = self.db.delegation_parent_of(id)? {
+                bail!(
+                    "{verb} refused for session {id}: it is a child of pane {parent}, which could \
+                     not see its questions or permission requests; keep it a terminal"
+                );
+            }
+        }
         let (live_children, _) = self.child_counts_of(id);
         if live_children > 0 {
             bail!(

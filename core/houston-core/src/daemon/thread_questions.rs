@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 use super::threads::{ApprovalGuard, ASK_IN_REPLY};
 use super::{Daemon, PermissionPrompt};
-use crate::thread_session::{ApprovalAnswer, ThreadHandle};
+use crate::thread_session::{ApprovalAnswer, StructuredRuntime};
 
 pub(crate) const ASK_USER_QUESTION: &str = "AskUserQuestion";
 /// The deny message Claude reads when the user skips its question.
@@ -218,7 +218,7 @@ impl Daemon {
     /// cannot hold one, Claude is told to ask it in its reply instead.
     pub(super) fn hold_question(
         &self,
-        handle: &Arc<ThreadHandle>,
+        handle: &Arc<StructuredRuntime>,
         tool_use_id: &str,
         questions: Vec<proto::ThreadQuestion>,
         truncated: bool,
@@ -293,7 +293,7 @@ pub(crate) struct QuestionResolution {
 /// Records `question_request` and holds the call like an approval (same pending cap and
 /// NeedsInput status), returning its request id and the receiver its answer arrives on.
 fn runtime_hold_question(
-    handle: &Arc<ThreadHandle>,
+    handle: &Arc<StructuredRuntime>,
     _tool_use_id: &str,
     _questions: Vec<proto::ThreadQuestion>,
     _truncated: bool,
@@ -305,7 +305,7 @@ fn runtime_hold_question(
 /// Resolves the held question `request_id` with what `resolve` makes of its questions and
 /// Claude's input; the question stays held when `resolve` refuses, so it is answered once.
 fn runtime_answer_question(
-    handle: &Arc<ThreadHandle>,
+    handle: &Arc<StructuredRuntime>,
     request_id: &str,
     _resolve: impl FnOnce(&[proto::ThreadQuestion], &Value) -> Result<QuestionResolution>,
 ) -> Result<()> {

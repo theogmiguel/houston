@@ -111,3 +111,36 @@ describe('useBrowserPaneLocalServers polling', () => {
     expect(make.requests.length).toBe(visible)
   })
 })
+
+describe('useBrowserPaneLocalServers while the window is hidden', () => {
+  let visibility: DocumentVisibilityState = 'visible'
+  const setVisibility = (next: DocumentVisibilityState): void => {
+    visibility = next
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+  beforeEach(() => {
+    visibility = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('parks while hidden and asks again as soon as the window is revealed', () => {
+    const make = fakeClient(() => 3000)
+    renderHook(() => useBrowserPaneLocalServers(make.client, '/ws', true, false, false))
+    act(() => {
+      vi.advanceTimersByTime(3_000)
+    })
+    expect(make.requests).toHaveLength(2)
+    setVisibility('hidden')
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000)
+    })
+    expect(make.requests).toHaveLength(2)
+    setVisibility('visible')
+    expect(make.requests).toHaveLength(3)
+  })
+})
