@@ -266,7 +266,9 @@ pane's message; the worktree is created either way. Houston runs no command from
 repository while doing this.
 
 If the repository declares submodules, Houston also initialises them in a worktree it
-creates, the same way `git submodule update --init --recursive` does. A submodule that
+creates, the same way `git submodule update --init --recursive` does. Each submodule is
+cloned from the URL in `.gitmodules`, which can use the network; this happens only at
+creation, and the step is abandoned after 30 seconds with a warning. A submodule that
 cannot be fetched is named in the same warning, and the worktree is created either way.
 
 Children are temporary by default. After a durable completed result, Houston ends the
