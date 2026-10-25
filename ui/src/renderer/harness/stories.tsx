@@ -115,12 +115,13 @@ import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTransferredStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
 import { ImagePreviewZoomStory } from './imagePreviewStories'
 import { RailUndoStory } from './railUndoStories'
+import { TransferExportStory, TransferImportStory, TransferRefusalStory, WorkspaceMenuStory } from './transferStories'
 
 const noop = (): void => {}
 
@@ -266,6 +267,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'connect-phone/scan': () => <ConnectPhoneStory scenario="scan" />,
   'connect-phone/expired': () => <ConnectPhoneStory scenario="expired" />,
   'connect-phone/connected': () => <ConnectPhoneStory scenario="connected" />,
+  'transfer/export': () => <TransferExportStory />,
+  'transfer/import': () => <TransferImportStory />,
+  'transfer/refusal': () => <TransferRefusalStory />,
+  'transfer/workspace-menu': () => <WorkspaceMenuStory />,
   'legacy/handoff': () => <LegacyHandoffStory />,
   'legacy/pane-handoff': () => <LegacyPaneHandoffStory />,
   'legacy/tags': () => <LegacyTagsStory />,
@@ -578,6 +583,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/sleeping': () => <PaneSleepingStory />,
   'panes/limited': () => <PaneLimitedStory />,
+  'panes/transferred': () => <PaneTransferredStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,

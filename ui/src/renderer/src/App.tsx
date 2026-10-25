@@ -3,6 +3,9 @@ import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
+import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
+import { useSessionUpdates } from './useSessionUpdates';
+import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
@@ -260,6 +263,7 @@ import { useCheckoutFacts } from "./useCheckoutFacts";
 import { isBackgroundAdmissionRefusal } from "./houston/controlAdmission";
 import {
   addGrid,
+  appendGrids,
   autoNameGrid,
   findEditorByPath,
   findPane,
@@ -926,6 +930,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  useSessionUpdates(readyClient(conn), setSessions);
   const openMergeQueue = useCallback((): void => {
     requestPrsView({ view: "queue" });
     setSettings(false);
@@ -2875,6 +2880,31 @@ export function App(): React.JSX.Element {
     [conn, workspaces],
   );
 
+  // Imported grids join the target workspace's own; panes auto-placed before the reply
+  // leave the grid they landed in, so each pane appears once.
+  const applyTransferGrids = useCallback(async (result: TransferImportResult, target: string): Promise<void> => {
+    if (!result.grids) return;
+    const { placeTransferGrids, vacateMovedPanes } = await import('./layout/transferGrids');
+    const existing = gridsByWsRef.current.get(target) ?? loadGrids(target);
+    const vacated = vacateMovedPanes(target, existing, result.sessions.map((m) => m.to));
+    const kept = existing.filter((grid) => !vacated.emptied.includes(grid.id));
+    const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, kept);
+    if (placed.grids.length === 0) return;
+    const updates = new Map<string, LayoutState>([...vacated.layouts, ...placed.layouts]);
+    for (const [key, state] of updates) saveLayout(key, state);
+    // Appended first, so removing the emptied grids never leaves the workspace without one.
+    let grids = appendGrids(target, placed.grids);
+    for (const id of vacated.emptied) grids = removeGrid(target, id);
+    setLayouts((prev) => {
+      const next = new Map(prev);
+      for (const [key, state] of updates) next.set(key, state);
+      for (const id of vacated.emptied) next.delete(gridStorageKey(target, id));
+      return next;
+    });
+    setGridsByWs((prev) => new Map(prev).set(target, grids));
+    setSelectedGridByWs((prev) => new Map(prev).set(target, placed.grids[0].id));
+  }, []);
+
   const dropWorkspaceLocalState = useCallback((path: string): void => {
     setWsColors((prev) => {
       if (!(path in prev)) return prev;
@@ -4700,6 +4730,13 @@ export function App(): React.JSX.Element {
           </AnimOut>
 
           <ConnectPhoneHost client={readyClient(conn)} />
+
+          <WorkspaceTransferHost
+            client={readyClient(conn)}
+            workspaces={workspaces}
+            agentProfiles={agentProfiles}
+            onImported={(result, target) => void applyTransferGrids(result, target)}
+          />
 
           <UpdateInstallHost
             update={update}

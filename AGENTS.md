@@ -36,7 +36,7 @@ Use the [glossary](docs/internals/glossary.md) consistently:
   a **pane** is the corresponding cell in the renderer grid.
 - **Workspace:** a project directory known to the daemon. Sessions belong to a workspace.
   A **grid** is a named layout; its split tree lives in renderer `localStorage`, not the
-  database or wire protocol.
+  database or wire protocol (a workspace transfer carries it as an opaque string).
 - **Daemon:** `houston-core`, which owns PTYs, storage, hooks and MCP for one **channel**.
   The installed `release` channel uses `~/.houston`; `dev` uses `~/.houston-dev`.
 - **Hooks:** CLI lifecycle events delivered as drop files and applied by the daemon.

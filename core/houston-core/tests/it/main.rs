@@ -184,6 +184,7 @@ mod windows_zcode_resume_wire;
 mod workspace_actions_wire;
 mod workspace_relocate_wire;
 mod worktree_check_wire;
+mod workspace_transfer_wire;
 mod worktree_cleanup_wire;
 mod worktree_include_wire;
 mod worktree_spawn_wire;

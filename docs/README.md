@@ -28,6 +28,8 @@ For an installed build, use the documentation at its version tag from the
 - [Remote access](user/remote-access.md) — following and answering panes from a phone or
   another computer, pairing, ntfy notifications, and what they transmit
 - [WSL](user/wsl.md) — workspaces inside WSL distros on Windows, and what they do not cover
+- [Workspace transfer](user/workspace-transfer.md) — moving a workspace's conversations and code
+  to another computer in an encrypted file, and what the file contains
 - [Dictation](user/voice.md) — local and cloud engines, and what leaves the machine
 - [Usage](user/usage.md) — token and cost figures, and what they do not cover
 - [Keybindings](user/keybindings.md) — what is rebindable, and passing keys through

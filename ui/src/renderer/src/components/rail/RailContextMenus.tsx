@@ -5,11 +5,14 @@ import { closeWorkspaceShortcut, effectiveLabel, renameWorkspaceShortcut } from 
 import { gridStorageKey } from "../../layout/tree";
 import { RAIL_VIEW_LABEL, type RailView } from "../../railView";
 import { showItemInFolder } from "../../houston/bridge";
+import { openWorkspaceTransfer } from "../../houston/transferOpen";
 import {
+  IconArrowUpRight,
   IconChevronRight,
   IconClose,
   IconCodeXml,
   IconEyeOff,
+  IconFileDown,
   IconFolder,
   IconFolderOpen,
   IconGrid,
@@ -229,6 +232,30 @@ export function WorkspaceContextMenu({
           onDone={onClose}
           onError={onOpenExternalError ?? (() => {})}
         />
+        <ContextMenuItem
+          role="menuitem"
+          data-testid="ws-transfer-export"
+          onClick={() => {
+            const { path, name } = menu;
+            onClose();
+            openWorkspaceTransfer({ mode: "export", workspace: path, name });
+          }}
+        >
+          <Icon glyph={IconArrowUpRight} role="ui" />
+          <span>Export transfer…</span>
+        </ContextMenuItem>
+        <ContextMenuItem
+          role="menuitem"
+          data-testid="ws-transfer-import"
+          onClick={() => {
+            const { path } = menu;
+            onClose();
+            openWorkspaceTransfer({ mode: "import", workspace: path });
+          }}
+        >
+          <Icon glyph={IconFileDown} role="ui" />
+          <span>Import transfer…</span>
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem danger
 

@@ -11,7 +11,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 150;
+pub const PROTOCOL_VERSION: u32 = 151;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2367,6 +2367,14 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
+    /// When this pane's conversation left in a workspace transfer; its process stopped then.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub transferred_at_ms: Option<u64>,
+    /// The pane resumed a conversation after it left in a transfer: it continues a fork.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(as = "Option<bool>", optional))]
+    pub transfer_fork: bool,
     /// The status line the pane's agent last wrote with `pane_note`.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
@@ -2831,6 +2839,203 @@ pub struct WorkspaceRelocateMoved {
     pub repaired: u32,
     /// Non-fatal follow-up problems, one line each.
     pub notes: Vec<String>,
+}
+
+/// The passphrase of a workspace transfer file. It is sent for one operation and is
+/// never shown by `Debug`, logged or stored.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export, type = "string"))]
+#[serde(transparent)]
+pub struct TransferPassphrase(String);
+
+impl TransferPassphrase {
+    pub fn new(passphrase: impl Into<String>) -> Self {
+        Self(passphrase.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for TransferPassphrase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TransferPassphrase(<redacted>)")
+    }
+}
+
+impl Drop for TransferPassphrase {
+    fn drop(&mut self) {
+        let mut bytes = std::mem::take(&mut self.0).into_bytes();
+        bytes.iter_mut().for_each(|byte| *byte = 0);
+        std::hint::black_box(&bytes);
+    }
+}
+
+/// The step a workspace transfer is on, for the dialog's progress line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TransferStage {
+    Checking,
+    Packing,
+    Decrypting,
+    RestoringCode,
+    PlacingConversations,
+    StartingPanes,
+}
+
+/// Why a workspace transfer was refused. Every refusal uses `TransferRefusal`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TransferRefusalCode {
+    UnknownWorkspace,
+    NotGitRepository,
+    WslWorkspace,
+    BusyPanes,
+    NothingToTransfer,
+    TooLarge,
+    DestinationExists,
+    PartiallyStaged,
+    TransferRunning,
+    PassphraseRequired,
+    WrongPassphrase,
+    NotTransferFile,
+    UnknownFormat,
+    OtherOperatingSystem,
+    CliMissing,
+    CliTooOld,
+    DirtyCheckout,
+    MissingCommits,
+    BranchDiverged,
+    BranchCheckedOut,
+    ChangesDoNotApply,
+    PathsExist,
+    ConversationOpen,
+    ProfileChoiceMissing,
+    ReturnTreeChanged,
+    ReturnForked,
+    ImportUndone,
+}
+
+/// A refusal states what is wrong (`problem`), the exact paths or values involved
+/// (`items`) and the steps that remove it (`steps`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferRefusal {
+    pub code: TransferRefusalCode,
+    pub problem: String,
+    pub items: Vec<String>,
+    pub steps: Vec<String>,
+}
+
+/// One pane a transfer file carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferPane {
+    pub session: u32,
+    pub title: String,
+    pub provider: AgentKind,
+    /// `main checkout`, or `worktree <slug>`.
+    pub checkout: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub profile_label: Option<String>,
+}
+
+/// A pane of the workspace a transfer does not carry, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferSkipped {
+    pub session: u32,
+    pub title: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferCliVersion {
+    pub provider: AgentKind,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferExportSummary {
+    pub transfer_id: String,
+    pub file: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub bytes: u64,
+    pub panes: Vec<TransferPane>,
+    pub skipped: Vec<TransferSkipped>,
+    /// Untracked symbolic links the file does not carry.
+    pub skipped_links: Vec<String>,
+}
+
+/// An agent profile a transfer file's panes name, and whether this computer has one
+/// with the same label for that provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferProfileNeed {
+    pub provider: AgentKind,
+    pub label: String,
+    pub matched: bool,
+}
+
+/// What `transfer_inspect` read from a file, before anything changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferFileSummary {
+    pub transfer_id: String,
+    pub source_os: String,
+    pub source_workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub remote_url: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: u64,
+    pub panes: Vec<TransferPane>,
+    pub skipped: Vec<TransferSkipped>,
+    pub cli_versions: Vec<TransferCliVersion>,
+    /// The registered workspace whose git remote matches the file's.
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub proposed_workspace: Option<String>,
+    pub profiles: Vec<TransferProfileNeed>,
+    /// The file continues a transfer this computer exported.
+    pub return_trip: bool,
+}
+
+/// The user's answer for a profile label without a match: a local profile label,
+/// or `None` for the default account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferProfileChoice {
+    pub provider: AgentKind,
+    pub label: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub use_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferSessionMapping {
+    pub from: u32,
+    pub to: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferImportResult {
+    pub transfer_id: String,
+    pub workspace: String,
+    pub source_workspace: String,
+    /// Source pane id to the new pane id, for remapping the grids.
+    pub sessions: Vec<TransferSessionMapping>,
+    /// Panes of an earlier export from this computer that a return trip resumed.
+    pub updated_in_place: Vec<TransferSessionMapping>,
+    /// The source workspace's grid entries, unchanged; `None` on a return trip.
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub grids: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -5369,6 +5574,34 @@ pub enum ClientMsg {
     DesktopPresence {
         active: bool,
     },
+    /// Writes the workspace's Claude and Codex panes, code state and `grids` (the
+    /// renderer's grid entries, stored uninterpreted) to `destination`. Replies
+    /// `transfer_exported` or `transfer_refused` with the same `request`.
+    TransferExport {
+        request: u32,
+        workspace: String,
+        destination: String,
+        /// The save dialog confirmed replacing `destination`; otherwise an existing file
+        /// there is refused.
+        #[serde(default)]
+        overwrite: bool,
+        passphrase: TransferPassphrase,
+        grids: String,
+    },
+    /// Reads a transfer file's summary without changing anything.
+    TransferInspect {
+        request: u32,
+        path: String,
+        passphrase: TransferPassphrase,
+    },
+    /// Restores a transfer file into `workspace` and resumes its panes.
+    TransferImport {
+        request: u32,
+        path: String,
+        passphrase: TransferPassphrase,
+        workspace: String,
+        profiles: Vec<TransferProfileChoice>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6399,6 +6632,26 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expires_at: u64,
     },
+    TransferProgress {
+        request: u32,
+        stage: TransferStage,
+    },
+    TransferExported {
+        request: u32,
+        summary: TransferExportSummary,
+    },
+    TransferInspected {
+        request: u32,
+        summary: TransferFileSummary,
+    },
+    TransferImported {
+        request: u32,
+        result: TransferImportResult,
+    },
+    TransferRefused {
+        request: u32,
+        refusal: TransferRefusal,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -6811,6 +7064,21 @@ pub struct ManageErrorBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transfer_passphrase_never_appears_in_debug_output() {
+        let msg: ClientMsg = serde_json::from_str(
+            r#"{"type":"transfer_inspect","request":1,"path":"/tmp/a.houston-transfer","passphrase":"hunter2"}"#,
+        )
+        .unwrap();
+        let shown = format!("{msg:?}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
+        let ClientMsg::TransferInspect { passphrase, .. } = msg else {
+            panic!("expected transfer_inspect");
+        };
+        assert_eq!(passphrase.expose(), "hunter2");
+    }
 
     #[test]
     fn dictation_defaults_to_portuguese_rather_than_auto_detect() {

@@ -164,6 +164,46 @@ pub async fn dialog_pick_image<R: Runtime>(app: AppHandle<R>) -> Result<Option<P
     Ok(picked)
 }
 
+/// Where to write a workspace transfer file, exactly as the dialog confirmed it (the
+/// renderer appends a missing extension and tells the daemon whether replacing is
+/// confirmed). The daemon writes it, so the path is not added to the file allowlist.
+#[tauri::command]
+pub async fn dialog_save_transfer<R: Runtime>(
+    default_name: String,
+    app: AppHandle<R>,
+) -> Result<Option<String>, String> {
+    let picked = await_pick(|cb| {
+        app.dialog()
+            .file()
+            .set_title("Export workspace transfer")
+            .set_file_name(&default_name)
+            .add_filter(
+                "Houston workspace transfer",
+                &[crate::transfer_open::EXTENSION],
+            )
+            .save_file(move |file_path| cb(to_pick_result("dialog_save_transfer", file_path)));
+    })
+    .await?;
+    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
+}
+
+/// A transfer file to import; the daemon reads it.
+#[tauri::command]
+pub async fn dialog_pick_transfer<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
+    let picked = await_pick(|cb| {
+        app.dialog()
+            .file()
+            .set_title("Import workspace transfer")
+            .add_filter(
+                "Houston workspace transfer",
+                &[crate::transfer_open::EXTENSION],
+            )
+            .pick_file(move |file_path| cb(to_pick_result("dialog_pick_transfer", file_path)));
+    })
+    .await?;
+    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
+}
+
 pub const CHAT_IMAGE_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 pub fn image_default_name(url: &str) -> String {

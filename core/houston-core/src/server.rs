@@ -1560,6 +1560,7 @@ async fn handle_control(
         Ok(m) => m,
         Err(e) => {
             let credential_message = text.contains("credential")
+                || text.contains("passphrase")
                 || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| {
                     value
                         .as_object()
@@ -4494,7 +4495,120 @@ async fn dispatch(
             daemon.remote_desktop_presence(conn_id, active);
             Ok(())
         }
+        proto::ClientMsg::TransferExport {
+            request,
+            workspace,
+            destination,
+            overwrite,
+            passphrase,
+            grids,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_export(
+                        &workspace,
+                        &destination,
+                        overwrite,
+                        &passphrase,
+                        grids,
+                        progress,
+                    )
+                    .map(|summary| proto::ServerMsg::TransferExported { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferInspect {
+            request,
+            path,
+            passphrase,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, _| {
+                daemon
+                    .transfer_inspect(&path, &passphrase)
+                    .map(|summary| proto::ServerMsg::TransferInspected { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferImport {
+            request,
+            path,
+            passphrase,
+            workspace,
+            profiles,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_import(&path, &passphrase, &workspace, &profiles, progress)
+                    .map(|result| proto::ServerMsg::TransferImported { request, result })
+            })
+            .await
+        }
     }
+}
+
+/// Runs a workspace transfer off the runtime, forwarding its progress. A refusal answers
+/// `transfer_refused`; any other failure is an `error` with context `transfer:<request>`.
+async fn transfer_reply<F>(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    request: u32,
+    work: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce(
+            &Arc<Daemon>,
+            &(dyn Fn(proto::TransferStage) + Send + Sync),
+        ) -> anyhow::Result<proto::ServerMsg>
+        + Send
+        + 'static,
+{
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let daemon = Arc::clone(daemon);
+    let mut task = tokio::task::spawn_blocking(move || {
+        let progress = move |stage| {
+            let _ = tx.send(stage);
+        };
+        work(&daemon, &progress)
+    });
+    let result = loop {
+        tokio::select! {
+            Some(stage) = rx.recv() => {
+                let _ = send_msg(sink, &proto::ServerMsg::TransferProgress { request, stage }).await;
+            }
+            result = &mut task => break result,
+        }
+    };
+    let reply = match result {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(error)) => match crate::transfer::refusal(&error) {
+            Some(refusal) => proto::ServerMsg::TransferRefused {
+                request,
+                refusal: refusal.clone(),
+            },
+            None => {
+                tracing::warn!("transfer request {request} failed: {error:#}");
+                send_error(
+                    sink,
+                    format!("{error:#}"),
+                    Some(format!("transfer:{request}")),
+                )
+                .await;
+                return Ok(());
+            }
+        },
+        Err(error) => {
+            send_error(
+                sink,
+                format!("transfer request {request} stopped unexpectedly: {error}"),
+                Some(format!("transfer:{request}")),
+            )
+            .await;
+            return Ok(());
+        }
+    };
+    send_msg(sink, &reply)
+        .await
+        .map_err(|_| anyhow::anyhow!("sending the transfer reply failed"))
 }
 
 // Mirrored by the renderer in App.tsx.

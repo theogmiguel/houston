@@ -284,7 +284,11 @@ they are never inferred from terminal text.
 4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
    first prompt pasted once its composer reports focus through the terminal modes it
    sets: bracketed paste enabled, then the cursor shown (`composer_ready.rs`,
-   `Daemon::first_prompt_deliver`, deadline `FIRST_PROMPT_DEADLINE`). Output alone is no
+   `Daemon::first_prompt_deliver`, deadline `FIRST_PROMPT_DEADLINE`, after which a
+   submitted prompt is pasted regardless). A prefilled prompt (a task brief, a transfer's
+   moved note) waits only for that signal, until `FIRST_PROMPT_PREFILL_DEADLINE`: a
+   first-run question such as Claude's folder trust prompt stays up until the operator
+   answers it, and a paste there would answer it. Output alone is no
    signal: ConPTY draws before the CLI has started, and ZCode starts its TUI seconds
    before it focuses the input box, dropping keys that arrive in between. The scanner
    reads DEC private mode sequences, never text, and the VT binding exposes no modes. It
