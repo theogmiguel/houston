@@ -5040,10 +5040,12 @@ impl Db {
             "UPDATE pane_inbox SET reserved_at = NULL, delivery_id = NULL WHERE reserved_at IS NOT NULL",
             [],
         )? as u32;
+        // At the attempt cap the last submitted paste stands; replaying it on every boot
+        // would repeat already-handled messages until the seven-day bound deletes them.
         let pastes_requeued = conn.execute(
             "UPDATE pane_inbox SET delivered_at = NULL, delivered_via = NULL, delivery_id = NULL
-             WHERE delivered_via = 'paste' AND confirmed_at IS NULL",
-            [],
+             WHERE delivered_via = 'paste' AND confirmed_at IS NULL AND attempts < ?1",
+            [crate::orchestrate::PASTE_ATTEMPTS_MAX],
         )? as u32;
         let operator_requeued = conn.execute(
             "UPDATE pane_inbox SET delivered_at = NULL, delivered_via = NULL
@@ -9546,6 +9548,36 @@ mod tests {
         assert_eq!(operator_rows.len(), 1);
         assert_eq!(operator_rows[0].original_to, Some(3));
         assert_eq!(operator_rows[0].reason.as_deref(), Some("parent_dead"));
+    }
+
+    #[test]
+    fn restarts_stop_replaying_an_unconfirmed_paste_at_the_attempt_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", None, Some(1), true), 100)
+            .unwrap();
+        for attempt in 1..=crate::orchestrate::PASTE_ATTEMPTS_MAX {
+            let now = 100 + u64::from(attempt) * 10;
+            let (delivery, rows) = db
+                .inbox_reserve(1, now, 10, 1_000_000)
+                .unwrap()
+                .unwrap_or_else(|| panic!("attempt {attempt}: the row is pending again"));
+            assert_eq!(rows[0].attempts, attempt);
+            assert!(db.inbox_pin_reservation(&delivery).unwrap());
+            db.inbox_mark_delivered(&delivery, "paste", now).unwrap();
+            db.inbox_recover_after_restart_at(&[1], now + 1).unwrap();
+        }
+        let row = db.inbox_get(id).unwrap().unwrap();
+        assert_eq!(
+            db.inbox_pending_count(1).unwrap(),
+            0,
+            "a paste submitted {} times is not replayed on the next restart: {row:?}",
+            crate::orchestrate::PASTE_ATTEMPTS_MAX
+        );
+        assert_eq!(row.delivered_via.as_deref(), Some("paste"));
+        assert!(row.delivered_at.is_some() && row.confirmed_at.is_none());
+        assert!(row.reserved_at.is_none() && row.delivery_id.is_none());
     }
 
     #[test]
