@@ -48,8 +48,9 @@ pub trait ThreadHost: Send + Sync + 'static {
 
 /// The provider-specific half of a structured session.
 pub trait ProviderAdapter: Send + Sync + 'static {
-    /// Names the provider in notices and refusals.
     fn provider(&self) -> AgentKind;
+    /// Names the provider in notices and refusals, such as "Claude".
+    fn display_name(&self) -> &'static str;
     /// The process for `conversation`.
     fn command(&self, conversation: Option<&Conversation>) -> Result<ProcessSpec>;
     /// One codec per process: decoders keep per-process state (block indices, request ids).
@@ -225,7 +226,7 @@ fn adopt_suspended(job: &crate::pid::OwnedJob, child: &std::process::Child) -> R
 /// One run of the provider process. A Stop or a crash ends it; the handle starts the next.
 struct ThreadProcess {
     generation: u64,
-    provider: AgentKind,
+    provider: &'static str,
     pid: u32,
     child: Mutex<Option<std::process::Child>>,
     /// Held only by writers: ending the tree never waits for it, so a write blocked on a
@@ -249,7 +250,7 @@ impl ThreadProcess {
         std::process::ChildStdout,
         std::process::ChildStderr,
     )> {
-        let provider = adapter.provider();
+        let provider = adapter.display_name();
         let spec = adapter.command(conversation)?;
         let mut command = spec.command();
         #[cfg(unix)]
@@ -266,7 +267,7 @@ impl ThreadProcess {
         };
         let mut child = command.spawn().with_context(|| {
             format!(
-                "starting {} for a thread session (expected the {provider:?} CLI on PATH)",
+                "starting {} for a thread session (expected the {provider} CLI on PATH)",
                 spec.program.to_string_lossy()
             )
         })?;
@@ -298,11 +299,11 @@ impl ThreadProcess {
         let mut stdin = self.stdin.lock().expect("thread stdin lock");
         let pipe = stdin
             .as_mut()
-            .ok_or_else(|| anyhow!("{:?} pid {} has no open stdin", self.provider, self.pid))?;
+            .ok_or_else(|| anyhow!("{} pid {} has no open stdin", self.provider, self.pid))?;
         pipe.write_all(line.as_bytes())
             .and_then(|()| pipe.write_all(b"\n"))
             .and_then(|()| pipe.flush())
-            .with_context(|| format!("writing a message to {:?} pid {}", self.provider, self.pid))
+            .with_context(|| format!("writing a message to {} pid {}", self.provider, self.pid))
     }
 
     /// Ends every process in the tree and reaps the root. Returns its exit code if known.
@@ -523,16 +524,13 @@ impl StructuredRuntime {
         if let Err(error) = process.write_line(&line) {
             if process.stopping.load(Ordering::Acquire) {
                 bail!(
-                    "thread session {} stopped before this message reached {:?}",
+                    "thread session {} stopped before this message reached {}",
                     self.session,
                     process.provider
                 );
             }
             self.emit(vec![ThreadEventKind::Notice {
-                text: format!(
-                    "This message did not reach {:?}: {error:#}",
-                    process.provider
-                ),
+                text: format!("This message did not reach {}: {error:#}", process.provider),
             }]);
             return Err(error);
         }
@@ -749,7 +747,7 @@ impl StructuredRuntime {
             Decoded {
                 events: vec![ThreadEventKind::Notice {
                     text: format!(
-                        "Skipped one {bytes} byte line of {:?}'s output: over the {} MiB \
+                        "Skipped one {bytes} byte line of {}'s output: over the {} MiB \
                          limit for a thread line, so an event of this turn is missing.",
                         process.provider,
                         STDOUT_LINE_MAX_BYTES / (1024 * 1024)
@@ -787,12 +785,12 @@ impl StructuredRuntime {
         let provider = process.provider;
         let mut events = self.state.lock().expect("thread state lock").end_open_turn(
             TurnOutcome::Error,
-            Some(format!("{provider:?} exited during the turn ({code})")),
+            Some(format!("{provider} exited during the turn ({code})")),
         );
         let text = if stderr.is_empty() {
-            format!("{provider:?} exited ({code}); the next message starts it again.")
+            format!("{provider} exited ({code}); the next message starts it again.")
         } else {
-            format!("{provider:?} exited ({code}); the next message starts it again. Its last output:\n{stderr}")
+            format!("{provider} exited ({code}); the next message starts it again. Its last output:\n{stderr}")
         };
         events.push(ThreadEventKind::Notice { text });
         self.emit(events);
@@ -1126,31 +1124,39 @@ mod tests {
         spawned: Mutex<Vec<ProcessSpec>>,
     }
 
+    /// `program args` with this test process's environment.
+    fn spec(program: &str, args: &[&str]) -> ProcessSpec {
+        let host = crate::host_env::HostEnv::capture();
+        ProcessSpec {
+            program: program.into(),
+            args: args.iter().map(OsString::from).collect(),
+            env: host
+                .names()
+                .filter_map(|name| name.to_str())
+                .filter_map(|name| Some((name.to_string(), host.var(name)?)))
+                .collect(),
+            cwd: None,
+        }
+    }
+
     impl ProviderAdapter for EchoAdapter {
         fn provider(&self) -> AgentKind {
             AgentKind::Codex
         }
 
+        fn display_name(&self) -> &'static str {
+            "Echo"
+        }
+
         fn command(&self, conversation: Option<&Conversation>) -> Result<ProcessSpec> {
             assert_eq!(conversation, None);
             #[cfg(unix)]
-            let (program, args) = ("sh", ["-c", "read line; echo \"reply:$line\""].as_slice());
+            let spec = spec("sh", &["-c", "read line; echo \"reply:$line\""]);
             #[cfg(windows)]
-            let (program, args) = (
+            let spec = spec(
                 "cmd",
-                ["/v:on", "/d", "/c", "set /p line=&echo reply:!line!"].as_slice(),
+                &["/v:on", "/d", "/c", "set /p line=&echo reply:!line!"],
             );
-            let host = crate::host_env::HostEnv::capture();
-            let spec = ProcessSpec {
-                program: program.into(),
-                args: args.iter().map(OsString::from).collect(),
-                env: host
-                    .names()
-                    .filter_map(|name| name.to_str())
-                    .filter_map(|name| Some((name.to_string(), host.var(name)?)))
-                    .collect(),
-                cwd: None,
-            };
             self.spawned.lock().unwrap().push(spec.clone());
             Ok(spec)
         }
@@ -1205,6 +1211,46 @@ mod tests {
         fn settle(&self, _session: u32, _outcome: TurnOutcome) {}
         fn process_started(&self, _session: u32, _pid: u32) {}
         fn process_gone(&self, _session: u32) {}
+    }
+
+    fn wait_for(
+        host: &StoredEvents,
+        found: impl Fn(&ThreadEventKind) -> bool,
+    ) -> std::sync::MutexGuard<'_, Vec<ThreadEventKind>> {
+        let events = host.events.lock().unwrap();
+        let (events, wait) = host
+            .changed
+            .wait_timeout_while(events, Duration::from_secs(30), |events| {
+                !events.iter().any(&found)
+            })
+            .unwrap();
+        assert!(!wait.timed_out(), "not found in {events:?}");
+        events
+    }
+
+    #[test]
+    fn an_exit_notice_names_the_provider_by_its_display_name() {
+        let host = Arc::new(StoredEvents::default());
+        let handle =
+            StructuredRuntime::start(7, Arc::new(EchoAdapter::default()), None, 1, host.clone())
+                .unwrap();
+        handle.send("hello").unwrap();
+        let events = wait_for(
+            &host,
+            |event| matches!(event, ThreadEventKind::Notice { text } if text.contains("exited")),
+        );
+        let notice = events.iter().find_map(|event| match event {
+            ThreadEventKind::Notice { text } => Some(text.clone()),
+            _ => None,
+        });
+        assert!(
+            notice
+                .as_deref()
+                .is_some_and(|text| text.starts_with("Echo exited (")),
+            "{notice:?}"
+        );
+        drop(events);
+        handle.close();
     }
 
     #[test]
