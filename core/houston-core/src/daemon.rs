@@ -20729,8 +20729,12 @@ impl Daemon {
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
-        crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
-            .context("spawn refused")?;
+        if ask.branch.is_some() {
+            crate::worktrees::create_on_named_branch(project_dir, &branch, None, &dest)
+        } else {
+            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
+        }
+        .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
         let mut created = CreatedWorktree {
             repo: project_dir.to_path_buf(),
