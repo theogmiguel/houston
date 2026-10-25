@@ -3877,6 +3877,9 @@ pub struct RemoteInfo {
 }
 
 pub const REMOTE_NOTIFY_DELAY_MAX_SECS: u32 = 600;
+// Matches the system idle threshold desktop presence commonly uses: long enough
+// to read a reply, short enough that a phone hears about a desk left behind.
+pub const DESKTOP_AWAY_SECS: u32 = 180;
 
 /// A desktop grid as a paired device shows it: the panes it holds, in the
 /// grid's reading order. Grids live in renderer storage; this copy is how the
@@ -5251,6 +5254,12 @@ pub enum ClientMsg {
     /// is an `error` with context `remote`.
     RemoteGridsPublish {
         grids: Vec<RemoteGrid>,
+    },
+    /// Whether someone is using the desktop app. No reply. `active` holds phone
+    /// notifications for `DESKTOP_AWAY_SECS` from receipt; `false`, or closing
+    /// the connection, releases them.
+    DesktopPresence {
+        active: bool,
     },
 }
 

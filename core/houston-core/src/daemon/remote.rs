@@ -586,6 +586,11 @@ impl Daemon {
         out
     }
 
+    /// Phone notifications wait while `conn` reports the desktop in use.
+    pub fn remote_desktop_presence(&self, conn: u64, active: bool) {
+        self.remote.report_presence(conn, active);
+    }
+
     /// Replaces the grids devices group panes by. Refuses a set over the
     /// limits instead of trimming it, naming the limit that tripped.
     pub fn remote_grids_publish(&self, grids: Vec<proto::RemoteGrid>) -> anyhow::Result<()> {
@@ -1153,6 +1158,11 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn remote_presence_held_for_test(&self) -> bool {
+        self.remote.presence_hold().is_some()
+    }
+
+    #[doc(hidden)]
     pub fn remote_pending_notifications_for_test(&self) -> usize {
         self.remote
             .notifications
@@ -1550,7 +1560,11 @@ impl Daemon {
                         && self.remote.seen(*id).map(|s| s.epoch) == Some(n.event.epoch)
                         && self.get(*id).is_ok()
                 });
-                pending.values().map(|n| n.due).min()
+                let hold = self.remote.presence_hold();
+                pending
+                    .values()
+                    .map(|n| hold.map_or(n.due, |h| n.due.max(h)))
+                    .min()
             };
             tokio::select! {
                 event = rx.recv() => {
@@ -1579,7 +1593,9 @@ impl Daemon {
                         None => std::future::pending::<()>().await,
                     }
                 } => {
-                    let next = {
+                    let next = if self.remote.presence_hold().is_some() {
+                        None
+                    } else {
                         let mut pending = self.remote.notifications.lock().expect("remote notifications lock");
                         let id = pending.iter().filter(|(_, n)| n.due <= tokio::time::Instant::now()).min_by_key(|(_, n)| n.due).map(|(id, _)| *id);
                         id.and_then(|id| pending.remove(&id))

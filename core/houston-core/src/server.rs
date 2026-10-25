@@ -1578,6 +1578,13 @@ async fn handle_control(
         }
     };
 
+    // A mutex write: on the connection task, reports apply in socket order and never
+    // wait for, or lose to, a full set of control slots.
+    if let proto::ClientMsg::DesktopPresence { active } = msg {
+        daemon.remote_desktop_presence(conn_id, active);
+        return;
+    }
+
     if daemon.refusing_mutations() && !is_read_only_during_shutdown(&msg) {
         let (message, context) = if daemon.is_handing_off() {
             (
@@ -4386,6 +4393,10 @@ async fn dispatch(
             if let Err(e) = daemon.remote_grids_publish(grids) {
                 send_error(sink, format!("{e:#}"), Some("remote".into())).await;
             }
+            Ok(())
+        }
+        proto::ClientMsg::DesktopPresence { active } => {
+            daemon.remote_desktop_presence(conn_id, active);
             Ok(())
         }
     }
