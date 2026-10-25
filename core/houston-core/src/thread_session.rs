@@ -25,7 +25,7 @@ pub const PERMISSION_TOOL: &str = "thread_permission";
 pub const APPROVALS_PENDING_MAX: usize = 16;
 /// A tool name or tool use id above this is cut; real ones are a few dozen bytes.
 const APPROVAL_NAME_MAX_BYTES: usize = 256;
-/// The longest deny message Claude is told.
+/// The longest deny message the provider is told.
 pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4 * 1024;
 
 /// 30 `thread_events` messages a second per session at most.
@@ -621,8 +621,9 @@ impl StructuredRuntime {
             let state = self.state.lock().expect("thread state lock");
             if state.closed || state.process.is_none() {
                 bail!(
-                    "session {} has no running Claude process; nothing can be approved",
-                    self.session
+                    "session {} has no running {} process; nothing can be approved",
+                    self.session,
+                    self.adapter.display_name()
                 );
             }
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
@@ -702,7 +703,10 @@ impl StructuredRuntime {
         self.emit(vec![ThreadEventKind::ApprovalResolved {
             request_id: request_id.to_string(),
             decision: ApprovalDecision::Withdrawn,
-            reason: Some("Claude stopped waiting for an answer; the tool did not run.".into()),
+            reason: Some(format!(
+                "{} stopped waiting for an answer; the tool did not run.",
+                self.adapter.display_name()
+            )),
         }]);
         if empty {
             self.host.approvals_pending(self.session, false);
@@ -1063,7 +1067,10 @@ impl StructuredRuntime {
             }
             state.process = None;
         }
-        self.deny_pending("Claude exited before anyone answered.", true);
+        self.deny_pending(
+            &format!("{} exited before anyone answered.", process.provider),
+            true,
+        );
         let code = process.end_tree(false);
         self.host.process_gone(self.session);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
@@ -1622,6 +1629,27 @@ mod tests {
             .recv_timeout(Duration::from_secs(60))
             .expect("start wrote its handshake while the stdout reader waited on the state lock")
             .unwrap();
+    }
+
+    #[test]
+    fn an_approval_refusal_names_the_provider_by_its_display_name() {
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            Arc::new(StoredEvents::default()),
+        )
+        .unwrap();
+        handle.close();
+        let error = handle
+            .request_approval("Bash", "toolu_1", &serde_json::json!({}))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "session 7 has no running Echo process; nothing can be approved"
+        );
     }
 
     #[test]
