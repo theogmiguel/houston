@@ -71,6 +71,7 @@ let cachedFontFamily = "";
 let fontCacheKey = "";
 let rowMask = new Uint8Array(0);
 const fontCache = new Map<number, string>();
+const asciiAdvanceCache = new Map<string, number>();
 
 function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): string {
   if (fontSize !== cachedFontSize || fontFamily !== cachedFontFamily) {
@@ -78,6 +79,7 @@ function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): s
     cachedFontFamily = fontFamily;
     fontCacheKey = `${fontSize}px ${fontFamily}`;
     fontCache.clear();
+    asciiAdvanceCache.clear();
   }
   const variant = (cell.italic ? 1 : 0) | (cell.bold ? 2 : 0);
   const hit = fontCache.get(variant);
@@ -87,6 +89,15 @@ function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): s
   const value = `${style} ${weight} ${fontCacheKey}`;
   fontCache.set(variant, value);
   return value;
+}
+
+function asciiCellAdvance(context: CanvasRenderingContext2D, font: string): number {
+  const hit = asciiAdvanceCache.get(font);
+  if (hit !== undefined) return hit;
+  context.font = font;
+  const advance = context.measureText("M").width;
+  asciiAdvanceCache.set(font, advance);
+  return advance;
 }
 
 export function snapToDevice(value: number, dpr: number): number {
@@ -287,8 +298,11 @@ export function renderGhosttySnapshot(options: {
           (cell) => sameTextStyle(cell, first) && !isCustomGlyph(cell.text),
         );
         let text = "";
+        let asciiCells = true;
         for (let column = runStart; column < runEnd; column += 1) {
-          text += row.cells[column]!.text;
+          const cellText = row.cells[column]!.text;
+          text += cellText;
+          if (cellText.length !== 1 || cellText.charCodeAt(0) >= 0x7f) asciiCells = false;
         }
         if (!first.invisible && text.trim().length > 0) {
           context.save();
@@ -300,10 +314,19 @@ export function renderGhosttySnapshot(options: {
             metrics.height + verticalClipBleed * 2,
           );
           context.clip();
-          context.font = fontForCell(first, fontSize, fontFamily);
+          const font = fontForCell(first, fontSize, fontFamily);
+          context.font = font;
           context.fillStyle = cssColor(first.foreground);
-          const runWidth = (runEnd - runStart) * metrics.width;
-          if (Math.abs(context.measureText(text).width - runWidth) <= 0.5 / devicePixelRatio) {
+          const runCols = runEnd - runStart;
+          const runWidth = runCols * metrics.width;
+          /* One fillText advances at the font's natural widths, so a
+           * snapped-up cell or a fallback glyph drifts glyphs off the grid.
+           * Only one-code-unit ASCII cells share an exact advance. */
+          const onGrid =
+            asciiCells &&
+            Math.abs(asciiCellAdvance(context, font) - metrics.width) * runCols <=
+              0.5 / devicePixelRatio;
+          if (onGrid) {
             context.fillText(
               text,
               padding + runStart * metrics.width,
@@ -311,13 +334,9 @@ export function renderGhosttySnapshot(options: {
               runWidth,
             );
           } else {
-            /* One fillText for the run advances at the font's natural widths,
-             * so a snapped-up cell or a fallback glyph wider than its cell
-             * drifts the glyphs away from the grid that hit-testing and the
-             * overlays use. Place each cell on the grid instead. */
             for (let column = runStart; column < runEnd; column += 1) {
               const cell = row.cells[column];
-              if (!cell || cell.text.length === 0) continue;
+              if (!cell || cell.text.trim().length === 0) continue;
               const columns = cell.wide === GHOSTTY_CELL_WIDE.wide ? 2 : 1;
               context.fillText(
                 cell.text,

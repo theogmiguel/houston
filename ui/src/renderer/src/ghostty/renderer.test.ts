@@ -65,10 +65,16 @@ type RecordedCall = { op: string; args: readonly unknown[]; style?: string; font
 function recordingContext(
   canvasWidth = 400,
   canvasHeight = 300,
-  options: { measureText?: (text: string) => number } = {},
+  options: {
+    advance?: number;
+    measureText?: (text: string) => number;
+  } = {},
 ) {
   const calls: RecordedCall[] = [];
-  const measureAdvance = options.measureText ?? ((text: string) => text.length * 6);
+  const measured: string[] = [];
+  const advance = options.advance ?? 6;
+  const measureAdvance =
+    options.measureText ?? ((text: string) => (text === "M" ? advance : text.length * 6));
   let fillStyle = "";
   let strokeStyle = "";
   let font = "";
@@ -104,13 +110,16 @@ function recordingContext(
     fillRect: (...args: number[]) => calls.push({ op: "fillRect", args, style: fillStyle }),
     strokeRect: (...args: number[]) => calls.push({ op: "strokeRect", args, style: strokeStyle }),
     fillText: (...args: unknown[]) => calls.push({ op: "fillText", args, style: fillStyle, font }),
-    measureText: (text: string) => ({
-      width: measureAdvance(text),
-      actualBoundingBoxAscent: 10,
-      actualBoundingBoxDescent: 3,
-    }),
+    measureText: (text: string) => {
+      measured.push(text);
+      return {
+        width: measureAdvance(text),
+        actualBoundingBoxAscent: 10,
+        actualBoundingBoxDescent: 3,
+      };
+    },
   };
-  return { context: context as unknown as CanvasRenderingContext2D, calls };
+  return { context: context as unknown as CanvasRenderingContext2D, calls, measured };
 }
 
 function fillRects(calls: readonly RecordedCall[]): RecordedCall[] {
@@ -542,15 +551,13 @@ describe("renderGhosttySnapshot", () => {
 
   it("keeps a single fillText for a run whose advance matches the grid", () => {
     const rowCells = [cell({ text: "a" }), cell({ text: "b" }), cell({ text: "c" })];
-    const { context, calls } = recordingContext(400, 300, {
-      measureText: (text) => text.length * 7,
-    });
+    const { context, calls, measured } = recordingContext(400, 300, { advance: 7 });
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
       metrics: metrics({ width: 7, height: 20 }),
       fontSize: 12,
-      fontFamily: "monospace",
+      fontFamily: "monospace-exact",
       padding: 4,
       forceFull: false,
       cursorOn: false,
@@ -558,13 +565,12 @@ describe("renderGhosttySnapshot", () => {
     const texts = drawnTexts(calls);
     expect(texts).toHaveLength(1);
     expect(texts[0]?.args).toEqual(["abc", 4, 18, 21]);
+    expect(measured).toEqual(["M"]);
   });
 
   it("draws a run on the grid when a fallback glyph is wider than its cell", () => {
     const rowCells = [cell({ text: "x" }), cell({ text: "⏺" }), cell({ text: "y" })];
-    const { context, calls } = recordingContext(400, 300, {
-      measureText: (text) => [...text].reduce((sum, char) => sum + (char === "⏺" ? 10.5 : 7), 0),
-    });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
@@ -588,9 +594,7 @@ describe("renderGhosttySnapshot", () => {
       cell({ text: "", wide: GHOSTTY_CELL_WIDE.spacerTail }),
       cell({ text: "b" }),
     ];
-    const { context, calls } = recordingContext(400, 300, {
-      measureText: (text) => [...text].reduce((sum, char) => sum + (char === "永" ? 12 : 7), 0),
-    });
+    const { context, calls } = recordingContext();
     renderGhosttySnapshot({
       context,
       snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
@@ -605,5 +609,146 @@ describe("renderGhosttySnapshot", () => {
     expect(texts.map((entry) => entry.args[0])).toEqual(["a", "永", "b"]);
     expect(texts.map((entry) => entry.args[1])).toEqual([4, 11, 25]);
     expect(texts.map((entry) => entry.args[3])).toEqual([7, 14, 7]);
+  });
+
+  it("places every glyph on the grid when a wide fallback glyph is offset by narrower ones", () => {
+    const rowCells = [cell({ text: "⏺" }), cell({ text: "l" })];
+    const { context, calls } = recordingContext(400, 300, {
+      measureText: (text) =>
+        text === "M"
+          ? 7
+          : [...text].reduce((sum, char) => sum + (char === "⏺" ? 10.5 : 3.5), 0),
+    });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-cancellation",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["⏺", "l"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7]);
+  });
+
+  it("draws cell by cell past the device-pixel tolerance over the run at DPR 2", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
+    const { context, calls } = recordingContext(400, 300, { advance: 7.3 });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-dpr2-far",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+      devicePixelRatio: 2,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "b"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7]);
+  });
+
+  it("draws cell by cell at DPR 2 for a difference a whole-pixel tolerance would accept", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
+    const { context, calls } = recordingContext(400, 300, { advance: 7.2 });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-dpr2-mid",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+      devicePixelRatio: 2,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "b"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7]);
+  });
+
+  it("keeps one fillText within the device-pixel tolerance over the run at DPR 2", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
+    const { context, calls } = recordingContext(400, 300, { advance: 7.1 });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-dpr2-near",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+      devicePixelRatio: 2,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]?.args).toEqual(["ab", 4, 18, 14]);
+  });
+
+  it("draws cell by cell past the device-pixel tolerance over the run at DPR 1", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
+    const { context, calls } = recordingContext(400, 300, { advance: 7.3 });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-dpr1-far",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+      devicePixelRatio: 1,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "b"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7]);
+  });
+
+  it("keeps one fillText within the device-pixel tolerance over the run at DPR 1", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" })];
+    const { context, calls } = recordingContext(400, 300, { advance: 7.2 });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-dpr1-near",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+      devicePixelRatio: 1,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]?.args).toEqual(["ab", 4, 18, 14]);
+  });
+
+  it("skips whitespace-only cells in a run placed cell by cell", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: " " }), cell({ text: "⏺" })];
+    const { context, calls } = recordingContext();
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace-whitespace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "⏺"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 18]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7]);
   });
 });
