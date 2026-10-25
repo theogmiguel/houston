@@ -76,6 +76,13 @@ Removed sessions release readiness, attach-attempt and generation metadata. A bo
 recent-removal set suppresses late readiness and background queries; exited sessions that
 remain in the roster keep their readiness suppression until removal.
 
+The daemon refuses control requests past 16 in flight per connection instead of queueing
+them, so a refresh that sends one request per directory or workspace must not fire them
+all at once. Such fan-outs queue through `createBoundedPoller` (`houston/boundedPoller.ts`),
+which bounds requests in flight and skips a key already queued or awaiting its reply.
+`inbox_list` shares one poller per client across every surface, because its `inbox_rows`
+reply reaches every subscriber; `git_status` and `git_branch` fan-outs use their own bounds.
+
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
 `write`. Each accepted input is sent as one binary frame, preserving paste transaction
 ordering. Paste encoding admits at most 65,536 UTF-16 code units before UTF-8/WASM

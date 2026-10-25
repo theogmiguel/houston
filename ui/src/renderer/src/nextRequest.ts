@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from './houston/client'
 import type { InboxRow } from './houston/generated/InboxRow'
+import { requestInboxLists } from './houston/inboxListRequests'
 import { addressedToOperator, ownUserInput } from './sessionAttention'
 import { openSideOverview, selectOverviewChild } from './sidePanel'
 
@@ -96,7 +97,7 @@ export function useOperatorInbox(client: HoustonClient | null, workspaces: reado
         ? current
         : [...current.filter((other) => other.id !== row.id), ...(open(row) ? [row] : [])])
     })
-    for (const path of workspaces) client.inboxList(path)
+    requestInboxLists(client, workspaces)
     return () => { offRows(); offChanged() }
   }, [client, workspaceKey])
   return rows

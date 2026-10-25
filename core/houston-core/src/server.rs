@@ -2829,11 +2829,7 @@ async fn dispatch(
             let models = Arc::clone(daemon);
             tokio::spawn(async move { models.refresh_model_catalog(false).await });
             let daemon = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || {
-                let providers = daemon.agent_hooks_state_rescanned();
-                daemon.send_control_to(conn_id, &proto::ServerMsg::AgentHooks { providers });
-                daemon.send_control_to(conn_id, &daemon.agent_accounts_state());
-            });
+            tokio::task::spawn_blocking(move || daemon.answer_agent_hooks(conn_id));
             Ok(())
         }
         proto::ClientMsg::AgentHooksSet { provider, enabled } => {
@@ -4584,12 +4580,11 @@ async fn send_git_status(
         if d.is_dir() && !crate::git::probe_repo(&d)? {
             return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
         }
-        let files = match b.as_deref() {
-            Some(base) => crate::git::status_vs_base(&d, base)?,
-            None => crate::git::status(&d)?,
+        let (files, sync) = match b.as_deref() {
+            Some(base) => (crate::git::status_vs_base(&d, base)?, crate::git::sync(&d)),
+            None => crate::git::status_and_sync(&d)?,
         };
-        let sync = crate::git::sync(&d);
-        let default_base = crate::git::default_base(&d);
+        let default_base = crate::git::default_base_cached(&d);
         anyhow::Ok((files, sync, default_base, false))
     })
     .await

@@ -645,9 +645,55 @@ function withPaneIds(node: LayoutNode): LayoutNode {
 
 const KEY_PREFIX = 'tr-layout:'
 
+// A splitter drag or a burst of splits saves the tree on every change; one write
+// 300 ms after the last covers it, and leaving the page writes at once.
+const LAYOUT_WRITE_DELAY_MS = 300
+const pendingLayouts = new Map<string, string>()
+let layoutWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushLayoutSaves()
+  })
+  window.addEventListener('pagehide', flushLayoutSaves)
+}
+
+/** A layout as storage will hold it, counting a save not yet written. */
+function storedLayout(key: string): string | null {
+  return pendingLayouts.get(key) ?? localStorage.getItem(key)
+}
+
+function writeLayoutNow(key: string, value: string): void {
+  pendingLayouts.delete(key)
+  localStorage.setItem(key, value)
+}
+
+/** Writes every pending layout save, then notifies `onGridsSaved` once. */
+export function flushLayoutSaves(): void {
+  if (layoutWriteTimer !== null) clearTimeout(layoutWriteTimer)
+  layoutWriteTimer = null
+  if (pendingLayouts.size === 0) return
+  const writes = [...pendingLayouts]
+  pendingLayouts.clear()
+  for (const [key, value] of writes) {
+    try {
+      localStorage.setItem(key, value)
+    } catch (error) {
+      console.warn(`saving layout ${key} (${value.length} chars) failed`, error)
+    }
+  }
+  notifyGridsSaved()
+}
+
+/** Deletes a saved layout, including a save not yet written. */
+export function forgetLayout(workspaceKey: string): void {
+  pendingLayouts.delete(KEY_PREFIX + workspaceKey)
+  localStorage.removeItem(KEY_PREFIX + workspaceKey)
+}
+
 export function loadLayout(workspaceKey: string): LayoutState {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + workspaceKey) ?? 'null')
+    const raw = JSON.parse(storedLayout(KEY_PREFIX + workspaceKey) ?? 'null')
     if (raw && typeof raw === 'object') {
       const parsed = raw.tree && isNode(raw.tree) ? withPaneIds(raw.tree as LayoutNode) : null
       const browserUrls = parsed ? urlsInPaneKind(parsed, 'browser') : []
@@ -657,7 +703,7 @@ export function loadLayout(workspaceKey: string): LayoutState {
       const cols =
         Number.isInteger(raw.cols) && raw.cols >= 1 && raw.cols <= 4 ? (raw.cols as number) : 2
       if (browserUrls.length > 0) {
-        localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify({ ...raw, tree }))
+        writeLayoutNow(KEY_PREFIX + workspaceKey, JSON.stringify({ ...raw, tree }))
         return { tree, cols, browserUrls }
       }
       return { tree, cols }
@@ -677,13 +723,15 @@ function removePaneKinds(node: LayoutNode, kinds: PaneNode['kind'][]): LayoutNod
 }
 
 export function saveLayout(workspaceKey: string, state: LayoutState): void {
-  localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify({ tree: state.tree, cols: state.cols }))
-  notifyGridsSaved()
+  pendingLayouts.set(KEY_PREFIX + workspaceKey, JSON.stringify({ tree: state.tree, cols: state.cols }))
+  if (layoutWriteTimer !== null) clearTimeout(layoutWriteTimer)
+  layoutWriteTimer = setTimeout(flushLayoutSaves, LAYOUT_WRITE_DELAY_MS)
 }
 
 const gridsSavedListeners = new Set<() => void>()
 
-/** Runs `listener` after any grid list or grid layout is written to storage. */
+/** Runs `listener` after any grid list or grid layout is written to storage; a burst
+ *  of layout saves notifies once, when it is written. */
 export function onGridsSaved(listener: () => void): () => void {
   gridsSavedListeners.add(listener)
   return () => {
@@ -700,6 +748,7 @@ function notifyGridsSaved(): void {
 // Idempotent: a second run finds no leaf and reports nothing.
 export function migrateSavedGitLeaves(): string[] {
   const migrated: string[] = []
+  flushLayoutSaves()
   try {
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
@@ -813,7 +862,7 @@ export function savedGrids(): SavedGrid[] {
       for (const grid of metas ?? []) {
         let tree: LayoutNode | null = null
         try {
-          const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + gridStorageKey(workspace, grid.id)) ?? 'null')
+          const raw = JSON.parse(storedLayout(KEY_PREFIX + gridStorageKey(workspace, grid.id)) ?? 'null')
           tree = raw && typeof raw === 'object' && isNode(raw.tree) ? (raw.tree as LayoutNode) : null
         } catch {
         }
@@ -826,9 +875,9 @@ export function savedGrids(): SavedGrid[] {
 }
 
 function migrateLegacyLayout(path: string): GridMeta[] {
-  const legacyRaw = localStorage.getItem(KEY_PREFIX + path)
+  const legacyRaw = storedLayout(KEY_PREFIX + path)
   if (legacyRaw !== null) {
-    localStorage.setItem(KEY_PREFIX + gridStorageKey(path, DEFAULT_GRID_ID), legacyRaw)
+    writeLayoutNow(KEY_PREFIX + gridStorageKey(path, DEFAULT_GRID_ID), legacyRaw)
   }
   const grids: GridMeta[] = [{ id: DEFAULT_GRID_ID, name: DEFAULT_GRID_NAME, nameSource: 'auto' }]
   saveGrids(path, grids)
@@ -947,7 +996,7 @@ export function removeGrid(path: string, gridId: string): GridMeta[] {
   const rest = grids.filter((g) => g.id !== gridId)
   const next = rest.length > 0 ? rest : [{ id: newGridId(), name: DEFAULT_GRID_NAME, named: false, tags: [] }]
   saveGrids(path, next)
-  localStorage.removeItem(KEY_PREFIX + gridStorageKey(path, gridId))
+  forgetLayout(gridStorageKey(path, gridId))
   return next
 }
 

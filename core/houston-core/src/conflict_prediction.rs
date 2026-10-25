@@ -3,7 +3,7 @@
 //! pairs to ask about and whom to tell.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// `git merge-tree --write-tree` first shipped in this release.
@@ -27,12 +27,16 @@ fn git(
     git_dir: Option<&Path>,
     args: &[&str],
     timeout: Duration,
+    quarantine: Option<&ObjectQuarantine>,
 ) -> Result<std::process::Output, String> {
     let mut cmd = crate::git::command();
     if let Some(dir) = git_dir {
         cmd.arg("--git-dir").arg(dir);
     }
     cmd.args(args).env("GIT_TERMINAL_PROMPT", "0");
+    if let Some(quarantine) = quarantine {
+        quarantine.apply(&mut cmd);
+    }
     match crate::spawn::output_within(cmd, timeout) {
         Ok(Some(out)) => Ok(out),
         Ok(None) => Err(format!(
@@ -45,7 +49,7 @@ fn git(
 
 /// The installed git's version string, e.g. `2.45.1.windows.1`.
 pub fn git_version() -> Result<String, String> {
-    let out = git(None, &["--version"], GIT_QUERY_TIMEOUT)?;
+    let out = git(None, &["--version"], GIT_QUERY_TIMEOUT, None)?;
     let text = String::from_utf8_lossy(&out.stdout);
     if !out.status.success() {
         return Err(format!(
@@ -102,6 +106,7 @@ pub fn branch_heads(git_dir: &Path) -> Result<HashMap<String, String>, String> {
             "refs/remotes",
         ],
         GIT_QUERY_TIMEOUT,
+        None,
     )?;
     if !out.status.success() {
         return Err(format!(
@@ -129,11 +134,98 @@ pub fn resolve<'a>(heads: &'a HashMap<String, String>, name: &str) -> Option<&'a
         .map(String::as_str)
 }
 
+/// A quarantine untouched for this long belongs to no running call: each lives one
+/// merge-tree run, which `MERGE_TREE_TIMEOUT` bounds.
+const STALE_QUARANTINE: Duration = Duration::from_secs(10 * 60);
+
+/// One merge-tree call's scratch object store. Git writes the throwaway merged trees
+/// here, and reads still see the repository's real objects through
+/// `GIT_ALTERNATE_OBJECT_DIRECTORIES`; dropping it removes every object git wrote.
+struct ObjectQuarantine {
+    dir: tempfile::TempDir,
+    /// The repository's real object directory, the scratch store's only alternate.
+    objects: PathBuf,
+}
+
+impl ObjectQuarantine {
+    fn create(scratch_root: &Path, git_dir: &Path) -> Result<Self, String> {
+        let objects = git_dir.join("objects");
+        std::fs::create_dir_all(scratch_root)
+            .map_err(|e| format!("creating {}: {e}", scratch_root.display()))?;
+        let dir = tempfile::Builder::new()
+            .prefix("merge-tree-")
+            .tempdir_in(scratch_root)
+            .map_err(|e| {
+                format!(
+                    "creating a merge-tree quarantine in {}: {e}",
+                    scratch_root.display()
+                )
+            })?;
+        Ok(Self { dir, objects })
+    }
+
+    fn apply(&self, cmd: &mut std::process::Command) {
+        cmd.env("GIT_OBJECT_DIRECTORY", self.dir.path());
+        cmd.env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            alternate_entry(&self.objects),
+        );
+    }
+}
+
+/// One `GIT_ALTERNATE_OBJECT_DIRECTORIES` entry. The variable is a `:` list (`;` on
+/// Windows), so a path holding the separator, or opening with `"`, is C-quoted.
+fn alternate_entry(path: &Path) -> std::ffi::OsString {
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    match path.to_str() {
+        Some(text) if text.contains(separator) || text.starts_with('"') => {
+            let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{escaped}\"").into()
+        }
+        _ => path.as_os_str().to_owned(),
+    }
+}
+
+/// Removes quarantines a crash, or a deletion refused while a killed git still held its
+/// files, left under `scratch_root`. Recent ones may belong to a running call and stay.
+pub fn sweep_quarantines(scratch_root: &Path) {
+    sweep_quarantines_older_than(scratch_root, STALE_QUARANTINE);
+}
+
+fn sweep_quarantines_older_than(scratch_root: &Path, age: Duration) {
+    let Ok(entries) = std::fs::read_dir(scratch_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|at| at.elapsed().is_ok_and(|elapsed| elapsed >= age));
+        let ours = entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("merge-tree-");
+        if ours && stale {
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                tracing::warn!(
+                    "removing stale merge-tree quarantine {}: {e}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+/// Runs in a fresh quarantine, dropped on return: the caller reads only the tree OID
+/// and conflicted paths from stdout, never the objects git wrote.
 fn run_merge_tree(
+    scratch_root: &Path,
     git_dir: &Path,
     ours: &str,
     theirs: &str,
 ) -> Result<std::process::Output, String> {
+    let quarantine = ObjectQuarantine::create(scratch_root, git_dir)?;
     git(
         Some(git_dir),
         &[
@@ -146,14 +238,20 @@ fn run_merge_tree(
             theirs,
         ],
         MERGE_TREE_TIMEOUT,
+        Some(&quarantine),
     )
 }
 
 /// Merges commits `ours` and `theirs` in memory. Git writes the resulting tree objects
-/// to the object store, unreferenced, so a later gc removes them; no ref, index or
-/// working tree changes.
-pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdict, String> {
-    let out = run_merge_tree(git_dir, ours, theirs)?;
+/// to a per-call scratch store under `scratch_root` that is deleted afterwards, so the
+/// repository's object store gains nothing; no ref, index or working tree changes.
+pub fn merge_tree(
+    scratch_root: &Path,
+    git_dir: &Path,
+    ours: &str,
+    theirs: &str,
+) -> Result<MergeVerdict, String> {
+    let out = run_merge_tree(scratch_root, git_dir, ours, theirs)?;
     parse_merge_tree(out.status.code(), &out.stdout).map_err(|e| {
         format!(
             "git merge-tree {ours} {theirs} in {}: {e}: {}",
@@ -166,11 +264,17 @@ pub fn merge_tree(git_dir: &Path, ours: &str, theirs: &str) -> Result<MergeVerdi
 /// Whether `head`'s changes are already in `base`, from local objects only: `head` is an
 /// ancestor of `base`, or merging it leaves `base`'s tree unchanged (a squash or rebase
 /// merge whose lines `base` has not since edited again).
-pub fn is_integrated(git_dir: &Path, head: &str, base: &str) -> Result<bool, String> {
+pub fn is_integrated(
+    scratch_root: &Path,
+    git_dir: &Path,
+    head: &str,
+    base: &str,
+) -> Result<bool, String> {
     let ancestor = git(
         Some(git_dir),
         &["merge-base", "--is-ancestor", head, base],
         GIT_QUERY_TIMEOUT,
+        None,
     )?;
     match ancestor.status.code() {
         Some(0) => return Ok(true),
@@ -183,7 +287,7 @@ pub fn is_integrated(git_dir: &Path, head: &str, base: &str) -> Result<bool, Str
             ))
         }
     }
-    let out = run_merge_tree(git_dir, base, head)?;
+    let out = run_merge_tree(scratch_root, git_dir, base, head)?;
     let verdict = parse_merge_tree(out.status.code(), &out.stdout).map_err(|e| {
         format!(
             "git merge-tree {base} {head} in {}: {e}: {}",
@@ -200,6 +304,7 @@ pub fn is_integrated(git_dir: &Path, head: &str, base: &str) -> Result<bool, Str
         Some(git_dir),
         &["rev-parse", "--verify", &tree_spec],
         GIT_QUERY_TIMEOUT,
+        None,
     )?;
     if !base_tree.status.success() {
         return Err(format!(
@@ -329,5 +434,89 @@ mod tests {
         assert_eq!(resolve(&heads, "main"), Some("l"));
         assert_eq!(resolve(&heads, "origin/main"), Some("o"));
         assert_eq!(resolve(&heads, "gone"), None);
+    }
+
+    #[test]
+    fn a_quarantine_lives_in_its_root_and_names_both_stores() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let quarantine = ObjectQuarantine::create(root.path(), repo.path()).unwrap();
+        let scratch = quarantine.dir.path().to_path_buf();
+        assert!(scratch.starts_with(root.path()), "{scratch:?}");
+        assert!(
+            scratch
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("merge-tree-")),
+            "{scratch:?}"
+        );
+        let mut cmd = crate::git::command();
+        quarantine.apply(&mut cmd);
+        let env = |key: &str| {
+            cmd.get_envs()
+                .find(|(k, _)| *k == std::ffi::OsStr::new(key))
+                .and_then(|(_, v)| v)
+        };
+        assert_eq!(env("GIT_OBJECT_DIRECTORY"), Some(scratch.as_os_str()));
+        let objects = repo.path().join("objects");
+        assert_eq!(
+            env("GIT_ALTERNATE_OBJECT_DIRECTORIES"),
+            Some(objects.as_os_str())
+        );
+    }
+
+    #[test]
+    fn a_dropped_quarantine_leaves_nothing_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let quarantine = ObjectQuarantine::create(root.path(), repo.path()).unwrap();
+        let scratch = quarantine.dir.path().to_path_buf();
+        assert!(scratch.is_dir());
+        drop(quarantine);
+        assert!(!scratch.exists(), "{scratch:?}");
+    }
+
+    #[test]
+    fn a_quarantine_reads_a_repository_whose_path_holds_the_list_separator() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join(if cfg!(windows) { "a;b" } else { "a:b" });
+        std::fs::create_dir_all(&repo).unwrap();
+        let run = |args: &[&str]| {
+            let out = crate::git::command()
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}: {out:?}");
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        run(&["init", "-q"]);
+        std::fs::write(repo.join("f.txt"), "x\n").unwrap();
+        let blob = run(&["hash-object", "-w", "f.txt"]);
+        let git_dir = repo.join(".git");
+        let quarantine = ObjectQuarantine::create(&root.path().join("scratch"), &git_dir).unwrap();
+        let out = git(
+            Some(&git_dir),
+            &["cat-file", "-e", &blob],
+            GIT_QUERY_TIMEOUT,
+            Some(&quarantine),
+        )
+        .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    }
+
+    #[test]
+    fn a_sweep_removes_only_stale_quarantines() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let left = ObjectQuarantine::create(root.path(), repo.path()).unwrap();
+        let left = left.dir.keep();
+        let other = root.path().join("unrelated");
+        std::fs::create_dir(&other).unwrap();
+        sweep_quarantines(root.path());
+        assert!(left.is_dir(), "a fresh quarantine may still be in use");
+        sweep_quarantines_older_than(root.path(), Duration::ZERO);
+        assert!(!left.exists(), "{left:?}");
+        assert!(other.is_dir(), "{other:?}");
     }
 }

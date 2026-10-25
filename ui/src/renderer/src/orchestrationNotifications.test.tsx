@@ -93,7 +93,7 @@ describe('orchestration notifications', () => {
     expect(notifyNative).toHaveBeenCalledTimes(1)
   })
 
-  it('clears a child input notice on resolution and suppresses a historic user-owned snapshot', async () => {
+  it('clears a child input notice on resolution and keeps an already-delivered episode silent across a reconciliation', async () => {
     vi.mocked(isFocused).mockResolvedValue(true)
     const dismissNotice = vi.fn()
     const child = pane({ id: 2, spawned_by: 1, title: 'Child' })
@@ -104,7 +104,8 @@ describe('orchestration notifications', () => {
     expect(pushNotice).toHaveBeenCalledTimes(1)
     view.rerender(<Notifications options={configuration(child)} />)
     expect(dismissNotice).toHaveBeenCalledWith('orchestration-2')
-    view.rerender(<Notifications options={configuration(withInputOwner(child, 'user', 'Historic prompt', 'historic-1'), 1)} />)
+    // A roster that replays the episode the live path already delivered must not re-notify.
+    view.rerender(<Notifications options={configuration(withInputOwner(child, 'user', 'Allow the command?'), 1)} />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(pushNotice).toHaveBeenCalledTimes(1)
   })
@@ -134,6 +135,54 @@ describe('orchestration notifications', () => {
     view.rerender(<Notifications options={options(new Map([[1, pane({ status: 'needs-input' })]]), { rosterRevision: 1 })} />)
     expect(notifyNative).not.toHaveBeenCalled()
     await act(async () => { await Promise.resolve() })
+  })
+
+  it('notifies once for needs-input and finished transitions restored by a reconnect, and a second reconciliation replays nothing', async () => {
+    const connected = (): ReadonlyMap<number, SessionInfo> => new Map([
+      [1, pane()],
+      [2, pane({ id: 2, title: 'Other pane' })],
+    ])
+    const view = render(<Notifications options={options(connected())} />)
+    // Nothing reaches a disconnected renderer; the reconnect snapshot then carries
+    // both transitions the live path never saw.
+    const restored = (): ReadonlyMap<number, SessionInfo> => new Map([
+      [1, pane({ status: 'needs-input' })],
+      [2, pane({ id: 2, title: 'Other pane', status: 'idle' })],
+    ])
+    view.rerender(<Notifications options={options(restored(), { rosterRevision: 1 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledWith('Orchestrator needs your input', 'Claude Code · project_eagle', 1)
+    expect(notifyNative).toHaveBeenCalledWith('Other pane finished', 'Claude Code · project_eagle', 2)
+    expect(notifyNative).toHaveBeenCalledTimes(2)
+    view.rerender(<Notifications options={options(restored(), { rosterRevision: 2 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a pane already waiting for input silent when a handoff re-stamps its status time', async () => {
+    vi.useFakeTimers()
+    const view = render(<Notifications options={options(new Map([[1, pane()]]))} />)
+    view.rerender(<Notifications options={options(new Map([[1, pane({ status: 'needs-input', status_since_ms: 100 })]]))} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(NOTIFICATION_FLAP_WINDOW_MS + 1)
+    // The adopting daemon reports the same wait with its own adoption time.
+    view.rerender(<Notifications options={options(new Map([[1, pane({ status: 'needs-input', status_since_ms: 900 })]]), { rosterRevision: 1 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(1)
+  })
+
+  it('catches up a child input request restored by a reconnect and keeps an owner replay on the same episode silent', async () => {
+    const child = pane({ id: 2, spawned_by: 1, title: 'Child' })
+    const sessions = (worker: SessionInfo): ReadonlyMap<number, SessionInfo> => new Map([[1, pane()], [2, worker]])
+    const view = render(<Notifications options={options(sessions(child))} />)
+    view.rerender(<Notifications options={options(sessions(withInputOwner(child, 'user', 'Choose a branch')), { rosterRevision: 1 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledExactlyOnceWith('Child needs your input', 'Claude Code · project_eagle · Choose a branch', 2)
+    view.rerender(<Notifications options={options(sessions(withInputOwner(child, 'orchestrator', 'Choose a branch')), { rosterRevision: 1 })} />)
+    view.rerender(<Notifications options={options(sessions(withInputOwner(child, 'user', 'Choose a branch')), { rosterRevision: 1 })} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(notifyNative).toHaveBeenCalledTimes(1)
   })
 
   it('fires one desktop notification for an unfocused top-level status transition', async () => {

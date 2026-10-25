@@ -476,7 +476,7 @@ async fn only_the_head_merges_pinned_to_its_commit_and_the_next_entry_moves_up()
         proto::PrMergeMethod::Squash,
     ));
     assert!(
-        not_head.contains("only the head") && not_head.contains("#12 is first"),
+        not_head.contains("only the entry that goes next") && not_head.contains("#12 goes next"),
         "{not_head}"
     );
     assert!(rig.take_calls("pr merge").is_empty());

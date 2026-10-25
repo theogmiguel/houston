@@ -50,7 +50,7 @@ pub fn enqueue_result(entry: &proto::MergeQueueEntry) -> Value {
         "status": entry.status,
         "reason": entry.reason,
         "depends_on": entry.depends_on,
-        "note": "The user merges the queue head. Fix the blocking reason if there is one; do not poll.",
+        "note": "The user merges the entry that goes next. Fix the blocking reason if there is one; do not poll.",
     })
 }
 
@@ -145,7 +145,7 @@ const PANE_ROUTING: &str = concat!(
     "For reusable workers `pane_prompt{mode: queue|steer|restart}` defaults to queue and returns an accepted instruction id and current state, not proof of completion or delivery. Use `pane_instruction_list/get/cancel/resume` for current durable control state: queued, held_after_recovery, delivered, cancelled or uncertain. After restart recovery, held work requires explicit resume; never resume uncertain work. Cancel/resume retries report current truth. Steer delivery and adoption are distinct: adoption starts a separate request round. Restart requires verified interrupt-to-idle (Codex Escape); Claude, Antigravity, OpenCode and ZCode restart is refused. Preserve partial results. Needs-input requires an explicit decision, not paste. ",
     "After receiving a completed child's result, preserve its needed output and artifacts, then close it with `pane_kill` (or `hs-pane kill`) as soon as no further task is planned. Before your final response or handback, close every completed child you no longer need. A reusable flag is not a reason to leave a completed pane open; keep one only for intentional assigned follow-up work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
-    "When a PR is ready to land, add it to the workspace merge queue with `pane_pr_enqueue{pr, depends_on?}`; the user merges the queue head. You cannot merge. ",
+    "When a PR is ready to land, add it to the workspace merge queue with `pane_pr_enqueue{pr, depends_on?}`; the user merges the entry that goes next. You cannot merge. ",
     "Questions and every actual permission prompt route to the parent first in all launch modes. Parent-owned input stays gray and has an actionable needs_input inbox row. Answer routine questions within authority with pane_reply or pane_send_keys. The parent NEVER approves permissions: every pending permission episode refuses ALL pane_send_keys, including n/Escape. Use pane_deny{child,episode_id} for verified provider denial or pane_escalate{child,reason} for the operator's decision; only the operator may approve. Denial stays pending until provider evidence. Escalation transfers ownership to User with amber notifications. Bare Codex Auto PermissionRequest is non-alerting approval activity. Operator intervention is reported to the parent. Accepted Stop/ACP turn end or parent close/death escalates unanswered input; quiet-settle never does. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
     "need, and when you do delegate, size the model to that chunk rather than taking the CLI's own ",

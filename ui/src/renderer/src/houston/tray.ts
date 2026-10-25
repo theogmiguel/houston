@@ -164,6 +164,7 @@ export function createTraySync(
 }
 
 export const TRAY_EVENT_FOCUS_PANE = 'tray://focus-pane'
+export const TRAY_EVENT_WINDOW_HIDDEN = 'tray://window-hidden'
 export const NOTIFICATION_EVENT_FOCUS_PANE = 'native-notification://focus-pane'
 
 async function invoker(): Promise<

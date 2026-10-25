@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliverControl, makeSession, makeWorkspace, renderReadyApp, resetHarness, type AppHarness } from './test/appTestHarness'
-import { leaf, type LayoutNode } from './layout/tree'
+import { flushLayoutSaves, leaf, type LayoutNode } from './layout/tree'
 
 const readiness = vi.hoisted(() => ({
   snapshot: { sessionSlots: new Set<number>(), workspaces: false, discovering: false },
@@ -50,6 +50,7 @@ function selectedName(): string | null {
   return app!.container.querySelector('.witem[role="button"][aria-current="true"]')?.textContent ?? null
 }
 function allTree(): LayoutNode {
+  flushLayoutSaves()
   return JSON.parse(localStorage.getItem('tr-layout:all')!).tree as LayoutNode
 }
 async function openAll(): Promise<void> {

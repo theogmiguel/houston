@@ -112,7 +112,7 @@ export function MergeQueueSpecimen(): React.JSX.Element {
         { label: 'Mergeable', state: 'passed' },
         { label: 'No unresolved review threads', state: 'failed', reason: 'PR #215 has 1 unresolved review thread' },
         { label: 'Reviewer passed', state: 'not_applicable', reason: 'Not a task Slice' },
-        { label: 'Verification', state: 'pending', reason: 'Runs when it is first in line' }
+        { label: 'Verification', state: 'pending', reason: 'Runs when it goes next' }
       ]} />}
     />
     <MergeQueuePolicy>Merges when verified · cargo nextest run --workspace · one at a time on this machine</MergeQueuePolicy>

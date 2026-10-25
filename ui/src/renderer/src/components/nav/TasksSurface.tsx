@@ -19,6 +19,7 @@ import { FINISHED_GROUP_LABEL, formatAge, formatAgo, queueActionOf, queueGroupOf
 import { filterTasks, isFinished, projectEntries, queueEntries, type TaskGrouping, type TaskListEntry } from '../tasks/taskListSections'
 import { isPullRequestUrl } from '../../houston/taskDomain'
 import type { InboxRow } from '../../houston/generated/InboxRow'
+import { requestInboxLists } from '../../houston/inboxListRequests'
 
 type TaskItem = ListDetailItem & { task: TaskSummary }
 
@@ -240,18 +241,20 @@ function TaskListEmpty({ filtered }: { filtered: boolean }): React.JSX.Element {
 }
 
 function useInboxRows(client: HoustonClient | null, workspaces: string[], setRows: React.Dispatch<React.SetStateAction<InboxRow[]>>): void {
+  // Keyed by content: the workspace list is a new array on every App render.
+  const workspaceKey = workspaces.join('\0')
   useEffect(() => {
-    if (!client || workspaces.length === 0) return
-    const known = new Set(workspaces)
+    if (!client || workspaceKey === '') return
+    const known = new Set(workspaceKey.split('\0'))
     const offRows = client.subscribe('inbox_rows', (message) => {
       if (known.has(message.workspace)) setRows((current) => [...current.filter((row) => row.workspace !== message.workspace), ...message.rows])
     })
     const offChanged = client.subscribe('inbox_changed', (message) => {
       if (known.has(message.workspace)) setRows((current) => [...current.filter((row) => row.id !== message.row.id), message.row])
     })
-    workspaces.forEach((path) => client.inboxList(path))
+    requestInboxLists(client, known)
     return () => { offRows(); offChanged() }
-  }, [client, workspaces, setRows])
+  }, [client, workspaceKey, setRows])
 }
 
 /** The queue's next step for a task when the detail does not already offer it. */

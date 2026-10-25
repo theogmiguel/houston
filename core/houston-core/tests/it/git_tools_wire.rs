@@ -341,6 +341,118 @@ async fn worktree_create_list_and_remove_over_the_wire() {
     drop(daemon);
 }
 
+#[cfg(windows)]
+fn create_junction(link: &Path, target: &Path) {
+    // cmd reads a forward-slash path as a switch, and worktree paths come from Git.
+    let native = |path: &Path| path.display().to_string().replace('/', "\\");
+    let out = Command::new("cmd")
+        .args(["/c", "mklink", "/J"])
+        .arg(native(link))
+        .arg(native(target))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "mklink /J {} {}: {}",
+        link.display(),
+        target.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[cfg(windows)]
+async fn create_worktree_over_the_wire(ws: &mut WsStream, dir: &str, name: &str) -> String {
+    send(
+        ws,
+        &proto::ClientMsg::GitWorktreeCreate {
+            dir: dir.to_string(),
+            name: name.to_string(),
+            base: None,
+        },
+    )
+    .await;
+    let _ = expect_worktrees(ws).await;
+    send(
+        ws,
+        &proto::ClientMsg::GitWorktrees {
+            dir: dir.to_string(),
+        },
+    )
+    .await;
+    let branch = format!("houston/{name}");
+    worktrees(&expect_worktrees(ws).await)
+        .into_iter()
+        .find(|w| w.branch.as_deref() == Some(branch.as_str()))
+        .expect("the new worktree is listed")
+        .path
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn removing_a_worktree_on_windows_keeps_what_its_junctions_point_to() {
+    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    std::fs::write(repo.path().join(".gitignore"), "node_modules\n").unwrap();
+    git(repo.path(), &["add", ".gitignore"]);
+    git(repo.path(), &["commit", "-m", "ignore installs"]);
+    let dir = repo.path().display().to_string();
+    let store = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(store.path().join("pkg")).unwrap();
+    std::fs::write(store.path().join("pkg").join("index.js"), "shared\n").unwrap();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+
+    // The unattended cleanup pass removes clean trees unforced, and an ignored
+    // junction leaves the tree clean.
+    let clean = create_worktree_over_the_wire(&mut ws, &dir, "clean").await;
+    create_junction(&Path::new(&clean).join("node_modules"), store.path());
+    let forced = create_worktree_over_the_wire(&mut ws, &dir, "forced").await;
+    create_junction(&Path::new(&forced).join("node_modules"), store.path());
+    let read_only = Path::new(&forced).join("generated.txt");
+    std::fs::write(&read_only, "x\n").unwrap();
+    let mut permissions = std::fs::metadata(&read_only).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&read_only, permissions).unwrap();
+
+    for (path, force) in [(&clean, false), (&forced, true)] {
+        send(
+            &mut ws,
+            &proto::ClientMsg::GitWorktreeRemove {
+                dir: dir.clone(),
+                path: path.clone(),
+                force,
+            },
+        )
+        .await;
+        let msg = expect_worktrees(&mut ws).await;
+        assert!(
+            worktree_message(&msg).unwrap().contains("Removed"),
+            "{msg:?}"
+        );
+        assert!(!Path::new(path).exists(), "{path} is deleted");
+        assert_eq!(
+            std::fs::read_to_string(store.path().join("pkg").join("index.js")).unwrap(),
+            "shared\n",
+            "removing {path} (force {force}) keeps what its junction points to"
+        );
+    }
+
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitWorktrees { dir: dir.clone() },
+    )
+    .await;
+    let list = worktrees(&expect_worktrees(&mut ws).await);
+    assert_eq!(
+        list.len(),
+        1,
+        "only the main checkout stays registered: {list:?}"
+    );
+    drop(daemon);
+}
+
 #[tokio::test]
 async fn checkpoints_capture_inspect_restore_and_delete_over_the_wire() {
     let (addr, _state) = start_daemon().await;

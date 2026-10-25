@@ -10,7 +10,7 @@ import {
   settleLazySurface
 } from './test/appTestHarness'
 import { openSideBrowser } from './sidePanel'
-import { DEFAULT_GRID_ID, gridStorageKey } from './layout/tree'
+import { DEFAULT_GRID_ID, flushLayoutSaves, gridStorageKey } from './layout/tree'
 
 beforeEach(() => {
   resetHarness()
@@ -25,6 +25,7 @@ function pressB(): void {
 }
 
 function savedTree(): Record<string, unknown> | null {
+  flushLayoutSaves()
   const raw = localStorage.getItem(`tr-layout:${gridStorageKey('/tmp/project', DEFAULT_GRID_ID)}`)
   return raw ? (JSON.parse(raw).tree as Record<string, unknown>) : null
 }

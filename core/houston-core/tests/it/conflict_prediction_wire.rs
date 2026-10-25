@@ -533,3 +533,70 @@ async fn a_note_reports_each_branch_tip_at_prediction_time() {
 
     end(&daemon, &[parent]);
 }
+
+/// Files under the repository's object store in a two-hex-digit fanout: exactly the
+/// loose objects.
+fn loose_objects(common_dir: &str) -> usize {
+    let objects = Path::new(common_dir).join("objects");
+    let mut count = 0;
+    for fanout in std::fs::read_dir(&objects).into_iter().flatten().flatten() {
+        let name = fanout.file_name().to_string_lossy().into_owned();
+        if name.len() == 2 && name.bytes().all(|b| b.is_ascii_hexdigit()) {
+            count += std::fs::read_dir(fanout.path()).map_or(0, |d| d.count());
+        }
+    }
+    count
+}
+
+fn dir_entries(path: &Path) -> Vec<String> {
+    std::fs::read_dir(path)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A pass's merged trees are throwaway: the repository's object store ends the ticks as
+/// it began, and no per-call scratch store outlives them.
+#[tokio::test]
+async fn a_conflict_pass_leaves_no_loose_objects_or_scratch_behind() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    let repo = repo(state.path());
+    let parent = orchestrator(&daemon, &repo.dir);
+    let a = worktree(&db, &repo, "a", Some(parent));
+    let b = worktree(&db, &repo, "b", Some(parent));
+    commit_file(&a, "shared.txt", &shared(&[(1, "A")]), "a");
+    commit_file(&b, "shared.txt", &shared(&[(1, "B")]), "b");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        end(&daemon, &[parent]);
+        return;
+    }
+
+    let scratch = state.path().join("merge-tree");
+    let before = loose_objects(&repo.common);
+    tick(&daemon).await;
+    tick(&daemon).await;
+    let found = notes(&db);
+    assert_eq!(
+        found.len(),
+        1,
+        "the pass must have merged a with b: {found:#?}"
+    );
+    let after = loose_objects(&repo.common);
+    assert_eq!(
+        after, before,
+        "a pass moved the repository's loose objects from {before} to {after}"
+    );
+    let leftovers = dir_entries(&scratch);
+    assert!(
+        leftovers.is_empty(),
+        "{} kept scratch stores: {leftovers:?}",
+        scratch.display()
+    );
+
+    end(&daemon, &[parent]);
+}

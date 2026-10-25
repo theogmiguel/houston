@@ -200,7 +200,9 @@ in each brief.
 From an agent pane, ask the agent to watch an open GitHub pull request. The agent calls
 `pane_pr_watch` with a pull request number or URL, then ends its turn. Houston checks the pull
 request once a minute and wakes that pane when a check fails, all reported checks pass, a new
-review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
+review or comment arrives, or the branch becomes conflicted with its base. When no check has
+reported fifteen minutes after the watch started or the head last moved, Houston wakes the pane
+once to say checks may not be configured. A watch stops when the
 pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
 Panes watching the same pull request share one read per check. When GitHub reports a rate
 limit, Houston pauses every pull request watch until GitHub's reset time instead of counting a
@@ -216,7 +218,7 @@ workspace's merge queue, optionally behind another queued pull request. The repl
 entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
 removes it. When the agent's branch is built on another queued pull request's branch, it
 names that one in `depends_on`: Houston restacks the branch onto the base after the other one
-merges. You merge the queue head from the Pull requests page, or Houston merges it once it
+merges. You merge the entry that goes next from the Pull requests page, or Houston merges it once it
 is verified if the workspace's policy allows; see [Merge queue](changes.md#merge-queue). When
 the queue cannot verify or merge the pull request, the pane that enqueued it gets one message
 with the conflicting files or the failing output: fix the branch and push, and the new head
@@ -235,9 +237,21 @@ workspace, and unrelated panes remain inaccessible.
 For an isolated checkout on Linux or Windows, set `worktree` to a new directory slug
 in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records it under
 `.houston/worktrees/SLUG`, using branch `houston/SLUG` unless an explicit `branch` is
-supplied. Existing branches and occupied paths are refused. If creation or provider
+supplied. An explicit `branch` that exists on exactly one remote but not locally continues
+that remote branch and tracks it, as `git switch` would, unless the base already contains
+its changes. When two remotes hold it, or remote names overlap so the ref is ambiguous,
+Houston does not guess and starts a new branch. Existing local branches and occupied paths are refused. If creation or provider
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
+
+Claude keeps its conversation history per directory, so a reused slug could hand an old
+checkout's history to the new one. When the slug's directory is free but Claude history
+for that path survives (under `~/.claude/projects`, `CLAUDE_CONFIG_DIR` or an agent
+profile), Houston creates the worktree as `SLUG-2` (or the next free number) and names the
+rename in the `pane_spawn` result (a `worktree_slug_history` warning) or in the Changes
+pane's message. `pane_spawn` renames only for a Claude pane; other providers keep the slug
+they asked for. A worktree added from the Changes pane is always checked, since any agent
+may open there later. The old history is never modified.
 
 While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
 whether their committed branches would conflict with their base or with each other. A
@@ -259,6 +273,12 @@ refused. A copy stops at 256 files or 32 MiB. Anything not copied is named in a
 `worktree_include` warning in the `pane_spawn` result, in the task brief, or in the Changes
 pane's message; the worktree is created either way. Houston runs no command from the
 repository while doing this.
+
+If the repository declares submodules, Houston also initialises them in a worktree it
+creates, the same way `git submodule update --init --recursive` does. Each submodule is
+cloned from the URL in `.gitmodules`, which can use the network; this happens only at
+creation, and the step is abandoned after 30 seconds with a warning. A submodule that
+cannot be fetched is named in the same warning, and the worktree is created either way.
 
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the

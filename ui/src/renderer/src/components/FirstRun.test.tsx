@@ -256,6 +256,24 @@ describe('FirstRun', () => {
     expect(openExternalMock).toHaveBeenCalledWith(expect.stringContaining('docs/user/install.md'))
   })
 
+  it('takes a later hooks listing in place of the first, as a rescan finding a new CLI sends it', () => {
+    const claude: AgentHookState = {
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
+      installed: true, error: null, present: true, version: '2.3.1', trust: null
+    }
+    const codex: AgentHookState = {
+      ...claude, provider: 'codex', path: '~/.codex/hooks.json', installed: false, present: false, version: null
+    }
+    const p = props({ hasWorkspace: true, orchestrationConsented: true, agentHooks: [claude, codex] })
+    render(p)
+    expect(host.querySelector('[data-testid="first-run-hook-codex"]')).toBeNull()
+    expect(host.querySelector('[data-testid="first-run-install-reason"]')?.textContent).toBe('All present CLIs are already reporting.')
+
+    render({ ...p, agentHooks: [claude, { ...codex, present: true, version: '0.98.0' }] })
+    expect(host.querySelector('[data-testid="first-run-hook-codex"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="first-run-install-all"]')?.hasAttribute('disabled')).toBe(false)
+  })
+
   it('offers no install guide while the present CLIs are only reporting already', () => {
     const claude: AgentHookState = {
       provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,

@@ -12,6 +12,8 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import type { DelegationResult } from '../houston/generated/DelegationResult'
 import type { InboxRow } from '../houston/generated/InboxRow'
+import { requestInboxLists } from '../houston/inboxListRequests'
+import { createGitStatusPoller, type GitStatusPoller } from './git/gitStatusPoller'
 import { selectOverviewChild } from '../sidePanel'
 import { CHILD_GROUPS, ChildStatusDot, childGroup, childStateWord, DelegationAge } from './ChildrenRoster'
 import { pendingDeliveryStatus, sessionIdentity } from './DelegationCard'
@@ -45,6 +47,12 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   const [rows, setRows] = useState<InboxRow[]>([])
   const [counts, setCounts] = useState(new Map<string, number>())
   const [groupBy, setGroupBy] = useState<'status' | 'worktree'>('status')
+  const gitPoller = useRef<GitStatusPoller | null>(null)
+  useEffect(() => {
+    const created = createGitStatusPoller(client)
+    gitPoller.current = created
+    return () => { created.dispose(); gitPoller.current = null }
+  }, [client])
   useEffect(() => {
     const workspaces = new Set([parent?.project_dir, ...children.flatMap((child) => [child.project_dir, child.worktree?.path])].filter((dir): dir is string => Boolean(dir)))
     const offRows = client.subscribe('inbox_rows', (message) => {
@@ -62,8 +70,9 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
       if (message.base != null || !workspaces.has(message.dir)) return
       setCounts((current) => new Map(current).set(message.dir, new Set(message.files.map((file) => file.path)).size))
     })
-    for (const workspace of workspaces) { client.inboxList(workspace); client.gitStatus(workspace, null) }
-    return () => { offRows(); offChanged(); offGit() }
+    requestInboxLists(client, workspaces)
+    gitPoller.current?.request([...workspaces])
+    return () => { offRows(); offChanged(); offGit(); gitPoller.current?.dropQueued() }
   }, [client, parentId, parent?.project_dir, children.flatMap((child) => [child.project_dir, child.worktree?.path ?? '']).sort().join('\0')])
   useEffect(() => {
     const refresh = (): void => { pendingCursor.current = null; setResultsLoading(true); client.delegationResultsList(parentId) }

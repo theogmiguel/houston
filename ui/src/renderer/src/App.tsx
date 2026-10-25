@@ -292,6 +292,7 @@ import {
   sessionForPaneId,
   removeLeaf,
   saveLayout,
+  forgetLayout,
   setRatio,
   stackWith,
   swapLeaf,
@@ -394,6 +395,8 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity, stackFullMessage } from "./paneCaps";
+import { PaneStatusAnnouncer } from "./components/PaneStatusAnnouncer";
+import { windowParked } from "./windowParked";
 import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/ui/Icon";
 import {
@@ -1237,9 +1240,10 @@ export function App(): React.JSX.Element {
     setScmOpen,
     setActiveSurface,
   });
-  const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
+  const attentionIds = useMemo(() => [...sessions.values()].filter((session) =>
     ownUserInput(session) && !session.hidden && openedAttention.get(session.id) !== inputEpisode(session)
-  ).length, [sessions, openedAttention]);
+  ).map((session) => session.id), [sessions, openedAttention]);
+  const taskbarAttentionCount = attentionIds.length;
   useEffect(() => {
     void setTaskbarAttentionCount(taskbarAttentionCount).catch(() => {});
   }, [taskbarAttentionCount]);
@@ -2039,7 +2043,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (conn.kind !== "ready") return;
     conn.client.hostInfoGet();
-    const timer = setInterval(() => conn.client.hostInfoGet(), 30_000);
+    const timer = setInterval(() => {
+      if (!windowParked()) conn.client.hostInfoGet();
+    }, 30_000);
     return () => clearInterval(timer);
   }, [conn]);
 
@@ -2875,7 +2881,7 @@ export function App(): React.JSX.Element {
         if (pane.kind === "browser")
           localStorage.removeItem(tabsStorageKey(pane.id));
       }
-      localStorage.removeItem(`tr-layout:${key}`);
+      forgetLayout(key);
     }
     setLayouts((prev) => {
       let changed = false;
@@ -2902,7 +2908,7 @@ export function App(): React.JSX.Element {
     setWsOrder((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : prev));
     pruneCollapsedWorkspace(path);
     localStorage.removeItem(`tr-grids:${path}`);
-    localStorage.removeItem(`tr-layout:${path}`);
+    forgetLayout(path);
     dropWorkspaceBuffers(path);
   }, []);
 
@@ -4541,6 +4547,8 @@ export function App(): React.JSX.Element {
           )}
 
           <PrefixHint />
+
+          <PaneStatusAnnouncer activeId={activeId} needingYou={attentionIds} />
 
           <QuickOpenOverlay
             open={quickOpen}

@@ -11,11 +11,14 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 ## Invariants
 
-- **Terminal fidelity:** panes are real PTYs rendered with libghostty-vt. Preserve input
-  delivery; do not replace terminal interaction with chat wrappers or transcript scraping.
-- **Reported status:** use CLI lifecycle hooks or supported ACP streams for agent status.
-  Do not infer status from terminal pixels or text. Exceptions are explicitly documented
-  in [invariants](docs/internals/invariants.md).
+- **Terminal fidelity:** terminal panes are real PTYs rendered with libghostty-vt.
+  Preserve input delivery; never scrape transcripts or screen text. A thread is a separate
+  view driven by a provider's documented structured stream; it never wraps or parses a
+  terminal, and an idle thread can be reopened in a terminal pane.
+- **Reported status:** use CLI lifecycle hooks or supported structured streams (ACP, and a
+  thread's documented `stream-json` turn end) for agent status. Do not infer status from
+  terminal pixels or text. Exceptions are explicitly documented in
+  [invariants](docs/internals/invariants.md).
 - **Local state:** one user, one machine, one SQLite database per channel in each
   environment (the app's own machine, and each enabled WSL distro). Houston has no
   telemetry service. Local-first does not mean offline: hosted agent CLIs and optional
@@ -23,6 +26,8 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
   explicit user action. Store secrets in the OS keychain, never in the database or logs.
 - **Bounded work:** use binary PTY frames and bounded buffers. Keep JSON and continuous
   animation off the terminal rendering hot path; verify performance with measurements.
+  Thread events use their own coalesced control messages and never share the terminal
+  byte path.
 - **External configuration:** changes to agent CLI configuration must use reversible
   managed-marker blocks. Never manually rewrite `~/.claude.json`.
 
@@ -32,8 +37,9 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 
 - **Contributor agent:** the agent editing Houston. Check `HOUSTON_SESSION` before
   operations that could affect the pane hosting it.
-- **Agent:** a coding CLI hosted by Houston. A **session** is its PTY (or a shell PTY);
-  a **pane** is the corresponding cell in the renderer grid.
+- **Agent:** a coding CLI hosted by Houston. A **session** is its PTY (or a shell PTY),
+  or for a thread its structured process; a **pane** is the corresponding cell in the
+  renderer grid.
 - **Workspace:** a project directory known to the daemon. Sessions belong to a workspace.
   A **grid** is a named layout; its split tree lives in renderer `localStorage`, not the
   database or wire protocol.
@@ -42,6 +48,8 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 - **Hooks:** CLI lifecycle events delivered as drop files and applied by the daemon.
 - **Orchestration:** agent-to-agent operations through `pane_*` MCP tools or `hs-pane`.
   Each signal is one inbox row, delivered through `pane_wait`, a Stop hook or a paste.
+  Only the operator approves a permission request, in either view; a parent answers
+  questions, denies or escalates.
 
 ## Safety boundaries
 

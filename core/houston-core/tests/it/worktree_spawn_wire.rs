@@ -432,6 +432,63 @@ async fn pane_spawn_uses_the_branch_it_was_given() {
 }
 
 #[tokio::test]
+async fn pane_spawn_on_a_branch_only_the_remote_has_continues_it() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("spawn-remote-branch", true).await;
+    let bare = r.state.path().join("remote.git");
+    let other = r.state.path().join("other");
+    git(
+        r.state.path(),
+        &["init", "--bare", "-b", "main", bare.to_str().unwrap()],
+    );
+    git(
+        &r.ws_dir,
+        &["remote", "add", "origin", bare.to_str().unwrap()],
+    );
+    git(&r.ws_dir, &["push", "origin", "main"]);
+    git(
+        r.state.path(),
+        &["clone", bare.to_str().unwrap(), other.to_str().unwrap()],
+    );
+    git(&other, &["config", "user.email", "t@t.local"]);
+    git(&other, &["config", "user.name", "t"]);
+    git(&other, &["switch", "-c", "feat/remote-only"]);
+    std::fs::write(other.join("remote.txt"), "pushed\n").unwrap();
+    git(&other, &["add", "remote.txt"]);
+    git(&other, &["commit", "-m", "remote work"]);
+    git(&other, &["push", "origin", "feat/remote-only"]);
+    git(&r.ws_dir, &["fetch", "origin"]);
+    assert!(!branch_exists(&r.ws_dir, "feat/remote-only"));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+
+    let result = r
+        .spawn(
+            &token,
+            serde_json::json!({
+                "kind": "codex",
+                "prompt": "go",
+                "worktree": "resume",
+                "branch": "feat/remote-only",
+            }),
+        )
+        .await;
+    spawned_session(&result);
+    let tree = r.worktrees_dir().join("resume");
+
+    assert!(
+        tree.join("remote.txt").is_file(),
+        "the remote's commit is checked out"
+    );
+    std::fs::write(tree.join("local.txt"), "more\n").unwrap();
+    git(&tree, &["add", "local.txt"]);
+    git(&tree, &["commit", "-m", "local work"]);
+    let sync = houston_core::git::sync(&tree);
+    assert_eq!(sync.upstream.as_deref(), Some("origin/feat/remote-only"));
+    assert_eq!((sync.ahead, sync.behind), (1, 0));
+}
+
+#[tokio::test]
 async fn the_worktrees_dir_gets_a_gitignore_once() {
     let _guard = SERIAL.lock().await;
     let r = rig("spawn-ignore", true).await;

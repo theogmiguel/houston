@@ -7,6 +7,9 @@ pub const PR_WATCH_INTERVAL_MS: u64 = 60_000;
 pub const PR_WATCH_READ_FAILURE_LIMIT: u32 = 15;
 /// Ten comment-only wakes prevent review chatter from keeping a pane awake forever.
 pub const PR_WATCH_COMMENT_WAKE_LIMIT: u32 = 10;
+/// Fifteen minutes without one reported check suggests CI may not run on the change;
+/// the wake fires once per head so a silent watch still tells the agent something.
+pub const PR_WATCH_NO_CHECKS_AFTER_MS: u64 = 15 * 60_000;
 /// Ten entries keep a single wake readable while reporting the remaining count.
 pub const PR_WATCH_LIST_CAP: usize = 10;
 /// Two hundred characters preserve a useful comment excerpt without flooding the inbox.
@@ -20,6 +23,10 @@ pub struct State {
     pub head_sha: String,
     pub failed_checks: HashSet<String>,
     pub passed: bool,
+    #[serde(default)]
+    pub checks_awaited_since_ms: Option<i64>,
+    #[serde(default)]
+    pub no_checks_woken: bool,
     pub comments_through: u64,
     pub comment_ids: HashSet<String>,
     pub conflicting: bool,
@@ -47,6 +54,10 @@ pub enum Change {
     ChecksPassed {
         sha: String,
         count: usize,
+    },
+    NoChecksReported {
+        sha: String,
+        minutes: u64,
     },
     NewComment(Comment),
     Conflict {
@@ -85,12 +96,16 @@ pub fn evaluate(
     }
 
     let mut changes = Vec::new();
-    state.last_checked_at_ms = Some(crate::daemon::now_unix_ms());
+    let now = crate::daemon::now_unix_ms();
+    state.last_checked_at_ms = Some(now);
     state.read_failures = 0;
     if detail.head_sha != state.head_sha {
         state.head_sha.clone_from(&detail.head_sha);
         state.failed_checks.clear();
         state.passed = false;
+        state.no_checks_woken = false;
+        state.checks_awaited_since_ms = Some(now);
+        state.conflicting = false;
     }
 
     for check in &detail.checks {
@@ -119,6 +134,25 @@ pub fn evaluate(
             sha: state.head_sha.clone(),
             count: detail.checks.len(),
         });
+    }
+
+    // A head that never reports a check would hold the watch open forever; one wake names
+    // the wait so the agent learns CI may not be configured. Any reported check settles
+    // the question until the head moves, so a later empty read never re-arms the timer.
+    if detail.checks.is_empty() && !state.no_checks_woken {
+        let legacy_since = (state.started_at.saturating_mul(1000)) as i64;
+        let elapsed_ms =
+            (now - *state.checks_awaited_since_ms.get_or_insert(legacy_since)).max(0) as u64;
+        if elapsed_ms >= PR_WATCH_NO_CHECKS_AFTER_MS {
+            state.no_checks_woken = true;
+            changes.push(Change::NoChecksReported {
+                sha: state.head_sha.clone(),
+                minutes: elapsed_ms / 60_000,
+            });
+        }
+    } else if !detail.checks.is_empty() {
+        state.no_checks_woken = true;
+        state.checks_awaited_since_ms = None;
     }
 
     let comments = detail
@@ -174,16 +208,22 @@ pub fn evaluate(
             .unwrap_or(state.comments_through),
     );
 
-    let conflicting = detail.mergeable == proto::PrMergeable::Conflicting;
-    if conflicting && !state.conflicting {
-        changes.push(Change::Conflict {
-            base: detail
-                .base_ref
-                .clone()
-                .unwrap_or_else(|| "the base branch".into()),
-        });
+    // GitHub answers Unknown while it recomputes mergeability; only a clean answer or a
+    // new head clears the flag, so a head that keeps conflicting through that window wakes
+    // once, and a push that still conflicts wakes again.
+    match detail.mergeable {
+        proto::PrMergeable::Conflicting if !state.conflicting => {
+            state.conflicting = true;
+            changes.push(Change::Conflict {
+                base: detail
+                    .base_ref
+                    .clone()
+                    .unwrap_or_else(|| "the base branch".into()),
+            });
+        }
+        proto::PrMergeable::Mergeable => state.conflicting = false,
+        proto::PrMergeable::Conflicting | proto::PrMergeable::Unknown => {}
     }
-    state.conflicting = conflicting;
 
     if !changes.is_empty() && changes.iter().all(|c| matches!(c, Change::NewComment(_))) {
         state.comment_only_wakes = state.comment_only_wakes.saturating_add(1);
@@ -245,6 +285,11 @@ pub fn message(number: u32, changes: &[Change]) -> String {
             Change::ChecksPassed { sha, count } => {
                 items.push(format!("all {count} required checks passed on {sha}"));
             }
+            Change::NoChecksReported { sha, minutes } => {
+                items.push(format!(
+                    "no checks have reported on {sha} after {minutes} minutes; none may be configured to run on this change"
+                ));
+            }
             Change::NewComment(comment) => comments.push(comment),
             Change::Conflict { base } => {
                 items.push(format!("the branch now conflicts with {base}"))
@@ -304,6 +349,8 @@ pub(crate) mod tests {
             head_sha: "abc".into(),
             failed_checks: HashSet::new(),
             passed: false,
+            checks_awaited_since_ms: None,
+            no_checks_woken: false,
             comments_through: 1,
             comment_ids: HashSet::new(),
             conflicting: false,
@@ -313,12 +360,29 @@ pub(crate) mod tests {
         }
     }
 
+    /// A state whose no-checks timer has settled, for tests that exercise other changes
+    /// against a detail with no checks.
+    fn settled() -> State {
+        let mut value = state();
+        value.no_checks_woken = true;
+        value
+    }
+
     #[test]
     fn persisted_state_without_last_checked_time_defaults_to_unknown() {
         let mut value = serde_json::to_value(state()).unwrap();
         value.as_object_mut().unwrap().remove("last_checked_at_ms");
         let restored: State = serde_json::from_value(value).unwrap();
         assert_eq!(restored.last_checked_at_ms, None);
+        let mut value = serde_json::to_value(settled()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("checks_awaited_since_ms");
+        value.as_object_mut().unwrap().remove("no_checks_woken");
+        let restored: State = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.checks_awaited_since_ms, None);
+        assert!(!restored.no_checks_woken);
     }
 
     pub(crate) fn link(state: proto::PullRequestState) -> proto::PullRequestLink {
@@ -429,9 +493,60 @@ pub(crate) mod tests {
         ));
         let second = evaluate(first.state.unwrap(), &link, &checks, None, None);
         assert!(second.changes.is_empty());
-        assert!(evaluate(state(), &link, &detail("abc"), None, None)
+        assert!(evaluate(settled(), &link, &detail("abc"), None, None)
             .changes
             .is_empty());
+    }
+
+    #[test]
+    fn a_head_that_never_reports_checks_wakes_once_after_fifteen_minutes() {
+        let link = link(proto::PullRequestState::Open);
+        let mut waiting = state();
+        waiting.started_at = (crate::daemon::now_unix_ms() / 1000 - 16 * 60) as u64;
+        let detail = detail("abc");
+        let first = evaluate(waiting, &link, &detail, None, None);
+        assert_eq!(
+            first.changes.len(),
+            1,
+            "one wake names the minutes without checks: {:?}",
+            first.changes
+        );
+        assert!(message(12, &first.changes).contains("no checks have reported"));
+        let second = evaluate(first.state.unwrap(), &link, &detail, None, None);
+        assert!(second.changes.is_empty(), "the wake fires once per head");
+    }
+
+    #[test]
+    fn a_head_move_rearms_the_no_checks_timer_and_reported_checks_settle_it() {
+        let link = link(proto::PullRequestState::Open);
+        let mut waiting = state();
+        waiting.started_at = (crate::daemon::now_unix_ms() / 1000 - 16 * 60) as u64;
+        let first = evaluate(waiting, &link, &detail("abc"), None, None);
+        assert!(first.state.as_ref().unwrap().no_checks_woken);
+        let mut pushed = detail("def");
+        pushed.checks.push(proto::PrCheck {
+            run_id: None,
+            name: "build".into(),
+            state: proto::PrCheckState::Passing,
+            url: None,
+            duration_ms: None,
+        });
+        let second = evaluate(first.state.unwrap(), &link, &pushed, None, None);
+        assert!(matches!(
+            second.changes.as_slice(),
+            [Change::ChecksPassed { .. }]
+        ));
+        assert!(second
+            .state
+            .as_ref()
+            .unwrap()
+            .checks_awaited_since_ms
+            .is_none());
+        let third = evaluate(second.state.unwrap(), &link, &detail("def"), None, None);
+        assert!(
+            third.changes.is_empty(),
+            "a later empty read never re-wakes"
+        );
     }
 
     #[test]
@@ -439,7 +554,7 @@ pub(crate) mod tests {
         let link = link(proto::PullRequestState::Open);
         let mut detail = detail("abc");
         detail.mergeable = proto::PrMergeable::Conflicting;
-        let first = evaluate(state(), &link, &detail, None, None);
+        let first = evaluate(settled(), &link, &detail, None, None);
         assert_eq!(
             first.changes,
             [Change::Conflict {
@@ -458,6 +573,67 @@ pub(crate) mod tests {
             [Change::Conflict {
                 base: "main".into()
             }]
+        );
+    }
+
+    #[test]
+    fn unknown_mergeability_after_a_push_keeps_the_conflict() {
+        let link = link(proto::PullRequestState::Open);
+        let mut conflicting = detail("abc");
+        conflicting.mergeable = proto::PrMergeable::Conflicting;
+        let first = evaluate(settled(), &link, &conflicting, None, None);
+        assert_eq!(first.changes.len(), 1);
+        let mut computing = conflicting.clone();
+        computing.mergeable = proto::PrMergeable::Unknown;
+        let unknown = evaluate(first.state.unwrap(), &link, &computing, None, None);
+        assert!(unknown.state.as_ref().unwrap().conflicting);
+        let again = evaluate(unknown.state.unwrap(), &link, &conflicting, None, None);
+        assert!(
+            again.changes.is_empty(),
+            "a still-computing answer never re-arms the conflict wake: {:?}",
+            again.changes
+        );
+    }
+
+    #[test]
+    fn a_push_that_still_conflicts_wakes_again_once() {
+        let link = link(proto::PullRequestState::Open);
+        let mut conflicting = detail("abc");
+        conflicting.mergeable = proto::PrMergeable::Conflicting;
+        let first = evaluate(settled(), &link, &conflicting, None, None);
+        assert_eq!(first.changes.len(), 1);
+
+        let mut pushed = detail("def");
+        pushed.mergeable = proto::PrMergeable::Unknown;
+        let computing = evaluate(first.state.unwrap(), &link, &pushed, None, None);
+        assert!(
+            !computing
+                .changes
+                .iter()
+                .any(|c| matches!(c, Change::Conflict { .. })),
+            "{:?}",
+            computing.changes
+        );
+        pushed.mergeable = proto::PrMergeable::Conflicting;
+        let still = evaluate(computing.state.unwrap(), &link, &pushed, None, None);
+        assert_eq!(
+            still
+                .changes
+                .iter()
+                .filter(|c| matches!(c, Change::Conflict { .. }))
+                .count(),
+            1,
+            "a new head that still conflicts must wake: {:?}",
+            still.changes
+        );
+        let again = evaluate(still.state.unwrap(), &link, &pushed, None, None);
+        assert!(
+            !again
+                .changes
+                .iter()
+                .any(|c| matches!(c, Change::Conflict { .. })),
+            "the same head wakes once: {:?}",
+            again.changes
         );
     }
 
@@ -543,7 +719,7 @@ pub(crate) mod tests {
             bot: false,
         });
         let first = evaluate(
-            state(),
+            settled(),
             &link(proto::PullRequestState::Open),
             &detail,
             Some("author"),
@@ -569,6 +745,7 @@ pub(crate) mod tests {
         read_state.read_failures = PR_WATCH_READ_FAILURE_LIMIT - 1;
         assert_eq!(failed_read(read_state).changes, [Change::StopReadFailures]);
         let mut comment_state = state();
+        comment_state.no_checks_woken = true;
         comment_state.comment_only_wakes = PR_WATCH_COMMENT_WAKE_LIMIT - 1;
         let mut detail = detail("abc");
         detail.comments.push(proto::PrComment {
