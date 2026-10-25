@@ -348,4 +348,43 @@ describe('ThreadPane', () => {
     expect(rows('user')).toContain('m1000')
     expect(container.querySelector('[data-testid="thread-jump-latest"]')).not.toBeNull()
   })
+
+  it('offers Open diff only for files under the pane folder', () => {
+    mount({ cwd: '/repo' })
+    const call = (id: string, name: string, input: object): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name, input: JSON.stringify(input), truncated: false })
+    const done = (id: string): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: false, output: 'ok', truncated: false })
+    history([
+      { seq: 1, at_ms: 0, kind: user('plan it') },
+      { seq: 2, at_ms: 10, kind: call('w', 'Write', { file_path: '/home/dev/.claude/plans/p.md', content: 'plan\n' }) },
+      { seq: 3, at_ms: 20, kind: done('w') },
+      { seq: 4, at_ms: 30, kind: call('e', 'Edit', { file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'b' }) },
+      { seq: 5, at_ms: 40, kind: done('e') },
+      { seq: 6, at_ms: 50, kind: turnEnd() }
+    ])
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('[data-thread-item="changes"] li button')]
+    expect(buttons.map((button) => [button.closest('li')!.textContent, button.disabled])).toEqual([
+      [expect.stringContaining('/home/dev/.claude/plans/p.md'), true],
+      [expect.stringContaining('src/a.ts'), false]
+    ])
+  })
+
+  it('keeps the reading position when the row it ends at folds away', () => {
+    mount()
+    const read = (id: string): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name: 'Read', input: JSON.stringify({ file_path: `/r/${id}` }), truncated: false })
+    const done = (id: string): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: false, output: 'ok', truncated: false })
+    const before = Array.from({ length: 600 }, (_, i) => ev(i + 1, user(`u${i + 1}`)))
+    const work = Array.from({ length: 10 }, (_, i) => [ev(602 + 2 * i, read(`t${i}`)), ev(603 + 2 * i, done(`t${i}`))]).flat()
+    const after = Array.from({ length: 143 }, (_, i) => ev(i + 700, user(`v${i}`)))
+    history([...before, ev(601, user('work')), ...work, ev(650, said('m', 'Done.')), ev(651, turnEnd()), ...after])
+    const toggle = (): void => act(() => container.querySelector<HTMLButtonElement>('[data-thread-item="turn"] button')!.click())
+    toggle()
+    // The first click grows the window; the second passes its cap and slides it to end at a Read row.
+    for (let i = 0; i < 2; i++) click('thread-show-earlier')
+    expect(rows('tool').length).toBeGreaterThan(0)
+    expect(rows('user')).not.toContain('v142')
+    toggle()
+    expect(rows('user')).not.toContain('v142')
+    const items = [...container.querySelectorAll('[data-thread-item]')]
+    expect(items.at(-1)!.getAttribute('data-thread-item')).toBe('turn')
+  })
 })

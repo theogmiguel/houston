@@ -83,19 +83,20 @@ The work log shows each tool call as one row: what Claude did and to what (for e
 **Read**, **Edited** or **Ran**), with line counts for an edit and **Failed** for a call
 that returned an error. Select a row to see its input and output: shell commands show the
 command and its output, and file edits and writes show a diff. Houston cuts tool input at
-8 KiB and output at 16 KiB and says so in the row. When Claude reasons before a step, a
-row reads **Thinking** and then, for example, "Thought for 12s · ~800 tokens", with Claude's
-own estimate of the reasoning's size. Claude does not send its reasoning text to a thread,
-so the row has nothing to open.
+8 KiB and output at 16 KiB and says so in the row's details. When Claude reasons before a
+step, a row reads **Thinking** and then, for example, "Thought for 12s · ~800 tokens", with
+Claude's own estimate of the reasoning's size. Claude does not send its reasoning text to a
+thread, so the row has nothing to open.
 
 When a turn ends, its work folds into one summary row, such as "Worked for 2m 14s · Read 6
 files · Changed 2 files", "Stopped after 41s" or "Failed after 3m 02s". Select it to open
 the turn again. The final answer, failed calls and notices stay visible in a folded turn.
 A turn that edited files ends with a list of those files and their line counts; **Open
 diff** opens the Changes panel at that file, which shows the file's current changes in the
-repository rather than only this turn's. Houston keeps each thread's history on this
-machine, up to 20,000 events or 8 MiB, removing the oldest first with a note in the
-thread; the history is deleted when you close the pane. A pane shows the latest
+repository rather than only this turn's. A file outside the pane's folder, such as a
+plan Claude saved in your home directory, has no diff to open. Houston keeps each
+thread's history on this machine, up to 20,000 events or 8 MiB, removing the oldest
+first with a note in the thread; the history is deleted when you close the pane. A pane shows the latest
 messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.
 The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
 a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it

@@ -6,6 +6,7 @@ import { Prose } from './Prose'
 import { WorkingSpinner } from './Spinner'
 import { FOCUS_RING_ACCENT_INSET_45_CLS } from './shadowChrome'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 
 /** The thread pane body: a scrolling timeline over a docked composer, on the pane ground. */
 export function ThreadSurface({ children }: { children: ReactNode }): React.JSX.Element {
@@ -117,6 +118,8 @@ export interface ThreadChangedFile {
   glyph: IconComponent
   added: number
   removed: number
+  /** Outside the pane's folder, so the Changes panel cannot show it. */
+  outside?: boolean
 }
 
 /** The files a turn changed, with line counts and a way to each file's diff. */
@@ -137,7 +140,9 @@ export function ThreadChangedFiles({ files, onOpen }: { files: readonly ThreadCh
               <Icon glyph={file.glyph} role="small" className="flex-none text-[var(--text-faint)]" />
               <Text as="span" size="small" tone="secondary" mono className="min-w-0 flex-1 truncate">{file.path}</Text>
               <ThreadLineCounts added={file.added} removed={file.removed} />
-              {onOpen && <Button variant="ghost" size="sm" onClick={() => onOpen(file.path)}>Open diff</Button>}
+              {onOpen && (file.outside
+                ? <Tooltip label="Outside the pane's folder, so the Changes panel cannot show it" className="inline-flex"><Button variant="ghost" size="sm" disabled>Open diff</Button></Tooltip>
+                : <Button variant="ghost" size="sm" onClick={() => onOpen(file.path)}>Open diff</Button>)}
             </li>
           ))}
         </ul>
@@ -289,7 +294,7 @@ export function ThreadSpecimen(): React.JSX.Element {
       <ThreadWorkRow glyph={IconFileDiff} verb="Edited" target="src/missing.ts" state="error" open={false} onToggle={() => {}} />
       <ThreadTurnFold label="Stopped after 41s · Ran 1 command" outcome="interrupted" open={false} onToggle={() => {}} />
       <ThreadTurnFold label="Failed after 3m 02s" outcome="error" open={false} onToggle={() => {}} />
-      <ThreadChangedFiles files={[{ path: 'src/helper.ts', glyph: IconFileText, added: 4, removed: 2 }, { path: 'src/callers.ts', glyph: IconFileText, added: 3, removed: 3 }]} onOpen={() => {}} />
+      <ThreadChangedFiles files={[{ path: 'src/helper.ts', glyph: IconFileText, added: 4, removed: 2 }, { path: 'src/callers.ts', glyph: IconFileText, added: 3, removed: 3 }, { path: '/home/dev/.claude/plans/plan.md', glyph: IconFileText, added: 12, removed: 0, outside: true }]} onOpen={() => {}} />
       <ThreadNotice>Earlier messages were removed: the thread keeps 20,000 events.</ThreadNotice>
       <ThreadNotice tone="stop">Claude exited with code 1.</ThreadNotice>
       <ThreadStoppedMarker />

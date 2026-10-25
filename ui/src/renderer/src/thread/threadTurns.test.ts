@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildThreadTimeline, type ThreadItem } from './threadModel'
-import { changedFiles, displayTarget, foldThreadRows, formatDuration, summaryOf, toolKindOf } from './threadTurns'
+import { changedFiles, displayTarget, foldThreadRows, formatDuration, isUnderDir, keepWindowAnchor, summaryOf, toolKindOf } from './threadTurns'
 import type { ThreadEvent, ThreadEventKind, ToolSummary } from './threadTypes'
 
 const user = (text: string): ThreadEventKind => ({ type: 'user_message', text })
@@ -68,6 +68,18 @@ describe('foldThreadRows', () => {
   })
 })
 
+describe('keepWindowAnchor', () => {
+  it('moves an anchor that folded away to its turn summary, and leaves a shown one alone', () => {
+    const timeline = buildThreadTimeline(timed([...WORKED, [135_000, user('next')]], 40))
+    const open = foldThreadRows(timeline, new Set(['40']))
+    const read = open.find((row) => row.kind === 'tool' && row.name === 'Read')!
+    const folded = foldThreadRows(timeline, new Set())
+    expect(keepWindowAnchor(folded, timeline, { size: 150, end: read.key })).toEqual({ size: 150, end: 'turn-40' })
+    expect(keepWindowAnchor(open, timeline, { size: 150, end: read.key })).toEqual({ size: 150, end: read.key })
+    expect(keepWindowAnchor(folded, timeline, { size: 150, end: null })).toEqual({ size: 150, end: null })
+  })
+})
+
 describe('summaryOf', () => {
   it('prefers the daemon summary, which survives an input cut at the cap', () => {
     const daemon: ToolSummary = { kind: 'edit', target: '/repo/big.ts', added: 300, removed: 280 }
@@ -102,5 +114,13 @@ describe('formatting', () => {
     expect(displayTarget('/repo/src/a.ts', '/repo')).toBe('src/a.ts')
     expect(displayTarget('/repository/a.ts', '/repo')).toBe('/repository/a.ts')
     expect(displayTarget('C:\\repo\\a.ts', 'C:\\repo\\')).toBe('a.ts')
+  })
+
+  it('tells a file under the pane folder from one outside it', () => {
+    expect(isUnderDir('/repo/src/a.ts', '/repo')).toBe(true)
+    expect(isUnderDir('src/a.ts', '/repo')).toBe(true)
+    expect(isUnderDir('C:\\Repo\\a.ts', 'c:\\repo')).toBe(true)
+    expect(isUnderDir('/home/dev/.claude/plans/p.md', '/repo')).toBe(false)
+    expect(isUnderDir('../other/a.ts', '/repo')).toBe(false)
   })
 })

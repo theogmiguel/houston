@@ -29,7 +29,7 @@ import { ThreadChangesCard, ThreadReasoningItem } from './ThreadWorkLog'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
-import { foldThreadRows } from '../../thread/threadTurns'
+import { foldThreadRows, keepWindowAnchor } from '../../thread/threadTurns'
 import type { ThreadPermissionMode } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
@@ -235,8 +235,9 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
     return next
   }), [])
   const rows = useMemo(() => foldThreadRows(thread.timeline, expanded), [thread.timeline, expanded])
+  const anchored = useCallback((current: ThreadWindow) => keepWindowAnchor(rows, thread.timeline, current), [rows, thread.timeline])
   const scroll = useRef<HTMLDivElement>(null)
-  const { start, end } = windowBounds(rows, win)
+  const { start, end } = windowBounds(rows, anchored(win))
   const shown = rows.slice(start, end)
   const { onScroll, holdFromBottom } = useStickToBottom(scroll, [rows, start, end, markdown], win.end === null)
   const growOnArrival = useRef(false)
@@ -244,8 +245,8 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
     if (thread.loadingEarlier || !growOnArrival.current) return
     growOnArrival.current = false
     holdFromBottom()
-    setWin((current) => showEarlier(rows, current))
-  }, [thread.loadingEarlier, rows, holdFromBottom])
+    setWin((current) => showEarlier(rows, anchored(current)))
+  }, [thread.loadingEarlier, rows, anchored, holdFromBottom])
   const earlier = (): void => {
     if (start === 0) {
       growOnArrival.current = true
@@ -253,7 +254,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
       return
     }
     holdFromBottom()
-    setWin((current) => showEarlier(rows, current))
+    setWin((current) => showEarlier(rows, anchored(current)))
   }
   return (
     <ThreadSurface>
@@ -271,7 +272,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
         {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} cwd={info.cwd} onAnswer={thread.answer} onToggleTurn={toggleTurn} />)}
         {win.end !== null && (
           <ThreadHistoryControl>
-            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(rows, current))}>Show later</Button>
+            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(rows, anchored(current)))}>Show later</Button>
             <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => { setWin(LATEST_WINDOW); thread.followLatest() }}>Jump to latest</Button>
           </ThreadHistoryControl>
         )}

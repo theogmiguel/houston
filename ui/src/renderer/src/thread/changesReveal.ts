@@ -7,11 +7,15 @@ export interface ChangesReveal {
   cwd: string
 }
 
-// Kept until a Changes list shows the file: the panel may mount after the request.
-let pending: ChangesReveal | null = null
+// Long enough for the panel to mount and list a large repository; a later list must not
+// move the selection unasked.
+export const CHANGES_REVEAL_TTL_MS = 10_000
+
+// Kept until the panel lists the request's repository: it may mount after the request.
+let pending: { reveal: ChangesReveal; expires: number } | null = null
 
 export function revealInChanges(reveal: ChangesReveal): void {
-  pending = reveal
+  pending = { reveal, expires: Date.now() + CHANGES_REVEAL_TTL_MS }
   window.dispatchEvent(new CustomEvent<ChangesReveal>(CHANGES_REVEAL_EVENT, { detail: reveal }))
 }
 
@@ -32,11 +36,15 @@ export function repoRelativePath(reveal: ChangesReveal, repoDir: string): string
   return matches ? full.slice(prefix.length) : null
 }
 
-/** The pending reveal's path when `paths` lists it for this repository; consumes the reveal. */
-export function takeChangesReveal(repoDir: string, paths: readonly string[]): string | null {
+/** The reveal's path when this repository's first list (`null` while loading) shows it; that list consumes the reveal either way. */
+export function takeChangesReveal(repoDir: string, paths: readonly string[] | null): string | null {
   if (pending === null) return null
-  const path = repoRelativePath(pending, repoDir)
-  if (path === null || !paths.includes(path)) return null
+  if (Date.now() > pending.expires) {
+    pending = null
+    return null
+  }
+  const path = repoRelativePath(pending.reveal, repoDir)
+  if (path === null || paths === null) return null
   pending = null
-  return path
+  return paths.includes(path) ? path : null
 }
