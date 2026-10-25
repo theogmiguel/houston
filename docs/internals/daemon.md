@@ -481,12 +481,13 @@ pane and file; an explicit fresh root launch starts with a fresh ring. Recovery 
 oversized files and overflowing offsets before constructing a ring.
 
 Between checkpoints, output stays in bounded memory whether or not a client is attached:
-a daemon crash loses about the last 30 s of a pane's output (one interval plus the pass). The periodic pass compares
-each ring's `(generation, bytes_seen)` with the pair recorded at its last write, so idle
-panes are never rewritten; a busy pane rewrites its whole file, at most 4 MiB per interval.
-The pass stands aside while shutdown or a live handoff runs its own full checkpoint. SQLite WAL transactions and
-rename-based snapshots protect process-level recovery ordering; `synchronous = NORMAL`
-and unsynced filesystem writes do not promise the latest state after a machine power cut.
+a daemon crash loses about the last 30 s of a pane's output (one interval plus the pass).
+The periodic pass compares each ring's `(generation, bytes_seen)` with the pair recorded at
+its last write, so idle panes are never rewritten; a busy pane rewrites its whole file, at
+most 4 MiB per interval. The pass stands aside while shutdown or a live handoff runs its
+own full checkpoint. SQLite WAL transactions and rename-based snapshots protect
+process-level recovery ordering; `synchronous = NORMAL` and unsynced filesystem writes do
+not promise the latest state after a machine power cut.
 
 ## Reading a pane
 
