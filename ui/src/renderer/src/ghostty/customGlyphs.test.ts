@@ -38,6 +38,7 @@ function recordingContext(): {
     fillRect: (x: number, y: number, w: number, h: number) => fills.push({ x, y, w, h, alpha }),
     clearRect: (x: number, y: number, w: number, h: number) => fills.push({ x, y, w, h, alpha }),
     fillText: (...args: unknown[]) => texts.push(args),
+    measureText: (text: string) => ({ width: text.length * 8 }),
     rect: (...args: number[]) => clips.push(args),
     resetTransform: () => {},
     restore: () => {

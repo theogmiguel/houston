@@ -62,8 +62,13 @@ function snapshot(overrides: Partial<GhosttySnapshot> & { rowData: readonly Ghos
 
 type RecordedCall = { op: string; args: readonly unknown[]; style?: string; font?: string };
 
-function recordingContext(canvasWidth = 400, canvasHeight = 300) {
+function recordingContext(
+  canvasWidth = 400,
+  canvasHeight = 300,
+  options: { measureText?: (text: string) => number } = {},
+) {
   const calls: RecordedCall[] = [];
+  const measureAdvance = options.measureText ?? ((text: string) => text.length * 6);
   let fillStyle = "";
   let strokeStyle = "";
   let font = "";
@@ -100,7 +105,7 @@ function recordingContext(canvasWidth = 400, canvasHeight = 300) {
     strokeRect: (...args: number[]) => calls.push({ op: "strokeRect", args, style: strokeStyle }),
     fillText: (...args: unknown[]) => calls.push({ op: "fillText", args, style: fillStyle, font }),
     measureText: (text: string) => ({
-      width: text.length * 6,
+      width: measureAdvance(text),
       actualBoundingBoxAscent: 10,
       actualBoundingBoxDescent: 3,
     }),
@@ -110,6 +115,10 @@ function recordingContext(canvasWidth = 400, canvasHeight = 300) {
 
 function fillRects(calls: readonly RecordedCall[]): RecordedCall[] {
   return calls.filter((entry) => entry.op === "fillRect");
+}
+
+function drawnTexts(calls: readonly RecordedCall[]): RecordedCall[] {
+  return calls.filter((entry) => entry.op === "fillText");
 }
 
 describe("terminalGridSize", () => {
@@ -510,5 +519,91 @@ describe("renderGhosttySnapshot", () => {
     const secondRowLeft = underlines.find((entry) => entry.args[0] === 0 && entry.args[1] === 38);
     expect(firstRowLeft).toBeDefined();
     expect(secondRowLeft).toBeDefined();
+  });
+
+  it("draws a run on the grid when its natural advance is narrower than the cell", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" }), cell({ text: "c" })];
+    const { context, calls } = recordingContext();
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "b", "c"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11, 18]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7, 7]);
+  });
+
+  it("keeps a single fillText for a run whose advance matches the grid", () => {
+    const rowCells = [cell({ text: "a" }), cell({ text: "b" }), cell({ text: "c" })];
+    const { context, calls } = recordingContext(400, 300, {
+      measureText: (text) => text.length * 7,
+    });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]?.args).toEqual(["abc", 4, 18, 21]);
+  });
+
+  it("draws a run on the grid when a fallback glyph is wider than its cell", () => {
+    const rowCells = [cell({ text: "x" }), cell({ text: "⏺" }), cell({ text: "y" })];
+    const { context, calls } = recordingContext(400, 300, {
+      measureText: (text) => [...text].reduce((sum, char) => sum + (char === "⏺" ? 10.5 : 7), 0),
+    });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["x", "⏺", "y"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11, 18]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 7, 7]);
+  });
+
+  it("gives a wide cell its spacer column and skips the empty spacer tail", () => {
+    const rowCells = [
+      cell({ text: "a" }),
+      cell({ text: "永", wide: GHOSTTY_CELL_WIDE.wide }),
+      cell({ text: "", wide: GHOSTTY_CELL_WIDE.spacerTail }),
+      cell({ text: "b" }),
+    ];
+    const { context, calls } = recordingContext(400, 300, {
+      measureText: (text) => [...text].reduce((sum, char) => sum + (char === "永" ? 12 : 7), 0),
+    });
+    renderGhosttySnapshot({
+      context,
+      snapshot: snapshot({ rowData: [row(rowCells)], dirtyRows: new Set([0]) }),
+      metrics: metrics({ width: 7, height: 20 }),
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: false,
+    });
+    const texts = drawnTexts(calls);
+    expect(texts.map((entry) => entry.args[0])).toEqual(["a", "永", "b"]);
+    expect(texts.map((entry) => entry.args[1])).toEqual([4, 11, 25]);
+    expect(texts.map((entry) => entry.args[3])).toEqual([7, 14, 7]);
   });
 });

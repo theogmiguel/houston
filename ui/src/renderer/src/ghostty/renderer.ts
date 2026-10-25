@@ -302,12 +302,31 @@ export function renderGhosttySnapshot(options: {
           context.clip();
           context.font = fontForCell(first, fontSize, fontFamily);
           context.fillStyle = cssColor(first.foreground);
-          context.fillText(
-            text,
-            padding + runStart * metrics.width,
-            top + metrics.baseline,
-            (runEnd - runStart) * metrics.width,
-          );
+          const runWidth = (runEnd - runStart) * metrics.width;
+          if (Math.abs(context.measureText(text).width - runWidth) <= 0.5 / devicePixelRatio) {
+            context.fillText(
+              text,
+              padding + runStart * metrics.width,
+              top + metrics.baseline,
+              runWidth,
+            );
+          } else {
+            /* One fillText for the run advances at the font's natural widths,
+             * so a snapped-up cell or a fallback glyph wider than its cell
+             * drifts the glyphs away from the grid that hit-testing and the
+             * overlays use. Place each cell on the grid instead. */
+            for (let column = runStart; column < runEnd; column += 1) {
+              const cell = row.cells[column];
+              if (!cell || cell.text.length === 0) continue;
+              const columns = cell.wide === GHOSTTY_CELL_WIDE.wide ? 2 : 1;
+              context.fillText(
+                cell.text,
+                padding + column * metrics.width,
+                top + metrics.baseline,
+                metrics.width * columns,
+              );
+            }
+          }
           context.restore();
         }
         runStart = runEnd;
