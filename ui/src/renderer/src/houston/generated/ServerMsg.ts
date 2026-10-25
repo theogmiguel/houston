@@ -94,6 +94,7 @@ import type { TaskTrackerProvider } from "./TaskTrackerProvider";
 import type { TaskTrackerWorkspaceSettings } from "./TaskTrackerWorkspaceSettings";
 import type { TasksAccess } from "./TasksAccess";
 import type { ThreadEvent } from "./ThreadEvent";
+import type { ThreadQueuedMessage } from "./ThreadQueuedMessage";
 import type { TitleSource } from "./TitleSource";
 import type { UpdatePolicy } from "./UpdatePolicy";
 import type { UpdateState } from "./UpdateState";
@@ -114,7 +115,7 @@ export type ServerMsg = { "type": "generated_titles", enabled: boolean, } | { "t
 /**
  * The request's `before_seq`, so a client matches the reply to its request.
  */
-before_seq?: number | null, events: Array<ThreadEvent>, has_more: boolean, } | { "type": "scrollback", session: number, data: string, generation: number, replayed_bytes: number, bytes_seen: number, attempt: number, } | { "type": "attach_snapshot", session: number, generation: number, attempt: number, output_offset: number, format_version: number, state: string, } | { "type": "workspace_list", workspaces: Array<Workspace>, } | { "type": "workspace_focus", path: string, } | { "type": "workspace_local_servers", workspace: string, servers: Array<LocalServer>, unsupported: string | null, truncated: boolean, } | { "type": "session_resized", session: number, cols: number, rows: number, } | { "type": "session_renamed", session: number, title: string, title_source: TitleSource, } | { "type": "session_tags_set", session: number, tags: Array<number>, } | { "type": "session_resumable", session: number, resumable: boolean, } | { "type": "pr_watch_changed", session: number, watches: Array<PrWatchInfo>, } | { "type": "merge_queue", workspace: string, dir?: string | null, entries: Array<MergeQueueEntry>,
+before_seq?: number | null, events: Array<ThreadEvent>, has_more: boolean, } | { "type": "thread_queue", session: number, items: Array<ThreadQueuedMessage>, } | { "type": "scrollback", session: number, data: string, generation: number, replayed_bytes: number, bytes_seen: number, attempt: number, } | { "type": "attach_snapshot", session: number, generation: number, attempt: number, output_offset: number, format_version: number, state: string, } | { "type": "workspace_list", workspaces: Array<Workspace>, } | { "type": "workspace_focus", path: string, } | { "type": "workspace_local_servers", workspace: string, servers: Array<LocalServer>, unsupported: string | null, truncated: boolean, } | { "type": "session_resized", session: number, cols: number, rows: number, } | { "type": "session_renamed", session: number, title: string, title_source: TitleSource, } | { "type": "session_tags_set", session: number, tags: Array<number>, } | { "type": "session_resumable", session: number, resumable: boolean, } | { "type": "pr_watch_changed", session: number, watches: Array<PrWatchInfo>, } | { "type": "merge_queue", workspace: string, dir?: string | null, entries: Array<MergeQueueEntry>,
 /**
  * The last day's merge log, newest first.
  */

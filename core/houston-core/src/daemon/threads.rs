@@ -197,17 +197,7 @@ impl Daemon {
     }
 
     pub fn thread_send(self: &Arc<Self>, id: u32, text: &str) -> Result<()> {
-        if text.len() > proto::THREAD_USER_MESSAGE_MAX_BYTES {
-            bail!(
-                "thread_send refused for session {id}: the message is {} bytes, over the {} byte \
-                 limit (THREAD_USER_MESSAGE_MAX_BYTES)",
-                text.len(),
-                proto::THREAD_USER_MESSAGE_MAX_BYTES
-            );
-        }
-        if text.trim().is_empty() {
-            bail!("thread_send refused for session {id}: the message is empty");
-        }
+        ensure_message_text(id, "thread_send", text)?;
         let handle = self.thread_handle(id, "thread_send")?;
         let state = *self.get(id)?.state.lock().expect("state lock");
         if !state.is_live() {
@@ -376,6 +366,62 @@ impl Daemon {
             PermissionPrompt::Held(receiver, ApprovalGuard { handle, request_id }),
             input,
         ))
+    }
+
+    /// Refuses a queue request for an unknown or terminal session, naming the verb.
+    fn ensure_thread_session(&self, id: u32, verb: &str) -> Result<()> {
+        if self.get(id).is_err() && !self.db.session_exists(id)? {
+            bail!("{verb} refused for session {id}: unknown session");
+        }
+        let view = self.session_view(id);
+        if view != proto::SessionView::Thread {
+            bail!(
+                "{verb} refused for session {id}: it is a terminal session (view {}); \
+                 {verb} applies to thread sessions only",
+                view.as_str()
+            );
+        }
+        Ok(())
+    }
+
+    fn broadcast_thread_queue(&self, id: u32, items: Vec<proto::ThreadQueuedMessage>) {
+        self.broadcast_control(&proto::ServerMsg::ThreadQueue { session: id, items });
+    }
+
+    pub fn thread_queue_list(&self, id: u32) -> Result<proto::ServerMsg> {
+        self.ensure_thread_session(id, "thread_queue_list")?;
+        Ok(proto::ServerMsg::ThreadQueue {
+            session: id,
+            items: self.db.thread_queue(id)?,
+        })
+    }
+
+    pub fn thread_queue_edit(&self, id: u32, message: &str, text: &str) -> Result<()> {
+        self.ensure_thread_session(id, "thread_queue_edit")?;
+        ensure_message_text(id, "thread_queue_edit", text)?;
+        let items = self
+            .db
+            .thread_queue_edit(id, message, text)?
+            .ok_or_else(|| {
+                anyhow!(
+                "thread_queue_edit refused for session {id}: message {message:?} is not in its \
+                 queue; it was sent or removed"
+            )
+            })?;
+        self.broadcast_thread_queue(id, items);
+        Ok(())
+    }
+
+    pub fn thread_queue_remove(&self, id: u32, message: &str) -> Result<()> {
+        self.ensure_thread_session(id, "thread_queue_remove")?;
+        let items = self.db.thread_queue_remove(id, message)?.ok_or_else(|| {
+            anyhow!(
+                "thread_queue_remove refused for session {id}: message {message:?} is not in its \
+                 queue; it was sent or removed"
+            )
+        })?;
+        self.broadcast_thread_queue(id, items);
+        Ok(())
     }
 
     pub fn thread_history(
@@ -709,6 +755,22 @@ impl Daemon {
             .context(orchestrate::MutationMayHaveActed)?;
         Ok(info)
     }
+}
+
+/// A message Claude will read: not empty and within `THREAD_USER_MESSAGE_MAX_BYTES`.
+fn ensure_message_text(id: u32, verb: &str, text: &str) -> Result<()> {
+    if text.len() > proto::THREAD_USER_MESSAGE_MAX_BYTES {
+        bail!(
+            "{verb} refused for session {id}: the message is {} bytes, over the {} byte \
+             limit (THREAD_USER_MESSAGE_MAX_BYTES)",
+            text.len(),
+            proto::THREAD_USER_MESSAGE_MAX_BYTES
+        );
+    }
+    if text.trim().is_empty() {
+        bail!("{verb} refused for session {id}: the message is empty");
+    }
+    Ok(())
 }
 
 fn status_name(status: proto::AgentStatus) -> &'static str {

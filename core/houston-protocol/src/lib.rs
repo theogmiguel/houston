@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 152;
+pub const PROTOCOL_VERSION: u32 = 155;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1588,6 +1588,10 @@ impl SessionView {
 pub const THREAD_HISTORY_PAGE_MAX: u32 = 500;
 /// Largest `thread_send` text; a longer message is refused, never cut.
 pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
+/// Messages waiting in one thread's queue; a queue holds a few follow-ups, not a backlog.
+pub const THREAD_QUEUE_MAX_ITEMS: usize = 16;
+/// Text bytes waiting in one thread's queue, which also bounds a `thread_queue` snapshot.
+pub const THREAD_QUEUE_MAX_BYTES: usize = 1_048_576;
 pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
@@ -1613,6 +1617,8 @@ pub struct ThreadEvent {
 pub enum ThreadEventKind {
     UserMessage {
         text: String,
+        #[serde(default)]
+        delivery: MessageDelivery,
     },
     /// Live only, never stored: the `AssistantMessage` with the same
     /// `message_id` supersedes every delta before it.
@@ -1667,6 +1673,44 @@ pub enum ThreadEventKind {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         reason: Option<String>,
     },
+}
+
+/// How a user message reached Claude.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MessageDelivery {
+    /// Sent while no turn was open and nothing was queued.
+    #[default]
+    Direct,
+    /// Waited in the thread's queue and was sent when a turn completed, or by the user.
+    Queued,
+    /// Stopped the open turn and was sent before the queue.
+    Steered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum QueuedState {
+    /// Sent automatically after the open turn completes.
+    Queued,
+    /// Sent only when the user sends it; `hold_reason` says why it stopped.
+    Held,
+}
+
+/// A message written while a turn was open, waiting in the daemon until it can be sent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQueuedMessage {
+    pub id: String,
+    pub text: String,
+    pub state: QueuedState,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub hold_reason: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4129,9 +4173,13 @@ pub enum ClientMsg {
         cols: u16,
         rows: u16,
     },
+    /// Sent at once while no turn is open and the queue is empty; queued otherwise.
+    /// `steer` stops an open turn and sends this message before the queue.
     ThreadSend {
         session: u32,
         text: String,
+        #[serde(default)]
+        steer: bool,
     },
     ThreadStop {
         session: u32,
@@ -4167,6 +4215,29 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         before_seq: Option<u64>,
         limit: u32,
+    },
+    /// Answered with a `thread_queue` snapshot to this connection.
+    ThreadQueueList {
+        session: u32,
+    },
+    ThreadQueueEdit {
+        session: u32,
+        id: String,
+        text: String,
+    },
+    ThreadQueueRemove {
+        session: u32,
+        id: String,
+    },
+    /// Sends a queued or held message now; while a turn is open it waits as `queued`.
+    ThreadQueueSend {
+        session: u32,
+        id: String,
+    },
+    /// Takes a queued message out of the queue and sends it first, stopping an open turn.
+    ThreadSteer {
+        session: u32,
+        id: String,
     },
     SessionList,
     PrWatchList,
@@ -5474,6 +5545,11 @@ pub enum ServerMsg {
         before_seq: Option<u64>,
         events: Vec<ThreadEvent>,
         has_more: bool,
+    },
+    /// The session's whole queue, oldest first; broadcast after every change.
+    ThreadQueue {
+        session: u32,
+        items: Vec<ThreadQueuedMessage>,
     },
     Scrollback {
         session: u32,
@@ -7716,6 +7792,41 @@ mod tests {
         assert_eq!(
             events,
             r#"{"type":"thread_events","session":3,"events":[{"seq":7,"at_ms":1,"kind":{"type":"turn_end","outcome":"interrupted","error":null}}]}"#
+        );
+    }
+
+    #[test]
+    fn queue_messages_keep_their_wire_shape() {
+        let send: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_send","session":3,"text":"hi"}"#).unwrap();
+        assert!(matches!(send, ClientMsg::ThreadSend { steer: false, .. }));
+        let steer: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_steer","session":3,"id":"q1"}"#).unwrap();
+        assert!(matches!(steer, ClientMsg::ThreadSteer { session: 3, ref id } if id == "q1"));
+        let message: ThreadEventKind =
+            serde_json::from_str(r#"{"type":"user_message","text":"hi"}"#).unwrap();
+        assert_eq!(
+            message,
+            ThreadEventKind::UserMessage {
+                text: "hi".into(),
+                delivery: MessageDelivery::Direct
+            },
+            "events stored before v155 read as direct"
+        );
+        let queue = serde_json::to_string(&ServerMsg::ThreadQueue {
+            session: 3,
+            items: vec![ThreadQueuedMessage {
+                id: "q1".into(),
+                text: "next".into(),
+                state: QueuedState::Held,
+                hold_reason: Some("stopped".into()),
+                created_at_ms: 5,
+            }],
+        })
+        .unwrap();
+        assert_eq!(
+            queue,
+            r#"{"type":"thread_queue","session":3,"items":[{"id":"q1","text":"next","state":"held","hold_reason":"stopped","created_at_ms":5}]}"#
         );
     }
 

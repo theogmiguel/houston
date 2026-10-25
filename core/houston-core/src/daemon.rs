@@ -3376,6 +3376,7 @@ impl Daemon {
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
         db.instruction_recover(now_ms())?;
+        db.thread_queue_recover()?;
         if adopted.is_none() {
             let retention_hours = db
                 .get_setting("settled_retention_hours")?

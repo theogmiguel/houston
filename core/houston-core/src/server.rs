@@ -859,6 +859,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
         msg,
         proto::ClientMsg::SessionList
             | proto::ClientMsg::ThreadHistory { .. }
+            | proto::ClientMsg::ThreadQueueList { .. }
             | proto::ClientMsg::SkillSync
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
@@ -1715,6 +1716,11 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::ThreadApprove { session, .. }
         | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
         | proto::ClientMsg::ThreadHistory { session, .. }
+        | proto::ClientMsg::ThreadQueueList { session }
+        | proto::ClientMsg::ThreadQueueEdit { session, .. }
+        | proto::ClientMsg::ThreadQueueRemove { session, .. }
+        | proto::ClientMsg::ThreadQueueSend { session, .. }
+        | proto::ClientMsg::ThreadSteer { session, .. }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
         _ => None,
     }
@@ -1952,7 +1958,11 @@ async fn dispatch(
             .await;
             Ok(())
         }
-        proto::ClientMsg::ThreadSend { session, text } => {
+        proto::ClientMsg::ThreadSend {
+            session,
+            text,
+            steer: _,
+        } => {
             let d = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || d.thread_send(session, &text))
                 .await
@@ -2001,6 +2011,32 @@ async fn dispatch(
                 .await
                 .map_err(|_| anyhow::anyhow!("sending thread history failed"))
         }
+        proto::ClientMsg::ThreadQueueList { session } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.thread_queue_list(session))
+                .await
+                .map_err(|e| anyhow::anyhow!("thread queue read panicked: {e}"))??;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending thread queue failed"))
+        }
+        proto::ClientMsg::ThreadQueueEdit { session, id, text } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_edit(session, &id, &text))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue edit panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadQueueRemove { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_remove(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue remove panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadQueueSend { session, .. }
+        | proto::ClientMsg::ThreadSteer { session, .. } => Err(anyhow::anyhow!(
+            "queued message delivery refused for session {session}: this daemon does not send \
+             queued messages yet"
+        )),
         proto::ClientMsg::WorkspaceLocalServers { workspace } => {
             let msg = daemon.workspace_local_servers(workspace);
             send_msg(sink, &msg)

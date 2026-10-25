@@ -72,6 +72,8 @@ SLACK_TOKEN_LEN_MAX="$(extract_u32 SLACK_TOKEN_LEN_MAX)"
 SLACK_RUNS_WORKING_MAX="$(extract_u32 SLACK_RUNS_WORKING_MAX)"
 THREAD_HISTORY_PAGE_MAX="$(extract_u32 THREAD_HISTORY_PAGE_MAX)"
 THREAD_USER_MESSAGE_MAX_BYTES="$(extract_u32 THREAD_USER_MESSAGE_MAX_BYTES)"
+THREAD_QUEUE_MAX_ITEMS="$(extract_u32 THREAD_QUEUE_MAX_ITEMS)"
+THREAD_QUEUE_MAX_BYTES="$(extract_u32 THREAD_QUEUE_MAX_BYTES)"
 USAGE_WINDOW_REFUSED="$(sed -nE 's/^pub const USAGE_WINDOW_REFUSED: &str = "(.*)";$/\1/p' houston-protocol/src/lib.rs)"
 [ -n "$USAGE_WINDOW_REFUSED" ] || { echo "could not extract USAGE_WINDOW_REFUSED from houston-protocol/src/lib.rs" >&2; exit 1; }
 mapfile -t TAG_PALETTE_HEXES < <(sed -n '/^pub const TAG_PALETTE/,/^\];/p' houston-protocol/src/lib.rs | grep -oE '#[0-9a-fA-F]{6}')
@@ -129,5 +131,7 @@ export const MAX_TAG_NAME_LEN = $MAX_TAG_NAME_LEN
 export const MAX_TAGS_PER_SESSION = $MAX_TAGS_PER_SESSION
 export const THREAD_HISTORY_PAGE_MAX = $THREAD_HISTORY_PAGE_MAX
 export const THREAD_USER_MESSAGE_MAX_BYTES = $THREAD_USER_MESSAGE_MAX_BYTES
+export const THREAD_QUEUE_MAX_ITEMS = $THREAD_QUEUE_MAX_ITEMS
+export const THREAD_QUEUE_MAX_BYTES = $THREAD_QUEUE_MAX_BYTES
 EOF
 echo "generated $(ls "$OUT" | wc -l) file(s) in ui/src/renderer/src/houston/generated/ (protocol v$VERSION)"

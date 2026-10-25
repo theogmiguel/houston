@@ -248,7 +248,7 @@ async fn a_thread_turn_streams_typed_events_and_keeps_them_as_history() {
 
     assert!(live.windows(2).all(|pair| pair[0].seq < pair[1].seq));
     assert!(
-        matches!(&live[0].kind, ThreadEventKind::UserMessage { text } if text == "replay:tools")
+        matches!(&live[0].kind, ThreadEventKind::UserMessage { text, .. } if text == "replay:tools")
     );
     let tools: Vec<&str> = live
         .iter()
@@ -609,6 +609,163 @@ async fn a_restarted_daemon_restores_the_thread_with_its_history() {
     daemon.close(restored.id).unwrap();
 }
 
+fn queued_row(id: &str, text: &str) -> proto::ThreadQueuedMessage {
+    proto::ThreadQueuedMessage {
+        id: id.into(),
+        text: text.into(),
+        state: proto::QueuedState::Queued,
+        hold_reason: None,
+        created_at_ms: 1,
+    }
+}
+
+async fn queue_snapshot(ws: &mut WsStream, session: u32) -> Vec<proto::ThreadQueuedMessage> {
+    loop {
+        match next_control(ws).await {
+            proto::ServerMsg::ThreadQueue { session: s, items } if s == session => return items,
+            proto::ServerMsg::Error { message, .. } => panic!("queue request refused: {message}"),
+            _ => {}
+        }
+    }
+}
+
+async fn refusal(ws: &mut WsStream) -> (String, Option<String>) {
+    loop {
+        if let proto::ServerMsg::Error { message, context } = next_control(ws).await {
+            return (message, context);
+        }
+    }
+}
+
+/// Nothing queued before a restart is sent by the next daemon; the queue follows the
+/// restored row and can be edited and emptied over `/ws`.
+#[tokio::test]
+async fn a_restarted_daemon_holds_the_queue_and_the_user_edits_it() {
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    let transcript = rig.scratch.path().join("conversation.jsonl");
+    std::fs::write(&transcript, "{}\n").unwrap();
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.insert_session(&thread_row(7, rig.project.path()))
+            .unwrap();
+        db.set_session_resume_handle(7, Some(("conv-7", Some(transcript.to_str().unwrap()))))
+            .unwrap();
+        for (id, text) in [("a", "first"), ("b", "second")] {
+            db.thread_queue_push(7, "thread_send", &queued_row(id, text))
+                .unwrap();
+        }
+    }
+    std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let (addr, _server) =
+        houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+    daemon.set_port(addr.port());
+    wait_until("the thread to be restored", || {
+        daemon
+            .list()
+            .iter()
+            .any(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+    })
+    .await;
+    let id = daemon
+        .list()
+        .into_iter()
+        .find(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+        .unwrap()
+        .id;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    ws.send(Message::text(
+        json!({"type":"thread_queue_list","session":id}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let items = queue_snapshot(&mut ws, id).await;
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| (item.id.as_str(), item.state, item.hold_reason.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "a",
+                proto::QueuedState::Held,
+                Some(houston_core::db::THREAD_QUEUE_RESTART_REASON)
+            ),
+            (
+                "b",
+                proto::QueuedState::Held,
+                Some(houston_core::db::THREAD_QUEUE_RESTART_REASON)
+            ),
+        ]
+    );
+    assert!(
+        history_of(&daemon, id)
+            .iter()
+            .all(|e| !matches!(e.kind, ThreadEventKind::UserMessage { .. })),
+        "a held message is never sent by itself"
+    );
+
+    ws.send(Message::text(
+        json!({"type":"thread_queue_edit","session":id,"id":"b","text":"SECOND"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let items = queue_snapshot(&mut ws, id).await;
+    assert_eq!(items[1].text, "SECOND");
+    ws.send(Message::text(
+        json!({"type":"thread_queue_remove","session":id,"id":"a"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let items = queue_snapshot(&mut ws, id).await;
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b"]
+    );
+
+    ws.send(Message::text(
+        json!({"type":"thread_queue_remove","session":id,"id":"a"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let (message, context) = refusal(&mut ws).await;
+    assert!(
+        message.starts_with(&format!("thread_queue_remove refused for session {id}"))
+            && message.contains("\"a\" is not in its queue"),
+        "{message}"
+    );
+    assert_eq!(context, Some(format!("session:{id}")));
+    ws.send(Message::text(
+        json!({"type":"thread_queue_edit","session":id,"id":"b","text":"  "}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let (message, _) = refusal(&mut ws).await;
+    assert!(message.contains("the message is empty"), "{message}");
+
+    daemon.close(id).unwrap();
+    assert!(
+        Db::open(&db_path)
+            .unwrap()
+            .thread_queue(id)
+            .unwrap()
+            .is_empty(),
+        "closing the session deletes its queue"
+    );
+}
+
 /// A daemon that dies mid-turn leaves a user message with no turn end and a running row.
 #[tokio::test]
 async fn a_turn_left_open_by_a_daemon_crash_ends_on_restore() {
@@ -630,6 +787,7 @@ async fn a_turn_left_open_by_a_daemon_crash_ends_on_restore() {
         let open_turn = [
             ThreadEventKind::UserMessage {
                 text: "question".into(),
+                delivery: Default::default(),
             },
             ThreadEventKind::ToolCall {
                 tool_use_id: "toolu_1".into(),
@@ -802,7 +960,7 @@ async fn orchestration_prompts_and_reads_a_thread_and_refuses_keys() {
         .events_until(child, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
         .await;
     assert!(events.iter().any(
-        |e| matches!(&e.kind, ThreadEventKind::UserMessage { text } if text.contains("hello thread"))
+        |e| matches!(&e.kind, ThreadEventKind::UserMessage { text, .. } if text.contains("hello thread"))
     ));
     let lines = rig
         .daemon
@@ -925,7 +1083,8 @@ async fn a_message_sent_during_stop_waits_for_the_old_process() {
             }
         )
     });
-    let next = at(&|k| matches!(k, ThreadEventKind::UserMessage { text } if text == "replay:warm"));
+    let next =
+        at(&|k| matches!(k, ThreadEventKind::UserMessage { text, .. } if text == "replay:warm"));
     assert!(partial < stopped && stopped < next, "{history:?}");
     wait_until("the resumed turn to settle", || {
         rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)

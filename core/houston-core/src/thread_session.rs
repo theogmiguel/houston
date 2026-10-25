@@ -1087,6 +1087,7 @@ impl ThreadHandle {
             drop(state);
             self.emit(vec![ThreadEventKind::UserMessage {
                 text: text.to_string(),
+                delivery: houston_protocol::MessageDelivery::Direct,
             }]);
             process
         };

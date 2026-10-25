@@ -488,7 +488,7 @@ async fn a_round_trip_puts_the_turns_notice_after_the_old_history() {
     let after = rig.history(back.id);
     let warm = after
         .iter()
-        .find(|e| matches!(&e.kind, ThreadEventKind::UserMessage { text } if text == "replay:warm"))
+        .find(|e| matches!(&e.kind, ThreadEventKind::UserMessage { text, .. } if text == "replay:warm"))
         .expect("the new turn's message");
     assert!(warm.seq > seq, "new events follow the notice");
     assert!(after.last().unwrap().seq > seq);

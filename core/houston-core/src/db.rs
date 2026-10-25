@@ -31,6 +31,7 @@ mod task_trackers;
 pub use remote::RemoteDeviceRow;
 mod tasks;
 mod threads;
+pub use threads::THREAD_QUEUE_RESTART_REASON;
 mod view_switch;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
