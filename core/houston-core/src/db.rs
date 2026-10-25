@@ -179,6 +179,7 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("backlog_task_counters", "workspace"),
     ("night_runs", "workspace"),
     ("workspace_transfers", "workspace"),
+    ("routines", "workspace_id"),
 ];
 
 /// Columns holding a path that may sit inside a workspace: rows under the old
@@ -7461,7 +7462,7 @@ pub(crate) mod tests {
             .collect::<std::result::Result<_, _>>()
             .unwrap();
         let path_like = |c: &str| {
-            matches!(c, "workspace" | "path" | "cwd" | "dir")
+            matches!(c, "workspace" | "workspace_id" | "path" | "cwd" | "dir")
                 || c.ends_with("_dir")
                 || c.ends_with("_path")
                 || c.ends_with("_cwd")
@@ -7509,6 +7510,13 @@ pub(crate) mod tests {
                          'running', 0, 0);
              INSERT INTO workspace_transfers (id, direction, workspace, created_at_ms)
                  VALUES ('t1', 'export', '{from}', 0), ('t2', 'export', '/a/project', 0);
+             INSERT INTO routines (id, name, name_folded, prompt, cadence, enabled,
+                 workspace_id, engine, next_run_at_ms, revision, created_at, updated_at)
+                 VALUES (1, 'Sweep', 'sweep', 'x', '{{\"type\":\"interval\",\"seconds\":900}}',
+                         1, '{from}', 'shell', 0, 'r1', 0, 0),
+                        (2, 'Sweep sibling', 'sweep sibling', 'x',
+                         '{{\"type\":\"interval\",\"seconds\":900}}', 1, '/a/project',
+                         'shell', 0, 'r2', 0, 0);
              INSERT INTO workspace_transfer_checkouts
                  (transfer_id, direction, key, path, tree_state, untracked)
                  VALUES ('t1', 'export', 'main', '{from}/.houston/worktrees/x', NULL, '[]'),
@@ -7578,6 +7586,21 @@ pub(crate) mod tests {
         assert_eq!(
             runs,
             vec![(1, "/b/proj".to_owned()), (2, "/a/project".to_owned())]
+        );
+        let routines: Vec<(u32, Option<String>)> = conn
+            .prepare("SELECT id, workspace_id FROM routines ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            routines,
+            vec![
+                (1, Some("/b/proj".to_owned())),
+                (2, Some("/a/project".to_owned())),
+            ],
+            "the routine follows its workspace; a sibling folder must not move"
         );
         let transfers: Vec<(String, String)> = conn
             .prepare("SELECT id, workspace FROM workspace_transfers ORDER BY id")
