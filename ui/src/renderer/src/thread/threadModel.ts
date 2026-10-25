@@ -136,7 +136,7 @@ export function buildThreadTimeline(events: readonly ThreadEvent[]): ThreadTimel
           if (tokens !== null) items[at] = { ...current, tokens }
         } else {
           thinking.set(kind.message_id, items.length)
-          push({ kind: 'reasoning', key: `delta-${key}`, streaming: true, redacted: false, durationMs: null, tokens })
+          push({ kind: 'reasoning', key: `delta-${key}`, streaming: true, redacted: kind.redacted, durationMs: null, tokens })
         }
         break
       }

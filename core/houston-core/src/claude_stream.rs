@@ -6,8 +6,9 @@ use crate::thread_session::{
 };
 use anyhow::{anyhow, bail, Result};
 use houston_protocol::{
-    AgentKind, ThreadEventKind, ThreadPermissionMode, TurnOutcome, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    AgentKind, ThreadEventKind, ThreadPermissionMode, ToolKind, ToolSummary, TurnOutcome,
+    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_TOOL_INPUT_MAX_BYTES, THREAD_TOOL_OUTPUT_MAX_BYTES,
+    THREAD_TOOL_TARGET_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -178,6 +179,45 @@ impl ProviderAdapter for ClaudeStreamJson {
 #[derive(Default)]
 pub struct StreamMapper {
     open_text_block: HashMap<String, u64>,
+    open_reasoning: Option<OpenReasoning>,
+}
+
+/// The thinking block being streamed. Claude sends no thinking text headless (Houston
+/// passes no display flag), only size estimates: increments on `thinking_delta` and on the
+/// top-level `system/thinking_tokens` events, which can arrive without a matching delta.
+struct OpenReasoning {
+    message: String,
+    index: u64,
+    from_system: u32,
+    from_deltas: u32,
+    redacted: bool,
+}
+
+impl OpenReasoning {
+    fn estimate(&self) -> Option<u32> {
+        Some(self.from_system.max(self.from_deltas)).filter(|tokens| *tokens > 0)
+    }
+
+    fn delta(&self) -> ThreadEventKind {
+        ThreadEventKind::ReasoningDelta {
+            message_id: block_key(&self.message, self.index),
+            text: String::new(),
+            estimated_tokens: self.estimate(),
+            redacted: self.redacted,
+        }
+    }
+
+    /// The stored form of a block whose own `assistant` line never arrived.
+    fn cut_off(self) -> ThreadEventKind {
+        ThreadEventKind::Reasoning {
+            message_id: block_key(&self.message, self.index),
+            text: String::new(),
+            truncated: true,
+            duration_ms: None,
+            estimated_tokens: self.estimate(),
+            redacted: self.redacted,
+        }
+    }
 }
 
 impl ProviderStream for StreamMapper {
@@ -224,8 +264,23 @@ impl StreamMapper {
                     TurnOutcome::Completed
                 };
                 let error = is_error.then(|| result_error(&value));
+                if let Some(open) = self.open_reasoning.take() {
+                    out.events.push(open.cut_off());
+                }
                 out.events.push(ThreadEventKind::TurnEnd { outcome, error });
                 out.turn_end = Some(outcome);
+            }
+            Some("system")
+                if value.get("subtype").and_then(Value::as_str) == Some("thinking_tokens") =>
+            {
+                let added = value
+                    .get("estimated_tokens_delta")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                if let Some(open) = &mut self.open_reasoning {
+                    open.from_system = open.from_system.saturating_add(clamp_u32(added));
+                    out.events.push(open.delta());
+                }
             }
             Some("system") => {
                 if value.get("subtype").and_then(Value::as_str) == Some("init") {
@@ -256,14 +311,39 @@ impl StreamMapper {
         let index = event.get("index").and_then(Value::as_u64).unwrap_or(0);
         match event.get("type").and_then(Value::as_str) {
             Some("content_block_start") => {
-                let kind = event.pointer("/content_block/type").and_then(Value::as_str);
-                if kind == Some("text") {
-                    self.open_text_block.insert(message.to_string(), index);
+                match event.pointer("/content_block/type").and_then(Value::as_str) {
+                    Some("text") => {
+                        self.open_text_block.insert(message.to_string(), index);
+                    }
+                    // Starts the block's live row, and with it the runtime's clock.
+                    Some(kind @ ("thinking" | "redacted_thinking")) => {
+                        let open = OpenReasoning {
+                            message: message.to_string(),
+                            index,
+                            from_system: 0,
+                            from_deltas: 0,
+                            redacted: kind == "redacted_thinking",
+                        };
+                        out.events.push(open.delta());
+                        self.open_reasoning = Some(open);
+                    }
+                    _ => {}
                 }
             }
             Some("content_block_delta") => {
-                if event.pointer("/delta/type").and_then(Value::as_str) != Some("text_delta") {
-                    return;
+                match event.pointer("/delta/type").and_then(Value::as_str) {
+                    Some("text_delta") => {}
+                    Some("thinking_delta") => {
+                        let added = event
+                            .pointer("/delta/estimated_tokens")
+                            .and_then(Value::as_u64);
+                        if let (Some(open), Some(added)) = (&mut self.open_reasoning, added) {
+                            open.from_deltas = open.from_deltas.saturating_add(clamp_u32(added));
+                            out.events.push(open.delta());
+                        }
+                        return;
+                    }
+                    _ => return,
                 }
                 let text = event
                     .pointer("/delta/text")
@@ -305,6 +385,8 @@ impl StreamMapper {
                     });
                 }
                 Some("tool_use") => {
+                    let name = str_field(block, "name");
+                    let summary = block.get("input").map(|input| tool_summary(&name, input));
                     let input = block
                         .get("input")
                         .map(Value::to_string)
@@ -312,10 +394,23 @@ impl StreamMapper {
                     let (input, truncated) = cap_text(input, THREAD_TOOL_INPUT_MAX_BYTES);
                     out.events.push(ThreadEventKind::ToolCall {
                         tool_use_id: str_field(block, "id"),
-                        name: str_field(block, "name"),
+                        name,
                         input,
                         truncated,
-                        summary: None,
+                        summary,
+                    });
+                }
+                // Arrives before the block's `content_block_stop`; the runtime adds the duration.
+                Some(kind @ ("thinking" | "redacted_thinking")) => {
+                    let open = self.open_reasoning.take_if(|open| open.message == message);
+                    let index = open.as_ref().map_or(0, |open| open.index);
+                    out.events.push(ThreadEventKind::Reasoning {
+                        message_id: block_key(message, index),
+                        text: String::new(),
+                        truncated: false,
+                        duration_ms: None,
+                        estimated_tokens: open.and_then(|open| open.estimate()),
+                        redacted: kind == "redacted_thinking",
                     });
                 }
                 _ => {}
@@ -327,6 +422,136 @@ impl StreamMapper {
 /// Deltas and their final message share this key: one text block of one model message.
 fn block_key(message: &str, index: u64) -> String {
     format!("{message}:{index}")
+}
+
+fn clamp_u32(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+fn tool_kind(name: &str) -> ToolKind {
+    if name.starts_with("mcp__") {
+        return ToolKind::Mcp;
+    }
+    match name {
+        "Read" | "NotebookRead" => ToolKind::Read,
+        "Grep" | "Glob" => ToolKind::Search,
+        "WebFetch" | "WebSearch" => ToolKind::Web,
+        "Bash" | "PowerShell" => ToolKind::Command,
+        "Edit" | "MultiEdit" | "NotebookEdit" => ToolKind::Edit,
+        "Write" => ToolKind::Write,
+        "TodoWrite" => ToolKind::Todo,
+        "AskUserQuestion" => ToolKind::Question,
+        "ExitPlanMode" => ToolKind::Plan,
+        "Task" => ToolKind::Task,
+        _ => ToolKind::Other,
+    }
+}
+
+/// A tool call's row, from its whole input: an input over the stored cap is cut JSON the
+/// renderer cannot parse, so the path and line counts are taken here.
+fn tool_summary(name: &str, input: &Value) -> ToolSummary {
+    let kind = tool_kind(name);
+    let first_string = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| {
+                input
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|v| !v.is_empty())
+            })
+            .unwrap_or_default()
+            .to_string()
+    };
+    let target = match kind {
+        ToolKind::Mcp => {
+            let mut parts = name.splitn(3, "__").skip(1);
+            let server = parts.next().unwrap_or_default();
+            format!("{server} · {}", parts.next().unwrap_or_default())
+        }
+        ToolKind::Read | ToolKind::Edit => first_string(&["file_path", "notebook_path", "path"]),
+        ToolKind::Write => first_string(&["file_path", "path"]),
+        ToolKind::Search => first_string(&["pattern", "path"]),
+        ToolKind::Web => first_string(&["url", "query"]),
+        ToolKind::Command => first_string(&["command"]),
+        ToolKind::Task => first_string(&["description", "prompt"]),
+        ToolKind::Question => input
+            .pointer("/questions/0/question")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        ToolKind::Todo | ToolKind::Plan | ToolKind::Other => first_string(&[
+            "command",
+            "file_path",
+            "path",
+            "pattern",
+            "url",
+            "query",
+            "description",
+            "prompt",
+        ]),
+    };
+    let (added, removed) = match kind {
+        ToolKind::Edit => edit_counts(name, input),
+        ToolKind::Write => (
+            input.get("content").and_then(Value::as_str).map(line_count),
+            None,
+        ),
+        _ => (None, None),
+    };
+    ToolSummary {
+        kind,
+        target: cap_text(target, THREAD_TOOL_TARGET_MAX_BYTES).0,
+        added,
+        removed,
+    }
+}
+
+/// Lines added and removed by an Edit or MultiEdit, by the diff view's rule: the lines
+/// left after trimming those the old and new strings share at both ends.
+fn edit_counts(name: &str, input: &Value) -> (Option<u32>, Option<u32>) {
+    fn pair(edit: &Value) -> Option<(&str, &str)> {
+        Some((
+            edit.get("old_string")?.as_str()?,
+            edit.get("new_string")?.as_str()?,
+        ))
+    }
+    let pairs: Vec<(&str, &str)> = match input.get("edits").and_then(Value::as_array) {
+        Some(edits) if name == "MultiEdit" => edits.iter().filter_map(pair).collect(),
+        _ => pair(input).into_iter().collect(),
+    };
+    if pairs.is_empty() {
+        return (None, None);
+    }
+    let (mut added, mut removed) = (0u32, 0u32);
+    for (before, after) in pairs {
+        let a = split_lines(before);
+        let b = split_lines(after);
+        let head = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+        let tail = a[head..]
+            .iter()
+            .rev()
+            .zip(b[head..].iter().rev())
+            .take_while(|(x, y)| x == y)
+            .count();
+        removed = removed.saturating_add(clamp_u32((a.len() - head - tail) as u64));
+        added = added.saturating_add(clamp_u32((b.len() - head - tail) as u64));
+    }
+    (Some(added), Some(removed))
+}
+
+fn split_lines(text: &str) -> Vec<&str> {
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    if lines.len() > 1 && lines.last() == Some(&"") {
+        lines.pop();
+    }
+    lines
+}
+
+fn line_count(text: &str) -> u32 {
+    if text.is_empty() {
+        return 0;
+    }
+    clamp_u32(text.strip_suffix('\n').unwrap_or(text).split('\n').count() as u64)
 }
 
 fn str_field(value: &Value, name: &str) -> String {
@@ -589,5 +814,331 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(error.contains("\"dontAsk\""), "{error}");
+    }
+
+    fn reasoning_kinds(events: &[ThreadEventKind]) -> Vec<ThreadEventKind> {
+        events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    ThreadEventKind::ReasoningDelta { .. } | ThreadEventKind::Reasoning { .. }
+                )
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn reasoning_delta(id: &str, tokens: Option<u32>) -> ThreadEventKind {
+        ThreadEventKind::ReasoningDelta {
+            message_id: id.into(),
+            text: String::new(),
+            estimated_tokens: tokens,
+            redacted: false,
+        }
+    }
+
+    #[test]
+    fn a_thinking_block_streams_its_estimate_and_stores_one_block_without_text() {
+        let events = kinds(include_str!("../tests/fixtures/threads/thinking.jsonl"));
+        let stored = ThreadEventKind::Reasoning {
+            message_id: "msg_01:0".into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms: None,
+            estimated_tokens: Some(196),
+            redacted: false,
+        };
+        // The top-level estimate (196) runs past the deltas' own (50).
+        assert_eq!(
+            reasoning_kinds(&events),
+            vec![
+                reasoning_delta("msg_01:0", None),
+                reasoning_delta("msg_01:0", Some(50)),
+                reasoning_delta("msg_01:0", Some(50)),
+                reasoning_delta("msg_01:0", Some(196)),
+                stored.clone(),
+            ]
+        );
+        let at = |wanted: &dyn Fn(&ThreadEventKind) -> bool| events.iter().position(wanted);
+        assert!(
+            at(&|e| *e == stored)
+                < at(
+                    &|e| matches!(e, ThreadEventKind::AssistantMessage { message_id, .. } if message_id == "msg_01:1")
+                ),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn a_redacted_block_is_stored_as_redacted_and_stray_estimates_map_to_nothing() {
+        let events = kinds(concat!(
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":9,"estimated_tokens_delta":9}"#,
+            "\n",
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"redacted_thinking","data":"x"}},"parent_tool_use_id":null,"api_message_id":"msg_r"}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"id":"msg_r","content":[{"type":"redacted_thinking","data":"x"}]},"parent_tool_use_id":null}"#,
+            "\n",
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":30,"estimated_tokens_delta":21}"#,
+        ));
+        assert_eq!(
+            events,
+            vec![
+                ThreadEventKind::ReasoningDelta {
+                    message_id: "msg_r:2".into(),
+                    text: String::new(),
+                    estimated_tokens: None,
+                    redacted: true,
+                },
+                ThreadEventKind::Reasoning {
+                    message_id: "msg_r:2".into(),
+                    text: String::new(),
+                    truncated: false,
+                    duration_ms: None,
+                    estimated_tokens: None,
+                    redacted: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_turn_end_stores_the_open_block_as_cut_off_and_forgets_it() {
+        let events = kinds(concat!(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"x"}},"parent_tool_use_id":null,"api_message_id":"msg_e"}"#,
+            "
+",
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":40,"estimated_tokens_delta":40}"#,
+            "
+",
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: overloaded"}"#,
+            "
+",
+            r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":12,"estimated_tokens_delta":12}"#,
+        ));
+        let cut_off = ThreadEventKind::Reasoning {
+            message_id: "msg_e:0".into(),
+            text: String::new(),
+            truncated: true,
+            duration_ms: None,
+            estimated_tokens: Some(40),
+            redacted: true,
+        };
+        let stored_at = events.iter().position(|event| *event == cut_off);
+        let end_at = events
+            .iter()
+            .position(|event| matches!(event, ThreadEventKind::TurnEnd { .. }));
+        assert!(stored_at.is_some() && stored_at < end_at, "{events:?}");
+        assert_eq!(
+            events.last(),
+            end_at.map(|at| &events[at]),
+            "the next turn's estimate names no block: {events:?}"
+        );
+    }
+
+    fn summaries(events: &[ThreadEventKind]) -> Vec<(String, bool, Option<ToolSummary>)> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                ThreadEventKind::ToolCall {
+                    name,
+                    truncated,
+                    summary,
+                    ..
+                } => Some((name.clone(), *truncated, summary.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_edit_over_the_input_cap_keeps_its_path_and_line_counts() {
+        let events = kinds(include_str!("../tests/fixtures/threads/large-edit.jsonl"));
+        let summary = |kind, added, removed| ToolSummary {
+            kind,
+            target: "/work/repo/big.txt".into(),
+            added,
+            removed,
+        };
+        // The capture's `structuredPatch` for this edit also counts 110 and 110.
+        assert_eq!(
+            summaries(&events),
+            vec![
+                (
+                    "Read".into(),
+                    false,
+                    Some(summary(ToolKind::Read, None, None))
+                ),
+                (
+                    "Edit".into(),
+                    true,
+                    Some(summary(ToolKind::Edit, Some(110), Some(110)))
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn tool_names_map_to_kinds_targets_and_counts() {
+        let long = "é".repeat(THREAD_TOOL_TARGET_MAX_BYTES);
+        let cases = [
+            (
+                "Bash",
+                serde_json::json!({"command":"ls -la"}),
+                ToolKind::Command,
+                "ls -la",
+                None,
+                None,
+            ),
+            (
+                "PowerShell",
+                serde_json::json!({"command":long}),
+                ToolKind::Command,
+                &long[..THREAD_TOOL_TARGET_MAX_BYTES],
+                None,
+                None,
+            ),
+            (
+                "Grep",
+                serde_json::json!({"pattern":"fn main","path":"src"}),
+                ToolKind::Search,
+                "fn main",
+                None,
+                None,
+            ),
+            (
+                "Glob",
+                serde_json::json!({"path":"src"}),
+                ToolKind::Search,
+                "src",
+                None,
+                None,
+            ),
+            (
+                "WebSearch",
+                serde_json::json!({"query":"rust"}),
+                ToolKind::Web,
+                "rust",
+                None,
+                None,
+            ),
+            (
+                "NotebookRead",
+                serde_json::json!({"notebook_path":"a.ipynb"}),
+                ToolKind::Read,
+                "a.ipynb",
+                None,
+                None,
+            ),
+            (
+                "Write",
+                serde_json::json!({"file_path":"a.txt","content":"one\ntwo\n"}),
+                ToolKind::Write,
+                "a.txt",
+                Some(2),
+                None,
+            ),
+            (
+                "Write",
+                serde_json::json!({"file_path":"b.txt","content":""}),
+                ToolKind::Write,
+                "b.txt",
+                Some(0),
+                None,
+            ),
+            (
+                "Edit",
+                serde_json::json!({"file_path":"a.rs","old_string":"a\nb\nc","new_string":"a\nB\nB2\nc"}),
+                ToolKind::Edit,
+                "a.rs",
+                Some(2),
+                Some(1),
+            ),
+            (
+                "MultiEdit",
+                serde_json::json!({"file_path":"a.rs","edits":[
+                {"old_string":"x","new_string":"y"},{"old_string":"p\nq","new_string":""}]}),
+                ToolKind::Edit,
+                "a.rs",
+                Some(2),
+                Some(3),
+            ),
+            (
+                "NotebookEdit",
+                serde_json::json!({"notebook_path":"a.ipynb","new_source":"x"}),
+                ToolKind::Edit,
+                "a.ipynb",
+                None,
+                None,
+            ),
+            (
+                "TodoWrite",
+                serde_json::json!({"todos":[]}),
+                ToolKind::Todo,
+                "",
+                None,
+                None,
+            ),
+            (
+                "AskUserQuestion",
+                serde_json::json!({"questions":[{"question":"Which colour?"}]}),
+                ToolKind::Question,
+                "Which colour?",
+                None,
+                None,
+            ),
+            (
+                "ExitPlanMode",
+                serde_json::json!({}),
+                ToolKind::Plan,
+                "",
+                None,
+                None,
+            ),
+            (
+                "Task",
+                serde_json::json!({"description":"Find callers","prompt":"…"}),
+                ToolKind::Task,
+                "Find callers",
+                None,
+                None,
+            ),
+            (
+                "mcp__houston__pane_wait",
+                serde_json::json!({}),
+                ToolKind::Mcp,
+                "houston · pane_wait",
+                None,
+                None,
+            ),
+            (
+                "mcp__srv__a__b",
+                serde_json::json!({}),
+                ToolKind::Mcp,
+                "srv · a__b",
+                None,
+                None,
+            ),
+            (
+                "SomethingNew",
+                serde_json::json!({"url":"https://example.test"}),
+                ToolKind::Other,
+                "https://example.test",
+                None,
+                None,
+            ),
+        ];
+        for (name, input, kind, target, added, removed) in cases {
+            assert_eq!(
+                tool_summary(name, &input),
+                ToolSummary {
+                    kind,
+                    target: target.into(),
+                    added,
+                    removed
+                },
+                "{name} {input}"
+            );
+        }
     }
 }

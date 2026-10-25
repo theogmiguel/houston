@@ -10,7 +10,15 @@ export type ThreadEventKind = { "type": "user_message", text: string, } | { "typ
 /**
  * The CLI's running estimate of the block's size.
  */
-estimated_tokens?: number | null, } | { "type": "reasoning", message_id: string, text: string, truncated: boolean,
+estimated_tokens?: number | null,
+/**
+ * Kept so a block cut off before its end is stored with it.
+ */
+redacted: boolean, } | { "type": "reasoning", message_id: string, text: string,
+/**
+ * Cut off before its end by `thread_stop`, an exit or the turn's end; never a size cap.
+ */
+truncated: boolean,
 /**
  * From the block's first delta to its end, on the daemon's clock.
  */

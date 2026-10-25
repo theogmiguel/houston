@@ -1592,7 +1592,6 @@ pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
 /// A tool summary's target; a full command or URL stays in the tool's input.
 pub const THREAD_TOOL_TARGET_MAX_BYTES: usize = 512;
-pub const THREAD_REASONING_MAX_BYTES: usize = 65_536;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
 /// Larger than a tool card's cap: the user approves this input, so it should be readable.
 pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
@@ -1646,6 +1645,9 @@ pub enum ThreadEventKind {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         estimated_tokens: Option<u32>,
+        /// Kept so a block cut off before its end is stored with it.
+        #[serde(default)]
+        redacted: bool,
     },
     /// One reasoning block. Claude's headless stream sends no reasoning text, so `text` is
     /// empty unless a documented source provides it; `redacted` blocks never carry text.
@@ -1653,6 +1655,7 @@ pub enum ThreadEventKind {
         message_id: String,
         #[serde(default)]
         text: String,
+        /// Cut off before its end by `thread_stop`, an exit or the turn's end; never a size cap.
         #[serde(default)]
         truncated: bool,
         /// From the block's first delta to its end, on the daemon's clock.

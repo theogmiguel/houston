@@ -15,9 +15,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
-use std::time::Duration;
-#[cfg(any(target_os = "linux", windows))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Houston's MCP tool that answers a thread's permission prompts (`--permission-prompt-tool`).
 pub const PERMISSION_TOOL: &str = "thread_permission";
@@ -45,7 +43,7 @@ const RESUME_TIMEOUT: Duration = Duration::from_secs(5);
 /// What the daemon does with a thread's events. A trait so the backend runs in unit tests
 /// without a daemon.
 pub trait ThreadHost: Send + Sync + 'static {
-    /// Called in `seq` order for every event except `AssistantDelta`.
+    /// Called in `seq` order for every event except the live-only deltas.
     fn store(&self, session: u32, event: &ThreadEvent);
     fn broadcast(&self, session: u32, events: Vec<ThreadEvent>);
     /// The stream's `result` event ended a turn.
@@ -203,28 +201,54 @@ pub fn cap_text(mut text: String, max: usize) -> (String, bool) {
 pub fn coalesce(events: Vec<ThreadEvent>) -> Vec<ThreadEvent> {
     let mut out: Vec<ThreadEvent> = Vec::with_capacity(events.len());
     for event in events {
-        if let (
-            Some(ThreadEvent {
-                seq,
-                kind:
+        if let Some(last) = out.last_mut() {
+            let merged = match (&mut last.kind, &event.kind) {
+                (
                     ThreadEventKind::AssistantDelta {
                         message_id: last_id,
                         text: last_text,
                     },
-                ..
-            }),
-            ThreadEventKind::AssistantDelta { message_id, text },
-        ) = (out.last_mut(), &event.kind)
-        {
-            if last_id == message_id {
-                last_text.push_str(text);
-                *seq = event.seq;
+                    ThreadEventKind::AssistantDelta { message_id, text },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    true
+                }
+                (
+                    ThreadEventKind::ReasoningDelta {
+                        message_id: last_id,
+                        text: last_text,
+                        estimated_tokens: last_tokens,
+                        ..
+                    },
+                    ThreadEventKind::ReasoningDelta {
+                        message_id,
+                        text,
+                        estimated_tokens,
+                        ..
+                    },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    *last_tokens = estimated_tokens.or(*last_tokens);
+                    true
+                }
+                _ => false,
+            };
+            if merged {
+                last.seq = event.seq;
                 continue;
             }
         }
         out.push(event);
     }
     out
+}
+
+/// Live-only events: superseded by the stored message or block of the same id.
+fn is_delta(kind: &ThreadEventKind) -> bool {
+    matches!(
+        kind,
+        ThreadEventKind::AssistantDelta { .. } | ThreadEventKind::ReasoningDelta { .. }
+    )
 }
 
 #[derive(Default)]
@@ -433,12 +457,52 @@ struct HandleState {
     close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
     partial: Option<(String, String)>,
+    reasoning: Option<LiveReasoning>,
+}
+
+/// The reasoning block streaming now.
+struct LiveReasoning {
+    message_id: String,
+    first_delta: Instant,
+    estimated_tokens: Option<u32>,
+    redacted: bool,
 }
 
 impl HandleState {
-    fn track_partial(&mut self, events: &[ThreadEventKind]) {
+    /// Follows the open blocks and gives each stored reasoning block its duration.
+    fn track_partial(&mut self, events: &mut [ThreadEventKind]) {
         for event in events {
             match event {
+                ThreadEventKind::ReasoningDelta {
+                    message_id,
+                    estimated_tokens,
+                    redacted,
+                    ..
+                } => match &mut self.reasoning {
+                    Some(open) if open.message_id == *message_id => {
+                        open.estimated_tokens = estimated_tokens.or(open.estimated_tokens);
+                    }
+                    _ => {
+                        self.reasoning = Some(LiveReasoning {
+                            message_id: message_id.clone(),
+                            first_delta: Instant::now(),
+                            estimated_tokens: *estimated_tokens,
+                            redacted: *redacted,
+                        });
+                    }
+                },
+                ThreadEventKind::Reasoning {
+                    message_id,
+                    duration_ms,
+                    ..
+                } => {
+                    if let Some(open) = self
+                        .reasoning
+                        .take_if(|open| open.message_id == *message_id)
+                    {
+                        duration_ms.get_or_insert_with(|| elapsed_ms(open.first_delta));
+                    }
+                }
                 ThreadEventKind::AssistantDelta { message_id, text } => match &mut self.partial {
                     Some((open, so_far)) if open == message_id => so_far.push_str(text),
                     _ => self.partial = Some((message_id.clone(), text.clone())),
@@ -451,14 +515,17 @@ impl HandleState {
                 {
                     self.partial = None
                 }
-                ThreadEventKind::TurnEnd { .. } => self.partial = None,
+                ThreadEventKind::TurnEnd { .. } => {
+                    self.partial = None;
+                    self.reasoning = None;
+                }
                 _ => {}
             }
         }
     }
 
     /// What an ended process leaves of an open turn: the streamed text of a cut-off answer
-    /// as a truncated message, then the turn end.
+    /// as a truncated message, a cut-off reasoning block, then the turn end.
     fn end_open_turn(
         &mut self,
         outcome: TurnOutcome,
@@ -472,11 +539,25 @@ impl HandleState {
                 truncated: true,
             });
         }
+        if let Some(open) = self.reasoning.take() {
+            events.push(ThreadEventKind::Reasoning {
+                message_id: open.message_id,
+                text: String::new(),
+                truncated: true,
+                duration_ms: Some(elapsed_ms(open.first_delta)),
+                estimated_tokens: open.estimated_tokens,
+                redacted: open.redacted,
+            });
+        }
         if std::mem::take(&mut self.turn_open) {
             events.push(ThreadEventKind::TurnEnd { outcome, error });
         }
         events
     }
+}
+
+fn elapsed_ms(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// The structured runtime of one thread session: its provider process, turns and events.
@@ -519,6 +600,7 @@ impl StructuredRuntime {
                 closed: false,
                 close_cause: None,
                 partial: None,
+                reasoning: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
             outbox: Arc::clone(&outbox),
@@ -1094,7 +1176,7 @@ impl StructuredRuntime {
                     kind,
                 };
                 *next += 1;
-                if !matches!(event.kind, ThreadEventKind::AssistantDelta { .. }) {
+                if !is_delta(&event.kind) {
                     self.host.store(self.session, &event);
                 }
                 event
@@ -1112,7 +1194,7 @@ impl StructuredRuntime {
         self.on_decoded(process.generation, decoded);
     }
 
-    fn on_decoded(&self, generation: u64, mapped: Decoded) {
+    fn on_decoded(&self, generation: u64, mut mapped: Decoded) {
         let mut reported_mode = None;
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
@@ -1141,7 +1223,7 @@ impl StructuredRuntime {
                     reported_mode = Some(mode);
                 }
             }
-            state.track_partial(&mapped.events);
+            state.track_partial(&mut mapped.events);
             self.emit(mapped.events);
         }
         if let Some(mode) = reported_mode {
@@ -1676,5 +1758,120 @@ mod tests {
         );
         drop(spawned);
         handle.close();
+    }
+
+    #[test]
+    fn coalescing_merges_reasoning_deltas_and_keeps_the_latest_estimate() {
+        let delta = |seq, tokens| ThreadEvent {
+            seq,
+            at_ms: 0,
+            kind: ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: tokens,
+                redacted: false,
+            },
+        };
+        assert_eq!(
+            coalesce(vec![
+                delta(1, Some(50)),
+                delta(2, Some(196)),
+                delta(3, None)
+            ]),
+            vec![delta(3, Some(196))]
+        );
+    }
+
+    fn idle_state() -> HandleState {
+        HandleState {
+            process: None,
+            conversation: None,
+            permission_mode: ThreadPermissionMode::Default,
+            generation: 0,
+            turn_open: true,
+            closed: false,
+            close_cause: None,
+            partial: None,
+            reasoning: None,
+        }
+    }
+
+    fn reasoning(id: &str, duration_ms: Option<u64>) -> ThreadEventKind {
+        ThreadEventKind::Reasoning {
+            message_id: id.into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms,
+            estimated_tokens: Some(50),
+            redacted: false,
+        }
+    }
+
+    #[test]
+    fn a_stored_reasoning_block_gets_its_duration_from_the_first_delta() {
+        let mut state = idle_state();
+        let started = Instant::now();
+        state.track_partial(&mut [ThreadEventKind::ReasoningDelta {
+            message_id: "r".into(),
+            text: String::new(),
+            estimated_tokens: Some(50),
+            redacted: false,
+        }]);
+        std::thread::sleep(Duration::from_millis(30));
+        let mut events = [reasoning("r", None), reasoning("other", None)];
+        state.track_partial(&mut events);
+        let ThreadEventKind::Reasoning { duration_ms, .. } = &events[0] else {
+            unreachable!()
+        };
+        let duration = duration_ms.expect("a duration on the daemon clock");
+        assert!(
+            (30..=elapsed_ms(started)).contains(&duration),
+            "{duration} ms"
+        );
+        assert_eq!(events[1], reasoning("other", None), "no delta, no duration");
+        assert!(state.reasoning.is_none());
+    }
+
+    #[test]
+    fn a_reasoning_block_cut_off_by_stop_is_stored_as_truncated_and_stays_redacted() {
+        let mut state = idle_state();
+        state.track_partial(&mut [
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: Some(50),
+                redacted: true,
+            },
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: None,
+                redacted: true,
+            },
+        ]);
+        let events = state.end_open_turn(TurnOutcome::Interrupted, None);
+        assert!(
+            matches!(
+                &events[..],
+                [
+                    ThreadEventKind::Reasoning {
+                        message_id,
+                        truncated: true,
+                        duration_ms: Some(_),
+                        estimated_tokens: Some(50),
+                        redacted: true,
+                        ..
+                    },
+                    ThreadEventKind::TurnEnd {
+                        outcome: TurnOutcome::Interrupted,
+                        ..
+                    },
+                ] if message_id == "r"
+            ),
+            "{events:?}"
+        );
+        assert!(state
+            .end_open_turn(TurnOutcome::Interrupted, None)
+            .is_empty());
     }
 }

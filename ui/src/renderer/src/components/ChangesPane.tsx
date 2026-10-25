@@ -756,11 +756,11 @@ export function ChangesPane({
   }, [])
   useEffect(() => {
     if (!repoDir) return
-    const path = takeChangesReveal(repoDir, rows.map((row) => row.path))
+    const path = takeChangesReveal(repoDir, files ? rows.map((row) => row.path) : null)
     if (path === null) return
     setSelected(path)
     if (compact) setExpandedPaths((current) => new Set(current).add(path))
-  }, [repoDir, rows, compact, revealRequests])
+  }, [repoDir, files, rows, compact, revealRequests])
   refreshRef.current = refresh
 
   useEffect(() => {

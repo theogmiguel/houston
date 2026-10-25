@@ -3,7 +3,7 @@ import { fileTypeIcon } from '../files/fileTypeIcons'
 import { ThreadChangedFiles, ThreadReasoningRow } from '../ui/Thread'
 import { revealInChanges } from '../../thread/changesReveal'
 import type { ThreadItem } from '../../thread/threadModel'
-import { displayTarget, formatDuration } from '../../thread/threadTurns'
+import { displayTarget, formatDuration, isUnderDir } from '../../thread/threadTurns'
 
 type ReasoningItem = Extract<ThreadItem, { kind: 'reasoning' }>
 type ChangesItem = Extract<ThreadItem, { kind: 'changes' }>
@@ -23,7 +23,7 @@ export const ThreadReasoningItem = memo(function ThreadReasoningItem({ item }: {
 export const ThreadChangesCard = memo(function ThreadChangesCard({ item, cwd }: { item: ChangesItem; cwd?: string }): React.JSX.Element {
   const files = item.files.map((file) => {
     const path = displayTarget(file.path, cwd)
-    return { path, glyph: fileTypeIcon(path), added: file.added, removed: file.removed }
+    return { path, glyph: fileTypeIcon(path), added: file.added, removed: file.removed, outside: cwd !== undefined && !isUnderDir(file.path, cwd) }
   })
   return <ThreadChangedFiles files={files} onOpen={cwd ? (path) => revealInChanges({ path, cwd }) : undefined} />
 })

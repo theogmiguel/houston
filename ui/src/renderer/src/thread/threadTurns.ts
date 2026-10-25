@@ -1,4 +1,5 @@
-import { PLAN_TOOL, parseToolInput, replacementDiff, toolSummary, type ChangedFile, type ThreadItem, type ThreadTimeline } from './threadModel'
+import { PLAN_TOOL, parseToolInput, replacementDiff, toolSummary, type ChangedFile, type ThreadItem, type ThreadTimeline, type ThreadWindow } from './threadModel'
+import { repoRelativePath } from './changesReveal'
 import type { ToolKind, ToolSummary, TurnOutcome } from './threadTypes'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
@@ -110,6 +111,12 @@ export function displayTarget(target: string, cwd: string | undefined): string {
   return target.length > base.length && target.startsWith(base) && (sep === '/' || sep === '\\') ? target.slice(base.length + 1) : target
 }
 
+/** Whether `path` (absolute, or relative to `cwd`) lies under `cwd`, where the Changes panel can show it. */
+export function isUnderDir(path: string, cwd: string): boolean {
+  const relative = repoRelativePath({ path, cwd }, cwd)
+  return relative !== null && !relative.split('/').includes('..')
+}
+
 /** `41s`, `2m 14s`, `1h 05m`. */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(1, Math.round(ms / 1000))
@@ -202,4 +209,20 @@ export function foldThreadRows(timeline: ThreadTimeline, expanded: ReadonlySet<s
     at = end
   }
   return rows
+}
+
+/** Moves an anchor that folded away to its turn's summary row, or else the nearest earlier row shown, so folding never moves the reader. */
+export function keepWindowAnchor(rows: readonly ThreadItem[], timeline: ThreadTimeline, win: ThreadWindow): ThreadWindow {
+  if (win.end === null) return win
+  const shown = new Set(rows.map((row) => row.key))
+  if (shown.has(win.end)) return win
+  const at = timeline.items.findIndex((item) => item.key === win.end)
+  if (at < 0) return win
+  const turn = timeline.turnOf[at]
+  if (turn != null && shown.has(`turn-${turn}`)) return { ...win, end: `turn-${turn}` }
+  for (let back = at - 1; back >= 0; back--) {
+    const key = timeline.items[back]!.key
+    if (shown.has(key)) return { ...win, end: key }
+  }
+  return win
 }
