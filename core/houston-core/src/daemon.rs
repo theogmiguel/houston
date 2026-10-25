@@ -627,6 +627,9 @@ pub struct Session {
     runtime: SessionRuntime,
 }
 
+// One per session: a few hundred bytes per thread session do not justify boxing the PTY
+// variant and adding an indirection to every PTY access.
+#[allow(clippy::large_enum_variant)]
 enum SessionRuntime {
     Pty(PtyRuntime),
     Structured(Arc<crate::thread_session::StructuredRuntime>),
