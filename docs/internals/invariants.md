@@ -348,7 +348,7 @@ arrives; Houston never reads Claude's transcript files to fill it and never writ
 `control_request` protocol. A thread takes no terminal input: stdin frames,
 `pane_send_keys` and Sleep are refused by name.
 
-### Houston answers permission prompts for threads, never for terminal panes
+### Only the operator approves a permission request, in either view
 
 A thread session's Claude runs with `--permission-prompt-tool mcp__houston__thread_permission`.
 The tool is on the daemon's MCP server, listed only to a thread session's bearer token and
@@ -370,9 +370,18 @@ also fires in headless mode, after the prompt tool is called. For a thread it is
 acknowledged and ignored: it opens no permission episode and sets no status, and tool
 activity cannot override NeedsInput while a request is held.
 
-In a terminal pane Houston answers no permission prompt: the CLI's own dialog asks at the
-keyboard, and orchestration only relays, denies or escalates it (only the operator
-approves). The permission mode a thread runs with is a launch flag: changing it is refused
+Houston carries an approval; it never grants one, and no timer, default or Houston policy
+approves on anyone's behalf. In a terminal pane the CLI's own dialog asks at the keyboard and
+Houston reports NeedsInput. A parent orchestrator may answer a child's question; for a
+permission it may only deny (`pane_deny`, the provider's verified deny sequence) or escalate
+(`pane_escalate`), and `pane_send_keys` is refused while a permission episode is pending, so
+only the operator approves. In a thread, Houston holds Claude's prompt-tool call and answers
+it once, keyed by request id, with the decision made on the approval card; the answer comes
+only from `thread_approve` on a client connection, and no MCP verb approves. A thread cannot
+be a child pane in this version (Open as thread is refused for a pane with a parent), so no
+parent ever sees a thread's request.
+
+The permission mode a thread runs with is a launch flag: changing it is refused
 while a turn is open or a request waits, and otherwise restarts the process with
 `--resume`. Claude reports its mode in `permissionMode` on the documented `system` events
 (`init` each turn, `status` on a change such as ExitPlanMode); Houston records that value,
