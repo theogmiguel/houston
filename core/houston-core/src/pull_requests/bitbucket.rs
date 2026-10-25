@@ -395,7 +395,9 @@ fn map_pull_request(
         threads_message: None,
         auto_merge_enabled: None,
         auto_merge_method: None,
+        merge_methods: Vec::new(),
         cross_repository: false,
+        github_merge: None,
         read_only: Some(READ_ONLY_REASON.to_string()),
     };
     Ok((link, detail))
@@ -432,6 +434,7 @@ fn checks_from(statuses: &[Value]) -> Vec<PrCheck> {
             };
             let done = matches!(state, PrCheckState::Passing | PrCheckState::Failing);
             PrCheck {
+                run_id: None,
                 name: str_at(s, "/name")
                     .or_else(|| str_at(s, "/key"))
                     .unwrap_or_else(|| "unnamed build".to_string()),
@@ -579,6 +582,7 @@ fn discussion(values: &[Value]) -> (Vec<PrComment>, u32, Vec<proto::PrThread>) {
                 created_at: remark.created_at,
                 url: remark.url,
                 reactions: Vec::new(),
+                bot: false,
             });
         }
     }
@@ -596,6 +600,7 @@ fn comment_of(c: &Value) -> PrComment {
         created_at: time_at(c, "/created_on").unwrap_or(0),
         url: str_at(c, "/links/html/href"),
         reactions: Vec::new(),
+        bot: false,
     }
 }
 

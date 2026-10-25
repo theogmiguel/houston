@@ -1,11 +1,9 @@
 #![allow(clippy::disallowed_methods)]
 
-mod common;
-
+use crate::common::*;
 use axum::extract::{OriginalUri, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use common::*;
 use futures_util::{SinkExt, StreamExt};
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::server;
@@ -48,21 +46,23 @@ impl Fixture {
 fn body(path: &str, query: &str) -> Option<&'static str> {
     Some(match path {
         "/repositories/ws/repo/pullrequests" if query.contains("feat%2Freader") => {
-            include_str!("fixtures/bitbucket/branch_pullrequests.json")
+            include_str!("../fixtures/bitbucket/branch_pullrequests.json")
         }
-        "/repositories/ws/repo/pullrequests" => include_str!("fixtures/bitbucket/empty_page.json"),
-        PR => include_str!("fixtures/bitbucket/pullrequest.json"),
+        "/repositories/ws/repo/pullrequests" => {
+            include_str!("../fixtures/bitbucket/empty_page.json")
+        }
+        PR => include_str!("../fixtures/bitbucket/pullrequest.json"),
         "/repositories/ws/repo/pullrequests/7/statuses" => {
-            include_str!("fixtures/bitbucket/statuses.json")
+            include_str!("../fixtures/bitbucket/statuses.json")
         }
         "/repositories/ws/repo/pullrequests/7/comments" => {
-            include_str!("fixtures/bitbucket/comments.json")
+            include_str!("../fixtures/bitbucket/comments.json")
         }
         "/repositories/ws/repo/pullrequests/7/diffstat" => {
-            include_str!("fixtures/bitbucket/diffstat.json")
+            include_str!("../fixtures/bitbucket/diffstat.json")
         }
         "/repositories/ws/repo/pullrequests/7/commits" => {
-            include_str!("fixtures/bitbucket/commits.json")
+            include_str!("../fixtures/bitbucket/commits.json")
         }
         _ => return None,
     })
@@ -125,11 +125,7 @@ fn init_repo(dir: &Path, branch: &str) {
 }
 
 async fn start_daemon_on(db_path: PathBuf, api_base: &str) -> (std::net::SocketAddr, Arc<Daemon>) {
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path,
-    })
-    .unwrap();
+    let daemon = Daemon::new(DaemonConfig::new(TOKEN.to_string(), db_path, base_env())).unwrap();
     daemon.set_bitbucket_api_base_for_test(api_base).unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await

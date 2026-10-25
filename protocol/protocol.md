@@ -793,11 +793,11 @@ PrDetail           body?, author?, base_ref?, head_ref?, head_sha, commit_count,
                    merge_state (clean | behind | blocked | dirty | draft | has_hooks |
                    unstable | unknown), checks: PrCheck[], comments: PrComment[],
                    reviews: PrReview[], comments_total, reviews_total, merge_disabled_reason?,
-                   merge_methods, github_merge?: PrGitHubMerge
+                   merge_methods, github_merge?: PrGitHubMerge,
+                   read_only? (set when Houston cannot write to this forge; no write control is offered)
 PrGitHubMerge      merge_queue_required?, auto_merge_allowed?, required_checks?,
                    queue_entry?: {state, position?, head_sha?}, removal?: {reason, at_ms}
-                   — `None` wherever GitHub did not show the viewer the field
-                   read_only? (set when Houston cannot write to this forge; no write control is offered)
+                   - `None` wherever GitHub did not show the viewer the field
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
                    url?, duration_ms?, run_id?
 PrCheckLog         dir, run_id, lines, truncated, available

@@ -31,6 +31,7 @@ mod db_write_ordering_wire;
 mod diagnostics_wire;
 mod env_hygiene_wire;
 mod exited_root_restore;
+mod forge_bitbucket_wire;
 mod generated_titles;
 mod git_base_scope_wire;
 mod git_discard_wire;
