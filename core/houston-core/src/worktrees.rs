@@ -187,6 +187,7 @@ pub fn create_on_named_branch(
     branch: &str,
     base: Option<&str>,
     dest: &Path,
+    scratch_root: &Path,
 ) -> Result<Worktree> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
@@ -195,7 +196,7 @@ pub fn create_on_named_branch(
     } else {
         sole_remote_branch(repo, branch)
     };
-    let Some(remote) = remote.filter(|r| !integrated_into_base(repo, r, base)) else {
+    let Some(remote) = remote.filter(|r| !integrated_into_base(repo, r, base, scratch_root)) else {
         return create_on_branch(repo, branch, base, dest);
     };
     let tree = create_on_branch(repo, branch, Some(&remote), dest)?;
@@ -233,7 +234,12 @@ fn sole_remote_branch(repo: &Path, branch: &str) -> Option<String> {
 
 /// Whether `base` (or the default base) already has `remote`'s changes. An answer Git
 /// cannot give counts as integrated: a fresh branch loses nothing the remote keeps.
-fn integrated_into_base(repo: &Path, remote: &str, base: Option<&str>) -> bool {
+fn integrated_into_base(
+    repo: &Path,
+    remote: &str,
+    base: Option<&str>,
+    scratch_root: &Path,
+) -> bool {
     let base = match base {
         Some(b) => b.to_string(),
         None => crate::git::default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
@@ -241,7 +247,12 @@ fn integrated_into_base(repo: &Path, remote: &str, base: Option<&str>) -> bool {
     let Some(common_dir) = crate::git::checkout_facts(repo).common_dir else {
         return true;
     };
-    match crate::conflict_prediction::is_integrated(Path::new(&common_dir), remote, &base) {
+    match crate::conflict_prediction::is_integrated(
+        scratch_root,
+        Path::new(&common_dir),
+        remote,
+        &base,
+    ) {
         Ok(integrated) => integrated,
         Err(e) => {
             tracing::warn!("worktree starts fresh off {base:?}, not from {remote}: {e}");
@@ -291,7 +302,13 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
 /// A task worktree: a fresh branch off `base`, or — on a re-Start — the same branch
 /// checked out again (or continued from the one remote still holding it) when its
 /// earlier tree is gone. The caller handles a tree already there and on the branch.
-pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -> Result<Worktree> {
+pub fn create_task(
+    repo: &Path,
+    branch: &str,
+    base: Option<&str>,
+    dest: &Path,
+    scratch_root: &Path,
+) -> Result<Worktree> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
     if dest.exists() {
@@ -302,7 +319,7 @@ pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -
         );
     }
     if !branch_exists(repo, branch) {
-        return create_on_named_branch(repo, branch, base, dest);
+        return create_on_named_branch(repo, branch, base, dest, scratch_root);
     }
     let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
@@ -893,7 +910,14 @@ mod tests {
         let pushed = remote_with_branch(root.path(), &repo, "origin", "feat/resume");
 
         let dest = root.path().join("wt");
-        create_task(&repo, "feat/resume", None, &dest).unwrap();
+        create_task(
+            &repo,
+            "feat/resume",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
 
         assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), pushed);
         std::fs::write(dest.join("local.txt"), "more\n").unwrap();
@@ -915,7 +939,14 @@ mod tests {
         remote_with_branch(root.path(), &repo, "fork", "feat/both");
 
         let dest = root.path().join("wt");
-        create_task(&repo, "feat/both", None, &dest).unwrap();
+        create_task(
+            &repo,
+            "feat/both",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
 
         assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
         assert_eq!(crate::git::sync(&dest).upstream, None);
@@ -929,7 +960,14 @@ mod tests {
         init_repo(&repo);
         remote_with_branch(root.path(), &repo, "origin", "houston/hou-1-fix");
         let dest = root.path().join("wt");
-        create_task(&repo, "houston/hou-1-fix", None, &dest).unwrap();
+        create_task(
+            &repo,
+            "houston/hou-1-fix",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
         git(&repo, &["merge", "--squash", "origin/houston/hou-1-fix"]);
         git(&repo, &["commit", "-m", "squashed"]);
         git(&repo, &["push", "origin", "main"]);
@@ -937,7 +975,14 @@ mod tests {
         git(&repo, &["worktree", "remove", dest.to_str().unwrap()]);
         git(&repo, &["branch", "-D", "houston/hou-1-fix"]);
 
-        create_task(&repo, "houston/hou-1-fix", None, &dest).unwrap();
+        create_task(
+            &repo,
+            "houston/hou-1-fix",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
 
         assert_eq!(
             git_out(&dest, &["rev-parse", "HEAD"]),
@@ -962,7 +1007,7 @@ mod tests {
         );
 
         let dest = root.path().join("wt");
-        create_task(&repo, "b/c", None, &dest).unwrap();
+        create_task(&repo, "b/c", None, &dest, &root.path().join("scratch")).unwrap();
 
         assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
         assert_eq!(crate::git::sync(&dest).upstream, None);
@@ -978,7 +1023,14 @@ mod tests {
         git(&repo, &["remote", "set-head", "origin", "main"]);
 
         let dest = root.path().join("wt");
-        create_task(&repo, "feat/fresh", None, &dest).unwrap();
+        create_task(
+            &repo,
+            "feat/fresh",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
 
         assert_eq!(
             git_out(&dest, &["rev-parse", "HEAD"]),

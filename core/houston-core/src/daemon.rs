@@ -20731,7 +20731,13 @@ impl Daemon {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
         if ask.branch.is_some() {
-            crate::worktrees::create_on_named_branch(project_dir, &branch, None, &dest)
+            crate::worktrees::create_on_named_branch(
+                project_dir,
+                &branch,
+                None,
+                &dest,
+                &self.merge_tree_scratch(),
+            )
         } else {
             crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
         }

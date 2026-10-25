@@ -205,7 +205,7 @@ impl Daemon {
             .clone()
     }
 
-    fn merge_tree_scratch(&self) -> PathBuf {
+    pub(super) fn merge_tree_scratch(&self) -> PathBuf {
         self.state_dir().join(MERGE_TREE_SCRATCH)
     }
 
