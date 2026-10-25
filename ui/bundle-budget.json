@@ -221,9 +221,17 @@
     "boot-path code.",
     "",
     "Re-cut against 952,286 bytes (one boot chunk, Windows build) with 254 bytes of",
-    "headroom: the six features above and the status announcer share this chunk."
+    "headroom: the six features above and the status announcer share this chunk.",
+
+    "Re-cut against 957,897 bytes (one boot chunk, Windows build) with 250 bytes of",
+    "headroom: Night shift's morning notice handler and its client verbs run in App's",
+    "connection handlers, and its workspace-naming helpers are on their import path;",
+    "workspace transfer's host listens for the workspace menu, a launch file and",
+    "transfer-open events from first paint, so `WorkspaceTransferHost.tsx`,",
+    "`transferOpen.ts` and the pane's transferred marker are boot-path code. Both",
+    "features' dialogs and views already load behind `lazy()` or `preloadable()`."
   ],
-  "maxBootBytes": 952540,
+  "maxBootBytes": 958147,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
