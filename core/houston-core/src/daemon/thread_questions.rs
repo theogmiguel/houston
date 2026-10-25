@@ -7,9 +7,9 @@ use anyhow::{anyhow, bail, Result};
 use houston_protocol as proto;
 use serde_json::{Map, Value};
 
-use super::threads::{ApprovalGuard, ASK_IN_REPLY};
+use super::threads::ApprovalGuard;
 use super::{Daemon, PermissionPrompt};
-use crate::thread_session::{ApprovalAnswer, StructuredRuntime};
+use crate::thread_session::{ApprovalAnswer, QuestionResolution, StructuredRuntime};
 
 pub(crate) const ASK_USER_QUESTION: &str = "AskUserQuestion";
 /// The deny message Claude reads when the user skips its question.
@@ -214,8 +214,8 @@ pub(crate) fn check_answers(
 }
 
 impl Daemon {
-    /// Holds a well-formed question until the user answers or skips it. While the runtime
-    /// cannot hold one, Claude is told to ask it in its reply instead.
+    /// Holds a well-formed question like a permission request until the user answers or
+    /// skips it, or the process stops.
     pub(super) fn hold_question(
         &self,
         handle: &Arc<StructuredRuntime>,
@@ -224,24 +224,18 @@ impl Daemon {
         truncated: bool,
         input: Value,
     ) -> Result<(PermissionPrompt, Value)> {
-        match runtime_hold_question(handle, tool_use_id, questions, truncated, &input) {
-            Ok((request_id, receiver)) => Ok((
-                PermissionPrompt::Held(
-                    receiver,
-                    ApprovalGuard {
-                        handle: Arc::clone(handle),
-                        request_id,
-                    },
-                ),
-                input,
-            )),
-            Err(error) => Ok((
-                PermissionPrompt::Answered(ApprovalAnswer::Deny(format!(
-                    "{ASK_IN_REPLY}: {error}."
-                ))),
-                input,
-            )),
-        }
+        let (request_id, receiver) =
+            handle.request_question(tool_use_id, questions, truncated, input.clone())?;
+        Ok((
+            PermissionPrompt::Held(
+                receiver,
+                ApprovalGuard {
+                    handle: Arc::clone(handle),
+                    request_id,
+                },
+            ),
+            input,
+        ))
     }
 
     /// Answers or skips a question Houston holds for a thread; refused unless that request
@@ -253,12 +247,12 @@ impl Daemon {
         answers: Option<Vec<proto::QuestionAnswer>>,
     ) -> Result<()> {
         let handle = self.thread_handle(id, "thread_answer")?;
-        runtime_answer_question(&handle, request_id, |questions, input| {
+        handle.answer_question(request_id, |questions, input| {
             let Some(answers) = &answers else {
                 return Ok(QuestionResolution {
                     outcome: proto::QuestionOutcome::Skipped,
                     answers: Vec::new(),
-                    reply: Err(QUESTION_SKIPPED.into()),
+                    answer: ApprovalAnswer::Deny(QUESTION_SKIPPED.into()),
                 });
             };
             let checked = check_answers(questions, answers)
@@ -266,60 +260,13 @@ impl Daemon {
             Ok(QuestionResolution {
                 outcome: proto::QuestionOutcome::Answered,
                 answers: checked.answers,
-                reply: Ok(crate::mcp_thread_permission::answered_input(
+                answer: ApprovalAnswer::AllowWith(crate::mcp_thread_permission::answered_input(
                     input,
                     checked.map,
                 )),
             })
         })
     }
-}
-
-/// How a held question ends: recorded as `question_resolved` with `answers`, and told to
-/// Claude as an allow with this `updatedInput` (`Ok`) or a deny with this message (`Err`).
-#[expect(
-    dead_code,
-    reason = "read by the thread runtime once it holds questions"
-)]
-pub(crate) struct QuestionResolution {
-    pub outcome: proto::QuestionOutcome,
-    pub answers: Vec<proto::QuestionAnswer>,
-    pub reply: std::result::Result<Value, String>,
-}
-
-// STUB: the thread runtime gains held questions after its split; until then both calls
-// below refuse through `no_question_runtime`.
-
-/// Records `question_request` and holds the call like an approval (same pending cap and
-/// NeedsInput status), returning its request id and the receiver its answer arrives on.
-fn runtime_hold_question(
-    handle: &Arc<StructuredRuntime>,
-    _tool_use_id: &str,
-    _questions: Vec<proto::ThreadQuestion>,
-    _truncated: bool,
-    _input: &Value,
-) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
-    Err(no_question_runtime(handle.session(), "AskUserQuestion", ""))
-}
-
-/// Resolves the held question `request_id` with what `resolve` makes of its questions and
-/// Claude's input; the question stays held when `resolve` refuses, so it is answered once.
-fn runtime_answer_question(
-    handle: &Arc<StructuredRuntime>,
-    request_id: &str,
-    _resolve: impl FnOnce(&[proto::ThreadQuestion], &Value) -> Result<QuestionResolution>,
-) -> Result<()> {
-    Err(no_question_runtime(
-        handle.session(),
-        "thread_answer",
-        &format!("no held question {request_id:?}; "),
-    ))
-}
-
-fn no_question_runtime(session: u32, verb: &str, detail: &str) -> anyhow::Error {
-    anyhow!(
-        "{verb} refused for session {session}: {detail}this daemon's thread runtime does not          hold questions yet"
-    )
 }
 
 #[cfg(test)]

@@ -135,8 +135,7 @@ pub(crate) enum PermissionPrompt {
 
 /// A question Houston cannot show as choices is refused with this message, which sends it
 /// into Claude's reply.
-pub(super) const ASK_IN_REPLY: &str =
-    "Ask the question in your reply; Houston cannot show it as choices";
+const ASK_IN_REPLY: &str = "Ask the question in your reply; Houston cannot show it as choices";
 
 /// The status source of a permission request Houston itself holds for a thread.
 const THREAD_APPROVAL_SOURCE: &str = "thread_approval";

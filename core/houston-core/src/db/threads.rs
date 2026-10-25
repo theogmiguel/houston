@@ -142,20 +142,27 @@ impl Db {
         Ok(kind.len() as u64)
     }
 
-    /// Permission requests in the history that never got a resolution: their process ended
-    /// with a daemon that stopped before it could record one.
-    pub fn thread_unresolved_approvals(&self, session: u32) -> Result<Vec<String>> {
+    /// Permission requests and questions in the history that never got a resolution: their
+    /// process ended with a daemon that stopped before it could record one. Each id comes
+    /// with whether it is a question.
+    pub fn thread_unresolved_approvals(&self, session: u32) -> Result<Vec<(String, bool)>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
-            "SELECT json_extract(kind, '$.request_id') FROM thread_events
-             WHERE session_id = ?1 AND json_extract(kind, '$.type') = 'approval_request'
+            "SELECT json_extract(kind, '$.request_id'),
+                    json_extract(kind, '$.type') = 'question_request'
+             FROM thread_events
+             WHERE session_id = ?1
+               AND json_extract(kind, '$.type') IN ('approval_request', 'question_request')
                AND json_extract(kind, '$.request_id') NOT IN (
                  SELECT json_extract(kind, '$.request_id') FROM thread_events
-                 WHERE session_id = ?1 AND json_extract(kind, '$.type') = 'approval_resolved')
+                 WHERE session_id = ?1
+                   AND json_extract(kind, '$.type') IN ('approval_resolved', 'question_resolved'))
              ORDER BY seq",
         )?;
         let ids = stmt
-            .query_map([session], |row| row.get::<_, String>(0))?
+            .query_map([session], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(ids)
     }
@@ -333,5 +340,51 @@ mod tests {
         let (older, has_more) = db.thread_events_page(4, Some(9), 2).unwrap();
         assert!(has_more);
         assert_eq!(older.iter().map(|e| e.seq).collect::<Vec<_>>(), [7, 8]);
+    }
+
+    #[test]
+    fn unresolved_requests_of_both_kinds_are_found_for_settling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let kinds = [
+            proto::ThreadEventKind::ApprovalRequest {
+                request_id: "a1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "Bash".into(),
+                input: "{}".into(),
+                truncated: false,
+                input_bytes: 2,
+            },
+            proto::ThreadEventKind::QuestionRequest {
+                request_id: "q1".into(),
+                tool_use_id: "t2".into(),
+                questions: Vec::new(),
+                truncated: false,
+            },
+            proto::ThreadEventKind::QuestionRequest {
+                request_id: "q2".into(),
+                tool_use_id: "t3".into(),
+                questions: Vec::new(),
+                truncated: false,
+            },
+            proto::ThreadEventKind::QuestionResolved {
+                request_id: "q2".into(),
+                outcome: proto::QuestionOutcome::Answered,
+                answers: Vec::new(),
+                reason: None,
+            },
+        ];
+        for (seq, kind) in kinds.into_iter().enumerate() {
+            let event = proto::ThreadEvent {
+                seq: seq as u64 + 1,
+                at_ms: 0,
+                kind,
+            };
+            db.thread_event_insert(4, &event).unwrap();
+        }
+        assert_eq!(
+            db.thread_unresolved_approvals(4).unwrap(),
+            [("a1".to_string(), false), ("q1".to_string(), true)]
+        );
     }
 }

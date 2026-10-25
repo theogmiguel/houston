@@ -1655,6 +1655,192 @@ async fn thread_answer_is_refused_unless_it_names_a_held_question() {
     );
 }
 
+const COLOUR_AND_FRUIT: &str = r#"{"questions":[{"question":"Which colour do you prefer?","header":"Colour","multiSelect":false,"options":[{"label":"Red","description":"Warm"},{"label":"Blue","description":"Cool"}]},{"question":"Which fruits?","header":"Fruit","multiSelect":true,"options":[{"label":"Plums","description":""},{"label":"Figs","description":""}]}]}"#;
+
+impl Rig {
+    /// Asks `AskUserQuestion` with `input` and returns the held question's id.
+    async fn ask_question(&mut self, session: u32, input: &str) -> String {
+        self.say(session, &format!("askq:{input}")).await;
+        let (events, _) = self
+            .events_until(session, |e| {
+                matches!(e.kind, ThreadEventKind::QuestionRequest { .. })
+            })
+            .await;
+        match &events.last().unwrap().kind {
+            ThreadEventKind::QuestionRequest {
+                request_id,
+                tool_use_id,
+                questions,
+                truncated,
+            } => {
+                assert!(tool_use_id.starts_with("toolu_askq_"), "{tool_use_id}");
+                assert!(!truncated);
+                assert_eq!(questions[0].question, "Which colour do you prefer?");
+                assert!(questions[1].multi_select);
+                request_id.clone()
+            }
+            other => panic!("expected a question request, got {other:?}"),
+        }
+    }
+
+    async fn answer(&mut self, session: u32, request_id: &str, answers: Value) {
+        self.send(
+            json!({"type":"thread_answer","session":session,"request_id":request_id,
+            "answers":answers}),
+        )
+        .await;
+    }
+}
+
+fn question_resolution(
+    events: &[ThreadEvent],
+    id: &str,
+) -> (
+    proto::QuestionOutcome,
+    Vec<proto::QuestionAnswer>,
+    Option<String>,
+) {
+    events
+        .iter()
+        .find_map(|e| match &e.kind {
+            ThreadEventKind::QuestionResolved {
+                request_id,
+                outcome,
+                answers,
+                reason,
+            } if request_id == id => Some((*outcome, answers.clone(), reason.clone())),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no resolution of question {id} in {events:?}"))
+}
+
+#[tokio::test]
+async fn a_held_question_waits_for_input_and_claude_reads_the_answers() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let asked = rig.ask_question(id, COLOUR_AND_FRUIT).await;
+    assert_eq!(
+        rig.daemon.session_status(id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "a held question asks for input"
+    );
+
+    rig.approve(id, &asked, true, None).await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("is a question; answer or skip it with thread_answer"),
+        "{message}"
+    );
+    rig.answer(
+        id,
+        &asked,
+        json!([{"question":"Which colour do you prefer?","selected":["Purple"]},
+               {"question":"Which fruits?","selected":["Plums"]}]),
+    )
+    .await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.starts_with(&format!("thread_answer refused for session {id}"))
+            && message.contains("\"Purple\" is not an option"),
+        "{message}"
+    );
+    assert_eq!(context, Some(format!("session:{id}")));
+
+    let answers = json!([{"question":"Which colour do you prefer?","selected":["Blue"]},
+        {"question":"Which fruits?","selected":["Plums","Figs"],"other":"pears"}]);
+    rig.answer(id, &asked, answers.clone()).await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    let (outcome, recorded, reason) = question_resolution(&events, &asked);
+    assert_eq!(outcome, proto::QuestionOutcome::Answered);
+    assert_eq!(
+        serde_json::to_value(&recorded).unwrap()[1]["other"],
+        "pears"
+    );
+    assert_eq!(reason, None);
+    assert_eq!(
+        tool_result(&events),
+        (
+            false,
+            "Your questions have been answered: \"Which colour do you prefer?\"=\"Blue\", \
+             \"Which fruits?\"=\"Plums, Figs, pears\". You can now continue with these answers \
+             in mind."
+                .into()
+        )
+    );
+    wait_until("the turn to settle", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+
+    rig.answer(id, &asked, answers).await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains(&format!("no held question {asked:?}")),
+        "an answered question cannot be answered again: {message}"
+    );
+    let (history, _) = rig.history(id).await;
+    let (_, stored, _) = question_resolution(&history, &asked);
+    assert_eq!(
+        stored, recorded,
+        "the answers are kept in the thread's history"
+    );
+}
+
+#[tokio::test]
+async fn a_skipped_question_is_denied_and_stop_denies_a_held_one() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let skipped = rig.ask_question(id, COLOUR_AND_FRUIT).await;
+    rig.send(json!({"type":"thread_answer","session":id,"request_id":skipped}))
+        .await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    let (outcome, answers, _) = question_resolution(&events, &skipped);
+    assert_eq!(outcome, proto::QuestionOutcome::Skipped);
+    assert!(answers.is_empty());
+    assert_eq!(
+        tool_result(&events),
+        (true, "The user skipped the question.".into())
+    );
+    wait_until("the turn to settle", || {
+        rig.daemon.session_status(id).ok().flatten() == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+
+    let stopped = rig.ask_question(id, COLOUR_AND_FRUIT).await;
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    let (events, _) = rig
+        .events_until(id, |e| matches!(e.kind, ThreadEventKind::TurnEnd { .. }))
+        .await;
+    let (outcome, _, reason) = question_resolution(&events, &stopped);
+    assert_eq!(outcome, proto::QuestionOutcome::Denied);
+    assert!(reason.unwrap().contains("Stopped"));
+    assert!(!events
+        .iter()
+        .any(|e| matches!(e.kind, ThreadEventKind::ApprovalResolved { .. })));
+}
+
+#[tokio::test]
+async fn a_daemon_shutdown_withdraws_a_held_question() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let held = rig.ask_question(id, COLOUR_AND_FRUIT).await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || daemon.manage_shutdown().map(|_| ()))
+        .await
+        .unwrap()
+        .map_err(|failure| format!("{failure:?}"))
+        .unwrap();
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    let (history, _) = db.thread_events_page(id, None, 500).unwrap();
+    let (outcome, _, reason) = question_resolution(&history, &held);
+    assert_eq!(outcome, proto::QuestionOutcome::Withdrawn);
+    assert!(reason.unwrap().contains("Houston restarted"));
+}
+
 #[tokio::test]
 async fn the_permission_mode_follows_what_claude_reports() {
     let mut rig = Rig::new().await;

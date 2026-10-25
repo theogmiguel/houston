@@ -52,6 +52,9 @@ fn spec() -> ToolSpec {
 fn decision(answer: ApprovalAnswer, input: Value) -> Value {
     match answer {
         ApprovalAnswer::Allow => json!({ "behavior": "allow", "updatedInput": input }),
+        ApprovalAnswer::AllowWith(updated) => {
+            json!({ "behavior": "allow", "updatedInput": updated })
+        }
         ApprovalAnswer::Deny(message) => json!({ "behavior": "deny", "message": message }),
     }
 }
@@ -157,8 +160,11 @@ mod tests {
         answers.insert("Which colour do you prefer?".into(), json!("Blue"));
         assert_eq!(
             decision(
-                ApprovalAnswer::Allow,
-                answered_input(&json!({ "questions": questions }), answers)
+                ApprovalAnswer::AllowWith(answered_input(
+                    &json!({ "questions": questions }),
+                    answers
+                )),
+                json!({ "questions": questions })
             ),
             json!({"behavior":"allow","updatedInput":{"questions":questions,
                 "answers":{"Which colour do you prefer?":"Blue"}}})

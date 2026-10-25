@@ -4,9 +4,9 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    AgentKind, ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadPermissionMode, TurnOutcome,
-    THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_USER_MESSAGE_MAX_BYTES,
+    AgentKind, ApprovalDecision, QuestionAnswer, QuestionOutcome, ThreadEvent, ThreadEventKind,
+    ThreadPermissionMode, ThreadQuestion, TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES,
+    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -62,15 +62,59 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn permission_mode_reported(&self, session: u32, mode: ThreadPermissionMode);
 }
 
-/// What `thread_approve` tells a held permission request.
+/// What `thread_approve` or `thread_answer` tells a held permission request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApprovalAnswer {
     Allow,
+    /// Allow with this input instead of Claude's own, such as a question's answers.
+    AllowWith(Value),
     Deny(String),
 }
 
 struct PendingApproval {
     answer: tokio::sync::oneshot::Sender<ApprovalAnswer>,
+    /// Set for `AskUserQuestion`: answers are checked against these, and its events are
+    /// `question_request` / `question_resolved`.
+    question: Option<HeldQuestion>,
+}
+
+struct HeldQuestion {
+    questions: Vec<ThreadQuestion>,
+    input: Value,
+}
+
+/// How a held question ends: recorded with `answers`, and told to Claude as `answer`.
+pub struct QuestionResolution {
+    pub outcome: QuestionOutcome,
+    pub answers: Vec<QuestionAnswer>,
+    pub answer: ApprovalAnswer,
+}
+
+/// The event that settles a held request without an answer from the user.
+fn unanswered(
+    request_id: String,
+    question: bool,
+    decision: ApprovalDecision,
+    reason: &str,
+) -> ThreadEventKind {
+    if question {
+        let outcome = match decision {
+            ApprovalDecision::Withdrawn => QuestionOutcome::Withdrawn,
+            _ => QuestionOutcome::Denied,
+        };
+        ThreadEventKind::QuestionResolved {
+            request_id,
+            outcome,
+            answers: Vec::new(),
+            reason: Some(reason.to_string()),
+        }
+    } else {
+        ThreadEventKind::ApprovalResolved {
+            request_id,
+            decision,
+            reason: Some(reason.to_string()),
+        }
+    }
 }
 
 /// The provider-specific half of a structured session.
@@ -588,11 +632,46 @@ impl StructuredRuntime {
         tool_use_id: &str,
         input: &Value,
     ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
-        let request_id = uuid::Uuid::new_v4().to_string();
-        let (answer, receiver) = tokio::sync::oneshot::channel();
         let input = input.to_string();
         let input_bytes = input.len() as u64;
         let (input, truncated) = cap_text(input, THREAD_APPROVAL_INPUT_MAX_BYTES);
+        self.hold(None, |request_id| ThreadEventKind::ApprovalRequest {
+            request_id,
+            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            input,
+            truncated,
+            input_bytes,
+        })
+    }
+
+    /// Holds Claude's checked `AskUserQuestion` like a permission prompt (same cap, same
+    /// NeedsInput status); `input` is what its answers extend.
+    pub fn request_question(
+        &self,
+        tool_use_id: &str,
+        questions: Vec<ThreadQuestion>,
+        truncated: bool,
+        input: Value,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let shown = questions.clone();
+        self.hold(Some(HeldQuestion { questions, input }), |request_id| {
+            ThreadEventKind::QuestionRequest {
+                request_id,
+                tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+                questions: shown,
+                truncated,
+            }
+        })
+    }
+
+    fn hold(
+        &self,
+        question: Option<HeldQuestion>,
+        event: impl FnOnce(String) -> ThreadEventKind,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (answer, receiver) = tokio::sync::oneshot::channel();
         let first = {
             // Under `state`, where Stop and Close take the process before they drain the
             // requests: a request either lands before that drain or is refused here.
@@ -613,20 +692,13 @@ impl StructuredRuntime {
                     approvals.len()
                 );
             }
-            approvals.insert(request_id.clone(), PendingApproval { answer });
+            approvals.insert(request_id.clone(), PendingApproval { answer, question });
             approvals.len() == 1
         };
         if first {
             self.host.approvals_pending(self.session, true);
         }
-        self.emit(vec![ThreadEventKind::ApprovalRequest {
-            request_id: request_id.clone(),
-            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
-            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
-            input,
-            truncated,
-            input_bytes,
-        }]);
+        self.emit(vec![event(request_id.clone())]);
         Ok((request_id, receiver))
     }
 
@@ -634,6 +706,16 @@ impl StructuredRuntime {
     pub fn answer_approval(&self, request_id: &str, answer: ApprovalAnswer) -> Result<()> {
         let (pending, left) = {
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            if approvals
+                .get(request_id)
+                .is_some_and(|pending| pending.question.is_some())
+            {
+                bail!(
+                    "thread_approve refused for session {}: {request_id:?} is a question; \
+                     answer or skip it with thread_answer",
+                    self.session
+                );
+            }
             let pending = approvals.remove(request_id);
             let left: Vec<String> = approvals.keys().cloned().collect();
             (pending, left)
@@ -652,7 +734,9 @@ impl StructuredRuntime {
             allow => allow,
         };
         let (decision, reason) = match &answer {
-            ApprovalAnswer::Allow => (ApprovalDecision::Allowed, None),
+            ApprovalAnswer::Allow | ApprovalAnswer::AllowWith(_) => {
+                (ApprovalDecision::Allowed, None)
+            }
             ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
         };
         // A dropped receiver means Claude ended the call first; the tool does not run either way.
@@ -668,36 +752,82 @@ impl StructuredRuntime {
         Ok(())
     }
 
+    /// Resolves the held question `request_id` with what `resolve` makes of its questions
+    /// and Claude's input. Checked and removed under one lock: a refused answer leaves the
+    /// question held, and a question is answered once.
+    pub fn answer_question(
+        &self,
+        request_id: &str,
+        resolve: impl FnOnce(&[ThreadQuestion], &Value) -> Result<QuestionResolution>,
+    ) -> Result<()> {
+        let (pending, resolution, empty) = {
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            let Some(held) = approvals
+                .get(request_id)
+                .and_then(|pending| pending.question.as_ref())
+            else {
+                let questions: Vec<&String> = approvals
+                    .iter()
+                    .filter(|(_, pending)| pending.question.is_some())
+                    .map(|(id, _)| id)
+                    .collect();
+                bail!(
+                    "thread_answer refused for session {}: no held question {request_id:?} \
+                     (held questions: {questions:?})",
+                    self.session
+                );
+            };
+            let resolution = resolve(&held.questions, &held.input)?;
+            let pending = approvals.remove(request_id).expect("held question");
+            (pending, resolution, approvals.is_empty())
+        };
+        // A dropped receiver means Claude ended the call first; nothing reads the answer.
+        let _ = pending.answer.send(resolution.answer);
+        self.emit(vec![ThreadEventKind::QuestionResolved {
+            request_id: request_id.to_string(),
+            outcome: resolution.outcome,
+            answers: resolution.answers,
+            reason: None,
+        }]);
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+        Ok(())
+    }
+
     /// Claude ended a call nobody answered (it timed out or its process went away).
     pub fn withdraw_approval(&self, request_id: &str) {
         let (removed, empty) = {
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
-            (approvals.remove(request_id).is_some(), approvals.is_empty())
+            (approvals.remove(request_id), approvals.is_empty())
         };
-        if !removed {
+        let Some(removed) = removed else {
             return;
-        }
-        self.emit(vec![ThreadEventKind::ApprovalResolved {
-            request_id: request_id.to_string(),
-            decision: ApprovalDecision::Withdrawn,
-            reason: Some("Claude stopped waiting for an answer; the tool did not run.".into()),
-        }]);
+        };
+        self.emit(vec![unanswered(
+            request_id.to_string(),
+            removed.question.is_some(),
+            ApprovalDecision::Withdrawn,
+            "Claude stopped waiting for an answer; the tool did not run.",
+        )]);
         if empty {
             self.host.approvals_pending(self.session, false);
         }
     }
 
     /// Records requests a previous daemon held and never resolved; nothing can answer them.
-    pub fn settle_orphaned_approvals(&self, request_ids: Vec<String>) {
+    /// Each id comes with whether it was a question.
+    pub fn settle_orphaned_approvals(&self, requests: Vec<(String, bool)>) {
         self.emit(
-            request_ids
+            requests
                 .into_iter()
-                .map(|request_id| ThreadEventKind::ApprovalResolved {
-                    request_id,
-                    decision: ApprovalDecision::Withdrawn,
-                    reason: Some(
-                        "Houston restarted before anyone answered; the tool did not run.".into(),
-                    ),
+                .map(|(request_id, question)| {
+                    unanswered(
+                        request_id,
+                        question,
+                        ApprovalDecision::Withdrawn,
+                        "Houston restarted before anyone answered; the tool did not run.",
+                    )
                 })
                 .collect(),
         );
@@ -734,11 +864,12 @@ impl StructuredRuntime {
             let _ = approval
                 .answer
                 .send(ApprovalAnswer::Deny(reason.to_string()));
-            events.push(ThreadEventKind::ApprovalResolved {
+            events.push(unanswered(
                 request_id,
+                approval.question.is_some(),
                 decision,
-                reason: Some(reason.to_string()),
-            });
+                reason,
+            ));
         }
         self.emit(events);
         if report {
