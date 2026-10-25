@@ -302,6 +302,22 @@ pub fn read_branch(dir: &Path) -> Result<Option<(PullRequestLink, PrDetail)>> {
     Ok(Some((link, detail)))
 }
 
+/// The refusal that rebasing the head onto its base resolves: GitHub reports a
+/// conflict with the base, or a branch that must be brought up to date.
+pub fn base_refusal(number: u32, detail: &PrDetail) -> Option<String> {
+    let base = detail.base_ref.as_deref().unwrap_or("its base branch");
+    match (detail.mergeable, detail.merge_state) {
+        (PrMergeable::Mergeable, PrMergeState::Clean) => None,
+        (PrMergeable::Conflicting, _) | (_, PrMergeState::Dirty) => {
+            Some(format!("PR #{number} conflicts with {base}"))
+        }
+        (_, PrMergeState::Behind) => Some(format!(
+            "PR #{number} is behind {base} — update the branch first"
+        )),
+        _ => None,
+    }
+}
+
 /// The one merge gate: `None` allows, `Some` names the blocking fact, in the
 /// same words for the button and the daemon's own pre-merge recheck. Only
 /// `(Mergeable, Clean)` allows; every unknown, pending or failed check blocks.
@@ -330,17 +346,11 @@ pub fn merge_disabled_reason(
         Some("REVIEW_REQUIRED") => return Some(format!("PR #{number} needs an approving review")),
         _ => {}
     }
-    let base = detail.base_ref.as_deref().unwrap_or("its base branch");
+    if let Some(reason) = base_refusal(number, detail) {
+        return Some(reason);
+    }
     match (detail.mergeable, detail.merge_state) {
         (PrMergeable::Mergeable, PrMergeState::Clean) => {}
-        (PrMergeable::Conflicting, _) | (_, PrMergeState::Dirty) => {
-            return Some(format!("PR #{number} conflicts with {base}"))
-        }
-        (_, PrMergeState::Behind) => {
-            return Some(format!(
-                "PR #{number} is behind {base} — update the branch first"
-            ))
-        }
         (_, PrMergeState::Draft) => {
             return Some(format!(
                 "PR #{number} is a draft — mark it ready for review first"

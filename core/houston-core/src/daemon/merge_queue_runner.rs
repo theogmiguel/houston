@@ -850,6 +850,17 @@ impl Daemon {
                 return Ok(Landing::Waiting(moved));
             }
         }
+        // The base held, so this is GitHub's answer for the commit before the rebase.
+        if let Some(stale) = row
+            .facts
+            .as_ref()
+            .filter(|f| f.base_only)
+            .and_then(|f| f.merge_disabled_reason.clone())
+        {
+            return Ok(Landing::Waiting(format!(
+                "{stale}; it merges once GitHub recomputes against the verified commit"
+            )));
+        }
         if let Some(paused) = self.merge_queue_paused(workspace)? {
             bail!("{paused}; PR #{number} was not merged");
         }

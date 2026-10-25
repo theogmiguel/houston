@@ -529,3 +529,138 @@ fn a_command_past_its_limit_times_out_with_the_tail_of_its_output() {
         "and unregistered"
     );
 }
+
+#[tokio::test]
+async fn a_rebase_needs_no_configured_git_identity_and_commits_as_the_head_author() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    let base = rig.advance_base("base.txt", "base\n");
+    // The daemon's test HOME has no global identity, and git may not guess one.
+    git(&rig.root, &["config", "--unset", "user.name"]);
+    git(&rig.root, &["config", "--unset", "user.email"]);
+    git(&rig.root, &["config", "user.useConfigOnly", "true"]);
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+
+    rig.tick().await;
+
+    assert!(
+        rig.entries().iter().all(|e| e.number != 1),
+        "#1 merged and left: {:?}",
+        rig.entries()
+    );
+    let merged = rig.origin_tip("main");
+    assert_eq!(git(&rig.root, &["rev-parse", &format!("{merged}^")]), base);
+    assert_eq!(
+        git(&rig.origin, &["log", "-1", "--format=%cn <%ce>", &merged]),
+        "t <t@t.local>",
+        "the rebased commit's committer is the head commit's author"
+    );
+    assert_eq!(
+        git(&rig.root, &["config", "--get", "user.useConfigOnly"]),
+        "true"
+    );
+    assert!(
+        git(&rig.root, &["config", "--list", "--local"])
+            .lines()
+            .all(|l| !l.starts_with("user.name") && !l.starts_with("user.email")),
+        "no identity was written to the repository's config"
+    );
+}
+
+/// GitHub's answer for a pull request whose branch conflicts with its base.
+fn github_reports_a_conflict(rig: &Rig, number: u32) {
+    rig.pr_set(number, "mergeable", "CONFLICTING".into());
+    rig.pr_set(number, "mergeStateStatus", "DIRTY".into());
+}
+
+#[tokio::test]
+async fn a_pull_request_github_reports_conflicting_is_rebased_and_parks_on_a_real_conflict() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "app.txt", "one\nTWO\nthree\n");
+    rig.change(2, "two", "two.txt", "two\n");
+    rig.advance_base("app.txt", "one\n2\nthree\n");
+    github_reports_a_conflict(&rig, 1);
+    rig.settings(true, "git --version");
+    rig.enqueue(1, None);
+    rig.enqueue(2, None);
+
+    let entry = rig.entry(1);
+    assert_eq!(
+        entry.status,
+        proto::MergeQueueStatus::WaitingForSlot,
+        "GitHub's conflict waits for the verification's rebase: {entry:?}"
+    );
+    let mergeable = entry
+        .gates
+        .iter()
+        .find(|g| g.kind == proto::MergeQueueGateKind::Mergeable)
+        .unwrap();
+    assert_eq!(mergeable.state, proto::MergeQueueGateState::Pending);
+    assert!(
+        mergeable
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("conflicts with main") && r.contains("rebases")),
+        "{mergeable:?}"
+    );
+
+    rig.tick().await;
+
+    let entry = rig.entry(1);
+    assert_eq!(entry.status, proto::MergeQueueStatus::Parked, "{entry:?}");
+    let failure = entry.failure.expect("a failure");
+    assert_eq!(failure.kind, proto::MergeQueueFailureKind::Conflict);
+    assert_eq!(failure.files, ["app.txt"]);
+
+    for _ in 0..3 {
+        if rig.entries().iter().all(|e| e.number != 2) {
+            break;
+        }
+        rig.tick().await;
+    }
+    assert!(
+        rig.entries().iter().all(|e| e.number != 2),
+        "#2 merged past the parked #1: {:?}",
+        rig.entries()
+    );
+    assert!(rig.calls("pr merge 1").is_empty());
+}
+
+#[tokio::test]
+async fn a_pull_request_github_reports_conflicting_lands_once_a_clean_rebase_is_pushed() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    let head = rig.origin_tip("houston/one");
+    let base = rig.advance_base("base.txt", "base\n");
+    github_reports_a_conflict(&rig, 1);
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+    assert_eq!(rig.entry(1).status, proto::MergeQueueStatus::WaitingForSlot);
+
+    rig.tick().await;
+
+    let pushed = rig.origin_tip("houston/one");
+    assert_ne!(pushed, head, "the clean rebase was pushed");
+    assert_eq!(git(&rig.root, &["rev-parse", &format!("{pushed}^")]), base);
+    assert!(
+        rig.calls("pr merge 1").is_empty(),
+        "no merge while GitHub still reports the old conflict"
+    );
+
+    // GitHub recomputes against the pushed commit.
+    rig.pr_set(1, "mergeable", "MERGEABLE".into());
+    rig.pr_set(1, "mergeStateStatus", "CLEAN".into());
+    rig.read_pass().await;
+    rig.tick().await;
+
+    assert!(
+        rig.entries().iter().all(|e| e.number != 1),
+        "#1 merged and left: {:?}",
+        rig.entries()
+    );
+    assert_eq!(rig.origin_tip("main"), pushed);
+}
