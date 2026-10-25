@@ -1078,7 +1078,7 @@ TransferPane         session (the pane id on the exporting computer), title, pro
 TransferSkipped      session, title, reason
 TransferCliVersion   provider: AgentKind, version?
 TransferExportSummary transfer_id, file, bytes, panes: TransferPane[], skipped: TransferSkipped[],
-                     skipped_links: string[] (untracked symbolic links not carried)
+                     skipped_links: string[] (untracked symbolic links and other non-regular entries not carried)
 TransferProfileNeed  provider, label, matched (this computer has a profile with that label)
 TransferFileSummary  transfer_id, source_os, source_workspace, remote_url?, created_at_ms,
                      panes, skipped, cli_versions: TransferCliVersion[], proposed_workspace? (the

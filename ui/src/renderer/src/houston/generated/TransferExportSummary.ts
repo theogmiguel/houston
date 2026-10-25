@@ -4,6 +4,7 @@ import type { TransferSkipped } from "./TransferSkipped";
 
 export type TransferExportSummary = { transfer_id: string, file: string, bytes: number, panes: Array<TransferPane>, skipped: Array<TransferSkipped>,
 /**
- * Untracked symbolic links the file does not carry.
+ * Untracked entries the file does not carry: symbolic links and other
+ * non-regular paths.
  */
 skipped_links: Array<string>, };
