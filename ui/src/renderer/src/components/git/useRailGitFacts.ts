@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GitFileStatus, HoustonClient } from '../../houston/client'
+import { subscribeWindowParked, windowParked } from '../../windowParked'
 import { createGitStatusPoller, type GitStatusPoller } from './gitStatusPoller'
 
 export interface RailDiffTotals {
@@ -48,7 +49,10 @@ export function useRailGitFacts(client: HoustonClient | null, dirs: readonly str
       setFacts((current) => new Map(current).set(message.dir, totals(message.files, message.ahead, message.behind)))
     })
     let lastPollAt = 0
+    // A window hidden to the tray keeps running; nobody reads the rail, so polls park
+    // and the reveal refreshes once, throttled like a focus return.
     const refresh = (): void => {
+      if (windowParked()) return
       lastPollAt = Date.now()
       poller.current?.request(requestedDirs)
     }
@@ -58,11 +62,16 @@ export function useRailGitFacts(client: HoustonClient | null, dirs: readonly str
     }
     refresh()
     window.addEventListener('focus', onFocus)
+    const offParked = subscribeWindowParked(() => {
+      if (windowParked()) poller.current?.dropQueued()
+      else onFocus()
+    })
     const timer = window.setInterval(refresh, 60_000)
     return () => {
       unsubscribe()
       poller.current?.dropQueued()
       window.removeEventListener('focus', onFocus)
+      offParked()
       window.clearInterval(timer)
     }
   }, [client, key])

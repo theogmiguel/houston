@@ -191,9 +191,13 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 947,114 bytes (one boot chunk) with the same small headroom:",
+    "the parked-window store in `windowParked.ts` gates the rail's git poller, which",
+    "starts at first paint, so the store and its tray-event listener are boot-path code."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947300,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

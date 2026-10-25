@@ -367,9 +367,14 @@ factor and snaps to the nearest bundled size.
 **Closing the window hides it** when a tray is actually available and the user has not
 turned the setting off (Settings → Daemon → Background, default on, stored in
 `<state_dir>/tray.json`). The webview keeps running while hidden, which is what keeps the
-tray fed. The app quits from the tray's "Quit Houston…" (which stops the daemon first) or
-from an in-app quit — both end at the `app_quit` command, which arms the flag that tells
-the close handler this one is real.
+tray fed. WebView2 still reports the page visible while the window is hidden, so the hide
+emits `tray://window-hidden` with `true`, and both show paths (`tray::show_main_window` and
+the `window_focus` command) emit it with `false`. The renderer's own background polls
+(rail `git_status`, a browser pane's local servers, `host_info`) skip their ticks until
+the window is shown. Tray data is pushed by the daemon and is unaffected. The app quits
+from the tray's "Quit Houston…" (which stops the daemon first) or from an in-app quit —
+both end at the `app_quit` command, which arms the flag that tells the close handler this
+one is real.
 
 Availability is **probed, not assumed**, and on Linux `tray/probe.rs` asks two questions
 before anything else runs. Who owns `org.kde.StatusNotifierWatcher` on the session bus —
