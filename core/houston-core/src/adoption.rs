@@ -93,6 +93,10 @@ pub struct Manifest {
     pub generation: u64,
     pub token: String,
     pub sessions: Vec<SessionManifest>,
+    /// Thread sessions the old generation closed for this handoff, left Interrupted in the
+    /// database: the new one restores them, resuming each conversation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<u32>,
 }
 
 impl Manifest {
@@ -357,6 +361,7 @@ mod tests {
             version: MANIFEST_VERSION,
             generation: 2,
             token: "tok".to_string(),
+            threads: vec![9],
             sessions: vec![SessionManifest {
                 title_source: Default::default(),
                 session_id: 1,
