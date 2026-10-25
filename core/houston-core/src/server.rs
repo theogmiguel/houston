@@ -1707,7 +1707,8 @@ fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::NightShiftWrapUp { .. }
         | proto::ClientMsg::NightShiftStop { .. }
         | proto::ClientMsg::NightShiftDecide { .. }
-        | proto::ClientMsg::NightShiftQaPassed { .. } => Some("night_shift".into()),
+        | proto::ClientMsg::NightShiftQaPassed { .. }
+        | proto::ClientMsg::RoutineDelete { .. } => Some("night_shift".into()),
         _ => None,
     }
 }

@@ -7236,6 +7236,11 @@ impl Daemon {
                 None,
             ));
         };
+        Self::refuse_night_shift_routine(
+            &row,
+            "routine_delete",
+            "its own settings, since a Night shift routine has no generic delete",
+        )?;
         if row.revision != expected_revision {
             return Ok(Self::routine_refused(
                 Some(id),

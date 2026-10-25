@@ -3,6 +3,7 @@
 
 use crate::common;
 
+use futures_util::SinkExt;
 use houston_core::daemon::Daemon;
 use houston_core::hook_drop::HookDrop;
 use houston_core::mcp_creds::McpScope;
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+use tokio_tungstenite::tungstenite::Message;
 
 const MINUTE: i64 = 60_000;
 
@@ -500,7 +502,7 @@ async fn merge_output_needs_verify_and_app_qa() {
 }
 
 #[tokio::test]
-async fn delete_removes_settings() {
+async fn delete_refuses_a_night_shift_routine() {
     let r = rig().await;
     let routine = r.create();
     assert_eq!(settings_rows(r.state.path(), routine.id), 1);
@@ -511,11 +513,36 @@ async fn delete_removes_settings() {
         _ => unreachable!(),
     };
     assert_eq!(listed.kind, proto::RoutineKind::NightShift);
-    r.daemon
+    let err = r
+        .daemon
         .routine_delete(routine.id, &listed.revision)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("routine_delete"), "{err}");
+    assert!(err.contains("Night shift"), "{err}");
+    assert_eq!(settings_rows(r.state.path(), routine.id), 1);
+    assert!(r.state().routine.is_some(), "nothing was deleted");
+
+    let mut ws = common::connect_and_hello(r.addr, common::TOKEN).await;
+    let request = proto::ClientMsg::RoutineDelete {
+        id: routine.id,
+        expected_revision: listed.revision.clone(),
+    };
+    ws.send(Message::text(serde_json::to_string(&request).unwrap()))
+        .await
         .unwrap();
-    assert_eq!(settings_rows(r.state.path(), routine.id), 0);
-    assert!(r.state().routine.is_none());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let reply = tokio::time::timeout_at(deadline, common::next_control(&mut ws))
+            .await
+            .expect("a reply to routine_delete");
+        if let proto::ServerMsg::Error { message, context } = reply {
+            assert!(message.contains("routine_delete"), "{message}");
+            assert_eq!(context.as_deref(), Some("night_shift"));
+            break;
+        }
+    }
+    assert!(r.state().routine.is_some(), "nothing was deleted");
 }
 
 /// The generic routine verbs would desynchronise the routine row from its
