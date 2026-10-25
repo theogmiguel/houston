@@ -68,13 +68,33 @@ impl Db {
 
     pub fn session_has_bound_resume_handle(&self, id: u32) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1 AND resume_session_id IS NOT NULL
-                AND resume_agent = CASE WHEN agent = 'shell' THEN detected_agent ELSE agent END
-                AND resume_cwd = cwd)",
-            [id],
-            |row| row.get(0),
-        )?)
+        let row = conn
+            .query_row(
+                "SELECT resume_session_id IS NOT NULL, resume_agent, resume_cwd, cwd,
+                    CASE WHEN agent = 'shell' THEN detected_agent ELSE agent END
+                 FROM sessions WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, bool>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((has_handle, bound_agent, bound_cwd, cwd, effective)) = row else {
+            return Ok(false);
+        };
+        // Provider hooks can report a subfolder of the folder the handle is bound to;
+        // that is still the same conversation.
+        Ok(has_handle
+            && bound_agent.is_some()
+            && bound_agent == effective
+            && bound_cwd
+                .is_some_and(|bound| crate::paths::contains(Path::new(&bound), Path::new(&cwd))))
     }
 
     pub fn root_hook_recovery_session_ids(&self) -> Result<Vec<u32>> {
