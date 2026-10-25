@@ -207,15 +207,45 @@ pub fn upstream_gone(repo: &Path, branch: &str) -> bool {
     .is_some_and(|t| t.trim() == "[gone]")
 }
 
-/// The sum of file sizes under `path`, symlinks not followed.
-pub fn tree_bytes(path: &Path) -> u64 {
+/// How far one measurement may walk before it gives up.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeLimit {
+    pub entries: usize,
+    pub deadline: Duration,
+}
+
+/// One huge tree must not hold a pass. Two million entries is several dependency trees'
+/// worth; past either bound the tree keeps its previous size. The deadline is checked
+/// between entries, so it cannot interrupt one filesystem call that hangs.
+pub const TREE_LIMIT: TreeLimit = TreeLimit {
+    entries: 2_000_000,
+    deadline: Duration::from_secs(120),
+};
+
+/// The sum of file sizes under `path`, symlinks not followed; `None` once `limit` is
+/// reached, with the limit, the entries visited and the path logged.
+pub fn tree_bytes_within(path: &Path, limit: TreeLimit) -> Option<u64> {
+    let started = std::time::Instant::now();
     let mut total = 0;
+    let mut visited = 0usize;
     let mut stack = vec![path.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
         for entry in entries.flatten() {
+            visited += 1;
+            if visited > limit.entries || started.elapsed() >= limit.deadline {
+                tracing::warn!(
+                    "measuring worktree {} stopped after {visited} entries in {} ms; the limit \
+                     is {} entries or {} s, so it keeps its previous size",
+                    path.display(),
+                    started.elapsed().as_millis(),
+                    limit.entries,
+                    limit.deadline.as_secs()
+                );
+                return None;
+            }
             let Ok(meta) = entry.path().symlink_metadata() else {
                 continue;
             };
@@ -226,7 +256,7 @@ pub fn tree_bytes(path: &Path) -> u64 {
             }
         }
     }
-    total
+    Some(total)
 }
 
 /// GitHub's `mergedAt` (`YYYY-MM-DDTHH:MM:SSZ`) as Unix milliseconds.
@@ -277,6 +307,27 @@ mod tests {
         ] {
             assert_ne!(repo_key(url), want, "{url}");
         }
+    }
+
+    #[test]
+    fn a_tree_past_its_entry_budget_is_not_measured() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        for i in 0..4 {
+            std::fs::write(nested.join(format!("f{i}")), "1234").unwrap();
+        }
+        let limit = |entries| TreeLimit {
+            entries,
+            deadline: Duration::from_secs(60),
+        };
+        assert_eq!(tree_bytes_within(tmp.path(), limit(6)), Some(16));
+        assert_eq!(tree_bytes_within(tmp.path(), limit(5)), None);
+        let past = TreeLimit {
+            entries: usize::MAX,
+            deadline: Duration::ZERO,
+        };
+        assert_eq!(tree_bytes_within(tmp.path(), past), None);
     }
 
     #[test]
