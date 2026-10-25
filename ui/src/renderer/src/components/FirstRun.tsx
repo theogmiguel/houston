@@ -10,12 +10,18 @@ import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import { FirstRunHooksStep } from './ui/FirstRunHooksStep'
+import type { AgentFolderScanState } from './ui/FirstRunFolderOffers'
+import type { AgentFolder } from '../houston/generated/AgentFolder'
 import { firstRunHookInstallCount, firstRunHookRows } from './firstRunHooks'
 import { openExternal } from '../houston/bridge'
 
 const INSTALL_GUIDE_URL = 'https://github.com/theogmiguel/houston/blob/main/docs/user/install.md#installing-the-clis'
 
 const MascotIntro = lazy(() => import('./ui/MascotIntro'))
+// First-run-only surface; kept out of the boot payload.
+const FirstRunFolderOffers = lazy(() =>
+  import('./ui/FirstRunFolderOffers').then((m) => ({ default: m.FirstRunFolderOffers })),
+)
 
 // Offered only when no supported CLI is on PATH: the hooks step has nothing else to do.
 function installGuideAction(noCliFound: boolean): { label: string; onClick: () => void } | undefined {
@@ -35,6 +41,15 @@ export interface FirstRunProps {
   hooksInstalled: boolean
   agentHooks: AgentHookState[] | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
+  folders: {
+    scanState: AgentFolderScanState
+    folders: AgentFolder[]
+    capped: string | null
+    error: string | null
+    adding: boolean
+  }
+  onScanFolders: () => void
+  onAddFolders: (paths: string[]) => void
   onDone: () => void
 }
 
@@ -65,6 +80,9 @@ export function FirstRun({
   hooksInstalled,
   agentHooks,
   onAgentHooksSet,
+  folders,
+  onScanFolders,
+  onAddFolders,
   onDone
 }: FirstRunProps): React.JSX.Element | null {
   const mascotPrefs = useMascotPrefs()
@@ -107,7 +125,26 @@ export function FirstRun({
   )
 
   if (current === 'workspace' && mascotPrefs.enabled && !mascotDone) return <Suspense fallback={null}><MascotIntro inline onDone={() => setMascotDone(true)} onAddWorkspace={workspaces.onAdd} onOpenSettings={() => { setSettingsSection('mascot'); setSettingsOpen(true) }} /></Suspense>
-  if (current === 'workspace') return <WorkspacesEmpty {...workspaces} footer={footer} />
+  if (current === 'workspace')
+    return (
+      <WorkspacesEmpty
+        {...workspaces}
+        footer={footer}
+        offers={
+          <Suspense fallback={null}>
+            <FirstRunFolderOffers
+              scanState={folders.scanState}
+              folders={folders.folders}
+              capped={folders.capped}
+              error={folders.error}
+              adding={folders.adding}
+              onScan={onScanFolders}
+              onAdd={onAddFolders}
+            />
+          </Suspense>
+        }
+      />
+    )
 
   if (current === 'hooks') {
     const rows = firstRunHookRows(agentHooks ?? [])

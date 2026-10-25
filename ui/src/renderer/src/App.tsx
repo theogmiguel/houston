@@ -45,6 +45,8 @@ import type {
 } from "./houston/client";
 import type { AgentAccountIdentity } from "./houston/generated/AgentAccountIdentity";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
+import type { AgentFolder } from "./houston/generated/AgentFolder";
+import type { AgentFolderScanState } from "./components/ui/FirstRunFolderOffers";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
 import {
@@ -860,6 +862,11 @@ export function App(): React.JSX.Element {
   const [usageActivity, setUsageActivity] = useState<UsageActivityDay[]>([]);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
+  const [agentFolders, setAgentFolders] = useState<AgentFolder[]>([]);
+  const [agentFolderScanState, setAgentFolderScanState] = useState<AgentFolderScanState>("idle");
+  const [agentFoldersCapped, setAgentFoldersCapped] = useState<string | null>(null);
+  const [agentFoldersError, setAgentFoldersError] = useState<string | null>(null);
+  const [addingFolders, setAddingFolders] = useState(false);
   const [historyIgnoreGlobs, setHistoryIgnoreGlobs] = useState<string[] | null>(
     null,
   );
@@ -1622,6 +1629,11 @@ export function App(): React.JSX.Element {
             setUsageLoading(false);
             setUsageError(null);
             break;
+          case "agent_folders":
+            setAgentFolders(msg.folders);
+            setAgentFoldersCapped(msg.capped);
+            setAgentFolderScanState("done");
+            break;
           case "usage_activity_summary":
             setUsageActivity(msg.days);
             break;
@@ -1693,6 +1705,11 @@ export function App(): React.JSX.Element {
             setHistoryCount(msg.count);
             break;
           case "error": {
+            if (msg.context === "agent_folders") {
+              setAgentFolderScanState("error");
+              setAgentFoldersError(msg.message);
+              break;
+            }
             if (msg.context === USAGE_SUMMARY_ERROR_CONTEXT || msg.context === USAGE_ACTIVITY_ERROR_CONTEXT || msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
               setUsageLoading(false);
               setUsageError(
@@ -1856,6 +1873,28 @@ export function App(): React.JSX.Element {
       setPickingWorkspace(false);
     }
   }, [conn, pushError]);
+
+  const scanAgentFolders = useCallback((): void => {
+    if (conn.kind !== "ready") return;
+    setAgentFoldersError(null);
+    setAgentFolderScanState("scanning");
+    conn.client.agentFoldersScan();
+  }, [conn]);
+
+  const addAgentFolders = useCallback(
+    (paths: string[]): void => {
+      if (conn.kind !== "ready" || paths.length === 0) return;
+      setAddingFolders(true);
+      try {
+        for (const path of paths) conn.client.addWorkspace(path);
+        setSelectedWs(paths[paths.length - 1]);
+        setShowLauncher(false);
+      } finally {
+        setAddingFolders(false);
+      }
+    },
+    [conn],
+  );
 
   const replacedSessions = useMemo(
     () => respawnedSessions(sessions.values()),
@@ -4474,6 +4513,15 @@ export function App(): React.JSX.Element {
                     onAgentHooksSet={(provider, enabled) => {
                       if (conn.kind === "ready") conn.client.agentHooksSet(provider, enabled);
                     }}
+                    folders={{
+                      scanState: agentFolderScanState,
+                      folders: agentFolders,
+                      capped: agentFoldersCapped,
+                      error: agentFoldersError,
+                      adding: addingFolders,
+                    }}
+                    onScanFolders={scanAgentFolders}
+                    onAddFolders={addAgentFolders}
                     onDone={closeFirstRun}
                   />
                 ) : (

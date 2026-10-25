@@ -19,6 +19,7 @@ export interface WorkspacesEmptyProps {
   error?: string | null
   keymapOverrides: KeymapOverrides
   footer?: ReactNode
+  offers?: ReactNode
 }
 
 export function WorkspacesEmpty({
@@ -27,7 +28,8 @@ export function WorkspacesEmpty({
   refusals,
   error,
   keymapOverrides,
-  footer
+  footer,
+  offers
 }: WorkspacesEmptyProps): React.JSX.Element {
   return (
     <ScreenRegion
@@ -47,6 +49,8 @@ export function WorkspacesEmpty({
             <IconTile size="xl" radius="medium" tone="surface-muted" icon={<Icon glyph={IconFolderOpen} role="title" />} label="No workspaces yet" />
           }
         />
+
+        {offers}
 
         {footer}
 

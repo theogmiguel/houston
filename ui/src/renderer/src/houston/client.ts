@@ -719,6 +719,10 @@ export class HoustonClient {
     this.send({ type: 'workspace_add', path })
   }
 
+  agentFoldersScan(): void {
+    this.send({ type: 'agent_folders_scan' })
+  }
+
   removeWorkspace(path: string): void {
     this.send({ type: 'workspace_remove', path })
   }

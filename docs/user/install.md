@@ -266,7 +266,15 @@ or read their status.
 ## First run
 
 With no workspaces added yet, Houston shows a single "No workspaces yet" screen with one
-button: add a project folder as a workspace. Immediately after adding your first
+button: add a project folder as a workspace. The same screen can also look for folders
+your agent CLIs already work in: "Find folders" reads the local Claude Code and Codex
+session lists (`~/.claude/projects` and `~/.codex/sessions`, plus a configured
+`CLAUDE_CONFIG_DIR` or `CODEX_HOME`), keeps folders that still exist and are git
+repositories, and orders them by most recent use. Pick the ones to add with the
+checkboxes; nothing is added without your confirmation, and the step is skippable. Large
+histories are scanned with limits, and Houston says so when a limit cut the list short.
+The scan reads your machine's files only and sends nothing anywhere; sessions inside WSL
+distros are separate environments and are not scanned. Immediately after adding your first
 workspace, Houston walks through two more one-at-a-time screens — turning on
 agent-to-agent orchestration, and installing hooks for a provider — each skippable. None
 of the three screens reappears once its condition is already met, and there is no stored

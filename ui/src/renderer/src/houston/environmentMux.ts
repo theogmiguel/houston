@@ -304,6 +304,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   command_history_ignore_globs_get: 'local',
   command_history_ignore_globs_set: 'local',
   usage_summary_get: 'local',
+  agent_folders_scan: 'local',
   usage_activity_summary_get: 'local',
   browser_relay_register: 'local',
   browser_tool_result: 'local'
@@ -493,6 +494,7 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   storage_reclaimed: 'drop',
   command_history_ignore_globs: 'drop',
   usage_summary: 'drop',
+  agent_folders: 'drop',
   usage_activity_summary: 'drop',
   error: 'forward',
   browser_tool_call: 'drop'

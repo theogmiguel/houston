@@ -139,10 +139,20 @@ const FIRST_RUN_BASE = {
   onEnableOrchestration: noop,
   agentHooks: [],
   onAgentHooksSet: noop,
+  folders: { scanState: 'idle' as const, folders: [], capped: null, error: null, adding: false },
+  onScanFolders: noop,
+  onAddFolders: noop,
   onDone: noop
 }
 
+// The intro animation owns the first paint of a fresh harness page; these
+// stories capture the step under it.
+function skipMascotIntro(): void {
+  localStorage.setItem('tr-mascot-ledger', JSON.stringify({ introSeen: true }))
+}
+
 export function FirstRunOrchestrationStory(): React.JSX.Element {
+  skipMascotIntro()
   return (
     <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
       <FirstRun {...FIRST_RUN_BASE} hasWorkspace orchestrationConsented={false} hooksInstalled />
@@ -151,9 +161,36 @@ export function FirstRunOrchestrationStory(): React.JSX.Element {
 }
 
 export function FirstRunWorkspaceStory(): React.JSX.Element {
+  skipMascotIntro()
   return (
     <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
       <FirstRun {...FIRST_RUN_BASE} hasWorkspace={false} orchestrationConsented hooksInstalled />
+    </div>
+  )
+}
+
+export function FirstRunWorkspaceFoldersStory(): React.JSX.Element {
+  skipMascotIntro()
+  const day = 24 * 60 * 60 * 1_000
+  return (
+    <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
+      <FirstRun
+        {...FIRST_RUN_BASE}
+        hasWorkspace={false}
+        orchestrationConsented
+        hooksInstalled
+        folders={{
+          scanState: 'done',
+          folders: [
+            { path: 'C:\\dev\\houston', last_active_ms: Date.now() - 1 * day, sessions: 12 },
+            { path: 'C:\\dev\\notes-site', last_active_ms: Date.now() - 4 * day, sessions: 5 },
+            { path: 'C:\\work\\client-portal', last_active_ms: Date.now() - 61 * day, sessions: 3 }
+          ],
+          capped: null,
+          error: null,
+          adding: false
+        }}
+      />
     </div>
   )
 }

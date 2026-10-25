@@ -33,6 +33,9 @@ function props(over: Partial<FirstRunProps> = {}): FirstRunProps {
     hooksInstalled: false,
     agentHooks: [],
     onAgentHooksSet: () => {},
+    folders: { scanState: 'idle', folders: [], capped: null, error: null, adding: false },
+    onScanFolders: () => {},
+    onAddFolders: () => {},
     onDone: () => {},
     ...over
   }
@@ -68,6 +71,15 @@ describe('FirstRun', () => {
     expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
     expect(step()).toBe('Step 1 of 3')
     expect(host.querySelector('[data-testid="first-run-skip"]')).toBeNull()
+  })
+
+  it('offers the folders the agent CLIs already work in on the workspace screen', async () => {
+    await act(async () => {
+      render(props())
+      await import('./ui/FirstRunFolderOffers')
+    })
+    expect(host.querySelector('[data-testid="first-run-folders"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="first-run-folders-scan"]')).not.toBeNull()
   })
 
   it('shows the mascot hero when enabled and restores the workspace actions after Skip intro', async () => {

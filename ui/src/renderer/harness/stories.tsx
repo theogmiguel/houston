@@ -110,7 +110,7 @@ import type { PrInfo } from '../src/houston/client'
 import { FirstRunHooksStepNoCliSpecimen, FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
-import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
+import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, FirstRunWorkspaceFoldersStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
@@ -306,6 +306,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/shortcuts-off': () => <ShortcutsOffStory />,
   'firstrun/orchestration': () => <FirstRunOrchestrationStory />,
   'firstrun/workspace': () => <FirstRunWorkspaceStory />,
+  'firstrun/workspace-folders': () => <FirstRunWorkspaceFoldersStory />,
   'boot/loading': () => <BootLoadingStory />,
   'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,

@@ -191,9 +191,15 @@
     "Re-cut against 946,609 bytes (one boot chunk) with the same small headroom:",
     "three additions share this chunk with main's editor path key and sound burst",
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
-    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs."
+    "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
+    "",
+    "Re-cut against 947,662 bytes (one boot chunk, Windows build) with the same",
+    "small headroom: the first-run workspace step offers the folders the agent",
+    "CLIs already work in. The offers card and its scan states sit behind one",
+    "lazy() in FirstRun; what rides on the boot path is the scan request in the",
+    "client, the reply and error handlers in App, and the step's props plumbing."
   ],
-  "maxBootBytes": 946800,
+  "maxBootBytes": 947900,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
