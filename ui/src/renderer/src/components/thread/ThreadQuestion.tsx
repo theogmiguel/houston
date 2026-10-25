@@ -41,12 +41,17 @@ export function answerText(answer: QuestionAnswer): string {
   return [...answer.selected, ...(answer.other ? [answer.other] : [])].join(', ')
 }
 
-/** Focus inside a thread pane picks that pane's question for number keys, otherwise the
- *  grid's focused pane (`active`) does, so one key press answers one question. */
+/** Focus inside a thread pane picks that pane's question for number keys; focus in the grid
+ *  or on nothing leaves it to the grid's focused pane (`active`). A hidden grid, a dialog or
+ *  focus elsewhere takes no number keys, so one key press answers at most one visible question. */
 export function ownsQuestionKeys(dock: Element | null, active: boolean): boolean {
+  if (dock === null || dock.closest('[inert], [aria-hidden="true"]') !== null) return false
   const focused = document.activeElement
-  const surface = focused instanceof Element ? focused.closest('[data-testid="thread-surface"]') : null
-  return surface !== null ? dock !== null && surface.contains(dock) : active
+  if (!(focused instanceof Element) || focused === document.body) return active
+  if (focused.closest('[role="dialog"], [role="alertdialog"], dialog') !== null) return false
+  const surface = focused.closest('[data-testid="thread-surface"]')
+  if (surface !== null) return surface.contains(dock)
+  return active && focused.closest('.grid-slot') !== null
 }
 
 /** The held question above the composer: one page per question, then Submit; Skip answers none. */

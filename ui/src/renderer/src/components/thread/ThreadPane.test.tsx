@@ -355,6 +355,39 @@ describe('ThreadPane', () => {
     second.remove()
   })
 
+  it('takes no number keys while the grid is hidden, a dialog holds focus or focus is outside the grid', () => {
+    const slot = document.createElement('div')
+    slot.className = 'grid-slot'
+    document.body.appendChild(slot)
+    const slotRoot = createRoot(slot)
+    const questions = [{ question: 'Which colour?', header: '', multi_select: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }]
+    act(() => slotRoot.render(<ThreadPane client={fake.client} info={info({ status: 'needs-input' })} connected active />))
+    history([ev(1, { type: 'question_request', request_id: 'q7', tool_use_id: 't', questions, truncated: false })])
+    const pressed = (): (string | null)[] => [...slot.querySelectorAll('[data-testid="question-card-option"]')].map((option) => option.getAttribute('aria-pressed'))
+    const key = (k: string): void => { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })) }) }
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inDialog = document.createElement('button')
+    dialog.appendChild(inDialog)
+    const outside = document.createElement('button')
+    document.body.append(dialog, outside)
+    act(() => inDialog.focus())
+    key('1')
+    act(() => outside.focus())
+    key('1')
+    act(() => outside.blur())
+    slot.setAttribute('inert', '')
+    key('1')
+    expect(pressed()).toEqual(['false', 'false'])
+    slot.removeAttribute('inert')
+    key('1')
+    expect(pressed()).toEqual(['true', 'false'])
+    act(() => slotRoot.unmount())
+    slot.remove()
+    dialog.remove()
+    outside.remove()
+  })
+
   it('refuses Keep planning feedback over the limit by name and keeps the text', () => {
     mount({ status: 'needs-input' })
     const plan = JSON.stringify({ plan: 'Make the rail sort stable.' })
