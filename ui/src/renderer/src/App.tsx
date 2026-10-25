@@ -222,6 +222,7 @@ import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
 import { usePanelSurfaceNavigation } from "./usePanelSurfaceNavigation";
+import { CHANGES_REVEAL_EVENT } from "./thread/changesReveal";
 import { forgetGrid, touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
 import type { ReviewDiffsData } from "./git/review";
@@ -2738,6 +2739,11 @@ export function App(): React.JSX.Element {
     setScmOpen,
     setActiveSurface,
   });
+  useEffect(() => {
+    const onReveal = (): void => openPanelSurface("diff");
+    window.addEventListener(CHANGES_REVEAL_EVENT, onReveal);
+    return () => window.removeEventListener(CHANGES_REVEAL_EVENT, onReveal);
+  }, [openPanelSurface]);
   useEffect(() => {
     setSideReview((current) => current?.id === activeId ? current : null);
   }, [activeId, sideReview, setSideReview]);

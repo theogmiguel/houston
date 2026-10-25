@@ -38,6 +38,7 @@ import type { ReviewDiffsData } from '../git/review'
 import { useGitStatusSubscription, type DiffState } from './git/useGitStatusSubscription'
 import { usePrSubscription, type PrState } from './git/usePrSubscription'
 import { useReviewSubscription, type ReviewNotice } from './git/useReviewSubscription'
+import { CHANGES_REVEAL_EVENT, takeChangesReveal } from '../thread/changesReveal'
 import { ReviewProviderModal } from './git/ReviewProviderModal'
 import { useGitToolsSubscription } from './git/useGitToolsSubscription'
 import { useGitErrorRouter } from './git/useGitErrorRouter'
@@ -746,6 +747,20 @@ export function ChangesPane({
       if (compact) setExpandedPaths((current) => new Set(current).add(initialPath))
     }
   }, [rows, files, selected, compact])
+
+  const [revealRequests, setRevealRequests] = useState(0)
+  useEffect(() => {
+    const onReveal = (): void => setRevealRequests((count) => count + 1)
+    window.addEventListener(CHANGES_REVEAL_EVENT, onReveal)
+    return () => window.removeEventListener(CHANGES_REVEAL_EVENT, onReveal)
+  }, [])
+  useEffect(() => {
+    if (!repoDir) return
+    const path = takeChangesReveal(repoDir, rows.map((row) => row.path))
+    if (path === null) return
+    setSelected(path)
+    if (compact) setExpandedPaths((current) => new Set(current).add(path))
+  }, [repoDir, rows, compact, revealRequests])
   refreshRef.current = refresh
 
   useEffect(() => {
