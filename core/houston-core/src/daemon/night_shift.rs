@@ -960,18 +960,7 @@ impl Daemon {
             report_dir.display().to_string(),
         )];
         Ok(self
-            .routine_spawn_run_pane(
-                &launch_row,
-                run_id,
-                now,
-                next,
-                dir,
-                super::RoutinePanePrompt {
-                    prompt: text,
-                    leading: Vec::new(),
-                },
-                env,
-            )?
+            .routine_spawn_run_pane(&launch_row, run_id, now, next, dir, text, env)?
             .is_some())
     }
 

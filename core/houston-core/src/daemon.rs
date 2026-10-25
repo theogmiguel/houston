@@ -35,9 +35,6 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
-/// Between leading first inputs and the prompt: time for the CLI to take a slash command
-/// before the next paste arrives.
-const FIRST_INPUT_GAP: Duration = Duration::from_secs(2);
 // A prefilled prompt is only typed into a composer that takes input, never pasted
 // regardless: a first-run question such as Claude's folder trust prompt can stay up
 // until the operator reads it, and a paste there would answer it.
@@ -1586,13 +1583,6 @@ fn transcript_link_update(
         native.map(str::to_string).or(old_native.clone()),
     );
     (next != (old_path, old_native)).then_some(next)
-}
-
-/// What a routine run's pane is asked: `prompt` at launch, or, when `leading` inputs
-/// come first (a Claude orchestrator's `/goal`), typed after them into the TUI.
-struct RoutinePanePrompt {
-    prompt: String,
-    leading: Vec<String>,
 }
 
 /// A routine run in flight, keyed by routine id. The pane's session is the
@@ -7487,19 +7477,8 @@ impl Daemon {
         };
         let run_id = self.record_run_start(row, trigger, None, now, next)?;
         self.harness_review_start(row, run_id, Some(dir.as_str()), now);
-        self.routine_spawn_run_pane(
-            row,
-            run_id,
-            now,
-            next,
-            &dir,
-            RoutinePanePrompt {
-                prompt: row.prompt.clone(),
-                leading: Vec::new(),
-            },
-            Vec::new(),
-        )
-        .map(|_| ())
+        self.routine_spawn_run_pane(row, run_id, now, next, &dir, row.prompt.clone(), Vec::new())
+            .map(|_| ())
     }
 
     /// Opens the pane of a recorded run and registers it in flight. `None`
@@ -7512,10 +7491,9 @@ impl Daemon {
         now: i64,
         next: i64,
         dir: &str,
-        prompt: RoutinePanePrompt,
+        prompt: String,
         extra_env: Vec<(String, String)>,
     ) -> Result<Option<u32>> {
-        let RoutinePanePrompt { prompt, leading } = prompt;
         let night = row.kind == proto::RoutineKind::NightShift;
         let test_cmd = self
             .routine_pane_cmd_override
@@ -7529,22 +7507,20 @@ impl Daemon {
         // The dev channel's stand-in fires no hooks, so no UserPromptSubmit could
         // confirm a pasted prompt; it is pasted here, unconfirmed.
         let unconfirmed = dev_cmd.is_some();
-        // Leading inputs are typed into the TUI, so the prompt follows them there.
-        let pasted =
-            if leading.is_empty() && !(unconfirmed && !crate::launch::prompt_in_argv(row.engine)) {
-                None
-            } else {
-                let (text, file) = crate::launch::prompt_text(
-                    &prompt,
-                    Some(&init_prompts_dir(Path::new(dir))?),
-                    &format!("routine-run-{run_id}"),
-                )?;
-                if let Some((path, contents)) = file {
-                    std::fs::write(&path, contents)
-                        .with_context(|| format!("writing prompt file {}", path.display()))?;
-                }
-                Some(text)
-            };
+        let pasted = if !(unconfirmed && !crate::launch::prompt_in_argv(row.engine)) {
+            None
+        } else {
+            let (text, file) = crate::launch::prompt_text(
+                &prompt,
+                Some(&init_prompts_dir(Path::new(dir))?),
+                &format!("routine-run-{run_id}"),
+            )?;
+            if let Some((path, contents)) = file {
+                std::fs::write(&path, contents)
+                    .with_context(|| format!("writing prompt file {}", path.display()))?;
+            }
+            Some(text)
+        };
         let (cmd, approval) = match test_cmd.or(dev_cmd) {
             Some(cmd) => {
                 let approval = match row.permission_mode {
@@ -7625,7 +7601,7 @@ impl Daemon {
             }
         };
         if let Some(text) = pasted {
-            self.deliver_first_prompts(session.id, leading, text, None, true, !unconfirmed);
+            self.deliver_first_prompts(session.id, text, None, true, !unconfirmed);
         }
         self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
@@ -19776,16 +19752,13 @@ impl Daemon {
         sender: Option<u32>,
         submit: bool,
     ) {
-        self.deliver_first_prompts(session, Vec::new(), text, sender, submit, true);
+        self.deliver_first_prompts(session, text, sender, submit, true);
     }
 
-    /// `leading` are submitted one by one before `text`, each once the composer takes
-    /// input again (a slash command such as `/goal`); only `text` waits for confirmation,
-    /// and only with `confirm`.
+    /// `text` waits for confirmation only with `confirm`.
     pub(crate) fn deliver_first_prompts(
         self: &Arc<Self>,
         session: u32,
-        leading: Vec<String>,
         text: String,
         sender: Option<u32>,
         submit: bool,
@@ -19795,17 +19768,7 @@ impl Daemon {
         let spawned = std::thread::Builder::new()
             .name(format!("first-prompt-{session}"))
             .spawn(move || {
-                let mut outcome = Ok(FirstPromptOutcome::Unconfirmable(String::new()));
-                for input in &leading {
-                    outcome = daemon.first_prompt_deliver(session, input, true, false);
-                    if outcome.is_err() {
-                        break;
-                    }
-                    std::thread::sleep(FIRST_INPUT_GAP);
-                }
-                if outcome.is_ok() {
-                    outcome = daemon.first_prompt_deliver(session, &text, submit, confirm);
-                }
+                let outcome = daemon.first_prompt_deliver(session, &text, submit, confirm);
                 if let Ok(s) = daemon.get(session) {
                     s.composer_watch.store(false, Ordering::Relaxed);
                 }
@@ -19903,7 +19866,7 @@ impl Daemon {
                         "the CLI drew nothing".to_string()
                     }
                 });
-                bail!("{why} by the deadline");
+                bail!("{}", first_prompt_deadline_text(&why, paste_unready));
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
@@ -29248,6 +29211,33 @@ mod handoff_stranding_tests {
                 .iter()
                 .any(|t| t.contains("handoff_error") && t.contains("deadline")),
             "the requesting client must receive the deadline HandoffError: {texts:?}"
+        );
+    }
+}
+
+/// A paste that timed out says which limit it waited past.
+fn first_prompt_deadline_text(why: &str, paste_unready: bool) -> String {
+    let limit = if paste_unready {
+        FIRST_PROMPT_DEADLINE
+    } else {
+        FIRST_PROMPT_PREFILL_DEADLINE
+    };
+    format!("{why} within {} s", limit.as_secs())
+}
+
+#[cfg(test)]
+mod first_prompt_deadline_tests {
+    use super::*;
+
+    #[test]
+    fn the_deadline_error_names_the_limit() {
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", true),
+            "the CLI drew nothing within 60 s"
+        );
+        assert_eq!(
+            first_prompt_deadline_text("its composer never took input", false),
+            "its composer never took input within 900 s"
         );
     }
 }
