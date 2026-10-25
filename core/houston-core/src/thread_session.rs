@@ -1616,7 +1616,7 @@ mod tests {
             host.clone(),
         )
         .unwrap();
-        handle.send("hello").unwrap();
+        handle.send("hello", &[]).unwrap();
         let events = wait_for(
             &host,
             |event| matches!(event, ThreadEventKind::Notice { text } if text.contains("exited")),
