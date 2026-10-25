@@ -514,8 +514,9 @@ mod tests {
             .command(conversation.as_ref(), ThreadPermissionMode::Default)
             .unwrap()
             .args;
-        assert_eq!(resumed[2..4], [OsString::from("--resume"), "abc".into()]);
-        assert_eq!(resumed[4..], THREAD_FLAGS.map(OsString::from));
+        assert_eq!(resumed[2], "--permission-prompt-tool");
+        assert_eq!(resumed[4..6], [OsString::from("--resume"), "abc".into()]);
+        assert_eq!(resumed[6..], THREAD_FLAGS.map(OsString::from));
     }
 
     #[test]
