@@ -20,7 +20,8 @@ A `.houston-transfer` file is encrypted with the passphrase you choose at export
 - **Code state** of the workspace folder and of each Houston worktree a pane runs in: the
   branch and commit, a git bundle of the commits that no remote branch has, a binary diff of
   uncommitted changes to tracked files, and every untracked file that is not ignored.
-  Untracked symbolic links are not carried and are listed after export.
+  Untracked symbolic links, nested Git repositories and other entries that are not regular
+  files are not carried and are listed after export.
 - **Pane details:** each pane's name, provider, model, effort, approval mode and agent
   profile label, and the provider CLI versions.
 - **Grids:** the workspace's grid layouts.
@@ -43,6 +44,11 @@ the passphrase can read them.
    to save the file. Houston adds the `.houston-transfer` extension when the name lacks it,
    and replaces an existing file only when you confirmed replacing that file in the save
    dialog.
+
+Export is refused, before any pane stops, while an untracked file has a name the other
+computer cannot carry: a `:` `?` `*` `<` `>` `"` `|` or `\` character, a trailing dot or
+space, a Windows device name such as `con` or `aux`, or two names that differ only by letter
+case. The refusal lists each; rename, ignore or delete each listed file, then export again.
 
 Export is also refused while a file has staged content that differs from its working copy:
 the transfer carries the working copy only. Stage or unstage such a file completely first.
