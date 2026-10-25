@@ -594,6 +594,9 @@ pub struct Session {
     tags: Mutex<Vec<u32>>,
     acp: Option<Mutex<crate::acp::AcpDecoder>>,
     scrollback: Mutex<Scrollback>,
+    /// The ring's `(generation, bytes_seen)` when its file was last written,
+    /// so the periodic checkpoint skips sessions with nothing new.
+    scrollback_checkpointed: Mutex<Option<(u32, u64)>>,
     ws_attaches: AtomicU32,
     vt: Mutex<Option<crate::vt::Emulator>>,
     vt_refused: AtomicBool,
@@ -1538,6 +1541,7 @@ mod merge_queue_runner;
 mod provider_deny;
 mod remote;
 mod remote_phone;
+mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
@@ -4363,29 +4367,50 @@ impl Daemon {
     }
 
     fn persist_scrollback_result(&self, id: u32) -> Result<()> {
+        self.persist_scrollback_inner(id, false).map(|_| ())
+    }
+
+    /// Returns whether the file was written; `only_dirty` skips a ring whose
+    /// `(generation, bytes_seen)` already matches its last write.
+    fn persist_scrollback_inner(&self, id: u32, only_dirty: bool) -> Result<bool> {
         let session = match self.sessions.lock().expect("sessions lock").get(&id) {
             Some(s) => Arc::clone(s),
-            None => return Ok(()),
+            None => return Ok(false),
         };
-        if *session.state.lock().expect("state lock") == proto::SessionState::Killed
-            && !self.is_shutting_down()
-        {
-            // Kill released this pane's scrollback file; the EOF drain must not
-            // re-create it. Shutdown's own kills keep theirs for the restart.
-            return Ok(());
-        }
         let _writes = self
             .scrollback_writes
             .lock()
             .expect("scrollback writes lock");
-        let snapshot = {
+        // Checked under the write lock that removal also takes, so a kill or close that
+        // lands mid-pass cannot have its released file re-created. Shutdown's own kills
+        // keep theirs for the restart.
+        if session.removed.load(Ordering::Acquire)
+            || (*session.state.lock().expect("state lock") == proto::SessionState::Killed
+                && !self.is_shutting_down())
+        {
+            return Ok(false);
+        }
+        let (mark, snapshot) = {
             let ring = session.scrollback.lock().expect("scrollback lock");
-            if ring.bytes_seen() == 0 {
-                return Ok(());
+            let mark = (ring.generation(), ring.bytes_seen());
+            if mark.1 == 0
+                || (only_dirty
+                    && *session
+                        .scrollback_checkpointed
+                        .lock()
+                        .expect("scrollback checkpointed lock")
+                        == Some(mark))
+            {
+                return Ok(false);
             }
-            ring.snapshot()
+            (mark, ring.snapshot())
         };
-        crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
+        crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)?;
+        *session
+            .scrollback_checkpointed
+            .lock()
+            .expect("scrollback checkpointed lock") = Some(mark);
+        Ok(true)
     }
 
     fn persist_scrollback(&self, id: u32) {
@@ -5489,6 +5514,7 @@ impl Daemon {
             tags: Mutex::new(m.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(vt),
             vt_refused: AtomicBool::new(false),
@@ -5720,6 +5746,10 @@ impl Daemon {
             }
         }
         let path = self.scrollback_path(id);
+        let _writes = self
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
                 tracing::warn!("removing persisted scrollback of session {id}: {e}");
@@ -11985,6 +12015,7 @@ impl Daemon {
                 .as_ref()
                 .map(|_| Mutex::new(crate::acp::AcpDecoder::new())),
             scrollback: Mutex::new(scrollback_seed.unwrap_or_default()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -12040,13 +12071,16 @@ impl Daemon {
                 .scrollback_writes
                 .lock()
                 .expect("scrollback writes lock");
-            let snapshot = session
-                .scrollback
-                .lock()
-                .expect("scrollback lock")
-                .snapshot();
+            let (mark, snapshot) = {
+                let ring = session.scrollback.lock().expect("scrollback lock");
+                ((ring.generation(), ring.bytes_seen()), ring.snapshot())
+            };
             crate::scrollback::write_snapshot(&self.scrollback_path(id), snapshot)
                 .context(orchestrate::MutationMayHaveActed)?;
+            *session
+                .scrollback_checkpointed
+                .lock()
+                .expect("scrollback checkpointed lock") = Some(mark);
         }
         let prepare = || -> Result<()> {
             #[cfg(feature = "test-barriers")]
@@ -12616,6 +12650,7 @@ impl Daemon {
                 osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
                 acp: None,
                 scrollback: Mutex::new(Scrollback::new()),
+                scrollback_checkpointed: Mutex::new(None),
                 ws_attaches: AtomicU32::new(0),
                 vt: Mutex::new(None),
                 vt_refused: AtomicBool::new(false),
@@ -27368,6 +27403,7 @@ mod kill_teardown_tests {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -27469,6 +27505,72 @@ mod kill_teardown_tests {
         writer.join().unwrap().unwrap();
         let saved = Scrollback::load(&daemon.scrollback_path(7)).unwrap();
         assert_eq!(saved.tail_lines(1), ["first checkpoint"]);
+    }
+
+    #[test]
+    fn the_periodic_checkpoint_writes_only_rings_with_new_output() {
+        let (daemon, state) = test_daemon();
+        let busy = stub_ssh_session(&daemon, state.path(), 7);
+        stub_ssh_session(&daemon, state.path(), 8);
+        let push = |bytes: &[u8]| busy.scrollback.lock().expect("scrollback lock").push(bytes);
+
+        push(b"first output");
+        assert_eq!(
+            daemon.checkpoint_dirty_scrollback(),
+            1,
+            "an empty ring is never written"
+        );
+        assert!(!daemon.scrollback_path(8).exists());
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 0, "nothing new");
+
+        push(b"\nsecond output");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 1, "new output");
+        let saved = Scrollback::load(&daemon.scrollback_path(7)).unwrap();
+        assert_eq!(saved.tail_lines(1), ["second output"]);
+
+        daemon.kill(7).unwrap();
+        push(b"\nafter the kill");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 0);
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a killed pane's released file is not re-created"
+        );
+    }
+
+    #[test]
+    fn a_kill_during_the_periodic_checkpoint_does_not_re_create_the_file() {
+        let (daemon, state) = test_daemon();
+        let busy = stub_ssh_session(&daemon, state.path(), 7);
+        let push = |bytes: &[u8]| busy.scrollback.lock().expect("scrollback lock").push(bytes);
+        push(b"first output");
+        assert_eq!(daemon.checkpoint_dirty_scrollback(), 1);
+        push(
+            b"
+second output",
+        );
+
+        // Holding the write lock parks the pass after it has read the pane as Running.
+        let writes = daemon
+            .scrollback_writes
+            .lock()
+            .expect("scrollback writes lock");
+        let pass = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.checkpoint_dirty_scrollback())
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        let kill = {
+            let daemon = Arc::clone(&daemon);
+            std::thread::spawn(move || daemon.kill(7))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        drop(writes);
+        kill.join().unwrap().unwrap();
+        pass.join().unwrap();
+        assert!(
+            !daemon.scrollback_path(7).exists(),
+            "a kill that lands mid-pass keeps its scrollback file released"
+        );
     }
 
     #[test]
@@ -27992,6 +28094,7 @@ mod force_respawn_guard_tests {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
+            scrollback_checkpointed: Mutex::new(None),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),

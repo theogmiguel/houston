@@ -473,14 +473,18 @@ shells exclude the scanner because their titles describe the directory.
 A replay that does not start at the true stream start is prefixed with an SGR reset, so
 trimmed colour state cannot bleed into the first visible line. Rings persist to
 `scrollback/<id>.bin` behind a `TRSB` magic and version byte — written on session end, on the
-last `/ws` client detaching (`checkpoint_scrollback`), and at orderly shutdown, read on
+last `/ws` client detaching (`checkpoint_scrollback`), at orderly shutdown, and every 30 s
+for rings with output since their last write (`checkpoint_dirty_scrollback`), read on
 demand when a restored husk is attached. Automatic restore carries a saved ring into the
 replacement ID before retiring the old row. Snapshot transfer failure retains the original
 pane and file; an explicit fresh root launch starts with a fresh ring. Recovery rejects
 oversized files and overflowing offsets before constructing a ring.
 
 Between checkpoints, output stays in bounded memory whether or not a client is attached:
-a daemon crash can lose everything since the last snapshot. SQLite WAL transactions and
+a daemon crash loses about the last 30 s of a pane's output (one interval plus the pass). The periodic pass compares
+each ring's `(generation, bytes_seen)` with the pair recorded at its last write, so idle
+panes are never rewritten; a busy pane rewrites its whole file, at most 4 MiB per interval.
+The pass stands aside while shutdown or a live handoff runs its own full checkpoint. SQLite WAL transactions and
 rename-based snapshots protect process-level recovery ordering; `synchronous = NORMAL`
 and unsynced filesystem writes do not promise the latest state after a machine power cut.
 

@@ -13,6 +13,8 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     let updates = daemon.clone();
     tokio::spawn(async move { updates.update_check_loop().await });
     tokio::spawn(daemon.clone().worktree_cleanup_loop());
+    // Writes only panes with output since their last checkpoint.
+    tokio::spawn(daemon.clone().scrollback_checkpoint_loop());
     // Read-only and local: no switch, and idle without an orchestrator's worktree.
     tokio::spawn(daemon.clone().conflict_prediction_loop());
     // Not gated by worktree_cleanup_enabled: closing a task on its merged PR
