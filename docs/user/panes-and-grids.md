@@ -388,6 +388,8 @@ with an error within 10 seconds, a top-level pane starts fresh and says why. An 
 child whose conversation fails to resume remains ended and reports the failure to its parent;
 it never substitutes an empty conversation for its mission. Changing the folder
 or changing its profile's configuration directory discards the old conversation handle.
+A pane whose agent last ran commands in a subfolder reopens in the folder where its
+conversation started; only a folder outside it, such as another checkout, is a change.
 Losing the profile also discards it. A shell pane with a validated Claude, Codex or ZCode
 conversation can relaunch that conversation inside its shell; orchestration children stay
 deferred when the parent's conversation cannot resume. The relaunch needs a POSIX shell

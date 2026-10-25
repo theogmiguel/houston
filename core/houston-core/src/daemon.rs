@@ -10469,7 +10469,20 @@ impl Daemon {
         let profile_changed = recorded_profile_dir.as_deref() != profile_dir
             || (had_profile && recorded_profile_dir.is_none());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let recorded_cwd = cwd;
+        // Provider hooks report the folder a tool last ran in; a subfolder of the folder
+        // bound to the handle still holds the same conversation.
+        let recorded_cwd = match self.db.session_resume_binding(old_id).ok().flatten() {
+            Some((_, bound))
+                if handle.is_some()
+                    && agent != proto::AgentKind::Shell
+                    && cwd_override.is_none()
+                    && conversation != RespawnConversation::Fresh
+                    && crate::paths::contains(Path::new(&bound), Path::new(&cwd)) =>
+            {
+                bound
+            }
+            _ => cwd,
+        };
         let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let resume_provider = if agent == proto::AgentKind::Shell {
             resume_agent.unwrap_or(agent)

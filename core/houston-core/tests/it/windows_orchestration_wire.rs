@@ -726,3 +726,160 @@ async fn a_claude_slug_whose_history_survives_spawns_under_a_fresh_name_and_code
     rig.daemon.close(child).unwrap();
     rig.daemon.close(parent.id).unwrap();
 }
+
+#[tokio::test]
+async fn issue350_a_child_that_reported_a_subfolder_resumes_in_its_launch_folder_after_restart() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    // A command override is not resumable, so the parent launches the fixture `claude`.
+    let parent = rig
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: rig.repo.clone(),
+            cmd: None,
+            cols: 100,
+            rows: 30,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: true,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let token = rig.token(parent.id);
+    let mut children = Vec::new();
+    for role in ["mover", "elsewhere"] {
+        let (status, body) = rig
+            .post(
+                &token,
+                "/orchestrate/spawn",
+                json!({"kind":"claude", "prompt":"work", "role":role, "reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        let child = body["session_id"].as_u64().unwrap() as u32;
+        rig.child_cwd(child).await;
+        children.push(child);
+    }
+    let (child, elsewhere) = (children[0], children[1]);
+    let apply = |drop: houston_core::hook_drop::HookDrop| {
+        houston_core::hook_drop::write_drop(
+            &houston_core::hook_drop::drop_dir(rig._state.path()),
+            &drop,
+            houston_core::daemon::now_ms(),
+        )
+        .unwrap();
+        assert_eq!(rig.daemon.hook_drop_tick_for_test(), 1, "{drop:?}");
+    };
+    // The launch folder is recorded verbatim; the CLI reports DOS paths in its own spelling.
+    let launch = rig.repo.display().to_string();
+    assert!(launch.starts_with(r"\\?\"), "{launch}");
+    std::fs::create_dir(rig.repo.join("core")).unwrap();
+    let dos = houston_core::paths::windows_command_path(&rig.repo.join("core"))
+        .display()
+        .to_string();
+    let subfolder = format!("{}{}", dos[..1].to_lowercase(), &dos[1..]).replace('\\', "/");
+    let other_checkout = rig._state.path().join("other-checkout");
+    std::fs::create_dir(&other_checkout).unwrap();
+    let conversation = |id: u32| format!("00000000-0000-4000-8000-{id:012}");
+    for id in [parent.id, child, elsewhere] {
+        let transcript = rig
+            ._state
+            .path()
+            .join(format!("{}.jsonl", conversation(id)));
+        std::fs::write(&transcript, "conversation metadata\n").unwrap();
+        apply(houston_core::hook_drop::HookDrop {
+            session: id,
+            agent: Some("claude".into()),
+            event: "UserPromptSubmit".into(),
+            session_id: Some(conversation(id)),
+            cwd: Some(launch.clone()),
+            transcript_path: Some(transcript.display().to_string()),
+            ..Default::default()
+        });
+    }
+    for (id, cwd) in [
+        (child, subfolder.clone()),
+        (elsewhere, other_checkout.display().to_string()),
+    ] {
+        apply(houston_core::hook_drop::HookDrop {
+            session: id,
+            agent: Some("claude".into()),
+            event: "PostToolUse".into(),
+            session_id: Some(conversation(id)),
+            cwd: Some(cwd),
+            ..Default::default()
+        });
+    }
+    let stored: String = rusqlite::Connection::open(rig._state.path().join("test.db"))
+        .unwrap()
+        .query_row("SELECT cwd FROM sessions WHERE id = ?1", [child], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(stored, subfolder);
+    let path = rig._state.path().join("restart.db");
+    rig.daemon.manage_shutdown().unwrap();
+    let source = rusqlite::Connection::open(rig._state.path().join("test.db")).unwrap();
+    source
+        .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    drop(source);
+    let restarted = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig::new("windows-wire-fixture".into(), path, common::base_env()),
+        houston_core::daemon::SafeModeFlags::default(),
+    )
+    .unwrap();
+    let sessions = restarted.list();
+    let close_all = || {
+        for session in restarted.list() {
+            let _ = restarted.close(session.id);
+        }
+    };
+    let restored_parent = sessions
+        .iter()
+        .find(|s| s.session_origin == Some(parent.id) && s.id != parent.id)
+        .unwrap_or_else(|| {
+            close_all();
+            panic!("parent {} was not restored: {sessions:?}", parent.id)
+        });
+    let notices: Vec<_> = restarted
+        .inbox_rows_for_test(restored_parent.id)
+        .into_iter()
+        .filter(|row| row.kind == "restored")
+        .collect();
+    let restored_child = sessions
+        .iter()
+        .find(|s| s.session_origin == Some(child) && s.id != child)
+        .cloned();
+    close_all();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    let entries: Value = serde_json::from_str(&notices[0].body).unwrap();
+    let entry = |role: &str| {
+        entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["role"] == role)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(entry("mover")["resumed"], true, "{entries}");
+    let refused = entry("elsewhere");
+    assert_eq!(refused["resumed"], false, "{entries}");
+    let reason = refused["reason"].as_str().unwrap();
+    assert!(
+        reason.contains(&format!("belongs to folder {launch}"))
+            && reason.contains(&other_checkout.display().to_string()),
+        "{reason}"
+    );
+    let restored_child = restored_child.expect("the mover child is restored");
+    assert_eq!(restored_child.spawned_by, Some(restored_parent.id));
+    assert_eq!(restored_child.cwd, launch);
+    assert!(restored_child.resumable);
+    assert_eq!(restored_child.resume_notice, None);
+}
