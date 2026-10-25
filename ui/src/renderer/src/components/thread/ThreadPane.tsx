@@ -248,7 +248,8 @@ function useStickToBottom(scroll: React.RefObject<HTMLDivElement | null>, deps: 
   }
 }
 
-export function ThreadPane({ client, info, connected }: { client: HoustonClient; info: SessionInfo; connected: boolean }): React.JSX.Element {
+/** `active`: this pane is the grid's focused pane, so number keys answer its question. */
+export function ThreadPane({ client, info, connected, active = false }: { client: HoustonClient; info: SessionInfo; connected: boolean; active?: boolean }): React.JSX.Element {
   const thread = useThread(client, info.id, connected)
   const markdown = useMarkdownPipeline()
   const [win, setWin] = useState<ThreadWindow>(LATEST_WINDOW)
@@ -308,7 +309,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
           </ThreadHistoryControl>
         )}
       </ThreadScroll>
-      {asking && <ThreadQuestionPrompt key={asking.requestId} item={asking} answering={thread.answering.has(asking.requestId)} connected={connected} onAnswer={thread.answerQuestion} />}
+      {asking && <ThreadQuestionPrompt key={asking.requestId} item={asking} answering={thread.answering.has(asking.requestId)} connected={connected} active={active} onAnswer={thread.answerQuestion} />}
       <ThreadComposer
         stoppable={threadStoppable(info, thread.events)}
         disabledReason={composerDisabledReason(info, connected)}

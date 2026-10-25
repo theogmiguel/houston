@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Tooltip } from './ui/Tooltip'
 import {
   FreeTextOption,
@@ -50,6 +50,8 @@ export interface QuestionCardProps {
   disabledReason?: string
   /** A row under the body, for example Back, Next and Submit. */
   actions?: ReactNode
+  /** Whether this card takes a number key now; several cards can be mounted at once. */
+  ownsShortcuts?: () => boolean
   className?: string
 }
 
@@ -80,6 +82,7 @@ export function QuestionCard({
   disabled = false,
   disabledReason,
   actions,
+  ownsShortcuts,
   className = ''
 }: QuestionCardProps): React.JSX.Element {
   const isSelectBody = body === 'multi-select' || body === 'single-select'
@@ -88,10 +91,13 @@ export function QuestionCard({
   const escapeHatchNumber = (options?.length ?? 0) + 1
   const interactive = isSelectBody && !disabled && !loading && !error && !isEmpty && !isEmptySet
 
+  const owns = useRef(ownsShortcuts)
+  owns.current = ownsShortcuts
+
   useEffect(() => {
     if (!interactive) return
     const handler = (e: KeyboardEvent): void => {
-      if (!digitTarget(e)) return
+      if (!digitTarget(e) || owns.current?.() === false) return
       const n = Number(e.key)
       if (!Number.isInteger(n) || n < 1) return
       if (n === escapeHatchNumber) {

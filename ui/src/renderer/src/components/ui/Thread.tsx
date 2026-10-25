@@ -266,9 +266,9 @@ export function ThreadQuestionRecord({ lines, state, reason }: {
 }
 
 /** The question card's place above the composer, in the timeline's column. */
-export function ThreadQuestionDock({ children }: { children: ReactNode }): React.JSX.Element {
+export function ThreadQuestionDock({ ref, children }: { ref?: Ref<HTMLDivElement>; children: ReactNode }): React.JSX.Element {
   return (
-    <div data-testid="thread-question-dock" className="flex-none border-t border-[var(--divider)] px-[var(--space-4)] pt-[var(--space-3)]">
+    <div ref={ref} data-testid="thread-question-dock" className="flex-none border-t border-[var(--divider)] px-[var(--space-4)] pt-[var(--space-3)]">
       <div className="mx-auto flex w-full max-w-[var(--w-thread-column)] flex-col">{children}</div>
     </div>
   )

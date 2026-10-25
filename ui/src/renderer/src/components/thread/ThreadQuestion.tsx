@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { QuestionCard } from '../QuestionCard'
 import { Button } from '../ui/Button'
 import { ThreadCaption, ThreadQuestionDock, ThreadQuestionRecord } from '../ui/Thread'
@@ -41,13 +41,24 @@ export function answerText(answer: QuestionAnswer): string {
   return [...answer.selected, ...(answer.other ? [answer.other] : [])].join(', ')
 }
 
+/** Focus inside a thread pane picks that pane's question for number keys, otherwise the
+ *  grid's focused pane (`active`) does, so one key press answers one question. */
+export function ownsQuestionKeys(dock: Element | null, active: boolean): boolean {
+  const focused = document.activeElement
+  const surface = focused instanceof Element ? focused.closest('[data-testid="thread-surface"]') : null
+  return surface !== null ? dock !== null && surface.contains(dock) : active
+}
+
 /** The held question above the composer: one page per question, then Submit; Skip answers none. */
-export function ThreadQuestionPrompt({ item, answering, connected, onAnswer }: {
+export function ThreadQuestionPrompt({ item, answering, connected, active, onAnswer }: {
   item: QuestionItem
   answering: boolean
   connected: boolean
+  /** This pane is the grid's focused pane. */
+  active: boolean
   onAnswer: (requestId: string, answers: QuestionAnswer[] | null) => void
 }): React.JSX.Element {
+  const dock = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
   const [drafts, setDrafts] = useState<readonly QuestionDraft[]>(() => item.questions.map(() => EMPTY_DRAFT))
   const question = item.questions[index]!
@@ -59,8 +70,9 @@ export function ThreadQuestionPrompt({ item, answering, connected, onAnswer }: {
   const blocked = item.questions.map((q, i) => draftProblem(q, drafts[i] ?? EMPTY_DRAFT)).find((problem) => problem !== null) ?? null
   const single = !question.multi_select
   return (
-    <ThreadQuestionDock>
+    <ThreadQuestionDock ref={dock}>
       <QuestionCard
+        ownsShortcuts={() => ownsQuestionKeys(dock.current, active)}
         questionIndex={index + 1}
         questionCount={item.questions.length}
         question={question.question}

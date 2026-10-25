@@ -74,7 +74,7 @@ describe('ThreadPane', () => {
 
   const mount = (over: Partial<SessionInfo> = {}, connected = true): void => {
     act(() => {
-      root.render(<ThreadPane client={fake.client} info={info(over)} connected={connected} />)
+      root.render(<ThreadPane client={fake.client} info={info(over)} connected={connected} active />)
     })
   }
   const history = (events: ThreadEvent[], hasMore = false, beforeSeq: number | null = null): void => {
@@ -327,6 +327,31 @@ describe('ThreadPane', () => {
     expect(rows('question')[0]).toContain('Plums, Figs, pears')
     live([ev(4, turnEnd())])
     expect(rows('question')).toHaveLength(1)
+  })
+
+  it('gives a number key only to the question of the focused pane', () => {
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    const other = createRoot(second)
+    const questions = [{ question: 'Which colour?', header: '', multi_select: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }]
+    act(() => {
+      root.render(<ThreadPane client={fake.client} info={info({ status: 'needs-input' })} connected active />)
+      other.render(<ThreadPane client={fake.client} info={info({ id: 8, status: 'needs-input' })} connected active={false} />)
+    })
+    for (const session of [7, 8]) {
+      act(() => fake.emit({ type: 'thread_history', session, before_seq: null, events: [ev(1, { type: 'question_request', request_id: `q${session}`, tool_use_id: 't', questions, truncated: false })], has_more: false }))
+    }
+    const pressed = (host: HTMLElement): (string | null)[] => [...host.querySelectorAll('[data-testid="question-card-option"]')].map((option) => option.getAttribute('aria-pressed'))
+    const key = (k: string): void => { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })) }) }
+    key('1')
+    expect(pressed(container)).toEqual(['true', 'false'])
+    expect(pressed(second)).toEqual(['false', 'false'])
+    act(() => second.querySelector<HTMLButtonElement>('[data-testid="question-card-skip"]')!.focus())
+    key('2')
+    expect(pressed(container)).toEqual(['true', 'false'])
+    expect(pressed(second)).toEqual(['false', 'true'])
+    act(() => other.unmount())
+    second.remove()
   })
 
   it('implements a plan, or keeps planning with the message box text as the reason', () => {
