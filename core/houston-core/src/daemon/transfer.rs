@@ -1431,7 +1431,7 @@ impl Daemon {
                 if tip != head {
                     checkout::fast_forward_ref(repo, branch, &tip, head)?;
                 }
-                crate::worktrees::create_task(repo, branch, None, &dest)?;
+                crate::worktrees::create_task(repo, branch, None, &dest, &self.merge_tree_scratch())?;
             }
         }
         let path = dest.canonicalize().unwrap_or(dest);
