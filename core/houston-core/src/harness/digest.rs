@@ -130,13 +130,50 @@ fn cap_chars(s: &str, max: usize) -> String {
     out
 }
 
-/// Claude's project-directory name for a path: every non-alphanumeric byte
-/// becomes `-`.
+/// Claude's project-directory name for a path, verified against Claude Code
+/// 2.1.310: each UTF-16 code unit that is not an ASCII alphanumeric becomes `-`
+/// (the derivation is JavaScript, so an astral character is two surrogate units
+/// and maps to `--`), and a name over 200 code units is cut to 200 plus `-` and
+/// a base36 hash of the whole path.
 pub fn claude_slug(path: &Path) -> String {
-    path.to_string_lossy()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
+    let units: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
+    let slug: String = units
+        .iter()
+        .map(|&unit| match char::from_u32(u32::from(unit)) {
+            Some(c) if c.is_ascii_alphanumeric() => c,
+            _ => '-',
+        })
+        .collect();
+    if units.len() <= CLAUDE_SLUG_MAX_UNITS {
+        return slug;
+    }
+    let truncated: String = slug.chars().take(CLAUDE_SLUG_MAX_UNITS).collect();
+    format!("{truncated}-{}", claude_path_hash(&units))
+}
+
+const CLAUDE_SLUG_MAX_UNITS: usize = 200;
+
+/// Claude's long-name suffix: the absolute value of a Java-style
+/// `String.hashCode` over the path's UTF-16 code units, in base36.
+fn claude_path_hash(units: &[u16]) -> String {
+    let mut hash: i32 = 0;
+    for &unit in units {
+        hash = hash
+            .wrapping_shl(5)
+            .wrapping_sub(hash)
+            .wrapping_add(i32::from(unit));
+    }
+    let mut magnitude = hash.unsigned_abs();
+    if magnitude == 0 {
+        return "0".to_string();
+    }
+    let mut digits = Vec::new();
+    while magnitude > 0 {
+        digits.push(b"0123456789abcdefghijklmnopqrstuvwxyz"[(magnitude % 36) as usize]);
+        magnitude /= 36;
+    }
+    digits.reverse();
+    String::from_utf8(digits).expect("base36 digits are ASCII")
 }
 
 fn within(ws: &Path, cwd: &str) -> bool {
@@ -1122,6 +1159,31 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_slug_maps_per_utf_16_unit_like_claude_s_javascript() {
+        assert_eq!(
+            claude_slug(Path::new("/home/user/project")),
+            "-home-user-project"
+        );
+        assert_eq!(claude_slug(Path::new("C:\\dev\\houston")), "C--dev-houston");
+        // An astral character is two surrogate units, so it maps to `--`; a
+        // vector from Claude's own algorithm on Claude Code 2.1.310.
+        assert_eq!(claude_slug(Path::new("/ws/\u{1F980}")), "-ws---");
+    }
+
+    #[test]
+    fn claude_slug_over_200_units_truncates_and_hashes_like_claude() {
+        let long = PathBuf::from(format!("C:\\{}", "x".repeat(250)));
+        let expected = format!("C--{}-1tey79", "x".repeat(197));
+        assert_eq!(claude_slug(&long), expected);
+        let astral = PathBuf::from(format!("C:\\ws\\{}", "\u{1F980}".repeat(150)));
+        let expected = format!("C--ws-{}-gxkqmx", "-".repeat(194));
+        assert_eq!(claude_slug(&astral), expected);
+        // 120 BMP characters stay under the cap and hash nothing.
+        let bmp = PathBuf::from(format!("C:\\dev\\{}", "\u{E9}".repeat(120)));
+        assert_eq!(claude_slug(&bmp), format!("C--dev-{}", "-".repeat(120)));
+    }
 
     fn prompt(text: &str) -> Prompt {
         Prompt {
