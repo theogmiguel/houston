@@ -345,7 +345,9 @@ Sleep is refused while the agent is working or waiting for input, while terminal
 is still being delivered, while orchestration or external child work is active, and for
 child, routine, harness, shell and unsupported provider sessions. Non-Linux platforms
 report Sleep as unavailable until graceful
-process-tree shutdown is supported there.
+process-tree shutdown is supported there. A pane whose agent last ran commands in a
+subfolder of the folder where its conversation started still sleeps; only a conversation
+bound to a folder outside it is refused.
 
 Choose **Measure process memory** from an agent pane's actions to read its current process-tree
 PSS on Linux. An unavailable reading is shown as unknown rather than a partial total.

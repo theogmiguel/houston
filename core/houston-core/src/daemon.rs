@@ -10469,19 +10469,14 @@ impl Daemon {
         let profile_changed = recorded_profile_dir.as_deref() != profile_dir
             || (had_profile && recorded_profile_dir.is_none());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        // Provider hooks report the folder a tool last ran in; a subfolder of the folder
-        // bound to the handle still holds the same conversation.
-        let recorded_cwd = match self.db.session_resume_binding(old_id).ok().flatten() {
-            Some((_, bound))
-                if handle.is_some()
-                    && agent != proto::AgentKind::Shell
-                    && cwd_override.is_none()
-                    && conversation != RespawnConversation::Fresh
-                    && crate::paths::contains(Path::new(&bound), Path::new(&cwd)) =>
-            {
-                bound
-            }
-            _ => cwd,
+        let recorded_cwd = if handle.is_some()
+            && agent != proto::AgentKind::Shell
+            && cwd_override.is_none()
+            && conversation != RespawnConversation::Fresh
+        {
+            self.bound_resume_folder(old_id, &cwd)
+        } else {
+            cwd.to_string()
         };
         let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let resume_provider = if agent == proto::AgentKind::Shell {
@@ -10752,6 +10747,21 @@ impl Daemon {
                 );
                 (Vec::new(), None, Some(label))
             }
+        }
+    }
+
+    /// The folder a resume handle is bound to when `cwd` is that folder or lies inside
+    /// it; otherwise `cwd` unchanged. Provider hooks report the folder a tool last ran
+    /// in, while the handle stays bound to the launch folder.
+    fn bound_resume_folder(&self, id: u32, cwd: &str) -> String {
+        let binding = self.db.session_resume_binding(id).ok().flatten();
+        Self::select_bound_resume_folder(binding, cwd)
+    }
+
+    fn select_bound_resume_folder(binding: Option<(String, String)>, cwd: &str) -> String {
+        match binding {
+            Some((_, bound)) if crate::paths::contains(Path::new(&bound), Path::new(cwd)) => bound,
+            _ => cwd.to_string(),
         }
     }
 
@@ -14066,12 +14076,13 @@ impl Daemon {
                 .expect("hook cwd lock")
                 .clone()
                 .unwrap_or_else(|| session.cwd());
+            let bound = self.bound_resume_folder(id, &resume_cwd);
             self.resume_check(
                 id,
                 resume_agent,
                 &handle,
-                &resume_cwd,
-                Path::new(&resume_cwd),
+                &bound,
+                Path::new(&bound),
                 current_profile_dir,
                 None,
             )
@@ -28888,6 +28899,38 @@ mod force_respawn_guard_tests {
         assert!(
             daemon.list().iter().any(|info| info.id == child.info.id),
             "the live child must keep running"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bound_resume_folder_tests {
+    use super::*;
+
+    fn binding(agent: &str, cwd: &str) -> Option<(String, String)> {
+        Some((agent.to_string(), cwd.to_string()))
+    }
+
+    #[test]
+    fn bound_resume_folder_accepts_the_bound_folder_and_its_subfolders() {
+        let bound = binding("claude", "/a/proj");
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound.clone(), "/a/proj"),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound.clone(), "/a/proj/core/x"),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound, "/a/project"),
+            "/a/project",
+            "a sibling prefix is another folder"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(None, "/a/proj/core"),
+            "/a/proj/core",
+            "no binding leaves the reported folder selected"
         );
     }
 }
