@@ -7226,21 +7226,35 @@ impl Daemon {
                 None,
             ));
         };
-        if row.kind == proto::RoutineKind::NightShift {
-            if let Some(run) = self.routine_runs.lock().expect("routine run lock").get(&id) {
-                bail!(
-                    "routine_delete refused: Night shift routine {id} has run {} in flight; \
-                     stop or wait for the run first (Routines ▸ Night shift)",
-                    run.run_id
-                );
-            }
-        }
         if row.revision != expected_revision {
             return Ok(Self::routine_refused(
                 Some(id),
                 proto::RoutineErrorKind::Conflict,
                 None,
             ));
+        }
+        if row.kind == proto::RoutineKind::NightShift {
+            let live = self
+                .routine_runs
+                .lock()
+                .expect("routine run lock")
+                .get(&id)
+                .map(|run| run.run_id);
+            let run_id = match live {
+                Some(run_id) => Some(run_id),
+                None => self
+                    .db
+                    .night_runs_in_flight()?
+                    .into_iter()
+                    .find(|run| run.routine_id == id)
+                    .map(|run| run.run_id),
+            };
+            if let Some(run_id) = run_id {
+                bail!(
+                    "routine_delete refused: Night shift routine {id} has run {run_id} in flight; \
+                     stop or wait for the run first (Routines ▸ Night shift)"
+                );
+            }
         }
         if !self.db.delete_routine(id)? {
             return Ok(Self::routine_refused(

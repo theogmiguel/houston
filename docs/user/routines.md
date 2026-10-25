@@ -119,8 +119,7 @@ saved.
 Change the settings in the **Setup** view and choose **Save**. Unsaved edits survive
 updates from elsewhere; if the settings changed in another window meanwhile, **Save** is
 refused and **Discard changes** loads the current ones. The routine is changed and started
-only here: the generic routine edit and Run now refuse a Night shift routine. Deleting the
-routine deletes its runs and ledger; it is refused while a run is in flight.
+only here: the generic routine edit and Run now refuse a Night shift routine.
 
 Competitor gaps studies the competitors you add. Each is a GitHub repository (`owner/repo`;
 a pasted github.com URL is accepted), which a scout clones read-only, reading the releases

@@ -569,6 +569,47 @@ async fn delete_is_refused_while_a_run_is_in_flight() {
 }
 
 #[tokio::test]
+async fn a_stale_revision_is_reported_while_a_run_is_in_flight() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    match r.daemon.routine_delete(routine.id, "stale").unwrap() {
+        proto::ServerMsg::RoutineRefused { id, kind, .. } => {
+            assert_eq!(id, Some(routine.id));
+            assert_eq!(kind, proto::RoutineErrorKind::Conflict);
+        }
+        other => panic!("a stale delete answers a conflict, not {other:?}"),
+    }
+    assert!(r.state().routine.is_some(), "nothing was deleted");
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+}
+
+#[tokio::test]
+async fn delete_refuses_a_run_the_db_knows_before_the_map_does() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let listed = r.state().routine.expect("the routine exists");
+    let conn = rusqlite::Connection::open(r.state.path().join("test.db")).unwrap();
+    conn.execute(
+        "INSERT INTO night_runs (run_id, routine_id, workspace, report_path, started_at_ms,
+             trigger, phase, wrap_up_at_ms, hard_stop_at_ms, cost_json)
+         VALUES (77, ?1, ?2, '/state/night-shift/77/report.md', 0, 'manual', 'running', 0, 0,
+                 '{\"pane_hours\":0,\"panes\":0,\"per_provider\":[]}')",
+        rusqlite::params![routine.id, r.ws_str()],
+    )
+    .unwrap();
+    drop(conn);
+    let err = r
+        .daemon
+        .routine_delete(routine.id, &listed.revision)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("run 77"), "{err}");
+    assert!(err.contains("stop or wait for the run first"), "{err}");
+    assert!(r.state().routine.is_some(), "nothing was deleted");
+}
+
+#[tokio::test]
 async fn delete_removes_the_ledger_when_no_run_is_in_flight() {
     let r = rig().await;
     let routine = r.ready(|_| {});
