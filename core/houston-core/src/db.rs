@@ -11,6 +11,7 @@ mod harness;
 mod instructions;
 mod intake;
 mod merge_queue;
+mod night_shift;
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
@@ -24,11 +25,16 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
+pub use night_shift::{NightEntryWrite, NightMember, NightRunRow};
 mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
+mod transfers;
 pub use remote::RemoteDeviceRow;
+pub use transfers::{
+    TransferCheckoutRecord, TransferDirection, TransferRecord, TransferSessionRecord,
+};
 mod tasks;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
@@ -171,6 +177,9 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("task_tracker_refresh_cursor", "workspace"),
     ("task_tracker_outbox", "workspace"),
     ("backlog_task_counters", "workspace"),
+    ("night_runs", "workspace"),
+    ("workspace_transfers", "workspace"),
+    ("routines", "workspace_id"),
 ];
 
 /// Columns holding a path that may sit inside a workspace: rows under the old
@@ -181,6 +190,7 @@ const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
     ("command_history", "cwd"),
     ("backlog_task_runs", "worktree_path"),
     ("harness_reviews", "run_dir"),
+    ("workspace_transfer_checkouts", "path"),
 ];
 
 /// Settings stored per workspace as `<prefix><workspace path>`.
@@ -912,7 +922,7 @@ fn close_stale_routine_runs(conn: &Connection) -> Result<()> {
         "UPDATE routine_runs SET status = 'failed', \
              error = 'the daemon stopped while this run was in flight', \
              ended_at_ms = MAX(started_at_ms, unixepoch() * 1000) \
-         WHERE status = 'running'",
+         WHERE status = 'running' AND id NOT IN              (SELECT run_id FROM night_runs WHERE ended_at_ms IS NULL)",
         [],
     )?;
     if closed > 0 {
@@ -1151,6 +1161,7 @@ pub struct AgentProfileRow {
     pub config_dir: String,
 }
 
+#[derive(Clone)]
 pub struct RoutineRow {
     pub kind: proto::RoutineKind,
     pub id: u32,
@@ -1416,7 +1427,7 @@ fn map_routine_row(r: &rusqlite::Row) -> rusqlite::Result<RoutineRow> {
         rusqlite::Error::FromSqlConversionFailure(
             18,
             rusqlite::types::Type::Text,
-            format!("routines {id} has unknown kind {kind_raw:?}: expected user or harness_review")
+            format!("routines {id} has unknown kind {kind_raw:?}: expected user, harness_review or night_shift")
                 .into(),
         )
     })?;
@@ -2063,6 +2074,7 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        night_shift::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
@@ -2384,6 +2396,7 @@ impl Db {
         add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
         instructions::init(&conn)?;
         merge_queue::init(&conn)?;
+        transfers::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -2470,7 +2483,7 @@ impl Db {
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
-                    latest_prompt, last_agent_message, slept_at_ms, state, context_json
+                    latest_prompt, last_agent_message, slept_at_ms, state, context_json, transferred_at_ms, transfer_fork
              FROM sessions
              WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
@@ -2502,6 +2515,8 @@ impl Db {
                     r.get::<_, Option<u64>>(17)?,
                     r.get::<_, String>(18)?,
                     r.get::<_, Option<String>>(19)?,
+                    r.get::<_, Option<u64>>(20)?,
+                    r.get::<_, bool>(21)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2509,7 +2524,7 @@ impl Db {
         let mut used: std::collections::HashSet<String> = rows
             .iter()
             .filter_map(
-                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
+                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
                     if codename.is_empty() {
                         (!title.is_empty()).then(|| title.clone())
                     } else {
@@ -2540,6 +2555,8 @@ impl Db {
             slept_at_ms,
             persisted_state,
             context_json,
+            transferred_at_ms,
+            transfer_fork,
         ) in rows
         {
             if codename.is_empty() && !title.is_empty() {
@@ -2610,6 +2627,8 @@ impl Db {
                     last_agent_message,
                     slept_at_ms,
                     limit: None,
+                    transferred_at_ms,
+                    transfer_fork,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -4493,12 +4512,27 @@ impl Db {
     }
 
     pub fn delete_routine(&self, id: u32) -> Result<bool> {
-        let conn = self.conn.lock().expect("db lock");
-        let changed = conn.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM night_entries WHERE run_id IN \
+             (SELECT run_id FROM night_runs WHERE routine_id = ?1)",
+            rusqlite::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM night_runs WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM night_shift_settings WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
+        tx.execute(
             "DELETE FROM harness_routines WHERE routine_id = ?1",
             rusqlite::params![id],
         )?;
+        let changed = tx.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
+        tx.commit()?;
         Ok(changed > 0)
     }
 
@@ -6886,7 +6920,7 @@ impl Db {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -7101,7 +7135,7 @@ mod tests {
         );
     }
 
-    fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
+    pub(crate) fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
             note: None,
             title_source: Default::default(),
@@ -7143,6 +7177,8 @@ mod tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         }
     }
 
@@ -7399,6 +7435,10 @@ mod tests {
         ("sessions", "transcript_path"),
         ("sessions", "resume_transcript_path"),
         ("sessions", "profile_config_dir"),
+        // The run's report lives in the state directory, not the workspace.
+        ("night_runs", "report_path"),
+        // The provider keeps the transcript in its own folder, outside any workspace.
+        ("workspace_transfer_sessions", "transcript_path"),
         // Moved for Codex bindings only, inside `relocate_workspace`.
         ("sessions", "resume_cwd"),
         ("agent_profiles", "config_dir"),
@@ -7422,7 +7462,7 @@ mod tests {
             .collect::<std::result::Result<_, _>>()
             .unwrap();
         let path_like = |c: &str| {
-            matches!(c, "workspace" | "path" | "cwd" | "dir")
+            matches!(c, "workspace" | "workspace_id" | "path" | "cwd" | "dir")
                 || c.ends_with("_dir")
                 || c.ends_with("_path")
                 || c.ends_with("_cwd")
@@ -7461,7 +7501,26 @@ mod tests {
              INSERT INTO command_history (workspace, session_id, cwd, cmd, shell, started_at, ended_at)
                  VALUES ('{from}', 1, '{from}/src', 'ls', 'bash', 0, 0);
              INSERT INTO settings (key, value) VALUES ('workspace_actions:{from}', '[]');
-             INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('{from}', 3);"
+             INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('{from}', 3);
+             INSERT INTO night_runs (run_id, routine_id, workspace, report_path, started_at_ms,
+                 trigger, phase, wrap_up_at_ms, hard_stop_at_ms)
+                 VALUES (1, 1, '{from}', '/state/night-shift/1/report.md', 0, 'manual',
+                         'running', 0, 0),
+                        (2, 2, '/a/project', '/state/night-shift/2/report.md', 0, 'manual',
+                         'running', 0, 0);
+             INSERT INTO workspace_transfers (id, direction, workspace, created_at_ms)
+                 VALUES ('t1', 'export', '{from}', 0), ('t2', 'export', '/a/project', 0);
+             INSERT INTO routines (id, name, name_folded, prompt, cadence, enabled,
+                 workspace_id, engine, next_run_at_ms, revision, created_at, updated_at)
+                 VALUES (1, 'Sweep', 'sweep', 'x', '{{\"type\":\"interval\",\"seconds\":900}}',
+                         1, '{from}', 'shell', 0, 'r1', 0, 0),
+                        (2, 'Sweep sibling', 'sweep sibling', 'x',
+                         '{{\"type\":\"interval\",\"seconds\":900}}', 1, '/a/project',
+                         'shell', 0, 'r2', 0, 0);
+             INSERT INTO workspace_transfer_checkouts
+                 (transfer_id, direction, key, path, tree_state, untracked)
+                 VALUES ('t1', 'export', 'main', '{from}/.houston/worktrees/x', NULL, '[]'),
+                        ('t2', 'export', 'main', '/a/project', NULL, '[]');"
         ))
         .unwrap();
     }
@@ -7517,6 +7576,65 @@ mod tests {
             )
             .unwrap();
         assert_eq!(key, "workspace_actions:/b/proj");
+        let runs: Vec<(u32, String)> = conn
+            .prepare("SELECT run_id, workspace FROM night_runs ORDER BY run_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            runs,
+            vec![(1, "/b/proj".to_owned()), (2, "/a/project".to_owned())]
+        );
+        let routines: Vec<(u32, Option<String>)> = conn
+            .prepare("SELECT id, workspace_id FROM routines ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            routines,
+            vec![
+                (1, Some("/b/proj".to_owned())),
+                (2, Some("/a/project".to_owned())),
+            ],
+            "the routine follows its workspace; a sibling folder must not move"
+        );
+        let transfers: Vec<(String, String)> = conn
+            .prepare("SELECT id, workspace FROM workspace_transfers ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            transfers,
+            vec![
+                ("t1".to_owned(), "/b/proj".to_owned()),
+                ("t2".to_owned(), "/a/project".to_owned()),
+            ]
+        );
+        let checkouts: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT transfer_id, path FROM workspace_transfer_checkouts ORDER BY transfer_id",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(checkouts[0].0, "t1");
+        assert_eq!(
+            Path::new(&checkouts[0].1),
+            Path::new("/b/proj/.houston/worktrees/x")
+        );
+        assert_eq!(
+            checkouts[1],
+            ("t2".to_owned(), "/a/project".to_owned()),
+            "a sibling folder must not move"
+        );
     }
 
     #[test]

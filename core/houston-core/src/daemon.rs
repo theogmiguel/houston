@@ -35,6 +35,10 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+// A prefilled prompt is only typed into a composer that takes input, never pasted
+// regardless: a first-run question such as Claude's folder trust prompt can stay up
+// until the operator reads it, and a paste there would answer it.
+const FIRST_PROMPT_PREFILL_DEADLINE: Duration = Duration::from_secs(15 * 60);
 // A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
 // the margin covers a CLI still finishing its startup when the paste arrived.
 const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
@@ -626,6 +630,9 @@ pub struct Session {
     hook_latest_prompt: Mutex<Option<String>>,
     hook_latest_agent_message: Mutex<Option<String>>,
     sleep_notice: Mutex<Option<String>>,
+    /// When the conversation left in a workspace transfer, and whether this pane
+    /// continues a conversation that had left (see `SessionInfo::transfer_fork`).
+    transfer_mark: Mutex<(Option<u64>, bool)>,
     recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
     limit: Mutex<Option<proto::SessionLimit>>,
@@ -1365,6 +1372,8 @@ impl Session {
             .expect("latest agent message lock")
             .clone();
         info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        (info.transferred_at_ms, info.transfer_fork) =
+            *self.transfer_mark.lock().expect("transfer mark lock");
         if let Some(notice) = self
             .recovery_notice
             .lock()
@@ -1545,6 +1554,7 @@ mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
 mod merge_queue_runner;
+mod night_shift;
 mod pane_notes;
 mod provider_deny;
 mod remote;
@@ -1554,6 +1564,7 @@ mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod title_generation;
+mod transfer;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
@@ -1582,6 +1593,8 @@ struct RoutineRun {
     session_id: Option<u32>,
     started_at_ms: i64,
     denied: bool,
+    /// A Night shift run: its hard stop caps it and its turn end does not settle it.
+    night: bool,
 }
 
 type InboxPasteHook = Box<dyn Fn(u32) + Send + Sync>;
@@ -1808,6 +1821,7 @@ pub struct Daemon {
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
     first_prompt_confirm_ms: AtomicU64,
+    first_prompt_deadline_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
     claude_mod_turns: Mutex<HashMap<u32, (String, String)>>,
@@ -1853,6 +1867,7 @@ pub struct Daemon {
     permission_episodes: Mutex<HashMap<u32, orchestrate::PermissionEpisodes>>,
     antigravity_roots: Mutex<HashMap<u32, String>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
+    night: night_shift::NightShiftCtx,
     /// Last transcript path and native id written per session, so a drop
     /// repeating them costs no write.
     transcript_links: Mutex<HashMap<u32, TranscriptLink>>,
@@ -2637,6 +2652,12 @@ struct SpawnParams {
     /// A first prompt will be pasted once the composer takes input, so its output is
     /// watched for that until the delivery ends.
     pastes_first_prompt: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ProcessEnding {
+    Kill,
+    Transfer,
 }
 
 struct SessionReplacement {
@@ -3628,6 +3649,7 @@ impl Daemon {
             paste_confirmations: Mutex::new(HashMap::new()),
             first_prompts: Mutex::new(HashMap::new()),
             first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
+            first_prompt_deadline_ms: AtomicU64::new(FIRST_PROMPT_DEADLINE.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
             claude_mod_turns: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
@@ -3699,6 +3721,7 @@ impl Daemon {
             }),
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
             routine_runs: Mutex::new(HashMap::new()),
+            night: night_shift::NightShiftCtx::default(),
             transcript_links: Mutex::new(HashMap::new()),
             resume_launches: Mutex::new(HashMap::new()),
             pending_shell_children: Mutex::new(HashMap::new()),
@@ -3775,6 +3798,9 @@ impl Daemon {
         daemon
             .mcp_tools
             .register(Arc::new(crate::mcp_harness::HarnessTools::new(&daemon)));
+        daemon
+            .mcp_tools
+            .register(Arc::new(crate::mcp_night::NightTools::new(&daemon)));
         daemon
             .mcp_tools
             .register(Arc::new(crate::mcp_tasks::TasksTools::new(&daemon)));
@@ -3946,6 +3972,7 @@ impl Daemon {
             }
             dead.values()
                 .filter(|info| info.state != proto::SessionState::Sleeping)
+                .filter(|info| info.transferred_at_ms.is_none())
                 .filter(|info| {
                     info.state != proto::SessionState::Exited || info.spawned_by.is_some()
                 })
@@ -5517,6 +5544,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -5590,6 +5619,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -7047,6 +7077,7 @@ impl Daemon {
                 None,
             ));
         };
+        Self::refuse_night_shift_routine(&row, "routine_update", "night_shift_update")?;
         if row.revision != expected_revision {
             return Ok(Self::routine_refused(
                 Some(id),
@@ -7202,6 +7233,29 @@ impl Daemon {
                 None,
             ));
         }
+        if row.kind == proto::RoutineKind::NightShift {
+            let live = self
+                .routine_runs
+                .lock()
+                .expect("routine run lock")
+                .get(&id)
+                .map(|run| run.run_id);
+            let run_id = match live {
+                Some(run_id) => Some(run_id),
+                None => self
+                    .db
+                    .night_runs_in_flight()?
+                    .into_iter()
+                    .find(|run| run.routine_id == id)
+                    .map(|run| run.run_id),
+            };
+            if let Some(run_id) = run_id {
+                bail!(
+                    "routine_delete refused: Night shift routine {id} has run {run_id} in flight; \
+                     stop or wait for the run first (Routines ▸ Night shift)"
+                );
+            }
+        }
         if !self.db.delete_routine(id)? {
             return Ok(Self::routine_refused(
                 Some(id),
@@ -7240,8 +7294,29 @@ impl Daemon {
         self.routine_fire_with_trigger(id, proto::RoutineTrigger::Schedule)
     }
 
+    /// Night shift keeps its routine row in step with its settings and its own
+    /// window, so the generic verbs that would change one without the other refuse.
+    fn refuse_night_shift_routine(
+        row: &crate::db::RoutineRow,
+        verb: &str,
+        instead: &str,
+    ) -> Result<()> {
+        if row.kind == proto::RoutineKind::NightShift {
+            bail!(
+                "{verb} refused: routine {} ({:?}) is a Night shift routine; use {instead} \
+                 (Routines ▸ Night shift)",
+                row.id,
+                row.name
+            );
+        }
+        Ok(())
+    }
+
     /// Run now: exactly the scheduler's path, with the trigger written down.
     pub fn routine_run_now(self: &Arc<Self>, id: u32) -> Result<proto::ServerMsg> {
+        if let Some(row) = self.db.routine(id)? {
+            Self::refuse_night_shift_routine(&row, "routine_run_now", "night_shift_run_now")?;
+        }
         let in_flight = self
             .routine_runs
             .lock()
@@ -7266,6 +7341,9 @@ impl Daemon {
         let Some(row) = self.db.routine(id)? else {
             bail!("no routine with id {id} to fire");
         };
+        if row.kind == proto::RoutineKind::NightShift {
+            return self.night_shift_fire(&row, trigger, None).map(|_| ());
+        }
         let now = now_unix_ms();
         let next = crate::routines::next_run_at_ms(&row.cadence, now);
         let Some(dir) = row.workspace_id.clone() else {
@@ -7376,6 +7454,7 @@ impl Daemon {
         }
         self.broadcast_routine_run(run_id);
         self.harness_review_settle(run_id, error.as_deref());
+        self.night_shift_settled(run_id);
         self.settle_routine_run(routine_id, outcome, error);
     }
 
@@ -7416,12 +7495,51 @@ impl Daemon {
         };
         let run_id = self.record_run_start(row, trigger, None, now, next)?;
         self.harness_review_start(row, run_id, Some(dir.as_str()), now);
-        let cmd_override = self
+        self.routine_spawn_run_pane(row, run_id, now, next, &dir, row.prompt.clone(), Vec::new())
+            .map(|_| ())
+    }
+
+    /// Opens the pane of a recorded run and registers it in flight. `None`
+    /// when the launch was refused; the run is then settled.
+    #[allow(clippy::too_many_arguments)]
+    fn routine_spawn_run_pane(
+        self: &Arc<Self>,
+        row: &crate::db::RoutineRow,
+        run_id: u32,
+        now: i64,
+        next: i64,
+        dir: &str,
+        prompt: String,
+        extra_env: Vec<(String, String)>,
+    ) -> Result<Option<u32>> {
+        let night = row.kind == proto::RoutineKind::NightShift;
+        let test_cmd = self
             .routine_pane_cmd_override
             .lock()
             .expect("routine pane cmd lock")
             .clone();
-        let (cmd, approval) = match cmd_override {
+        let dev_cmd = test_cmd
+            .is_none()
+            .then(|| night.then(|| self.night_shift_dev_cmd()).flatten())
+            .flatten();
+        // The dev channel's stand-in fires no hooks, so no UserPromptSubmit could
+        // confirm a pasted prompt; it is pasted here, unconfirmed.
+        let unconfirmed = dev_cmd.is_some();
+        let pasted = if unconfirmed && !crate::launch::prompt_in_argv(row.engine) {
+            let (text, file) = crate::launch::prompt_text(
+                &prompt,
+                Some(&init_prompts_dir(Path::new(dir))?),
+                &format!("routine-run-{run_id}"),
+            )?;
+            if let Some((path, contents)) = file {
+                std::fs::write(&path, contents)
+                    .with_context(|| format!("writing prompt file {}", path.display()))?;
+            }
+            Some(text)
+        } else {
+            None
+        };
+        let (cmd, approval) = match test_cmd.or(dev_cmd) {
             Some(cmd) => {
                 let approval = match row.permission_mode {
                     proto::ChatPermissionMode::AcceptEdits => crate::launch::ApprovalMode::Auto,
@@ -7445,14 +7563,22 @@ impl Daemon {
                         proto::RoutineOutcome::EngineRefused,
                         Some(format!("{e:#}")),
                     );
-                    return Ok(());
+                    return Ok(None);
                 }
             },
+        };
+        let mut env = vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())];
+        env.extend(extra_env);
+        // A Night shift run's worktree lies inside its workspace, and the pane
+        // belongs to that workspace, as a `pane_spawn` worktree child does.
+        let (project_dir, cwd) = match row.workspace_id.as_deref().filter(|_| night) {
+            Some(workspace) => (PathBuf::from(workspace), Some(PathBuf::from(dir))),
+            None => (PathBuf::from(dir), None),
         };
         let spawned = self.create_session_with_env(
             CreateParams {
                 agent: row.engine,
-                project_dir: PathBuf::from(&dir),
+                project_dir,
                 cmd: Some(cmd),
                 cols: 120,
                 rows: 32,
@@ -7461,17 +7587,17 @@ impl Daemon {
                 auto_approve: false,
                 acp: None,
                 profile: None,
-                prompt: Some(row.prompt.clone()),
+                prompt: pasted.is_none().then_some(prompt),
                 model: None,
                 effort: None,
             },
-            vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())],
+            env,
             Vec::new(),
             None,
-            None,
+            cwd,
             false,
             None,
-            false,
+            pasted.is_some(),
             Some(crate::launch::SessionLaunchSelections {
                 provider: row.engine,
                 model: row.model.clone(),
@@ -7489,9 +7615,12 @@ impl Daemon {
                     proto::RoutineOutcome::EngineRefused,
                     Some(format!("{e:#}")),
                 );
-                return Ok(());
+                return Ok(None);
             }
         };
+        if let Some(text) = pasted {
+            self.deliver_first_prompts(session.id, text, None, true, !unconfirmed);
+        }
         self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
             tracing::warn!("recording routine {}'s pane session: {e:#}", row.id);
@@ -7514,13 +7643,20 @@ impl Daemon {
                 session_id: Some(session.id),
                 started_at_ms: now,
                 denied: false,
+                night,
             },
         );
+        // A run in flight needs ticks (its cap, and a Night shift run's clock and
+        // cost), and a scheduler parked with no enabled routine would not tick.
+        self.routine_wake.notify_one();
+        if night {
+            self.night_shift_pane_opened(run_id, session.id);
+        }
         if self.routine_pane_is_done(session.id) {
             self.report_routine_pane_run(session.id, orchestrate::TurnEndSource::QuietSettle);
         }
         self.broadcast_control(&self.routine_list());
-        Ok(())
+        Ok(Some(session.id))
     }
 
     fn routine_pane_is_done(&self, session: u32) -> bool {
@@ -7544,6 +7680,9 @@ impl Daemon {
         ev: crate::agent_events::AgentEvent,
     ) {
         if !matches!(ev, crate::agent_events::AgentEvent::TurnEnded) {
+            return;
+        }
+        if !self.night_shift_turn_ended(session) {
             return;
         }
         self.report_routine_pane_run(session, orchestrate::TurnEndSource::StopHook);
@@ -7597,7 +7736,7 @@ impl Daemon {
             .lock()
             .expect("routine run lock")
             .iter()
-            .filter(|(_, run)| run.session_id.is_some())
+            .filter(|(_, run)| run.session_id.is_some() && !run.night)
             .map(|(id, run)| (*id, *run))
             .collect();
         for (_, run) in runs {
@@ -7637,6 +7776,11 @@ impl Daemon {
     }
 
     pub async fn routine_fire_loop(self: Arc<Self>) {
+        let recovering = Arc::clone(&self);
+        let _ = tokio::task::spawn_blocking(move || {
+            recovering.night_shift_recover_at(now_unix_ms());
+        })
+        .await;
         loop {
             self.idle_tick_counts[0].fetch_add(1, Ordering::Relaxed);
             self.routine_tick();
@@ -7683,6 +7827,7 @@ impl Daemon {
 
     #[doc(hidden)]
     pub fn routine_tick_at(self: &Arc<Self>, now_ms: i64) {
+        self.night_shift_tick_at(now_ms);
         if self.refusing_mutations() {
             self.stop_routine_runs_past_the_cap(now_ms);
             return;
@@ -7724,7 +7869,8 @@ impl Daemon {
             .expect("routine run lock")
             .iter()
             .filter(|(_, run)| {
-                now_ms.saturating_sub(run.started_at_ms) >= proto::ROUTINE_RUN_MAX_MS as i64
+                !run.night
+                    && now_ms.saturating_sub(run.started_at_ms) >= proto::ROUTINE_RUN_MAX_MS as i64
             })
             .map(|(id, run)| (*id, *run))
             .collect();
@@ -9258,6 +9404,10 @@ impl Daemon {
                         .session_has_bound_resume_handle(info.id)
                         .unwrap_or(false);
                 info.compactions = self.compactions_of(info);
+                match self.db.session_transfer_mark(info.id) {
+                    Ok(mark) => (info.transferred_at_ms, info.transfer_fork) = mark,
+                    Err(e) => tracing::warn!("reading session {}'s transfer mark: {e}", info.id),
+                }
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
                     0
@@ -9389,6 +9539,7 @@ impl Daemon {
                 facts.toplevel.as_deref().unwrap_or("none")
             ),
         };
+        self.refuse_night_run_in_relocation(from, to)?;
         let live = self
             .sessions
             .lock()
@@ -9474,6 +9625,9 @@ impl Daemon {
             (Some(old), Some(new)) if current.name == old => new,
             _ => current.name.clone(),
         };
+        // A start inserts its run without the membership lock, so check again right
+        // before the transaction: no run may keep pointing at the old path.
+        self.refuse_night_run_in_relocation(from, to)?;
         self.db.relocate_workspace(from, to, &name, &worktrees)?;
         moved.worktrees = worktrees.len() as u32;
         let re_root = |slot: &mut String| match relocated(from, to, slot) {
@@ -9557,6 +9711,22 @@ impl Daemon {
             });
         }
         Ok(moved)
+    }
+
+    /// Refuses relocation while a Night shift run owns the workspace.
+    fn refuse_night_run_in_relocation(&self, from: &str, to: &str) -> Result<()> {
+        if let Some(run) = self
+            .db
+            .night_runs_in_flight()?
+            .into_iter()
+            .find(|r| crate::paths::relocated(from, to, &r.workspace).is_some())
+        {
+            bail!(
+                "Night shift run {} is in flight in {from}; stop or wait for the run first",
+                run.run_id
+            );
+        }
+        Ok(())
     }
 
     pub fn workspace_remove(self: &Arc<Self>, path: &str) -> Result<Vec<proto::Workspace>> {
@@ -10483,6 +10653,7 @@ impl Daemon {
             Ok(())
         };
         let strict_resume = conversation == RespawnConversation::Wake;
+        let keeps_conversation = conversation != RespawnConversation::Fresh;
         let restore_scrollback = conversation == RespawnConversation::Restore;
         if strict_resume && (handle.is_none() || acp.is_some()) {
             bail!("Wake refused for session {old_id}: the exact provider conversation handle is unavailable. Choose fresh explicitly to start a new conversation.");
@@ -10688,6 +10859,11 @@ impl Daemon {
                 info.spawned_by = Some(spawned.id);
             }
         }
+        let spawned = if keeps_conversation && spawned.resume_notice.is_none() {
+            self.carry_transfer_fork(old_id, spawned)
+        } else {
+            spawned
+        };
         if was_dead {
             self.dead.lock().expect("dead lock").remove(&old_id);
             self.dead_geometry
@@ -12264,6 +12440,8 @@ impl Daemon {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
 
         if let Some(cues) = replacement
@@ -12352,6 +12530,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
             hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
             limit: Mutex::new(None),
@@ -12929,6 +13108,8 @@ impl Daemon {
                 last_agent_message: None,
                 slept_at_ms: None,
                 limit: None,
+                transferred_at_ms: None,
+                transfer_fork: false,
             };
             // Remote checkouts are folders; resolving one runs no git.
             self.session_checkout_metadata(&mut info);
@@ -12990,6 +13171,7 @@ impl Daemon {
                 hook_latest_prompt: Mutex::new(None),
                 hook_latest_agent_message: Mutex::new(None),
                 sleep_notice: Mutex::new(None),
+                transfer_mark: Mutex::new((None, false)),
                 recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
                 limit: Mutex::new(None),
@@ -13946,6 +14128,31 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.end_process_unlocked(id, ProcessEnding::Kill)
+    }
+
+    /// Stops a pane whose conversation left in a workspace transfer. Unlike Kill, the
+    /// pane keeps its conversation handle and ends Exited, so it can be respawned as a
+    /// fork and a return trip can resume it in place.
+    pub(crate) fn stop_for_transfer(&self, id: u32) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
+        self.resume_launches
+            .lock()
+            .expect("resume launches lock")
+            .remove(&id);
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .remove(&id);
+        self.end_process_unlocked(id, ProcessEnding::Transfer)
+    }
+
+    fn end_process_unlocked(&self, id: u32, ending: ProcessEnding) -> Result<()> {
         self.shutdown_preserved
             .lock()
             .expect("shutdown preserved lock")
@@ -13979,11 +14186,16 @@ impl Daemon {
             .lock()
             .expect("operator_ended lock")
             .insert(id);
-        self.forget_resume_handle(id);
+        let ended = match ending {
+            ProcessEnding::Kill => {
+                self.forget_resume_handle(id);
+                proto::SessionState::Killed
+            }
+            ProcessEnding::Transfer => proto::SessionState::Exited,
+        };
         let mut state = session.state.lock().expect("state lock");
-        self.db
-            .update_session_state(id, proto::SessionState::Killed, None)?;
-        *state = proto::SessionState::Killed;
+        self.db.update_session_state(id, ended, None)?;
+        *state = ended;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.broadcast_control(&proto::ServerMsg::SessionState {
             session: id,
@@ -16003,6 +16215,9 @@ impl Daemon {
             let limit_started = limit
                 .clone()
                 .is_some_and(|limit| self.mark_limited(d.session, &session, limit));
+            if limit_started {
+                self.night_shift_provider_limited(d.session, provider, "StopFailure rate_limit");
+            }
             if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
                 let name = crate::agent_hooks::provider_slug(provider);
                 let reason = format!(
@@ -19575,11 +19790,25 @@ impl Daemon {
         sender: Option<u32>,
         submit: bool,
     ) {
+        self.deliver_first_prompts(session, text, sender, submit, true);
+    }
+
+    /// Pastes `text` once the composer takes input, submits it with Enter when `submit`
+    /// is set, and waits for the CLI's own UserPromptSubmit to confirm delivery only
+    /// with `confirm`.
+    pub(crate) fn deliver_first_prompts(
+        self: &Arc<Self>,
+        session: u32,
+        text: String,
+        sender: Option<u32>,
+        submit: bool,
+        confirm: bool,
+    ) {
         let daemon = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name(format!("first-prompt-{session}"))
             .spawn(move || {
-                let outcome = daemon.first_prompt_deliver(session, &text, submit);
+                let outcome = daemon.first_prompt_deliver(session, &text, submit, confirm);
                 if let Ok(s) = daemon.get(session) {
                     s.composer_watch.store(false, Ordering::Relaxed);
                 }
@@ -19636,10 +19865,16 @@ impl Daemon {
         }
     }
 
-    /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
-    /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
-    /// has started, and ZCode drops what arrives before its input box has focus.
-    fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
+    /// Waits until the CLI's composer takes input (see `composer_ready.rs`): drawn output
+    /// is not enough, as ConPTY draws before the CLI starts. Past `deadline` the paste goes
+    /// in regardless when `paste_unready`, and otherwise the wait fails.
+    fn first_prompt_wait_ready(
+        &self,
+        session: u32,
+        wait: Duration,
+        paste_unready: bool,
+    ) -> Result<()> {
+        let deadline = Instant::now() + wait;
         loop {
             let Ok(s) = self.get(session) else {
                 bail!("the pane closed first");
@@ -19655,7 +19890,7 @@ impl Daemon {
             drop(s);
             let late = Instant::now() >= deadline;
             let held = self.immediate_paste_hold_reason(session);
-            if drawn && held.is_none() && (ready || late) {
+            if drawn && held.is_none() && (ready || (late && paste_unready)) {
                 if !ready {
                     tracing::info!(
                         "pane {session}: its composer reported no focus by the deadline; \
@@ -19665,11 +19900,14 @@ impl Daemon {
                 return Ok(());
             }
             if late {
-                bail!(
-                    "{} within {} s",
-                    held.unwrap_or_else(|| "the CLI drew nothing".to_string()),
-                    FIRST_PROMPT_DEADLINE.as_secs()
-                );
+                let why = held.unwrap_or_else(|| {
+                    if drawn {
+                        "its composer never took input".to_string()
+                    } else {
+                        "the CLI drew nothing".to_string()
+                    }
+                });
+                bail!("{}", first_prompt_deadline_text(&why, wait));
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
@@ -19699,11 +19937,19 @@ impl Daemon {
         session: u32,
         text: &str,
         submit: bool,
+        confirm: bool,
     ) -> Result<FirstPromptOutcome> {
-        self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
+        if submit {
+            let deadline =
+                Duration::from_millis(self.first_prompt_deadline_ms.load(Ordering::Relaxed));
+            self.first_prompt_wait_ready(session, deadline, true)?;
+        } else {
+            self.first_prompt_wait_ready(session, FIRST_PROMPT_PREFILL_DEADLINE, false)?;
+        }
         let agent = self.get(session).map(|s| s.info.agent)?;
         // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
-        let confirmable = submit
+        let confirmable = confirm
+            && submit
             && self.hook_consent(agent)
             && self.hook_config_home().is_ok_and(|home| {
                 crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel())
@@ -19740,7 +19986,7 @@ impl Daemon {
         if self.first_prompt_confirmed_within(session, wait) {
             return Ok(FirstPromptOutcome::Confirmed);
         }
-        self.first_prompt_wait_ready(session, Instant::now() + wait)?;
+        self.first_prompt_wait_ready(session, wait, true)?;
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
         if self.first_prompt_confirmed_within(session, wait) {
@@ -19784,6 +20030,12 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_first_prompt_confirm_for_test(&self, wait: Duration) {
         self.first_prompt_confirm_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    pub fn set_first_prompt_deadline_for_test(&self, wait: Duration) {
+        self.first_prompt_deadline_ms
             .store(wait.as_millis() as u64, Ordering::Relaxed);
     }
 }
@@ -20481,6 +20733,12 @@ impl Daemon {
                 brief,
                 request.state_doc.as_ref(),
             )?;
+            let (kind, substituted) =
+                self.night_shift_spawn_provider(caller, request.kind, request.handoff)?;
+            if kind != request.kind {
+                request.kind = kind;
+                request.model = None;
+            }
             let isolated = request.worktree.is_some();
             let worktree = crate::worktrees::spawn_ask(request.worktree, request.branch)?;
             let session = if request.handoff {
@@ -20513,6 +20771,7 @@ impl Daemon {
                     worktree,
                 )
             }?;
+            self.night_shift_spawned(caller, session.id)?;
             let warning = if isolated {
                 crate::launch::worktree_trust_warning(session.agent)
             } else {
@@ -20526,6 +20785,7 @@ impl Daemon {
                     .remove(&session.id)
                     .unwrap_or_default(),
             );
+            warnings.extend(substituted);
             Ok(orchestrate::SpawnOutcome {
                 session,
                 warning,
@@ -20835,11 +21095,9 @@ impl Daemon {
                 self.assert_role_free(caller, role)?;
             }
             let direct = self.active_children_of(caller).len() as u32;
-            if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
-                caller,
-                direct,
-                self.orchestration_max_live_children(),
-            ) {
+            if let orchestrate::SpawnVerdict::Refused(msg) =
+                orchestrate::children_cap_verdict(caller, direct, self.child_cap_of(caller))
+            {
                 bail!(
                     "{msg}; {} settled children do not count against the cap",
                     self.settled_children_count(caller)
@@ -21500,7 +21758,7 @@ impl Daemon {
         if !self.orchestration_enabled() {
             return false;
         }
-        let max = self.orchestration_max_live_children();
+        let max = self.child_cap_of(id);
         let free = max.saturating_sub(self.active_children_of(id).len() as u32);
         if free == 0 {
             return false;
@@ -25352,6 +25610,7 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     std::fs::create_dir_all(&bin_dir).with_context(|| format!("creating {}", bin_dir.display()))?;
     write_helper_wrapper(&bin_dir, "hs-pane", "hs-pane")?;
     write_helper_wrapper(&bin_dir, "hs-harness", "hs-harness")?;
+    write_helper_wrapper(&bin_dir, "hs-night", "hs-night")?;
     write_helper_wrapper(&bin_dir, "hs-task", "hs-task")?;
     Ok((prompts_dir, bin_dir))
 }
@@ -27031,6 +27290,7 @@ mod idle_profile_tests {
                     session_id: Some(42),
                     started_at_ms: now_unix_ms(),
                     denied: false,
+                    night: false,
                 },
             );
         let delay = daemon
@@ -28069,6 +28329,8 @@ mod kill_teardown_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -28128,6 +28390,7 @@ mod kill_teardown_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -28495,6 +28758,8 @@ mod shell_restore_bookkeeping_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         }
     }
 
@@ -28763,6 +29028,8 @@ mod force_respawn_guard_tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -28822,6 +29089,7 @@ mod force_respawn_guard_tests {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            transfer_mark: Mutex::new((None, false)),
             recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             limit: Mutex::new(None),
@@ -28980,6 +29248,48 @@ mod handoff_stranding_tests {
                 .iter()
                 .any(|t| t.contains("handoff_error") && t.contains("deadline")),
             "the requesting client must receive the deadline HandoffError: {texts:?}"
+        );
+    }
+}
+
+/// A paste that timed out says which limit it waited past.
+fn first_prompt_deadline_text(why: &str, limit: Duration) -> String {
+    let ms = limit.as_millis();
+    if ms.is_multiple_of(1000) {
+        format!("{why} within {} s", ms / 1000)
+    } else {
+        format!("{why} within {ms} ms")
+    }
+}
+
+#[cfg(test)]
+mod first_prompt_deadline_tests {
+    use super::*;
+
+    #[test]
+    fn the_deadline_error_names_the_limit() {
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", FIRST_PROMPT_DEADLINE),
+            "the CLI drew nothing within 60 s"
+        );
+        assert_eq!(
+            first_prompt_deadline_text(
+                "its composer never took input",
+                FIRST_PROMPT_PREFILL_DEADLINE
+            ),
+            "its composer never took input within 900 s"
+        );
+    }
+
+    #[test]
+    fn a_shortened_deadline_names_its_milliseconds() {
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", Duration::from_millis(1500)),
+            "the CLI drew nothing within 1500 ms"
+        );
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", Duration::from_secs(2)),
+            "the CLI drew nothing within 2 s"
         );
     }
 }

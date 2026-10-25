@@ -185,6 +185,86 @@ async fn a_moved_workspace_is_relocated_with_its_worktrees_only_to_the_same_repo
     );
 }
 
+#[tokio::test]
+async fn a_relocation_is_refused_while_a_night_shift_run_is_in_flight() {
+    let (addr, state) = start_daemon().await;
+    let tmp = houston_core::fixture_dirs::tempdir_outside_git();
+    let original = tmp.path().join("proj");
+    init_repo(&original);
+    let from = original.display().to_string();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::WorkspaceAdd { path: from.clone() },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::WorkspaceList { workspaces } if !workspaces.is_empty() => break,
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+    let moved_dir = tmp.path().join("proj-moved");
+    std::fs::rename(&original, &moved_dir).unwrap();
+    let to = moved_dir.display().to_string();
+
+    let db = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    db.execute(
+        "INSERT INTO night_runs (run_id, routine_id, workspace, report_path, started_at_ms,
+             trigger, phase, wrap_up_at_ms, hard_stop_at_ms, cost_json)
+         VALUES (41, 1, ?1, '/state/night-shift/41/report.md', 0, 'manual', 'running', 0, 0,
+                 '{\"pane_hours\":0,\"panes\":0,\"per_provider\":[]}')",
+        [&from],
+    )
+    .unwrap();
+
+    let err = relocate(&mut ws, &from, &to).await.unwrap_err();
+    assert!(err.contains("Night shift run 41"), "{err}");
+    assert!(
+        err.contains(&from),
+        "the refusal names the workspace: {err}"
+    );
+    assert!(err.contains("stop or wait for the run first"), "{err}");
+    let workspace: String = db
+        .query_row("SELECT path FROM workspaces", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(workspace, from, "a refused relocation moves nothing");
+    let run_workspace: String = db
+        .query_row(
+            "SELECT workspace FROM night_runs WHERE run_id = 41",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(run_workspace, from);
+
+    db.execute(
+        "UPDATE night_runs SET ended_at_ms = 1, phase = 'settled'",
+        [],
+    )
+    .unwrap();
+    let moved = relocate(&mut ws, &from, &to).await.unwrap();
+    assert_eq!(moved.worktrees, 0, "{moved:?}");
+    let workspace: String = db
+        .query_row("SELECT path FROM workspaces", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(workspace, to);
+    let run_workspace: String = db
+        .query_row(
+            "SELECT workspace FROM night_runs WHERE run_id = 41",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        run_workspace, to,
+        "the ended run's ledger follows the workspace"
+    );
+}
+
 async fn wait_exited(ws: &mut WsStream, session: u32) {
     loop {
         match next_control(ws).await {

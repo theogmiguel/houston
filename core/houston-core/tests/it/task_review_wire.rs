@@ -647,6 +647,8 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
 }

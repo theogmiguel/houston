@@ -103,6 +103,8 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 
