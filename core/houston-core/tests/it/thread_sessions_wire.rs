@@ -217,9 +217,85 @@ async fn assert_idle_and_running(daemon: &Daemon, id: u32) {
 fn stored(events: &[ThreadEvent]) -> Vec<ThreadEvent> {
     events
         .iter()
-        .filter(|e| !matches!(e.kind, ThreadEventKind::AssistantDelta { .. }))
+        .filter(|e| {
+            !matches!(
+                e.kind,
+                ThreadEventKind::AssistantDelta { .. } | ThreadEventKind::ReasoningDelta { .. }
+            )
+        })
         .cloned()
         .collect()
+}
+
+#[tokio::test]
+async fn a_replayed_thinking_turn_stores_one_reasoning_block_and_never_a_delta() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let live = rig.turn(id, "replay:thinking").await;
+    assert!(
+        live.iter()
+            .any(|e| matches!(e.kind, ThreadEventKind::ReasoningDelta { .. })),
+        "{live:?}"
+    );
+
+    let (history, _) = rig.history(id).await;
+    assert_eq!(history, stored(&live));
+    let reasoning: Vec<&ThreadEventKind> = history
+        .iter()
+        .map(|e| &e.kind)
+        .filter(|kind| {
+            matches!(
+                kind,
+                ThreadEventKind::Reasoning { .. } | ThreadEventKind::ReasoningDelta { .. }
+            )
+        })
+        .collect();
+    assert!(
+        matches!(
+            reasoning[..],
+            [ThreadEventKind::Reasoning {
+                message_id,
+                text,
+                truncated: false,
+                duration_ms: Some(_),
+                estimated_tokens: Some(196),
+                redacted: false,
+            }] if message_id == "msg_01:0" && text.is_empty()
+        ),
+        "{history:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_edit_over_the_input_cap_keeps_its_summary_in_history() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.turn(id, "replay:large-edit").await;
+    let (history, _) = rig.history(id).await;
+    let edit = history
+        .iter()
+        .find_map(|e| match &e.kind {
+            ThreadEventKind::ToolCall {
+                name,
+                truncated,
+                summary,
+                ..
+            } if name == "Edit" => Some((*truncated, summary.clone())),
+            _ => None,
+        })
+        .expect("the Edit call");
+    assert_eq!(
+        edit,
+        (
+            true,
+            Some(proto::ToolSummary {
+                kind: proto::ToolKind::Edit,
+                target: "/work/repo/big.txt".into(),
+                added: Some(110),
+                removed: Some(110),
+            })
+        )
+    );
 }
 
 #[tokio::test]

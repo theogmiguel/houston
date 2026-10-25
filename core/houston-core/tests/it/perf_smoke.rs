@@ -563,7 +563,10 @@ mod thread_load {
                     );
                     ended = true;
                 }
-                if !matches!(event.kind, ThreadEventKind::AssistantDelta { .. }) {
+                if !matches!(
+                    event.kind,
+                    ThreadEventKind::AssistantDelta { .. } | ThreadEventKind::ReasoningDelta { .. }
+                ) {
                     thread.stored.push(event.seq);
                 }
             }

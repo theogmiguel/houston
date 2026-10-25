@@ -664,7 +664,8 @@ ThreadEventKind    tag `type`: user_message{text} | assistant_delta{message_id, 
                    estimated_tokens?, redacted?} (v153: one reasoning block, superseding its
                    deltas; `duration_ms` runs from the first delta to the block's end on the
                    daemon's clock; `estimated_tokens` is the CLI's estimate of the block's size;
-                   `text` is empty because Claude's headless stream sends none) |
+                   `text` is empty because Claude's headless stream sends none; a block cut
+                   off by `thread_stop` or an exit is stored with `truncated`) |
                    tool_call{tool_use_id, name, input (the input JSON as text), truncated,
                    summary?: ToolSummary} (v153: `summary` is computed from the whole input, so it
                    survives the input cap; events stored earlier have none) |
