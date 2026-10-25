@@ -17,4 +17,4 @@ export const THREAD_HISTORY_REFUSAL = /^thread_history refused for session (\d+)
 /** The daemon's refusal of a `thread_approve`; the card's buttons come back. */
 export const THREAD_APPROVE_REFUSAL = /^thread_approve refused for session (\d+)/
 /** The daemon's refusal of a message or queue request; the thread pane shows it above the composer. */
-export const THREAD_QUEUE_REFUSAL = /^(?:thread_send|thread_steer|thread_queue_\w+|queued message delivery) refused for session (\d+)/
+export const THREAD_QUEUE_REFUSAL = /^(?:thread_send|thread_steer|thread_queue_\w+) refused for session (\d+)/

@@ -25,6 +25,7 @@ import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
 import { preloadable } from '../preloadable'
 import { THREAD_HISTORY_REFUSAL } from '../thread/threadTypes'
+import { useThreadQueueLength } from '../thread/queueLength'
 import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
@@ -536,10 +537,11 @@ function TextAndHandoffRows({ thread, keymapOverrides, menuItem, onZoom, onHando
 const TURN_STATUS_WORD: Partial<Record<AgentStatus, string>> = { working: 'Working', spawning: 'Starting', 'needs-input': 'Needs input' }
 
 /** Why the pane cannot move to the other view right now, in the daemon's words; `null` when it can. */
-export function viewSwitchRefusal(info: SessionInfo): string | null {
+export function viewSwitchRefusal(info: SessionInfo, queued = 0): string | null {
   if (info.state === 'sleeping') return 'The session is sleeping; wake it first'
   if (!isLive(info.state)) return `The session is ${info.state}; restart it first`
   if (info.view !== 'thread' && info.delegation) return `It is a child of pane ${info.delegation.parent}, which could not see its questions or permission requests; keep it a terminal`
+  if (info.view === 'thread' && queued > 0) return `${queued} queued messages wait in this thread; send or clear them first`
   const busy = info.status ? TURN_STATUS_WORD[info.status] : undefined
   return busy ? `Claude's status is ${busy}; wait for the turn to end or stop it first` : null
 }
@@ -550,9 +552,10 @@ function ViewSwitchRow({ info, client, menuItem }: {
   client: HoustonClient
   menuItem: PaneContextMenuController['menuItem']
 }): React.JSX.Element | null {
+  const queued = useThreadQueueLength(client, info.id)
   if (info.agent !== 'claude' || info.acp != null) return null
   const target = info.view === 'thread' ? 'terminal' : 'thread'
-  const reason = viewSwitchRefusal(info)
+  const reason = viewSwitchRefusal(info, queued)
   return (
     <CtxRow
       glyph={target === 'thread' ? IconMessageSquare : IconSquareTerminal}

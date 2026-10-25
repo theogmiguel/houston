@@ -6,6 +6,7 @@ import { Icon } from './Icon'
 import { Prose } from './Prose'
 import { FOCUS_RING_ACCENT_INSET_45_CLS } from './shadowChrome'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 
 /** The thread pane body: a scrolling timeline over a docked composer, on the pane ground. */
 export function ThreadSurface({ children }: { children: ReactNode }): React.JSX.Element {
@@ -146,10 +147,11 @@ export function ThreadQueuedText({ children }: { children: ReactNode }): React.J
 }
 
 /** The queue's summary above the composer: the count, why it waits when held, and queue-wide actions. */
-export function ThreadQueueStrip({ label, held, detail, children }: { label: string; held: boolean; detail?: string | null; children?: ReactNode }): React.JSX.Element {
+export function ThreadQueueStrip({ label, held, detail, tooltip, children }: { label: string; held: boolean; detail?: string | null; tooltip?: string; children?: ReactNode }): React.JSX.Element {
+  const chip = <Chip variant="state" tone={held ? 'warning' : 'info'} label={label} />
   return (
     <div data-testid="thread-queue-strip" className="flex min-w-0 items-center gap-[var(--space-2)]">
-      <Chip variant="state" tone={held ? 'warning' : 'info'} label={label} />
+      {tooltip ? <Tooltip label={tooltip} className="inline-flex">{chip}</Tooltip> : chip}
       <Text as="div" size="small" tone="muted" className="min-w-0 flex-1 truncate">{detail}</Text>
       {children}
     </div>

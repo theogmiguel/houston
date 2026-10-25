@@ -292,11 +292,14 @@ export function queueSummary(queue: readonly ThreadQueuedMessage[]): { label: st
   return { label: `Held ${held.length}`, held: true, detail: `${firstHeld.hold_reason ?? 'Waiting for you to send it.'}${also}`, head: firstHeld }
 }
 
+const HELD_TOOLTIP = 'Held messages are sent only when you choose Send. A new message still goes at once while Claude is idle.'
+const QUEUED_TOOLTIP = 'Queued messages go one at a time, oldest first, each when the turn before it completes.'
+
 function QueueStrip({ queue, disabled, onAct }: { queue: readonly ThreadQueuedMessage[]; disabled: boolean; onAct: (action: QueueAction) => void }): React.JSX.Element | null {
   const summary = queueSummary(queue)
   if (summary === null) return null
   return (
-    <ThreadQueueStrip label={summary.label} held={summary.held} detail={summary.detail}>
+    <ThreadQueueStrip label={summary.label} held={summary.held} detail={summary.detail} tooltip={summary.held ? HELD_TOOLTIP : QUEUED_TOOLTIP}>
       {summary.held
         ? <Button data-testid="thread-queue-send-next" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'send', id: summary.head.id })}>Send next</Button>
         : <Tooltip label="Stop the running turn and send the first queued message"><Button data-testid="thread-queue-steer" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'steer', id: summary.head.id })}>Steer</Button></Tooltip>}
