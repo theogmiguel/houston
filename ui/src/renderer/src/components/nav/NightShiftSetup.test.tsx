@@ -180,6 +180,11 @@ describe('NightShiftSetup', () => {
     type('Start command', '')
     expect(step()).toContain('Needs a start command')
     expect(q<HTMLInputElement>('input[aria-label="What to open"]')?.disabled).toBe(true)
+    const open = q<HTMLInputElement>('input[aria-label="What to open"]')!
+    expect(open.value, 'empty by default: the per-change behaviour is a placeholder').toBe('')
+    expect(open.placeholder).toBe('Per change: the story or screen it touches')
+    expect(open.className, 'a placeholder in the field font, not a typed-looking command').not.toContain('font-mono')
+    expect(open.className).toContain('placeholder:text-[var(--text-faint)]')
     expect(step()).toContain('App QA stays off until you do.')
   })
 

@@ -71,7 +71,7 @@ function AppQa({ draft, detected, set }: { draft: NightShiftSettings; detected: 
         </div>
         <div className="grid gap-[var(--space-1)]">
           <Text size="small" tone="secondary">What to open</Text>
-          <TextInput aria-label="What to open" size="form" width="full" font="mono" disabled={noStart} value={qa.address} placeholder="Per change: the story or screen it touches"
+          <TextInput aria-label="What to open" size="form" width="full" placeholderTone="faint" disabled={noStart} value={qa.address} placeholder="Per change: the story or screen it touches"
             onChange={(e) => patch({ address: e.target.value })} />
         </div>
         <div className="grid gap-[var(--space-1)]">

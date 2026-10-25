@@ -4,6 +4,7 @@ import { Icon } from './Icon'
 import { RadioCard } from './RadioCard'
 import { SectionHead } from './SectionHead'
 import { Text } from './Text'
+import { TextInput } from './TextInput'
 import { Tooltip } from './Tooltip'
 
 export type GateState = 'none' | 'pending' | 'passed' | 'failed'
@@ -305,7 +306,9 @@ export function NightShiftSpecimen(): React.JSX.Element {
         <NightDividedRow><NightGrow basis="medium"><Text weight="semibold">Reliability</Text></NightGrow></NightDividedRow>
         <NightReveal><NightBox><Text size="small">github.com/owner/repo</Text></NightBox></NightReveal>
         <NightStep number={1} heading="Claims and proofs" tip="Each change lists what must be true and the test that proves it." aside={<Text size="small" tone="muted">Fixed, nothing to set</Text>} />
-        <NightStep number={5} optional heading="App QA" tip="A QA pane drives the app for changes you can see." aside={<Text size="small" tone="muted">Off</Text>} />
+        <NightStep number={5} optional heading="App QA" tip="A QA pane drives the app for changes you can see." aside={<Text size="small" tone="muted">Off</Text>}>
+          <TextInput aria-label="What to open" size="form" width="full" placeholderTone="faint" placeholder="Per change: the story or screen it touches" />
+        </NightStep>
       </NightQuestion>
       <NightQuestion number={2} heading="How do I know a change is good?" badge={{ label: 'Answered from the repository', tone: 'answered' }}>
         <NightChoiceGrid aria-label="Output">

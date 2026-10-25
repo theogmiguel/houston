@@ -46,6 +46,7 @@ describe('ui-primitives', () => {
     const output = host.querySelector('[role="radiogroup"][aria-label="Output"]')!
     expect(output.querySelector('[aria-checked="true"]')?.textContent).toContain('Draft pull requests')
     expect(host.querySelector('button[aria-label="About Reviewer"]')).not.toBeNull()
+    expect(host.querySelector('input[aria-label="What to open"]')?.className, 'a form field hint as faint as a text area hint').toContain('placeholder:text-[var(--text-faint)]')
   })
 
   it('night shift window strip places marks along the window', () => {
