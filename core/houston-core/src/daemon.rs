@@ -996,10 +996,17 @@ struct StdinQueue {
 
 impl Session {
     fn thread(&self) -> Option<&Arc<crate::thread_session::StructuredRuntime>> {
-        match &self.runtime {
+        let thread = match &self.runtime {
             SessionRuntime::Structured(handle) => Some(handle),
             SessionRuntime::Pty(_) => None,
-        }
+        };
+        debug_assert_eq!(
+            thread.is_some(),
+            self.info.view == proto::SessionView::Thread,
+            "session {}: a structured runtime is exactly a thread view",
+            self.info.id
+        );
+        thread
     }
 
     fn pty(&self) -> Option<&PtyRuntime> {
