@@ -5623,6 +5623,8 @@ impl Daemon {
                 head_sha: detail.head_sha,
                 failed_checks,
                 passed,
+                checks_awaited_since_ms: Some(now_unix_ms()),
+                no_checks_woken: false,
                 comments_through: now_unix(),
                 comment_ids: Default::default(),
                 conflicting: detail.mergeable == proto::PrMergeable::Conflicting,
