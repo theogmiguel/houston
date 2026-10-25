@@ -4,6 +4,8 @@ import {
   THREAD_WINDOW_MAX,
   THREAD_WINDOW_PAGE,
   buildThreadItems,
+  pendingQuestion,
+  planText,
   replacementDiff,
   sameThreadItem,
   showEarlier,
@@ -189,5 +191,31 @@ describe('tool presentation', () => {
     expect(toolSummary('{"description":"x","command":"ls -la"}')).toBe('ls -la')
     expect(toolSummary('{"file_path":"src/a.ts","old_string":"x"}')).toBe('src/a.ts')
     expect(toolSummary('{"command":"cut at the cap')).toBe('{"command":"cut at the cap')
+  })
+})
+
+describe('questions and plans', () => {
+  const colour = { question: 'Which colour do you prefer?', header: 'Colour', multi_select: false, options: [{ label: 'Red', description: 'Warm' }, { label: 'Blue', description: 'Cool' }] }
+  const asked = (id: string): ThreadEventKind => ({ type: 'question_request', request_id: id, tool_use_id: `t-${id}`, questions: [colour], truncated: false })
+
+  it('folds a question and its resolution into one row and finds the newest one still held', () => {
+    const answers = [{ question: colour.question, selected: ['Blue'], other: null }]
+    const items = buildThreadItems(events([
+      asked('q1'),
+      asked('q2'),
+      { type: 'question_resolved', request_id: 'q1', outcome: 'answered', answers, reason: null },
+      { type: 'question_resolved', request_id: 'unknown', outcome: 'skipped', answers: [], reason: null }
+    ]))
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ kind: 'question', requestId: 'q1', state: 'answered', answers })
+    expect(pendingQuestion(items)).toMatchObject({ requestId: 'q2', state: 'pending', answers: [] })
+    expect(sameThreadItem(items[0]!, buildThreadItems(events([asked('q1'), { type: 'question_resolved', request_id: 'q1', outcome: 'answered', answers, reason: null }]))[0]!)).toBe(false)
+    expect(pendingQuestion(items.slice(0, 1))).toBeNull()
+  })
+
+  it('reads the plan of an ExitPlanMode request and refuses input cut at the cap', () => {
+    expect(planText(JSON.stringify({ plan: '# Plan\n1. Sort', planFilePath: '/home/dev/.claude/plans/p.md' }))).toBe('# Plan\n1. Sort')
+    expect(planText('{"plan":"# Plan')).toBeNull()
+    expect(planText('{}')).toBeNull()
   })
 })

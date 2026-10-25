@@ -1,9 +1,10 @@
-import { memo, useState } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { IconFileDiff, IconFileText, IconGlobe, IconMessageSquare, IconPencil, IconPlug, IconSearch, IconSparkles, IconSquareTerminal, IconTaskStatusTodo, IconUsers, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
 import { Button } from '../ui/Button'
-import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadLineCounts, ThreadToolSection, ThreadWorkRow, type ThreadToolState } from '../ui/Thread'
-import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
+import { Tooltip } from '../ui/Tooltip'
+import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadLineCounts, ThreadPlanCard, ThreadToolSection, ThreadWorkRow, type ThreadToolState } from '../ui/Thread'
+import { parseToolInput, planText, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
 import { displayTarget, summaryOf, toolVerb } from '../../thread/threadTurns'
 import type { ToolKind } from '../../thread/threadTypes'
 
@@ -156,6 +157,37 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
     </ThreadApprovalCard>
   )
 })
+
+/** Claude's plan (`ExitPlanMode`): Implement allows it, Keep planning denies it with the composer's text. */
+export function ThreadPlanRow({ item, answering, connected, renderPlan, onAnswer, onKeepPlanning }: {
+  item: ApprovalItem
+  answering: boolean
+  connected: boolean
+  renderPlan: (markdown: string) => ReactNode
+  onAnswer: (requestId: string, allow: boolean) => void
+  onKeepPlanning: (requestId: string) => void
+}): React.JSX.Element {
+  const plan = planText(item.input)
+  const locked = answering || !connected
+  return (
+    <ThreadPlanCard
+      state={item.state}
+      reason={item.reason}
+      status={answering ? 'Sending your answer…' : connected ? undefined : 'Reconnecting to the daemon'}
+      actions={<>
+        <Tooltip label="Claude keeps planning and reads what you wrote in the message box" className="inline-flex">
+          <Button data-testid="thread-plan-keep" variant="secondary" size="sm" disabled={locked} onClick={() => onKeepPlanning(item.requestId)}>Keep planning</Button>
+        </Tooltip>
+        <Button data-testid="thread-plan-implement" variant="primary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, true)}>Implement</Button>
+      </>}
+    >
+      {plan !== null ? renderPlan(plan) : <>
+        <ThreadCodeBlock>{item.input}</ThreadCodeBlock>
+        {item.inputTruncated && <ThreadApprovalNote>The plan was cut at 64 KiB by Houston; Implement approves all of it.</ThreadApprovalNote>}
+      </>}
+    </ThreadPlanCard>
+  )
+}
 
 export const ThreadToolRow = memo(function ThreadToolRow({ item, cwd }: { item: ToolItem; cwd?: string }): React.JSX.Element {
   const [open, setOpen] = useState(false)

@@ -24,10 +24,11 @@ import {
   ThreadTurnFold,
   ThreadUserMessage
 } from '../ui/Thread'
-import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
+import { ThreadApprovalRow, ThreadPlanRow, ThreadToolRow } from './ThreadToolCard'
+import { ThreadQuestionPrompt, ThreadQuestionRow } from './ThreadQuestion'
 import { ThreadChangesCard, ThreadReasoningItem } from './ThreadWorkLog'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
-import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
+import { LATEST_WINDOW, PLAN_TOOL, pendingQuestion, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
 import { foldThreadRows } from '../../thread/threadTurns'
 import type { ThreadPermissionMode } from '../../thread/threadTypes'
@@ -49,13 +50,17 @@ function useMarkdownPipeline(): PipelineModule | null {
 
 type AnswerApproval = (requestId: string, allow: boolean) => void
 
-const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, cwd, onAnswer, onToggleTurn }: {
+/** Sent when Keep planning is pressed with an empty message box. */
+export const KEEP_PLANNING_DEFAULT = 'The user wants to keep planning before you implement.'
+
+const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, cwd, onAnswer, onKeepPlanning, onToggleTurn }: {
   item: ThreadItem
   markdown: PipelineModule | null
   answering: boolean
   connected: boolean
   cwd: string | undefined
   onAnswer: AnswerApproval
+  onKeepPlanning: (requestId: string) => void
   onToggleTurn: (turn: string) => void
 }): React.JSX.Element {
   switch (item.kind) {
@@ -83,9 +88,15 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
     case 'stopped':
       return <ThreadStoppedMarker />
     case 'approval':
+      if (item.name === PLAN_TOOL) {
+        const renderPlan = (source: string): React.JSX.Element => markdown ? <markdown.MarkdownDocument source={source} variant="thread" /> : <ThreadPlainText>{source}</ThreadPlainText>
+        return <ThreadPlanRow item={item} answering={answering} connected={connected} renderPlan={renderPlan} onAnswer={onAnswer} onKeepPlanning={onKeepPlanning} />
+      }
       return <ThreadApprovalRow item={item} answering={answering} connected={connected} onAnswer={onAnswer} />
+    case 'question':
+      return <ThreadQuestionRow item={item} />
   }
-}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.onToggleTurn === b.onToggleTurn && a.answering === b.answering && a.connected === b.connected && a.cwd === b.cwd && sameThreadItem(a.item, b.item))
+}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.onKeepPlanning === b.onKeepPlanning && a.onToggleTurn === b.onToggleTurn && a.answering === b.answering && a.connected === b.connected && a.cwd === b.cwd && sameThreadItem(a.item, b.item))
 
 const PERMISSION_MODES: readonly { value: ThreadPermissionMode; label: string }[] = [
   { value: 'default', label: 'Ask before tools' },
@@ -133,14 +144,28 @@ export function isImeEnter(event: { key: string; keyCode: number; isComposing: b
   return event.isComposing || event.keyCode === 229 || event.key === 'Process'
 }
 
-export function ThreadComposer({ stoppable, disabledReason, onSend, onStop }: {
+/** The composer's text for a caller outside it, such as Keep planning, without re-rendering on each key. */
+export interface ComposerDraft {
+  text: () => string
+  clear: () => void
+}
+
+export function ThreadComposer({ stoppable, disabledReason, draft, onSend, onStop }: {
   stoppable: boolean
   disabledReason: string | null
+  draft?: React.RefObject<ComposerDraft | null>
   /** Whether the message was written; the text stays in the field when it was not. */
   onSend: (text: string) => boolean
   onStop: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
+  const current = useRef(text)
+  current.current = text
+  useEffect(() => {
+    if (!draft) return
+    draft.current = { text: () => current.current, clear: () => setText('') }
+    return () => { draft.current = null }
+  }, [draft])
   const [refusal, setRefusal] = useState<string | null>(null)
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
   const send = (): void => {
@@ -238,7 +263,14 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
   const scroll = useRef<HTMLDivElement>(null)
   const { start, end } = windowBounds(rows, win)
   const shown = rows.slice(start, end)
+  const asking = pendingQuestion(thread.timeline.items)
   const { onScroll, holdFromBottom } = useStickToBottom(scroll, [rows, start, end, markdown], win.end === null)
+  const draft = useRef<ComposerDraft | null>(null)
+  const { answer } = thread
+  const keepPlanning = useCallback((requestId: string) => {
+    const message = draft.current?.text().trim() ?? ''
+    if (answer(requestId, false, message || KEEP_PLANNING_DEFAULT)) draft.current?.clear()
+  }, [answer])
   const growOnArrival = useRef(false)
   useEffect(() => {
     if (thread.loadingEarlier || !growOnArrival.current) return
@@ -268,7 +300,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
           </ThreadHistoryControl>
         )}
         {thread.loaded && rows.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
-        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} cwd={info.cwd} onAnswer={thread.answer} onToggleTurn={toggleTurn} />)}
+        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} cwd={info.cwd} onAnswer={thread.answer} onKeepPlanning={keepPlanning} onToggleTurn={toggleTurn} />)}
         {win.end !== null && (
           <ThreadHistoryControl>
             <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(rows, current))}>Show later</Button>
@@ -276,9 +308,11 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
           </ThreadHistoryControl>
         )}
       </ThreadScroll>
+      {asking && <ThreadQuestionPrompt key={asking.requestId} item={asking} answering={thread.answering.has(asking.requestId)} connected={connected} onAnswer={thread.answerQuestion} />}
       <ThreadComposer
         stoppable={threadStoppable(info, thread.events)}
         disabledReason={composerDisabledReason(info, connected)}
+        draft={draft}
         onSend={(text) => {
           setWin(LATEST_WINDOW)
           thread.followLatest()

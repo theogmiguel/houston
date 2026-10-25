@@ -8,7 +8,7 @@ import { THREAD_WINDOW_MAX, THREAD_WINDOW_PAGE } from '../../thread/threadModel'
 import type { ThreadEvent, ThreadEventKind } from '../../thread/threadTypes'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { THREAD_STOPPED_COPY } from '../ui/Thread'
-import { ThreadPane } from './ThreadPane'
+import { KEEP_PLANNING_DEFAULT, ThreadPane } from './ThreadPane'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -279,6 +279,80 @@ describe('ThreadPane', () => {
     expect(container.textContent).toContain('40 KiB more input is not shown')
     mount({ status: 'needs-input' }, false)
     expect(allow().disabled).toBe(true)
+  })
+
+  it('asks a held question above the composer, sends the chosen answers and records them', () => {
+    mount({ status: 'needs-input' })
+    const questions = [
+      { question: 'Which colour do you prefer?', header: 'Colour', multi_select: false, options: [{ label: 'Red', description: 'Warm' }, { label: 'Blue', description: 'Cool' }] },
+      { question: 'Which fruits?', header: 'Fruit', multi_select: true, options: [{ label: 'Plums', description: '' }, { label: 'Figs', description: '' }] }
+    ]
+    history([ev(1, user('Ask me')), ev(2, { type: 'question_request', request_id: 'q1', tool_use_id: 't1', questions, truncated: false })])
+    const options = (): HTMLButtonElement[] => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="question-card-option"]')]
+    const button = (testId: string): HTMLButtonElement => container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)!
+    expect(container.querySelector('[data-testid="question-card-pager"]')!.textContent).toContain('1 of 2 › · Colour')
+    expect(rows('question')[0]).toContain('Waiting for your answer below')
+    expect(button('question-card-next').disabled).toBe(true)
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: '2' })) })
+    expect(options()[1]!.getAttribute('aria-pressed')).toBe('true')
+    type('3')
+    act(() => { input().dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true })) })
+    expect(options()[0]!.getAttribute('aria-pressed')).toBe('false')
+    click('question-card-next')
+    expect(button('question-card-submit').disabled).toBe(true)
+    act(() => options()[0]!.click())
+    act(() => options()[1]!.click())
+    click('question-card-escape-hatch')
+    const freeText = container.querySelector<HTMLTextAreaElement>('[data-testid="question-card-freetext"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(freeText, '  pears ')
+      freeText.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    click('question-card-submit')
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_answer', session: 7, request_id: 'q1', answers: [
+      { question: 'Which colour do you prefer?', selected: ['Blue'], other: null },
+      { question: 'Which fruits?', selected: ['Plums', 'Figs'], other: 'pears' }
+    ] })
+    expect(button('question-card-skip').disabled).toBe(true)
+    act(() => fake.emit({ type: 'error', message: 'thread_answer refused for session 7: no held question "q1"', context: 'session:7' }))
+    expect(button('question-card-skip').disabled).toBe(false)
+    click('question-card-skip')
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_answer', session: 7, request_id: 'q1', answers: null })
+    live([ev(3, { type: 'question_resolved', request_id: 'q1', outcome: 'answered', answers: [
+      { question: 'Which colour do you prefer?', selected: ['Blue'], other: null },
+      { question: 'Which fruits?', selected: ['Plums', 'Figs'], other: 'pears' }
+    ], reason: null })])
+    expect(container.querySelector('[data-testid="thread-question-dock"]')).toBeNull()
+    expect(rows('question')[0]).toContain('Answered')
+    expect(rows('question')[0]).toContain('Plums, Figs, pears')
+    live([ev(4, turnEnd())])
+    expect(rows('question')).toHaveLength(1)
+  })
+
+  it('implements a plan, or keeps planning with the message box text as the reason', () => {
+    mount({ status: 'needs-input' })
+    const plan = JSON.stringify({ plan: 'Make the rail sort stable.', planFilePath: '/home/dev/.claude/plans/p.md' })
+    history([
+      ev(1, user('Plan it')),
+      ev(2, { type: 'approval_request', request_id: 'p1', tool_use_id: 't1', tool_name: 'ExitPlanMode', input: plan, truncated: false, input_bytes: plan.length }),
+      ev(3, { type: 'approval_request', request_id: 'p2', tool_use_id: 't2', tool_name: 'ExitPlanMode', input: '{"plan":"Cut', truncated: true, input_bytes: 70_000 })
+    ])
+    const cards = (): HTMLElement[] => [...container.querySelectorAll<HTMLElement>('[data-thread-item="plan"]')]
+    expect(container.querySelector('[data-thread-item="approval"]')).toBeNull()
+    expect(cards()[0]!.textContent).toContain('Make the rail sort stable.')
+    expect(cards()[0]!.textContent).not.toContain('planFilePath')
+    expect(cards()[1]!.textContent).toContain('The plan was cut at 64 KiB by Houston')
+    type('Split the second step.')
+    act(() => cards()[0]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'p1', allow: false, message: 'Split the second step.' })
+    expect(input().value).toBe('')
+    act(() => cards()[1]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.at(-1)).toMatchObject({ request_id: 'p2', allow: false, message: KEEP_PLANNING_DEFAULT })
+    act(() => fake.emit({ type: 'error', message: 'thread_approve refused for session 7: no pending permission request "p2" (pending: ["p1"])', context: 'session:7' }))
+    act(() => cards()[1]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-implement"]')!.click())
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'p2', allow: true })
+    live([ev(4, { type: 'approval_resolved', request_id: 'p1', decision: 'denied', reason: 'Split the second step.' }), ev(5, turnEnd())])
+    expect(cards()[0]!.textContent).toContain('Kept planning · Split the second step.')
   })
 
   it('locks the permission mode while a turn is open even before the status says so', () => {

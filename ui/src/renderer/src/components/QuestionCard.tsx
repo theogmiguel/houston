@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Tooltip } from './ui/Tooltip'
 import {
   FreeTextOption,
@@ -19,6 +19,8 @@ export type QuestionCardBody = 'free-text' | 'multi-select' | 'single-select'
 export interface QuestionCardOption {
   id: string
   label: string
+  /** Shown as the option's tooltip. */
+  description?: string
 }
 
 export interface QuestionCardError {
@@ -30,6 +32,8 @@ export interface QuestionCardProps {
   questionIndex: number
   questionCount: number
   question: string
+  /** A short name for the question, shown beside the pager. */
+  header?: string
   body: QuestionCardBody
   options?: QuestionCardOption[]
   selectedIds?: string[]
@@ -44,13 +48,23 @@ export interface QuestionCardProps {
   error?: QuestionCardError
   disabled?: boolean
   disabledReason?: string
+  /** A row under the body, for example Back, Next and Submit. */
+  actions?: ReactNode
   className?: string
+}
+
+// Digits typed into a field, or with a modifier, belong to that field or shortcut.
+function digitTarget(e: KeyboardEvent): boolean {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return false
+  const target = e.target
+  return !(target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]') !== null)
 }
 
 export function QuestionCard({
   questionIndex,
   questionCount,
   question,
+  header,
   body,
   options,
   selectedIds = [],
@@ -65,6 +79,7 @@ export function QuestionCard({
   error,
   disabled = false,
   disabledReason,
+  actions,
   className = ''
 }: QuestionCardProps): React.JSX.Element {
   const isSelectBody = body === 'multi-select' || body === 'single-select'
@@ -76,6 +91,7 @@ export function QuestionCard({
   useEffect(() => {
     if (!interactive) return
     const handler = (e: KeyboardEvent): void => {
+      if (!digitTarget(e)) return
       const n = Number(e.key)
       if (!Number.isInteger(n) || n < 1) return
       if (n === escapeHatchNumber) {
@@ -101,7 +117,7 @@ export function QuestionCard({
     >
       <PromptHeader>
         <QuestionPager>
-          ‹ {questionIndex} of {questionCount} ›
+          ‹ {questionIndex} of {questionCount} ›{header ? ` · ${header}` : ''}
         </QuestionPager>
         <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
           <SkipButton disabled={disabled} onClick={onSkip} />
@@ -138,7 +154,7 @@ export function QuestionCard({
             return (
               <Tooltip
                 key={opt.id}
-                label={disabled ? disabledReason : undefined}
+                label={disabled ? disabledReason : opt.description || undefined}
                 className="flex w-full"
               >
                 <OptionButton
@@ -159,6 +175,7 @@ export function QuestionCard({
           </Tooltip>
         </OptionList>
       )}
+      {actions}
     </PromptCard>
   )
 }

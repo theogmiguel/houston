@@ -1,4 +1,4 @@
-import type { ThreadEvent, ToolSummary, TurnOutcome } from './threadTypes'
+import type { QuestionAnswer, QuestionOutcome, ThreadEvent, ThreadQuestion, ToolSummary, TurnOutcome } from './threadTypes'
 
 export interface ToolResultView {
   isError: boolean
@@ -8,6 +8,11 @@ export interface ToolResultView {
 
 /** A permission request's state: `withdrawn` when Claude stopped waiting or Houston restarted. */
 export type ApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
+
+export type QuestionState = 'pending' | QuestionOutcome
+
+/** The tool whose permission request carries a plan; its card shows the plan, not the raw input. */
+export const PLAN_TOOL = 'ExitPlanMode'
 
 export interface ChangedFile {
   path: string
@@ -25,6 +30,7 @@ export type ThreadItem =
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
   | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; inputBytes: number; state: ApprovalState; reason: string | null }
+  | { kind: 'question'; key: string; requestId: string; questions: readonly ThreadQuestion[]; truncated: boolean; state: QuestionState; answers: readonly QuestionAnswer[]; reason: string | null }
   // Rows `foldThreadRows` adds for a settled turn.
   | { kind: 'turn'; key: string; turn: string; label: string; outcome: TurnOutcome; expanded: boolean }
   | { kind: 'changes'; key: string; files: readonly ChangedFile[] }
@@ -61,6 +67,7 @@ export function buildThreadTimeline(events: readonly ThreadEvent[]): ThreadTimel
   }
   const tools = new Map<string, number>()
   const approvals = new Map<string, number>()
+  const questions = new Map<string, number>()
   const stored = new Set<string>()
   const thinking = new Map<string, number>()
   let turnStart = 0
@@ -190,6 +197,16 @@ export function buildThreadTimeline(events: readonly ThreadEvent[]): ThreadTimel
         if (item?.kind === 'approval' && at !== undefined) items[at] = { ...item, state: kind.decision, reason: kind.reason ?? null }
         break
       }
+      case 'question_request':
+        questions.set(kind.request_id, items.length)
+        push({ kind: 'question', key, requestId: kind.request_id, questions: kind.questions, truncated: kind.truncated, state: 'pending', answers: [], reason: null })
+        break
+      case 'question_resolved': {
+        const at = questions.get(kind.request_id)
+        const item = at === undefined ? undefined : items[at]
+        if (item?.kind === 'question' && at !== undefined) items[at] = { ...item, state: kind.outcome, answers: kind.answers, reason: kind.reason ?? null }
+        break
+      }
     }
   }
   return { items, turnOf, turns }
@@ -203,6 +220,21 @@ function untruncateStopped(items: ThreadItem[], turnStart: number): void {
     if (item.truncated) items[at] = { ...item, truncated: false }
     return
   }
+}
+
+/** The newest question still waiting for the user; its card takes the composer's place. */
+export function pendingQuestion(items: readonly ThreadItem[]): Extract<ThreadItem, { kind: 'question' }> | null {
+  for (let at = items.length - 1; at >= 0; at--) {
+    const item = items[at]!
+    if (item.kind === 'question' && item.state === 'pending') return item
+  }
+  return null
+}
+
+/** The plan of an `ExitPlanMode` request, or `null` when its input is not whole JSON (cut at the cap). */
+export function planText(input: string): string | null {
+  const plan = parseToolInput(input)?.plan
+  return typeof plan === 'string' ? plan : null
 }
 
 /** A turn is open when the newest user message has no turn end after it. */
@@ -253,6 +285,11 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
     case 'approval': {
       const other = b as typeof a
       return a.requestId === other.requestId && a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.inputBytes === other.inputBytes && a.state === other.state && a.reason === other.reason
+    }
+    // Questions and answers come from stored events, so a rebuilt row keeps the same arrays.
+    case 'question': {
+      const other = b as typeof a
+      return a.requestId === other.requestId && a.questions === other.questions && a.truncated === other.truncated && a.state === other.state && a.answers === other.answers && a.reason === other.reason
     }
   }
 }

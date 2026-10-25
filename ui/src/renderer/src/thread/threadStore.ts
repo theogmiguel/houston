@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadTimeline, type ThreadTimeline } from './threadModel'
-import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventKind, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
+import { THREAD_ANSWER_REFUSAL, THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type QuestionAnswer, type ThreadClientMsg, type ThreadEvent, type ThreadEventKind, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -19,7 +19,7 @@ export interface ThreadSnapshot {
   loadingEarlier: boolean
   /** Why the last history request failed, until a retry. */
   failure: string | null
-  /** Permission requests answered here whose resolution has not arrived yet. */
+  /** Permission requests and questions answered here whose resolution has not arrived yet. */
   answering: ReadonlySet<string>
 }
 
@@ -193,7 +193,7 @@ export class ThreadSessionStore {
   private set(next: ThreadSnapshot): void {
     if (next.answering.size > 0) {
       const waiting = new Set(next.answering)
-      for (const event of next.events) if (event.kind.type === 'approval_resolved') waiting.delete(event.kind.request_id)
+      for (const event of next.events) if (event.kind.type === 'approval_resolved' || event.kind.type === 'question_resolved') waiting.delete(event.kind.request_id)
       if (waiting.size !== next.answering.size) next = { ...next, answering: waiting }
     }
     this.snapshot = next
@@ -218,7 +218,7 @@ function registryFor(client: HoustonClient): Registry {
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
     if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
-    const answer = THREAD_APPROVE_REFUSAL.exec(msg.message)
+    const answer = THREAD_APPROVE_REFUSAL.exec(msg.message) ?? THREAD_ANSWER_REFUSAL.exec(msg.message)
     if (answer) stores.get(Number(answer[1]))?.store.answerRefused()
   })
   const off = (): void => { offEvents(); offHistory(); offError() }
@@ -264,8 +264,13 @@ export function stopThread(client: HoustonClient, session: number): void {
 }
 
 /** Whether the answer was written to the socket; a closed socket drops it. */
-export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean): boolean {
-  return client.trySend({ type: 'thread_approve', session, request_id: requestId, allow })
+export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean, message?: string): boolean {
+  return client.trySend({ type: 'thread_approve', session, request_id: requestId, allow, ...(message === undefined ? {} : { message }) })
+}
+
+/** `answers: null` skips the question. Whether the answer was written to the socket. */
+export function answerQuestion(client: HoustonClient, session: number, requestId: string, answers: QuestionAnswer[] | null): boolean {
+  return client.trySend({ type: 'thread_answer', session, request_id: requestId, answers })
 }
 
 export function setThreadPermissionMode(client: HoustonClient, session: number, mode: ThreadPermissionMode): void {
@@ -276,7 +281,9 @@ export interface ThreadView extends ThreadSnapshot {
   timeline: ThreadTimeline
   loadEarlier: () => void
   retry: () => void
-  answer: (requestId: string, allow: boolean) => void
+  /** Whether the answer was written; a deny `message` is what Claude reads. */
+  answer: (requestId: string, allow: boolean, message?: string) => boolean
+  answerQuestion: (requestId: string, answers: QuestionAnswer[] | null) => void
   followLatest: () => void
 }
 
@@ -292,8 +299,13 @@ export function useThread(client: HoustonClient, session: number, connected: boo
     if (connected) store.attach()
   }, [store, connected])
   const timeline = useMemo(() => buildThreadTimeline(snapshot.events), [snapshot.events])
-  const answer = useCallback((requestId: string, allow: boolean) => {
-    if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
+  const answer = useCallback((requestId: string, allow: boolean, message?: string) => {
+    const sent = answerApproval(client, session, requestId, allow, message)
+    if (sent) store.markAnswering(requestId)
+    return sent
   }, [client, session, store])
-  return { ...snapshot, timeline, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest() }
+  const answerQuestionNow = useCallback((requestId: string, answers: QuestionAnswer[] | null) => {
+    if (answerQuestion(client, session, requestId, answers)) store.markAnswering(requestId)
+  }, [client, session, store])
+  return { ...snapshot, timeline, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, answerQuestion: answerQuestionNow, followLatest: () => store.followLatest() }
 }

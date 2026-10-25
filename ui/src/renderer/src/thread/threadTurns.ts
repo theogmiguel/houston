@@ -1,4 +1,4 @@
-import { parseToolInput, replacementDiff, toolSummary, type ChangedFile, type ThreadItem, type ThreadTimeline } from './threadModel'
+import { PLAN_TOOL, parseToolInput, replacementDiff, toolSummary, type ChangedFile, type ThreadItem, type ThreadTimeline } from './threadModel'
 import type { ToolKind, ToolSummary, TurnOutcome } from './threadTypes'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
@@ -162,8 +162,9 @@ export function turnLabel(outcome: TurnOutcome, durationMs: number, counts: read
 }
 
 /** Rows a folded turn still shows: a failed tool and a notice should not need a click to be seen. */
+// The user's answers and a plan stay readable after their turn folds.
 function staysVisible(item: ThreadItem): boolean {
-  return item.kind === 'notice' || (item.kind === 'tool' && item.result?.isError === true)
+  return item.kind === 'notice' || item.kind === 'question' || (item.kind === 'approval' && item.name === PLAN_TOOL) || (item.kind === 'tool' && item.result?.isError === true)
 }
 
 /** A settled turn with work becomes a summary row; its work follows only when `expanded` names it. */

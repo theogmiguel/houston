@@ -224,6 +224,38 @@ export function ThreadApprovalStory(): React.JSX.Element {
   return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={APPROVALS} info={threadInfo({ status: 'needs-input', title: 'Build cleanup', permission_mode: 'default' })} /></div>
 }
 
+const COLOUR = { question: 'Which colour should the unseen mark use?', header: 'Colour', multi_select: false, options: [{ label: 'Accent', description: 'The theme accent, as the rail selection uses' }, { label: 'Warn', description: 'The warning colour, as pending approvals use' }, { label: 'Muted', description: 'A faint dot that never competes with status' }] }
+const SCOPE = { question: 'Where should the mark appear?', header: 'Scope', multi_select: true, options: [{ label: 'Rail', description: 'The session rail' }, { label: 'Pane header', description: 'The pane title bar' }, { label: 'Tray', description: 'The tray menu' }] }
+
+const QUESTIONS: ThreadEventKind[] = [
+  user('Add an unseen mark for finished panes. Ask me what you need.'),
+  { type: 'question_request', request_id: 'q0', tool_use_id: 'u0', questions: [{ ...COLOUR, question: 'Should the mark clear when the pane is focused?', header: 'Clear', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }], truncated: false },
+  { type: 'question_resolved', request_id: 'q0', outcome: 'answered', answers: [{ question: 'Should the mark clear when the pane is focused?', selected: ['Yes'], other: null }], reason: null },
+  said('q-m1', 'It clears on focus. Two more choices before I edit the rail.'),
+  { type: 'question_request', request_id: 'q1', tool_use_id: 'u1', questions: [COLOUR, SCOPE], truncated: false }
+]
+
+/** Claude's questions: an answered one in the timeline and a held one above the composer. */
+export function ThreadQuestionStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={QUESTIONS} info={threadInfo({ status: 'needs-input', title: 'Unseen mark' })} /></div>
+}
+
+const PLAN = '## Stable rail order\n\n1. Sort the rail by session id instead of status in `railView.ts`.\n2. Keep the unseen mark on its own key so a finished pane does not move.\n3. Run `bun run test railView` and the rail story.\n\nNo protocol change.'
+
+const PLANNING: ThreadEventKind[] = [
+  user('Plan a fix for the rail flicker; do not edit yet.'),
+  call('p1', 'Read', { file_path: 'ui/src/renderer/src/railView.ts' }),
+  result('p1', 'export function railView(…) { … }'),
+  // The stream's ExitPlanMode input is empty; the plan arrives only with the permission request.
+  { type: 'tool_call', tool_use_id: 'p2', name: 'ExitPlanMode', input: '{}', truncated: false, summary: { kind: 'plan', target: '', added: null, removed: null } },
+  { type: 'approval_request', request_id: 'r-plan', tool_use_id: 'p2', tool_name: 'ExitPlanMode', input: JSON.stringify({ plan: PLAN, planFilePath: '/home/dev/.claude/plans/stable-rail.md' }), truncated: false, input_bytes: 420 }
+]
+
+/** A plan waiting for Implement or Keep planning, in plan mode. */
+export function ThreadPlanStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={PLANNING} info={threadInfo({ status: 'needs-input', title: 'Rail flicker plan', permission_mode: 'plan' })} /></div>
+}
+
 /** One long thread, for measuring the rendered DOM against the row window. */
 export function ThreadLongStory(): React.JSX.Element {
   const events = React.useMemo(() => Array.from({ length: 1000 }, (_, i) => i % 2 === 0 ? user(`Question ${i / 2 + 1}`) : said(`l${i}`, `Answer ${(i + 1) / 2} with **some** Markdown.`)), [])

@@ -1,5 +1,5 @@
 import type { ReactNode, Ref, TextareaHTMLAttributes } from 'react'
-import { IconBrain, IconCheck, IconChevronDown, IconChevronRight, IconFileDiff, IconFileText, IconInfo, IconSearch, IconShieldAlert, IconSquareTerminal, IconStopCircle, IconWrench, type IconComponent } from '../icons'
+import { IconBrain, IconCheck, IconChevronDown, IconChevronRight, IconFileDiff, IconFileText, IconInfo, IconMessageSquare, IconSearch, IconShieldAlert, IconSparkles, IconSquareTerminal, IconStopCircle, IconWrench, type IconComponent } from '../icons'
 import { Button } from './Button'
 import { Icon } from './Icon'
 import { Prose } from './Prose'
@@ -191,6 +191,89 @@ export function ThreadApprovalCard({ name, summary, state, reason, status, actio
   )
 }
 
+export type ThreadPlanState = ThreadApprovalState
+
+const PLAN_WORD: Record<ThreadPlanState, string> = { pending: 'Waiting for you', allowed: 'Implementing', denied: 'Kept planning', withdrawn: 'Not answered' }
+
+/** Claude's plan, waiting for Implement or Keep planning; the plan reads as prose, not as tool input. */
+export function ThreadPlanCard({ state, reason, status, actions, children }: {
+  state: ThreadPlanState
+  reason?: string | null
+  /** Replaces the pending state's words, for example while an answer is on its way. */
+  status?: string
+  actions?: ReactNode
+  children: ReactNode
+}): React.JSX.Element {
+  const pending = state === 'pending'
+  return (
+    <section
+      data-thread-item="plan"
+      data-plan-state={state}
+      aria-label="Plan"
+      className={`min-w-0 overflow-hidden rounded-[var(--tr-radius-button)] border bg-[var(--card-bg)] ${pending ? 'border-[var(--warn)]' : 'border-[var(--border)]'}`}
+    >
+      <div className="flex min-h-[var(--h-ctl)] min-w-0 items-center gap-[var(--space-2)] px-[var(--space-2)]">
+        <Icon glyph={IconSparkles} role="small" className={`flex-none ${pending ? 'text-[var(--warn)]' : 'text-[var(--text-faint)]'}`} />
+        <Text as="span" size="small" weight="semibold" tone="primary" className="min-w-0 flex-1 truncate">Plan ready</Text>
+      </div>
+      <div className="flex max-h-[var(--h-thread-code-max)] min-w-0 flex-col gap-[var(--space-2)] overflow-y-auto border-t border-[var(--divider)] p-[var(--space-2)]">{children}</div>
+      <div className="flex min-w-0 items-center gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--space-2)] py-[var(--space-1-5)]">
+        <Text as="div" role="status" size="small" tone={pending ? 'secondary' : 'muted'} className="min-w-0 flex-1 break-words [text-wrap:pretty]">
+          {pending ? status ?? PLAN_WORD.pending : PLAN_WORD[state]}{!pending && reason ? ` · ${reason}` : ''}
+        </Text>
+        {pending && actions}
+      </div>
+    </section>
+  )
+}
+
+export type ThreadQuestionState = 'pending' | 'answered' | 'skipped' | 'denied' | 'withdrawn'
+
+const QUESTION_WORD: Record<ThreadQuestionState, string> = { pending: 'Waiting for your answer below', answered: 'Answered', skipped: 'Skipped', denied: 'Not answered', withdrawn: 'Not answered' }
+
+export interface ThreadQuestionLine {
+  question: string
+  /** The user's answer as Claude reads it; absent while unanswered. */
+  answer?: string
+}
+
+/** Claude's question in the timeline: what it asked and, once settled, what the user answered. */
+export function ThreadQuestionRecord({ lines, state, reason }: {
+  lines: readonly ThreadQuestionLine[]
+  state: ThreadQuestionState
+  reason?: string | null
+}): React.JSX.Element {
+  const pending = state === 'pending'
+  return (
+    <section data-thread-item="question" data-question-state={state} aria-label="Question from Claude" className="flex min-w-0 flex-col gap-[var(--space-1)]">
+      <div className={WORK_ROW_CLS}>
+        <Icon glyph={IconMessageSquare} role="small" className={`flex-none ${pending ? 'text-[var(--warn)]' : 'text-[var(--text-faint)]'}`} />
+        <Text as="span" size="small" weight="semibold" tone="secondary" className="flex-none">{lines.length === 1 ? 'Claude asked' : `Claude asked ${lines.length} questions`}</Text>
+        <Text as="span" role="status" size="small" tone={pending ? 'secondary' : 'faint'} className="min-w-0 flex-1 truncate text-right">
+          {QUESTION_WORD[state]}{!pending && state !== 'answered' && reason ? ` · ${reason}` : ''}
+        </Text>
+      </div>
+      <dl className="m-0 flex min-w-0 flex-col gap-[var(--space-1)] pl-[var(--space-5)]">
+        {lines.map((line) => (
+          <div key={line.question} className="flex min-w-0 flex-col">
+            <Text as="dt" size="small" tone="muted" className="break-words">{line.question}</Text>
+            {line.answer !== undefined && <Text as="dd" size="small" tone="primary" className="m-0 whitespace-pre-wrap break-words">{line.answer}</Text>}
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+/** The question card's place above the composer, in the timeline's column. */
+export function ThreadQuestionDock({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <div data-testid="thread-question-dock" className="flex-none border-t border-[var(--divider)] px-[var(--space-4)] pt-[var(--space-3)]">
+      <div className="mx-auto flex w-full max-w-[var(--w-thread-column)] flex-col">{children}</div>
+    </div>
+  )
+}
+
 /** The strip above a thread's timeline: session-wide controls such as the permission mode. */
 export function ThreadHeaderBar({ children }: { children: ReactNode }): React.JSX.Element {
   return (
@@ -298,6 +381,15 @@ export function ThreadSpecimen(): React.JSX.Element {
         <ThreadApprovalNote>12 KiB more input is not shown; Allow approves it too.</ThreadApprovalNote>
       </ThreadApprovalCard>
       <ThreadApprovalCard name="Write" summary="notes.txt" state="denied" reason="Stopped in Houston before anyone answered." />
+      <ThreadPlanCard state="pending" actions={<><Button variant="secondary" size="sm">Keep planning</Button><Button variant="primary" size="sm">Implement</Button></>}>
+        <ThreadPlainText>1. Make the rail sort stable. 2. Run the rail view tests.</ThreadPlainText>
+      </ThreadPlanCard>
+      <ThreadPlanCard state="denied" reason="Split the second step.">
+        <ThreadPlainText>1. Make the rail sort stable.</ThreadPlainText>
+      </ThreadPlanCard>
+      <ThreadQuestionRecord state="pending" lines={[{ question: 'Which colour do you prefer?' }]} />
+      <ThreadQuestionRecord state="answered" lines={[{ question: 'Which colour do you prefer?', answer: 'Blue' }, { question: 'Which fruits?', answer: 'Red berries, plums' }]} />
+      <ThreadQuestionRecord state="denied" reason="Stopped in Houston before anyone answered." lines={[{ question: 'Which colour do you prefer?' }]} />
       <ThreadComposerFrame>
         <ThreadComposerInput rows={1} placeholder="Message Claude" />
         <ThreadComposerActions hint="Enter sends · Shift+Enter adds a line"><Button variant="primary" size="sm">Send</Button></ThreadComposerActions>
