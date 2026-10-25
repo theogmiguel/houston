@@ -874,6 +874,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SessionCwds { .. }
             | proto::ClientMsg::SessionRunningProcs { .. }
             | proto::ClientMsg::WorkspaceList
+            | proto::ClientMsg::AgentFoldersScan {}
             | proto::ClientMsg::WorkspaceLocalServers { .. }
             | proto::ClientMsg::GitStatus { .. }
             | proto::ClientMsg::GitDiff { .. }
@@ -2934,6 +2935,23 @@ async fn dispatch(
             let _ = send_msg(sink, &proto::ServerMsg::WorkspaceList { workspaces }).await;
             Ok(())
         }
+        proto::ClientMsg::AgentFoldersScan {} => {
+            let d = Arc::clone(daemon);
+            match tokio::task::spawn_blocking(move || d.agent_folders_scan()).await {
+                Ok(reply) => {
+                    let _ = send_msg(sink, &reply).await;
+                }
+                Err(e) => {
+                    send_error(
+                        sink,
+                        format!("agent folder scan panicked: {e}"),
+                        Some(AGENT_FOLDERS_ERROR_CONTEXT.into()),
+                    )
+                    .await;
+                }
+            }
+            Ok(())
+        }
         proto::ClientMsg::DelegationResultsList {
             parent,
             before_message_id,
@@ -4445,6 +4463,7 @@ async fn dispatch(
 // Mirrored by the renderer in App.tsx.
 const USAGE_SUMMARY_ERROR_CONTEXT: &str = "usage_summary";
 const USAGE_ACTIVITY_ERROR_CONTEXT: &str = "usage_activity";
+const AGENT_FOLDERS_ERROR_CONTEXT: &str = "agent_folders";
 
 const GIT_STATUS_ERROR_CONTEXT: &str = "git_status";
 

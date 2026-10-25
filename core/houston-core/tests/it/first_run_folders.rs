@@ -7,6 +7,7 @@
 use crate::common;
 use houston_core::first_run_scan::{resolve_roots, scan, ScanOutcome};
 use houston_core::host_env::HostEnv;
+use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
 const NOW_MS: i64 = 1_800_000_000_000;
@@ -113,10 +114,8 @@ fn seed(seed_alt: bool) -> Seeded {
         );
         let old = claude_root.join("bucket-a/s7.jsonl");
         write(&old, &format!("{{\"type\":\"user\",\"cwd\":\"{b}\"}}\n"));
-        set_mtime(
-            &old,
-            NOW_MS - (houston_core::first_run_scan::SCAN_WINDOW_DAYS + 5) * 24 * 60 * 60 * 1_000,
-        );
+        // Far outside any window, real clock or the fixture's `NOW_MS`.
+        set_mtime(&old, 86_400_000);
 
         write(
             &codex_root.join("2026/10/24/rollout-1.jsonl"),
@@ -203,4 +202,49 @@ fn discovery_honours_the_cli_config_dir_overrides() {
     );
     assert_eq!(outcome.folders[0].sessions, 3);
     let _ = s.scratch;
+}
+
+#[tokio::test]
+async fn the_wire_answers_agent_folders_scan_with_the_seeded_folders() {
+    use futures_util::SinkExt;
+
+    let s = seed(false);
+    let env = common::base_env()
+        .with("HOME", Some(s.home.clone()))
+        .with("USERPROFILE", Some(s.home.clone()))
+        .without("CLAUDE_CONFIG_DIR")
+        .without("CODEX_HOME");
+    let (addr, _state, _daemon) = common::start_daemon_with_handle_in(env).await;
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    ws.send(tokio_tungstenite::tungstenite::Message::text(
+        serde_json::to_string(&proto::ClientMsg::AgentFoldersScan {}).unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::HelloOk { .. } => continue,
+            proto::ServerMsg::AgentFolders {
+                folders,
+                capped,
+                transcripts_read,
+                ..
+            } => {
+                assert_eq!(capped, None);
+                assert_eq!(
+                    transcripts_read, 6,
+                    "the scan ran over the seeded home, not the test host's"
+                );
+                assert_eq!(
+                    folders.into_iter().map(|f| f.path).collect::<Vec<_>>(),
+                    s.repos
+                        .iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>(),
+                );
+                break;
+            }
+            other => panic!("unexpected control message: {other:?}"),
+        }
+    }
 }

@@ -9116,6 +9116,39 @@ impl Daemon {
         self.db.list_workspaces()
     }
 
+    /// First-run workspace discovery over the agent CLIs' own transcript roots.
+    /// Read-only and answered on demand; the daemon runs no scan of its own.
+    pub fn agent_folders_scan(&self) -> proto::ServerMsg {
+        let outcome = crate::first_run_scan::resolve_roots(&self.env())
+            .map(|roots| crate::first_run_scan::scan(&roots, crate::usage::time::now_ms()))
+            .unwrap_or_default();
+        tracing::debug!(
+            "agent folder scan: {} folder(s) from {} transcript(s) in {}ms{}",
+            outcome.folders.len(),
+            outcome.transcripts_read,
+            outcome.duration_ms,
+            outcome
+                .capped
+                .as_deref()
+                .map(|c| format!(" (capped: {c})"))
+                .unwrap_or_default()
+        );
+        proto::ServerMsg::AgentFolders {
+            folders: outcome
+                .folders
+                .into_iter()
+                .map(|f| proto::AgentFolder {
+                    path: f.path,
+                    last_active_ms: f.last_active_ms,
+                    sessions: f.sessions,
+                })
+                .collect(),
+            transcripts_read: outcome.transcripts_read,
+            capped: outcome.capped,
+            scan_duration_ms: outcome.duration_ms,
+        }
+    }
+
     pub fn workspace_local_servers(&self, workspace: String) -> proto::ServerMsg {
         #[cfg(target_os = "linux")]
         {

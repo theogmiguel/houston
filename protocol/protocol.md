@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -142,6 +142,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
 | `workspace_list` | — | `workspace_list` (direct) |
 | `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
+| `agent_folders_scan` | — | `agent_folders` (direct): a bounded, read-only scan over the agent CLIs' own transcript roots (`~/.claude/projects`, `~/.codex/sessions`, config-dir overrides honoured). Folders are kept only when they exist and are git repositories, merged across providers and ordered by newest transcript activity; `capped` names the bound that stopped the scan, when one was hit. Read on demand only — the daemon runs no scan on its own schedule |
 
 ### Orchestration
 
@@ -456,6 +457,7 @@ every refusal names the setting.
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `agent_folders` | `folders: AgentFolder[]`, `transcripts_read`, `capped: string \| null`, `scan_duration_ms` | direct reply to `agent_folders_scan`; never a broadcast |
 | `workspace_focus` | `path` | bcast after `/manage workspace_open` added `path`; clients select that workspace |
 | `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
 | `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
@@ -1400,6 +1402,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **First run can offer the folders the agent CLIs already work in.** New `agent_folders_scan` → `agent_folders` (direct, never broadcast) with `AgentFolder{path, last_active_ms, sessions}`: a bounded, read-only, on-demand scan over `~/.claude/projects` and `~/.codex/sessions` (config-dir overrides honoured) that reads each transcript's recorded `cwd` — Claude bucket names cannot be reversed reliably — keeps only existing git repositories, merges providers, orders by newest activity, and names any bound that stopped it (transcripts read, folders visited, git probes, offers, 90-day window, wall budget). Nothing is scanned unless a client asks |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |
@@ -1475,6 +1478,10 @@ Only the current window; older bumps live in git history.
 saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
 command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
 and reason.
+
+`AgentFolder` is a folder the agent CLIs have transcripts for: `path`, `last_active_ms`
+(the newest transcript mtime) and `sessions` (transcripts seen for it across the scanned
+roots). WSL distro histories are a separate environment and are not scanned.
 
 Generated titles use `session_title_generate {session}`, `generated_titles_get {}` and
 `generated_titles_set {enabled}`. `generated_titles {enabled}` reports the daemon setting,

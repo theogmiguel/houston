@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2783,6 +2783,18 @@ pub struct Workspace {
     pub name: String,
 }
 
+/// A folder an agent CLI has transcripts for, offered to the first run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct AgentFolder {
+    pub path: String,
+    /// Newest transcript mtime for this folder.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub last_active_ms: i64,
+    /// Transcripts seen for it, across every scanned CLI root.
+    pub sessions: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorkspaceAction {
@@ -4020,6 +4032,9 @@ pub enum ClientMsg {
     WorkspaceAdd {
         path: String,
     },
+    /// First-run workspace discovery: a bounded read-only scan over the agent
+    /// CLIs' own transcript roots, answered by `agent_folders` on this socket.
+    AgentFoldersScan {},
     WorkspaceRemove {
         path: String,
     },
@@ -5279,6 +5294,14 @@ pub enum ServerMsg {
     },
     WorkspaceList {
         workspaces: Vec<Workspace>,
+    },
+    /// Direct reply to `agent_folders_scan`. `capped` names the bound that
+    /// stopped the scan, when one was hit; folders are newest activity first.
+    AgentFolders {
+        folders: Vec<AgentFolder>,
+        transcripts_read: u32,
+        capped: Option<String>,
+        scan_duration_ms: u64,
     },
     /// Broadcast after `/manage workspace_open`: clients select this workspace.
     WorkspaceFocus {
