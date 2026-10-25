@@ -241,7 +241,7 @@ export function NightChoiceGrid({ children, 'aria-label': label }: { children: R
 export function NightChoice({ selected, heading, description, onSelect }: { selected: boolean; heading: string; description: string; onSelect: () => void }): React.JSX.Element {
   return (
     <RadioCard selected={selected} onClick={onSelect}>
-      <span className="grid gap-[var(--space-0-5)] p-[var(--space-3)]">
+      <span className="grid w-full gap-[var(--space-0-5)] p-[var(--space-3)]">
         <Text weight="semibold">{heading}</Text>
         <Text size="small" tone="secondary">{description}</Text>
       </span>

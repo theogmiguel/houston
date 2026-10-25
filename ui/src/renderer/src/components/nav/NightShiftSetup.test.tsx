@@ -162,6 +162,14 @@ describe('NightShiftSetup', () => {
     expect(onSave.mock.calls[0][0].hold_for_qa).toBe(false)
   })
 
+  it('lays out both Output cards the same, the content stretched to the card padding', () => {
+    render(ready())
+    const content = ['Draft pull requests', 'Merge queue'].map((t) => radio('Output', t)?.firstElementChild?.className ?? '')
+    // The card is a .btn, which centres its children; content narrower than the card would drift inwards.
+    expect(content[0], 'a short description must not centre the content').toContain('w-full')
+    expect(content[1]).toBe(content[0])
+  })
+
   it('turns App QA on with the start command found in the repository', () => {
     render(ready())
     const step = (): string => q('[role="group"][aria-label="App QA"]')?.textContent ?? ''
