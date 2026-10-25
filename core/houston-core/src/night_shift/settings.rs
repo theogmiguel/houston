@@ -77,14 +77,40 @@ pub fn defaults() -> NightShiftSettings {
     }
 }
 
-/// Reads a stored document, upgrading an older version first.
-pub fn parse(json: &str) -> Result<NightShiftSettings> {
+/// Fills what a new setup takes from the workspace: the checks found there and
+/// the start command, each only where the setup has none.
+pub fn seed(s: &mut NightShiftSettings, detected: houston_protocol::NightDetected) {
+    if s.checks.is_empty() {
+        s.checks = detected.checks;
+    }
+    if let (true, Some(start)) = (
+        s.app_qa.start_command.trim().is_empty(),
+        detected.start_command,
+    ) {
+        s.app_qa.start_command = start.command;
+        s.app_qa.source = start.source;
+    }
+}
+
+/// Reads a stored document, upgrading an older version first. A v1 setup
+/// predates detection, so it is seeded with `detect` as a new one is; an empty
+/// list in a v2 document is the user's choice and stays empty.
+pub fn parse(
+    json: &str,
+    detect: impl FnOnce() -> houston_protocol::NightDetected,
+) -> Result<NightShiftSettings> {
     let mut doc: Value = serde_json::from_str(json)
         .with_context(|| format!("unreadable Night shift settings {json:?}"))?;
-    if doc.get("v").and_then(Value::as_u64) == Some(1) {
+    let v1 = doc.get("v").and_then(Value::as_u64) == Some(1);
+    if v1 {
         upgrade_v1(&mut doc);
     }
-    serde_json::from_value(doc).with_context(|| format!("unreadable Night shift settings {json:?}"))
+    let mut s: NightShiftSettings = serde_json::from_value(doc)
+        .with_context(|| format!("unreadable Night shift settings {json:?}"))?;
+    if v1 {
+        seed(&mut s, detect());
+    }
+    Ok(s)
 }
 
 /// v1 → v2. Fields v2 dropped are ignored by the reader.
@@ -503,7 +529,7 @@ mod tests {
 
     #[test]
     fn a_v1_document_upgrades_to_v2() {
-        let s = parse(V1_DOC).unwrap();
+        let s = parse(V1_DOC, nothing_found).unwrap();
         assert_eq!(s.v, 2);
         assert_eq!(s.pr_size, NightPrSize::Related { max_changes: 3 });
         assert_eq!(s.focus.performance, NightFocusLevel::High);
@@ -528,7 +554,7 @@ mod tests {
         let none = parse(&V1_DOC.replace(
             r#""app_check":{"start_command":"bun run dev","address":"","smoke_flows":["open"]}"#,
             r#""app_check":null"#,
-        ))
+        ), nothing_found)
         .unwrap();
         assert_eq!(none.app_qa, houston_protocol::NightAppQa::default());
         assert_eq!(
@@ -538,11 +564,67 @@ mod tests {
             }],
             "a URL becomes an entry; free text is dropped"
         );
-        let one = parse(&V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#))
-            .unwrap();
+        let one = parse(
+            &V1_DOC.replace(r#""max_changes_per_pr":3"#, r#""max_changes_per_pr":1"#),
+            nothing_found,
+        )
+        .unwrap();
         assert_eq!(one.pr_size, NightPrSize::One);
         let v2 = serde_json::to_string(&defaults()).unwrap();
-        assert_eq!(parse(&v2).unwrap(), defaults());
+        assert_eq!(parse(&v2, nothing_found).unwrap(), defaults());
+    }
+
+    fn nothing_found() -> houston_protocol::NightDetected {
+        houston_protocol::NightDetected::default()
+    }
+
+    fn found(command: &str, source: &str) -> houston_protocol::NightCheck {
+        houston_protocol::NightCheck {
+            command: command.into(),
+            source: source.into(),
+        }
+    }
+
+    /// A setup stored before detection looks like a new one after the
+    /// upgrade; a v2 setup whose checks the user removed keeps none.
+    #[test]
+    fn an_empty_v1_setup_takes_what_detection_found() {
+        let detected = || houston_protocol::NightDetected {
+            checks: vec![
+                found("cargo test", "ci.yml · core-checks"),
+                found("bun run typecheck", "package.json"),
+            ],
+            start_command: Some(found("bun run dev", "package.json")),
+            ..Default::default()
+        };
+        let empty = V1_DOC
+            .replace(r#""checks":["cargo test"]"#, r#""checks":[]"#)
+            .replace(
+                r#""app_check":{"start_command":"bun run dev","address":"","smoke_flows":["open"]}"#,
+                r#""app_check":null"#,
+            );
+        let s = parse(&empty, detected).unwrap();
+        assert_eq!(s.checks, detected().checks);
+        assert_eq!(
+            (s.app_qa.start_command.as_str(), s.app_qa.source.as_str()),
+            ("bun run dev", "package.json")
+        );
+        assert!(!s.app_qa.enabled, "App QA stays off, as in a new setup");
+
+        let mut new = defaults();
+        seed(&mut new, detected());
+        assert_eq!((&new.checks, &new.app_qa), (&s.checks, &s.app_qa));
+
+        let kept = parse(V1_DOC, detected).unwrap();
+        assert_eq!(kept.checks, [found("cargo test", ADDED_BY_YOU)]);
+        assert_eq!(kept.app_qa.source, ADDED_BY_YOU);
+
+        let mut removed = s.clone();
+        removed.checks.clear();
+        removed.app_qa.start_command.clear();
+        let removed = parse(&serde_json::to_string(&removed).unwrap(), detected).unwrap();
+        assert!(removed.checks.is_empty(), "{:?}", removed.checks);
+        assert!(removed.app_qa.start_command.is_empty());
     }
 
     #[test]

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { ownLimitNote, suggestFocus } from './nightShiftFormat'
+import { checksSummary, ownLimitNote, suggestFocus } from './nightShiftFormat'
 import { nightDefaults } from '../../test/nightShiftFixtures'
 
 describe('nightShiftFormat', () => {
   const base = nightDefaults().focus
+
+  it('an empty checks summary says how many the repository offers', () => {
+    const check = { command: 'cargo test', source: 'ci.yml · core-checks' }
+    expect(checksSummary([], 4)).toBe('None chosen, 4 found in the repository')
+    expect(checksSummary([], 0)).toBe('No checks found: add one')
+    expect(checksSummary([check], 4)).toBe('1 check from ci.yml')
+  })
 
   it('direction suggests matching focus areas in English and Portuguese', () => {
     const en = suggestFocus('Make it feel faster and stop it crashing in long sessions', base, base, new Set())

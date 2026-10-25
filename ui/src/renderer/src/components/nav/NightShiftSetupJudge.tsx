@@ -110,7 +110,7 @@ export function JudgeChange({ draft, detected, set }: { draft: NightShiftSetting
         </NightStep>
         <NightStep number={4} heading="Checks and CI"
           tip="Houston runs these commands on the pull request branch itself and reads CI from the pull request watch; both show as facts in the morning report. Found in the CI workflows, package manifests and AGENTS.md; only checks that run on this machine are listed, full suites run in CI."
-          aside={<Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => setChecksOpen(!checksOpen)}>{`${checksSummary(draft.checks)} ${expanded ? '▾' : '▸'}`}</Button>}>
+          aside={<Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => setChecksOpen(!checksOpen)}>{`${checksSummary(draft.checks, detected.checks.length)} ${expanded ? '▾' : '▸'}`}</Button>}>
           {expanded && <ChecksList draft={draft} detected={detected} set={set} />}
         </NightStep>
         <AppQa draft={draft} detected={detected} set={set} />

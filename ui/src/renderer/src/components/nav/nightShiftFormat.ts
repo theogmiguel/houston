@@ -265,9 +265,9 @@ export function githubRepo(text: string): string | null {
   return t
 }
 
-/** "4 checks from ci.yml", from the files the checks were found in. */
-export function checksSummary(checks: NightShiftSettings['checks']): string {
-  if (checks.length === 0) return 'No checks found: add one'
+/** "4 checks from ci.yml", from the files the checks were found in; `found` counts what detection offers. */
+export function checksSummary(checks: NightShiftSettings['checks'], found: number): string {
+  if (checks.length === 0) return found > 0 ? `None chosen, ${found} found in the repository` : 'No checks found: add one'
   const files = [...new Set(checks.map((c) => c.source.split(' · ')[0]))]
   const from = files.length === 1 ? files[0] : `${files.length} sources`
   return `${countLabel(checks.length, 'check', 'checks')} from ${from}`

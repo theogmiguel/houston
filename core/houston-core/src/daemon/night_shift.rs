@@ -115,10 +115,6 @@ const NIGHT_CHECK_NOTE_CHARS: usize = 1_500;
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
 
-fn parse_settings(json: &str) -> Result<proto::NightShiftSettings> {
-    settings::parse(json)
-}
-
 /// A run's worktree, detached at the workspace's HEAD under its
 /// `.houston/worktrees/` like a `pane_spawn` worktree: the run's panes then keep
 /// the workspace as their own and start inside it.
@@ -335,10 +331,16 @@ impl Daemon {
     }
 
     fn night_settings(&self, routine_id: u32) -> Result<proto::NightShiftSettings> {
-        match self.db.night_shift_settings_json(routine_id)? {
-            Some(json) => parse_settings(&json),
-            None => Ok(settings::defaults()),
-        }
+        let Some(json) = self.db.night_shift_settings_json(routine_id)? else {
+            return Ok(settings::defaults());
+        };
+        settings::parse(&json, || {
+            self.night_routine(routine_id)
+                .ok()
+                .and_then(|r| r.workspace_id)
+                .map(|w| self.night_detect_repo(&w))
+                .unwrap_or_default()
+        })
     }
 
     /// Creates the workspace's paused routine with the default settings, or
@@ -376,12 +378,7 @@ impl Daemon {
             })
             .ok_or_else(|| anyhow!("every Night shift routine name for {workspace} is taken"))?;
         let mut s = settings::defaults();
-        let detected = self.night_detect(workspace);
-        s.checks = detected.checks;
-        if let Some(start) = detected.start_command {
-            s.app_qa.start_command = start.command;
-            s.app_qa.source = start.source;
-        }
+        settings::seed(&mut s, self.night_detect_repo(workspace));
         let msg = self.routine_create_impl(
             &name,
             crate::night_shift::ROUTINE_PROMPT,
@@ -410,14 +407,22 @@ impl Daemon {
 
     /// What Setup offers from the workspace: checks whose program is on PATH.
     fn night_detect(&self, workspace: &str) -> proto::NightDetected {
+        let (apps, apps_note) = crate::night_shift::apps::installed();
+        proto::NightDetected {
+            apps,
+            apps_note,
+            ..self.night_detect_repo(workspace)
+        }
+    }
+
+    /// The checks and start command a new setup is seeded with.
+    fn night_detect_repo(&self, workspace: &str) -> proto::NightDetected {
         let env = self.env();
         let runnable = |program: &str| crate::exe_path::resolve_in(&env, program).is_some();
-        let (apps, apps_note) = crate::night_shift::apps::installed();
         proto::NightDetected {
             checks: crate::night_shift::detect::checks(Path::new(workspace), &runnable),
             start_command: crate::night_shift::detect::start_command(Path::new(workspace)),
-            apps,
-            apps_note,
+            ..Default::default()
         }
     }
 
