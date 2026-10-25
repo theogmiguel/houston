@@ -265,6 +265,10 @@ refused. A copy stops at 256 files or 32 MiB. Anything not copied is named in a
 pane's message; the worktree is created either way. Houston runs no command from the
 repository while doing this.
 
+If the repository declares submodules, Houston also initialises them in a worktree it
+creates, the same way `git submodule update --init --recursive` does. A submodule that
+cannot be fetched is named in the same warning, and the worktree is created either way.
+
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the
 pane or retention expires. After receiving a completed result, preserve any needed output

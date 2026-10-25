@@ -1,7 +1,12 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const BRANCH_PREFIX: &str = "houston/task/";
+
+/// A managed creation budgets its `.worktreeinclude` copy at 30 s; a submodule
+/// init past the same budget is abandoned with a warning, never a stalled spawn.
+const SUBMODULE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
@@ -406,12 +411,84 @@ pub fn has_submodules(worktree: &Path) -> bool {
     worktree.join(".gitmodules").is_file()
 }
 
-/// `git worktree add` leaves submodules empty, so a repository that keeps
-/// tooling in one gets a worktree quietly missing it. Best effort: a clone
-/// needs the network, and failing must not undo a worktree that exists.
+/// `git worktree add` leaves submodules empty. A clone can need the network and a
+/// credential prompt can never be answered, so the update is bounded; failing must
+/// not undo a worktree that exists.
 pub fn init_submodules(worktree: &Path) -> Result<()> {
-    run_git(worktree, &["submodule", "update", "--init", "--recursive"])?;
+    let mut command = git_command(worktree);
+    command.args(["submodule", "update", "--init", "--recursive"]);
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let out = crate::spawn::output_within(command, SUBMODULE_TIMEOUT).with_context(|| {
+        format!(
+            "spawning git submodule update --init --recursive in {}",
+            worktree.display()
+        )
+    })?;
+    let Some(out) = out else {
+        bail!(
+            "git submodule update --init --recursive in {} did not finish within {} s; \
+             the submodules may be partly initialised",
+            worktree.display(),
+            SUBMODULE_TIMEOUT.as_secs()
+        );
+    };
+    if !out.status.success() {
+        bail!(
+            "git submodule update --init --recursive in {} failed (exit {:?}): {}",
+            worktree.display(),
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
     Ok(())
+}
+
+/// The submodule paths a worktree's `.gitmodules` declares, so a failed init
+/// names them; an unreadable file leaves the list empty rather than guessing.
+fn declared_submodule_paths(worktree: &Path) -> Vec<String> {
+    run_git(
+        worktree,
+        &[
+            "config",
+            "--file",
+            ".gitmodules",
+            "--get-regexp",
+            r"^submodule\..+\.path$",
+        ],
+    )
+    .map(|raw| {
+        raw.lines()
+            .filter_map(|line| line.split_once(' '))
+            .map(|(_, path)| path.trim().to_string())
+            .filter(|path| !path.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Managed creations initialise declared submodules best effort: the worktree stands
+/// either way, and a failure becomes one warning naming the submodule and the error,
+/// also logged for callers that drop it.
+pub fn init_submodules_best_effort(worktree: &Path) -> Vec<String> {
+    if !has_submodules(worktree) {
+        return Vec::new();
+    }
+    let error = match init_submodules(worktree) {
+        Ok(()) => return Vec::new(),
+        Err(error) => error,
+    };
+    let paths = declared_submodule_paths(worktree);
+    let named = if paths.is_empty() {
+        "the declared submodules".to_string()
+    } else {
+        paths.join(", ")
+    };
+    let warning = format!(
+        "submodules: initialising {named} in {} failed: {error:#}",
+        worktree.display()
+    );
+    tracing::warn!("{warning}");
+    vec![warning]
 }
 
 /// Registration cleanup, not deletion: a worktree whose directory is already
@@ -1275,6 +1352,12 @@ mod submodule_tests {
             .arg("-C")
             .arg(dir)
             .args(args)
+            // A local-path submodule clone is the file transport, which git refuses
+            // unless `protocol.file.allow=always`; per-command env keeps the
+            // allowance off this process, so plain `cargo test` cannot leak it.
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "protocol.file.allow")
+            .env("GIT_CONFIG_VALUE_0", "always")
             .output()
             .unwrap();
         assert!(
@@ -1339,5 +1422,43 @@ mod submodule_tests {
         std::fs::create_dir_all(&repo).unwrap();
         init_repo(&repo);
         assert!(!has_submodules(&repo));
+        assert!(init_submodules_best_effort(&repo).is_empty());
+    }
+
+    /// Returns the root, the repo and the submodule.
+    fn repo_with_one_submodule() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let sub = root.path().join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        init_repo(&sub);
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        git(
+            &repo,
+            &["submodule", "add", sub.to_str().unwrap(), "vendor/sub"],
+        );
+        git(&repo, &["commit", "-m", "add submodule"]);
+        (root, repo, sub)
+    }
+
+    #[test]
+    fn a_failed_init_warns_naming_the_submodule_and_keeps_the_worktree() {
+        let (root, repo, sub) = repo_with_one_submodule();
+        let dest = root.path().join("wt");
+        create_named(&repo, "broken", None, &dest).unwrap();
+        std::fs::remove_dir_all(&sub).unwrap();
+
+        let warnings = init_submodules_best_effort(&dest);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("vendor/sub") && warnings[0].contains("failed"),
+            "the warning must name the submodule and the error: {:?}",
+            warnings[0]
+        );
+        assert!(
+            dest.join("README.md").is_file(),
+            "a failed init must not undo the worktree"
+        );
     }
 }

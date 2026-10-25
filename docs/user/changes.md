@@ -290,7 +290,8 @@ workspace:
 - **Worktrees** adds a worktree beside the repository (Houston names its branch
   `houston/<name>`), removes one — a worktree with uncommitted changes asks first — and
   prunes registrations whose directory is already gone. A new worktree receives the ignored
-  files listed in `.worktreeinclude` (see [orchestration](orchestration.md)). "Add as workspace" turns a
+  files listed in `.worktreeinclude` and has its declared submodules initialised (see
+  [orchestration](orchestration.md)). "Add as workspace" turns a
   worktree into a workspace you can open panes in.
 - **Checkpoints** captures the working tree and staging area as a snapshot you can come
   back to. Inspect shows what a checkpoint would change; Restore replaces the current
