@@ -1300,8 +1300,9 @@ target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 
 `pane_spawn` HTTP and MCP results include `warnings: PaneSpawnWarning[]`, whose
 entries contain `code` and `message`. Codes include `shared_checkout`, `worktree_trust`,
-`worktree_include` (ignored files `.worktreeinclude` listed that were not copied, and why)
-and provider-specific guidance. Codex setup failures use `hooks_off`,
+`worktree_include` (ignored files `.worktreeinclude` listed that were not copied, and why),
+`worktree_slug_history` (the asked-for slug was suffixed because Claude history survives at
+its path) and provider-specific guidance. Codex setup failures use `hooks_off`,
 `hooks_not_installed` or `hooks_trust_unconfirmed`; the message names the cause and
 Settings → Agent status → Codex repair path. The same cause is recorded in an
 `operator_note` inbox row's `reason` and `body`, with `from_session` identifying the pane.
