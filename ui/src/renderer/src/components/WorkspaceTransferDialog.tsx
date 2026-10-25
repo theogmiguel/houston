@@ -124,12 +124,17 @@ function Frame({ heading, onClose, frame, children, actions }: { heading: string
   )
 }
 
-function PassphraseFields({ passphrase, confirm, onPassphrase, onConfirm, mismatch, error }: { passphrase: string; confirm?: string; onPassphrase: (value: string) => void; onConfirm?: (value: string) => void; mismatch?: boolean; error?: string }): React.JSX.Element {
+function PassphraseFields({ passphrase, confirm, onPassphrase, onConfirm, mismatch, minLength }: { passphrase: string; confirm?: string; onPassphrase: (value: string) => void; onConfirm?: (value: string) => void; mismatch?: boolean; minLength?: number }): React.JSX.Element {
+  const length = [...passphrase].length
+  const short = minLength !== undefined && length > 0 && length < minLength
+  const showLength = short && (confirm ?? '') !== ''
   return (
     <FormGrid>
       <FormGridLabel htmlFor="transfer-passphrase">Passphrase</FormGridLabel>
-      <TextInput variant="form" id="transfer-passphrase" type="password" autoComplete="new-password" value={passphrase} aria-invalid={error ? true : undefined} onChange={(event) => onPassphrase(event.target.value)} />
-      {error && <Text as="p" size="small" tone="danger" flush role="alert" className="col-start-2">{error}</Text>}
+      <TextInput variant="form" id="transfer-passphrase" type="password" autoComplete="new-password" value={passphrase} aria-invalid={showLength ? true : undefined} aria-describedby={minLength !== undefined ? 'transfer-passphrase-hint' : undefined} onChange={(event) => onPassphrase(event.target.value)} />
+      {minLength !== undefined && (showLength
+        ? <Text as="p" size="small" tone="danger" flush id="transfer-passphrase-hint" className="col-start-2">The passphrase has {length} {length === 1 ? 'character' : 'characters'}; at least {minLength} are required.</Text>
+        : <Text as="p" size="small" tone="muted" flush id="transfer-passphrase-hint" className="col-start-2">At least {minLength} characters.</Text>)}
       {onConfirm && <>
         <FormGridLabel htmlFor="transfer-passphrase-confirm">Repeat</FormGridLabel>
         <TextInput variant="form" id="transfer-passphrase-confirm" type="password" autoComplete="new-password" value={confirm} aria-invalid={mismatch} onChange={(event) => onConfirm(event.target.value)} />
@@ -161,7 +166,6 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
   const frame = useDialogFrame(onClose)
   const mismatch = confirm !== '' && confirm !== passphrase
   const passphraseLength = [...passphrase].length
-  const tooShort = passphraseLength > 0 && passphraseLength < MIN_EXPORT_PASSPHRASE_CHARS
   const ready = passphraseLength >= MIN_EXPORT_PASSPHRASE_CHARS && passphrase === confirm && outcome.kind !== 'running'
   const run = async (): Promise<void> => {
     if (!ready) return
@@ -199,7 +203,7 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
     body = <Stack gap={3}>
       <DialogDescription>Saves this workspace's Claude and Codex conversations and its code state in one encrypted file, so the work continues on another computer.</DialogDescription>
       <Text as="p" size="small" tone="muted" flush>The file holds commits that no remote has, uncommitted changes, untracked files and the full conversations, including everything the agents read. Houston sends nothing over the network. The exported agents stop here.</Text>
-      <PassphraseFields passphrase={passphrase} confirm={confirm} onPassphrase={setPassphrase} onConfirm={setConfirm} mismatch={mismatch} error={tooShort ? `The passphrase has ${passphraseLength} characters; at least ${MIN_EXPORT_PASSPHRASE_CHARS} are required.` : undefined} />
+      <PassphraseFields passphrase={passphrase} confirm={confirm} onPassphrase={setPassphrase} onConfirm={setConfirm} mismatch={mismatch} minLength={MIN_EXPORT_PASSPHRASE_CHARS} />
       {outcome.kind === 'running' && <Progress stage={outcome.stage} />}
     </Stack>
     actions = <><Button variant="secondary" onClick={onClose} disabled={outcome.kind === 'running'}>Cancel</Button><span className="flex-1" /><Button variant="primary" disabled={!ready} onClick={() => void run()}>Export</Button></>

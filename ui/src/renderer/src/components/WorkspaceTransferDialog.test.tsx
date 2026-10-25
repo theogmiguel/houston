@@ -79,13 +79,26 @@ describe('workspace transfer dialogs', () => {
     const { client } = fakeClient()
     render(<ExportTransferDialog client={client} workspace="/w" name="w" onClose={() => {}} />)
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'short' } })
+    expect(screen.getByText('At least 12 characters.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'short' } })
-    expect(screen.getByRole('alert').textContent).toBe('The passphrase has 5 characters; at least 12 are required.')
+    expect(screen.getByText('The passphrase has 5 characters; at least 12 are required.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByLabelText('Passphrase').getAttribute('aria-describedby')).toBe('transfer-passphrase-hint')
     expect((screen.getByRole('button', { name: 'Export' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'correct-horse' } })
     fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'correct-horse' } })
     expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('At least 12 characters.')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Export' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('export says "1 character" for a one-character passphrase', () => {
+    const { client } = fakeClient()
+    render(<ExportTransferDialog client={client} workspace="/w" name="w" onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'a' } })
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'a' } })
+    expect(screen.getByText('The passphrase has 1 character; at least 12 are required.')).toBeTruthy()
   })
 
   it('import reads the summary, proposes the matching workspace and sends the profile choice', async () => {
