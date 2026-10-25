@@ -3400,7 +3400,7 @@ impl Daemon {
             .as_ref()
             .map(|v| v.iter().map(|(s, _)| s.info.id).collect())
             .unwrap_or_default();
-        let mut dead: HashMap<u32, proto::SessionInfo> = HashMap::new();
+        let mut dead: HashMap<u32, proto::SessionInfo>;
         if adopted.is_none() {
             for ws in db.list_workspaces().unwrap_or_default() {
                 match crate::paths::migrate_legacy_project_dir(Path::new(&ws.path)) {
@@ -3476,6 +3476,14 @@ impl Daemon {
                     dead.len()
                 );
             }
+        } else {
+            // The predecessor already named these; adopting only shows the panes it showed.
+            dead = db
+                .list_interrupted()?
+                .into_iter()
+                .filter(|i| !adopted_ids.contains(&i.id))
+                .map(|i| (i.id, i))
+                .collect();
         }
         let next_id = db.next_session_id()?;
         let scrollback_dir = cfg
