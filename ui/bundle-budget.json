@@ -198,7 +198,7 @@
     "one bounded inbox_list poller per connection, which the Tasks surface and the",
     "orchestrator overview share, so the poller and its generic queue are boot-path code.",
     "",
-    "Re-cut against PLACEHOLDER bytes (one boot chunk) with the same small headroom:",
+    "Re-cut against 948,812 bytes (one boot chunk, Windows build) with the same small headroom:",
     "the parked-window store in `windowParked.ts` gates the rail's git poller, which",
     "starts at first paint, so the store and its tray-event listener are boot-path code;",
     "layout saves are debounced, and the pending-write map, its flush on hide and",
@@ -206,7 +206,7 @@
     "`layout/tree.ts`, which every boot path imports; and the git poller's failure",
     "backoff lives in the shared bounded poller."
   ],
-  "maxBootBytes": 948500,
+  "maxBootBytes": 949050,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
