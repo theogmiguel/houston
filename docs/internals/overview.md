@@ -524,7 +524,7 @@ docs/                     this tree; see docs/README.md
 | SQLite `houston.db` (WAL) | workspaces, sessions roster, SSH profiles, settings KV, routines and their runs, command history, MCP/skill bookkeeping, legacy swarm tables | `db.rs`; migrations are `CREATE TABLE IF NOT EXISTS` + `add_column_if_missing`, no `user_version` |
 | `scrollback/<id>.bin` | 4 MiB ring per session, written on session end and shutdown | `scrollback.rs` |
 | OS keychain | SSH credentials, Groq API key | `ssh_credentials.rs`, `voice/cloud.rs` |
-| `localStorage` (per channel webview) | grids, split trees, workspace order and pins, sidebar state, chrome theme | `layout/tree.ts` |
+| `localStorage` (per channel webview) | grids, split trees (written 300 ms after the last change, at once when the page is hidden or unloaded), workspace order and pins, sidebar state, chrome theme | `layout/tree.ts` |
 | in memory only | live sessions, handoff jobs, hook/mail scope state | `daemon.rs` |
 
 The workspace/grid/pane hierarchy is split across two stores on purpose: the daemon knows

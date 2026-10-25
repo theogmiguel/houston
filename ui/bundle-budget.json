@@ -193,11 +193,14 @@
     "gate: the rail Undo wrappers, find-in-diff's KEYMAP entry, and content",
     "search's KEYMAP entry, shortcut handler, lazy overlay wrapper and toggle glyphs.",
     "",
-    "Re-cut against 947,114 bytes (one boot chunk) with the same small headroom:",
+    "Re-cut against 947,542 bytes (one boot chunk) with the same small headroom:",
     "the parked-window store in `windowParked.ts` gates the rail's git poller, which",
-    "starts at first paint, so the store and its tray-event listener are boot-path code."
+    "starts at first paint, so the store and its tray-event listener are boot-path code;",
+    "layout saves are debounced, and the pending-write map, its flush on hide and",
+    "pagehide, and the read-through that keeps loads current live in",
+    "`layout/tree.ts`, which every boot path imports."
   ],
-  "maxBootBytes": 947300,
+  "maxBootBytes": 947750,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
