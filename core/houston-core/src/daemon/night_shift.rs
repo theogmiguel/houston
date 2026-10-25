@@ -1,7 +1,7 @@
 //! Night shift runs as the daemon drives them: settings, start and preflight,
 //! wrap-up and hard stop, the ledger the orchestrator writes, keep-awake,
 //! restart recovery and provider substitution.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -92,9 +92,28 @@ pub(crate) struct NightShiftCtx {
     facts_for_test: Mutex<Option<preflight::Facts>>,
     awake_for_test: Mutex<Option<AwakeHook>>,
     /// Runs whose ZCode quota probe is in flight; one at a time per run.
-    zcode_probing: Mutex<std::collections::HashSet<u32>>,
+    zcode_probing: Mutex<HashSet<u32>>,
     zcode_probe_program_for_test: Mutex<Option<std::path::PathBuf>>,
     pr_fates_for_test: Mutex<Option<HashMap<u32, String>>>,
+    /// PR heads whose checks are in a detached thread: `(run, entry, sha)`.
+    checks_running: Mutex<HashSet<(u32, u32, String)>>,
+}
+
+/// Removes a PR head from `checks_running` however its checking thread ends.
+struct NightChecksRun {
+    daemon: Arc<Daemon>,
+    key: (u32, u32, String),
+}
+
+impl Drop for NightChecksRun {
+    fn drop(&mut self) {
+        self.daemon
+            .night
+            .checks_running
+            .lock()
+            .expect("night checks")
+            .remove(&self.key);
+    }
 }
 
 const MINUTE_MS: i64 = 60_000;
@@ -579,6 +598,33 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_night_shift_facts_for_test(&self, facts: Option<preflight::Facts>) {
         *self.night.facts_for_test.lock().expect("night facts") = facts;
+    }
+
+    /// Puts an entry's Checks gate back to Pending with no results, as a check
+    /// whose thread never recorded one leaves it.
+    #[doc(hidden)]
+    pub fn night_shift_pend_checks_for_test(&self, entry_id: u32) -> Result<()> {
+        let Some(entry) = self.db.night_entry(entry_id)? else {
+            bail!("no Night shift entry {entry_id}");
+        };
+        let mut gates = entry.gates;
+        gates.checks = proto::NightGate::Pending;
+        let detail = proto::NightEntryDetail {
+            checks_run: Vec::new(),
+            ..entry.detail
+        };
+        self.db.set_night_entry_facts(entry_id, &gates, &detail)
+    }
+
+    /// Whether an entry's check on `sha` is still in a detached thread.
+    #[doc(hidden)]
+    pub fn night_checks_running_for_test(&self, entry_id: u32, sha: &str) -> bool {
+        self.night
+            .checks_running
+            .lock()
+            .expect("night checks")
+            .iter()
+            .any(|(_, entry, running)| *entry == entry_id && running == sha)
     }
 
     /// Records keep-awake instead of asking the platform: `(run, held)`.
@@ -1792,6 +1838,7 @@ impl Daemon {
                 },
             );
             self.night_shift_pane_opened(row.run_id, session);
+            self.night_retrigger_checks(row.run_id);
             for pane in self.night_note_members(row.run_id, now_ms) {
                 self.night_resume_held(pane);
             }
@@ -1940,6 +1987,17 @@ impl Daemon {
                         gates.checks = proto::NightGate::Pending;
                         gates.verify = proto::NightGate::None;
                         check_at = Some(sha);
+                    }
+                }
+                if check_at.is_none() {
+                    if let Some(existing) = &existing {
+                        if gates.checks == proto::NightGate::Pending {
+                            if let Some(sha) = detail.head_sha.clone() {
+                                if !self.night_checks_running(run, existing.id, &sha) {
+                                    check_at = Some(sha);
+                                }
+                            }
+                        }
                     }
                 }
                 let title = required(args, "title", title_max)?;
@@ -2102,25 +2160,79 @@ impl Daemon {
         Ok(json!({ "recorded": true, "note": note }))
     }
 
+    /// Starts the checks a recovered run left Pending with no thread running.
+    fn night_retrigger_checks(self: &Arc<Self>, run_id: u32) {
+        let Ok(entries) = self.db.night_entries(run_id) else {
+            return;
+        };
+        for entry in entries {
+            if entry.kind != proto::NightEntryKind::Pr
+                || entry.gates.checks != proto::NightGate::Pending
+            {
+                continue;
+            }
+            let (Some(number), Some(sha)) = (entry.pr_number, entry.detail.head_sha.clone()) else {
+                continue;
+            };
+            if !self.night_checks_running(run_id, entry.id, &sha) {
+                self.night_run_checks(run_id, entry.id, number, sha);
+            }
+        }
+    }
+
+    /// Whether `sha`'s checks for `entry` are already in a detached thread.
+    fn night_checks_running(&self, run_id: u32, entry_id: u32, sha: &str) -> bool {
+        self.night
+            .checks_running
+            .lock()
+            .expect("night checks")
+            .contains(&(run_id, entry_id, sha.to_string()))
+    }
+
     /// Runs the settings' checks on `sha` in a scratch worktree, inside the
     /// build slot, off the caller's thread; the Checks gate follows.
     fn night_run_checks(self: &Arc<Self>, run_id: u32, entry_id: u32, number: u32, sha: String) {
+        let key = (run_id, entry_id, sha.clone());
+        if !self
+            .night
+            .checks_running
+            .lock()
+            .expect("night checks")
+            .insert(key.clone())
+        {
+            return;
+        }
         let Ok(Some(row)) = self.db.night_run(run_id) else {
+            self.night
+                .checks_running
+                .lock()
+                .expect("night checks")
+                .remove(&key);
             return;
         };
         let commands: Vec<String> = match self.night_settings(row.routine_id) {
             Ok(s) => s.checks.into_iter().map(|c| c.command).collect(),
             Err(e) => {
                 tracing::warn!("reading run {run_id}'s checks: {e:#}");
+                self.night
+                    .checks_running
+                    .lock()
+                    .expect("night checks")
+                    .remove(&key);
                 return;
             }
         };
         let scratch =
             crate::night_shift::run_dir(&self.state_dir, run_id).join(format!("checks-pr{number}"));
         let me = Arc::clone(self);
+        let thread_key = key.clone();
         let spawned = std::thread::Builder::new()
             .name(format!("night-checks-{run_id}-{number}"))
             .spawn(move || {
+                let _running = NightChecksRun {
+                    daemon: Arc::clone(&me),
+                    key: thread_key,
+                };
                 let slot = loop {
                     if let Some(slot) = me.night_take_build_slot(&row.workspace, number) {
                         break slot;
@@ -2148,6 +2260,11 @@ impl Daemon {
             });
         if let Err(e) = spawned {
             tracing::warn!("starting the checks of PR #{number}: {e}");
+            self.night
+                .checks_running
+                .lock()
+                .expect("night checks")
+                .remove(&key);
         }
     }
 

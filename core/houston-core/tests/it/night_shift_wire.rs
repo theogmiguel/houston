@@ -2321,6 +2321,69 @@ async fn houston_runs_the_checks_on_the_pr_head() {
     );
 }
 
+/// A Checks gate left Pending with no thread running starts again: when the
+/// orchestrator re-records the same head, and when a restart recovers the run.
+#[tokio::test]
+async fn pending_pr_checks_start_again_on_re_record_and_recovery() {
+    let r = rig().await;
+    let routine = r.ready(|s| s.checks = vec![check("true")]);
+    let run = r.run_now(routine.id, 240);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 7, "title": "Tray fix", "head": "HEAD" }),
+        )
+        .await
+        .0,
+        200
+    );
+    let sha = pr_entry(&r, run.run_id, 7)
+        .detail
+        .head_sha
+        .clone()
+        .expect("the head was recorded");
+    wait_until("the first checks to finish", || {
+        pr_entry(&r, run.run_id, 7).gates.checks == proto::NightGate::Passed
+            && !r
+                .daemon
+                .night_checks_running_for_test(pr_entry(&r, run.run_id, 7).id, &sha)
+    })
+    .await;
+
+    let entry = pr_entry(&r, run.run_id, 7);
+    r.daemon.night_shift_pend_checks_for_test(entry.id).unwrap();
+    let (status, body) = r
+        .night(
+            o,
+            "pr",
+            json!({ "number": 7, "title": "Tray fix", "head": "HEAD" }),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["note"]
+            .as_str()
+            .unwrap()
+            .contains("Houston runs the checks"),
+        "{body}"
+    );
+    wait_until("the re-recorded checks to finish", || {
+        pr_entry(&r, run.run_id, 7).gates.checks == proto::NightGate::Passed
+    })
+    .await;
+
+    r.daemon.night_shift_pend_checks_for_test(entry.id).unwrap();
+    r.daemon.forget_routine_runs_for_test();
+    r.daemon
+        .night_shift_recover_at(run.started_at_ms + 10 * MINUTE);
+    wait_until("the recovered checks to finish", || {
+        pr_entry(&r, run.run_id, 7).gates.checks == proto::NightGate::Passed
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn the_orchestrator_cannot_set_checks_or_ci() {
     let r = rig().await;
