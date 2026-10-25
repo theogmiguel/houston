@@ -2222,6 +2222,11 @@ async fn a_mode_change_is_refused_while_a_turn_is_open() {
     let mut rig = Rig::new().await;
     let id = rig.thread().await;
     rig.say(id, "slow:1500").await;
+    // Control requests run concurrently; ask once the turn is visibly open.
+    rig.events_until(id, |e| {
+        matches!(e.kind, ThreadEventKind::UserMessage { .. })
+    })
+    .await;
     rig.send(json!({"type":"thread_set_permission_mode","session":id,"mode":"bypass"}))
         .await;
     let (message, _) = tokio::time::timeout(Duration::from_secs(20), rig.error())
