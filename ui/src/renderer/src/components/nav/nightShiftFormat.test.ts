@@ -20,6 +20,17 @@ describe('nightShiftFormat', () => {
     expect(pt.focus).toMatchObject({ docs_accuracy: 'high', test_gaps: 'high', reliability: 'off', performance: 'off' })
   })
 
+  it('matches direction words only as whole words', () => {
+    const build = suggestFocus('make the build faster', base, base, new Set())
+    expect(build.focus).toMatchObject({ performance: 'high', ui_polish: 'off', docs_accuracy: 'off', test_gaps: 'off' })
+    const docker = suggestFocus('update the docker image', base, base, new Set())
+    expect(docker.focus.docs_accuracy).toBe(base.docs_accuracy)
+    const latest = suggestFocus('latest release', base, base, new Set())
+    expect(latest.focus.test_gaps).toBe(base.test_gaps)
+    expect(suggestFocus('fix the docs', base, base, new Set()).focus.docs_accuracy).toBe('high')
+    expect(suggestFocus('add tests', base, base, new Set()).focus.test_gaps).toBe('high')
+  })
+
   it('names the own pane limit only above the global child panes per agent', () => {
     expect(ownLimitNote(4, 6)).toBeNull()
     expect(ownLimitNote(5, 6)).toBe('Own limit: 7 panes · other agents keep 6')

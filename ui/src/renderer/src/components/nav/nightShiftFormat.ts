@@ -22,12 +22,12 @@ export const FOCUS_AREAS: { key: keyof NightFocus; label: string; definition: st
 
 /** Direction words that suggest a focus area, in English and Portuguese. */
 const DIRECTION_HINTS: Record<keyof NightFocus, RegExp> = {
-  reliability: /crash|stab|reliab|hang|freez|lost|lose|break|bug|error|trav|est[aá]v|confi[aá]v|perd/i,
-  performance: /fast|slow|speed|perf|lag|memory|cpu|startup|r[aá]pid|lent|desempenho|mem[oó]ria/i,
-  ui_polish: /look|ui|ux|design|polish|screen|visual|layout|beaut|bonit|tela|interface/i,
-  competitor_gaps: /compet|rival|catch up|alcan|concorr/i,
-  docs_accuracy: /doc|guide|readme|manual/i,
-  test_gaps: /test|coverage|cobertura/i
+  reliability: /\bcrash|\bstab|\breliab|\bhang|\bfreez|\blost|\blose|\bbreak|\bbug|\berror|\btrav|\best[aá]v|\bconfi[aá]v|\bperd/i,
+  performance: /\bperf|\bfast|\bslow|\bspeed|\blag|\bmemory|\bcpu|\bstartup|\br[aá]pid|\blent|\bdesempenho|\bmem[oó]ria/i,
+  ui_polish: /\bui\b|\bux\b|\blook|\bdesign|\bpolish|\bscreen|\bvisual|\blayout|\bbeaut|\bbonit|\btela\b|\binterface/i,
+  competitor_gaps: /\bcompet|\brival|\bcatch up|\balcan|\bconcorr/i,
+  docs_accuracy: /\bdocs?\b|\bdocumenta/i,
+  test_gaps: /\btest/i
 }
 
 /** Focus areas the Direction suggests: a matching area goes High, the others Off while any
