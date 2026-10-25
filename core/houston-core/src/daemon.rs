@@ -9539,17 +9539,7 @@ impl Daemon {
                 facts.toplevel.as_deref().unwrap_or("none")
             ),
         };
-        if let Some(run) = self
-            .db
-            .night_runs_in_flight()?
-            .into_iter()
-            .find(|r| relocated(from, to, &r.workspace).is_some())
-        {
-            bail!(
-                "Night shift run {} is in flight in {from}; stop or wait for the run first",
-                run.run_id
-            );
-        }
+        self.refuse_night_run_in_relocation(from, to)?;
         let live = self
             .sessions
             .lock()
@@ -9635,6 +9625,9 @@ impl Daemon {
             (Some(old), Some(new)) if current.name == old => new,
             _ => current.name.clone(),
         };
+        // A start inserts its run without the membership lock, so check again right
+        // before the transaction: no run may keep pointing at the old path.
+        self.refuse_night_run_in_relocation(from, to)?;
         self.db.relocate_workspace(from, to, &name, &worktrees)?;
         moved.worktrees = worktrees.len() as u32;
         let re_root = |slot: &mut String| match relocated(from, to, slot) {
@@ -9718,6 +9711,22 @@ impl Daemon {
             });
         }
         Ok(moved)
+    }
+
+    /// Refuses relocation while a Night shift run owns the workspace.
+    fn refuse_night_run_in_relocation(&self, from: &str, to: &str) -> Result<()> {
+        if let Some(run) = self
+            .db
+            .night_runs_in_flight()?
+            .into_iter()
+            .find(|r| crate::paths::relocated(from, to, &r.workspace).is_some())
+        {
+            bail!(
+                "Night shift run {} is in flight in {from}; stop or wait for the run first",
+                run.run_id
+            );
+        }
+        Ok(())
     }
 
     pub fn workspace_remove(self: &Arc<Self>, path: &str) -> Result<Vec<proto::Workspace>> {
