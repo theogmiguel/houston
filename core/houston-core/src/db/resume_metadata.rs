@@ -70,7 +70,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         let row = conn
             .query_row(
-                "SELECT resume_session_id IS NOT NULL, resume_agent, resume_cwd, cwd,
+                "SELECT resume_session_id IS NOT NULL, resume_agent, resume_cwd, cwd, agent,
                     CASE WHEN agent = 'shell' THEN detected_agent ELSE agent END
                  FROM sessions WHERE id = ?1",
                 [id],
@@ -80,21 +80,26 @@ impl Db {
                         row.get::<_, Option<String>>(1)?,
                         row.get::<_, Option<String>>(2)?,
                         row.get::<_, String>(3)?,
-                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((has_handle, bound_agent, bound_cwd, cwd, effective)) = row else {
+        let Some((has_handle, bound_agent, bound_cwd, cwd, agent, effective)) = row else {
             return Ok(false);
         };
-        // Provider hooks can report a subfolder of the folder the handle is bound to;
-        // that is still the same conversation.
-        Ok(has_handle
-            && bound_agent.is_some()
-            && bound_agent == effective
-            && bound_cwd
-                .is_some_and(|bound| crate::paths::contains(Path::new(&bound), Path::new(&cwd))))
+        // A provider hook can report a subfolder of the folder the handle is bound to;
+        // that is still the same conversation. A shell's cwd is its own folder, so any
+        // change there invalidates the binding.
+        let folder_matches = bound_cwd.is_some_and(|bound| {
+            if agent == "shell" {
+                bound == cwd
+            } else {
+                crate::paths::contains(Path::new(&bound), Path::new(&cwd))
+            }
+        });
+        Ok(has_handle && bound_agent.is_some() && bound_agent == effective && folder_matches)
     }
 
     pub fn root_hook_recovery_session_ids(&self) -> Result<Vec<u32>> {

@@ -7574,7 +7574,9 @@ mod tests {
                      (5, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
                          'c5', 'codex', '/a/proj'),
                      (6, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
-                         NULL, NULL, NULL);",
+                         NULL, NULL, NULL),
+                     (7, 'shell', 'claude', '/a/proj', '/a/proj', 'running', 0,
+                         'c7', 'claude', '/a/proj');",
             )
             .unwrap();
         assert!(
@@ -7590,8 +7592,8 @@ mod tests {
             "a folder outside the binding moved"
         );
         assert!(
-            db.session_has_bound_resume_handle(4).unwrap(),
-            "a shell's detected agent owns the handle"
+            !db.session_has_bound_resume_handle(4).unwrap(),
+            "a shell that changed folder no longer holds the bound conversation"
         );
         assert!(
             !db.session_has_bound_resume_handle(5).unwrap(),
@@ -7600,6 +7602,10 @@ mod tests {
         assert!(
             !db.session_has_bound_resume_handle(6).unwrap(),
             "no handle is not resumable"
+        );
+        assert!(
+            db.session_has_bound_resume_handle(7).unwrap(),
+            "a shell in the bound folder holds its detected agent's conversation"
         );
     }
 
