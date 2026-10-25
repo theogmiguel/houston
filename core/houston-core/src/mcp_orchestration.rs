@@ -946,7 +946,9 @@ impl OrchestrationTools {
                 title: "Post a status note".into(),
                 description: "Show one line (at most 512 bytes) and an optional phase on this pane's rail card, replacing your last note; clear: true removes it.".into(),
                 input_schema: json!({"type":"object","properties":{
-                    "text":{"type":"string","minLength":1,"maxLength":proto::PANE_NOTE_MAX_BYTES},
+                    // JSON Schema maxLength counts code points while the daemon counts
+                    // bytes, so the limit is stated here and enforced by the daemon.
+                    "text":{"type":"string","minLength":1,"description":format!("One line, at most {} bytes of UTF-8; the daemon refuses longer notes and non-ASCII characters count several bytes each.", proto::PANE_NOTE_MAX_BYTES)},
                     "phase":{"type":"string","enum":["todo","in_progress","in_review","done"]},
                     "clear":{"type":"boolean"}
                 },"additionalProperties":false}),

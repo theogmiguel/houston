@@ -1,12 +1,23 @@
 //! The one-line status note an agent writes on its own pane with `pane_note`, shown on
 //! the rail card. Persisted with the session row and dropped with the session.
+use std::sync::OnceLock;
+
 use anyhow::{bail, Result};
 use houston_protocol as proto;
+use regex::Regex;
 
 use super::{now_ms, Daemon};
 
-/// One line of text: whitespace runs (newlines included) become one space, other
-/// control characters are dropped, and the result is refused past the byte limit.
+/// Unicode General_Category=Format (Cf): bidi overrides and isolates, zero-width
+/// marks. Invisible characters must not reach the rail card.
+fn format_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\p{Cf}").unwrap())
+}
+
+/// One line of text: whitespace runs (newlines included) become one space, control
+/// characters and Unicode format characters (bidi overrides, zero-width marks)
+/// are dropped, and the result is refused past the byte limit.
 pub(crate) fn note_text(raw: &str) -> Result<String> {
     let text = raw
         .split_whitespace()
@@ -15,6 +26,7 @@ pub(crate) fn note_text(raw: &str) -> Result<String> {
         .chars()
         .filter(|c| !c.is_control())
         .collect::<String>();
+    let text = format_re().replace_all(&text, "").into_owned();
     if text.is_empty() {
         bail!(
             "pane note is empty; expected 1 to {} bytes of text, or `clear` to remove the note",
@@ -148,5 +160,19 @@ mod tests {
         let error = note_text(&over).unwrap_err().to_string();
         assert!(error.contains("514 bytes"), "{error}");
         assert!(error.contains("the limit is 512 bytes"), "{error}");
+    }
+
+    #[test]
+    fn a_note_strips_invisible_format_characters() {
+        // U+202E reorders and U+2066 isolates following text; U+FEFF is a
+        // zero-width no-break space. A note of only format characters is empty.
+        assert_eq!(
+            note_text("fix\u{202e}in\u{2066} place\u{feff}").unwrap(),
+            "fixin place"
+        );
+        assert!(note_text("\u{202e}\u{200d}")
+            .unwrap_err()
+            .to_string()
+            .contains("pane note is empty"));
     }
 }
