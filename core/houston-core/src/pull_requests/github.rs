@@ -457,6 +457,15 @@ const HAND_OFF_FIELDS: &[&str] = &[
 static NO_HAND_OFF_HOSTS: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
+/// The host set is process-wide; a test suite that flips one host's schema empties
+/// it so the next fixture starts as a fresh daemon would.
+#[doc(hidden)]
+pub fn clear_hand_off_hosts_for_test() {
+    if let Ok(mut hosts) = NO_HAND_OFF_HOSTS.lock() {
+        hosts.clear();
+    }
+}
+
 /// The host the workspace's remote names, or the remote itself for a local path.
 fn api_host(dir: &Path) -> String {
     let Some(url) = crate::git::remote_url(dir) else {

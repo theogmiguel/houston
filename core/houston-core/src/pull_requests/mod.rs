@@ -110,6 +110,13 @@ pub fn refresh(dir: &Path, existing: &PullRequestLink) -> Result<PullRequestLink
     read(dir, Some(existing.number), existing.source, Some(existing)).map(|(link, _)| link)
 }
 
+/// The hand-off schema host cache is process-wide; a test suite that flips one
+/// host's schema empties it so the next fixture starts as a fresh daemon would.
+#[doc(hidden)]
+pub fn clear_hand_off_hosts_for_test() {
+    github::clear_hand_off_hosts_for_test();
+}
+
 /// Read one pull request whole: its link (identity + state) and its detail
 /// (body, checks, reviews, merge gate). `None` reads the branch's own pull
 /// request, which is never a persisted association.

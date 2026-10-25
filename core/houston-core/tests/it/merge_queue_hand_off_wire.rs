@@ -3,7 +3,7 @@
 //! head goes to GitHub instead of Houston's own merge, and Houston watches it there.
 #![allow(clippy::disallowed_methods)]
 
-use crate::merge_queue_rig::{agent_pane, commit, git, slashed, Rig, NEEDS_BASE, SERIAL};
+use crate::merge_queue_rig::{agent_pane, commit, git, github_remote, Rig, NEEDS_BASE, SERIAL};
 
 use houston_protocol as proto;
 
@@ -249,7 +249,7 @@ async fn a_new_head_takes_the_hand_off_back_while_another_workspace_verifies() {
         git(&b_root, &["config", key, value]);
     }
     commit(&b_root, "app.txt", "b\n", "init");
-    git(&b_root, &["remote", "add", "origin", &slashed(&b_origin)]);
+    github_remote(&b_root, "git@github.com:owner/other.git", &b_origin);
     git(&b_root, &["push", "-q", "origin", "main"]);
     git(&b_root, &["checkout", "-q", "-b", "houston/b"]);
     commit(&b_root, "b.txt", "b\n", "b");

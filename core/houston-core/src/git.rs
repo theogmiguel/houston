@@ -1198,7 +1198,10 @@ pub fn remote_name(dir: &Path) -> Option<String> {
 
 pub fn remote_url(dir: &Path) -> Option<String> {
     let name = remote_name(dir)?;
-    let out = run_git(dir, &["remote", "get-url", &name]).ok()?;
+    // The configured URL, not `git remote get-url`'s transport-rewritten one:
+    // `url.<base>.insteadOf` may point a GitHub URL at a local mirror, and the
+    // forge is still the one the user configured.
+    let out = run_git(dir, &["config", "--get", &format!("remote.{name}.url")]).ok()?;
     let url = out.trim();
     if url.is_empty() {
         None
