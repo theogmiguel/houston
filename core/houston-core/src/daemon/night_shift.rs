@@ -407,7 +407,8 @@ impl Daemon {
 
     /// What Setup offers from the workspace: checks whose program is on PATH.
     fn night_detect(&self, workspace: &str) -> proto::NightDetected {
-        let (apps, apps_note) = crate::night_shift::apps::installed();
+        let (apps, apps_note) =
+            crate::night_shift::apps::installed(self.env().home_dir().as_deref());
         proto::NightDetected {
             apps,
             apps_note,

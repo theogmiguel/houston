@@ -7,8 +7,9 @@ use houston_protocol::NightInstalledApp;
 const APPS_MAX: usize = 400;
 
 /// The detected apps, by name, and a note when this platform cannot list them.
-pub fn installed() -> (Vec<NightInstalledApp>, Option<String>) {
-    let (mut apps, note) = platform::installed();
+/// `home` is the daemon's resolved home; Linux reads per-user desktop entries there.
+pub fn installed(home: Option<&std::path::Path>) -> (Vec<NightInstalledApp>, Option<String>) {
+    let (mut apps, note) = platform::installed(home);
     apps.sort_by_key(|a| a.name.to_lowercase());
     apps.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name) && a.version == b.version);
     apps.truncate(APPS_MAX);
@@ -158,7 +159,7 @@ mod platform {
             .then(|| u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
     }
 
-    pub fn installed() -> (Vec<NightInstalledApp>, Option<String>) {
+    pub fn installed(_home: Option<&std::path::Path>) -> (Vec<NightInstalledApp>, Option<String>) {
         let mut out = Vec::new();
         for (root, path) in [
             (HKEY_CURRENT_USER, UNINSTALL),
@@ -216,13 +217,13 @@ mod platform {
     /// Desktop entry files read per directory.
     const FILES_MAX: usize = 2_000;
 
-    pub fn installed() -> (Vec<NightInstalledApp>, Option<String>) {
+    pub fn installed(home: Option<&std::path::Path>) -> (Vec<NightInstalledApp>, Option<String>) {
         let mut dirs = vec![
             std::path::PathBuf::from("/usr/share/applications"),
             std::path::PathBuf::from("/usr/local/share/applications"),
             std::path::PathBuf::from("/var/lib/flatpak/exports/share/applications"),
         ];
-        if let Some(home) = crate::home_dir::home_dir() {
+        if let Some(home) = home {
             dirs.push(home.join(".local/share/applications"));
         }
         let mut out = Vec::new();
@@ -246,7 +247,9 @@ mod platform {
 
 #[cfg(not(any(windows, target_os = "linux")))]
 mod platform {
-    pub fn installed() -> (Vec<houston_protocol::NightInstalledApp>, Option<String>) {
+    pub fn installed(
+        _home: Option<&std::path::Path>,
+    ) -> (Vec<houston_protocol::NightInstalledApp>, Option<String>) {
         (
             Vec::new(),
             Some(format!(
