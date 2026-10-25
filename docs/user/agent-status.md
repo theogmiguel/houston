@@ -47,7 +47,7 @@ tooltip lists the contributing pane states, so the indicator does not rely on co
 Screen readers announce the focused pane's reported status when it changes: working, needs
 your input, finished, or ready. They also announce how many other panes need you when that
 number changes. Moving focus to another pane announces nothing; a status that changes back
-within about a second is not announced. Terminal output is never announced.
+within 1.5 seconds is not announced. Terminal output is never announced.
 
 ### Plan and rate limits
 
