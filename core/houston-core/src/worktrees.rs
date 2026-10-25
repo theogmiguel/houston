@@ -391,6 +391,13 @@ pub fn remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
             worktree.display()
         );
     }
+    #[cfg(windows)]
+    {
+        let git_file = worktree.join(".git");
+        if git_file.is_file() || is_link(&git_file) {
+            return remove_linked_windows(repo, worktree, force);
+        }
+    }
     let path = git_path(worktree)?;
     if force {
         run_git(repo, &["worktree", "remove", "--force", &path])?;
@@ -398,6 +405,182 @@ pub fn remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
         run_git(repo, &["worktree", "remove", &path])?;
     }
     let _ = run_git(repo, &["worktree", "prune"]);
+    Ok(())
+}
+
+// Git for Windows before 2.54 deletes what a worktree's junctions point to; later
+// versions strand the junctions instead. Houston deletes the folder, unlinking links,
+// and Git then only drops the registration.
+#[cfg(windows)]
+fn remove_linked_windows(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
+    if is_link(worktree) {
+        bail!(
+            "worktree path {} is a link; remove the worktree by the path Git registered",
+            worktree.display()
+        );
+    }
+    // A linked `.git` would borrow another worktree's registration for this folder.
+    if is_link(&worktree.join(".git")) {
+        bail!(
+            "{} has a .git that is a link, not the file Git writes; refusing to delete it",
+            worktree.display()
+        );
+    }
+    let path = git_path(worktree)?;
+    let admin_dir = registered_admin_dir(repo, worktree)?;
+    // Git counts the lock file's existence as a lock, and the single `--force`
+    // this caller can pass never overrides it.
+    let lock_file = admin_dir.join("locked");
+    if present(&lock_file) {
+        let reason = std::fs::read_to_string(&lock_file).unwrap_or_default();
+        let reason = reason.trim();
+        bail!(
+            "worktree {} is locked{}; unlock it with git worktree unlock before removing it",
+            worktree.display(),
+            if reason.is_empty() {
+                String::new()
+            } else {
+                format!(" ({reason})")
+            }
+        );
+    }
+    if !force {
+        refuse_submodules(worktree, &admin_dir)?;
+        refuse_unclean(worktree)?;
+    }
+    // A file held open can stop the delete partway; putting `.git` back leaves
+    // a worktree that a retry can remove.
+    let git_file = worktree.join(".git");
+    let git_file_contents =
+        std::fs::read(&git_file).with_context(|| format!("reading {}", git_file.display()))?;
+    // std's remove_dir_all unlinks junctions and symlinks without entering them.
+    if let Err(error) = std::fs::remove_dir_all(worktree) {
+        let _ = std::fs::write(&git_file, &git_file_contents);
+        bail!(
+            "failed to delete worktree {}: {error}; it stays registered, so close what holds its files and retry",
+            worktree.display()
+        );
+    }
+    run_git(
+        repo,
+        &["worktree", "remove", "--force", "--force", "--", &path],
+    )?;
+    let _ = run_git(repo, &["worktree", "prune"]);
+    Ok(())
+}
+
+/// Proves `worktree` is a registered worktree of `repo` and returns its admin
+/// directory: the `.git` file names an admin dir under the repo's common
+/// `worktrees/`, and that dir's `gitdir` file points back at the `.git` file.
+#[cfg(windows)]
+fn registered_admin_dir(repo: &Path, worktree: &Path) -> Result<PathBuf> {
+    let refuse = || {
+        anyhow::anyhow!(
+            "{} is not a registered worktree of {}; refusing to delete it",
+            worktree.display(),
+            repo.display()
+        )
+    };
+    let found = run_git(worktree, &["rev-parse", "--absolute-git-dir"]).map_err(|_| refuse())?;
+    let admin_dir = resolve_against(worktree, found.trim());
+    let common = run_git(repo, &["rev-parse", "--git-common-dir"]).map_err(|_| refuse())?;
+    let common = resolve_against(repo, common.trim());
+    let back = std::fs::read_to_string(admin_dir.join("gitdir")).map_err(|_| refuse())?;
+    let back = resolve_against(&admin_dir, back.trim());
+    let admin_parent = admin_dir.parent().ok_or_else(refuse)?;
+    let registered = same_path(&back, &worktree.join(".git"))
+        && same_path(admin_parent, &common.join("worktrees"));
+    if !registered {
+        return Err(refuse());
+    }
+    Ok(admin_dir)
+}
+
+/// Resolves git's own relative output against the directory it was asked in.
+#[cfg(windows)]
+fn resolve_against(base: &Path, raw: &str) -> PathBuf {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
+/// A path that cannot be resolved is never equal, so a doubt refuses.
+#[cfg(windows)]
+fn same_path(left: &Path, right: &Path) -> bool {
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// A symlink or junction; an unreadable path counts as one, so a doubt refuses.
+#[cfg(windows)]
+fn is_link(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta.file_type().is_symlink(),
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+/// An unreadable path counts as present, so a doubt refuses.
+#[cfg(windows)]
+fn present(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+// Git's own unforced refusal, checked here because the delete runs before Git.
+#[cfg(windows)]
+fn refuse_submodules(worktree: &Path, admin_dir: &Path) -> Result<()> {
+    let refuse = || {
+        anyhow::anyhow!(
+            "worktree {} contains submodules; remove it with force",
+            worktree.display()
+        )
+    };
+    if present(&admin_dir.join("modules")) {
+        return Err(refuse());
+    }
+    let index = run_git(worktree, &["ls-files", "--stage", "-z"])?;
+    for entry in index.split('\0') {
+        if !entry.starts_with("160000 ") {
+            continue;
+        }
+        let Some((_, path)) = entry.split_once('\t') else {
+            continue;
+        };
+        if present(&worktree.join(path).join(".git")) {
+            return Err(refuse());
+        }
+    }
+    Ok(())
+}
+
+/// Git's unforced clean check, except that a failed status refuses and a
+/// repository setting cannot hide untracked files.
+#[cfg(windows)]
+fn refuse_unclean(worktree: &Path) -> Result<()> {
+    let status = run_git(
+        worktree,
+        &[
+            "-c",
+            "status.showUntrackedFiles=normal",
+            "status",
+            "--porcelain",
+            "--ignore-submodules=none",
+        ],
+    )?;
+    if status.lines().any(|line| !line.trim().is_empty()) {
+        bail!(
+            "worktree {} has uncommitted changes; commit or discard them, or remove it with force",
+            worktree.display()
+        );
+    }
     Ok(())
 }
 
@@ -738,6 +921,134 @@ mod tests {
         remove(&repo, &dest, true).unwrap();
         assert!(!dest.exists());
         assert!(list(&repo).unwrap().len() == 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_locked_worktree_and_keeps_its_files() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let dest = root.path().join("wt");
+        create_named(&repo, "locked-up", None, &dest).unwrap();
+        git(&repo, &["worktree", "lock", dest.to_str().unwrap()]);
+
+        let err = remove(&repo, &dest, true).unwrap_err().to_string();
+        assert!(err.contains("is locked"), "unexpected: {err}");
+        assert!(
+            dest.join("README.md").is_file(),
+            "a locked worktree must not be deleted"
+        );
+
+        git(&repo, &["worktree", "unlock", dest.to_str().unwrap()]);
+        remove(&repo, &dest, true).unwrap();
+        assert!(!dest.exists());
+        assert_eq!(list(&repo).unwrap().len(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_tree_it_cannot_prove_is_a_registered_worktree() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let fake = repo.join("fake");
+        std::fs::create_dir_all(&fake).unwrap();
+        std::fs::write(fake.join("precious.txt"), "keep\n").unwrap();
+        std::fs::write(fake.join(".git"), "gitdir: C:/definitely/not/this/repo\n").unwrap();
+
+        let err = remove(&repo, &fake, true).unwrap_err().to_string();
+        assert!(
+            err.contains("is not a registered worktree"),
+            "unexpected: {err}"
+        );
+        assert!(
+            fake.join("precious.txt").is_file(),
+            "a tree that cannot be proved must be refused, not deleted"
+        );
+        assert!(fake.join(".git").is_file());
+    }
+
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let native = |path: &Path| path.display().to_string().replace('/', "\\");
+        let out = Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(native(link))
+            .arg(native(target))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "mklink /J: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A folder whose `.git` links to a real worktree's, and that worktree.
+    #[cfg(windows)]
+    fn folder_borrowing_a_worktree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let repo = root.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let real = root.join("wt");
+        create_named(&repo, "real", None, &real).unwrap();
+        let folder = root.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("precious.txt"), "keep\n").unwrap();
+        (repo, real, folder)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_folder_whose_git_is_a_junction() {
+        let root = tempfile::tempdir().unwrap();
+        let (repo, real, folder) = folder_borrowing_a_worktree(root.path());
+        let admin = repo.join(".git/worktrees/wt");
+        create_junction(&folder.join(".git"), &admin);
+
+        let err = remove(&repo, &folder, true).unwrap_err().to_string();
+
+        assert!(err.contains("is a link"), "unexpected: {err}");
+        assert!(folder.join("precious.txt").is_file());
+        assert!(real.join("README.md").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn force_remove_refuses_a_folder_whose_git_file_is_a_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let (repo, real, folder) = folder_borrowing_a_worktree(root.path());
+        // File symlinks need Developer Mode or elevation; CI runners have it.
+        if let Err(e) = std::os::windows::fs::symlink_file(real.join(".git"), folder.join(".git")) {
+            eprintln!("skipped: cannot create a file symlink here: {e}");
+            return;
+        }
+
+        let err = remove(&repo, &folder, true).unwrap_err().to_string();
+
+        assert!(err.contains("is a link"), "unexpected: {err}");
+        assert!(folder.join("precious.txt").is_file());
+        assert!(real.join("README.md").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unforced_remove_counts_untracked_files_a_repo_setting_hides() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let dest = root.path().join("wt");
+        create_named(&repo, "hidden-untracked", None, &dest).unwrap();
+        git(&dest, &["config", "status.showUntrackedFiles", "no"]);
+        std::fs::write(dest.join("draft.txt"), "unsaved\n").unwrap();
+
+        let err = remove(&repo, &dest, false).unwrap_err().to_string();
+        assert!(err.contains("uncommitted changes"), "unexpected: {err}");
+        assert!(dest.join("draft.txt").is_file());
     }
 }
 

@@ -16663,7 +16663,13 @@ impl Daemon {
 
     fn confirm_paste_from_prompt(&self, session: u32, prompt: Option<&str>) {
         let Some(prompt) = prompt else { return };
-        let head = prompt.lines().next().unwrap_or("");
+        // Claude Code reports a pasted prompt inside `<pasted_content id=…>`, so the
+        // receipt header is not necessarily the prompt's first line.
+        let head = prompt
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("--- Houston"))
+            .unwrap_or("");
         if let Some((_, suffix)) = head.split_once(", delivery ") {
             let receipt = suffix.trim_end_matches(" ---");
             if receipt.len() == 32 && receipt.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -25275,6 +25281,8 @@ mod pr_watch_stall_tests {
                     head_sha: "abc".into(),
                     failed_checks: Default::default(),
                     passed: false,
+                    checks_awaited_since_ms: None,
+                    no_checks_woken: false,
                     comments_through: 1,
                     comment_ids: Default::default(),
                     conflicting: false,
@@ -26833,6 +26841,70 @@ mod idle_profile_tests {
             .contains_key(&parent));
         daemon.kill(parent).unwrap();
         daemon.close(parent).unwrap();
+    }
+
+    #[test]
+    fn a_paste_wrapped_in_claude_pasted_content_confirms_its_delivery() {
+        let (daemon, state) = test_daemon();
+        let parent = 7;
+        let now = now_ms();
+        let id = daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().to_string_lossy().into_owned(),
+                    from_session: None,
+                    request_id: None,
+                    kind: "operator_note".into(),
+                    urgent: false,
+                    summary: "message".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now,
+            )
+            .unwrap();
+        let (receipt, rows) = daemon
+            .db
+            .inbox_reserve(parent, now, 8, 8000)
+            .unwrap()
+            .unwrap();
+        let entries: Vec<_> = rows
+            .into_iter()
+            .map(|row| orchestrate::InboxEntry {
+                row,
+                from_label: "Houston".into(),
+                excerpt: None,
+            })
+            .collect();
+        let pasted = orchestrate::compose_inbox(&entries, &receipt);
+        daemon
+            .db
+            .inbox_mark_delivered(&receipt, "paste", now)
+            .unwrap();
+        daemon
+            .paste_confirmations
+            .lock()
+            .unwrap()
+            .insert(parent, (receipt, now));
+        // Claude Code 2.1.307 reports a bracketed paste to UserPromptSubmit in this wrapper.
+        let prompt = format!("<pasted_content id=\"3d98\">\n{pasted}\n</pasted_content>");
+        daemon.confirm_paste_from_prompt(parent, Some(&prompt));
+        assert!(
+            daemon
+                .db
+                .inbox_get(id)
+                .unwrap()
+                .unwrap()
+                .confirmed_at
+                .is_some(),
+            "the receipt on the wrapped header line proves the paste: {prompt}"
+        );
     }
 
     #[test]
