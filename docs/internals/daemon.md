@@ -475,16 +475,21 @@ shells exclude the scanner because their titles describe the directory.
 A replay that does not start at the true stream start is prefixed with an SGR reset, so
 trimmed colour state cannot bleed into the first visible line. Rings persist to
 `scrollback/<id>.bin` behind a `TRSB` magic and version byte — written on session end, on the
-last `/ws` client detaching (`checkpoint_scrollback`), and at orderly shutdown, read on
+last `/ws` client detaching (`checkpoint_scrollback`), at orderly shutdown, and every 30 s
+for rings with output since their last write (`checkpoint_dirty_scrollback`), read on
 demand when a restored husk is attached. Automatic restore carries a saved ring into the
 replacement ID before retiring the old row. Snapshot transfer failure retains the original
 pane and file; an explicit fresh root launch starts with a fresh ring. Recovery rejects
 oversized files and overflowing offsets before constructing a ring.
 
 Between checkpoints, output stays in bounded memory whether or not a client is attached:
-a daemon crash can lose everything since the last snapshot. SQLite WAL transactions and
-rename-based snapshots protect process-level recovery ordering; `synchronous = NORMAL`
-and unsynced filesystem writes do not promise the latest state after a machine power cut.
+a daemon crash loses about the last 30 s of a pane's output (one interval plus the pass).
+The periodic pass compares each ring's `(generation, bytes_seen)` with the pair recorded at
+its last write, so idle panes are never rewritten; a busy pane rewrites its whole file, at
+most 4 MiB per interval. The pass stands aside while shutdown or a live handoff runs its
+own full checkpoint. SQLite WAL transactions and rename-based snapshots protect
+process-level recovery ordering; `synchronous = NORMAL` and unsynced filesystem writes do
+not promise the latest state after a machine power cut.
 
 ## Reading a pane
 
@@ -907,6 +912,11 @@ as before; only `%HOME%\bin` moves behind Git's directories. Any other layout ke
 `git.rs` shells out to the system `git`; libgit2 was rejected. Its surface is the Changes
 pane's data model: `status`, `diff`, `review_diffs`, `head_sha`, `branch`, `sync`, `stage`,
 `unstage`, `commit`, `push`, `discard`, `default_base`, `status_vs_base`, `is_git_repo`.
+The rail polls every workspace each minute, so `git_status` reads files and branch sync from
+one `git status --porcelain=v2 --branch -z` scan (`status_and_sync`) and takes the default
+base from `default_base_cached`, which may lag a new `origin/HEAD` or `main` by five minutes.
+It keeps only a found base, and a failed `status_vs_base` against the cached base drops it,
+so a renamed or deleted default branch is replaced on the next poll.
 Subprocesses run with `GIT_TERMINAL_PROMPT=0`, and diffs pass `redact_review_secrets` before
 display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs

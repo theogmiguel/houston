@@ -148,8 +148,8 @@ impl Daemon {
                 dir.display()
             )));
         }
-        let statuses = crate::git::status(&dir).map_err(|e| internal("reading git status", e))?;
-        let sync = crate::git::sync(&dir);
+        let (statuses, sync) =
+            crate::git::status_and_sync(&dir).map_err(|e| internal("reading git status", e))?;
         Ok(Changes {
             dir,
             branch: sync.branch,

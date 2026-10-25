@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { HoustonClient } from '../../houston/client'
 import { GIT_STATUS_IN_FLIGHT_LIMIT, GIT_STATUS_REPLY_TIMEOUT_MS } from './gitStatusPoller'
 import { FOCUS_REFRESH_MIN_MS, useRailGitFacts } from './useRailGitFacts'
+import { setHiddenToTray } from '../../windowParked'
 
 type Handler = (message: never) => void
 
@@ -130,5 +131,144 @@ describe('useRailGitFacts request bound', () => {
     const { client } = mount(dirsOf(6))
     act(() => { vi.advanceTimersByTime(GIT_STATUS_REPLY_TIMEOUT_MS) })
     expect(client.sent).toHaveLength(6)
+  })
+})
+
+describe('useRailGitFacts while the window is hidden', () => {
+  let visibility: DocumentVisibilityState = 'visible'
+  const setVisibility = (next: DocumentVisibilityState): void => {
+    visibility = next
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+  }
+  // Ten minutes of the 60 s interval, each refresh answered as a daemon would.
+  const tenMinutes = (client: FakeClient): void => {
+    for (let minute = 0; minute < 10; minute += 1) {
+      act(() => { vi.advanceTimersByTime(60_000) })
+      drain(client)
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    visibility = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  })
+  afterEach(() => { cleanup(); setHiddenToTray(false); vi.restoreAllMocks(); vi.useRealTimers() })
+
+  // Hidden to the tray, WebView2 still reports the page visible; minimizing reports it hidden on WebKitGTK.
+  const hide = {
+    tray: (): void => act(() => setHiddenToTray(true)),
+    minimized: (): void => setVisibility('hidden'),
+  }
+
+  test.each(['tray', 'minimized'] as const)('ten minutes hidden (%s) send no git_status, where ten visible minutes send one per directory per minute', (how) => {
+    const { client } = mount(dirsOf(3))
+    drain(client)
+    const mounted = client.sent.length
+    tenMinutes(client)
+    const visible = client.sent.length - mounted
+    hide[how]()
+    tenMinutes(client)
+    const hidden = client.sent.length - mounted - visible
+    expect({ visible, hidden }).toEqual({ visible: 30, hidden: 0 })
+  })
+
+  test('the focus that shows a window hidden to the tray refreshes every directory at once', () => {
+    const { client } = mount(dirsOf(3))
+    drain(client)
+    hide.tray()
+    act(() => { vi.advanceTimersByTime(5 * 60_000) })
+    expect(client.sent).toHaveLength(3)
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(client.sent).toEqual([...dirsOf(3), ...dirsOf(3)])
+  })
+
+  test('revealing the window refreshes every directory at once', () => {
+    const { client } = mount(dirsOf(3))
+    drain(client)
+    setVisibility('hidden')
+    act(() => { vi.advanceTimersByTime(5 * 60_000) })
+    expect(client.sent).toHaveLength(3)
+    setVisibility('visible')
+    expect(client.sent).toEqual([...dirsOf(3), ...dirsOf(3)])
+  })
+
+  test('a reveal soon after the last poll waits for the interval, as a focus return does', () => {
+    const { client } = mount(dirsOf(3))
+    drain(client)
+    setVisibility('hidden')
+    act(() => { vi.advanceTimersByTime(FOCUS_REFRESH_MIN_MS / 2) })
+    setVisibility('visible')
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(client.sent).toHaveLength(3)
+  })
+
+  test('hiding the window drops directories still queued behind the bound', () => {
+    const { client } = mount(dirsOf(10))
+    expect(client.sent).toHaveLength(GIT_STATUS_IN_FLIGHT_LIMIT)
+    setVisibility('hidden')
+    drain(client)
+    expect(client.sent).toHaveLength(GIT_STATUS_IN_FLIGHT_LIMIT)
+  })
+
+  test('a rail mounted while hidden polls first when the window is revealed', () => {
+    visibility = 'hidden'
+    const { client } = mount(dirsOf(2))
+    act(() => { vi.advanceTimersByTime(3 * 60_000) })
+    expect(client.sent).toHaveLength(0)
+    setVisibility('visible')
+    expect(client.sent).toEqual(dirsOf(2))
+  })
+})
+
+describe('useRailGitFacts failure backoff', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { cleanup(); vi.useRealTimers() })
+
+  test('a failing directory skips one tick, then two, four and eight, capped at fifteen minutes, until a reply resets the ladder', () => {
+    const { client } = mount(dirsOf(1))
+    const pollAfterFailure = (ticks: number): void => {
+      act(() => client.fail('git_status'))
+      const sent = client.sent.length
+      act(() => { vi.advanceTimersByTime(ticks * 60_000) })
+      expect(client.sent).toHaveLength(sent + 1)
+    }
+    pollAfterFailure(1)
+    pollAfterFailure(2)
+    pollAfterFailure(4)
+    pollAfterFailure(8)
+    // The next rung would be 16 minutes; the cap lets the 15-minute tick through.
+    pollAfterFailure(15)
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    act(() => { vi.advanceTimersByTime(14 * 60_000) })
+    expect(client.sent).toHaveLength(sent)
+    act(() => client.reply(dirsOf(1)[0]))
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(client.sent).toHaveLength(sent + 1)
+  })
+
+  test('a wall-clock step back does not extend the backoff', () => {
+    const { client } = mount(dirsOf(1))
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    // NTP or a manual change can step the wall clock back; the ladder measures
+    // elapsed time, so an hour of stepping must not delay the next rung.
+    act(() => { vi.setSystemTime(Date.now() - 3_600_000) })
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(client.sent).toHaveLength(sent + 1)
+  })
+
+  test('a focus refresh is never delayed by the failure ladder', () => {
+    const { client } = mount(dirsOf(1))
+    drain(client)
+    act(() => { vi.advanceTimersByTime(60_000) })
+    act(() => client.fail('git_status'))
+    const sent = client.sent.length
+    act(() => {
+      vi.advanceTimersByTime(FOCUS_REFRESH_MIN_MS)
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(client.sent).toHaveLength(sent + 1)
   })
 })
