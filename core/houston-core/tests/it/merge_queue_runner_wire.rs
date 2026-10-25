@@ -845,3 +845,51 @@ async fn an_entry_github_is_still_computing_holds_the_entries_behind_it() {
     );
     assert!(rig.calls("pr merge 1").is_empty());
 }
+
+/// The memory floor belongs to Night shift's checks and `hs-pane heavy`; an
+/// ordinary verification still takes a free slot below it.
+#[tokio::test]
+async fn the_memory_floor_does_not_hold_an_ordinary_verification() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.advance_base("base.txt", "base\n");
+    rig.settings(false, NEEDS_BASE);
+    rig.enqueue(1, None);
+    let low = houston_core::night_shift::preflight::Facts {
+        orchestration_enabled: true,
+        providers: Vec::new(),
+        machine: houston_core::night_shift::preflight::MachineFacts {
+            memory_free_mib: Some(1024),
+            ..Default::default()
+        },
+    };
+    rig.daemon.set_night_shift_facts_for_test(Some(low));
+
+    assert!(
+        rig.daemon.merge_queue_take_slot_for_test(&rig.workspace, 1),
+        "an ordinary verification takes the slot below the memory floor"
+    );
+    rig.tick().await;
+
+    assert_eq!(
+        rig.entry(1).status,
+        proto::MergeQueueStatus::Ready,
+        "the ordinary verification ran: {:?}",
+        rig.entry(1)
+    );
+    let held = rig
+        .daemon
+        .build_slot_request(9_999, "acquire", None)
+        .unwrap();
+    assert!(
+        held["holder"]
+            .as_str()
+            .is_some_and(|h| h.contains("1024 MiB free")),
+        "hs-pane heavy still waits for the floor: {held}"
+    );
+    assert!(
+        !rig.daemon.night_take_build_slot_for_test(&rig.workspace, 5),
+        "Night shift still waits for the floor"
+    );
+}

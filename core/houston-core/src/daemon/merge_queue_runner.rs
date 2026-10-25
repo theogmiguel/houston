@@ -158,9 +158,6 @@ impl Daemon {
     /// Takes the slot for `number` of `workspace`, or `None` while another
     /// verification holds it; that head shows Waiting for a slot meanwhile.
     fn merge_queue_take_slot(&self, workspace: &str, number: u32) -> Option<Slot<'_>> {
-        if crate::build_slot::memory_hold(self.night_memory_free_mib()).is_some() {
-            return None;
-        }
         let mut slot = self.merge_queue_slot.lock().expect("merge queue slot lock");
         let now = now_unix_ms();
         if slot
@@ -286,6 +283,18 @@ impl Daemon {
             lease: None,
             night: false,
         });
+    }
+
+    /// Takes an ordinary verification's slot for a test and reports whether it was free.
+    #[doc(hidden)]
+    pub fn merge_queue_take_slot_for_test(&self, workspace: &str, number: u32) -> bool {
+        self.merge_queue_take_slot(workspace, number).is_some()
+    }
+
+    /// Takes Night shift's build slot for a test and reports whether it was free.
+    #[doc(hidden)]
+    pub fn night_take_build_slot_for_test(&self, workspace: &str, number: u32) -> bool {
+        self.night_take_build_slot(workspace, number).is_some()
     }
 
     /// Moves the workspace's head one step: verify it, fail it, or land it.
