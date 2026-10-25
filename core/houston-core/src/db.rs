@@ -177,6 +177,8 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("task_tracker_refresh_cursor", "workspace"),
     ("task_tracker_outbox", "workspace"),
     ("backlog_task_counters", "workspace"),
+    ("night_runs", "workspace"),
+    ("workspace_transfers", "workspace"),
 ];
 
 /// Columns holding a path that may sit inside a workspace: rows under the old
@@ -187,6 +189,7 @@ const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
     ("command_history", "cwd"),
     ("backlog_task_runs", "worktree_path"),
     ("harness_reviews", "run_dir"),
+    ("workspace_transfer_checkouts", "path"),
 ];
 
 /// Settings stored per workspace as `<prefix><workspace path>`.
@@ -7431,6 +7434,10 @@ pub(crate) mod tests {
         ("sessions", "transcript_path"),
         ("sessions", "resume_transcript_path"),
         ("sessions", "profile_config_dir"),
+        // The run's report lives in the state directory, not the workspace.
+        ("night_runs", "report_path"),
+        // The provider keeps the transcript in its own folder, outside any workspace.
+        ("workspace_transfer_sessions", "transcript_path"),
         // Moved for Codex bindings only, inside `relocate_workspace`.
         ("sessions", "resume_cwd"),
         ("agent_profiles", "config_dir"),
@@ -7493,7 +7500,19 @@ pub(crate) mod tests {
              INSERT INTO command_history (workspace, session_id, cwd, cmd, shell, started_at, ended_at)
                  VALUES ('{from}', 1, '{from}/src', 'ls', 'bash', 0, 0);
              INSERT INTO settings (key, value) VALUES ('workspace_actions:{from}', '[]');
-             INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('{from}', 3);"
+             INSERT INTO backlog_task_counters (workspace, next_number) VALUES ('{from}', 3);
+             INSERT INTO night_runs (run_id, routine_id, workspace, report_path, started_at_ms,
+                 trigger, phase, wrap_up_at_ms, hard_stop_at_ms)
+                 VALUES (1, 1, '{from}', '/state/night-shift/1/report.md', 0, 'manual',
+                         'running', 0, 0),
+                        (2, 2, '/a/project', '/state/night-shift/2/report.md', 0, 'manual',
+                         'running', 0, 0);
+             INSERT INTO workspace_transfers (id, direction, workspace, created_at_ms)
+                 VALUES ('t1', 'export', '{from}', 0), ('t2', 'export', '/a/project', 0);
+             INSERT INTO workspace_transfer_checkouts
+                 (transfer_id, direction, key, path, tree_state, untracked)
+                 VALUES ('t1', 'export', 'main', '{from}/.houston/worktrees/x', NULL, '[]'),
+                        ('t2', 'export', 'main', '/a/project', NULL, '[]');"
         ))
         .unwrap();
     }
@@ -7549,6 +7568,49 @@ pub(crate) mod tests {
             )
             .unwrap();
         assert_eq!(key, "workspace_actions:/b/proj");
+        let runs: Vec<(u32, String)> = conn
+            .prepare("SELECT run_id, workspace FROM night_runs ORDER BY run_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            runs,
+            vec![(1, "/b/proj".to_owned()), (2, "/a/project".to_owned())]
+        );
+        let transfers: Vec<(String, String)> = conn
+            .prepare("SELECT id, workspace FROM workspace_transfers ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            transfers,
+            vec![
+                ("t1".to_owned(), "/b/proj".to_owned()),
+                ("t2".to_owned(), "/a/project".to_owned()),
+            ]
+        );
+        let checkouts: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT transfer_id, path FROM workspace_transfer_checkouts ORDER BY transfer_id",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            checkouts[0],
+            ("t1".to_owned(), "/b/proj/.houston/worktrees/x".to_owned())
+        );
+        assert_eq!(
+            checkouts[1],
+            ("t2".to_owned(), "/a/project".to_owned()),
+            "a sibling folder must not move"
+        );
     }
 
     #[test]
