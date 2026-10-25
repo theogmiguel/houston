@@ -74,7 +74,8 @@ as terminals.
 Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. One message
 is limited to 256 KiB. While Claude works, **Enter** queues the message instead: it waits
 under the timeline marked Queued and is sent when the running turn completes, oldest
-first. **Ctrl+Enter** steers: Houston stops the running turn and sends your message
+first. This includes a turn Claude starts by itself, for example to report a finished
+background task. **Ctrl+Enter** steers: Houston stops the running turn and sends your message
 before the queue, and the thread marks it Steered. A queued message can be edited,
 removed or steered from its row; the strip above the box counts the queue and offers
 **Steer** for the first message and **Clear** for all of them. A queue holds at most 16
@@ -85,7 +86,8 @@ same action. Stop ends Claude and the tools it started. The answer it was writin
 in the thread, marked "Stopped · Claude will not remember this partial answer": the next
 message resumes the conversation without it. After Stop, a failed turn, Claude exiting or
 a Houston restart, queued messages are held instead of sent: the strip says why, and each
-waits until you choose **Send** on it. A new message you send while Claude is idle still
+waits until you choose **Send** on it. A queued message that Stop cuts off while it is
+being sent goes back to the queue as held, and the thread notes it. A new message you send while Claude is idle still
 goes at once; held messages stay where they are. The pane menu's text size and Handoff actions apply
 to terminal panes only.
 

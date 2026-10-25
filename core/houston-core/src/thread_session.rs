@@ -48,8 +48,9 @@ pub trait ThreadHost: Send + Sync + 'static {
     /// Called in `seq` order for every event except `AssistantDelta`.
     fn store(&self, session: u32, event: &ThreadEvent);
     fn broadcast(&self, session: u32, events: Vec<ThreadEvent>);
-    /// The stream's `result` event ended a turn.
-    fn turn_ended(&self, session: u32, outcome: TurnOutcome);
+    /// The stream's `result` event ended a turn; `deferred` is a Stop hook that arrived while
+    /// it was open, whose status change this turn end applies.
+    fn turn_ended(&self, session: u32, outcome: TurnOutcome, deferred: Option<DeferredHook>);
     /// Stop or an exit ended the process, so no turn is running any more.
     fn settle(&self, session: u32, outcome: TurnOutcome);
     /// A new provider process leads the thread's process group.
@@ -75,10 +76,13 @@ pub trait ThreadHost: Send + Sync + 'static {
     fn queue_push(&self, session: u32, _text: &str, _excerpts: &[ThreadExcerpt]) -> Result<()> {
         bail!("thread session {session} keeps no message queue")
     }
-    /// Takes `id` out of the queue, or with `None` the oldest `queued` message.
+    /// Takes `id` out of the queue, or with `None` the oldest `queued` message. It stays
+    /// stored, out of the queue's view, until `queue_sent` or `queue_restore`.
     fn queue_take(&self, _session: u32, _id: Option<&str>) -> Result<Option<ThreadQueuedMessage>> {
         Ok(None)
     }
+    /// A taken message reached the provider.
+    fn queue_sent(&self, _session: u32, _id: &str) {}
     /// Messages waiting as `queued`; held ones wait for the user and count for nothing here.
     fn queue_waiting(&self, _session: u32) -> Result<usize> {
         Ok(0)
@@ -92,6 +96,31 @@ pub trait ThreadHost: Send + Sync + 'static {
     /// Holds every `queued` message with `reason`.
     fn queue_hold(&self, _session: u32, _reason: &str) {}
 }
+
+/// A lifecycle Stop hook held until the open turn's `result`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeferredHook {
+    pub prompt_id: Option<String>,
+}
+
+/// `deliver_now` found the thread busy and wrote nothing; its caller retries later.
+#[derive(Debug)]
+pub struct ThreadBusy {
+    session: u32,
+    reason: String,
+}
+
+impl std::fmt::Display for ThreadBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "message refused for thread session {}: {}; it is delivered once the thread is idle",
+            self.session, self.reason
+        )
+    }
+}
+
+impl std::error::Error for ThreadBusy {}
 
 /// One user message on its way to the provider.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -161,6 +190,8 @@ pub trait ProviderStream: Send {
 #[derive(Debug, Default, PartialEq)]
 pub struct Decoded {
     pub events: Vec<ThreadEventKind>,
+    /// The line opens a turn, including one the provider started without a message.
+    pub turn_start: bool,
     pub turn_end: Option<TurnOutcome>,
     pub conversation: Option<String>,
     pub permission_mode: Option<ThreadPermissionMode>,
@@ -499,8 +530,11 @@ struct HandleState {
     conversation: Option<Conversation>,
     permission_mode: ThreadPermissionMode,
     generation: u64,
-    /// A message was sent and its `result` has not arrived.
+    /// A turn started and its `result` has not arrived.
     turn_open: bool,
+    /// Counts opened turns, so a late drain can tell its turn from a later one.
+    turn: u64,
+    deferred_hook: Option<DeferredHook>,
     closed: bool,
     close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
@@ -541,6 +575,8 @@ impl HandleState {
         error: Option<String>,
     ) -> Vec<ThreadEventKind> {
         let mut events = Vec::new();
+        // The caller settles the status, so a deferred Stop hook is owed nothing.
+        self.deferred_hook = None;
         if let Some((message_id, text)) = self.partial.take().filter(|(_, text)| !text.is_empty()) {
             events.push(ThreadEventKind::AssistantMessage {
                 message_id,
@@ -568,7 +604,6 @@ pub struct StructuredRuntime {
     outbox: Arc<Outbox>,
     closed: (Mutex<bool>, Condvar),
     approvals: Mutex<HashMap<String, PendingApproval>>,
-    turn_end_hook_deferred: AtomicBool,
 }
 
 impl StructuredRuntime {
@@ -593,6 +628,8 @@ impl StructuredRuntime {
                 permission_mode,
                 generation: 0,
                 turn_open: false,
+                turn: 0,
+                deferred_hook: None,
                 closed: false,
                 close_cause: None,
                 partial: None,
@@ -603,7 +640,6 @@ impl StructuredRuntime {
             outbox: Arc::clone(&outbox),
             closed: (Mutex::new(false), Condvar::new()),
             approvals: Mutex::new(HashMap::new()),
-            turn_end_hook_deferred: AtomicBool::new(false),
         });
         std::thread::Builder::new()
             .name(format!("thread-events-{session}"))
@@ -898,16 +934,13 @@ impl StructuredRuntime {
         self.admit(text, excerpts)?;
         let pending = {
             let op = self.op.lock().expect("thread operation lock");
-            let open = self.open_state()?.turn_open;
-            if open {
-                self.stop_held(&op, None);
-            }
-            let mut state = self.open_state()?;
-            let delivery = if open {
+            drop(self.open_state()?);
+            let delivery = if self.stop_open_turn(&op) {
                 MessageDelivery::Steered
             } else {
                 MessageDelivery::Direct
             };
+            let mut state = self.open_state()?;
             self.deliver(&mut state, text, excerpts, delivery, None)?
         };
         self.write(pending)
@@ -920,17 +953,16 @@ impl StructuredRuntime {
         crate::test_barriers::pause("thread-steer", self.session);
         let pending = {
             let op = self.op.lock().expect("thread operation lock");
-            let open = self.open_state()?.turn_open;
+            drop(self.open_state()?);
             let row = self.take_row("thread_steer", id)?;
-            if open {
-                self.stop_held(&op, None);
-            }
-            let mut state = self.open_state()?;
-            let delivery = if open {
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("thread-steer-stop", self.session);
+            let delivery = if self.stop_open_turn(&op) {
                 MessageDelivery::Steered
             } else {
                 MessageDelivery::Queued
             };
+            let mut state = self.open_state()?;
             let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
             self.deliver(&mut state, &text, &excerpts, delivery, Some(row))?
         };
@@ -968,11 +1000,11 @@ impl StructuredRuntime {
             let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.open_state()?;
             if let Some(reason) = self.busy_reason(&state) {
-                bail!(
-                    "message refused for thread session {}: {reason}; it is delivered once \
-                     the thread is idle",
-                    self.session
-                );
+                return Err(ThreadBusy {
+                    session: self.session,
+                    reason,
+                }
+                .into());
             }
             self.deliver(&mut state, text, &[], MessageDelivery::Direct, None)?
         };
@@ -1090,6 +1122,7 @@ impl StructuredRuntime {
             }
         };
         state.turn_open = true;
+        state.turn += 1;
         self.emit(vec![ThreadEventKind::UserMessage {
             text: message.text,
             delivery: message.delivery,
@@ -1103,39 +1136,51 @@ impl StructuredRuntime {
     fn write(&self, pending: PendingWrite) -> Result<()> {
         let PendingWrite { process, line, row } = pending;
         let Err(error) = process.write_line(Some(&line)) else {
+            if let Some(row) = &row {
+                self.host.queue_sent(self.session, &row.id);
+            }
             return Ok(());
         };
         let stopped = process.stopping.load(Ordering::Acquire);
-        if let Some(row) = &row {
-            let reason = if stopped {
-                format!("Stopped before this message reached {}.", process.provider)
-            } else {
-                format!("This message did not reach {}: {error:#}", process.provider)
-            };
-            self.host.queue_restore(self.session, row, &reason);
+        let provider = process.provider;
+        let reason = if stopped {
+            format!("Stopped before this message reached {provider}")
+        } else {
+            format!("This message did not reach {provider}: {error:#}")
+        };
+        // History already shows the message, so it says the message went back held.
+        let notice = match &row {
+            Some(row) => {
+                self.host
+                    .queue_restore(self.session, row, &format!("{reason}."));
+                Some(format!("{reason}; it is back in the queue, held."))
+            }
+            // Stop's turn end already says the turn ended.
+            None if stopped => None,
+            None => Some(reason),
+        };
+        if let Some(text) = notice {
+            self.emit(vec![ThreadEventKind::Notice { text }]);
         }
         if stopped {
             bail!(
-                "thread session {} stopped before this message reached {}",
-                self.session,
-                process.provider
+                "thread session {} stopped before this message reached {provider}",
+                self.session
             );
         }
-        self.emit(vec![ThreadEventKind::Notice {
-            text: format!("This message did not reach {}: {error:#}", process.provider),
-        }]);
         Err(error)
     }
 
-    /// After a turn's `result`, under `op`: a completed turn sends the oldest queued message;
-    /// any other outcome holds the queue for the user.
-    fn after_turn(self: &Arc<Self>, outcome: TurnOutcome) {
+    /// After the `result` of turn `turn`, under `op`: a completed turn sends the oldest queued
+    /// message; any other outcome holds the queue for the user. A turn opened since decides
+    /// for itself, so messages queued during it are not held for an earlier failure.
+    fn after_turn(self: &Arc<Self>, outcome: TurnOutcome, turn: u64) {
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("thread-queue-drain", self.session);
         let pending = {
             let _op = self.op.lock().expect("thread operation lock");
             let mut state = self.state.lock().expect("thread state lock");
-            if state.closed {
+            if state.closed || state.turn != turn {
                 return;
             }
             if outcome != TurnOutcome::Completed {
@@ -1184,11 +1229,11 @@ impl StructuredRuntime {
     }
 
     /// Runs `after_turn` off the stdout reader, which must keep draining while it writes.
-    fn start_after_turn(self: &Arc<Self>, outcome: TurnOutcome) {
+    fn start_after_turn(self: &Arc<Self>, outcome: TurnOutcome, turn: u64) {
         let runtime = Arc::clone(self);
         let started = std::thread::Builder::new()
             .name(format!("thread-queue-{}", self.session))
-            .spawn(move || runtime.after_turn(outcome));
+            .spawn(move || runtime.after_turn(outcome, turn));
         if let Err(error) = started {
             tracing::warn!(
                 "session {}: starting its queue after a turn: {error}",
@@ -1198,30 +1243,42 @@ impl StructuredRuntime {
     }
 
     /// A Stop hook arrived while a turn is open: an earlier turn's, or this turn's ahead of
-    /// its `result`. Returns true when it is deferred to the stream's turn end.
-    pub fn defer_turn_end_hook(&self) -> bool {
-        let state = self.state.lock().expect("thread state lock");
+    /// its `result`. Returns true when its status change is deferred to the stream's turn
+    /// end; Stop, an exit or close settle the status instead and drop it.
+    pub fn defer_turn_end_hook(&self, hook: DeferredHook) -> bool {
+        let mut state = self.state.lock().expect("thread state lock");
         if state.turn_open {
-            self.turn_end_hook_deferred.store(true, Ordering::Release);
+            state.deferred_hook = Some(hook);
         }
         state.turn_open
-    }
-
-    /// Whether a deferred Stop hook is owed to the turn end being reported now.
-    pub fn take_deferred_turn_end_hook(&self) -> bool {
-        self.turn_end_hook_deferred.swap(false, Ordering::AcqRel)
     }
 
     /// Ends the process tree and holds the queue. Returns whether a process was running.
     pub fn stop(&self) -> bool {
         let op = self.op.lock().expect("thread operation lock");
-        self.stop_held(&op, Some("Stopped before this message was sent."))
+        self.stop_held(&op, "Stopped before this message was sent.")
     }
 
-    /// `stop` for a caller holding `op`; `hold` names why queued messages wait, and `None`
-    /// (a steer) leaves them queued.
-    fn stop_held(&self, _op: &MutexGuard<'_, ()>, hold: Option<&str>) -> bool {
-        let Some(process) = self.state.lock().expect("thread state lock").process.take() else {
+    /// For a steer: stops the open turn and leaves the queue as it is. Stops nothing and
+    /// returns false when the turn has ended, even since the caller last looked.
+    fn stop_open_turn(&self, op: &MutexGuard<'_, ()>) -> bool {
+        self.stop_process(op, None, true)
+    }
+
+    /// `stop` for a caller holding `op`; `hold` names why queued messages wait.
+    fn stop_held(&self, op: &MutexGuard<'_, ()>, hold: &str) -> bool {
+        self.stop_process(op, Some(hold), false)
+    }
+
+    fn stop_process(&self, _op: &MutexGuard<'_, ()>, hold: Option<&str>, open_turn: bool) -> bool {
+        let process = {
+            let mut state = self.state.lock().expect("thread state lock");
+            if open_turn && !state.turn_open {
+                return false;
+            }
+            state.process.take()
+        };
+        let Some(process) = process else {
             return false;
         };
         self.deny_pending("Stopped in Houston before anyone answered.", true);
@@ -1399,6 +1456,7 @@ impl StructuredRuntime {
     fn on_decoded(self: &Arc<Self>, generation: u64, mapped: Decoded) {
         let mut reported_mode = None;
         let mut reported_conversation = None;
+        let mut ended = None;
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
             let mut state = self.state.lock().expect("thread state lock");
@@ -1422,8 +1480,13 @@ impl StructuredRuntime {
                     state.conversation = Some(Conversation::Resume(id.clone()));
                 }
             }
+            if mapped.turn_start && !state.turn_open {
+                state.turn_open = true;
+                state.turn += 1;
+            }
             if mapped.turn_end.is_some() {
                 state.turn_open = false;
+                ended = Some((state.turn, state.deferred_hook.take()));
             }
             if let Some(mode) = mapped.permission_mode {
                 if mode != state.permission_mode {
@@ -1446,9 +1509,9 @@ impl StructuredRuntime {
         if let Some(title) = mapped.title {
             self.host.title_reported(self.session, &title);
         }
-        if let Some(outcome) = mapped.turn_end {
-            self.host.turn_ended(self.session, outcome);
-            self.start_after_turn(outcome);
+        if let (Some(outcome), Some((turn, deferred))) = (mapped.turn_end, ended) {
+            self.host.turn_ended(self.session, outcome, deferred);
+            self.start_after_turn(outcome, turn);
         }
     }
 
@@ -1951,7 +2014,13 @@ mod tests {
             self.changed.notify_all();
         }
         fn broadcast(&self, _session: u32, _events: Vec<ThreadEvent>) {}
-        fn turn_ended(&self, _session: u32, _outcome: TurnOutcome) {}
+        fn turn_ended(
+            &self,
+            _session: u32,
+            _outcome: TurnOutcome,
+            _deferred: Option<DeferredHook>,
+        ) {
+        }
         fn settle(&self, _session: u32, _outcome: TurnOutcome) {}
         fn process_started(&self, _session: u32, _pid: u32) {}
         fn process_gone(&self, _session: u32) {}

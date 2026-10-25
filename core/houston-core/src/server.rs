@@ -2016,12 +2016,10 @@ async fn dispatch(
         }
         proto::ClientMsg::ThreadQueueList { session } => {
             let d = Arc::clone(daemon);
-            let reply = tokio::task::spawn_blocking(move || d.thread_queue_list(session))
+            // Answered on the broadcast channel, so it cannot overtake a newer snapshot.
+            tokio::task::spawn_blocking(move || d.thread_queue_reply(session, conn_id))
                 .await
-                .map_err(|e| anyhow::anyhow!("thread queue read panicked: {e}"))??;
-            send_msg(sink, &reply)
-                .await
-                .map_err(|_| anyhow::anyhow!("sending thread queue failed"))
+                .map_err(|e| anyhow::anyhow!("thread queue read panicked: {e}"))?
         }
         proto::ClientMsg::ThreadCommandsList { session } => {
             let d = Arc::clone(daemon);

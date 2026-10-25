@@ -77,6 +77,10 @@ fn excerpt_bytes(excerpts: &[proto::ThreadExcerpt]) -> usize {
 
 /// Why a message left `queued` when its daemon stopped.
 pub const THREAD_QUEUE_RESTART_REASON: &str = "Houston restarted before this message was sent.";
+/// Why a message taken for sending is held after its daemon stopped: the write may have
+/// happened.
+pub const THREAD_QUEUE_INTERRUPTED_REASON: &str =
+    "Houston stopped while sending this message; the thread shows whether it arrived.";
 
 fn queue_state_name(state: proto::QueuedState) -> &'static str {
     match state {
@@ -85,10 +89,12 @@ fn queue_state_name(state: proto::QueuedState) -> &'static str {
     }
 }
 
+/// The queue as clients see it. A taken message keeps its row as `sending` until its write
+/// ends, so it still counts against the limits, but it is out of the queue.
 fn queue_rows(conn: &Connection, session: u32) -> Result<Vec<proto::ThreadQueuedMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, text, state, hold_reason, created_at_ms, excerpts FROM thread_queue
-         WHERE session_id = ?1 ORDER BY position",
+         WHERE session_id = ?1 AND state != 'sending' ORDER BY position",
     )?;
     let rows = stmt
         .query_map([session], |row| {
@@ -458,7 +464,8 @@ impl Db {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         let changed = tx.execute(
-            "UPDATE thread_queue SET text = ?3 WHERE session_id = ?1 AND id = ?2",
+            "UPDATE thread_queue SET text = ?3
+             WHERE session_id = ?1 AND id = ?2 AND state != 'sending'",
             rusqlite::params![session, id, text],
         )?;
         if changed == 0 {
@@ -491,7 +498,7 @@ impl Db {
     ) -> Result<Option<Vec<proto::ThreadQueuedMessage>>> {
         let conn = self.conn.lock().expect("db lock");
         let removed = conn.execute(
-            "DELETE FROM thread_queue WHERE session_id = ?1 AND id = ?2",
+            "DELETE FROM thread_queue WHERE session_id = ?1 AND id = ?2 AND state != 'sending'",
             rusqlite::params![session, id],
         )?;
         if removed == 0 {
@@ -501,8 +508,8 @@ impl Db {
     }
 
     /// Takes one message out of the queue before it is written: `id`, or with `None` the
-    /// oldest `queued` one (held messages wait for the user). A taken message is gone from
-    /// the table, so a second take of it finds nothing.
+    /// oldest `queued` one (held messages wait for the user). A taken message is `sending`
+    /// until `thread_queue_sent` or `thread_queue_restore`, so a second take finds nothing.
     pub fn thread_queue_take(
         &self,
         session: u32,
@@ -521,7 +528,8 @@ impl Db {
             return Ok(None);
         };
         tx.execute(
-            "DELETE FROM thread_queue WHERE session_id = ?1 AND id = ?2",
+            "UPDATE thread_queue SET state = 'sending', hold_reason = NULL
+             WHERE session_id = ?1 AND id = ?2",
             rusqlite::params![session, taken.id],
         )?;
         let rows = queue_rows(&tx, session)?;
@@ -529,33 +537,45 @@ impl Db {
         Ok(Some((taken, rows)))
     }
 
-    /// Puts a taken message back at the head as `held`, for a write that failed. The
-    /// limits do not apply: the message was counted before it was taken.
+    /// A taken message reached the provider: its row goes.
+    pub fn thread_queue_sent(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "DELETE FROM thread_queue WHERE id = ?1 AND state = 'sending'",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    /// Puts taken message `id` back at the head of its queue as `held`, for a write that
+    /// failed, and returns the session it belongs to now (a respawn moves the queue) with its
+    /// queue. `None` when it is no longer stored: its session was closed.
     pub fn thread_queue_restore(
         &self,
-        session: u32,
-        message: &proto::ThreadQueuedMessage,
+        id: &str,
         reason: &str,
-    ) -> Result<Vec<proto::ThreadQueuedMessage>> {
+    ) -> Result<Option<(u32, Vec<proto::ThreadQueuedMessage>)>> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
+        let Some(session) = tx
+            .query_row(
+                "SELECT session_id FROM thread_queue WHERE id = ?1 AND state = 'sending'",
+                [id],
+                |row| row.get::<_, u32>(0),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
         tx.execute(
-            "INSERT OR REPLACE INTO thread_queue
-                 (session_id, id, position, text, state, hold_reason, created_at_ms, excerpts)
-             VALUES (?1, ?2, (SELECT COALESCE(MIN(position), 1) - 1 FROM thread_queue WHERE session_id = ?1),
-                     ?3, 'held', ?4, ?5, ?6)",
-            rusqlite::params![
-                session,
-                message.id,
-                message.text,
-                reason,
-                message.created_at_ms as i64,
-                serde_json::to_string(&message.excerpts)?
-            ],
+            "UPDATE thread_queue SET state = 'held', hold_reason = ?3,
+                 position = (SELECT MIN(position) - 1 FROM thread_queue WHERE session_id = ?1)
+             WHERE session_id = ?1 AND id = ?2",
+            rusqlite::params![session, id, reason],
         )?;
         let rows = queue_rows(&tx, session)?;
         tx.commit()?;
-        Ok(rows)
+        Ok(Some((session, rows)))
     }
 
     /// Messages waiting as `queued`.
@@ -578,7 +598,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         let changed = conn.execute(
             "UPDATE thread_queue SET state = 'queued', hold_reason = NULL
-             WHERE session_id = ?1 AND id = ?2",
+             WHERE session_id = ?1 AND id = ?2 AND state != 'sending'",
             rusqlite::params![session, id],
         )?;
         if changed == 0 {
@@ -633,13 +653,19 @@ impl Db {
         Ok(())
     }
 
-    /// Daemon start: nothing a previous daemon queued is sent until the user sends it.
+    /// Daemon start: nothing a previous daemon queued is sent until the user sends it, and a
+    /// message it was sending stays until the user sees whether it arrived.
     pub fn thread_queue_recover(&self) -> Result<usize> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.execute(
+        let interrupted = conn.execute(
+            "UPDATE thread_queue SET state = 'held', hold_reason = ?1 WHERE state = 'sending'",
+            [THREAD_QUEUE_INTERRUPTED_REASON],
+        )?;
+        let queued = conn.execute(
             "UPDATE thread_queue SET state = 'held', hold_reason = ?1 WHERE state = 'queued'",
             [THREAD_QUEUE_RESTART_REASON],
-        )?)
+        )?;
+        Ok(interrupted + queued)
     }
 
     /// Up to `limit` events before `before_seq` (the newest when `None`), oldest first,
@@ -729,7 +755,11 @@ mod tests {
         let (taken, rest) = db.thread_queue_take(4, None).unwrap().unwrap();
         assert_eq!((taken.id.as_str(), ids(&rest)), ("a", vec!["b"]));
         assert!(db.thread_queue_take(4, Some("a")).unwrap().is_none());
-        let rows = db.thread_queue_restore(4, &taken, "write failed").unwrap();
+        let (owner, rows) = db
+            .thread_queue_restore(&taken.id, "write failed")
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner, 4);
         assert_eq!(
             ids(&rows),
             ["a", "b"],
@@ -739,6 +769,11 @@ mod tests {
         assert_eq!(db.thread_queue_waiting(4).unwrap(), 1);
         let (next, _) = db.thread_queue_take(4, None).unwrap().unwrap();
         assert_eq!(next.id, "b", "the drain passes over a held message");
+        db.thread_queue_sent("b").unwrap();
+        assert!(
+            db.thread_queue_restore("b", "late").unwrap().is_none(),
+            "a sent message is gone"
+        );
         db.thread_queue_push(4, "thread_send", &queued("b", "two"))
             .unwrap();
         let rows = db.thread_queue_release(4, "a").unwrap().unwrap();
@@ -802,7 +837,10 @@ mod tests {
         db.thread_queue_push(4, "thread_send", &message).unwrap();
         let (taken, _) = db.thread_queue_take(4, Some("a")).unwrap().unwrap();
         assert_eq!(taken.excerpts, message.excerpts);
-        let rows = db.thread_queue_restore(4, &taken, "write failed").unwrap();
+        let (_, rows) = db
+            .thread_queue_restore(&taken.id, "write failed")
+            .unwrap()
+            .unwrap();
         assert_eq!(rows[0].excerpts, message.excerpts, "a held row keeps them");
         let fill = "y".repeat(proto::THREAD_QUEUE_MAX_BYTES - 1000);
         let over = db
@@ -841,6 +879,64 @@ mod tests {
             move_history(&conn, 4, 9).unwrap();
         }
         assert_eq!(db.thread_commands(9).unwrap(), Some(list));
+    }
+
+    #[test]
+    fn a_message_being_sent_keeps_its_place_in_the_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        for n in 0..proto::THREAD_QUEUE_MAX_ITEMS {
+            db.thread_queue_push(4, "thread_send", &queued(&n.to_string(), "x"))
+                .unwrap();
+        }
+        let (taken, rows) = db.thread_queue_take(4, None).unwrap().unwrap();
+        assert_eq!(rows.len(), proto::THREAD_QUEUE_MAX_ITEMS - 1);
+        assert!(db.thread_queue_remove(4, "0").unwrap().is_none());
+        assert!(db.thread_queue_edit(4, "0", "changed").unwrap().is_none());
+        assert!(db.thread_queue_release(4, "0").unwrap().is_none());
+        let full = db
+            .thread_queue_push(4, "thread_send", &queued("over", "x"))
+            .unwrap_err()
+            .to_string();
+        assert!(full.contains("holds 16 messages"), "{full}");
+        let (_, rows) = db
+            .thread_queue_restore(&taken.id, "write failed")
+            .unwrap()
+            .unwrap();
+        assert_eq!(rows.len(), proto::THREAD_QUEUE_MAX_ITEMS);
+        assert_eq!(rows[0].id, "0");
+    }
+
+    #[test]
+    fn a_message_being_sent_follows_its_queue_and_survives_a_crash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.thread_queue_push(4, "thread_send", &queued("a", "one"))
+            .unwrap();
+        db.thread_queue_take(4, None).unwrap().unwrap();
+        move_history(&db.conn.lock().unwrap(), 4, 5).unwrap();
+        let (owner, rows) = db
+            .thread_queue_restore("a", "write failed")
+            .unwrap()
+            .unwrap();
+        assert_eq!((owner, ids(&rows)), (5, vec!["a"]));
+        assert!(db.thread_queue(4).unwrap().is_empty());
+
+        db.thread_queue_push(5, "thread_send", &queued("b", "two"))
+            .unwrap();
+        db.thread_queue_take(5, Some("b")).unwrap().unwrap();
+        assert_eq!(db.thread_queue_recover().unwrap(), 1);
+        let rows = db.thread_queue(5).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.id.as_str(), row.hold_reason.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("a", Some("write failed")),
+                ("b", Some(THREAD_QUEUE_INTERRUPTED_REASON))
+            ],
+            "a message taken before a crash is held, not lost"
+        );
     }
 
     #[test]

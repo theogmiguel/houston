@@ -319,8 +319,10 @@ status source:
 - The stream's `result` event ends a turn only while the session has delivered no
   lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
 - A `Stop` hook that arrives while a turn is open (an earlier turn's, late, or this
-  turn's ahead of its `result`) is deferred, and the open turn's `result` applies it.
-  Otherwise a late hook of one turn would report Idle while the queue's next turn runs.
+  turn's ahead of its `result`) defers only its status change, which the open turn's
+  `result` applies. Otherwise a late hook of one turn would report Idle while the queue's
+  next turn runs. Its other effects (title, sub-agent hold, episodes) apply at once, and
+  Stop, an exit or close drop the deferred change because they settle the status.
 - A thread with no turn running is idle by construction: headless Claude reports
   `SessionStart` only with its first message, so a new or restored thread starts Idle and
   has no spawn grace.
@@ -355,11 +357,15 @@ arrives; Houston never reads Claude's transcript files to fill it and never writ
 ### A thread takes no message while a turn is open
 
 The daemon writes a user message to a thread's process only while no turn is open. A
-message sent during a turn waits in the session's `thread_queue` table and goes when the
-turn completes, one per turn, oldest first; orchestration prompts and inbox pastes wait
+turn opens with Houston's write or with the stream's `system/init`, which also opens a
+turn Claude starts by itself (a background task's report). A message sent during a turn
+waits in the session's `thread_queue` table and goes when the turn completes, one per
+turn, oldest first; orchestration prompts, inbox pastes and a Stop hook's inbox text wait
 behind it. Steer stops the turn first, so a steered message also has a turn of its own.
-A queued message leaves the table under the thread's operation lock before it is
-written, so a steer racing the queue sends it once.
+A queued message is taken under the thread's operation lock before it is written, so a
+steer racing the queue sends it once. A taken row stays stored as `sending`, out of the
+queue's view, until its write ends: it keeps counting against the queue limits, follows
+a respawn, and a daemon that dies mid-write leaves it held rather than lost.
 
 **Why.** Claude reads stdin during a turn and folds or batches what it reads: a message
 written during a tool call joins the running turn, and two written while text streams

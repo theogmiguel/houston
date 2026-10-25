@@ -1,7 +1,7 @@
 use super::*;
 use crate::claude_stream::ClaudeStreamJson;
 use crate::thread_session::{
-    ApprovalAnswer, Conversation, StructuredRuntime, ThreadCommandList, ThreadHost,
+    ApprovalAnswer, Conversation, DeferredHook, StructuredRuntime, ThreadCommandList, ThreadHost,
 };
 use std::sync::Weak;
 
@@ -68,9 +68,14 @@ impl ThreadHost for DaemonThreadHost {
         }
     }
 
-    fn turn_ended(&self, session: u32, outcome: proto::TurnOutcome) {
+    fn turn_ended(
+        &self,
+        session: u32,
+        outcome: proto::TurnOutcome,
+        deferred: Option<DeferredHook>,
+    ) {
         if let Some(daemon) = self.daemon.upgrade() {
-            daemon.thread_turn_ended(session, outcome);
+            daemon.thread_turn_ended(session, outcome, deferred);
         }
     }
 
@@ -195,6 +200,7 @@ impl ThreadHost for DaemonThreadHost {
             created_at_ms: now_ms(),
             excerpts: excerpts.to_vec(),
         };
+        let _publish = daemon.thread_queue_publish();
         let items = daemon
             .db
             .thread_queue_push(session, "thread_send", &message)?;
@@ -208,11 +214,23 @@ impl ThreadHost for DaemonThreadHost {
         id: Option<&str>,
     ) -> Result<Option<proto::ThreadQueuedMessage>> {
         let daemon = self.live_daemon()?;
+        let _publish = daemon.thread_queue_publish();
         let Some((taken, items)) = daemon.db.thread_queue_take(session, id)? else {
             return Ok(None);
         };
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-queue-publish", session);
         daemon.broadcast_thread_queue(session, items);
         Ok(Some(taken))
+    }
+
+    fn queue_sent(&self, session: u32, id: &str) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        if let Err(error) = daemon.db.thread_queue_sent(id) {
+            tracing::error!("removing sent message {id} from session {session}'s queue: {error:#}");
+        }
     }
 
     fn queue_waiting(&self, session: u32) -> Result<usize> {
@@ -221,6 +239,7 @@ impl ThreadHost for DaemonThreadHost {
 
     fn queue_release(&self, session: u32, id: &str) -> Result<()> {
         let daemon = self.live_daemon()?;
+        let _publish = daemon.thread_queue_publish();
         let items = daemon
             .db
             .thread_queue_release(session, id)?
@@ -238,8 +257,14 @@ impl ThreadHost for DaemonThreadHost {
         let Some(daemon) = self.daemon.upgrade() else {
             return;
         };
-        match daemon.db.thread_queue_restore(session, message, reason) {
-            Ok(items) => daemon.broadcast_thread_queue(session, items),
+        let _publish = daemon.thread_queue_publish();
+        // A respawn may have moved the message to the replacement row in the meantime.
+        match daemon.db.thread_queue_restore(&message.id, reason) {
+            Ok(Some((owner, items))) => daemon.broadcast_thread_queue(owner, items),
+            Ok(None) => tracing::debug!(
+                "message {} of session {session} left the queue before it could go back",
+                message.id
+            ),
             Err(error) => tracing::error!(
                 "putting message {} back in session {session}'s queue: {error:#}",
                 message.id
@@ -251,6 +276,7 @@ impl ThreadHost for DaemonThreadHost {
         let Some(daemon) = self.daemon.upgrade() else {
             return;
         };
+        let _publish = daemon.thread_queue_publish();
         match daemon.db.thread_queue_hold(session, reason) {
             Ok(Some(items)) => daemon.broadcast_thread_queue(session, items),
             Ok(None) => {}
@@ -568,6 +594,28 @@ impl Daemon {
         self.broadcast_control(&proto::ServerMsg::ThreadQueue { session: id, items });
     }
 
+    /// Held from a queue change until its snapshot is broadcast, so snapshots reach clients
+    /// in the order the changes were made. Taken after `op` and the runtime state, before
+    /// the database.
+    pub(super) fn thread_queue_publish(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.thread_queue_publish
+            .lock()
+            .expect("thread queue publish lock")
+    }
+
+    /// `thread_queue_list` answered on the connection's control channel, after every
+    /// snapshot broadcast before it.
+    pub fn thread_queue_reply(&self, id: u32, conn_id: u64) -> Result<()> {
+        self.ensure_thread_session(id, "thread_queue_list")?;
+        let _publish = self.thread_queue_publish();
+        let items = self.db.thread_queue(id)?;
+        self.send_control_to(
+            conn_id,
+            &proto::ServerMsg::ThreadQueue { session: id, items },
+        );
+        Ok(())
+    }
+
     pub fn thread_queue_list(&self, id: u32) -> Result<proto::ServerMsg> {
         self.ensure_thread_session(id, "thread_queue_list")?;
         Ok(proto::ServerMsg::ThreadQueue {
@@ -600,6 +648,7 @@ impl Daemon {
             .excerpts;
         ensure_excerpts(id, "thread_queue_edit", text, &excerpts)?;
         self.ensure_thread_command(id, "thread_queue_edit", text, &excerpts)?;
+        let _publish = self.thread_queue_publish();
         let items = self
             .db
             .thread_queue_edit(id, message, text)?
@@ -651,6 +700,7 @@ impl Daemon {
 
     pub fn thread_queue_remove(&self, id: u32, message: &str) -> Result<()> {
         self.ensure_thread_session(id, "thread_queue_remove")?;
+        let _publish = self.thread_queue_publish();
         let items = self.db.thread_queue_remove(id, message)?.ok_or_else(|| {
             anyhow!(
                 "thread_queue_remove refused for session {id}: message {message:?} is not in its \
@@ -743,16 +793,18 @@ impl Daemon {
     }
 
     /// The stream's `result` ends the turn while no lifecycle hook reports for this session,
-    /// or when a `Stop` hook arrived while the turn was open; otherwise that hook owns the
-    /// transition.
-    fn thread_turn_ended(self: &Arc<Self>, id: u32, outcome: proto::TurnOutcome) {
+    /// or when a `Stop` hook arrived while the turn was open (`deferred`); otherwise that
+    /// hook owns the transition.
+    fn thread_turn_ended(
+        self: &Arc<Self>,
+        id: u32,
+        outcome: proto::TurnOutcome,
+        deferred: Option<DeferredHook>,
+    ) {
         let Ok(session) = self.get(id) else {
             return;
         };
-        let deferred = session
-            .thread()
-            .is_some_and(|thread| thread.take_deferred_turn_end_hook());
-        if session.lifecycle_hook_seen.load(Ordering::Acquire) && !deferred {
+        if session.lifecycle_hook_seen.load(Ordering::Acquire) && deferred.is_none() {
             return;
         }
         let event = match outcome {
@@ -760,7 +812,15 @@ impl Daemon {
             proto::TurnOutcome::Interrupted => crate::agent_events::AgentEvent::TurnInterrupted,
             proto::TurnOutcome::Error => crate::agent_events::AgentEvent::TurnFailed,
         };
-        self.apply_agent_event(id, "thread_result", event, false, true, None);
+        let prompt_id = deferred.and_then(|hook| hook.prompt_id);
+        self.apply_agent_event(
+            id,
+            "thread_result",
+            event,
+            false,
+            true,
+            prompt_id.as_deref(),
+        );
     }
 
     fn record_thread_group(&self, id: u32, pid: u32) {
