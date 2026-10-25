@@ -1761,6 +1761,7 @@ pub struct Daemon {
     delegation_wake: Arc<tokio::sync::Notify>,
     idle_tick_counts: [AtomicU64; 2],
     checkpoint_lock: Mutex<()>,
+    pr_status_store: crate::pr_status_store::PrStatusStore,
     /// Serialises scrollback file writes, which share one temporary path per pane and may
     /// sleep in Windows retries, so the ring's own lock is held only to take a snapshot.
     scrollback_writes: Mutex<()>,
@@ -3550,6 +3551,10 @@ impl Daemon {
             delegation_wake: Arc::new(tokio::sync::Notify::new()),
             idle_tick_counts: [AtomicU64::new(0), AtomicU64::new(0)],
             checkpoint_lock: Mutex::new(()),
+            pr_status_store: crate::pr_status_store::PrStatusStore::load(
+                state_dir.join(crate::pr_status_store::FILE_NAME),
+                now_ms(),
+            ),
             scrollback_writes: Mutex::new(()),
             reap_armed: Mutex::new(None),
             reap_generation: AtomicU64::new(0),
@@ -4454,11 +4459,23 @@ impl Daemon {
         );
     }
 
+    /// PR status for `dir` and whether it came from the previous daemon's file, in
+    /// which case the caller re-asks at once so the stored answer is replaced.
+    pub fn pr_status(&self, dir: &Path) -> (crate::gh::PrStatus, bool) {
+        if let Some(seed) = self.pr_status_store.take_seed(dir, now_ms()) {
+            return (seed, true);
+        }
+        let status = crate::gh::pr_status_cached(dir);
+        self.pr_status_store.record(dir, &status, now_ms());
+        (status, false)
+    }
+
     pub fn mark_clean_shutdown(&self) -> Result<()> {
         self.write_file_atomic(&self.marker_path(), b"")
     }
 
     pub fn persist_all(&self) {
+        self.pr_status_store.flush();
         if let Err(e) = self.checkpoint_scrollback() {
             tracing::warn!("persist_all: checkpoint failed: {e:#}");
             return;
@@ -4875,6 +4892,7 @@ impl Daemon {
                 unterminated,
             });
         }
+        self.pr_status_store.flush();
         if let Err(e) = self.checkpoint_scrollback() {
             self.shutting_down.store(false, Ordering::Release);
             return Err(ShutdownFailure {
@@ -5162,6 +5180,8 @@ impl Daemon {
         let listener = UnixListener::bind(&socket_path)
             .map_err(|e| format!("binding adoption socket {path_str}: {e}"))?;
 
+        // The candidate loads the PR status file at startup.
+        self.pr_status_store.flush();
         self.request_spawn_next(
             &candidate.to_string_lossy(),
             &["--adopt".to_string(), path_str.clone()],
