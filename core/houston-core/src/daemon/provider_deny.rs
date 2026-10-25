@@ -36,7 +36,7 @@ fn effective_roots(
         _ => None,
     }.map(|raw| {
         let path = PathBuf::from(raw);
-        if path.is_absolute() { path } else { Path::new(&session.info.cwd).join(path) }
+        if path.is_absolute() { path } else { Path::new(&session.cwd()).join(path) }
     });
     Ok((home, profile))
 }

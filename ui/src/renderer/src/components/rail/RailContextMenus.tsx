@@ -11,6 +11,7 @@ import {
   IconCodeXml,
   IconEyeOff,
   IconFolder,
+  IconFolderOpen,
   IconGrid,
   IconPencil,
   IconPin,
@@ -42,6 +43,8 @@ export interface CtxMenu {
   pinned: boolean;
   /** True when this is the selected workspace, the one the F2 and close shortcuts act on. */
   selected: boolean;
+  /** The workspace folder is gone on disk, e.g. it was moved or renamed. */
+  missing?: boolean;
 }
 
 export interface GridCtxMenu {
@@ -119,6 +122,7 @@ export function WorkspaceContextMenu({
   onRemoveWorkspace,
   onOpenExternalError,
   onTogglePin,
+  onLocateStart,
 }: {
   menu: CtxMenu;
   onClose: () => void;
@@ -127,6 +131,7 @@ export function WorkspaceContextMenu({
   onRemoveWorkspace: (path: string) => void;
   onOpenExternalError?: (message: string) => void;
   onTogglePin: (path: string) => void;
+  onLocateStart?: (path: string) => void;
 }): React.JSX.Element {
   const keymapOverrides = useContext(KeymapOverridesContext);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -190,6 +195,20 @@ export function WorkspaceContextMenu({
           <Icon glyph={IconPin} role="ui" />
           <span>{menu.pinned ? "Unpin workspace" : "Pin workspace"}</span>
         </ContextMenuItem>
+        {menu.missing && onLocateStart && (
+          <ContextMenuItem
+            role="menuitem"
+            data-testid="ws-locate-moved"
+            onClick={() => {
+              const { path } = menu;
+              onClose();
+              onLocateStart(path);
+            }}
+          >
+            <Icon glyph={IconFolderOpen} role="ui" />
+            <span>Locate moved folder…</span>
+          </ContextMenuItem>
+        )}
         <ContextMenuItem
 
           role="menuitem"

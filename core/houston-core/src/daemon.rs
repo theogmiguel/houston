@@ -570,6 +570,8 @@ pub struct Session {
     state: Mutex<proto::SessionState>,
     title: Mutex<String>,
     project_dir: Mutex<String>,
+    // Spawn cwd; `info.cwd` keeps the original, and relocation re-roots this one.
+    cwd: Mutex<String>,
     detected: Mutex<Option<proto::AgentKind>>,
     running: Mutex<Option<proto::AgentKind>>,
     blocks: Option<Mutex<BlockTracker>>,
@@ -1286,6 +1288,10 @@ impl Backend {
 }
 
 impl Session {
+    fn cwd(&self) -> String {
+        self.cwd.lock().expect("cwd lock").clone()
+    }
+
     fn remove_shell_token_file(&self) {
         let Some(path) = &self.shell_token_file else {
             return;
@@ -1340,6 +1346,7 @@ impl Session {
         info.state = *self.state.lock().expect("state lock");
         (info.title, info.title_source) = self.snapshot_title();
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
+        info.cwd = self.cwd();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.running_agent = *self.running.lock().expect("running lock");
         info.status = *self.status.lock().expect("status lock");
@@ -5519,6 +5526,7 @@ impl Daemon {
             state: Mutex::new(m.state),
             title: Mutex::new(m.title.clone()),
             project_dir: Mutex::new(m.project_dir.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -5676,7 +5684,7 @@ impl Daemon {
                 status: *s.status.lock().expect("status lock"),
                 hidden: s.info.hidden,
                 project_dir: s.project_dir.lock().expect("project dir lock").clone(),
-                cwd: s.info.cwd.clone(),
+                cwd: s.cwd(),
                 title,
                 title_source: Some(title_source),
                 codename: s.info.codename.clone(),
@@ -9342,6 +9350,214 @@ impl Daemon {
         self.workspace_list()
     }
 
+    /// Re-point a workspace whose folder moved or was renamed on disk. `to` must be
+    /// the same repository: every managed worktree of the old checkout that still
+    /// exists has to link to a worktree entry `to` holds.
+    pub fn workspace_relocate(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<proto::WorkspaceRelocateMoved> {
+        use crate::paths::relocated;
+        let _membership = self
+            .workspace_membership
+            .lock()
+            .expect("workspace_membership lock");
+        let known = self.workspace_list()?;
+        let Some(current) = known.iter().find(|w| w.path == from) else {
+            bail!("unknown workspace path: {from}");
+        };
+        if Path::new(from).exists() {
+            bail!("workspace {from} still exists on disk; relocation is for a folder that moved or was renamed");
+        }
+        if known.iter().any(|w| w.path == to) {
+            bail!("{to} is already a workspace; pick the folder {from} moved to");
+        }
+        let target = Path::new(to);
+        if !target.is_dir() {
+            bail!("relocation target does not exist or is not a directory: {to}");
+        }
+        let facts = crate::git::checkout_facts(target);
+        let is_root = facts.toplevel.as_deref().is_some_and(|top| {
+            matches!((Path::new(top).canonicalize(), target.canonicalize()), (Ok(a), Ok(b)) if a == b)
+        });
+        let common_dir = match (is_root, facts.common_dir) {
+            (true, Some(dir)) if !dir.is_empty() => dir,
+            _ => bail!(
+                "relocation target {to} is not a git repository root (toplevel {:?}); expected the folder {from} moved to",
+                facts.toplevel.as_deref().unwrap_or("none")
+            ),
+        };
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|s| {
+                s.state.lock().expect("state lock").is_live()
+                    && relocated(from, to, &s.project_dir.lock().expect("project_dir lock"))
+                        .is_some()
+            })
+            .count();
+        if live > 0 {
+            bail!("{live} running session(s) are rooted in {from}; close them before relocating the workspace");
+        }
+        if let Some(swarm) = self
+            .db
+            .list_swarms()?
+            .into_iter()
+            .find(|s| relocated(from, to, &s.root_dir).is_some())
+        {
+            bail!(
+                "swarm {} ({:?}) is rooted in {from}; remove it before relocating the workspace",
+                swarm.id,
+                swarm.name
+            );
+        }
+
+        let mut moved = proto::WorkspaceRelocateMoved::default();
+        let mut worktrees = Vec::new();
+        let mut present = Vec::new();
+        let admin_root = Path::new(&common_dir).join("worktrees");
+        for row in self.db.managed_worktrees()? {
+            let ours = relocated(from, to, &row.repo_common_dir);
+            let path = relocated(from, to, &row.path);
+            if ours.is_none() && path.is_none() {
+                continue;
+            }
+            let path = path.unwrap_or_else(|| row.path.clone());
+            let dir = PathBuf::from(&path);
+            match crate::git::worktree_admin_dir(&dir) {
+                Some(admin) => {
+                    let home = relocated(from, to, &admin.to_string_lossy())
+                        .or_else(|| relocated(to, to, &admin.to_string_lossy()));
+                    let entry = admin.file_name().map(|n| admin_root.join(n));
+                    if home.is_none() || !entry.as_deref().is_some_and(Path::is_dir) {
+                        bail!(
+                            "worktree {path} links to {}, which is not a worktree entry of {to}; {to} is not the repository {from} held",
+                            admin.display()
+                        );
+                    }
+                    present.push(dir.clone());
+                }
+                None if dir.is_dir() => moved.notes.push(format!(
+                    "worktree {path} has no .git link; git cannot repair it"
+                )),
+                None => moved.notes.push(format!(
+                    "worktree {path} is gone; its row stays for cleanup"
+                )),
+            }
+            let stored = dir
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or(path);
+            let common = if ours.is_some() {
+                common_dir.clone()
+            } else {
+                row.repo_common_dir.clone()
+            };
+            worktrees.push((row.path, stored, common));
+        }
+        if present.is_empty() {
+            moved.notes.push(format!(
+                "{from} had no linked worktree to compare; {to} was accepted as a git repository root"
+            ));
+        }
+
+        let folder = |p: &str| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        };
+        let name = match (folder(from), folder(to)) {
+            (Some(old), Some(new)) if current.name == old => new,
+            _ => current.name.clone(),
+        };
+        self.db.relocate_workspace(from, to, &name, &worktrees)?;
+        moved.worktrees = worktrees.len() as u32;
+        let re_root = |slot: &mut String| match relocated(from, to, slot) {
+            Some(path) => {
+                *slot = path;
+                true
+            }
+            None => false,
+        };
+        let mut reparented = Vec::new();
+        for session in self.sessions.lock().expect("sessions lock").values() {
+            let mut project_dir = session.project_dir.lock().expect("project_dir lock");
+            let mut hit = re_root(&mut project_dir);
+            hit |= re_root(&mut session.cwd.lock().expect("cwd lock"));
+            if let Some(cwd) = session.hook_cwd.lock().expect("hook_cwd lock").as_mut() {
+                hit |= re_root(cwd);
+            }
+            let mut osc = session.osc_cwd.lock().expect("osc_cwd lock");
+            if let Some(dir) = osc
+                .as_deref()
+                .and_then(|d| relocated(from, to, &d.to_string_lossy()))
+            {
+                *osc = Some(PathBuf::from(dir));
+                hit = true;
+            }
+            if hit {
+                reparented.push((session.info.id, project_dir.clone()));
+            }
+        }
+        for info in self.dead.lock().expect("dead lock").values_mut() {
+            let mut hit = re_root(&mut info.project_dir);
+            hit |= re_root(&mut info.cwd);
+            if let Some(root) = info.checkout_root.as_mut() {
+                hit |= re_root(root);
+            }
+            if let Some(worktree) = info.worktree.as_mut() {
+                hit |= re_root(&mut worktree.path);
+                hit |= re_root(&mut worktree.repo_common_dir);
+            }
+            if let Some(checkout) = info.checkout.as_mut() {
+                hit |= re_root(&mut checkout.root);
+            }
+            if hit {
+                reparented.push((info.id, info.project_dir.clone()));
+            }
+        }
+        // As in `reparent_session`: the HEAD watcher re-resolves each moved checkout.
+        let mut checkouts = self.checkouts.lock().expect("checkouts lock");
+        for (id, _) in &reparented {
+            checkouts.insert(*id, None);
+        }
+        drop(checkouts);
+        moved.sessions = reparented.len() as u32;
+        self.install_workspace_hooks(to);
+
+        if !present.is_empty() {
+            match crate::git::worktree_repair(target, &present) {
+                Ok(()) => {
+                    moved.repaired = present
+                        .iter()
+                        .filter(|dir| {
+                            crate::git::worktree_admin_dir(dir).is_some_and(|admin| {
+                                relocated(to, to, &admin.to_string_lossy()).is_some()
+                            })
+                        })
+                        .count() as u32;
+                }
+                Err(e) => moved.notes.push(format!("{e:#}")),
+            }
+        }
+        // First, so a client moves its layouts before a pane leaves the old workspace.
+        self.broadcast_control(&proto::ServerMsg::WorkspaceRelocated {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            moved: moved.clone(),
+        });
+        for (session, project_dir) in reparented {
+            self.broadcast_control(&proto::ServerMsg::SessionReparented {
+                session,
+                project_dir,
+            });
+        }
+        Ok(moved)
+    }
+
     pub fn workspace_remove(self: &Arc<Self>, path: &str) -> Result<Vec<proto::Workspace>> {
         let _membership = self
             .workspace_membership
@@ -9804,7 +10020,7 @@ impl Daemon {
                 Some(s) => (
                     s.pid,
                     s.osc_cwd.lock().expect("osc_cwd lock").clone(),
-                    PathBuf::from(&s.info.cwd),
+                    PathBuf::from(s.cwd()),
                 ),
                 None => {
                     let dead = self.dead.lock().expect("dead lock");
@@ -9842,7 +10058,7 @@ impl Daemon {
             return Ok(dir.display().to_string());
         }
         if let Some(s) = self.sessions.lock().expect("sessions lock").get(&id) {
-            return Ok(s.info.cwd.clone());
+            return Ok(s.cwd());
         }
         if let Some(info) = self.dead.lock().expect("dead lock").get(&id) {
             return Ok(info.cwd.clone());
@@ -10141,7 +10357,7 @@ impl Daemon {
                     .lock()
                     .expect("hook_cwd lock")
                     .clone()
-                    .unwrap_or_else(|| old.info.cwd.clone()),
+                    .unwrap_or_else(|| old.cwd()),
                 old.custom_cmd.clone(),
                 title,
                 title_source,
@@ -12057,6 +12273,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(detected_agent.filter(|kind| detection_relabels(agent, *kind))),
             running: Mutex::new(hosted_provider),
             blocks: shellint_token.as_ref().map(|token| {
@@ -12710,6 +12927,7 @@ impl Daemon {
                 state: Mutex::new(proto::SessionState::Running),
                 title: Mutex::new(title),
                 project_dir: Mutex::new(info.project_dir.clone()),
+                cwd: Mutex::new(info.cwd.clone()),
                 detected: Mutex::new(None),
                 running: Mutex::new(None),
                 blocks: None,
@@ -13822,7 +14040,7 @@ impl Daemon {
                 .lock()
                 .expect("hook cwd lock")
                 .clone()
-                .unwrap_or_else(|| session.info.cwd.clone());
+                .unwrap_or_else(|| session.cwd());
             self.resume_check(
                 id,
                 resume_agent,
@@ -20587,7 +20805,7 @@ impl Daemon {
                         .lock()
                         .expect("hook_cwd lock")
                         .clone()
-                        .unwrap_or_else(|| parent.info.cwd.clone())
+                        .unwrap_or_else(|| parent.cwd())
                 })
                 .map(PathBuf::from)
                 .filter(|cwd| {
@@ -20987,7 +21205,7 @@ impl Daemon {
             .filter(|id| *id != child)
             .filter(|id| {
                 self.get(*id).ok().is_some_and(|session| {
-                    crate::git::checkout_facts(Path::new(&session.info.cwd))
+                    crate::git::checkout_facts(Path::new(&session.cwd()))
                         .toplevel
                         .as_deref()
                         == Some(root.as_str())
@@ -21901,7 +22119,7 @@ impl Daemon {
             let sessions = self.sessions.lock().expect("sessions lock");
             sessions
                 .get(&child)
-                .map(|s| PathBuf::from(s.info.cwd.clone()))
+                .map(|s| PathBuf::from(s.cwd()))
                 .unwrap_or_else(|| root.clone())
         };
         let mut out = Vec::with_capacity(artifacts.len());
@@ -27736,6 +27954,7 @@ mod kill_teardown_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("ssh".into()),
             project_dir: Mutex::new(project.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -28429,6 +28648,7 @@ mod force_respawn_guard_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("custom".into()),
             project_dir: Mutex::new(project),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,

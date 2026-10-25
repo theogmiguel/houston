@@ -553,6 +553,38 @@ pub struct CheckoutFacts {
     pub common_dir: Option<String>,
 }
 
+/// Re-links a main checkout and its linked worktrees in both directions after they
+/// moved; git needs each worktree's new path when the main checkout moved too.
+pub fn worktree_repair(repo: &Path, worktrees: &[PathBuf]) -> Result<()> {
+    #[cfg(windows)]
+    let plain = crate::paths::windows_command_path;
+    #[cfg(not(windows))]
+    let plain = Path::to_path_buf;
+    let mut command = command();
+    command
+        .arg("-C")
+        .arg(plain(repo))
+        .args(["worktree", "repair"])
+        .args(worktrees.iter().map(|dir| plain(dir)));
+    let out = git_output(command, GIT_COMMAND_TIMEOUT)?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git worktree repair in {} failed: {}",
+            repo.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// The admin directory a linked worktree's `.git` file names, resolved against
+/// the worktree when git wrote it relative.
+pub fn worktree_admin_dir(worktree: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(worktree.join(".git")).ok()?;
+    let link = contents.trim().strip_prefix("gitdir:")?.trim();
+    Some(worktree.join(link))
+}
+
 /// One `rev-parse` answers the identity, and the branch comes from the HEAD file
 /// the cache already keys on: that is the only source that answers in a
 /// repository with no commit yet, where `rev-parse HEAD` fails outright.
@@ -658,7 +690,7 @@ fn facts_via_cache(
     fresh
 }
 
-fn head_file(dir: &Path) -> Option<std::path::PathBuf> {
+fn head_file(dir: &Path) -> Option<PathBuf> {
     for ancestor in dir.ancestors() {
         let dot_git = ancestor.join(".git");
         let Ok(meta) = std::fs::metadata(&dot_git) else {
@@ -2067,6 +2099,24 @@ mod tests {
         fs::write(dir.join("README.md"), "hello\n").unwrap();
         git(dir, &["add", "-A"]);
         git(dir, &["commit", "-m", "init"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn worktree_repair_relinks_verbatim_paths_after_the_checkout_moved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("proj");
+        fs::create_dir(&repo).unwrap();
+        init_repo(&repo);
+        let wt = tmp.path().join("wt");
+        git(&repo, &["worktree", "add", "-b", "x", wt.to_str().unwrap()]);
+        let moved = tmp.path().join("moved");
+        fs::rename(&repo, &moved).unwrap();
+        // Canonical, so verbatim like the managed worktree rows.
+        let (moved, wt) = (moved.canonicalize().unwrap(), wt.canonicalize().unwrap());
+        worktree_repair(&moved, std::slice::from_ref(&wt)).unwrap();
+        let admin = worktree_admin_dir(&wt).unwrap().canonicalize().unwrap();
+        assert_eq!(admin, moved.join(".git").join("worktrees").join("wt"));
     }
 
     #[test]

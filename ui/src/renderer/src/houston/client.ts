@@ -731,6 +731,10 @@ export class HoustonClient {
     this.send({ type: 'workspace_rename', path, name })
   }
 
+  relocateWorkspace(from: string, to: string): void {
+    this.send({ type: 'workspace_relocate', from, to })
+  }
+
   gitBranch(dir: string): void {
     this.send({ type: 'git_branch', dir })
   }

@@ -100,6 +100,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   workspace_add: { path: 'path' },
   workspace_remove: { path: 'path' },
   workspace_rename: { path: 'path' },
+  workspace_relocate: { path: 'from' },
   workspace_list: 'list',
   workspace_local_servers: WORKSPACE,
   session_close: SESSION,
@@ -352,6 +353,7 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   attach_snapshot: SESSION_FIELD,
   workspace_list: 'list',
   workspace_focus: 'forward',
+  workspace_relocated: 'forward',
   workspace_local_servers: 'forward',
   session_resized: SESSION_FIELD,
   session_renamed: SESSION_FIELD,
@@ -848,6 +850,14 @@ export class EnvironmentMux {
       }
     }
     const out: Json = { ...msg, [field]: owner.path }
+    if (msg.type === 'workspace_relocate' && typeof msg.to === 'string') {
+      const dest = this.ownerOfPath(msg.to)
+      if ('refusal' in dest) return this.dispatchError(dest.refusal)
+      if (dest.env !== owner.env) {
+        return this.dispatchError(`${msg.to} is in another environment than ${value}; a workspace can only be relocated within its own`)
+      }
+      out.to = dest.path
+    }
     if (isTagged(out.cwd_from)) {
       const from = out.cwd_from
       out.cwd_from = owner.env !== null && slotOf(from) === owner.env.entry.slot ? from % SLOT_SPAN : null

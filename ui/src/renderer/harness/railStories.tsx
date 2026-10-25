@@ -140,6 +140,7 @@ function RailFixture({
         onAddWorkspace={noop}
         onRemoveWorkspace={noop}
         onRenameStart={noop}
+        onLocateStart={noop}
         onRenameSubmit={noop}
         onRenameCancel={noop}
         onChangeColor={noop}
@@ -534,6 +535,10 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/renaming-expanded': () => <RailRename workspace="acme-api" />,
   'rail/ws-menu': () => <RailMenu target='[data-ws-idx="3"]' />,
   'rail/ws-menu-pinned': () => <RailMenu target='[data-ws-idx="0"]' />,
+  'rail/ws-menu-missing': () => <RailMenu
+    target='[data-ws-idx="3"]'
+    workspaces={[ws('acme-core'), ws('acme-api'), ws('bridge'), { ...ws('acme-ui'), missing: true }, ws('houston')]}
+  />,
   'rail/grid-menu': () => <RailMenu target={GRID_ROW} />,
   'rail/grid-rename': () => <RailMenu target={GRID_ROW} pick="Rename" freezeCaret />,
   'rail/nav-menu': () => <RailMenu target='[data-testid="rail-nav-row"]' />,

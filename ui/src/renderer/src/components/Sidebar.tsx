@@ -431,6 +431,7 @@ interface Props {
   onAddWorkspace: () => void;
   onRemoveWorkspace: (path: string) => void;
   onRenameStart: (path: string) => void;
+  onLocateStart?: (path: string) => void;
   onOpenExternalError?: (message: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
@@ -1224,6 +1225,11 @@ const NO_BRANCHES: ReadonlyMap<number, string> = new Map();
 const NO_GRIDS: Record<string, GridItem[]> = {};
 const NO_PATHS: ReadonlySet<string> = new Set();
 
+// The open menu offers Locate only while the daemon reports its folder missing.
+function withMissing(menu: CtxMenu, workspaces: readonly Workspace[]): CtxMenu {
+  return { ...menu, missing: workspaces.find((w) => w.path === menu.path)?.missing };
+}
+
 export function Sidebar({
   mascotFirstRun = false,
   mascotWorkspacesEmpty,
@@ -1238,6 +1244,7 @@ export function Sidebar({
   onAddWorkspace,
   onRemoveWorkspace,
   onRenameStart,
+  onLocateStart,
   onOpenExternalError,
   onRenameSubmit,
   onRenameCancel,
@@ -1692,6 +1699,8 @@ export function Sidebar({
     e.preventDefault();
     setGridMenu(null);
     setNavMenu(null);
+    // A folder moved while the app ran shows as missing once the daemon restats it.
+    if (onLocateStart) railClient?.send({ type: "workspace_list" });
     setMenu({
       x: e.clientX,
       y: e.clientY,
@@ -1806,11 +1815,12 @@ export function Sidebar({
 
   const menuEl = menu && (
     <WorkspaceContextMenu
-      menu={menu}
+      menu={withMissing(menu, workspaces)}
       onClose={() => setMenu(null)}
       onAddGrid={onAddGrid}
       onRenameStart={onRenameStart}
       onRemoveWorkspace={onRemoveWorkspace}
+      onLocateStart={onLocateStart}
       onOpenExternalError={onOpenExternalError}
       onTogglePin={undoable.togglePinWorkspace}
     />

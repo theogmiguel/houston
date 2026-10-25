@@ -9,6 +9,8 @@ import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { RelocateState } from "./workspaceRelocate";
+import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
@@ -2913,6 +2915,20 @@ export function App(): React.JSX.Element {
     dropWorkspaceBuffers(path);
   }, []);
 
+  const relocateStateRef = useRef<RelocateState | null>(null);
+  relocateStateRef.current = {
+    gridsByWs: gridsByWsRef.current,
+    setWsColors, setLayouts, setGridsByWs, setSelectedGridByWs,
+    setWsPinned, setWsOrder, setWsRenaming, setSelectedWs,
+  };
+  useWorkspaceRelocated(conn, relocateStateRef, pushNotice);
+
+  const locateWorkspace = useCallback(async (path: string): Promise<void> => {
+    if (conn.kind !== "ready") return;
+    // Loading it first lets the reply move the layouts before the panes' reparents arrive.
+    await (await import("./workspaceRelocate")).locateMovedFolder(conn.client, path, pushError);
+  }, [conn, pushError]);
+
   const confirmRemoveWorkspace = useCallback(() => {
     if (!confirmRemoveWs || conn.kind !== "ready") {
       setConfirmRemoveWs(null);
@@ -3710,6 +3726,9 @@ export function App(): React.JSX.Element {
               taskTurnCount={taskTurnCount}
               mergeQueueParked={mergeQueueParked}
               onRemoveWorkspace={removeWorkspace}
+              onLocateStart={(path) => {
+                void locateWorkspace(path);
+              }}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
                 setSidebarRail(false);
