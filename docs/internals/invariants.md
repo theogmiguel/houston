@@ -313,11 +313,14 @@ be delegated to, via #3 — identity is still not status.
 A thread session (`thread_session.rs`, with Claude's adapter in `claude_stream.rs`) runs
 Claude with the documented `--print --input-format stream-json --output-format stream-json`
 flags on pipes. Claude's lifecycle hooks fire in this mode with the session's ids, so
-they own `AgentStatus` exactly as for a terminal pane. Four additions, and no other
+they own `AgentStatus` exactly as for a terminal pane. Five additions, and no other
 status source:
 
 - The stream's `result` event ends a turn only while the session has delivered no
   lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
+- A `Stop` hook that arrives while a turn is open (an earlier turn's, late, or this
+  turn's ahead of its `result`) is deferred, and the open turn's `result` applies it.
+  Otherwise a late hook of one turn would report Idle while the queue's next turn runs.
 - A thread with no turn running is idle by construction: headless Claude reports
   `SessionStart` only with its first message, so a new or restored thread starts Idle and
   has no spawn grace.
@@ -348,6 +351,21 @@ The thread's history is Houston's own `thread_events` log, written from the stre
 arrives; Houston never reads Claude's transcript files to fill it and never writes the
 `control_request` protocol. A thread takes no terminal input: stdin frames,
 `pane_send_keys` and Sleep are refused by name.
+
+### A thread takes no message while a turn is open
+
+The daemon writes a user message to a thread's process only while no turn is open. A
+message sent during a turn waits in the session's `thread_queue` table and goes when the
+turn completes, one per turn, oldest first; orchestration prompts and inbox pastes wait
+behind it. Steer stops the turn first, so a steered message also has a turn of its own.
+A queued message leaves the table under the thread's operation lock before it is
+written, so a steer racing the queue sends it once.
+
+**Why.** Claude reads stdin during a turn and folds or batches what it reads: a message
+written during a tool call joins the running turn, and two written while text streams
+become one later turn, with `queued_turn_count` 0 throughout. Houston could then neither
+pair a turn with its message nor tell when the process is idle. **Enforced by**
+`thread_sessions_wire` (the queue, steer and test-barrier race tests).
 
 ### Only the operator approves a permission request, in either view
 

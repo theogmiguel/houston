@@ -9849,7 +9849,7 @@ impl Daemon {
             self.deliver_first_prompt(info.id, text, None, true);
         }
         if let Some(text) = first_message {
-            if let Err(error) = self.thread_send(info.id, &text) {
+            if let Err(error) = self.thread_send(info.id, &text, false) {
                 tracing::warn!(
                     "delivering thread session {}'s first message: {error:#}",
                     info.id
@@ -16811,6 +16811,22 @@ impl Daemon {
             return None;
         }
 
+        if correlates
+            && ev == Some(crate::agent_events::AgentEvent::TurnEnded)
+            && !d.stop_continued
+            && self
+                .get(d.session)
+                .ok()
+                .and_then(|session| session.thread().cloned())
+                .is_some_and(|thread| thread.defer_turn_end_hook())
+        {
+            tracing::debug!(
+                "session {}: {} arrived while a thread turn is open; its stream turn end applies it",
+                d.session,
+                d.event
+            );
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) && !d.stop_continued
         {
             self.maybe_generate_title(d.session);
@@ -19653,7 +19669,7 @@ impl Daemon {
         }
         if let Some(thread) = self.get(session_id).ok().and_then(|s| s.thread().cloned()) {
             thread
-                .send(text)
+                .deliver_now(text)
                 .with_context(|| format!("sending a message to thread session {session_id}"))?;
             return Ok(true);
         }
@@ -24873,6 +24889,9 @@ impl Daemon {
         if let Some(reason) = self.child_input_paste_hold_reason(parent) {
             return Some(reason);
         }
+        if let Some(reason) = self.thread_paste_hold_reason(parent) {
+            return Some(reason);
+        }
         match self.session_status(parent) {
             Ok(Some(proto::AgentStatus::Idle)) => {}
             Ok(Some(proto::AgentStatus::NeedsInput)) => {
@@ -24909,6 +24928,9 @@ impl Daemon {
         if let Some(reason) = self.child_input_paste_hold_reason(target) {
             return Some(reason);
         }
+        if let Some(reason) = self.thread_paste_hold_reason(target) {
+            return Some(reason);
+        }
         match self.session_status(target) {
             Ok(Some(proto::AgentStatus::NeedsInput)) => {
                 Some("pane needs input; inspect the provider request; for permission use pane_deny or pane_escalate; only the operator may approve".into())
@@ -24916,6 +24938,13 @@ impl Daemon {
             Err(error) => Some(format!("pane cannot be read: {error}")),
             _ => self.operator_composer_hold_reason(target),
         }
+    }
+
+    /// A thread takes no message while a turn is open, and the user's queued messages go
+    /// first; its status can read Idle (a late Stop hook) after the queue opened a turn.
+    fn thread_paste_hold_reason(&self, target: u32) -> Option<String> {
+        let thread = self.get(target).ok()?.thread()?.hold_reason()?;
+        Some(format!("this thread is busy: {thread}"))
     }
 
     fn operator_composer_hold_reason(&self, parent: u32) -> Option<String> {
@@ -25039,7 +25068,7 @@ impl Daemon {
         }
         let thread = self.get(parent).ok().and_then(|s| s.thread().cloned());
         if let Some(thread) = thread {
-            if let Err(error) = thread.send(&composed) {
+            if let Err(error) = thread.deliver_now(&composed) {
                 let error = StdinWriteError {
                     written: Some(0),
                     error,

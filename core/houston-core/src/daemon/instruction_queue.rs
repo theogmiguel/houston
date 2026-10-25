@@ -683,7 +683,7 @@ impl Daemon {
             // A thread takes the instruction as one message; there is no composer to submit.
             Some(thread) => {
                 drop(admission.take());
-                thread.send(&text).map_err(|error| StdinWriteError {
+                thread.deliver_now(&text).map_err(|error| StdinWriteError {
                     written: Some(0),
                     error,
                 })

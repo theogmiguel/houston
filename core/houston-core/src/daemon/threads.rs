@@ -122,6 +122,86 @@ impl ThreadHost for DaemonThreadHost {
             daemon.broadcast_thread_info(session);
         }
     }
+
+    fn queue_push(&self, session: u32, text: &str) -> Result<()> {
+        let daemon = self.live_daemon()?;
+        let message = proto::ThreadQueuedMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            text: text.to_string(),
+            state: proto::QueuedState::Queued,
+            hold_reason: None,
+            created_at_ms: now_ms(),
+        };
+        let items = daemon
+            .db
+            .thread_queue_push(session, "thread_send", &message)?;
+        daemon.broadcast_thread_queue(session, items);
+        Ok(())
+    }
+
+    fn queue_take(
+        &self,
+        session: u32,
+        id: Option<&str>,
+    ) -> Result<Option<proto::ThreadQueuedMessage>> {
+        let daemon = self.live_daemon()?;
+        let Some((taken, items)) = daemon.db.thread_queue_take(session, id)? else {
+            return Ok(None);
+        };
+        daemon.broadcast_thread_queue(session, items);
+        Ok(Some(taken))
+    }
+
+    fn queue_waiting(&self, session: u32) -> Result<usize> {
+        self.live_daemon()?.db.thread_queue_waiting(session)
+    }
+
+    fn queue_release(&self, session: u32, id: &str) -> Result<()> {
+        let daemon = self.live_daemon()?;
+        let items = daemon
+            .db
+            .thread_queue_release(session, id)?
+            .ok_or_else(|| {
+                anyhow!(
+                "thread_queue_send refused for session {session}: message {id:?} is not in its \
+                 queue; it was sent or removed"
+            )
+            })?;
+        daemon.broadcast_thread_queue(session, items);
+        Ok(())
+    }
+
+    fn queue_restore(&self, session: u32, message: &proto::ThreadQueuedMessage, reason: &str) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        match daemon.db.thread_queue_restore(session, message, reason) {
+            Ok(items) => daemon.broadcast_thread_queue(session, items),
+            Err(error) => tracing::error!(
+                "putting message {} back in session {session}'s queue: {error:#}",
+                message.id
+            ),
+        }
+    }
+
+    fn queue_hold(&self, session: u32, reason: &str) {
+        let Some(daemon) = self.daemon.upgrade() else {
+            return;
+        };
+        match daemon.db.thread_queue_hold(session, reason) {
+            Ok(Some(items)) => daemon.broadcast_thread_queue(session, items),
+            Ok(None) => {}
+            Err(error) => tracing::error!("holding session {session}'s queue: {error:#}"),
+        }
+    }
+}
+
+impl DaemonThreadHost {
+    fn live_daemon(&self) -> Result<Arc<Daemon>> {
+        self.daemon
+            .upgrade()
+            .ok_or_else(|| anyhow!("the daemon is shutting down"))
+    }
 }
 
 /// How `thread_permission` answers a prompt: at once, or after the user decides.
@@ -197,16 +277,37 @@ impl Daemon {
             .unwrap_or(proto::SessionView::Terminal)
     }
 
-    pub fn thread_send(self: &Arc<Self>, id: u32, text: &str) -> Result<()> {
+    /// Sends at once, queues while a turn is open, or with `steer` goes ahead of the queue.
+    pub fn thread_send(self: &Arc<Self>, id: u32, text: &str, steer: bool) -> Result<()> {
         ensure_message_text(id, "thread_send", text)?;
-        let handle = self.thread_handle(id, "thread_send")?;
+        let handle = self.thread_message_target(id, "thread_send")?;
+        if steer {
+            handle.send_steered(text)
+        } else {
+            handle.send(text)
+        }
+    }
+
+    pub fn thread_queue_send(self: &Arc<Self>, id: u32, message: &str) -> Result<()> {
+        self.thread_message_target(id, "thread_queue_send")?
+            .send_queued(message)
+    }
+
+    pub fn thread_steer(self: &Arc<Self>, id: u32, message: &str) -> Result<()> {
+        self.thread_message_target(id, "thread_steer")?
+            .steer(message)
+    }
+
+    /// A live thread that may take a message now, refused by name otherwise.
+    fn thread_message_target(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
+        let handle = self.thread_handle(id, verb)?;
         let state = *self.get(id)?.state.lock().expect("state lock");
         if !state.is_live() {
-            bail!("thread_send refused for session {id}: it is {state:?}; restart it first");
+            bail!("{verb} refused for session {id}: it is {state:?}; restart it first");
         }
-        self.ensure_not_closing(id, "thread_send")?;
-        self.ensure_not_switching(id, "thread_send")?;
-        handle.send(text)
+        self.ensure_not_closing(id, verb)?;
+        self.ensure_not_switching(id, verb)?;
+        Ok(handle)
     }
 
     pub fn thread_stop(self: &Arc<Self>, id: u32) -> Result<()> {
@@ -505,13 +606,17 @@ impl Daemon {
         Ok(out.split_off(skip))
     }
 
-    /// The stream's `result` ends the turn only while no lifecycle hook reports for this
-    /// session; otherwise its `Stop` hook owns the transition.
+    /// The stream's `result` ends the turn while no lifecycle hook reports for this session,
+    /// or when a `Stop` hook arrived while the turn was open; otherwise that hook owns the
+    /// transition.
     fn thread_turn_ended(self: &Arc<Self>, id: u32, outcome: proto::TurnOutcome) {
         let Ok(session) = self.get(id) else {
             return;
         };
-        if session.lifecycle_hook_seen.load(Ordering::Acquire) {
+        let deferred = session
+            .thread()
+            .is_some_and(|thread| thread.take_deferred_turn_end_hook());
+        if session.lifecycle_hook_seen.load(Ordering::Acquire) && !deferred {
             return;
         }
         let event = match outcome {

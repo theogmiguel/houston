@@ -401,8 +401,8 @@ impl Db {
     }
 
     /// Takes one message out of the queue before it is written: `id`, or with `None` the
-    /// head when it is `queued` (a held head stops the drain, so order is kept). A taken
-    /// message is gone from the table, so a second take of it finds nothing.
+    /// oldest `queued` one (held messages wait for the user). A taken message is gone from
+    /// the table, so a second take of it finds nothing.
     pub fn thread_queue_take(
         &self,
         session: u32,
@@ -414,8 +414,8 @@ impl Db {
         let taken = match id {
             Some(id) => rows.iter().find(|row| row.id == id),
             None => rows
-                .first()
-                .filter(|row| row.state == proto::QueuedState::Queued),
+                .iter()
+                .find(|row| row.state == proto::QueuedState::Queued),
         };
         let Some(taken) = taken.cloned() else {
             return Ok(None);
@@ -455,6 +455,35 @@ impl Db {
         let rows = queue_rows(&tx, session)?;
         tx.commit()?;
         Ok(rows)
+    }
+
+    /// Messages waiting as `queued`.
+    pub fn thread_queue_waiting(&self, session: u32) -> Result<usize> {
+        let conn = self.conn.lock().expect("db lock");
+        let waiting: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM thread_queue WHERE session_id = ?1 AND state = 'queued'",
+            [session],
+            |row| row.get(0),
+        )?;
+        Ok(waiting as usize)
+    }
+
+    /// Marks a waiting message `queued`; `None` when no such message waits.
+    pub fn thread_queue_release(
+        &self,
+        session: u32,
+        id: &str,
+    ) -> Result<Option<Vec<proto::ThreadQueuedMessage>>> {
+        let conn = self.conn.lock().expect("db lock");
+        let changed = conn.execute(
+            "UPDATE thread_queue SET state = 'queued', hold_reason = NULL
+             WHERE session_id = ?1 AND id = ?2",
+            rusqlite::params![session, id],
+        )?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        Ok(Some(queue_rows(&conn, session)?))
     }
 
     /// Holds every `queued` message with `reason`; returns the queue when anything changed.
@@ -577,10 +606,17 @@ mod tests {
             "a failed write goes back to the head"
         );
         assert_eq!(rows[0].state, proto::QueuedState::Held);
-        assert!(
-            db.thread_queue_take(4, None).unwrap().is_none(),
-            "a held head stops the drain"
+        assert_eq!(db.thread_queue_waiting(4).unwrap(), 1);
+        let (next, _) = db.thread_queue_take(4, None).unwrap().unwrap();
+        assert_eq!(next.id, "b", "the drain passes over a held message");
+        db.thread_queue_push(4, "thread_send", &queued("b", "two"))
+            .unwrap();
+        let rows = db.thread_queue_release(4, "a").unwrap().unwrap();
+        assert_eq!(
+            (rows[0].state, rows[0].hold_reason.as_deref()),
+            (proto::QueuedState::Queued, None)
         );
+        assert!(db.thread_queue_release(4, "zz").unwrap().is_none());
         let rows = db.thread_queue_edit(4, "b", "TWO").unwrap().unwrap();
         assert_eq!(rows[1].text, "TWO");
         assert!(db.thread_queue_edit(4, "zz", "x").unwrap().is_none());

@@ -1961,10 +1961,10 @@ async fn dispatch(
         proto::ClientMsg::ThreadSend {
             session,
             text,
-            steer: _,
+            steer,
         } => {
             let d = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || d.thread_send(session, &text))
+            tokio::task::spawn_blocking(move || d.thread_send(session, &text, steer))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("thread send panicked: {e}")))
         }
@@ -2032,11 +2032,18 @@ async fn dispatch(
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue remove panicked: {e}")))
         }
-        proto::ClientMsg::ThreadQueueSend { session, .. }
-        | proto::ClientMsg::ThreadSteer { session, .. } => Err(anyhow::anyhow!(
-            "queued message delivery refused for session {session}: this daemon does not send \
-             queued messages yet"
-        )),
+        proto::ClientMsg::ThreadQueueSend { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_send(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue send panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadSteer { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_steer(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread steer panicked: {e}")))
+        }
         proto::ClientMsg::WorkspaceLocalServers { workspace } => {
             let msg = daemon.workspace_local_servers(workspace);
             send_msg(sink, &msg)
