@@ -196,9 +196,14 @@
     "Re-cut against 947,360 bytes (one boot chunk, Windows build) with the same small",
     "headroom: the operator inbox behind Next request lists every workspace through",
     "one bounded inbox_list poller per connection, which the Tasks surface and the",
-    "orchestrator overview share, so the poller and its generic queue are boot-path code."
+    "orchestrator overview share, so the poller and its generic queue are boot-path code.",
+    "",
+    "Re-cut against 949,188 bytes (one boot chunk) with the same small headroom:",
+    "the pane status announcer is a live region that must already be mounted when",
+    "the focused pane's first status change arrives, so it and its settle logic are",
+    "boot-path code."
   ],
-  "maxBootBytes": 947560,
+  "maxBootBytes": 949400,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
