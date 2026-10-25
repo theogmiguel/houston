@@ -7,13 +7,15 @@ use anyhow::{anyhow, bail, Result};
 use houston_protocol as proto;
 use serde_json::{Map, Value};
 
-use super::threads::ApprovalGuard;
+use super::threads::{one_line, ApprovalGuard};
 use super::{Daemon, PermissionPrompt};
 use crate::thread_session::{ApprovalAnswer, QuestionResolution, StructuredRuntime};
 
 pub(crate) const ASK_USER_QUESTION: &str = "AskUserQuestion";
 /// The deny message Claude reads when the user skips its question.
 pub(crate) const QUESTION_SKIPPED: &str = "The user skipped the question.";
+/// A refusal repeats at most this much of a client's question text or label.
+const ECHO_MAX_CHARS: usize = 200;
 
 /// The questions of a well-formed `AskUserQuestion` input, and whether a header or an
 /// option description was cut. Questions and labels are never cut: answers name them.
@@ -130,7 +132,7 @@ pub(crate) fn check_answers(
         if !questions.iter().any(|q| q.question == answer.question) {
             bail!(
                 "the answer for {:?} names no question of this request (questions: {:?})",
-                answer.question,
+                one_line(&answer.question, ECHO_MAX_CHARS),
                 asked()
             );
         }
@@ -156,13 +158,15 @@ pub(crate) fn check_answers(
         for label in &answer.selected {
             if !labels.contains(&label.as_str()) {
                 bail!(
-                    "{label:?} is not an option of question {:?} (options: {labels:?})",
+                    "{:?} is not an option of question {:?} (options: {labels:?})",
+                    one_line(label, ECHO_MAX_CHARS),
                     question.question
                 );
             }
             if selected.contains(label) {
                 bail!(
-                    "{label:?} is chosen twice for question {:?}",
+                    "{:?} is chosen twice for question {:?}",
+                    one_line(label, ECHO_MAX_CHARS),
                     question.question
                 );
             }
@@ -390,6 +394,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(typed.map["Which colour do you prefer?"], "Purple sunset");
+    }
+
+    #[test]
+    fn refusals_cut_the_labels_a_client_sent() {
+        let (questions, _) = parse_questions(&colour_input()).unwrap();
+        let huge = "x".repeat(300_000);
+        for answers in [
+            vec![answer(&huge, &["Red"], None)],
+            vec![
+                answer("Which colour do you prefer?", &[&huge], None),
+                answer("Which fruits?", &["Red berries"], None),
+            ],
+        ] {
+            let error = check_answers(&questions, &answers).unwrap_err().to_string();
+            assert!(error.len() < 1_024, "{} bytes", error.len());
+            assert!(error.contains("xxx…"), "{error}");
+        }
     }
 
     #[test]

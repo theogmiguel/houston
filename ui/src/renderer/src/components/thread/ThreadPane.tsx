@@ -27,7 +27,7 @@ import {
 import { ThreadApprovalRow, ThreadPlanRow, ThreadToolRow } from './ThreadToolCard'
 import { ThreadQuestionPrompt, ThreadQuestionRow } from './ThreadQuestion'
 import { ThreadChangesCard, ThreadReasoningItem } from './ThreadWorkLog'
-import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
+import { APPROVAL_MESSAGE_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, PLAN_TOOL, pendingQuestion, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
 import { foldThreadRows, keepWindowAnchor } from '../../thread/threadTurns'
@@ -148,6 +148,8 @@ export function isImeEnter(event: { key: string; keyCode: number; isComposing: b
 export interface ComposerDraft {
   text: () => string
   clear: () => void
+  /** Shows why the text was not sent, above the field, and keeps the text. */
+  refuse: (reason: string) => void
 }
 
 export function ThreadComposer({ stoppable, disabledReason, draft, onSend, onStop }: {
@@ -161,12 +163,12 @@ export function ThreadComposer({ stoppable, disabledReason, draft, onSend, onSto
   const [text, setText] = useState('')
   const current = useRef(text)
   current.current = text
+  const [refusal, setRefusal] = useState<string | null>(null)
   useEffect(() => {
     if (!draft) return
-    draft.current = { text: () => current.current, clear: () => setText('') }
+    draft.current = { text: () => current.current, clear: () => { setText(''); setRefusal(null) }, refuse: setRefusal }
     return () => { draft.current = null }
   }, [draft])
-  const [refusal, setRefusal] = useState<string | null>(null)
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
   const send = (): void => {
     if (disabledReason !== null || text.trim() === '') return
@@ -271,6 +273,11 @@ export function ThreadPane({ client, info, connected, active = false }: { client
   const { answer } = thread
   const keepPlanning = useCallback((requestId: string) => {
     const message = draft.current?.text().trim() ?? ''
+    const size = utf8Length(message)
+    if (size > APPROVAL_MESSAGE_MAX_BYTES) {
+      draft.current?.refuse(`Feedback not sent: it is ${size.toLocaleString()} bytes and Keep planning takes up to ${APPROVAL_MESSAGE_MAX_BYTES.toLocaleString()} bytes.`)
+      return
+    }
     if (answer(requestId, false, message || KEEP_PLANNING_DEFAULT)) draft.current?.clear()
   }, [answer])
   const growOnArrival = useRef(false)

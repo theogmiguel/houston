@@ -5,8 +5,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
     AgentKind, ApprovalDecision, QuestionAnswer, QuestionOutcome, ThreadEvent, ThreadEventKind,
-    ThreadPermissionMode, ThreadQuestion, TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES,
-    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
+    ThreadPermissionMode, ThreadQuestion, TurnOutcome, APPROVAL_MESSAGE_MAX_BYTES,
+    THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
+    THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -23,8 +24,6 @@ pub const PERMISSION_TOOL: &str = "thread_permission";
 pub const APPROVALS_PENDING_MAX: usize = 16;
 /// A tool name or tool use id above this is cut; real ones are a few dozen bytes.
 const APPROVAL_NAME_MAX_BYTES: usize = 256;
-/// The longest deny message Claude is told.
-pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4 * 1024;
 
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
@@ -87,6 +86,8 @@ pub struct QuestionResolution {
     pub answers: Vec<QuestionAnswer>,
     pub answer: ApprovalAnswer,
 }
+
+const STOPPED_WAITING: &str = "Claude stopped waiting for an answer; the tool did not run.";
 
 /// The event that settles a held request without an answer from the user.
 fn unanswered(
@@ -784,51 +785,62 @@ impl StructuredRuntime {
         Ok((request_id, receiver))
     }
 
-    /// Answers a held request. Errors name the request and the ones still pending.
+    /// Answers a held request. Errors name the request and the ones still pending; a deny
+    /// message over `APPROVAL_MESSAGE_MAX_BYTES` is refused and the request stays held.
     pub fn answer_approval(&self, request_id: &str, answer: ApprovalAnswer) -> Result<()> {
-        let (pending, left) = {
-            let mut approvals = self.approvals.lock().expect("thread approvals lock");
-            if approvals
-                .get(request_id)
-                .is_some_and(|pending| pending.question.is_some())
-            {
+        if let ApprovalAnswer::Deny(message) = &answer {
+            if message.len() > APPROVAL_MESSAGE_MAX_BYTES {
                 bail!(
+                    "thread_approve refused for session {}: the message is {} bytes, over the \
+                     limit of {APPROVAL_MESSAGE_MAX_BYTES} bytes (APPROVAL_MESSAGE_MAX_BYTES); \
+                     request {request_id:?} stays held",
+                    self.session,
+                    message.len()
+                );
+            }
+        }
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            match approvals.get(request_id) {
+                Some(pending) if pending.question.is_some() => bail!(
                     "thread_approve refused for session {}: {request_id:?} is a question; \
                      answer or skip it with thread_answer",
                     self.session
-                );
+                ),
+                Some(_) => {}
+                None => {
+                    let left: Vec<&String> = approvals.keys().collect();
+                    bail!(
+                        "thread_approve refused for session {}: no pending permission request \
+                         {request_id:?} (pending: {left:?})",
+                        self.session
+                    );
+                }
             }
-            let pending = approvals.remove(request_id);
-            let left: Vec<String> = approvals.keys().cloned().collect();
-            (pending, left)
-        };
-        let Some(pending) = pending else {
-            bail!(
-                "thread_approve refused for session {}: no pending permission request \
-                 {request_id:?} (pending: {left:?})",
-                self.session
+            self.refuse_after_exit(&state, "thread_approve", request_id)?;
+            let pending = approvals.remove(request_id).expect("pending request");
+            let empty = approvals.is_empty();
+            drop(approvals);
+            let (decision, reason) = match &answer {
+                ApprovalAnswer::Allow | ApprovalAnswer::AllowWith(_) => {
+                    (ApprovalDecision::Allowed, None)
+                }
+                ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
+            };
+            self.deliver(
+                request_id,
+                pending,
+                answer,
+                ThreadEventKind::ApprovalResolved {
+                    request_id: request_id.to_string(),
+                    decision,
+                    reason,
+                },
             );
+            empty
         };
-        let answer = match answer {
-            ApprovalAnswer::Deny(message) => {
-                ApprovalAnswer::Deny(cap_text(message, APPROVAL_MESSAGE_MAX_BYTES).0)
-            }
-            allow => allow,
-        };
-        let (decision, reason) = match &answer {
-            ApprovalAnswer::Allow | ApprovalAnswer::AllowWith(_) => {
-                (ApprovalDecision::Allowed, None)
-            }
-            ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
-        };
-        // A dropped receiver means Claude ended the call first; the tool does not run either way.
-        let _ = pending.answer.send(answer);
-        self.emit(vec![ThreadEventKind::ApprovalResolved {
-            request_id: request_id.to_string(),
-            decision,
-            reason,
-        }]);
-        if left.is_empty() {
+        if empty {
             self.host.approvals_pending(self.session, false);
         }
         Ok(())
@@ -842,7 +854,8 @@ impl StructuredRuntime {
         request_id: &str,
         resolve: impl FnOnce(&[ThreadQuestion], &Value) -> Result<QuestionResolution>,
     ) -> Result<()> {
-        let (pending, resolution, empty) = {
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
             let Some(held) = approvals
                 .get(request_id)
@@ -860,21 +873,62 @@ impl StructuredRuntime {
                 );
             };
             let resolution = resolve(&held.questions, &held.input)?;
+            self.refuse_after_exit(&state, "thread_answer", request_id)?;
             let pending = approvals.remove(request_id).expect("held question");
-            (pending, resolution, approvals.is_empty())
+            let empty = approvals.is_empty();
+            drop(approvals);
+            self.deliver(
+                request_id,
+                pending,
+                resolution.answer,
+                ThreadEventKind::QuestionResolved {
+                    request_id: request_id.to_string(),
+                    outcome: resolution.outcome,
+                    answers: resolution.answers,
+                    reason: None,
+                },
+            );
+            empty
         };
-        // A dropped receiver means Claude ended the call first; nothing reads the answer.
-        let _ = pending.answer.send(resolution.answer);
-        self.emit(vec![ThreadEventKind::QuestionResolved {
-            request_id: request_id.to_string(),
-            outcome: resolution.outcome,
-            answers: resolution.answers,
-            reason: None,
-        }]);
         if empty {
             self.host.approvals_pending(self.session, false);
         }
         Ok(())
+    }
+
+    /// Answers arrive under `state`, taken before `approvals` as `hold` does: Stop and an exit
+    /// take the process before they drain, so an answer lands before that drain or is refused.
+    fn refuse_after_exit(&self, state: &HandleState, verb: &str, request_id: &str) -> Result<()> {
+        if state.closed || state.process.is_none() {
+            bail!(
+                "{verb} refused for session {}: Claude's process ended before the answer; \
+                 request {request_id:?} is settled without it",
+                self.session
+            );
+        }
+        Ok(())
+    }
+
+    /// Sends `answer` and records `resolved`, or records the call as withdrawn when Claude
+    /// already stopped waiting. Called under `state`, so Stop's turn end follows it.
+    fn deliver(
+        &self,
+        request_id: &str,
+        pending: PendingApproval,
+        answer: ApprovalAnswer,
+        resolved: ThreadEventKind,
+    ) {
+        let question = pending.question.is_some();
+        let event = match pending.answer.send(answer) {
+            Ok(()) => resolved,
+            Err(_) => unanswered(
+                request_id.to_string(),
+                question,
+                ApprovalDecision::Withdrawn,
+                STOPPED_WAITING,
+            ),
+        };
+        self.emit(vec![event]);
     }
 
     /// Claude ended a call nobody answered (it timed out or its process went away).
@@ -890,7 +944,7 @@ impl StructuredRuntime {
             request_id.to_string(),
             removed.question.is_some(),
             ApprovalDecision::Withdrawn,
-            "Claude stopped waiting for an answer; the tool did not run.",
+            STOPPED_WAITING,
         )]);
         if empty {
             self.host.approvals_pending(self.session, false);
@@ -1757,6 +1811,116 @@ mod tests {
             spawned[0].args
         );
         drop(spawned);
+        handle.close();
+    }
+
+    fn echo_runtime() -> (Arc<StructuredRuntime>, Arc<StoredEvents>) {
+        let host = Arc::new(StoredEvents::default());
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            host.clone(),
+        )
+        .unwrap();
+        (handle, host)
+    }
+
+    fn last_event(host: &StoredEvents) -> ThreadEventKind {
+        host.events
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("an event")
+    }
+
+    #[test]
+    fn an_answer_claude_stopped_waiting_for_is_recorded_as_withdrawn() {
+        let (handle, host) = echo_runtime();
+        let (approval, receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::ApprovalResolved {
+                    decision: ApprovalDecision::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        let question = ThreadQuestion {
+            question: "Which?".into(),
+            header: String::new(),
+            options: Vec::new(),
+            multi_select: false,
+        };
+        let (asked, receiver) = handle
+            .request_question("tu2", vec![question], false, serde_json::json!({}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_question(&asked, |_, _| {
+                Ok(QuestionResolution {
+                    outcome: QuestionOutcome::Answered,
+                    answers: Vec::new(),
+                    answer: ApprovalAnswer::Allow,
+                })
+            })
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::QuestionResolved {
+                    outcome: QuestionOutcome::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        handle.close();
+    }
+
+    #[test]
+    fn an_answer_after_the_process_ended_or_over_the_message_cap_is_refused_by_name() {
+        let (handle, host) = echo_runtime();
+        let (approval, _receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        let long = "x".repeat(APPROVAL_MESSAGE_MAX_BYTES + 1);
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Deny(long))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("4097 bytes") && error.contains("APPROVAL_MESSAGE_MAX_BYTES"),
+            "{error}"
+        );
+        // Stop takes the process before it drains the held requests; an answer in between
+        // must not be recorded after the turn's end.
+        let process = handle.state.lock().unwrap().process.take().unwrap();
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("process ended"), "{error}");
+        assert!(handle.approvals.lock().unwrap().contains_key(&approval));
+        assert!(
+            matches!(last_event(&host), ThreadEventKind::ApprovalRequest { .. }),
+            "{:?}",
+            last_event(&host)
+        );
+        process.end_tree(true);
         handle.close();
     }
 

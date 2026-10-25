@@ -1442,6 +1442,13 @@ async fn a_held_permission_request_is_answered_allow_and_deny() {
     );
 
     let denied = rig.ask(id, "rm -rf build").await;
+    let long = "x".repeat(proto::APPROVAL_MESSAGE_MAX_BYTES + 1);
+    rig.approve(id, &denied, false, Some(&long)).await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("4097 bytes") && message.contains("(APPROVAL_MESSAGE_MAX_BYTES)"),
+        "{message}"
+    );
     rig.approve(id, &denied, false, Some("not that directory"))
         .await;
     let (events, _) = rig

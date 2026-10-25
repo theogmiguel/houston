@@ -748,7 +748,7 @@ fn status_name(status: proto::AgentStatus) -> &'static str {
     }
 }
 
-fn one_line(text: &str, max_chars: usize) -> String {
+pub(super) fn one_line(text: &str, max_chars: usize) -> String {
     let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     match flat.char_indices().nth(max_chars) {
         Some((at, _)) => format!("{}…", &flat[..at]),

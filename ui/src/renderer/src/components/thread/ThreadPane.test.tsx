@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../../houston/client'
+import { APPROVAL_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { THREAD_HISTORY_PAGE } from '../../thread/threadStore'
 import { THREAD_WINDOW_MAX, THREAD_WINDOW_PAGE } from '../../thread/threadModel'
 import type { ThreadEvent, ThreadEventKind } from '../../thread/threadTypes'
@@ -352,6 +353,18 @@ describe('ThreadPane', () => {
     expect(pressed(second)).toEqual(['false', 'true'])
     act(() => other.unmount())
     second.remove()
+  })
+
+  it('refuses Keep planning feedback over the limit by name and keeps the text', () => {
+    mount({ status: 'needs-input' })
+    const plan = JSON.stringify({ plan: 'Make the rail sort stable.' })
+    history([ev(1, user('Plan it')), ev(2, { type: 'approval_request', request_id: 'p1', tool_use_id: 't1', tool_name: 'ExitPlanMode', input: plan, truncated: false, input_bytes: plan.length })])
+    const long = 'x'.repeat(APPROVAL_MESSAGE_MAX_BYTES + 1)
+    type(long)
+    act(() => container.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.filter((msg) => msg.type === 'thread_approve')).toEqual([])
+    expect(input().value).toBe(long)
+    expect(container.textContent).toContain(`it is ${(APPROVAL_MESSAGE_MAX_BYTES + 1).toLocaleString()} bytes and Keep planning takes up to ${APPROVAL_MESSAGE_MAX_BYTES.toLocaleString()} bytes`)
   })
 
   it('implements a plan, or keeps planning with the message box text as the reason', () => {

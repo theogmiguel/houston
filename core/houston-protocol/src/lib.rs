@@ -1603,6 +1603,9 @@ pub const THREAD_QUESTION_OPTIONS_MAX: usize = 16;
 pub const THREAD_QUESTION_TEXT_MAX_BYTES: usize = 2_048;
 /// The user's own answer to one question ("Type your own").
 pub const THREAD_QUESTION_OTHER_MAX_BYTES: usize = 4_096;
+/// The longest message a denial tells Claude, such as Keep planning's feedback; a longer
+/// one is refused, never cut.
+pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4_096;
 
 /// One entry of a thread's timeline. `seq` increases per session and is not reused
 /// within one daemon run; a client merges history and live events by it and reloads

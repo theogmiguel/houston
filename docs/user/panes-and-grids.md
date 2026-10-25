@@ -120,7 +120,9 @@ answer leaves the question unanswered.
 
 When Claude finishes a plan in **Plan only**, the thread shows it as a plan card. Choose
 **Implement** to let Claude start, or **Keep planning** to send what you wrote in the
-message box as your feedback; Claude keeps planning with it.
+message box as your feedback; Claude keeps planning with it. Feedback is limited to 4 KiB:
+a longer message is not sent, and Houston keeps it in the message box and says how long it
+is.
 
 The **Permissions** menu above the timeline shows how the thread asks: **Ask before
 tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
