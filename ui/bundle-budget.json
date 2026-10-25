@@ -201,9 +201,12 @@
     "view switching adds the pane menu's Open as thread / Open in terminal row, the",
     "default-view hook applied by the new pane flows and the WSL routes for the",
     "three new protocol messages; the Default view settings row is on the lazy",
-    "Settings chunk."
+    "Settings chunk.",
+    "Re-cut against 950,521 bytes with the same headroom: the Changes panel and the app",
+    "shell listen for a thread's Open diff request and select that file; the work log",
+    "itself loads with the thread pane."
   ],
-  "maxBootBytes": 949800,
+  "maxBootBytes": 951300,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
