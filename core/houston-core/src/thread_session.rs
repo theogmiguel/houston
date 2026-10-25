@@ -58,8 +58,8 @@ pub trait ProviderAdapter: Send + Sync + 'static {
 }
 
 pub trait ProviderStream: Send {
-    /// Lines written before the first message: none for Claude; an `initialize` request
-    /// for a JSON-RPC provider.
+    /// Lines written before any other: none for Claude; an `initialize` request for a
+    /// JSON-RPC provider.
     fn handshake(&mut self) -> Vec<String> {
         Vec::new()
     }
@@ -231,13 +231,19 @@ struct ThreadProcess {
     child: Mutex<Option<std::process::Child>>,
     /// Held only by writers: ending the tree never waits for it, so a write blocked on a
     /// process that stopped reading cannot hold up Stop, Kill or shutdown.
-    stdin: Mutex<Option<std::process::ChildStdin>>,
+    stdin: Mutex<ProcessStdin>,
     /// Locked per line by the stdout reader and per message by `send`, never across a write.
     stream: Mutex<Box<dyn ProviderStream>>,
     stopping: AtomicBool,
     stderr: Arc<Mutex<Tail>>,
     #[cfg(windows)]
     job: crate::pid::OwnedJob,
+}
+
+/// A process's stdin, with the handshake lines it is still owed before any other line.
+struct ProcessStdin {
+    pipe: Option<std::process::ChildStdin>,
+    handshake: Vec<String>,
 }
 
 impl ThreadProcess {
@@ -277,16 +283,18 @@ impl ThreadProcess {
             let _ = child.wait();
             return Err(error);
         }
-        let stdin = child.stdin.take();
+        let pipe = child.stdin.take();
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
+        let mut stream = adapter.open();
+        let handshake = stream.handshake();
         let process = Arc::new(Self {
             generation,
             provider,
             pid: child.id(),
             child: Mutex::new(Some(child)),
-            stdin: Mutex::new(stdin),
-            stream: Mutex::new(adapter.open()),
+            stdin: Mutex::new(ProcessStdin { pipe, handshake }),
+            stream: Mutex::new(stream),
             stopping: AtomicBool::new(false),
             stderr: Arc::new(Mutex::new(Tail { bytes: Vec::new() })),
             #[cfg(windows)]
@@ -295,15 +303,27 @@ impl ThreadProcess {
         Ok((process, stdout, stderr))
     }
 
-    fn write_line(&self, line: &str) -> Result<()> {
+    /// Writes the owed handshake, then `line`, under one lock so no other line overtakes it.
+    fn write_line(&self, line: Option<&str>) -> Result<()> {
         let mut stdin = self.stdin.lock().expect("thread stdin lock");
-        let pipe = stdin
+        let ProcessStdin { pipe, handshake } = &mut *stdin;
+        if handshake.is_empty() && line.is_none() {
+            return Ok(());
+        }
+        let pipe = pipe
             .as_mut()
             .ok_or_else(|| anyhow!("{} pid {} has no open stdin", self.provider, self.pid))?;
-        pipe.write_all(line.as_bytes())
-            .and_then(|()| pipe.write_all(b"\n"))
-            .and_then(|()| pipe.flush())
-            .with_context(|| format!("writing a message to {} pid {}", self.provider, self.pid))
+        for line in std::mem::take(handshake)
+            .iter()
+            .map(String::as_str)
+            .chain(line)
+        {
+            pipe.write_all(line.as_bytes())
+                .and_then(|()| pipe.write_all(b"\n"))
+                .and_then(|()| pipe.flush())
+                .with_context(|| format!("writing to {} pid {}", self.provider, self.pid))?;
+        }
+        Ok(())
     }
 
     /// Ends every process in the tree and reaps the root. Returns its exit code if known.
@@ -449,12 +469,13 @@ impl StructuredRuntime {
             .spawn(move || outbox.run(session, host.as_ref()))
             .context("starting the thread event sender")?;
         let mut state = handle.state.lock().expect("thread state lock");
-        if let Err(error) = handle.ensure_process(&mut state) {
-            drop(state);
+        let started = handle.ensure_process(&mut state);
+        drop(state);
+        // The handshake is written outside the locks the stdout reader takes, as `send` does.
+        if let Err(error) = started.and_then(|process| process.write_line(None)) {
             handle.close();
             return Err(error);
         }
-        drop(state);
         Ok(handle)
     }
 
@@ -521,7 +542,7 @@ impl StructuredRuntime {
         };
         // Written outside every lock: the provider may be writing a long answer to stdout
         // while this blocks on a full stdin pipe, and the stdout reader must keep draining.
-        if let Err(error) = process.write_line(&line) {
+        if let Err(error) = process.write_line(Some(&line)) {
             if process.stopping.load(Ordering::Acquire) {
                 bail!(
                     "thread session {} stopped before this message reached {}",
@@ -661,17 +682,6 @@ impl StructuredRuntime {
         if let Err(error) = stderr_reader.and(stdout_reader) {
             process.end_tree(false);
             return Err(error).context("starting the thread's output readers");
-        }
-        let handshake = process
-            .stream
-            .lock()
-            .expect("thread stream lock")
-            .handshake();
-        for line in handshake {
-            if let Err(error) = process.write_line(&line) {
-                process.end_tree(false);
-                return Err(error);
-            }
         }
         self.host.process_started(self.session, process.pid);
         state.process = Some(Arc::clone(&process));
@@ -1251,6 +1261,65 @@ mod tests {
         );
         drop(events);
         handle.close();
+    }
+
+    /// Writes a stdout preamble larger than a pipe before it reads stdin at all.
+    #[cfg(unix)]
+    struct PreambleAdapter;
+
+    #[cfg(unix)]
+    impl ProviderAdapter for PreambleAdapter {
+        fn provider(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        fn display_name(&self) -> &'static str {
+            "Preamble"
+        }
+
+        fn command(&self, _conversation: Option<&Conversation>) -> Result<ProcessSpec> {
+            Ok(spec(
+                "sh",
+                &["-c", "yes preamble | head -n 300000; cat >/dev/null"],
+            ))
+        }
+
+        fn open(&self) -> Box<dyn ProviderStream> {
+            Box::new(LargeHandshake)
+        }
+    }
+
+    #[cfg(unix)]
+    struct LargeHandshake;
+
+    #[cfg(unix)]
+    impl ProviderStream for LargeHandshake {
+        fn handshake(&mut self) -> Vec<String> {
+            vec!["h".repeat(1024 * 1024)]
+        }
+
+        fn user_message(&mut self, text: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+
+        fn decode(&mut self, _line: &str) -> Decoded {
+            Decoded::default()
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_handshake_larger_than_a_pipe_leaves_the_stdout_reader_draining() {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let host = Arc::new(StoredEvents::default());
+            let started = StructuredRuntime::start(7, Arc::new(PreambleAdapter), None, 1, host);
+            let _ = done.send(started.map(|handle| handle.close()));
+        });
+        finished
+            .recv_timeout(Duration::from_secs(60))
+            .expect("start wrote its handshake while the stdout reader waited on the state lock")
+            .unwrap();
     }
 
     #[test]
