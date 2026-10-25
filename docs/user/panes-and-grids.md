@@ -303,6 +303,7 @@ and `<folder N>`; and the titles and SSH hosts of current panes become `<title>`
 of panes closed since the daemon started. The file is at most 1 MiB; older log lines are
 left out first. Houston keeps the five newest files and sends none of them anywhere: read
 the file before you attach it to an issue.
+The file describes only the daemon on this computer; the daemon of a WSL environment is not included.
 
 ## Killing a pane
 
