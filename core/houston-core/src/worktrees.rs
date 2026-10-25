@@ -1,7 +1,12 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const BRANCH_PREFIX: &str = "houston/task/";
+
+/// A managed creation budgets its `.worktreeinclude` copy at 30 s; a submodule
+/// init past the same budget is abandoned with a warning, never a stalled spawn.
+const SUBMODULE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
@@ -203,6 +208,88 @@ pub fn create_on_branch(
     add_worktree(repo, &branch, &base, dest)
 }
 
+/// A named branch only one remote has continues that branch and tracks it, as `git
+/// switch` does, unless `base` already holds its changes (a merged PR's stale remote
+/// ref); otherwise it is a fresh branch off `base`, never guessing between remotes.
+pub fn create_on_named_branch(
+    repo: &Path,
+    branch: &str,
+    base: Option<&str>,
+    dest: &Path,
+    scratch_root: &Path,
+) -> Result<Worktree> {
+    ensure_git_repo(repo)?;
+    crate::git::validate_branch_name(branch)?;
+    let remote = if branch_exists(repo, branch) {
+        None
+    } else {
+        sole_remote_branch(repo, branch)
+    };
+    let Some(remote) = remote.filter(|r| !integrated_into_base(repo, r, base, scratch_root)) else {
+        return create_on_branch(repo, branch, base, dest);
+    };
+    let tree = create_on_branch(repo, branch, Some(&remote), dest)?;
+    // Tracking is a convenience: the tree already holds the remote's commits.
+    let upstream = format!("--set-upstream-to={remote}");
+    if let Err(e) = run_git(repo, &["branch", &upstream, branch]) {
+        tracing::warn!("worktree branch {branch:?} continues {remote} but tracks nothing: {e:#}");
+    }
+    Ok(tree)
+}
+
+/// `refs/remotes/<remote>/<branch>` when exactly one remote has `branch` and no other
+/// remote's name could claim that ref (remotes `a` and `a/b` both read `a/b/c`).
+fn sole_remote_branch(repo: &Path, branch: &str) -> Option<String> {
+    let remotes = run_git(repo, &["remote"]).ok()?;
+    let remotes: Vec<&str> = remotes
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    let mut found = remotes
+        .iter()
+        .map(|name| format!("{name}/{branch}"))
+        .filter(|short| ref_exists(repo, &format!("refs/remotes/{short}")));
+    let short = found.next()?;
+    if found.next().is_some() {
+        return None;
+    }
+    let claimants = remotes
+        .iter()
+        .filter(|name| short.starts_with(&format!("{name}/")))
+        .count();
+    (claimants == 1).then(|| format!("refs/remotes/{short}"))
+}
+
+/// Whether `base` (or the default base) already has `remote`'s changes. An answer Git
+/// cannot give counts as integrated: a fresh branch loses nothing the remote keeps.
+fn integrated_into_base(
+    repo: &Path,
+    remote: &str,
+    base: Option<&str>,
+    scratch_root: &Path,
+) -> bool {
+    let base = match base {
+        Some(b) => b.to_string(),
+        None => crate::git::default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
+    };
+    let Some(common_dir) = crate::git::checkout_facts(repo).common_dir else {
+        return true;
+    };
+    match crate::conflict_prediction::is_integrated(
+        scratch_root,
+        Path::new(&common_dir),
+        remote,
+        &base,
+    ) {
+        Ok(integrated) => integrated,
+        Err(e) => {
+            tracing::warn!("worktree starts fresh off {base:?}, not from {remote}: {e}");
+            true
+        }
+    }
+}
+
 fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Worktree> {
     let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
@@ -241,10 +328,16 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
     })
 }
 
-/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same
-/// branch checked out again at the same path when its earlier tree is gone.
-/// The caller handles a tree that is already there and on the branch.
-pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -> Result<Worktree> {
+/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same branch
+/// checked out again (or continued from the one remote still holding it) when its
+/// earlier tree is gone. The caller handles a tree already there and on the branch.
+pub fn create_task(
+    repo: &Path,
+    branch: &str,
+    base: Option<&str>,
+    dest: &Path,
+    scratch_root: &Path,
+) -> Result<Worktree> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
     if dest.exists() {
@@ -255,7 +348,7 @@ pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -
         );
     }
     if !branch_exists(repo, branch) {
-        return create_on_branch(repo, branch, base, dest);
+        return create_on_named_branch(repo, branch, base, dest, scratch_root);
     }
     let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
@@ -364,12 +457,84 @@ pub fn has_submodules(worktree: &Path) -> bool {
     worktree.join(".gitmodules").is_file()
 }
 
-/// `git worktree add` leaves submodules empty, so a repository that keeps
-/// tooling in one gets a worktree quietly missing it. Best effort: a clone
-/// needs the network, and failing must not undo a worktree that exists.
+/// `git worktree add` leaves submodules empty. A clone can need the network and a
+/// credential prompt can never be answered, so the update is bounded; failing must
+/// not undo a worktree that exists.
 pub fn init_submodules(worktree: &Path) -> Result<()> {
-    run_git(worktree, &["submodule", "update", "--init", "--recursive"])?;
+    let mut command = git_command(worktree);
+    command.args(["submodule", "update", "--init", "--recursive"]);
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let out = crate::spawn::output_within(command, SUBMODULE_TIMEOUT).with_context(|| {
+        format!(
+            "spawning git submodule update --init --recursive in {}",
+            worktree.display()
+        )
+    })?;
+    let Some(out) = out else {
+        bail!(
+            "git submodule update --init --recursive in {} did not finish within {} s; \
+             the submodules may be partly initialised",
+            worktree.display(),
+            SUBMODULE_TIMEOUT.as_secs()
+        );
+    };
+    if !out.status.success() {
+        bail!(
+            "git submodule update --init --recursive in {} failed (exit {:?}): {}",
+            worktree.display(),
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
     Ok(())
+}
+
+/// The submodule paths a worktree's `.gitmodules` declares, so a failed init
+/// names them; an unreadable file leaves the list empty rather than guessing.
+fn declared_submodule_paths(worktree: &Path) -> Vec<String> {
+    run_git(
+        worktree,
+        &[
+            "config",
+            "--file",
+            ".gitmodules",
+            "--get-regexp",
+            r"^submodule\..+\.path$",
+        ],
+    )
+    .map(|raw| {
+        raw.lines()
+            .filter_map(|line| line.split_once(' '))
+            .map(|(_, path)| path.trim().to_string())
+            .filter(|path| !path.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Managed creations initialise declared submodules best effort: the worktree stands
+/// either way, and a failure becomes one warning naming the submodule and the error,
+/// also logged for callers that drop it.
+pub fn init_submodules_best_effort(worktree: &Path) -> Vec<String> {
+    if !has_submodules(worktree) {
+        return Vec::new();
+    }
+    let error = match init_submodules(worktree) {
+        Ok(()) => return Vec::new(),
+        Err(error) => error,
+    };
+    let paths = declared_submodule_paths(worktree);
+    let named = if paths.is_empty() {
+        "the declared submodules".to_string()
+    } else {
+        paths.join(", ")
+    };
+    let warning = format!(
+        "submodules: initialising {named} in {} failed: {error:#}",
+        worktree.display()
+    );
+    tracing::warn!("{warning}");
+    vec![warning]
 }
 
 /// Registration cleanup, not deletion: a worktree whose directory is already
@@ -726,6 +891,181 @@ mod tests {
         std::fs::write(dir.join("README.md"), "hello\n").unwrap();
         git(dir, &["add", "-A"]);
         git(dir, &["commit", "-m", "init"]);
+    }
+
+    fn git_out(dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A bare remote `name` holding `main` and a `branch` one commit ahead of it,
+    /// fetched into `repo`, which never had `branch` locally.
+    fn remote_with_branch(root: &Path, repo: &Path, name: &str, branch: &str) -> String {
+        let bare = root.join(format!("{name}.git"));
+        git(
+            root,
+            &["init", "--bare", "-b", "main", bare.to_str().unwrap()],
+        );
+        git(repo, &["remote", "add", name, bare.to_str().unwrap()]);
+        git(repo, &["push", name, "main"]);
+        let other = root.join(format!("{name}-clone"));
+        git(
+            root,
+            &["clone", bare.to_str().unwrap(), other.to_str().unwrap()],
+        );
+        git(&other, &["config", "user.email", "t@t.local"]);
+        git(&other, &["config", "user.name", "t"]);
+        git(&other, &["switch", "-c", branch]);
+        std::fs::write(other.join("remote.txt"), "pushed\n").unwrap();
+        git(&other, &["add", "remote.txt"]);
+        git(&other, &["commit", "-m", "remote work"]);
+        git(&other, &["push", "origin", branch]);
+        git(repo, &["fetch", name]);
+        git_out(repo, &["rev-parse", &format!("{name}/{branch}")])
+    }
+
+    #[test]
+    fn a_task_branch_only_on_its_remote_continues_it_and_tracks_it() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let pushed = remote_with_branch(root.path(), &repo, "origin", "feat/resume");
+
+        let dest = root.path().join("wt");
+        create_task(
+            &repo,
+            "feat/resume",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), pushed);
+        std::fs::write(dest.join("local.txt"), "more\n").unwrap();
+        git(&dest, &["add", "local.txt"]);
+        git(&dest, &["commit", "-m", "local work"]);
+        let sync = crate::git::sync(&dest);
+        assert_eq!(sync.upstream.as_deref(), Some("origin/feat/resume"));
+        assert_eq!((sync.ahead, sync.behind), (1, 0));
+    }
+
+    #[test]
+    fn a_branch_on_two_remotes_is_not_guessed_between() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let main = git_out(&repo, &["rev-parse", "main"]);
+        remote_with_branch(root.path(), &repo, "origin", "feat/both");
+        remote_with_branch(root.path(), &repo, "fork", "feat/both");
+
+        let dest = root.path().join("wt");
+        create_task(
+            &repo,
+            "feat/both",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_restart_after_a_squash_merge_starts_fresh_off_the_base() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        remote_with_branch(root.path(), &repo, "origin", "houston/hou-1-fix");
+        let dest = root.path().join("wt");
+        create_task(
+            &repo,
+            "houston/hou-1-fix",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
+        git(&repo, &["merge", "--squash", "origin/houston/hou-1-fix"]);
+        git(&repo, &["commit", "-m", "squashed"]);
+        git(&repo, &["push", "origin", "main"]);
+        git(&repo, &["fetch", "origin"]);
+        git(&repo, &["worktree", "remove", dest.to_str().unwrap()]);
+        git(&repo, &["branch", "-D", "houston/hou-1-fix"]);
+
+        create_task(
+            &repo,
+            "houston/hou-1-fix",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            git_out(&dest, &["rev-parse", "HEAD"]),
+            git_out(&repo, &["rev-parse", "origin/main"])
+        );
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_ref_two_remote_names_could_claim_is_not_guessed() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let main = git_out(&repo, &["rev-parse", "main"]);
+        remote_with_branch(root.path(), &repo, "a", "b/c");
+        // Current Git refuses `remote add` for overlapping names; config still allows them.
+        let other = root.path().join("a.git");
+        git(
+            &repo,
+            &["config", "remote.a/b.url", other.to_str().unwrap()],
+        );
+
+        let dest = root.path().join("wt");
+        create_task(&repo, "b/c", None, &dest, &root.path().join("scratch")).unwrap();
+
+        assert_eq!(git_out(&dest, &["rev-parse", "HEAD"]), main);
+        assert_eq!(crate::git::sync(&dest).upstream, None);
+    }
+
+    #[test]
+    fn a_new_branch_off_a_remote_default_base_tracks_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        remote_with_branch(root.path(), &repo, "origin", "feat/other");
+        git(&repo, &["remote", "set-head", "origin", "main"]);
+
+        let dest = root.path().join("wt");
+        create_task(
+            &repo,
+            "feat/fresh",
+            None,
+            &dest,
+            &root.path().join("scratch"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            git_out(&dest, &["rev-parse", "HEAD"]),
+            git_out(&repo, &["rev-parse", "origin/main"])
+        );
+        assert_eq!(crate::git::sync(&dest).upstream, None);
     }
 
     #[test]
@@ -1132,6 +1472,12 @@ mod submodule_tests {
             .arg("-C")
             .arg(dir)
             .args(args)
+            // A local-path submodule clone is the file transport, which git refuses
+            // unless `protocol.file.allow=always`; per-command env keeps the
+            // allowance off this process, so plain `cargo test` cannot leak it.
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "protocol.file.allow")
+            .env("GIT_CONFIG_VALUE_0", "always")
             .output()
             .unwrap();
         assert!(
@@ -1196,5 +1542,43 @@ mod submodule_tests {
         std::fs::create_dir_all(&repo).unwrap();
         init_repo(&repo);
         assert!(!has_submodules(&repo));
+        assert!(init_submodules_best_effort(&repo).is_empty());
+    }
+
+    /// Returns the root, the repo and the submodule.
+    fn repo_with_one_submodule() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let sub = root.path().join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        init_repo(&sub);
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        git(
+            &repo,
+            &["submodule", "add", sub.to_str().unwrap(), "vendor/sub"],
+        );
+        git(&repo, &["commit", "-m", "add submodule"]);
+        (root, repo, sub)
+    }
+
+    #[test]
+    fn a_failed_init_warns_naming_the_submodule_and_keeps_the_worktree() {
+        let (root, repo, sub) = repo_with_one_submodule();
+        let dest = root.path().join("wt");
+        create_named(&repo, "broken", None, &dest).unwrap();
+        std::fs::remove_dir_all(&sub).unwrap();
+
+        let warnings = init_submodules_best_effort(&dest);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("vendor/sub") && warnings[0].contains("failed"),
+            "the warning must name the submodule and the error: {:?}",
+            warnings[0]
+        );
+        assert!(
+            dest.join("README.md").is_file(),
+            "a failed init must not undo the worktree"
+        );
     }
 }

@@ -204,9 +204,14 @@
     "layout saves are debounced, and the pending-write map, its flush on hide and",
     "pagehide, and the read-through that keeps loads current live in",
     "`layout/tree.ts`, which every boot path imports; and the git poller's failure",
-    "backoff lives in the shared bounded poller."
+    "backoff lives in the shared bounded poller.",
+    "",
+    "Re-cut against 950,652 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the pane status announcer is a live region that must already be mounted when",
+    "the focused pane's first status change arrives, so it and its settle logic are",
+    "boot-path code."
   ],
-  "maxBootBytes": 949050,
+  "maxBootBytes": 950860,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

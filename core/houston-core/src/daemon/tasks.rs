@@ -3181,7 +3181,8 @@ impl Daemon {
         // A tree removed by hand leaves a registration that blocks re-adding
         // the same path; prune first, then reuse the branch.
         let _ = crate::worktrees::prune(repo);
-        crate::worktrees::create_task(repo, branch, base, dest).context("task_start refused")?;
+        crate::worktrees::create_task(repo, branch, base, dest, &self.merge_tree_scratch())
+            .context("task_start refused")?;
         let path = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
         let mut created = CreatedWorktree {
             repo: repo.to_path_buf(),
@@ -3210,8 +3211,9 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording task worktree {}: {e:#}", created.path.display());
         }
-        created.include_warnings =
-            crate::worktree_include::carry_over(repo, &created.path).warnings;
+        let mut warnings = crate::worktrees::init_submodules_best_effort(&created.path);
+        warnings.extend(crate::worktree_include::carry_over(repo, &created.path).warnings);
+        created.include_warnings = warnings;
         Ok(created)
     }
 
@@ -4666,7 +4668,9 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording review worktree {}: {e:#}", path.display());
         }
-        // A reviewer reads the branch; `carry_over` logs what it could not copy.
+        // A reviewer reads the branch; both setup passes log what they could
+        // not finish, and a reviewer's brief carries no warnings.
+        crate::worktrees::init_submodules_best_effort(&path);
         crate::worktree_include::carry_over(project_dir, &path);
         Ok(CreatedWorktree {
             repo: project_dir.to_path_buf(),

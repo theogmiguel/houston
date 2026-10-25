@@ -228,6 +228,14 @@ When other live panes share the same checkout or sit in another checkout of the 
 repository, the chip's tooltip names them. This is information to consult, not a warning:
 Houston never switches branches, stashes changes or moves worktrees.
 
+## Pane environment
+
+Every pane's process starts with `HOUSTON_WORKSPACE` set to its workspace path, so setup
+scripts can key dev-server ports or env files off the workspace a pane belongs to. A pane
+whose directory is inside a worktree Houston created also gets `HOUSTON_WORKTREE_SLUG`, the
+worktree's directory name; other panes do not have it. Panes in a WSL workspace see the
+distro's Linux path. The remote shell of an SSH pane does not receive them.
+
 ## Click-to-type
 
 Only one pane at a time receives keystrokes — the one you have clicked into. Every key

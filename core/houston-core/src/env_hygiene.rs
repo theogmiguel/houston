@@ -13,6 +13,9 @@ const SESSION_MARKERS: &[&str] = &[
     "HOUSTON_EXEC_GATE",
     "HOUSTON_EXEC_NONCE",
     "HOUSTON_COMMITTED_SCOPE",
+    // Each pane is given its own; a daemon started from a pane must not pass that pane's on.
+    crate::daemon::WORKSPACE_ENV,
+    crate::daemon::WORKTREE_SLUG_ENV,
     crate::supervisor::SUPERVISOR_FD_ENV,
     // A pane is not inside the launcher's multiplexer: tmux commands would target its server.
     "TMUX",
@@ -66,6 +69,8 @@ mod tests {
             "CLAUDE_EFFORT",
             "ANTHROPIC_API_KEY",
             "HOUSTON_CHANNEL",
+            "HOUSTON_WORKSPACE",
+            "HOUSTON_WORKTREE_SLUG",
         ];
         let hits = markers_in(env.iter().map(|s| s.to_string()));
         assert_eq!(
@@ -73,7 +78,9 @@ mod tests {
             vec![
                 "CLAUDECODE",
                 "CLAUDE_CODE_CHILD_SESSION",
-                "CLAUDE_CODE_SESSION_ID"
+                "CLAUDE_CODE_SESSION_ID",
+                "HOUSTON_WORKSPACE",
+                "HOUSTON_WORKTREE_SLUG"
             ]
         );
     }

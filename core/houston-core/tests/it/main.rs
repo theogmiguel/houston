@@ -81,6 +81,7 @@ mod orphan_survival_process;
 mod pane_name_wire;
 mod pane_read_source_wire;
 mod pane_title_wire;
+mod pane_workspace_env_wire;
 mod perf_smoke;
 mod pr_detail_wire;
 mod pr_read_sharing_wire;
