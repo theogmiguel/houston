@@ -46,6 +46,7 @@ mod harness_review_wire;
 mod hello_checkout_wire;
 mod hermetic_env_wire;
 mod history_wire;
+mod hook_drop_canary_wire;
 mod hook_drop_cli;
 mod hook_replay;
 mod hook_state_wire;

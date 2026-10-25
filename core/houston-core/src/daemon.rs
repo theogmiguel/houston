@@ -1814,8 +1814,9 @@ pub struct Daemon {
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
-    /// `.worktreeinclude` warnings of a spawn's new worktree, until its result takes them.
-    spawn_include_warnings: Mutex<HashMap<u32, Vec<String>>>,
+    /// Notes of a spawn's new worktree (what `.worktreeinclude` could not copy, a slug
+    /// renamed for surviving history), until its result takes them.
+    spawn_include_warnings: Mutex<HashMap<u32, Vec<proto::PaneSpawnWarning>>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     shell_child_restore_observer_for_test: Mutex<Option<SpawnObserver>>,
@@ -1859,6 +1860,7 @@ pub struct Daemon {
     recovery_metadata_blocked: Mutex<HashMap<u32, String>>,
     hook_drop_watch: Arc<crate::fs_watch::MailWatchState>,
     _hook_drop_watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    hook_drop_canary: Mutex<crate::hook_drop_canary::CanaryState>,
     port: Mutex<Option<u16>>,
     run_state_started_at: u64,
     run_state_expected_restart: AtomicBool,
@@ -3697,6 +3699,7 @@ impl Daemon {
             recovery_metadata_blocked: Mutex::new(HashMap::new()),
             hook_drop_watch: crate::fs_watch::MailWatchState::new(swarm_mail_wake),
             _hook_drop_watcher: Mutex::new(None),
+            hook_drop_canary: Mutex::new(crate::hook_drop_canary::CanaryState::default()),
             update_state: Mutex::new(proto::UpdateState::Unknown),
             update_wake: Arc::new(tokio::sync::Notify::new()),
             update_check_lock: tokio::sync::Mutex::new(()),
@@ -5883,7 +5886,7 @@ impl Daemon {
 
     /// A panel-created worktree under the daemon's own state dir, beside task
     /// worktrees: branch `houston/<slug>` off `base`, so it cannot collide with
-    /// a task's directory. Also returns what `.worktreeinclude` could not copy.
+    /// a task's directory. Also returns its notes (`.worktreeinclude`, history rename).
     pub fn git_worktree_create(
         &self,
         repo: &std::path::Path,
@@ -5894,9 +5897,19 @@ impl Daemon {
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "repo".to_string());
-        let dest = crate::worktrees::default_path(&self.state_dir, &project, name);
+        let asked = crate::git::ref_slug(name);
+        let (slug, history_note) = match self.resolve_slug_history(&asked, |name| {
+            crate::worktrees::default_path(&self.state_dir, &project, name)
+        })? {
+            Some(resolved) => {
+                let note = slug_history_note_message(&asked, &resolved);
+                (resolved, Some(note))
+            }
+            None => (asked, None),
+        };
+        let dest = crate::worktrees::default_path(&self.state_dir, &project, &slug);
         let common_dir = crate::git::checkout_facts(repo).common_dir.filter(|dir| !dir.is_empty()).ok_or_else(|| anyhow!("repo_common_dir for {} is unavailable; expected a non-empty git common directory", repo.display()))?;
-        let wt = crate::worktrees::create_named(repo, name, base, &dest)?;
+        let wt = crate::worktrees::create_named(repo, &slug, base, &dest)?;
         let path = wt.path.canonicalize().unwrap_or_else(|_| wt.path.clone());
         let row = crate::db::ManagedWorktreeRow {
             path: path.display().to_string(),
@@ -5916,7 +5929,10 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        let include = crate::worktree_include::carry_over(repo, &path);
+        let mut include = crate::worktree_include::carry_over(repo, &path);
+        if let Some(note) = history_note {
+            include.warnings.push(note);
+        }
         Ok((wt, include.warnings))
     }
 
@@ -12988,7 +13004,9 @@ impl Daemon {
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(&mail, swarms.is_empty());
         drop(mail);
 
-        let watcher_healthy = watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok;
+        let delivery_ok = self.hook_drop_canary_tick();
+        let watcher_healthy =
+            watcher_healthy && self.hook_drop_watch.healthy() && drop_listed_ok && delivery_ok;
 
         let mut ladder = self
             .swarm_mail_ladder
@@ -13194,11 +13212,13 @@ impl Daemon {
     }
 
     fn swarm_mail_error_delay(&self, drop_applied: usize, drop_listed_ok: bool) -> Duration {
+        let delivery_ok = self.hook_drop_canary_tick();
         let watcher_healthy = Self::swarm_mail_any_watcher_healthy(
             &self.swarm_mail.lock().expect("swarm_mail lock"),
             false,
         ) && drop_listed_ok
-            && self.hook_drop_watch.healthy();
+            && self.hook_drop_watch.healthy()
+            && delivery_ok;
         let view_active = self.tx.receiver_count() > 0;
         let mut ladder = self
             .swarm_mail_ladder
@@ -17268,6 +17288,50 @@ impl Daemon {
         self.hook_drop_boot();
     }
 
+    /// One delivery-canary round against the channel's watched drop directory.
+    /// Its verdict feeds `watcher_healthy`, so a miss selects the ladder's
+    /// watcher-dead rungs.
+    fn hook_drop_canary_tick(&self) -> bool {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let mut canary = self.hook_drop_canary.lock().expect("hook drop canary lock");
+        crate::hook_drop_canary::check(
+            &mut canary,
+            &dir,
+            &self.hook_drop_watch,
+            std::time::Instant::now(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn set_hook_drop_canary_timing_for_test(&self, every: Duration, deadline: Duration) {
+        self.hook_drop_canary
+            .lock()
+            .expect("hook drop canary lock")
+            .set_timing_for_test(every, deadline);
+    }
+
+    /// Drops the hook-drop watcher so the OS stops delivering events while
+    /// `hook_drop_watch.healthy()` stays true: the silent-delivery-death shape
+    /// the canary exists to catch.
+    #[doc(hidden)]
+    pub fn stop_hook_drop_watcher_for_test(&self) {
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = None;
+        crate::hook_drop_canary::wait_for_quiet_for_test(&self.hook_drop_watch);
+    }
+
+    #[doc(hidden)]
+    pub fn restart_hook_drop_watcher_for_test(&self) {
+        let dir = crate::hook_drop::drop_dir(&self.state_dir);
+        let watcher = crate::fs_watch::start_watcher(&dir, Arc::clone(&self.hook_drop_watch));
+        *self
+            ._hook_drop_watcher
+            .lock()
+            .expect("hook_drop_watcher lock") = watcher;
+    }
+
     pub fn mcp_progress_tick(&self) -> Duration {
         Duration::from_millis(self.mcp_progress_tick_ms.load(Ordering::Relaxed))
     }
@@ -20084,16 +20148,13 @@ impl Daemon {
                 self.spawn_checkout_warning(session.id)
             };
             let mut warnings = self.spawn_warnings(&session, isolated);
-            let include = self
-                .spawn_include_warnings
-                .lock()
-                .expect("spawn include warnings lock")
-                .remove(&session.id)
-                .unwrap_or_default();
-            warnings.extend(include.into_iter().map(|message| proto::PaneSpawnWarning {
-                code: "worktree_include".into(),
-                message,
-            }));
+            warnings.extend(
+                self.spawn_include_warnings
+                    .lock()
+                    .expect("spawn include warnings lock")
+                    .remove(&session.id)
+                    .unwrap_or_default(),
+            );
             Ok(orchestrate::SpawnOutcome {
                 session,
                 warning,
@@ -20332,6 +20393,24 @@ impl Daemon {
                  and runs code unattended - a spawned pane defaults to its CLI's auto \
                  mode, so it does not stop for routine approvals"
             );
+        }
+        // A Claude slug whose old checkout left history at its path is renamed before anything
+        // downstream (reservation, tree, branch, row) derives from it. Other providers do not
+        // read that history, so they keep the slug they asked for.
+        let mut worktree = worktree;
+        let mut slug_history_note = None;
+        if let Some(SpawnWorktreeRequest::Create(ask)) = worktree
+            .as_mut()
+            .filter(|_| kind == proto::AgentKind::Claude)
+        {
+            if let Some(resolved) = self.resolve_slug_history(&ask.slug, |name| {
+                crate::worktrees::spawn_path(&project_dir, name)
+            })? {
+                crate::worktrees::validate_slug(&resolved)
+                    .map_err(|e| anyhow!("spawn refused: {e}"))?;
+                slug_history_note = Some(slug_history_note_message(&ask.slug, &resolved));
+                ask.slug = resolved;
+            }
         }
         match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => orchestrate::seed_skill_everywhere(&home),
@@ -20662,14 +20741,25 @@ impl Daemon {
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(sid, text, Some(caller), true);
         }
-        if let Some(created) = created
-            .as_ref()
-            .filter(|c| created_here && !c.include_warnings.is_empty())
-        {
-            self.spawn_include_warnings
-                .lock()
-                .expect("spawn include warnings lock")
-                .insert(sid, created.include_warnings.clone());
+        if let Some(created) = created.as_ref().filter(|_| created_here) {
+            let mut notes = created
+                .include_warnings
+                .iter()
+                .map(|message| proto::PaneSpawnWarning {
+                    code: "worktree_include".into(),
+                    message: message.clone(),
+                })
+                .collect::<Vec<_>>();
+            notes.extend(slug_history_note.map(|message| proto::PaneSpawnWarning {
+                code: "worktree_slug_history".into(),
+                message,
+            }));
+            if !notes.is_empty() {
+                self.spawn_include_warnings
+                    .lock()
+                    .expect("spawn include warnings lock")
+                    .insert(sid, notes);
+            }
         }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
@@ -20764,6 +20854,49 @@ impl Daemon {
             })
             .collect();
         (!siblings.is_empty()).then(|| format!("shared checkout_root {root:?}: child {child} shares the checkout with live sibling panes {siblings:?}; parallel writes may conflict; use worktree for isolation"))
+    }
+
+    /// Whether a Claude projects root this daemon knows of (`CLAUDE_CONFIG_DIR`, the
+    /// home, agent profiles) keeps history for `dir`, under its plain or verbatim name.
+    fn claude_history_survives(&self, dir: &Path) -> bool {
+        let mut roots = self
+            .usage_sources()
+            .into_iter()
+            .filter(|source| source.provider == proto::UsageProvider::Claude)
+            .map(|source| source.root)
+            .collect::<Vec<_>>();
+        if let Some(config_dir) = self
+            .env()
+            .var_os("CLAUDE_CONFIG_DIR")
+            .filter(|v| !v.is_empty())
+        {
+            roots.push(crate::usage::root_under_config_dir(
+                proto::UsageProvider::Claude,
+                Path::new(&config_dir),
+            ));
+        }
+        let plain = PathBuf::from(crate::launch::brief_display_path(dir));
+        let names = [
+            crate::harness::digest::claude_slug(dir),
+            crate::harness::digest::claude_slug(&plain),
+        ];
+        roots
+            .iter()
+            .any(|root| names.iter().any(|name| root.join(name).exists()))
+    }
+
+    /// The suffixed slug to create in place of `slug` when its directory is free but an
+    /// old checkout's Claude history survives at it; `None` keeps `slug`.
+    fn resolve_slug_history(
+        &self,
+        slug: &str,
+        dest_for: impl Fn(&str) -> PathBuf,
+    ) -> Result<Option<String>> {
+        crate::worktrees::resolve_slug_history_collision(
+            slug,
+            |name| dest_for(name).exists(),
+            |name| self.claude_history_survives(&dest_for(name)),
+        )
     }
 
     /// `caller` is the pane whose spawn asked for the tree; a task Start has no
@@ -24803,6 +24936,14 @@ pub(crate) struct CreatedWorktree {
     pub(crate) branch: String,
     /// What `.worktreeinclude` could not carry over when this call created the tree.
     pub(crate) include_warnings: Vec<String>,
+}
+
+fn slug_history_note_message(asked: &str, resolved: &str) -> String {
+    format!(
+        "worktree slug {asked:?} was created as {resolved:?}: Claude history from the old \
+         checkout survives at the first path, so the suffix keeps the new checkout from \
+         adopting it"
+    )
 }
 
 /// Where a spawn's worktree comes from: `Create` asks git for the slug/branch
