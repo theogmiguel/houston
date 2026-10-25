@@ -788,9 +788,9 @@ the watcher's event counter to advance within 15 s. The probe's own event wakes 
 so a live watcher clears it at once. Its create and remove events each wake one more mail
 tick, so an idle daemon runs about three ticks per probe period instead of one. A watcher
 that goes silent after starting, or a drop directory that vanished, is held at the dead
-rungs — drops still arrive, but at poll latency — until a probe is delivered again. The canary never restarts the watcher or
-recreates the directory; the probe is invisible to the drop pass and never becomes an
-inbox row.
+rungs — drops still arrive, but at poll latency — until a probe is delivered again. The
+canary never restarts the watcher or recreates the directory; the probe is invisible to
+the drop pass and never becomes an inbox row.
 
 A filesystem-watcher event fires `swarm_mail_wake` (a `tokio::sync::Notify`) which cuts a
 sleep short — never lengthens one. Mailbox GC retention is 24 h, wire-settable.

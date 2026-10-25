@@ -130,11 +130,9 @@ fn cap_chars(s: &str, max: usize) -> String {
     out
 }
 
-/// Claude's project-directory name for a path, verified against Claude Code
-/// 2.1.310: each UTF-16 code unit that is not an ASCII alphanumeric becomes `-`
-/// (the derivation is JavaScript, so an astral character is two surrogate units
-/// and maps to `--`), and a name over 200 code units is cut to 200 plus `-` and
-/// a base36 hash of the whole path.
+/// Claude's project-directory name for a path (verified against Claude Code
+/// 2.1.310): every non-alphanumeric UTF-16 unit becomes `-`, so an astral
+/// character maps to `--`; names over 200 units are cut and hash-suffixed.
 pub fn claude_slug(path: &Path) -> String {
     let units: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
     let slug: String = units

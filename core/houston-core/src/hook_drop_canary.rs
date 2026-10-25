@@ -66,11 +66,9 @@ impl CanaryState {
     }
 }
 
-/// One canary round: judge any outstanding probe, then write the next one when
-/// due. Returns whether hook-drop event delivery is healthy; `false` selects
-/// the swarm-mail ladder's watcher-dead rungs. `now` must come from a
-/// monotonic clock: a wall-clock step back would hold the cadence and the
-/// deadline until the clock caught up.
+/// One canary round: judge any outstanding probe, then write the next when due.
+/// Returns whether delivery is healthy; `false` selects the watcher-dead rungs.
+/// `now` must be monotonic: a wall-clock step back would stall the cadence.
 pub fn check(state: &mut CanaryState, dir: &Path, watch: &MailWatchState, now: Instant) -> bool {
     if !watch.healthy() {
         // The watcher never started: the health conjunction that consumes this
