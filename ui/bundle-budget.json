@@ -204,9 +204,18 @@
     "layout saves are debounced, and the pending-write map, its flush on hide and",
     "pagehide, and the read-through that keeps loads current live in",
     "`layout/tree.ts`, which every boot path imports; and the git poller's failure",
-    "backoff lives in the shared bounded poller."
+    "backoff lives in the shared bounded poller.",
+    "",
+    "Re-cut against 950,454 bytes (one boot chunk, Windows build) with 246 bytes of",
+    "headroom: six features share this chunk. The rail card renders the newest pane",
+    "note of its grid, so `GridRailNoteLine` and the `session_note` handling in App are",
+    "boot-path code; Locate moved folder is offered from the workspace row menu and its",
+    "`workspace_relocated` hook runs in App, while the move itself stays behind one",
+    "`import()` in `workspaceRelocate.ts`; the desktop presence hook mounts in App and",
+    "loads its watcher on demand; the client and the environment mux carry the new",
+    "message routes."
   ],
-  "maxBootBytes": 949050,
+  "maxBootBytes": 950700,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
