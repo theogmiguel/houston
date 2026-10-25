@@ -31,6 +31,8 @@ import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, D
 const PROVIDER_NAME: Partial<Record<AgentKind, string>> = { claude: 'Claude Code', codex: 'Codex' }
 const OS_NAME: Record<string, string> = { windows: 'Windows', linux: 'Linux', macos: 'macOS' }
 const DEFAULT_ACCOUNT = ''
+// Mirrors MIN_EXPORT_PASSPHRASE_CHARS in core/houston-core/src/daemon/transfer.rs.
+const MIN_EXPORT_PASSPHRASE_CHARS = 12
 
 type Outcome<T> = { kind: 'idle' } | { kind: 'running'; stage: TransferStage | null } | TransferReply<T>
 
@@ -122,11 +124,12 @@ function Frame({ heading, onClose, frame, children, actions }: { heading: string
   )
 }
 
-function PassphraseFields({ passphrase, confirm, onPassphrase, onConfirm, mismatch }: { passphrase: string; confirm?: string; onPassphrase: (value: string) => void; onConfirm?: (value: string) => void; mismatch?: boolean }): React.JSX.Element {
+function PassphraseFields({ passphrase, confirm, onPassphrase, onConfirm, mismatch, error }: { passphrase: string; confirm?: string; onPassphrase: (value: string) => void; onConfirm?: (value: string) => void; mismatch?: boolean; error?: string }): React.JSX.Element {
   return (
     <FormGrid>
       <FormGridLabel htmlFor="transfer-passphrase">Passphrase</FormGridLabel>
-      <TextInput variant="form" id="transfer-passphrase" type="password" autoComplete="new-password" value={passphrase} onChange={(event) => onPassphrase(event.target.value)} />
+      <TextInput variant="form" id="transfer-passphrase" type="password" autoComplete="new-password" value={passphrase} aria-invalid={error ? true : undefined} onChange={(event) => onPassphrase(event.target.value)} />
+      {error && <Text as="p" size="small" tone="danger" flush role="alert" className="col-start-2">{error}</Text>}
       {onConfirm && <>
         <FormGridLabel htmlFor="transfer-passphrase-confirm">Repeat</FormGridLabel>
         <TextInput variant="form" id="transfer-passphrase-confirm" type="password" autoComplete="new-password" value={confirm} aria-invalid={mismatch} onChange={(event) => onConfirm(event.target.value)} />
@@ -157,7 +160,9 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
   })
   const frame = useDialogFrame(onClose)
   const mismatch = confirm !== '' && confirm !== passphrase
-  const ready = passphrase !== '' && passphrase === confirm && outcome.kind !== 'running'
+  const passphraseLength = [...passphrase].length
+  const tooShort = passphraseLength > 0 && passphraseLength < MIN_EXPORT_PASSPHRASE_CHARS
+  const ready = passphraseLength >= MIN_EXPORT_PASSPHRASE_CHARS && passphrase === confirm && outcome.kind !== 'running'
   const run = async (): Promise<void> => {
     if (!ready) return
     const picked = await pickTransferDestination(transferFileName(name))
@@ -194,7 +199,7 @@ export function ExportTransferDialog({ client, workspace, name, onClose }: { cli
     body = <Stack gap={3}>
       <DialogDescription>Saves this workspace's Claude and Codex conversations and its code state in one encrypted file, so the work continues on another computer.</DialogDescription>
       <Text as="p" size="small" tone="muted" flush>The file holds commits that no remote has, uncommitted changes, untracked files and the full conversations, including everything the agents read. Houston sends nothing over the network. The exported agents stop here.</Text>
-      <PassphraseFields passphrase={passphrase} confirm={confirm} onPassphrase={setPassphrase} onConfirm={setConfirm} mismatch={mismatch} />
+      <PassphraseFields passphrase={passphrase} confirm={confirm} onPassphrase={setPassphrase} onConfirm={setConfirm} mismatch={mismatch} error={tooShort ? `The passphrase has ${passphraseLength} characters; at least ${MIN_EXPORT_PASSPHRASE_CHARS} are required.` : undefined} />
       {outcome.kind === 'running' && <Progress stage={outcome.stage} />}
     </Stack>
     actions = <><Button variant="secondary" onClick={onClose} disabled={outcome.kind === 'running'}>Cancel</Button><span className="flex-1" /><Button variant="primary" disabled={!ready} onClick={() => void run()}>Export</Button></>

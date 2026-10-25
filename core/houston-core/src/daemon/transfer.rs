@@ -15,6 +15,9 @@ use proto::TransferRefusalCode as Code;
 const MAIN_KEY: &str = "main";
 const WORKTREE_KEY_PREFIX: &str = "worktree:";
 const CHANGES_WORKTREE_SKIPPED: &str = "worktree created from the Changes panel lives outside the workspace; this version moves only .houston/worktrees worktrees";
+/// Export's shortest passphrase: the file holds the whole source state and its
+/// conversations.
+const MIN_EXPORT_PASSPHRASE_CHARS: usize = 12;
 
 pub(crate) type Progress<'a> = &'a (dyn Fn(proto::TransferStage) + Send + Sync);
 
@@ -366,6 +369,26 @@ impl Daemon {
         Ok(())
     }
 
+    /// Export only: import must accept a file made with a shorter passphrase.
+    fn require_export_passphrase(passphrase: &proto::TransferPassphrase) -> Result<()> {
+        Self::require_passphrase(passphrase)?;
+        let chars = passphrase.expose().chars().count();
+        if chars < MIN_EXPORT_PASSPHRASE_CHARS {
+            return Err(refuse(
+                Code::PassphraseRequired,
+                format!(
+                    "The passphrase has {chars} characters; at least \
+                     {MIN_EXPORT_PASSPHRASE_CHARS} are required."
+                ),
+                Vec::new(),
+                vec![format!(
+                    "Use at least {MIN_EXPORT_PASSPHRASE_CHARS} characters, then try again."
+                )],
+            ));
+        }
+        Ok(())
+    }
+
     fn in_workspace(info: &proto::SessionInfo, root: &Path, outside: &[PathBuf]) -> bool {
         let cwd = canonical(Path::new(&info.cwd));
         let project = canonical(Path::new(&info.project_dir));
@@ -518,7 +541,7 @@ impl Daemon {
         grids: String,
         progress: Progress,
     ) -> Result<proto::TransferExportSummary> {
-        Self::require_passphrase(passphrase)?;
+        Self::require_export_passphrase(passphrase)?;
         let destination = PathBuf::from(destination);
         if !destination.is_absolute() || destination.file_name().is_none() {
             bail!(

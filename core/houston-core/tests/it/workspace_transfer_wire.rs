@@ -784,6 +784,37 @@ async fn an_untracked_nested_repository_is_skipped_and_named_in_the_summary() {
 }
 
 #[tokio::test]
+async fn an_export_passphrase_shorter_than_the_minimum_is_refused() {
+    let _serial = SERIAL.lock().await;
+    let world = tempfile::tempdir().unwrap();
+    let origin = origin(world.path());
+    let mut a = Computer::new(&origin, "2.1.310", "0.142.3").await;
+    let (pane, _, _) = a.claude_pane(&a.workspace).await;
+    let file = world.path().join("t.houston-transfer");
+
+    let request = a.request();
+    a.send(proto::ClientMsg::TransferExport {
+        request,
+        workspace: a.workspace.display().to_string(),
+        destination: file.display().to_string(),
+        overwrite: false,
+        passphrase: proto::TransferPassphrase::new("short"),
+        grids: "{}".into(),
+    })
+    .await;
+    let proto::ServerMsg::TransferRefused { refusal, .. } = a.reply(request).await else {
+        panic!("a short passphrase is refused");
+    };
+    assert_eq!(refusal.code, Code::PassphraseRequired);
+    assert!(refusal.problem.contains("5 characters"), "{refusal:?}");
+    assert!(refusal.problem.contains("at least 12"), "{refusal:?}");
+    assert!(
+        a.info(pane.id).state.is_live(),
+        "the refusal comes before any pane stops"
+    );
+}
+
+#[tokio::test]
 async fn an_untracked_name_import_cannot_carry_refuses_before_stopping_panes() {
     let _serial = SERIAL.lock().await;
     let world = tempfile::tempdir().unwrap();

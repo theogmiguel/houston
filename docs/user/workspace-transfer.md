@@ -39,9 +39,10 @@ the passphrase can read them.
    Claude Code or Codex pane that reports no status counts as busy: turn its status hooks
    on in **Settings ▸ Agents ▸ CLIs**, or close the pane.
 2. Open the workspace's menu in the rail and choose **Export transfer…**.
-3. Enter a passphrase twice, select **Export** and choose where to save the file. Houston
-   adds the `.houston-transfer` extension when the name lacks it, and replaces an existing
-   file only when you confirmed replacing that file in the save dialog.
+3. Enter a passphrase of at least 12 characters twice, select **Export** and choose where
+   to save the file. Houston adds the `.houston-transfer` extension when the name lacks it,
+   and replaces an existing file only when you confirmed replacing that file in the save
+   dialog.
 
 Export is also refused while a file has staged content that differs from its working copy:
 the transfer carries the working copy only. Stage or unstage such a file completely first.
