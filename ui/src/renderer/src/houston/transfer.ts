@@ -19,8 +19,12 @@ export type TransferReply<T> =
 
 let nextRequest = 1
 
+const CONNECTION_LOST =
+  'The connection to Houston was lost. The transfer may have completed or been undone; check the workspace before trying again.'
+
 /** Sends one transfer request and settles on its reply. Progress arrives through `onStage`;
- *  the daemon answers every request, so there is no client timeout. */
+ *  the daemon answers every request, so there is no client timeout. A closed connection
+ *  settles it too: the daemon may still have carried the transfer out. */
 function request<T>(
   client: HoustonClient,
   build: (request: number) => ClientMsg,
@@ -29,27 +33,37 @@ function request<T>(
 ): Promise<TransferReply<T>> {
   const id = nextRequest++
   return new Promise((resolve) => {
-    const unsubscribe = client.subscribeAll((msg) => {
+    const previousOnClose = client.onClose
+    let unsubscribe = () => {}
+    let settled = false
+    const settle = (reply: TransferReply<T>): void => {
+      if (settled) return
+      settled = true
+      unsubscribe()
+      if (client.onClose === onClose) client.onClose = previousOnClose
+      resolve(reply)
+    }
+    const onClose = (): void => {
+      previousOnClose()
+      settle({ kind: 'error', message: CONNECTION_LOST })
+    }
+    unsubscribe = client.subscribeAll((msg) => {
       if (msg.type === 'transfer_progress' && msg.request === id) {
         onStage?.(msg.stage)
         return
       }
       if (msg.type === 'transfer_refused' && msg.request === id) {
-        unsubscribe()
-        resolve({ kind: 'refused', refusal: msg.refusal })
+        settle({ kind: 'refused', refusal: msg.refusal })
         return
       }
       if (msg.type === 'error' && msg.context === `transfer:${id}`) {
-        unsubscribe()
-        resolve({ kind: 'error', message: msg.message })
+        settle({ kind: 'error', message: msg.message })
         return
       }
       const value = 'request' in msg && msg.request === id ? pick(msg) : undefined
-      if (value !== undefined) {
-        unsubscribe()
-        resolve({ kind: 'ok', value })
-      }
+      if (value !== undefined) settle({ kind: 'ok', value })
     })
+    client.onClose = onClose
     client.send(build(id))
   })
 }
