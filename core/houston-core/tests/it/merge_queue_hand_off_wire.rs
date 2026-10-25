@@ -20,6 +20,14 @@ fn failing_ci() -> serde_json::Value {
     }])
 }
 
+/// The base branch's rules reads the fake gh has served, failures included.
+fn rules_reads(rig: &Rig) -> usize {
+    std::fs::read_to_string(rig.bin.join("rules.log"))
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
 #[tokio::test]
 async fn a_merge_queue_base_gets_the_verified_head_enqueued_and_houston_finishes_after_github() {
     let _serial = SERIAL.lock().await;
@@ -439,4 +447,123 @@ async fn a_host_whose_schema_lacks_the_hand_off_fields_keeps_its_reads_and_houst
     assert!(rig.entries().is_empty(), "{:?}", rig.entries());
     assert_eq!(rig.calls("pr merge 1").len(), 1, "Houston merged it");
     assert!(!rig.has_flag("queued-1"), "nothing went to GitHub's queue");
+}
+
+#[tokio::test]
+async fn a_ruleset_only_base_hands_the_verified_commit_to_auto_merge() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    // No classic branch protection: only the base's ruleset requires checks.
+    rig.flag("auto-merge-allowed", "");
+    rig.flag("rules-checks", "ci, build");
+    rig.change(1, "one", "one.txt", "one\n");
+    let head = rig.origin_tip("houston/one");
+    rig.advance_base("base.txt", "base\n");
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+
+    rig.tick().await;
+
+    let verified = rig.origin_tip("houston/one");
+    assert_ne!(verified, head, "the verified commit is lease-pushed first");
+    assert_eq!(
+        rig.calls("pr merge 1 --auto"),
+        [format!(
+            "pr merge 1 --auto --match-head-commit {verified} --squash"
+        )],
+        "the ruleset's checks put the head on auto-merge"
+    );
+    let entry = rig.entry(1);
+    assert_eq!(entry.status, proto::MergeQueueStatus::Watching, "{entry:?}");
+    let hold = entry.github.expect("GitHub holds it");
+    assert_eq!(hold.mode, proto::MergeQueueHandOff::AutoMerge);
+    assert_eq!(hold.head_sha, verified, "pinned to the verified commit");
+    assert_eq!(rules_reads(&rig), 1);
+}
+
+#[tokio::test]
+async fn the_branch_rules_are_read_once_and_cached_across_ticks_and_entries() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.flag("auto-merge-allowed", "");
+    rig.flag("rules-checks", "ci");
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.change(2, "two", "two.txt", "two\n");
+    rig.advance_base("base.txt", "base\n");
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+    rig.enqueue(2, None);
+    assert_eq!(rules_reads(&rig), 1, "the second entry reuses the answer");
+
+    rig.read_pass().await;
+    rig.read_pass().await;
+    assert_eq!(rules_reads(&rig), 1, "no read on later passes");
+
+    rig.tick().await;
+    let entry = rig.entry(1);
+    assert_eq!(entry.status, proto::MergeQueueStatus::Watching, "{entry:?}");
+    assert_eq!(
+        entry.github.map(|h| h.mode),
+        Some(proto::MergeQueueHandOff::AutoMerge)
+    );
+    assert_eq!(rules_reads(&rig), 1, "no read on the landing");
+}
+
+#[tokio::test]
+async fn unreadable_branch_rules_keep_houston_merging_and_are_not_retried() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.flag("auto-merge-allowed", "");
+    rig.flag("rules-unreadable", "");
+    rig.change(1, "one", "one.txt", "one\n");
+    rig.advance_base("base.txt", "base\n");
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+    rig.read_pass().await;
+    rig.read_pass().await;
+    assert_eq!(rules_reads(&rig), 1, "the failure is cached too");
+
+    rig.tick().await;
+
+    assert!(
+        rig.calls("pr merge 1 --auto").is_empty(),
+        "no auto-merge without the rules"
+    );
+    assert_eq!(
+        rig.calls("pr merge 1 --match-head-commit").len(),
+        1,
+        "Houston merged the verified head itself"
+    );
+    assert!(rig.entries().is_empty(), "{:?}", rig.entries());
+    assert_eq!(rules_reads(&rig), 1, "the failure is not retried on a tick");
+}
+
+#[tokio::test]
+async fn classic_required_checks_are_enough_and_never_read_the_rules() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    rig.flag("auto-merge-allowed", "");
+    rig.flag("required-checks", "ci");
+    rig.flag("rules-checks", "build");
+    rig.change(1, "one", "one.txt", "one\n");
+    let head = rig.origin_tip("houston/one");
+    rig.advance_base("base.txt", "base\n");
+    rig.settings(true, NEEDS_BASE);
+    rig.enqueue(1, None);
+
+    rig.tick().await;
+
+    let verified = rig.origin_tip("houston/one");
+    assert_ne!(verified, head, "the verified commit is lease-pushed first");
+    assert_eq!(
+        rig.calls("pr merge 1 --auto"),
+        [format!(
+            "pr merge 1 --auto --match-head-commit {verified} --squash"
+        )]
+    );
+    assert_eq!(
+        rules_reads(&rig),
+        0,
+        "classic protection needs no rules read"
+    );
 }

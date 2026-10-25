@@ -961,6 +961,27 @@ pub fn graphql(dir: &Path, query: &str, variables: serde_json::Value) -> Result<
     Ok(value)
 }
 
+/// One REST GET through `gh api`, answered as JSON. The access query cannot
+/// carry a branch's effective rules, so the merge queue's hand-off reads them
+/// here instead.
+pub fn api_get(dir: &Path, path: &str) -> Result<serde_json::Value> {
+    let out = run(dir, &["api", path]).context("running gh api")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr)
+                .unwrap_or_else(|| format!("gh api {path} failed (exit {:?})", out.code))
+        );
+    }
+    serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh api {path} returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })
+}
+
 /// A reply on an inline review discussion.
 pub fn pr_thread_reply(dir: &Path, thread_id: &str, body: &str) -> Outcome {
     if let Some(refusal) = body_refusal(body) {
@@ -1634,9 +1655,9 @@ pub fn pr_stack_merge(
     }
 }
 
-/// A path segment's reserved characters, so a job id from GitHub can never name
-/// a different endpoint.
-fn percent_encode_path(value: &str) -> String {
+/// A path segment's reserved characters, so a job id or branch name from GitHub
+/// can never name a different endpoint.
+pub(crate) fn percent_encode_path(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {
@@ -2034,6 +2055,14 @@ mod tests {
         );
         assert_eq!(split_repository(""), None);
         assert_eq!(split_repository("owner"), None);
+    }
+
+    #[test]
+    fn a_branch_name_is_one_encoded_path_segment() {
+        assert_eq!(
+            percent_encode_path("release/1.0 #7"),
+            "release%2F1.0%20%237"
+        );
     }
 
     #[test]

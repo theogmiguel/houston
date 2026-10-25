@@ -729,8 +729,13 @@ the renderer finds the next entry by the same rule without a wire field. The con
 - **Hand-off to GitHub.** The access query the shared reader already makes also asks for
   `isMergeQueueEnabled`, `autoMergeAllowed`, the base's `refUpdateRule` required checks,
   the merge queue entry, the armed auto-merge and the last merge queue removal or
-  auto-merge disable; it costs one GraphQL point, as before. Each read refreshes the
-  workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
+  auto-merge disable; it costs one GraphQL point, as before. `refUpdateRule` reports classic
+  branch protection only, so when auto-merge is allowed and it names no check the reader also
+  GETs `repos/{owner}/{name}/rules/branches/{branch}` through `gh api`, read-only, and folds
+  every `required_status_checks` rule's contexts into the same list. That answer is cached per
+  workspace and base branch for the daemon's lifetime, failures included and logged; a base
+  branch whose rules cannot be read keeps Houston merging and is not retried. Each read refreshes
+  the workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
   policy line shows with no read of its own. A field GitHub hides from the viewer counts as
   "Houston merges", never as a hand-off; when GitHub then refuses Houston's merge naming
   its merge queue, the refusal takes the failure path unchanged and the cache learns the

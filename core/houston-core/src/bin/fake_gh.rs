@@ -171,6 +171,9 @@ fn graphql() {
         .map(|reason| serde_json::json!({ "createdAt": now_rfc3339(), "reason": reason.trim() }))
         .into_iter()
         .collect();
+    let base_ref = pr(&number)
+        .and_then(|v| v["baseRefName"].as_str().map(str::to_string))
+        .unwrap_or_else(|| "main".to_string());
     let answer = serde_json::json!({ "data": { "repository": {
         "viewerPermission": "WRITE",
         "squashMergeAllowed": allowed("squash"),
@@ -189,9 +192,52 @@ fn graphql() {
             "mergeQueueEntry": queue_entry,
             "autoMergeRequest": auto_merge,
             "timelineItems": { "nodes": timeline },
-            "baseRef": { "refUpdateRule": rule }
+            "baseRef": { "name": base_ref, "refUpdateRule": rule }
         }
     } } });
+    print!("{answer}");
+}
+
+/// The base branch's effective rules: `rules-checks` lists the checks its
+/// `required_status_checks` rule requires, comma-separated; `rules-unreadable`
+/// fails the read with its text, as a host without permission does. Every read
+/// is appended to `rules.log`, so tests count them.
+fn rules(path: &str) {
+    if let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir().join("rules.log"))
+    {
+        let _ = log.lock();
+        let _ = log.write_all(format!("{path}\n").as_bytes());
+        let _ = log.unlock();
+    }
+    if let Some(refused) = read("rules-unreadable") {
+        let message = refused.trim();
+        fail(if message.is_empty() {
+            "gh: Resource not accessible by integration (HTTP 403)"
+        } else {
+            message
+        });
+    }
+    let required: Vec<serde_json::Value> = read("rules-checks")
+        .map(|checks| {
+            checks
+                .split(',')
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(|c| serde_json::json!({ "context": c }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let answer = if required.is_empty() {
+        serde_json::json!([])
+    } else {
+        serde_json::json!([{
+            "type": "required_status_checks",
+            "parameters": { "required_status_checks": required }
+        }])
+    };
     print!("{answer}");
 }
 
@@ -348,6 +394,9 @@ fn main() {
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
         ("api", "graphql") => graphql(),
+        ("api", path) if path.starts_with("repos/") && path.contains("/rules/branches/") => {
+            rules(path)
+        }
         ("api", _) => fail("gh: Not Found (HTTP 404)"),
         _ => fail(&format!("fake gh: unsupported call {args:?}")),
     }
