@@ -263,6 +263,9 @@ Background controls whether Houston stays in the tray or quits its client when t
 window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
 sessions only; ended sessions do not appear in the tray menu. **Quit and keep sessions**
 in the tray exits the client directly, including when the interface is unresponsive.
+While the window is in the tray, the rail's diff counts and a browser pane's local
+server list stop refreshing; both refresh when the window is shown again. Pane
+status, the tray menu and notifications keep updating.
 When Houston detects that the interface has failed, closing the window exits the client
 instead of hiding it in the tray.
 
@@ -386,7 +389,8 @@ process and its foreground jobs, and detached background processes may keep runn
 pane that cannot be restored shows its reason without holding back the other panes.
 Pending missions still require explicit resume.
 
-Saved terminal output follows an automatically restored pane. Output since the last
-checkpoint can be lost after an abrupt daemon exit, and provider conversation history
+Saved terminal output follows an automatically restored pane. Output is saved every 30
+seconds while a pane is producing it, so an abrupt daemon exit loses about the last 30
+seconds of a pane's output; provider conversation history
 depends on the provider's own storage. A power failure can also lose recent writes that
 had not reached storage; recovery does not promise to repeat or complete interrupted tools.
