@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadItems, type ThreadItem } from './threadModel'
-import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
+import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueueMsg, type ThreadQueuedMessage } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -21,9 +21,13 @@ export interface ThreadSnapshot {
   failure: string | null
   /** Permission requests answered here whose resolution has not arrived yet. */
   answering: ReadonlySet<string>
+  /** Messages waiting in the daemon until they can be sent, oldest first. */
+  queue: readonly ThreadQueuedMessage[]
+  /** The daemon's last refusal of a message or queue request, until dismissed. */
+  refusal: string | null
 }
 
-const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set() }
+const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set(), queue: [], refusal: null }
 
 /** `beforeSeq: null` is the latest page. */
 interface HistoryRequest { beforeSeq: number | null }
@@ -49,8 +53,22 @@ export class ThreadSessionStore {
   }
 
   attach(): void {
+    // The queue is small and changes while the client is away, so every attach rereads it.
+    this.send({ type: 'thread_queue_list', session: this.session })
     if (this.snapshot.loaded || this.pending.some((request) => request.beforeSeq === null)) return
     this.request(null)
+  }
+
+  onQueue(msg: ThreadQueueMsg): void {
+    this.set({ ...this.snapshot, queue: msg.items })
+  }
+
+  refused(reason: string): void {
+    this.set({ ...this.snapshot, refusal: reason })
+  }
+
+  dismissRefusal(): void {
+    if (this.snapshot.refusal !== null) this.set({ ...this.snapshot, refusal: null })
   }
 
   retry(): void {
@@ -69,12 +87,12 @@ export class ThreadSessionStore {
   private request(beforeSeq: number | null): void {
     this.pending.push({ beforeSeq })
     if (!this.send({ type: 'thread_history', session: this.session, before_seq: beforeSeq, limit: THREAD_HISTORY_PAGE })) {
-      this.refused(beforeSeq, 'Thread history was not requested: the connection to the daemon is closed.')
+      this.historyRefused(beforeSeq, 'Thread history was not requested: the connection to the daemon is closed.')
     }
   }
 
   /** The daemon refused (or the client could not send) the request for this page. */
-  refused(beforeSeq: number | null, reason: string): void {
+  historyRefused(beforeSeq: number | null, reason: string): void {
     const at = this.pending.findIndex((request) => request.beforeSeq === beforeSeq)
     if (at < 0) return
     this.pending.splice(at, 1)
@@ -84,7 +102,7 @@ export class ThreadSessionStore {
   /** A refusal carries no `before_seq`; the daemon answers in request order, so it is the oldest request's. */
   refusedOldest(reason: string): void {
     const oldest = this.pending[0]
-    if (oldest) this.refused(oldest.beforeSeq, reason)
+    if (oldest) this.historyRefused(oldest.beforeSeq, reason)
   }
 
   // `before_seq` echoes the request; a reply without one is matched in send order.
@@ -104,7 +122,7 @@ export class ThreadSessionStore {
       this.noteStored(events)
       const early = this.early
       this.early = []
-      this.set({ events: this.merge(events, early), loaded: true, hasMore: msg.has_more, loadingEarlier: false, failure: null, answering: this.snapshot.answering })
+      this.set({ ...this.snapshot, events: this.merge(events, early), loaded: true, hasMore: msg.has_more, loadingEarlier: false, failure: null })
       return
     }
     const first = this.snapshot.events[0]?.seq ?? Number.POSITIVE_INFINITY
@@ -201,13 +219,16 @@ function registryFor(client: HoustonClient): Registry {
   // Routed once per client by session, so N thread panes cost one handler per message.
   const offEvents = client.subscribe('thread_events', (msg) => stores.get(msg.session)?.store.onEvents(msg))
   const offHistory = client.subscribe('thread_history', (msg) => stores.get(msg.session)?.store.onHistory(msg))
+  const offQueue = client.subscribe('thread_queue', (msg) => stores.get(msg.session)?.store.onQueue(msg))
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
     if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
     const answer = THREAD_APPROVE_REFUSAL.exec(msg.message)
     if (answer) stores.get(Number(answer[1]))?.store.answerRefused()
+    const queue = THREAD_QUEUE_REFUSAL.exec(msg.message)
+    if (queue) stores.get(Number(queue[1]))?.store.refused(msg.message)
   })
-  const off = (): void => { offEvents(); offHistory(); offError() }
+  const off = (): void => { offEvents(); offHistory(); offQueue(); offError() }
   const registry = { stores, off }
   registries.set(client, registry)
   return registry
@@ -240,9 +261,21 @@ export function retainThreadStore(client: HoustonClient, session: number): { sto
   }
 }
 
-/** Whether the message was written to the socket; a closed socket drops it. */
-export function sendThreadMessage(client: HoustonClient, session: number, text: string): boolean {
-  return client.trySend({ type: 'thread_send', session, text })
+/** Whether the message was written to the socket; a closed socket drops it. `steer` stops an open turn and sends this first. */
+export function sendThreadMessage(client: HoustonClient, session: number, text: string, steer = false): boolean {
+  return client.trySend({ type: 'thread_send', session, text, steer })
+}
+
+export type QueueAction = { type: 'edit'; id: string; text: string } | { type: 'remove'; id: string } | { type: 'send'; id: string } | { type: 'steer'; id: string }
+
+/** Whether the request was written to the socket; the daemon answers with a `thread_queue` snapshot. */
+export function actOnQueue(client: HoustonClient, session: number, action: QueueAction): boolean {
+  switch (action.type) {
+    case 'edit': return client.trySend({ type: 'thread_queue_edit', session, id: action.id, text: action.text })
+    case 'remove': return client.trySend({ type: 'thread_queue_remove', session, id: action.id })
+    case 'send': return client.trySend({ type: 'thread_queue_send', session, id: action.id })
+    case 'steer': return client.trySend({ type: 'thread_steer', session, id: action.id })
+  }
 }
 
 export function stopThread(client: HoustonClient, session: number): void {
@@ -264,6 +297,7 @@ export interface ThreadView extends ThreadSnapshot {
   retry: () => void
   answer: (requestId: string, allow: boolean) => void
   followLatest: () => void
+  dismissRefusal: () => void
 }
 
 export function useThread(client: HoustonClient, session: number, connected: boolean): ThreadView {
@@ -281,5 +315,5 @@ export function useThread(client: HoustonClient, session: number, connected: boo
   const answer = useCallback((requestId: string, allow: boolean) => {
     if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
   }, [client, session, store])
-  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest() }
+  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest(), dismissRefusal: () => store.dismissRefusal() }
 }

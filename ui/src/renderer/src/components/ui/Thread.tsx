@@ -1,6 +1,7 @@
 import type { ReactNode, Ref, TextareaHTMLAttributes } from 'react'
-import { IconCheck, IconChevronDown, IconChevronRight, IconInfo, IconShieldAlert, IconStopCircle, IconWrench, type IconComponent } from '../icons'
+import { IconCheck, IconChevronDown, IconChevronRight, IconClock, IconInfo, IconShieldAlert, IconStopCircle, IconWrench, type IconComponent } from '../icons'
 import { Button } from './Button'
+import { Chip } from './Chip'
 import { Icon } from './Icon'
 import { Prose } from './Prose'
 import { FOCUS_RING_ACCENT_INSET_45_CLS } from './shadowChrome'
@@ -19,9 +20,11 @@ export function ThreadScroll({ children, ref, onScroll }: { children: ReactNode;
   )
 }
 
-export function ThreadUserMessage({ children }: { children: ReactNode }): React.JSX.Element {
+/** The user's message; `steered` marks one that stopped the running turn to go first. */
+export function ThreadUserMessage({ steered = false, children }: { steered?: boolean; children: ReactNode }): React.JSX.Element {
   return (
-    <div data-thread-item="user" className="flex justify-end">
+    <div data-thread-item="user" data-steered={steered || undefined} className="flex flex-col items-end gap-[var(--space-1)]">
+      {steered && <Chip variant="label" label="Steered" />}
       <Text as="div" size="body" weight="body" tone="primary" leading="chatMarkdown" className="max-w-[85%] whitespace-pre-wrap break-words rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-3)] py-[var(--space-2)]">{children}</Text>
     </div>
   )
@@ -115,6 +118,44 @@ export function ThreadApprovalCard({ name, summary, state, reason, status, actio
   )
 }
 
+export type ThreadQueuedState = 'queued' | 'held'
+
+/** A message waiting in the daemon under the timeline: `queued` goes when the turn completes, `held` only when sent. */
+export function ThreadQueuedMessageRow({ state, reason, actions, children }: {
+  state: ThreadQueuedState
+  reason?: string | null
+  actions?: ReactNode
+  children: ReactNode
+}): React.JSX.Element {
+  return (
+    <section data-thread-item="queued" data-queued-state={state} aria-label={state === 'held' ? 'Held message' : 'Queued message'} className="ml-auto flex w-[85%] min-w-0 flex-col gap-[var(--space-1-5)] rounded-[var(--tr-radius-card)] border border-dashed border-[var(--border)] px-[var(--space-3)] py-[var(--space-2)]">
+      <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
+        <Icon glyph={IconClock} role="small" className={`flex-none ${state === 'held' ? 'text-[var(--warn)]' : 'text-[var(--text-faint)]'}`} />
+        <Text as="span" size="small" weight="semibold" tone="secondary" className="flex-none">{state === 'held' ? 'Held' : 'Queued'}</Text>
+        {reason && <Text as="span" size="small" tone="muted" className="min-w-0 flex-1 break-words [text-wrap:pretty]">{reason}</Text>}
+      </div>
+      <div className="min-w-0">{children}</div>
+      {actions && <div className="flex flex-wrap justify-end gap-[var(--space-1)]">{actions}</div>}
+    </section>
+  )
+}
+
+/** A queued message's text as the user wrote it. */
+export function ThreadQueuedText({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="body" tone="secondary" leading="chatMarkdown" className="whitespace-pre-wrap break-words">{children}</Text>
+}
+
+/** The queue's summary above the composer: the count, why it waits when held, and queue-wide actions. */
+export function ThreadQueueStrip({ label, held, detail, children }: { label: string; held: boolean; detail?: string | null; children?: ReactNode }): React.JSX.Element {
+  return (
+    <div data-testid="thread-queue-strip" className="flex min-w-0 items-center gap-[var(--space-2)]">
+      <Chip variant="state" tone={held ? 'warning' : 'info'} label={label} />
+      <Text as="div" size="small" tone="muted" className="min-w-0 flex-1 truncate">{detail}</Text>
+      {children}
+    </div>
+  )
+}
+
 /** The strip above a thread's timeline: session-wide controls such as the permission mode. */
 export function ThreadHeaderBar({ children }: { children: ReactNode }): React.JSX.Element {
   return (
@@ -200,6 +241,7 @@ export function ThreadSpecimen(): React.JSX.Element {
   return (
     <div data-testid="thread-specimen" className="grid max-w-[var(--w-thread-column)] gap-[var(--space-3)]">
       <ThreadUserMessage>Rename the helper and update its callers.</ThreadUserMessage>
+      <ThreadUserMessage steered>Use the new name in the docs too.</ThreadUserMessage>
       <ThreadAssistantBlock streaming={false}><ThreadPlainText>I renamed it in three files.</ThreadPlainText></ThreadAssistantBlock>
       <ThreadToolCard name="Bash" summary="bun run typecheck" state="done" open onToggle={() => {}}>
         <ThreadToolSection label="Output"><ThreadCodeBlock>$ tsc --noEmit</ThreadCodeBlock></ThreadToolSection>
@@ -214,7 +256,14 @@ export function ThreadSpecimen(): React.JSX.Element {
         <ThreadApprovalNote>12 KiB more input is not shown; Allow approves it too.</ThreadApprovalNote>
       </ThreadApprovalCard>
       <ThreadApprovalCard name="Write" summary="notes.txt" state="denied" reason="Stopped in Houston before anyone answered." />
+      <ThreadQueuedMessageRow state="queued" actions={<><Button variant="ghost" size="sm">Steer now</Button><Button variant="ghost" size="sm">Edit</Button><Button variant="ghost" size="sm">Remove</Button></>}>
+        <ThreadQueuedText>Then run the tests.</ThreadQueuedText>
+      </ThreadQueuedMessageRow>
+      <ThreadQueuedMessageRow state="held" reason="Houston restarted before this message was sent." actions={<><Button variant="ghost" size="sm">Send</Button><Button variant="ghost" size="sm">Remove</Button></>}>
+        <ThreadQueuedText>Commit when they pass.</ThreadQueuedText>
+      </ThreadQueuedMessageRow>
       <ThreadComposerFrame>
+        <ThreadQueueStrip label="Queued 2" held={false}><Button variant="ghost" size="sm">Steer</Button><Button variant="ghost" size="sm">Clear</Button></ThreadQueueStrip>
         <ThreadComposerInput rows={1} placeholder="Message Claude" />
         <ThreadComposerActions hint="Enter sends · Shift+Enter adds a line"><Button variant="primary" size="sm">Send</Button></ThreadComposerActions>
       </ThreadComposerFrame>

@@ -48,9 +48,9 @@ describe('buildThreadItems', () => {
   })
 
   it('appends live deltas to one streaming block per message', () => {
-    const items = buildThreadItems(events([{ type: 'user_message', text: 'hi' }, delta('m1', 'Hel'), delta('m1', 'lo')]))
+    const items = buildThreadItems(events([{ type: 'user_message', delivery: 'direct', text: 'hi' }, delta('m1', 'Hel'), delta('m1', 'lo')]))
     expect(items).toEqual([
-      { kind: 'user', key: '1', text: 'hi' },
+      { kind: 'user', key: '1', text: 'hi', steered: false },
       { kind: 'assistant', key: 'delta-2', text: 'Hello', streaming: true, truncated: false }
     ])
   })
@@ -92,7 +92,7 @@ describe('buildThreadItems', () => {
   })
 
   it('treats rebuilt rows with the same content as unchanged', () => {
-    const list = events([{ type: 'user_message', text: 'a' }, delta('m', 'b')])
+    const list = events([{ type: 'user_message', delivery: 'direct', text: 'a' }, delta('m', 'b')])
     const [a1, b1] = buildThreadItems(list)
     const [a2, b2] = buildThreadItems([...list])
     expect(sameThreadItem(a1!, a2!)).toBe(true)
@@ -114,8 +114,8 @@ describe('stale deltas and open turns', () => {
 
   it('reports a turn as open from its user message until its turn end', () => {
     expect(turnOpen(events([]))).toBe(false)
-    expect(turnOpen(events([{ type: 'user_message', text: 'go' }, delta('m', 'a')]))).toBe(true)
-    expect(turnOpen(events([{ type: 'user_message', text: 'go' }, { type: 'turn_end', outcome: 'interrupted', error: null }]))).toBe(false)
+    expect(turnOpen(events([{ type: 'user_message', delivery: 'direct', text: 'go' }, delta('m', 'a')]))).toBe(true)
+    expect(turnOpen(events([{ type: 'user_message', delivery: 'direct', text: 'go' }, { type: 'turn_end', outcome: 'interrupted', error: null }]))).toBe(false)
   })
 })
 

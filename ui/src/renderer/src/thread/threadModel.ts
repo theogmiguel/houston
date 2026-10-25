@@ -10,7 +10,7 @@ export interface ToolResultView {
 export type ApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
 
 export type ThreadItem =
-  | { kind: 'user'; key: string; text: string }
+  | { kind: 'user'; key: string; text: string; steered: boolean }
   | { kind: 'assistant'; key: string; text: string; streaming: boolean; truncated: boolean }
   | { kind: 'tool'; key: string; name: string; input: string; inputTruncated: boolean; result: ToolResultView | null; settled: boolean }
   | { kind: 'notice'; key: string; text: string }
@@ -47,7 +47,7 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
       case 'user_message':
         freeze()
         turnStart = items.length
-        items.push({ kind: 'user', key, text: kind.text })
+        items.push({ kind: 'user', key, text: kind.text, steered: kind.delivery === 'steered' })
         break
       case 'assistant_delta': {
         if (stored.has(kind.message_id)) break
@@ -141,6 +141,7 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false
   switch (a.kind) {
     case 'user':
+      return a.text === (b as typeof a).text && a.steered === (b as typeof a).steered
     case 'notice':
     case 'error':
       return a.text === (b as typeof a).text

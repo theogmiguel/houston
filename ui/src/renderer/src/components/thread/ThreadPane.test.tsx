@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../../houston/client'
 import { THREAD_HISTORY_PAGE } from '../../thread/threadStore'
 import { THREAD_WINDOW_MAX, THREAD_WINDOW_PAGE } from '../../thread/threadModel'
-import type { ThreadEvent, ThreadEventKind } from '../../thread/threadTypes'
+import type { ThreadEvent, ThreadEventKind, ThreadQueuedMessage } from '../../thread/threadTypes'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { THREAD_STOPPED_COPY } from '../ui/Thread'
-import { ThreadPane } from './ThreadPane'
+import { ThreadPane, composerIntent, queueSummary } from './ThreadPane'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -50,7 +50,7 @@ function ev(seq: number, kind: ThreadEventKind): ThreadEvent {
   return { seq, at_ms: seq, kind }
 }
 
-const user = (text: string): ThreadEventKind => ({ type: 'user_message', text })
+const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text })
 const said = (id: string, text: string, truncated = false): ThreadEventKind => ({ type: 'assistant_message', message_id: id, text, truncated })
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 const turnEnd = (outcome: 'completed' | 'interrupted' = 'completed'): ThreadEventKind => ({ type: 'turn_end', outcome, error: null })
@@ -102,7 +102,7 @@ describe('ThreadPane', () => {
 
   it('asks for the latest history page on attach and appends only newer live events', () => {
     mount()
-    expect(fake.sent).toEqual([{ type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
+    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
     live([ev(2, user('early live'))])
     history([ev(1, user('first')), ev(2, user('early live'))])
     live([ev(2, user('early live')), ev(3, user('next'))])
@@ -133,7 +133,7 @@ describe('ThreadPane', () => {
     expect(container.textContent).toContain('Thread history was not requested: the connection to the daemon is closed.')
     fake.setOpen(true)
     act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Retry') as HTMLButtonElement).click())
-    expect(fake.sent).toEqual([{ type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
+    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
     history([ev(1, user('back'))])
     expect(rows('user')).toEqual(['back'])
     expect(container.textContent).not.toContain('was not requested')
@@ -159,7 +159,7 @@ describe('ThreadPane', () => {
     press({ shiftKey: true })
     expect(sends()).toEqual([])
     press({})
-    expect(sends()).toEqual([{ type: 'thread_send', session: 7, text: 'line one' }])
+    expect(sends()).toEqual([{ type: 'thread_send', session: 7, text: 'line one', steer: false }])
     expect(input().value).toBe('')
   })
 
@@ -323,5 +323,110 @@ describe('ThreadPane', () => {
     expect(rows('user')).toHaveLength(THREAD_WINDOW_MAX)
     expect(rows('user')).toContain('m1000')
     expect(container.querySelector('[data-testid="thread-jump-latest"]')).not.toBeNull()
+  })
+
+  describe('queue', () => {
+    const queued = (id: string, text: string, state: 'queued' | 'held' = 'queued', reason: string | null = null): ThreadQueuedMessage =>
+      ({ id, text, state, hold_reason: reason, created_at_ms: 1 })
+    const snapshot = (items: ThreadQueuedMessage[]): void => {
+      act(() => fake.emit({ type: 'thread_queue', session: 7, items }))
+    }
+    const last = (): unknown => fake.sent.at(-1)
+
+    it('queues on Enter and steers on Ctrl+Enter while a turn is open, and offers Stop only with an empty field', () => {
+      mount({ status: 'working' })
+      history([ev(1, user('go'))])
+      expect(container.querySelector('[data-testid="thread-stop"]')).not.toBeNull()
+      type('next')
+      expect(container.querySelector('[data-testid="thread-stop"]')).toBeNull()
+      expect(container.textContent).toContain('Enter queues · Ctrl+Enter steers')
+      press({})
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'next', steer: false })
+      type('now')
+      press({ ctrlKey: true })
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'now', steer: true })
+      type('by button')
+      click('thread-steer')
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'by button', steer: true })
+      type('queued by button')
+      click('thread-queue')
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'queued by button', steer: false })
+    })
+
+    it('never steers when no turn is open', () => {
+      expect(composerIntent(false, true)).toBe('send')
+      expect(composerIntent(true, false)).toBe('queue')
+      expect(composerIntent(true, true)).toBe('steer')
+    })
+
+    it('lists waiting messages under the timeline and acts on one', () => {
+      mount({ status: 'working' })
+      history([ev(1, user('go'))])
+      snapshot([queued('q1', 'first'), queued('q2', 'second')])
+      expect(rows('queued').map((row) => row.includes('Queued'))).toEqual([true, true])
+      expect(container.querySelector('[data-testid="thread-queue-strip"]')?.textContent).toContain('Queued 2')
+      act(() => (container.querySelectorAll('[data-testid="thread-queued-steer"]')[1] as HTMLButtonElement).click())
+      expect(last()).toEqual({ type: 'thread_steer', session: 7, id: 'q2' })
+      act(() => (container.querySelector('[data-testid="thread-queued-remove"]') as HTMLButtonElement).click())
+      expect(last()).toEqual({ type: 'thread_queue_remove', session: 7, id: 'q1' })
+      click('thread-queue-steer')
+      expect(last()).toEqual({ type: 'thread_steer', session: 7, id: 'q1' })
+      click('thread-queue-clear')
+      expect(fake.sent.slice(-2)).toEqual([{ type: 'thread_queue_remove', session: 7, id: 'q1' }, { type: 'thread_queue_remove', session: 7, id: 'q2' }])
+      snapshot([])
+      expect(rows('queued')).toEqual([])
+      expect(container.querySelector('[data-testid="thread-queue-strip"]')).toBeNull()
+    })
+
+    it('edits a waiting message in place and keeps the text when Escape cancels', () => {
+      mount({ status: 'working' })
+      history([ev(1, user('go'))])
+      snapshot([queued('q1', 'first')])
+      click('thread-queued-edit')
+      const field = (): HTMLTextAreaElement => container.querySelector('[data-testid="thread-queued-input"]')!
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      act(() => { setter.call(field(), 'FIRST'); field().dispatchEvent(new Event('input', { bubbles: true })) })
+      act(() => { field().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+      expect(container.querySelector('[data-testid="thread-queued-input"]')).toBeNull()
+      expect(fake.sent.some((msg) => msg.type === 'thread_queue_edit')).toBe(false)
+      click('thread-queued-edit')
+      act(() => { setter.call(field(), 'FIRST'); field().dispatchEvent(new Event('input', { bubbles: true })) })
+      act(() => { field().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+      expect(last()).toEqual({ type: 'thread_queue_edit', session: 7, id: 'q1', text: 'FIRST' })
+    })
+
+    it('says why held messages wait and sends one only when asked', () => {
+      mount()
+      history([ev(1, user('go')), ev(2, turnEnd('interrupted'))])
+      snapshot([queued('q1', 'first', 'held', 'Houston restarted before this message was sent.'), queued('q2', 'second')])
+      const strip = container.querySelector('[data-testid="thread-queue-strip"]')?.textContent ?? ''
+      expect(strip).toContain('Held 1')
+      expect(strip).toContain('Houston restarted before this message was sent. · 1 queued')
+      expect(rows('queued')[0]).toContain('Houston restarted before this message was sent.')
+      expect(fake.sent.some((msg) => msg.type === 'thread_queue_send')).toBe(false)
+      click('thread-queue-send-next')
+      expect(last()).toEqual({ type: 'thread_queue_send', session: 7, id: 'q1' })
+      act(() => (container.querySelector('[data-testid="thread-queued-send"]') as HTMLButtonElement).click())
+      expect(last()).toEqual({ type: 'thread_queue_send', session: 7, id: 'q1' })
+    })
+
+    it('shows the daemon refusing a queued message until dismissed', () => {
+      mount({ status: 'working' })
+      history([ev(1, user('go'))])
+      act(() => fake.emit({ type: 'error', message: 'thread_send refused for session 7: the queue holds 16 messages, the limit (THREAD_QUEUE_MAX_ITEMS) is 16; send or remove one to queue a message', context: 'session:7' }))
+      expect(container.textContent).toContain('the limit (THREAD_QUEUE_MAX_ITEMS) is 16')
+      act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Dismiss') as HTMLButtonElement).click())
+      expect(container.textContent).not.toContain('THREAD_QUEUE_MAX_ITEMS')
+    })
+
+    it('marks a steered message', () => {
+      mount()
+      history([ev(1, { type: 'user_message', delivery: 'steered', text: 'first' }), ev(2, user('plain'))])
+      expect([...container.querySelectorAll('[data-thread-item="user"]')].map((row) => row.hasAttribute('data-steered'))).toEqual([true, false])
+    })
+
+    it('summarises an empty queue as nothing', () => {
+      expect(queueSummary([])).toBeNull()
+    })
   })
 })

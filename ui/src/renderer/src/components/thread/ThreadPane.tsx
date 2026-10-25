@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
-import { IconArrowUp, IconStopCircle } from '../icons'
+import { IconArrowUp, IconClock, IconStopCircle, IconZap } from '../icons'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { Tooltip } from '../ui/Tooltip'
@@ -18,6 +18,9 @@ import {
   ThreadHistoryControl,
   ThreadNotice,
   ThreadPlainText,
+  ThreadQueuedMessageRow,
+  ThreadQueuedText,
+  ThreadQueueStrip,
   ThreadScroll,
   ThreadStoppedMarker,
   ThreadSurface,
@@ -26,8 +29,8 @@ import {
 import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
-import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
-import type { ThreadPermissionMode } from '../../thread/threadTypes'
+import { actOnQueue, sendThreadMessage, setThreadPermissionMode, stopThread, useThread, type QueueAction } from '../../thread/threadStore'
+import type { ThreadPermissionMode, ThreadQueuedMessage } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
 
@@ -55,7 +58,7 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
 }): React.JSX.Element {
   switch (item.kind) {
     case 'user':
-      return <ThreadUserMessage>{item.text}</ThreadUserMessage>
+      return <ThreadUserMessage steered={item.steered}>{item.text}</ThreadUserMessage>
     case 'assistant':
       return (
         <ThreadAssistantBlock streaming={item.streaming}>
@@ -122,33 +125,59 @@ export function isImeEnter(event: { key: string; keyCode: number; isComposing: b
   return event.isComposing || event.keyCode === 229 || event.key === 'Process'
 }
 
-export function ThreadComposer({ stoppable, disabledReason, onSend, onStop }: {
+/** Whether Enter, with this modifier state, queues, steers or sends. */
+export function composerIntent(stoppable: boolean, ctrlKey: boolean): 'send' | 'queue' | 'steer' {
+  if (!stoppable) return 'send'
+  return ctrlKey ? 'steer' : 'queue'
+}
+
+/** Why a message is too large for Claude, or null; the composer and a queued row's edit field both check it. */
+function utf8Refusal(text: string): string | null {
+  const size = utf8Length(text)
+  return size > THREAD_USER_MESSAGE_MAX_BYTES ? `Message not sent: it is ${size.toLocaleString()} bytes and a thread message is limited to ${THREAD_USER_MESSAGE_MAX_BYTES.toLocaleString()} bytes.` : null
+}
+
+/** Enter submits, Shift+Enter and an IME confirmation do not. */
+function submitsOnEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+  return e.key === 'Enter' && !e.shiftKey && !isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })
+}
+
+export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDismissDaemonRefusal, strip, onSend, onStop }: {
   stoppable: boolean
   disabledReason: string | null
-  /** Whether the message was written; the text stays in the field when it was not. */
-  onSend: (text: string) => boolean
+  /** The daemon's last refusal of a message or queue request. */
+  daemonRefusal?: string | null
+  onDismissDaemonRefusal?: () => void
+  /** The queue's summary, shown above the field. */
+  strip?: React.ReactNode
+  /** Whether the message was written; the text stays in the field when it was not. `steer` stops the open turn. */
+  onSend: (text: string, steer: boolean) => boolean
   onStop: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
-  const send = (): void => {
+  const send = (steer: boolean): void => {
     if (disabledReason !== null || text.trim() === '') return
-    const size = utf8Length(text)
-    if (size > THREAD_USER_MESSAGE_MAX_BYTES) {
-      setRefusal(`Message not sent: it is ${size.toLocaleString()} bytes and a thread message is limited to ${THREAD_USER_MESSAGE_MAX_BYTES.toLocaleString()} bytes.`)
+    const tooLarge = utf8Refusal(text)
+    if (tooLarge !== null) {
+      setRefusal(tooLarge)
       return
     }
-    if (!onSend(text)) {
+    if (!onSend(text, steer)) {
       setRefusal('Message not sent: the connection to the daemon is closed. Your text is kept.')
       return
     }
     setRefusal(null)
     setText('')
   }
+  const empty = text.trim() === ''
+  const blocked = disabledReason !== null
   return (
     <ThreadComposerFrame>
       {refusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => setRefusal(null) }}>{refusal}</Notice>}
+      {daemonRefusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => onDismissDaemonRefusal?.() }}>{daemonRefusal}</Notice>}
+      {strip}
       <ThreadComposerInput
         data-testid="thread-composer-input"
         aria-label="Message Claude"
@@ -158,15 +187,24 @@ export function ThreadComposer({ stoppable, disabledReason, onSend, onStop }: {
         disabled={disabledReason !== null}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.shiftKey || isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })) return
+          if (!submitsOnEnter(e)) return
           e.preventDefault()
-          send()
+          send(composerIntent(stoppable, e.ctrlKey) === 'steer')
         }}
       />
-      <ThreadComposerActions hint="Enter sends · Shift+Enter adds a line">
-        {stoppable
-          ? <Button data-testid="thread-stop" variant="primary" size="sm" icon={IconStopCircle} disabled={disabledReason !== null} onClick={onStop}>Stop</Button>
-          : <Button data-testid="thread-send" variant="primary" size="sm" icon={IconArrowUp} disabled={disabledReason !== null || text.trim() === ''} onClick={send}>Send</Button>}
+      <ThreadComposerActions hint={stoppable ? 'Enter queues · Ctrl+Enter steers · Shift+Enter adds a line' : 'Enter sends · Shift+Enter adds a line'}>
+        {!stoppable && <Button data-testid="thread-send" variant="primary" size="sm" icon={IconArrowUp} disabled={blocked || empty} onClick={() => send(false)}>Send</Button>}
+        {stoppable && empty && <Button data-testid="thread-stop" variant="primary" size="sm" icon={IconStopCircle} disabled={blocked} onClick={onStop}>Stop</Button>}
+        {stoppable && !empty && (
+          <>
+            <Tooltip label="Stop the running turn and send this message first (Ctrl+Enter)">
+              <Button data-testid="thread-steer" variant="secondary" size="sm" icon={IconZap} disabled={blocked} onClick={() => send(true)}>Steer</Button>
+            </Tooltip>
+            <Tooltip label="Send this message when the running turn completes (Enter)">
+              <Button data-testid="thread-queue" variant="primary" size="sm" icon={IconClock} disabled={blocked} onClick={() => send(false)}>Queue</Button>
+            </Tooltip>
+          </>
+        )}
       </ThreadComposerActions>
     </ThreadComposerFrame>
   )
@@ -184,6 +222,87 @@ const TURN_STATUSES: ReadonlySet<SessionInfo['status']> = new Set(['working', 's
 /** Stop is offered while the agent reports a turn in progress or the timeline has one without an end. */
 export function threadStoppable(info: SessionInfo, events: Parameters<typeof turnOpen>[0]): boolean {
   return TURN_STATUSES.has(info.status) || turnOpen(events)
+}
+
+/** One waiting message under the timeline: its state and text, edited in place. */
+function QueuedRow({ message, disabled, editing, onEdit, onAct }: {
+  message: ThreadQueuedMessage
+  disabled: boolean
+  editing: boolean
+  onEdit: (editing: boolean) => void
+  onAct: (action: QueueAction) => void
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(message.text)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const held = message.state === 'held'
+  const save = (): void => {
+    const tooLarge = utf8Refusal(draft)
+    if (tooLarge !== null) return setRefusal(tooLarge)
+    if (draft.trim() === '') return setRefusal('A queued message cannot be empty; remove it instead.')
+    setRefusal(null)
+    if (draft !== message.text) onAct({ type: 'edit', id: message.id, text: draft })
+    onEdit(false)
+  }
+  const actions = editing
+    ? <>
+        <Button data-testid="thread-queued-cancel" variant="ghost" size="sm" onClick={() => { setDraft(message.text); setRefusal(null); onEdit(false) }}>Cancel</Button>
+        <Button data-testid="thread-queued-save" variant="primary" size="sm" disabled={disabled} onClick={save}>Save</Button>
+      </>
+    : <>
+        {held
+          ? <Button data-testid="thread-queued-send" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'send', id: message.id })}>Send</Button>
+          : <Tooltip label="Stop the running turn and send this message first"><Button data-testid="thread-queued-steer" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'steer', id: message.id })}>Steer now</Button></Tooltip>}
+        <Button data-testid="thread-queued-edit" variant="ghost" size="sm" disabled={disabled} onClick={() => { setDraft(message.text); onEdit(true) }}>Edit</Button>
+        <Button data-testid="thread-queued-remove" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'remove', id: message.id })}>Remove</Button>
+      </>
+  return (
+    <ThreadQueuedMessageRow state={message.state} reason={held ? message.hold_reason : null} actions={actions}>
+      {editing
+        ? <>
+            {refusal && <Notice tone="danger" inset="compact-inline">{refusal}</Notice>}
+            <ThreadComposerInput
+              data-testid="thread-queued-input"
+              aria-label="Edit queued message"
+              rows={Math.min(COMPOSER_MAX_ROWS, Math.max(1, draft.split('\n').length))}
+              value={draft}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setDraft(message.text); onEdit(false); return }
+                if (!submitsOnEnter(e)) return
+                e.preventDefault()
+                save()
+              }}
+            />
+          </>
+        : <ThreadQueuedText>{message.text}</ThreadQueuedText>}
+    </ThreadQueuedMessageRow>
+  )
+}
+
+/** The queue strip's summary: held messages first, since nothing sends them but the user. */
+export function queueSummary(queue: readonly ThreadQueuedMessage[]): { label: string; held: boolean; detail: string | null; head: ThreadQueuedMessage } | null {
+  const head = queue[0]
+  if (head === undefined) return null
+  const held = queue.filter((message) => message.state === 'held')
+  const queued = queue.length - held.length
+  const firstHeld = held[0]
+  if (firstHeld === undefined) return { label: `Queued ${queued}`, held: false, detail: 'Sent when the running turn completes', head }
+  const also = queued > 0 ? ` · ${queued} queued` : ''
+  return { label: `Held ${held.length}`, held: true, detail: `${firstHeld.hold_reason ?? 'Waiting for you to send it.'}${also}`, head: firstHeld }
+}
+
+function QueueStrip({ queue, disabled, onAct }: { queue: readonly ThreadQueuedMessage[]; disabled: boolean; onAct: (action: QueueAction) => void }): React.JSX.Element | null {
+  const summary = queueSummary(queue)
+  if (summary === null) return null
+  return (
+    <ThreadQueueStrip label={summary.label} held={summary.held} detail={summary.detail}>
+      {summary.held
+        ? <Button data-testid="thread-queue-send-next" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'send', id: summary.head.id })}>Send next</Button>
+        : <Tooltip label="Stop the running turn and send the first queued message"><Button data-testid="thread-queue-steer" variant="ghost" size="sm" disabled={disabled} onClick={() => onAct({ type: 'steer', id: summary.head.id })}>Steer</Button></Tooltip>}
+      <Button data-testid="thread-queue-clear" variant="ghost" size="sm" disabled={disabled} onClick={() => { for (const message of queue) onAct({ type: 'remove', id: message.id }) }}>Clear</Button>
+    </ThreadQueueStrip>
+  )
 }
 
 /** Keeps the newest row in view while the reader is at the bottom; holds position when they paged back. */
@@ -219,7 +338,12 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
   const scroll = useRef<HTMLDivElement>(null)
   const { start, end } = windowBounds(thread.items, win)
   const shown = thread.items.slice(start, end)
-  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, start, end, markdown], win.end === null)
+  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, thread.queue, start, end, markdown], win.end === null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const queueDisabled = composerDisabledReason(info, connected) !== null
+  const act = (action: QueueAction): void => {
+    if (!actOnQueue(client, info.id, action)) console.warn('houston: thread queue request dropped: the connection to the daemon is closed')
+  }
   const growOnArrival = useRef(false)
   useEffect(() => {
     if (thread.loadingEarlier || !growOnArrival.current) return
@@ -256,14 +380,21 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
             <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => { setWin(LATEST_WINDOW); thread.followLatest() }}>Jump to latest</Button>
           </ThreadHistoryControl>
         )}
+        {win.end === null && thread.queue.map((message) => (
+          <QueuedRow key={message.id} message={message} disabled={queueDisabled} editing={editing === message.id} onEdit={(on) => setEditing(on ? message.id : null)} onAct={act} />
+        ))}
       </ThreadScroll>
       <ThreadComposer
         stoppable={threadStoppable(info, thread.events)}
         disabledReason={composerDisabledReason(info, connected)}
-        onSend={(text) => {
+        daemonRefusal={thread.refusal}
+        onDismissDaemonRefusal={thread.dismissRefusal}
+        strip={<QueueStrip queue={thread.queue} disabled={queueDisabled} onAct={act} />}
+        onSend={(text, steer) => {
           setWin(LATEST_WINDOW)
           thread.followLatest()
-          return sendThreadMessage(client, info.id, text)
+          thread.dismissRefusal()
+          return sendThreadMessage(client, info.id, text, steer)
         }}
         onStop={() => stopThread(client, info.id)}
       />

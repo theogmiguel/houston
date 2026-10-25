@@ -7,7 +7,7 @@ function ev(seq: number, kind: ThreadEventKind): ThreadEvent {
   return { seq, at_ms: seq, kind }
 }
 
-const user = (text: string): ThreadEventKind => ({ type: 'user_message', text })
+const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text })
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 
 function store(): { store: ThreadSessionStore; sent: ThreadClientMsg[] } {
@@ -78,12 +78,26 @@ describe('ThreadSessionStore', () => {
     s.attach()
     s.onHistory(history([ev(10, user('ten'))], null, true))
     s.loadEarlier()
-    s.refused(10, 'thread_history refused for session 7')
+    s.historyRefused(10, 'thread_history refused for session 7')
     expect(s.getSnapshot()).toMatchObject({ loadingEarlier: false, failure: 'thread_history refused for session 7' })
     s.retry()
     expect(sent.filter((msg) => msg.type === 'thread_history').map((msg) => (msg as { before_seq: number | null }).before_seq)).toEqual([null, 10, 10])
     s.onHistory(history([ev(9, user('nine'))], 10))
     expect(s.getSnapshot().events.map((event) => event.seq)).toEqual([9, 10])
     expect(s.getSnapshot().failure).toBeNull()
+  })
+
+  it('rereads the queue on every attach and keeps it across a history reload', () => {
+    const { store: s, sent } = store()
+    s.attach()
+    s.onQueue({ type: 'thread_queue', session: 7, items: [{ id: 'q1', text: 'next', state: 'queued', hold_reason: null, created_at_ms: 1 }] })
+    s.onHistory(history([ev(1, user('go'))]))
+    expect(s.getSnapshot().queue.map((item) => item.id)).toEqual(['q1'])
+    s.attach()
+    expect(sent.filter((msg) => msg.type === 'thread_queue_list')).toHaveLength(2)
+    s.refused('thread_send refused for session 7: the message is empty')
+    expect(s.getSnapshot().refusal).toContain('the message is empty')
+    s.dismissRefusal()
+    expect(s.getSnapshot().refusal).toBeNull()
   })
 })

@@ -71,13 +71,22 @@ empty grid. Threads sit in the grid beside terminal panes, keep the same pane he
 menu, and run at the same time. Only Claude supports the thread view; other agents open
 as terminals.
 
-Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. A message
-sent while Claude is working is delivered at once and Claude reads it after its current
-step. One message is limited to 256 KiB. While Claude works, the button reads **Stop**;
-the pane menu offers the same action. Stop ends Claude and the tools it started. The
-answer it was writing stays in the thread, marked "Stopped · Claude will not remember
-this partial answer": the next message resumes the conversation without it. The pane
-menu's text size and Handoff actions apply to terminal panes only.
+Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. One message
+is limited to 256 KiB. While Claude works, **Enter** queues the message instead: it waits
+under the timeline marked Queued and is sent when the running turn completes, oldest
+first. **Ctrl+Enter** steers: Houston stops the running turn and sends your message
+before the queue, and the thread marks it Steered. A queued message can be edited,
+removed or steered from its row; the strip above the box counts the queue and offers
+**Steer** for the first message and **Clear** for all of them. A queue holds at most 16
+messages and 1 MiB.
+
+With an empty box the button reads **Stop** while Claude works; the pane menu offers the
+same action. Stop ends Claude and the tools it started. The answer it was writing stays
+in the thread, marked "Stopped · Claude will not remember this partial answer": the next
+message resumes the conversation without it. After Stop, a failed turn, Claude exiting or
+a Houston restart, queued messages are held instead of sent: the strip says why, and each
+waits until you choose **Send** on it. The pane menu's text size and Handoff actions apply
+to terminal panes only.
 
 Expand a tool card to see its input and output. Shell commands show the command and its
 output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and
