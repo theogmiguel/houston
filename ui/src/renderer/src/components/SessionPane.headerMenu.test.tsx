@@ -7,6 +7,7 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import { SessionPane } from './SessionPane'
 import { viewSwitchRefusal } from '../thread/viewSwitch'
+import { publishQueueLength } from '../thread/queueLength'
 import type { HandoffSource } from './PaneHandoff'
 import { ghosttySurfaceMockModule } from '../test/ghosttySurfaceMock'
 
@@ -384,6 +385,11 @@ describe('pane ··· menu', () => {
     openPaneMenu()
     click(row('Open in terminal'))
     expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_set_view', session: 1, view: 'terminal' })
+    act(() => publishQueueLength(fakeClient, 1, 2))
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'idle' }))
+    openPaneMenu()
+    expect(row('Open in terminal').disabled).toBe(true)
+    act(() => publishQueueLength(fakeClient, 1, 0))
     render(makeSession({ agent: 'codex', status: 'idle' }))
     openPaneMenu()
     expect(rows().some((b) => b.textContent?.includes('Open as thread'))).toBe(false)
@@ -394,6 +400,7 @@ describe('pane ··· menu', () => {
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'sleeping', status: 'idle' }))).toBe('The session is sleeping; wake it first')
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'needs-input' }))).toBe("Claude's status is Needs input; wait for the turn to end or stop it first")
     expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle' }))).toBeNull()
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle', view: 'thread' }), 2)).toBe('2 queued messages wait in this thread; send or clear them first')
     const child = makeSession({ agent: 'claude', status: 'idle', spawned_by: 7, delegation: { parent: 7, started_at: 1000, state: 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } })
     expect(viewSwitchRefusal(child)).toBe('It is a child of pane 7, which could not see its questions or permission requests; keep it a terminal')
     render(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))

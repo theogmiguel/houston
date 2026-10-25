@@ -4,9 +4,9 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    AgentKind, ApprovalDecision, ThreadEvent, ThreadEventKind, ThreadExcerpt, ThreadPermissionMode,
-    TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
-    THREAD_USER_MESSAGE_MAX_BYTES,
+    AgentKind, ApprovalDecision, MessageDelivery, ThreadEvent, ThreadEventKind, ThreadExcerpt,
+    ThreadPermissionMode, ThreadQueuedMessage, TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES,
+    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 #[cfg(any(target_os = "linux", windows))]
 use std::time::Instant;
@@ -63,6 +63,44 @@ pub trait ThreadHost: Send + Sync + 'static {
     /// The provider listed its commands; it does so at the start of every turn.
     fn commands_reported(&self, session: u32, list: ThreadCommandList);
     fn title_reported(&self, session: u32, title: &str);
+    /// Appends `text` and its excerpts to the session's queue as `queued`. A host without a
+    /// queue refuses.
+    fn queue_push(&self, session: u32, _text: &str, _excerpts: &[ThreadExcerpt]) -> Result<()> {
+        bail!("thread session {session} keeps no message queue")
+    }
+    /// Takes `id` out of the queue, or with `None` the oldest `queued` message.
+    fn queue_take(&self, _session: u32, _id: Option<&str>) -> Result<Option<ThreadQueuedMessage>> {
+        Ok(None)
+    }
+    /// Messages waiting as `queued`; held ones wait for the user and count for nothing here.
+    fn queue_waiting(&self, _session: u32) -> Result<usize> {
+        Ok(0)
+    }
+    /// Marks waiting message `id` `queued`, to go when the open turn completes.
+    fn queue_release(&self, session: u32, id: &str) -> Result<()> {
+        bail!("thread session {session} keeps no message queue; message {id:?} is not in it")
+    }
+    /// Puts a taken message back at the head as held, with `reason`.
+    fn queue_restore(&self, _session: u32, _message: &ThreadQueuedMessage, _reason: &str) {}
+    /// Holds every `queued` message with `reason`.
+    fn queue_hold(&self, _session: u32, _reason: &str) {}
+}
+
+/// One user message on its way to the provider.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutgoingMessage {
+    pub text: String,
+    /// Terminal selections the adapter composes before `text` (`compose_message`).
+    pub excerpts: Vec<ThreadExcerpt>,
+    pub delivery: MessageDelivery,
+}
+
+/// A message line owed to the provider, written once every lock is released.
+struct PendingWrite {
+    process: Arc<ThreadProcess>,
+    line: String,
+    /// The queued message it came from, put back held if the write fails.
+    row: Option<ThreadQueuedMessage>,
 }
 
 /// What `thread_approve` tells a held permission request.
@@ -98,7 +136,7 @@ pub trait ProviderStream: Send {
         Vec::new()
     }
     /// The stdin line that starts a turn.
-    fn user_message(&mut self, text: &str) -> Result<String>;
+    fn user_message(&mut self, message: &OutgoingMessage) -> Result<String>;
     /// One stdout line. Unknown types decode to nothing.
     fn decode(&mut self, line: &str) -> Decoded;
 }
@@ -510,6 +548,7 @@ pub struct StructuredRuntime {
     outbox: Arc<Outbox>,
     closed: (Mutex<bool>, Condvar),
     approvals: Mutex<HashMap<String, PendingApproval>>,
+    turn_end_hook_deferred: AtomicBool,
 }
 
 impl StructuredRuntime {
@@ -542,6 +581,7 @@ impl StructuredRuntime {
             outbox: Arc::clone(&outbox),
             closed: (Mutex::new(false), Condvar::new()),
             approvals: Mutex::new(HashMap::new()),
+            turn_end_hook_deferred: AtomicBool::new(false),
         });
         std::thread::Builder::new()
             .name(format!("thread-events-{session}"))
@@ -815,9 +855,127 @@ impl StructuredRuntime {
         }
     }
 
-    /// Records `text` and delivers it with its excerpts as one stream-json user message,
-    /// starting a process that resumes the conversation first when none runs.
+    /// Sends `text` at once while no turn is open and no message is queued; otherwise it
+    /// joins the queue. Held messages wait for the user, so they do not hold it back.
     pub fn send(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.check_size(text, excerpts)?;
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if state.turn_open || self.host.queue_waiting(self.session)? > 0 {
+                drop(state);
+                return self.host.queue_push(self.session, text, excerpts);
+            }
+            self.deliver(&mut state, text, excerpts, MessageDelivery::Direct, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Sends `text` ahead of the queue, stopping an open turn first.
+    pub fn send_steered(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.check_size(text, excerpts)?;
+        let pending = {
+            let op = self.op.lock().expect("thread operation lock");
+            let open = self.open_state()?.turn_open;
+            if open {
+                self.stop_held(&op, None);
+            }
+            let mut state = self.open_state()?;
+            let delivery = if open {
+                MessageDelivery::Steered
+            } else {
+                MessageDelivery::Direct
+            };
+            self.deliver(&mut state, text, excerpts, delivery, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Takes queued message `id` out of the queue and sends it first, stopping an open turn.
+    /// It leaves the queue under `op` before anything is written, so it is sent once.
+    pub fn steer(self: &Arc<Self>, id: &str) -> Result<()> {
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-steer", self.session);
+        let pending = {
+            let op = self.op.lock().expect("thread operation lock");
+            let open = self.open_state()?.turn_open;
+            let row = self.take_row("thread_steer", id)?;
+            if open {
+                self.stop_held(&op, None);
+            }
+            let mut state = self.open_state()?;
+            let delivery = if open {
+                MessageDelivery::Steered
+            } else {
+                MessageDelivery::Queued
+            };
+            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+            self.deliver(&mut state, &text, &excerpts, delivery, Some(row))?
+        };
+        self.write(pending)
+    }
+
+    /// Sends waiting message `id` now; while a turn is open it is queued to go after it.
+    pub fn send_queued(self: &Arc<Self>, id: &str) -> Result<()> {
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if state.turn_open {
+                drop(state);
+                return self.host.queue_release(self.session, id);
+            }
+            let row = self.take_row("thread_queue_send", id)?;
+            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+            self.deliver(
+                &mut state,
+                &text,
+                &excerpts,
+                MessageDelivery::Queued,
+                Some(row),
+            )?
+        };
+        self.write(pending)
+    }
+
+    /// A message from outside the composer (an orchestration prompt or an inbox paste): sent
+    /// only while no turn is open and nothing is queued, so the user's queued messages go
+    /// first. A refusal leaves it to its caller, which retries once the thread is idle.
+    pub fn deliver_now(self: &Arc<Self>, text: &str) -> Result<()> {
+        self.check_size(text, &[])?;
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if let Some(reason) = self.busy_reason(&state) {
+                bail!(
+                    "message refused for thread session {}: {reason}; it is delivered once \
+                     the thread is idle",
+                    self.session
+                );
+            }
+            self.deliver(&mut state, text, &[], MessageDelivery::Direct, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Why a message from outside the composer must wait now, if it must.
+    pub fn hold_reason(&self) -> Option<String> {
+        let state = self.state.lock().expect("thread state lock");
+        self.busy_reason(&state)
+    }
+
+    fn busy_reason(&self, state: &HandleState) -> Option<String> {
+        if state.turn_open {
+            return Some("a turn is open".into());
+        }
+        match self.host.queue_waiting(self.session) {
+            Ok(0) => None,
+            Ok(waiting) => Some(format!("{waiting} queued message(s) of the user go first")),
+            Err(error) => Some(format!("its queue cannot be read: {error:#}")),
+        }
+    }
+
+    /// The message as the provider reads it, excerpts included, fits `THREAD_USER_MESSAGE_MAX_BYTES`.
+    fn check_size(&self, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
         let composed = compose_message(text, excerpts);
         if composed.len() > THREAD_USER_MESSAGE_MAX_BYTES {
             bail!(
@@ -828,51 +986,197 @@ impl StructuredRuntime {
                 THREAD_USER_MESSAGE_MAX_BYTES
             );
         }
-        let (process, line) = {
-            let _op = self.op.lock().expect("thread operation lock");
-            let mut state = self.state.lock().expect("thread state lock");
-            if state.closed {
-                bail!(
-                    "session {} is closed; its thread takes no messages",
+        Ok(())
+    }
+
+    fn open_state(&self) -> Result<MutexGuard<'_, HandleState>> {
+        let state = self.state.lock().expect("thread state lock");
+        if state.closed {
+            bail!(
+                "session {} is closed; its thread takes no messages",
+                self.session
+            );
+        }
+        Ok(state)
+    }
+
+    fn take_row(&self, verb: &str, id: &str) -> Result<ThreadQueuedMessage> {
+        self.host
+            .queue_take(self.session, Some(id))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "{verb} refused for session {}: message {id:?} is not in its queue; it \
+                     was sent or removed",
                     self.session
-                );
-            }
-            let process = self.ensure_process(&mut state)?;
+                )
+            })
+    }
+
+    /// Under `op`: starts a process that resumes the conversation when none runs, records
+    /// the message and opens its turn. A queued message that fails here goes back held.
+    fn deliver(
+        self: &Arc<Self>,
+        state: &mut HandleState,
+        text: &str,
+        excerpts: &[ThreadExcerpt],
+        delivery: MessageDelivery,
+        row: Option<ThreadQueuedMessage>,
+    ) -> Result<PendingWrite> {
+        let message = OutgoingMessage {
+            text: text.to_string(),
+            excerpts: excerpts.to_vec(),
+            delivery,
+        };
+        let prepared = self.ensure_process(state).and_then(|process| {
             let line = process
                 .stream
                 .lock()
                 .expect("thread stream lock")
-                .user_message(&composed)?;
-            state.turn_open = true;
-            drop(state);
-            self.emit(vec![ThreadEventKind::UserMessage {
-                text: text.to_string(),
-                delivery: houston_protocol::MessageDelivery::Direct,
-                excerpts: excerpts.to_vec(),
-            }]);
-            (process, line)
-        };
-        // Written outside every lock: the provider may be writing a long answer to stdout
-        // while this blocks on a full stdin pipe, and the stdout reader must keep draining.
-        if let Err(error) = process.write_line(Some(&line)) {
-            if process.stopping.load(Ordering::Acquire) {
-                bail!(
-                    "thread session {} stopped before this message reached {}",
-                    self.session,
-                    process.provider
-                );
+                .user_message(&message)?;
+            Ok((process, line))
+        });
+        let (process, line) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if let Some(row) = &row {
+                    self.host
+                        .queue_restore(self.session, row, &format!("Not sent: {error:#}"));
+                }
+                return Err(error);
             }
-            self.emit(vec![ThreadEventKind::Notice {
-                text: format!("This message did not reach {}: {error:#}", process.provider),
-            }]);
-            return Err(error);
-        }
-        Ok(())
+        };
+        state.turn_open = true;
+        self.emit(vec![ThreadEventKind::UserMessage {
+            text: message.text,
+            delivery: message.delivery,
+            excerpts: message.excerpts,
+        }]);
+        Ok(PendingWrite { process, line, row })
     }
 
-    /// Ends the process tree. Returns whether a process was running.
+    /// Written outside every lock: the provider may be writing a long answer to stdout
+    /// while this blocks on a full stdin pipe, and the stdout reader must keep draining.
+    fn write(&self, pending: PendingWrite) -> Result<()> {
+        let PendingWrite { process, line, row } = pending;
+        let Err(error) = process.write_line(Some(&line)) else {
+            return Ok(());
+        };
+        let stopped = process.stopping.load(Ordering::Acquire);
+        if let Some(row) = &row {
+            let reason = if stopped {
+                format!("Stopped before this message reached {}.", process.provider)
+            } else {
+                format!("This message did not reach {}: {error:#}", process.provider)
+            };
+            self.host.queue_restore(self.session, row, &reason);
+        }
+        if stopped {
+            bail!(
+                "thread session {} stopped before this message reached {}",
+                self.session,
+                process.provider
+            );
+        }
+        self.emit(vec![ThreadEventKind::Notice {
+            text: format!("This message did not reach {}: {error:#}", process.provider),
+        }]);
+        Err(error)
+    }
+
+    /// After a turn's `result`, under `op`: a completed turn sends the oldest queued message;
+    /// any other outcome holds the queue for the user.
+    fn after_turn(self: &Arc<Self>, outcome: TurnOutcome) {
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-queue-drain", self.session);
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.state.lock().expect("thread state lock");
+            if state.closed {
+                return;
+            }
+            if outcome != TurnOutcome::Completed {
+                drop(state);
+                self.host.queue_hold(
+                    self.session,
+                    "The turn before this message did not complete.",
+                );
+                return;
+            }
+            if state.turn_open || state.process.is_none() {
+                return;
+            }
+            let row = match self.host.queue_take(self.session, None) {
+                Ok(Some(row)) => row,
+                Ok(None) => return,
+                Err(error) => {
+                    tracing::warn!("session {}: reading its queue: {error:#}", self.session);
+                    return;
+                }
+            };
+            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+            match self.deliver(
+                &mut state,
+                &text,
+                &excerpts,
+                MessageDelivery::Queued,
+                Some(row),
+            ) {
+                Ok(pending) => pending,
+                Err(error) => {
+                    tracing::warn!(
+                        "session {}: sending its queued message: {error:#}",
+                        self.session
+                    );
+                    return;
+                }
+            }
+        };
+        if let Err(error) = self.write(pending) {
+            tracing::warn!(
+                "session {}: writing its queued message: {error:#}",
+                self.session
+            );
+        }
+    }
+
+    /// Runs `after_turn` off the stdout reader, which must keep draining while it writes.
+    fn start_after_turn(self: &Arc<Self>, outcome: TurnOutcome) {
+        let runtime = Arc::clone(self);
+        let started = std::thread::Builder::new()
+            .name(format!("thread-queue-{}", self.session))
+            .spawn(move || runtime.after_turn(outcome));
+        if let Err(error) = started {
+            tracing::warn!(
+                "session {}: starting its queue after a turn: {error}",
+                self.session
+            );
+        }
+    }
+
+    /// A Stop hook arrived while a turn is open: an earlier turn's, or this turn's ahead of
+    /// its `result`. Returns true when it is deferred to the stream's turn end.
+    pub fn defer_turn_end_hook(&self) -> bool {
+        let state = self.state.lock().expect("thread state lock");
+        if state.turn_open {
+            self.turn_end_hook_deferred.store(true, Ordering::Release);
+        }
+        state.turn_open
+    }
+
+    /// Whether a deferred Stop hook is owed to the turn end being reported now.
+    pub fn take_deferred_turn_end_hook(&self) -> bool {
+        self.turn_end_hook_deferred.swap(false, Ordering::AcqRel)
+    }
+
+    /// Ends the process tree and holds the queue. Returns whether a process was running.
     pub fn stop(&self) -> bool {
-        let _op = self.op.lock().expect("thread operation lock");
+        let op = self.op.lock().expect("thread operation lock");
+        self.stop_held(&op, Some("Stopped before this message was sent."))
+    }
+
+    /// `stop` for a caller holding `op`; `hold` names why queued messages wait, and `None`
+    /// (a steer) leaves them queued.
+    fn stop_held(&self, _op: &MutexGuard<'_, ()>, hold: Option<&str>) -> bool {
         let Some(process) = self.state.lock().expect("thread state lock").process.take() else {
             return false;
         };
@@ -886,6 +1190,9 @@ impl StructuredRuntime {
             .expect("thread state lock")
             .end_open_turn(TurnOutcome::Interrupted, None);
         self.emit(events);
+        if let Some(reason) = hold {
+            self.host.queue_hold(self.session, reason);
+        }
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("thread-stop-settle", self.session);
         self.host.settle(self.session, TurnOutcome::Interrupted);
@@ -961,6 +1268,10 @@ impl StructuredRuntime {
         }
         drop(state);
         self.emit(events);
+        self.host.queue_hold(
+            self.session,
+            "Houston stopped this thread before this message was sent.",
+        );
         self.outbox.close();
         let (closed, changed) = &self.closed;
         *closed.lock().expect("thread closed lock") = true;
@@ -1028,7 +1339,7 @@ impl StructuredRuntime {
         self.outbox.push(events);
     }
 
-    fn on_line(&self, process: &ThreadProcess, line: &str) {
+    fn on_line(self: &Arc<Self>, process: &ThreadProcess, line: &str) {
         let decoded = process
             .stream
             .lock()
@@ -1037,7 +1348,7 @@ impl StructuredRuntime {
         self.on_decoded(process.generation, decoded);
     }
 
-    fn on_decoded(&self, generation: u64, mapped: Decoded) {
+    fn on_decoded(self: &Arc<Self>, generation: u64, mapped: Decoded) {
         let mut reported_mode = None;
         {
             // Held while emitting, so a Stop either drops this line or sees its delta.
@@ -1080,10 +1391,11 @@ impl StructuredRuntime {
         }
         if let Some(outcome) = mapped.turn_end {
             self.host.turn_ended(self.session, outcome);
+            self.start_after_turn(outcome);
         }
     }
 
-    fn line_skipped(&self, process: &ThreadProcess, bytes: usize) {
+    fn line_skipped(self: &Arc<Self>, process: &ThreadProcess, bytes: usize) {
         self.on_decoded(
             process.generation,
             Decoded {
@@ -1140,6 +1452,10 @@ impl StructuredRuntime {
         };
         events.push(ThreadEventKind::Notice { text });
         self.emit(events);
+        self.host.queue_hold(
+            self.session,
+            &format!("{provider} exited before this message was sent."),
+        );
         self.host.settle(self.session, TurnOutcome::Error);
     }
 }
@@ -1519,8 +1835,8 @@ mod tests {
     struct EchoStream;
 
     impl ProviderStream for EchoStream {
-        fn user_message(&mut self, text: &str) -> Result<String> {
-            Ok(text.to_string())
+        fn user_message(&mut self, message: &OutgoingMessage) -> Result<String> {
+            Ok(message.text.clone())
         }
 
         fn decode(&mut self, line: &str) -> Decoded {
@@ -1674,8 +1990,8 @@ mod tests {
             vec!["h".repeat(1024 * 1024)]
         }
 
-        fn user_message(&mut self, text: &str) -> Result<String> {
-            Ok(text.to_string())
+        fn user_message(&mut self, message: &OutgoingMessage) -> Result<String> {
+            Ok(message.text.clone())
         }
 
         fn decode(&mut self, _line: &str) -> Decoded {

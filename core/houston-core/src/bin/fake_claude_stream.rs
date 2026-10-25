@@ -14,16 +14,11 @@ fn main() {
     if let Some(at) = args.iter().position(|arg| arg == "--fake-sleeper") {
         sleeper(&args[at + 1]);
     }
-    if let Some(log) = std::env::var_os("HOUSTON_FAKE_CLAUDE_LOG") {
-        let record = json!({"pid": std::process::id(), "argv": &args[1..]});
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log)
-            .expect("opening the fake claude log");
-        // One write per record, so a test reading the log never sees half a line.
-        file.write_all(format!("{record}\n").as_bytes())
-            .expect("writing the fake claude log");
+    let log = std::env::var_os("HOUSTON_FAKE_CLAUDE_LOG").map(PathBuf::from);
+    // Every message read on stdin goes to `stdin.jsonl` beside the launch log.
+    let stdin_log = log.as_ref().map(|log| log.with_file_name("stdin.jsonl"));
+    if let Some(log) = &log {
+        append_record(log, json!({"pid": std::process::id(), "argv": &args[1..]}));
     }
     let conversation = args
         .windows(2)
@@ -40,12 +35,26 @@ fn main() {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        if let Some(log) = &stdin_log {
+            append_record(log, json!({"pid": std::process::id(), "text": &text}));
+        }
         if let Some(spec) = text.strip_prefix("ask:") {
             ask(spec, &args, &conversation);
             continue;
         }
         turn(&text, &conversation, fixtures.as_deref());
     }
+}
+
+/// One write per record, so a test reading the log never sees half a line.
+fn append_record(log: &std::path::Path, record: Value) {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .expect("opening a fake claude log");
+    file.write_all(format!("{record}\n").as_bytes())
+        .expect("writing a fake claude log");
 }
 
 fn emit(line: &str) {
@@ -98,12 +107,28 @@ fn turn(text: &str, conversation: &str, fixtures: Option<&std::path::Path>) {
             json!({"type":"assistant","message":{"id":"msg_slow","content":[{"type":"text","text":"slow"}]},"parent_tool_use_id":null}),
         );
         result(conversation);
+    } else if let Some(gate) = text.strip_prefix("gate:") {
+        // Holds the turn open until the test creates the gate file.
+        delta("msg_gate", "waiting");
+        while !std::path::Path::new(gate).exists() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        emit_value(
+            json!({"type":"assistant","message":{"id":"msg_gate","content":[{"type":"text","text":"gate opened"}]},"parent_tool_use_id":null}),
+        );
+        result(conversation);
     } else if let Some(mode) = text.strip_prefix("mode:") {
         emit_value(json!({"type":"system","subtype":"status","permissionMode":mode}));
         result(conversation);
     } else if text == "deaf" {
         delta("msg_deaf", "deaf");
         // Stops reading stdin for good, as a frozen Claude would.
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    } else if text == "mute" {
+        result(conversation);
+        // Ends its turn, then stops reading stdin, so the next message's write blocks.
         loop {
             std::thread::sleep(Duration::from_secs(1));
         }

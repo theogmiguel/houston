@@ -1179,15 +1179,11 @@ async fn within<T: Send + 'static>(
 async fn stop_and_kill_finish_while_a_message_write_is_blocked() {
     let mut rig = Rig::new().await;
     let id = rig.thread().await;
-    rig.say(id, "deaf").await;
-    rig.events_until(id, |e| {
-        matches!(e.kind, ThreadEventKind::AssistantDelta { .. })
-    })
-    .await;
+    rig.turn(id, "mute").await;
     // Larger than any pipe buffer: the write blocks because Claude no longer reads.
     let big = "y".repeat(200 * 1024);
     let daemon = Arc::clone(&rig.daemon);
-    let blocked = std::thread::spawn(move || daemon.thread_send(id, &big, &[]));
+    let blocked = std::thread::spawn(move || daemon.thread_send(id, &big, false, &[]));
     tokio::time::sleep(Duration::from_millis(300)).await;
     let daemon = Arc::clone(&rig.daemon);
     within("thread_stop", Duration::from_secs(10), move || {
@@ -1220,7 +1216,7 @@ async fn a_message_sent_during_stop_waits_for_the_old_process() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let daemon = Arc::clone(&rig.daemon);
     within("thread_send", Duration::from_secs(10), move || {
-        daemon.thread_send(id, "replay:warm", &[])
+        daemon.thread_send(id, "replay:warm", false, &[])
     })
     .await
     .unwrap();
@@ -1328,7 +1324,7 @@ async fn a_daemon_shutdown_mid_turn_is_recorded_and_restored() {
         .id;
     let pidfile = rig.scratch.path().join("sleeper.pid");
     first
-        .thread_send(id, &format!("hang:{}", pidfile.display()), &[])
+        .thread_send(id, &format!("hang:{}", pidfile.display()), false, &[])
         .unwrap();
     wait_until("the tool process to start", || pidfile.is_file()).await;
     // The fake streams its partial answer as it starts the tool process.
@@ -2146,4 +2142,494 @@ fn a_launch_record_still_being_written_is_left_for_the_next_read() {
     assert_eq!(records[0]["pid"], 1);
     std::fs::write(&log, "").unwrap();
     assert!(jsonl_records(&log).is_empty());
+}
+
+impl Rig {
+    /// Every message the fake read on stdin (logged beside its launch log), oldest first.
+    fn stdin_texts(&self) -> Vec<String> {
+        jsonl_records(&self.scratch.path().join("stdin.jsonl"))
+            .into_iter()
+            .filter_map(|record| record["text"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// A message whose turn stays open until the returned file exists.
+    fn gate(&self, name: &str) -> (String, PathBuf) {
+        let path = self.scratch.path().join(format!("gate-{name}"));
+        (format!("gate:{}", path.display()), path)
+    }
+
+    async fn queue_until(
+        &mut self,
+        session: u32,
+        done: impl Fn(&[proto::ThreadQueuedMessage]) -> bool,
+    ) -> Vec<proto::ThreadQueuedMessage> {
+        loop {
+            match next_control(&mut self.ws).await {
+                proto::ServerMsg::ThreadQueue { session: s, items } if s == session => {
+                    if done(&items) {
+                        return items;
+                    }
+                }
+                proto::ServerMsg::Error { message, .. } => panic!("unexpected error: {message}"),
+                _ => {}
+            }
+        }
+    }
+
+    /// Starts a turn that stays open, and waits until the fake has read it.
+    async fn gated_turn(&mut self, session: u32, name: &str) -> (String, PathBuf) {
+        let (text, open) = self.gate(name);
+        self.say(session, &text).await;
+        let expected = text.clone();
+        wait_until("the gated message to reach the fake", || {
+            self.stdin_texts().last() == Some(&expected)
+        })
+        .await;
+        (text, open)
+    }
+}
+
+/// User messages with their delivery and turn ends, in history order.
+fn turn_log(daemon: &Daemon, id: u32) -> Vec<String> {
+    history_of(daemon, id)
+        .into_iter()
+        .filter_map(|event| match event.kind {
+            ThreadEventKind::UserMessage { text, delivery, .. } => {
+                Some(format!("{text} ({delivery:?})"))
+            }
+            ThreadEventKind::TurnEnd { outcome, .. } => Some(format!("end {outcome:?}")),
+            _ => None,
+        })
+        .collect()
+}
+
+fn turn_ends(daemon: &Daemon, id: u32) -> usize {
+    turn_log(daemon, id)
+        .iter()
+        .filter(|line| line.starts_with("end "))
+        .count()
+}
+
+#[tokio::test]
+async fn messages_sent_during_a_turn_wait_and_go_once_each_in_order() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "second").await;
+    rig.say(id, "third").await;
+    let queued = rig.queue_until(id, |items| items.len() == 2).await;
+    assert_eq!(
+        queued
+            .iter()
+            .map(|item| (item.text.as_str(), item.state))
+            .collect::<Vec<_>>(),
+        [
+            ("second", proto::QueuedState::Queued),
+            ("third", proto::QueuedState::Queued)
+        ]
+    );
+    assert_eq!(
+        rig.stdin_texts(),
+        std::slice::from_ref(&gate),
+        "nothing is written while a turn is open"
+    );
+    std::fs::write(&open, b"").unwrap();
+    wait_until("both queued messages to be answered", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    assert_eq!(
+        rig.stdin_texts(),
+        [gate.clone(), "second".into(), "third".into()]
+    );
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Completed".into(),
+            "second (Queued)".into(),
+            "end Completed".into(),
+            "third (Queued)".into(),
+            "end Completed".into(),
+        ],
+        "each message has its own turn"
+    );
+    assert!(matches!(
+        rig.daemon.thread_queue_list(id).unwrap(),
+        proto::ServerMsg::ThreadQueue { items, .. } if items.is_empty()
+    ));
+}
+
+/// A message with an excerpt that waits in the queue reaches Claude composed exactly like a
+/// direct one, whether the drain sends it after the turn or a steer sends it first.
+#[tokio::test]
+async fn a_queued_message_keeps_its_excerpts_and_arrives_composed() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let excerpt = proto::ThreadExcerpt {
+        source: "build".into(),
+        session: Some(9),
+        text: "error[E0308]".into(),
+    };
+    let composed = |text: &str| {
+        format!("Terminal selection from pane \"build\":\n```\nerror[E0308]\n```\n\n{text}")
+    };
+    let (gate, open) = rig.gated_turn(id, "a").await;
+    rig.send(json!({"type":"thread_send","session":id,"text":"Why?","excerpts":[excerpt]}))
+        .await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    assert_eq!(
+        (queued[0].text.as_str(), &queued[0].excerpts[..]),
+        ("Why?", std::slice::from_ref(&excerpt)),
+        "the queue keeps the text and its excerpts apart"
+    );
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the queued message to be answered", || {
+        turn_ends(&rig.daemon, id) == 2
+    })
+    .await;
+
+    let (second_gate, _open) = rig.gated_turn(id, "b").await;
+    rig.send(json!({"type":"thread_send","session":id,"text":"And now?","excerpts":[excerpt]}))
+        .await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    rig.send(json!({"type":"thread_steer","session":id,"id":queued[0].id}))
+        .await;
+    wait_until("the steered message to be answered", || {
+        turn_ends(&rig.daemon, id) == 4
+    })
+    .await;
+    assert_eq!(
+        rig.stdin_texts(),
+        [gate, composed("Why?"), second_gate, composed("And now?")]
+    );
+    let stored: Vec<_> = history_of(&rig.daemon, id)
+        .into_iter()
+        .filter_map(|event| match event.kind {
+            ThreadEventKind::UserMessage {
+                text,
+                delivery,
+                excerpts,
+            } if !excerpts.is_empty() => Some((text, delivery, excerpts)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        stored,
+        [
+            (
+                "Why?".to_string(),
+                proto::MessageDelivery::Queued,
+                vec![excerpt.clone()]
+            ),
+            (
+                "And now?".to_string(),
+                proto::MessageDelivery::Steered,
+                vec![excerpt]
+            ),
+        ],
+        "the timeline keeps the parts, never the composed text"
+    );
+}
+
+#[tokio::test]
+async fn steering_a_queued_message_stops_the_turn_and_sends_it_first() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (gate, _open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "second").await;
+    rig.say(id, "third").await;
+    let queued = rig.queue_until(id, |items| items.len() == 2).await;
+    rig.send(json!({"type":"thread_steer","session":id,"id":queued[1].id}))
+        .await;
+    wait_until("the steered and the queued message to be answered", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Interrupted".into(),
+            "third (Steered)".into(),
+            "end Completed".into(),
+            "second (Queued)".into(),
+            "end Completed".into(),
+        ]
+    );
+    assert_eq!(rig.stdin_texts(), [gate, "third".into(), "second".into()]);
+}
+
+#[tokio::test]
+async fn a_steered_send_goes_before_the_queue_and_an_idle_one_goes_at_once() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (gate, _open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "queued").await;
+    rig.queue_until(id, |items| items.len() == 1).await;
+    rig.send(json!({"type":"thread_send","session":id,"text":"now","steer":true}))
+        .await;
+    wait_until("the steered message and the queue to be answered", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    rig.send(json!({"type":"thread_send","session":id,"text":"idle","steer":true}))
+        .await;
+    wait_until("the idle steer to be answered", || {
+        turn_ends(&rig.daemon, id) == 4
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Interrupted".into(),
+            "now (Steered)".into(),
+            "end Completed".into(),
+            "queued (Queued)".into(),
+            "end Completed".into(),
+            "idle (Direct)".into(),
+            "end Completed".into(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stop_holds_the_queue_until_the_user_sends_it() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (gate, _open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "later").await;
+    rig.queue_until(id, |items| items.len() == 1).await;
+    rig.send(json!({"type":"thread_stop","session":id})).await;
+    let held = rig
+        .queue_until(id, |items| {
+            items
+                .first()
+                .is_some_and(|item| item.state == proto::QueuedState::Held)
+        })
+        .await;
+    assert_eq!(
+        held[0].hold_reason.as_deref(),
+        Some("Stopped before this message was sent.")
+    );
+
+    rig.send(json!({"type":"session_set_view","session":id,"view":"terminal"}))
+        .await;
+    let (message, _) = rig.error().await;
+    assert!(
+        message.contains("1 queued messages wait in this thread; send or clear them first"),
+        "{message}"
+    );
+
+    rig.say(id, "fresh").await;
+    wait_until("the idle message to be answered", || {
+        turn_ends(&rig.daemon, id) == 2
+    })
+    .await;
+    assert_eq!(
+        rig.stdin_texts(),
+        [gate.clone(), "fresh".into()],
+        "a held message waits; an idle send goes past it"
+    );
+    rig.send(json!({"type":"thread_queue_send","session":id,"id":held[0].id}))
+        .await;
+    wait_until("the held message to be answered", || {
+        turn_ends(&rig.daemon, id) == 3
+    })
+    .await;
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Interrupted".into(),
+            "fresh (Direct)".into(),
+            "end Completed".into(),
+            "later (Queued)".into(),
+            "end Completed".into(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_queue_refuses_a_message_past_its_limit_by_name() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    rig.gated_turn(id, "a").await;
+    for n in 0..proto::THREAD_QUEUE_MAX_ITEMS {
+        rig.say(id, &format!("q{n}")).await;
+    }
+    rig.queue_until(id, |items| items.len() == proto::THREAD_QUEUE_MAX_ITEMS)
+        .await;
+    rig.say(id, "one too many").await;
+    let (message, context) = rig.error().await;
+    assert!(
+        message.starts_with(&format!("thread_send refused for session {id}"))
+            && message
+                .contains("the queue holds 16 messages, the limit (THREAD_QUEUE_MAX_ITEMS) is 16")
+            && message.contains("queue a message"),
+        "{message}"
+    );
+    assert_eq!(context, Some(format!("session:{id}")));
+    rig.daemon.close(id).unwrap();
+}
+
+#[tokio::test]
+async fn an_orchestration_prompt_waits_behind_the_users_queue() {
+    let mut rig = Rig::new().await;
+    let parent = rig.create("shell", "terminal").await.unwrap().id;
+    let child = rig.thread().await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    db.delegation_create(
+        parent,
+        child,
+        Some("worker"),
+        "task",
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.orchestration_set(true).unwrap();
+    let (gate, open) = rig.gated_turn(child, "a").await;
+    rig.say(child, "mine").await;
+    rig.queue_until(child, |items| items.len() == 1).await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || {
+        daemon.orchestrate_instruction_request(parent, child, "from the parent", None, None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(rig.stdin_texts(), std::slice::from_ref(&gate));
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the queue and then the prompt to be delivered", || {
+        rig.stdin_texts().len() == 3
+    })
+    .await;
+    let written = rig.stdin_texts();
+    assert_eq!(written[1], "mine", "{written:?}");
+    assert!(written[2].contains("from the parent"), "{written:?}");
+}
+
+/// A Claude lifecycle hook with no tool, as the CLI writes it.
+fn lifecycle_hook(rig: &Rig, event: &str, session: u32) {
+    let drop = houston_core::hook_drop::HookDrop {
+        v: houston_core::hook_drop::DROP_V,
+        event: event.to_string(),
+        session,
+        ..Default::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(rig._state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+}
+
+#[tokio::test]
+async fn a_late_stop_hook_leaves_the_next_queued_turn_working() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_, open_a) = rig.gated_turn(id, "a").await;
+    lifecycle_hook(&rig, "UserPromptSubmit", id);
+    let status = |rig: &Rig| rig.daemon.session_status(id).ok().flatten();
+    wait_until("the prompt hook to report working", || {
+        status(&rig) == Some(proto::AgentStatus::Working)
+    })
+    .await;
+    let (gate_b, open_b) = rig.gate("b");
+    rig.say(id, &gate_b).await;
+    rig.queue_until(id, |items| items.len() == 1).await;
+    std::fs::write(&open_a, b"").unwrap();
+    wait_until("the queued turn to start", || {
+        rig.stdin_texts().last() == Some(&gate_b)
+    })
+    .await;
+    lifecycle_hook(&rig, "Stop", id);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        status(&rig),
+        Some(proto::AgentStatus::Working),
+        "turn A's Stop hook must not report the running queued turn idle"
+    );
+    std::fs::write(&open_b, b"").unwrap();
+    wait_until("the queued turn's end to apply the deferred hook", || {
+        status(&rig) == Some(proto::AgentStatus::Idle)
+    })
+    .await;
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_steer_after_the_turn_ended_sends_once_as_queued() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let barrier = TestBarrier::arm("thread-queue-drain");
+    let (gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "next").await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    std::fs::write(&open, b"").unwrap();
+    barrier.reached(id).await;
+    rig.send(json!({"type":"thread_steer","session":id,"id":queued[0].id}))
+        .await;
+    wait_until("the steered message to be written", || {
+        rig.stdin_texts().len() == 2
+    })
+    .await;
+    barrier.release();
+    wait_until("both turns to end", || turn_ends(&rig.daemon, id) == 2).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(rig.stdin_texts(), [gate.clone(), "next".into()]);
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Completed".into(),
+            "next (Queued)".into(),
+            "end Completed".into(),
+        ],
+        "a turn that already ended is not stopped"
+    );
+}
+
+#[cfg(feature = "test-barriers")]
+#[tokio::test]
+async fn a_steer_racing_the_drain_sends_the_message_once() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let barrier = TestBarrier::arm("thread-steer");
+    let (gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "next").await;
+    let queued = rig.queue_until(id, |items| items.len() == 1).await;
+    let daemon = Arc::clone(&rig.daemon);
+    let message = queued[0].id.clone();
+    let steer = std::thread::spawn(move || daemon.thread_steer(id, &message));
+    barrier.reached(id).await;
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the drain to send the queued message", || {
+        rig.stdin_texts().len() == 2
+    })
+    .await;
+    barrier.release();
+    let refused = within("thread_steer", Duration::from_secs(10), move || {
+        steer.join().unwrap()
+    })
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(refused.contains("is not in its queue"), "{refused}");
+    wait_until("both turns to end", || turn_ends(&rig.daemon, id) == 2).await;
+    assert_eq!(rig.stdin_texts(), [gate.clone(), "next".into()]);
+    assert_eq!(
+        turn_log(&rig.daemon, id),
+        [
+            format!("{gate} (Direct)"),
+            "end Completed".into(),
+            "next (Queued)".into(),
+            "end Completed".into(),
+        ]
+    );
 }

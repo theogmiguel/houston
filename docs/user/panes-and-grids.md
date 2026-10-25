@@ -85,7 +85,8 @@ same action. Stop ends Claude and the tools it started. The answer it was writin
 in the thread, marked "Stopped · Claude will not remember this partial answer": the next
 message resumes the conversation without it. After Stop, a failed turn, Claude exiting or
 a Houston restart, queued messages are held instead of sent: the strip says why, and each
-waits until you choose **Send** on it. The pane menu's text size and Handoff actions apply
+waits until you choose **Send** on it. A new message you send while Claude is idle still
+goes at once; held messages stay where they are. The pane menu's text size and Handoff actions apply
 to terminal panes only.
 
 Type **/** at the start of a message to pick a command. Skills, and the Claude commands
@@ -145,9 +146,10 @@ thread keeps its history. If the conversation cannot be resumed (for example, it
 directory changed, or Houston never received its resume handle), the session starts
 fresh in the new view and the pane says why. Switching is refused while Claude's status
 is Working, Starting or Needs input, while a thread turn is still open or an approval card
-waits for an answer, while the session is sleeping or not running, and while it has live
-child panes. A child pane, one another agent started, cannot open as a thread: its parent
-could not see the thread's questions or permission requests, so it stays a terminal.
+waits for an answer, while the session is sleeping or not running, while it has live
+child panes, and while messages wait in a thread's queue (send or clear them first). A
+child pane, one another agent started, cannot open as a thread: its parent could not see
+the thread's questions or permission requests, so it stays a terminal.
 Messages and keystrokes sent to the pane during the switch are refused rather than lost
 to the restart.
 

@@ -148,6 +148,14 @@ impl Daemon {
             );
         }
         if let Some(handle) = session.thread() {
+            // A terminal view shows no queue, so its messages would wait unseen.
+            let waiting = self.db.thread_queue(id)?.len();
+            if waiting > 0 {
+                bail!(
+                    "{verb} refused for session {id}: {waiting} queued messages wait in this \
+                     thread; send or clear them first"
+                );
+            }
             if handle.has_pending_approvals() {
                 bail!(
                     "{verb} refused for session {id}: Claude is waiting for an answer to a \

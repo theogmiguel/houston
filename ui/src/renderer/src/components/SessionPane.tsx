@@ -26,6 +26,7 @@ import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
 import { preloadable } from '../preloadable'
 import { THREAD_HISTORY_REFUSAL } from '../thread/threadTypes'
+import { useThreadQueueLength } from '../thread/queueLength'
 import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
@@ -540,9 +541,10 @@ function ViewSwitchRow({ info, client, menuItem }: {
   client: HoustonClient
   menuItem: PaneContextMenuController['menuItem']
 }): React.JSX.Element | null {
+  const queued = useThreadQueueLength(client, info.id)
   if (info.agent !== 'claude' || info.acp != null) return null
   const target = info.view === 'thread' ? 'terminal' : 'thread'
-  const reason = viewSwitchRefusal(info)
+  const reason = viewSwitchRefusal(info, queued)
   return (
     <CtxRow
       glyph={target === 'thread' ? IconMessageSquare : IconSquareTerminal}

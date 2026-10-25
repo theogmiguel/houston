@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
+import { publishQueueLength } from './queueLength'
 import { buildThreadItems, type ThreadItem } from './threadModel'
 import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type ThreadClientMsg, type ThreadCommands, type ThreadCommandsMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadExcerpt, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueueMsg, type ThreadQueuedMessage } from './threadTypes'
 
@@ -226,7 +227,10 @@ function registryFor(client: HoustonClient): Registry {
   // Routed once per client by session, so N thread panes cost one handler per message.
   const offEvents = client.subscribe('thread_events', (msg) => stores.get(msg.session)?.store.onEvents(msg))
   const offHistory = client.subscribe('thread_history', (msg) => stores.get(msg.session)?.store.onHistory(msg))
-  const offQueue = client.subscribe('thread_queue', (msg) => stores.get(msg.session)?.store.onQueue(msg))
+  const offQueue = client.subscribe('thread_queue', (msg) => {
+    publishQueueLength(client, msg.session, msg.items.length)
+    stores.get(msg.session)?.store.onQueue(msg)
+  })
   const offCommands = client.subscribe('thread_commands', (msg) => stores.get(msg.session)?.store.onCommands(msg))
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)

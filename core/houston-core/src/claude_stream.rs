@@ -2,8 +2,8 @@
 //! stdout. The generic half (process tree, turns, coalescing) is `thread_session.rs`.
 
 use crate::thread_session::{
-    cap_text, Conversation, Decoded, ProcessSpec, ProviderAdapter, ProviderStream,
-    ThreadCommandList, PERMISSION_TOOL,
+    cap_text, compose_message, Conversation, Decoded, OutgoingMessage, ProcessSpec,
+    ProviderAdapter, ProviderStream, ThreadCommandList, PERMISSION_TOOL,
 };
 use anyhow::{anyhow, bail, Result};
 use houston_protocol::{
@@ -269,10 +269,10 @@ pub struct StreamMapper {
 }
 
 impl ProviderStream for StreamMapper {
-    fn user_message(&mut self, text: &str) -> Result<String> {
+    fn user_message(&mut self, message: &OutgoingMessage) -> Result<String> {
         Ok(serde_json::json!({
             "type": "user",
-            "message": {"role": "user", "content": text},
+            "message": {"role": "user", "content": compose_message(&message.text, &message.excerpts)},
         })
         .to_string())
     }
