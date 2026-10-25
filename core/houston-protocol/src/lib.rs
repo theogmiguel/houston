@@ -5139,6 +5139,11 @@ pub enum ClientMsg {
     HostInfoGet,
     /// Checkpoints the WAL and runs VACUUM on the channel database. Never automatic.
     StorageReclaim,
+    /// Writes a redacted diagnostics file under the state directory for a bug report.
+    /// `app_version` is the renderer's version, recorded beside the daemon's.
+    DiagnosticsCollect {
+        app_version: String,
+    },
     RestoreBudgetSet {
         budget: u32,
     },
@@ -6178,6 +6183,17 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
+    },
+    /// Reply to `diagnostics_collect`: the file written, or why none was.
+    DiagnosticsCollected {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        path: Option<String>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        error: Option<String>,
     },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,

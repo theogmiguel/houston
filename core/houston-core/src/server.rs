@@ -1969,6 +1969,18 @@ async fn dispatch(
             let _ = send_msg(sink, &daemon.host_info()).await;
             Ok(())
         }
+        proto::ClientMsg::DiagnosticsCollect { app_version } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.collect_diagnostics(&app_version))
+                .await
+                .unwrap_or_else(|e| proto::ServerMsg::DiagnosticsCollected {
+                    path: None,
+                    bytes: 0,
+                    error: Some(format!("diagnostics collection panicked: {e}")),
+                });
+            let _ = send_msg(sink, &reply).await;
+            Ok(())
+        }
         proto::ClientMsg::StorageReclaim => {
             let d = Arc::clone(daemon);
             let reply = tokio::task::spawn_blocking(move || d.reclaim_storage())

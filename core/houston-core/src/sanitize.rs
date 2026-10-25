@@ -169,6 +169,13 @@ pub fn redact_review_secrets(input: &str) -> (String, bool) {
     (text, redacted)
 }
 
+/// A diagnostics file leaves the machine with a bug report, so it takes every
+/// secret shape the other surfaces know plus the entropy pass.
+pub fn redact_diagnostics(input: &str) -> String {
+    let (text, _) = redact_review_secrets(input);
+    redact_secrets(&text).0
+}
+
 const ENTROPY_MIN_LEN: usize = 32;
 const ENTROPY_MIN_BITS: f64 = 3.5;
 

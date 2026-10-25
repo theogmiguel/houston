@@ -17770,6 +17770,78 @@ impl Daemon {
             })
     }
 
+    /// Blocking: reads the log tail and writes the file. Callers run it off the connection loop.
+    pub fn collect_diagnostics(&self, app_version: &str) -> proto::ServerMsg {
+        let generated = ::time::OffsetDateTime::now_utc();
+        let sessions = self.list();
+        let hooks = self.agent_hooks_state();
+        let log_lines = crate::diagnostics::read_log_tail(
+            &self.state_dir.join("logs"),
+            crate::diagnostics::FILE_MAX_BYTES as u64,
+        );
+        let workspaces: Vec<String> = self
+            .workspace_list()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing workspaces: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let worktrees: Vec<String> = self
+            .db
+            .managed_worktrees()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing managed worktrees: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let env = self.env();
+        let mut homes: Vec<PathBuf> = ["HOME", "USERPROFILE"]
+            .iter()
+            .filter_map(|name| env.var_os(name).filter(|v| !v.is_empty()))
+            .map(PathBuf::from)
+            .chain(env.home_dir())
+            .collect();
+        let canonical: Vec<PathBuf> = homes
+            .iter()
+            .filter_map(|h| std::fs::canonicalize(h).ok())
+            .collect();
+        homes.extend(canonical);
+        let text = crate::diagnostics::compose(&crate::diagnostics::Inputs {
+            generated,
+            app_version,
+            daemon_version: env!("CARGO_PKG_VERSION"),
+            build_commit: build_commit(),
+            channel: self.channel().unwrap_or("release"),
+            uptime: self.started.elapsed(),
+            sessions: &sessions,
+            hooks: &hooks,
+            log_lines: &log_lines,
+            workspaces: &workspaces,
+            worktrees: &worktrees,
+            homes: &homes,
+        });
+        let dir = self.state_dir.join("diagnostics");
+        match crate::diagnostics::write(&dir, generated, &text) {
+            Ok(path) => {
+                tracing::info!(
+                    "diagnostics: wrote {} ({} bytes)",
+                    path.display(),
+                    text.len()
+                );
+                proto::ServerMsg::DiagnosticsCollected {
+                    path: Some(path.display().to_string()),
+                    bytes: text.len() as u64,
+                    error: None,
+                }
+            }
+            Err(e) => proto::ServerMsg::DiagnosticsCollected {
+                path: None,
+                bytes: 0,
+                error: Some(format!("{e:#}")),
+            },
+        }
+    }
+
     /// Blocking: runs VACUUM on the session database. Callers run it off the connection loop.
     pub fn reclaim_storage(&self) -> proto::ServerMsg {
         let before_bytes = crate::storage::db_footprint(&self.db_path);
