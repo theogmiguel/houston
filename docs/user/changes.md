@@ -224,8 +224,9 @@ Houston's gates and verification always run first. Then:
 - **GitHub's merge queue** on the base branch: Houston adds the verified pull request to
   GitHub's merge queue instead of merging it. Nothing is pushed for it, because GitHub's merge
   group tests the real merge; only a restacked branch is pushed first.
-- **Auto-merge** allowed with required checks on the base: Houston pushes the verified commit
-  and turns auto-merge on for exactly that commit, with the repository's merge method.
+- **Auto-merge** allowed with required checks on the base, whether classic branch
+  protection or a ruleset requires them: Houston pushes the verified commit and turns
+  auto-merge on for exactly that commit, with the repository's merge method.
 
 The queue view's policy line names the path, such as **Hands off to GitHub's merge queue**.
 While GitHub holds the pull request it shows **Watching**, keeps its place, and its detail
@@ -234,9 +235,12 @@ base moved and logs the merge, as for its own merges. When GitHub removes it fro
 queue, turns auto-merge off or a check fails, the entry fails with GitHub's reason. **Dequeue**
 and **Pause** take the pull request back from GitHub first; a paused entry loses its place in
 GitHub's merge queue and is added again when you resume. Houston learns which path applies
-from the pull request reads it already makes. If GitHub hides that from your account, Houston
-merges itself; if GitHub then refuses because the branch requires its merge queue, the entry
-fails with GitHub's message and later landings use the merge queue.
+from the pull request reads it already makes. Checks a ruleset requires count like classic
+required checks: Houston reads the base branch's rules through `gh` (`api.github.com`, or your
+GitHub Enterprise host) once per base branch, read-only. If they cannot be read, Houston keeps
+merging itself. If GitHub hides the path from your account, Houston also merges itself; if
+GitHub then refuses because the branch requires its merge queue, the entry fails with GitHub's
+message and later landings use the merge queue.
 
 **Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
 the command palette, stops pushes and merges at once; entries keep their place and any
