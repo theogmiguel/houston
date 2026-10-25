@@ -620,15 +620,25 @@ so a watch and a queue entry of one pull request cost one read; the queue polls 
 else. A paused read leaves an entry's last answer in place. The gates are computed when a
 snapshot is built, from the stored read and the task backlog, so a task run change
 rebroadcasts the queue of its workspace without calling `gh`. An entry with no read, or whose
-read failed, is Blocked: the gates fail closed. Merging the head re-reads it on a fresh tick,
+read failed, is Blocked: the gates fail closed. Merging an entry re-reads it on a fresh tick,
 refuses a moved head or a failed gate, then calls the SHA-pinned `pr_merge`, or
 `pr_stack_merge` when the stacks preview reports a native stack; that preview read is the one
 merge-time call outside the shared reader.
 
 `merge_queue_loop` advances each queue, woken by every queue change and otherwise once a
-minute (`daemon/merge_queue_runner.rs`). Only the first entry in line moves: parked and fixing
-entries, and entries held behind one, are out of line, so a failure never stalls the queue.
-The constraints:
+minute (`daemon/merge_queue_runner.rs`). Only the entry that goes next moves, and the user's
+Merge accepts only that entry: the first ranked entry that is not blocked
+(`merge_queue::next_up`). Parked and fixing entries, and entries held behind one, are out of
+line. A blocked entry keeps its rank and is passed over, so an unresolved review thread, a
+review decision, a failing check, a draft or a branch-protection refusal never stalls the
+entries behind it; once it clears it goes first again. A dependent of a blocked entry is
+blocked with that reason and never goes before it. A block Houston has no answer for yet
+holds the line instead: no read yet, a failed read (of the pull request, its review threads
+or the task backlog), checks still running, or GitHub still computing whether it can merge.
+Such a block may clear on the next read. Running checks are also what a pushed verified
+commit waits for: passing them would let each later merge discard that verification. The
+entries behind a hold are Blocked with "the queue waits for #N" and the holder's reason, so
+the renderer finds the next entry by the same rule without a wire field. The constraints:
 
 - **One slot.** One verification runs at a time across every workspace of the daemon,
   because a test suite run in parallel with another starves both. Passes take workspaces in
@@ -646,7 +656,14 @@ The constraints:
   leftover is removed before the next run. The command runs through `sh -c` or `cmd /c` under
   `spawn::tail_within`: the process group or job ends at the time limit, priority is lowered,
   and only a 64 KiB tail of the output is kept; a failure reports its last 40 lines with
-  colour and secrets removed. The queue never parses that output for progress.
+  colour and secrets removed. The queue never parses that output for progress. The rebase
+  commits as the configured git identity or, where git config names none, as the head
+  commit's author, passed with `-c`; no git config is written.
+- **Base refusals wait for the rebase.** With a verification command set, GitHub reporting
+  that the head conflicts with or is behind its base, as the only refusal, leaves the
+  mergeable gate pending instead of blocking: the verification's rebase decides, and a real
+  conflict takes the failure path. After a clean push the landing waits until a read of the
+  pushed commit stops reporting it. Without a command the refusal blocks.
 - **The push guard** refuses, by name, a push to the pull request's base, to the
   repository's default branch, to a branch outside `houston/*`, and to a `houston/*` branch
   with no `managed_worktrees` row in the workspace's repository. A push is
@@ -701,7 +718,7 @@ The constraints:
   restack is pushed first), and an auto-merge repository gets the verified commit
   lease-pushed and `gh pr merge --auto --match-head-commit`. One fresh read must then show
   the request against that commit, or the hand-off is taken back and the entry fails. While
-  GitHub holds the head (`github_json`) the entry is Watching and stays first in line.
+  GitHub holds the head (`github_json`) the entry is Watching and keeps its place in line.
   GitHub merging it runs the after-merge steps above; GitHub removing it, turning its
   auto-merge off or failing a check on it takes the failure path with GitHub's reason. A
   new head takes the hand-off back in the PR watch read pass that first reports it, not on
@@ -738,9 +755,12 @@ File stdin is passed directly to the child, with no copier thread. OS spawn and
 termination scheduling are outside the wall-clock guarantee. Other platforms,
 including macOS, explicitly refuse bounded capture before spawning until equivalent
 process ownership is available.
-The conflict prediction loop has no setting because it is local, bounded and read-only
-apart from unreferenced merge objects, and it is idle until a managed worktree has a
-creating session. Only sessions with a live inbox recipient are compared or notified;
+The conflict prediction loop has no setting because it is local, bounded and read-only,
+and it is idle until a managed worktree has a creating session. Each `git merge-tree` run
+writes its throwaway objects to a per-call quarantine under the state dir's `merge-tree/`
+(`GIT_OBJECT_DIRECTORY`, with the repository's store as its alternate), deleted when the
+run ends; a pass removes quarantines a crash left behind once they are ten minutes old.
+Only sessions with a live inbox recipient are compared or notified;
 otherwise a closed orchestrator's notes would reach the workspace operator queue each time
 its abandoned branches fall behind. Siblings are compared only while active (the creating
 pane is live, or a live session runs in the worktree), and a worktree whose head is already
@@ -750,7 +770,8 @@ only, is cached per (head, base head) and is bounded by `MAX_INTEGRATION_CHECKS_
 A merge whose lines the base has since edited again still reads as open. `MAX_RUNS_PER_TICK`
 caps `git merge-tree` runs, and an unchanged pair of heads is never re-run.
 `predicted_conflicts` keeps a conflict to one note until the pair merges clean. A tick's new
-sibling conflicts reach each recipient as one note per branch, listing its partners. Merge-tree needs Git 2.38: an older or missing Git is
+sibling conflicts reach each recipient as one note per branch, listing its partners.
+Merge-tree needs Git 2.38: an older or missing Git is
 refused by name, once per creating session. Only committed heads are compared, so
 uncommitted work is invisible to it.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then

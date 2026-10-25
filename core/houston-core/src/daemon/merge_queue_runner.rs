@@ -176,17 +176,23 @@ impl Daemon {
             .unwrap_or_else(|| unreachable!("merge_queue_context always reads the settings"));
         let (rows, reviews) = self.merge_queue_rows(workspace)?;
         let entries = mq::line(&rows, &reviews, &ctx);
-        let Some(index) = entries.iter().position(|e| e.position == 1) else {
-            return Ok(false);
-        };
-        let row = &rows[index];
-        if let Some(failed) =
-            checks_failed_on_pushed(row).filter(|_| mq::github_holds(row).is_none())
-        {
+        // A pushed head GitHub's checks failed on is blocked, so it may no longer be next.
+        if let Some((row, failed)) = rows.iter().zip(&entries).find_map(|(row, entry)| {
+            (entry.position > 0 && mq::github_holds(row).is_none())
+                .then(|| checks_failed_on_pushed(row))
+                .flatten()
+                .map(|failed| (row, failed))
+        }) {
             self.merge_queue_fail(workspace, row, failed, true)?;
             return Ok(true);
         }
-        match entries[index].status {
+        let Some(next) = mq::next_up(&entries) else {
+            return Ok(false);
+        };
+        let Some(row) = rows.iter().find(|r| r.number == next.number) else {
+            return Ok(false);
+        };
+        match next.status {
             proto::MergeQueueStatus::WaitingForSlot => {
                 self.merge_queue_verify_head(workspace, row, &settings)
             }
@@ -658,21 +664,41 @@ impl Daemon {
         if let Some(refusal) = ctx.refusal.as_ref().filter(|_| command_set) {
             bail!("{refusal}");
         }
-        let (rows, reviews) = self.merge_queue_rows(workspace)?;
-        let entries = mq::line(&rows, &reviews, &ctx);
-        let Some(index) = rows.iter().position(|r| r.number == number) else {
-            bail!("PR #{number} is not in the merge queue of {workspace}");
+        let (mut rows, mut reviews) = self.merge_queue_rows(workspace)?;
+        let mut entries = mq::line(&rows, &reviews, &ctx);
+        let find = |rows: &[QueueRow]| {
+            rows.iter()
+                .position(|r| r.number == number)
+                .ok_or_else(|| anyhow!("PR #{number} is not in the merge queue of {workspace}"))
         };
-        if entries[index].position != 1 {
-            let place = match entries[index].position {
-                0 => "out of line".to_string(),
-                n => format!("number {n}"),
+        let mut index = find(&rows)?;
+        // The user's Merge of an entry ahead of the next one reads it again: it may have cleared.
+        let ahead = entries[index].position > 0
+            && mq::next_up(&entries).is_none_or(|n| entries[index].position < n.position);
+        if ahead && !unattended {
+            if let Read::Done(outcome) = self.merge_queue_read_fresh(root, &repository, number) {
+                if self.merge_queue_apply_read(rows[index].clone(), *outcome)? {
+                    self.broadcast_merge_queue(workspace);
+                }
+                (rows, reviews) = self.merge_queue_rows(workspace)?;
+                entries = mq::line(&rows, &reviews, &ctx);
+                index = find(&rows)?;
+            }
+        }
+        let next = mq::next_up(&entries);
+        if next.map(|e| e.number) != Some(number) {
+            let entry = &entries[index];
+            let why = entry.reason.as_deref().unwrap_or("no reason recorded");
+            let place = match (entry.position, entry.status) {
+                (0, _) => format!("out of line: {why}"),
+                (_, proto::MergeQueueStatus::Blocked) => format!("blocked: {why}"),
+                (n, _) => format!("number {n} in line"),
             };
-            let head = entries
-                .iter()
-                .find(|e| e.position == 1)
-                .map_or_else(|| "no entry".to_string(), |e| format!("#{}", e.number));
-            bail!("only the head of the merge queue can be merged from it: {head} is first and PR #{number} is {place}; dequeue #{number} to merge it on its own");
+            let next = next.map_or_else(
+                || "no entry goes next".to_string(),
+                |e| format!("#{} goes next", e.number),
+            );
+            bail!("only the entry that goes next can be merged from the merge queue: {next} and PR #{number} is {place}; dequeue #{number} to merge it on its own");
         }
         let row = rows[index].clone();
         let gh = crate::gh::state(root);
@@ -849,6 +875,17 @@ impl Daemon {
             if let Some(moved) = self.merge_queue_base_holds(workspace, row, v, &remote)? {
                 return Ok(Landing::Waiting(moved));
             }
+        }
+        // The base held, so this is GitHub's answer for the commit before the rebase.
+        if let Some(stale) = row
+            .facts
+            .as_ref()
+            .filter(|f| f.base_only)
+            .and_then(|f| f.merge_disabled_reason.clone())
+        {
+            return Ok(Landing::Waiting(format!(
+                "{stale}; it merges once GitHub recomputes against the verified commit"
+            )));
         }
         if let Some(paused) = self.merge_queue_paused(workspace)? {
             bail!("{paused}; PR #{number} was not merged");

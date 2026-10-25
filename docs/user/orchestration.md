@@ -200,7 +200,9 @@ in each brief.
 From an agent pane, ask the agent to watch an open GitHub pull request. The agent calls
 `pane_pr_watch` with a pull request number or URL, then ends its turn. Houston checks the pull
 request once a minute and wakes that pane when a check fails, all reported checks pass, a new
-review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
+review or comment arrives, or the branch becomes conflicted with its base. When no check has
+reported fifteen minutes after the watch started or the head last moved, Houston wakes the pane
+once to say checks may not be configured. A watch stops when the
 pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
 Panes watching the same pull request share one read per check. When GitHub reports a rate
 limit, Houston pauses every pull request watch until GitHub's reset time instead of counting a
@@ -216,7 +218,7 @@ workspace's merge queue, optionally behind another queued pull request. The repl
 entry's place and its one blocking reason, if any. `pane_pr_dequeue{pr}` (`hs-pane pr-dequeue`)
 removes it. When the agent's branch is built on another queued pull request's branch, it
 names that one in `depends_on`: Houston restacks the branch onto the base after the other one
-merges. You merge the queue head from the Pull requests page, or Houston merges it once it
+merges. You merge the entry that goes next from the Pull requests page, or Houston merges it once it
 is verified if the workspace's policy allows; see [Merge queue](changes.md#merge-queue). When
 the queue cannot verify or merge the pull request, the pane that enqueued it gets one message
 with the conflicting files or the failing output: fix the branch and push, and the new head
