@@ -363,8 +363,13 @@ or stops a session for recovery, and one left by a daemon that crashed, are reco
 withdrawn. Claude ends a tool call after 60 s without progress, so the held call carries
 MCP progress notifications. At most `APPROVALS_PENDING_MAX` (16) requests are held per
 session, and the card shows up to 64 KiB of the input and says how much it hides.
-AskUserQuestion is answered at once with a deny asking Claude to ask in its reply, because
-the card cannot collect answers.
+AskUserQuestion reaches the same tool and is held the same way, recorded as a
+`question_request`. Houston checks the input first; a malformed one is denied at once,
+asking Claude to ask in its reply. Answers are checked against the held question (labels
+among its options, one answer for a single-choice question, typed text capped) and returned
+as `updatedInput`: Claude's input plus `answers`, question text to the answer text. A skip
+is a deny. The answers are stored in `question_resolved`, never in daemon memory, and
+`thread_approve` refuses a question so that only `thread_answer` can supply them.
 
 Claude's own `PermissionRequest` hook (and a `Notification` of type `permission_prompt`)
 also fires in headless mode, after the prompt tool is called. For a thread it is

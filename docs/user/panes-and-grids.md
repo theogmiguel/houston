@@ -110,15 +110,23 @@ request nobody answered; if Houston itself restarts, the card shows it was not a
 Houston answers these requests only in threads; in a terminal pane Claude asks in its own
 prompt.
 
-A thread cannot show multiple-choice questions yet. When Claude wants to ask one, Houston
-tells it to ask in its reply instead, and you answer in the message box.
+When Claude asks a multiple-choice question, the question appears above the message box
+with one page per question. Choose an option with a click or its number key, or choose
+**Type it your own** to write an answer; some questions take several options. **Submit**
+sends every answer to Claude, and **Skip** tells Claude you skipped the question. The
+timeline keeps each question with your answer. Stopping or closing the thread before you
+answer leaves the question unanswered.
+
+When Claude finishes a plan in **Plan only**, the thread shows it as a plan card. Choose
+**Implement** to let Claude start, or **Keep planning** to send what you wrote in the
+message box as your feedback; Claude keeps planning with it.
 
 The **Permissions** menu above the timeline shows how the thread asks: **Ask before
 tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
 **Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
 conversation with the new mode and keeps it across Restart. The menu is unavailable while
 a turn runs or Claude waits for an answer. When Claude changes its own mode, for example
-by leaving **Plan only** after you allow its plan, the menu shows the new mode.
+by leaving **Plan only** after you choose **Implement**, the menu shows the new mode.
 
 ### Moving a conversation between views
 
