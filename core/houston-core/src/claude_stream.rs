@@ -142,6 +142,10 @@ impl ProviderAdapter for ClaudeStreamJson {
         AgentKind::Claude
     }
 
+    fn display_name(&self) -> &'static str {
+        "Claude"
+    }
+
     fn command(
         &self,
         conversation: Option<&Conversation>,

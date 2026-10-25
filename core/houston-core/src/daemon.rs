@@ -5052,6 +5052,8 @@ impl Daemon {
             thread.withdraw_for_restart();
             thread.note_close_cause(if self.is_shutting_down() {
                 "the daemon was shutting down; it resumes the conversation on restart"
+            } else if self.is_handing_off() {
+                "the daemon was handed over to a new generation, which resumes the conversation"
             } else {
                 "the session was restarted"
             });
@@ -5184,14 +5186,19 @@ impl Daemon {
         self: &Arc<Self>,
         candidate_bin: Option<&str>,
     ) -> proto::ManageDaemonHandoffResult {
-        match self.begin_handoff_inner(candidate_bin) {
+        let mut closed_threads = Vec::new();
+        match self.begin_handoff_inner(candidate_bin, &mut closed_threads) {
             Ok(ok) => ok,
-            Err(reason) => proto::ManageDaemonHandoffResult {
-                accepted: false,
-                reason: Some(reason),
-                generation: None,
-                sessions_transferred: None,
-            },
+            Err(reason) => {
+                // Once the claim is released: spawning is refused while a handoff runs.
+                self.restore_handed_over_threads(&closed_threads);
+                proto::ManageDaemonHandoffResult {
+                    accepted: false,
+                    reason: Some(reason),
+                    generation: None,
+                    sessions_transferred: None,
+                }
+            }
         }
     }
 
@@ -5214,6 +5221,7 @@ impl Daemon {
     fn begin_handoff_inner(
         self: &Arc<Self>,
         candidate_bin: Option<&str>,
+        closed_threads: &mut Vec<u32>,
     ) -> Result<proto::ManageDaemonHandoffResult, String> {
         use std::os::fd::AsRawFd;
         use std::os::unix::net::{UnixListener, UnixStream};
@@ -5374,12 +5382,43 @@ impl Daemon {
         }
         std::thread::sleep(Duration::from_millis(adoption::HANDOFF_MCP_DRAIN_MS));
 
+        // A thread has no descriptor to transfer: it ends as at shutdown, and the new
+        // generation resumes its conversation from the database.
+        let live_threads: Vec<u32> = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            sessions
+                .iter()
+                .filter(|(_, s)| {
+                    s.thread().is_some() && s.state.lock().expect("state lock").is_live()
+                })
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        for id in &live_threads {
+            if let Err(error) = self.stop_session_for_recovery(*id) {
+                return Err(refuse(
+                    &mut sock,
+                    format!("closing thread session {id} for the handoff: {error:#}"),
+                ));
+            }
+            closed_threads.push(*id);
+        }
+        let step_timeout_ms = step_timeout.as_millis();
+        let unclosed = self.wait_for_sessions_to_end(&live_threads, step_timeout);
+        if !unclosed.is_empty() {
+            return Err(refuse(
+                &mut sock,
+                format!("thread session(s) {unclosed:?} did not end within {step_timeout_ms}ms"),
+            ));
+        }
+
         let live_ids: Vec<u32> = {
             let sessions = self.sessions.lock().expect("sessions lock");
             sessions
                 .iter()
                 .filter(|(_, s)| {
                     s.state.lock().expect("state lock").is_live()
+                        && s.thread().is_none()
                         && !matches!(s.pty_backend(), Some(PtyBackend::Ssh(_)))
                 })
                 .map(|(id, _)| *id)
@@ -5445,7 +5484,7 @@ impl Daemon {
             }
         };
 
-        let manifest = match self.build_handoff_manifest(generation, &live_ids) {
+        let manifest = match self.build_handoff_manifest(generation, &live_ids, closed_threads) {
             Ok(m) => m,
             Err(reason) => {
                 self.resume_sessions(&parked);
@@ -5738,6 +5777,7 @@ impl Daemon {
         &self,
         generation: u64,
         ids: &[u32],
+        threads: &[u32],
     ) -> Result<adoption::Manifest, String> {
         let fd_count = ids.len() + 2;
         if fd_count > adoption::FD_CAP {
@@ -5850,6 +5890,7 @@ impl Daemon {
             generation,
             token: self.token.clone(),
             sessions: out,
+            threads: threads.to_vec(),
         };
         let byte_len = manifest
             .wire_byte_len()
