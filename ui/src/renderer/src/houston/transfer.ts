@@ -33,21 +33,20 @@ function request<T>(
 ): Promise<TransferReply<T>> {
   const id = nextRequest++
   return new Promise((resolve) => {
-    const previousOnClose = client.onClose
-    let unsubscribe = () => {}
+    let unsubscribeMessages = () => {}
+    let unsubscribeClose = () => {}
     let settled = false
     const settle = (reply: TransferReply<T>): void => {
       if (settled) return
       settled = true
-      unsubscribe()
-      if (client.onClose === onClose) client.onClose = previousOnClose
+      unsubscribeMessages()
+      unsubscribeClose()
       resolve(reply)
     }
     const onClose = (): void => {
-      previousOnClose()
       settle({ kind: 'error', message: CONNECTION_LOST })
     }
-    unsubscribe = client.subscribeAll((msg) => {
+    unsubscribeMessages = client.subscribeAll((msg) => {
       if (msg.type === 'transfer_progress' && msg.request === id) {
         onStage?.(msg.stage)
         return
@@ -63,7 +62,7 @@ function request<T>(
       const value = 'request' in msg && msg.request === id ? pick(msg) : undefined
       if (value !== undefined) settle({ kind: 'ok', value })
     })
-    client.onClose = onClose
+    unsubscribeClose = client.subscribeClose(onClose)
     client.send(build(id))
   })
 }

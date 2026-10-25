@@ -257,6 +257,7 @@ export class HoustonClient {
 
   private kindSubscribers = new Map<string, Set<(msg: ServerMsg) => void>>()
   private allSubscribers = new Set<(msg: ServerMsg) => void>()
+  private closeSubscribers = new Set<() => void>()
   onFrame: (session: number, offset: number, payload: Uint8Array) => void = () => {}
   onReplay: (session: number, data: Uint8Array, bytesSeen: number) => void = () => {}
   onSnapshot: (session: number, state: Uint8Array, outputOffset: number) => void = () => {}
@@ -291,6 +292,24 @@ export class HoustonClient {
     this.allSubscribers.add(wrapper)
     return () => {
       this.allSubscribers.delete(wrapper)
+    }
+  }
+
+  /** Calls `handler` when the connection closes, or when `close` ends the client. */
+  subscribeClose(handler: () => void): () => void {
+    this.closeSubscribers.add(handler)
+    return () => {
+      this.closeSubscribers.delete(handler)
+    }
+  }
+
+  private notifyClosed(): void {
+    for (const handler of [...this.closeSubscribers]) {
+      try {
+        handler()
+      } catch (err) {
+        console.error('houston: close subscriber threw', err)
+      }
     }
   }
 
@@ -458,6 +477,7 @@ export class HoustonClient {
     }
     ws.onclose = () => {
       wsTransport.dispose()
+      client.notifyClosed()
       client.onClose()
     }
 
@@ -1151,6 +1171,7 @@ export class HoustonClient {
   }
 
   close(): void {
+    this.notifyClosed()
     this.kindSubscribers.clear()
     this.allSubscribers.clear()
     this.onFrame = () => {}

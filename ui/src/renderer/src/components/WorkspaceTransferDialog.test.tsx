@@ -20,11 +20,16 @@ afterEach(() => {
 
 function fakeClient() {
   const handlers = new Set<(msg: ServerMsg) => void>()
+  const closeHandlers = new Set<() => void>()
   const sent: ClientMsg[] = []
   const client = {
     subscribeAll: (handler: (msg: ServerMsg) => void) => {
       handlers.add(handler)
       return () => handlers.delete(handler)
+    },
+    subscribeClose: (handler: () => void) => {
+      closeHandlers.add(handler)
+      return () => closeHandlers.delete(handler)
     },
     send: (msg: ClientMsg) => sent.push(msg)
   }
