@@ -226,7 +226,7 @@ impl ToolProvider for OrchestrationTools {
                 .filter(|tool| tool.name == "pane_reply")
                 .collect();
         }
-        let max = daemon.orchestration_max_live_children();
+        let max = daemon.child_cap_of(scope.session_id);
         let free = max.saturating_sub(daemon.active_children_of(scope.session_id).len() as u32);
         let depth_cap = daemon.orchestration_max_spawn_depth();
         let would_be = daemon.spawn_depth_of(scope.session_id) + 1;

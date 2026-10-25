@@ -74,6 +74,10 @@ tokio-tungstenite = { version = "0.26", default-features = false, features = ["c
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 time = "0.3"
+# Workspace transfer files: an age passphrase (scrypt) envelope around a gzip tar.
+age = "0.11"
+tar = "0.4"
+flate2 = "1"
 
 [target.'cfg(unix)'.dependencies]
 # Default features only: a CPU (ggml) build, no CUDA/OpenBLAS/CoreML -- GPU is
@@ -92,4 +96,4 @@ keyring-core = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Pipes"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Time", "Win32_System_Power", "Win32_System_SystemInformation"] }

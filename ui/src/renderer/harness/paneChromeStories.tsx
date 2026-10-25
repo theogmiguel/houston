@@ -201,6 +201,13 @@ export function PaneLimitedStory(): React.JSX.Element {
   return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={limited} branch="feature/plan-limit" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
 }
 
+export function PaneTransferredStory(): React.JSX.Element {
+  const transferred = mkInfo({ state: 'exited', status: null, title: 'api review', tags: [], transferred_at_ms: Date.UTC(2026, 9, 21, 18, 40) })
+  const fork = mkInfo({ id: 2, status: 'idle', title: 'api review (fork)', tags: [], transfer_fork: true })
+  const store = React.useMemo(() => createSessionsStore(new Map([[transferred.id, transferred], [fork.id, fork]])), [])
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--content-bg)' }}><PaneFor info={transferred} branch="feature/api" /><PaneFor info={fork} branch="feature/api" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+}
+
 export function PaneRecoveryDeferredStory(): React.JSX.Element {
   const deferred = mkInfo({
     state: 'interrupted', status: null, resumable: false, restore_deferred: 'spawn-failed', tags: [],

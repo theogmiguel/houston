@@ -99,7 +99,9 @@ pub async fn start_with_listener(
         .route("/orchestrate/note", post(orch_note))
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
+        .route("/orchestrate/build-slot", post(orch_build_slot))
         .route("/harness/publish", post(harness_publish))
+        .route("/night/{verb}", post(night_post))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
         .route("/task/get", get(task_get))
@@ -1558,6 +1560,7 @@ async fn handle_control(
         Ok(m) => m,
         Err(e) => {
             let credential_message = text.contains("credential")
+                || text.contains("passphrase")
                 || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| {
                     value
                         .as_object()
@@ -1602,7 +1605,7 @@ async fn handle_control(
         return;
     }
 
-    let context = session_error_context(&msg);
+    let context = request_error_context(&msg);
     if runs_on_connection_task(&msg) {
         let Some(msg) = on_loop.start(daemon, msg, context.clone(), frames_wanted) else {
             return;
@@ -1687,9 +1690,9 @@ fn control_admission_refusal(text: &str) -> (String, String) {
     }
 }
 
-/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), so a
-/// client can attribute the failure to its pane.
-fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
+/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), and
+/// Night shift requests carry `night_shift`, so a client can attribute the failure.
+fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
     match msg {
         proto::ClientMsg::SessionClose { session, .. }
         | proto::ClientMsg::SessionRespawn { session, .. }
@@ -1697,6 +1700,15 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::SessionAttach { session, .. }
         | proto::ClientMsg::SessionResize { session, .. }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
+        proto::ClientMsg::NightShiftCreate { .. }
+        | proto::ClientMsg::NightShiftState { .. }
+        | proto::ClientMsg::NightShiftUpdate { .. }
+        | proto::ClientMsg::NightShiftRunNow { .. }
+        | proto::ClientMsg::NightShiftWrapUp { .. }
+        | proto::ClientMsg::NightShiftStop { .. }
+        | proto::ClientMsg::NightShiftDecide { .. }
+        | proto::ClientMsg::NightShiftQaPassed { .. }
+        | proto::ClientMsg::RoutineDelete { .. } => Some("night_shift".into()),
         _ => None,
     }
 }
@@ -2369,6 +2381,69 @@ async fn dispatch(
                     let message = format!("{error:#}");
                     tracing::warn!("control request failed: {message}");
                     send_error(sink, message, Some(format!("harness_report:{review_id}"))).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftCreate { workspace } => {
+            let msg = daemon.night_shift_create(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftState {
+            workspace,
+            preflight_until_ms,
+        } => {
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || {
+                reader.night_shift_state(&workspace, preflight_until_ms)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the Night shift state failed: {e}")));
+            match read {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some("night_shift".into())).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftUpdate {
+            routine_id,
+            settings,
+            expected_revision,
+        } => {
+            let msg = daemon.night_shift_update(routine_id, settings, &expected_revision)?;
+            daemon.broadcast_control(&msg);
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftRunNow {
+            routine_id,
+            until_ms,
+        } => daemon.night_shift_run_now(routine_id, until_ms).map(|_| ()),
+        proto::ClientMsg::NightShiftWrapUp { run_id } => daemon.night_shift_wrap_up_now(run_id),
+        proto::ClientMsg::NightShiftStop { run_id } => daemon.night_shift_stop_now(run_id),
+        proto::ClientMsg::NightShiftDecide { entry_id, choice } => {
+            daemon.night_shift_decide(entry_id, &choice)
+        }
+        proto::ClientMsg::NightShiftQaPassed { entry_id } => daemon.night_shift_qa_passed(entry_id),
+        proto::ClientMsg::NightShiftReport { run_id } => {
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || reader.night_shift_report(run_id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the report failed: {e}")));
+            match read {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some(format!("night_shift_report:{run_id}"))).await;
                 }
             }
             Ok(())
@@ -4435,7 +4510,120 @@ async fn dispatch(
             daemon.remote_desktop_presence(conn_id, active);
             Ok(())
         }
+        proto::ClientMsg::TransferExport {
+            request,
+            workspace,
+            destination,
+            overwrite,
+            passphrase,
+            grids,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_export(
+                        &workspace,
+                        &destination,
+                        overwrite,
+                        &passphrase,
+                        grids,
+                        progress,
+                    )
+                    .map(|summary| proto::ServerMsg::TransferExported { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferInspect {
+            request,
+            path,
+            passphrase,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, _| {
+                daemon
+                    .transfer_inspect(&path, &passphrase)
+                    .map(|summary| proto::ServerMsg::TransferInspected { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferImport {
+            request,
+            path,
+            passphrase,
+            workspace,
+            profiles,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_import(&path, &passphrase, &workspace, &profiles, progress)
+                    .map(|result| proto::ServerMsg::TransferImported { request, result })
+            })
+            .await
+        }
     }
+}
+
+/// Runs a workspace transfer off the runtime, forwarding its progress. A refusal answers
+/// `transfer_refused`; any other failure is an `error` with context `transfer:<request>`.
+async fn transfer_reply<F>(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    request: u32,
+    work: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce(
+            &Arc<Daemon>,
+            &(dyn Fn(proto::TransferStage) + Send + Sync),
+        ) -> anyhow::Result<proto::ServerMsg>
+        + Send
+        + 'static,
+{
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let daemon = Arc::clone(daemon);
+    let mut task = tokio::task::spawn_blocking(move || {
+        let progress = move |stage| {
+            let _ = tx.send(stage);
+        };
+        work(&daemon, &progress)
+    });
+    let result = loop {
+        tokio::select! {
+            Some(stage) = rx.recv() => {
+                let _ = send_msg(sink, &proto::ServerMsg::TransferProgress { request, stage }).await;
+            }
+            result = &mut task => break result,
+        }
+    };
+    let reply = match result {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(error)) => match crate::transfer::refusal(&error) {
+            Some(refusal) => proto::ServerMsg::TransferRefused {
+                request,
+                refusal: refusal.clone(),
+            },
+            None => {
+                tracing::warn!("transfer request {request} failed: {error:#}");
+                send_error(
+                    sink,
+                    format!("{error:#}"),
+                    Some(format!("transfer:{request}")),
+                )
+                .await;
+                return Ok(());
+            }
+        },
+        Err(error) => {
+            send_error(
+                sink,
+                format!("transfer request {request} stopped unexpectedly: {error}"),
+                Some(format!("transfer:{request}")),
+            )
+            .await;
+            return Ok(());
+        }
+    };
+    send_msg(sink, &reply)
+        .await
+        .map_err(|_| anyhow::anyhow!("sending the transfer reply failed"))
 }
 
 // Mirrored by the renderer in App.tsx.
@@ -6134,6 +6322,33 @@ async fn orch_pr_enqueue(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct BuildSlotBody {
+    action: String,
+    #[serde(default)]
+    lease: Option<String>,
+}
+
+async fn orch_build_slot(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<BuildSlotBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.build_slot_request(scope.session_id, &body.action, body.lease.as_deref())
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("build slot request panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
+        Err(e) => orch_error(StatusCode::CONFLICT, e),
+    }
+}
+
 async fn orch_pr_dequeue(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
@@ -6175,6 +6390,26 @@ struct SubmitBody {
 struct PublishBody {
     #[serde(default)]
     summary: Option<String>,
+}
+
+async fn night_post(
+    State(daemon): State<Arc<Daemon>>,
+    axum::extract::Path(verb): axum::extract::Path<String>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let result =
+        tokio::task::spawn_blocking(move || daemon.night_tool(scope.session_id, &verb, &payload))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("night tool panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
+        Err(e) => orch_err_response(e),
+    }
 }
 
 async fn harness_publish(

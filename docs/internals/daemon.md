@@ -151,6 +151,26 @@ prompts and arbitrary environment variables or command arguments are not recover
 The Codex observer receives a native ID only for a launch that actually resumes it; a
 retained retry handle does not identify a newly launched conversation.
 
+A workspace transfer is the one path that moves a conversation to another folder, and it
+does not go through `resume_check`, which keeps refusing folder changes. Import places the
+transcript bytes, then spawns a new row whose resume handle is bound to the new folder from
+the start; it never rewrites a transcript, since both providers find a session id outside
+the current folder's namespace. Export stops each pane through `ProcessEnding::Transfer`:
+unlike Kill it keeps the resume handle and ends `exited`, so boot restore leaves it alone,
+a Restart resumes a fork (`transfer_fork`), and a return trip resumes it in place. The
+return trip compares each checkout's `TreeState` (HEAD plus a hash per changed or untracked
+path) with the one recorded at export, and removes only the untracked files that export
+recorded.
+
+Export stops the panes before it captures anything, then re-reads their status: a turn
+that started between the busy check and the stop refuses the export instead of being
+packed half-done. Import runs every check that needs no change first, including
+`git apply --check` against a scratch index and the paths that the carried commits and
+diff would add over ignored files. Each later change is logged before it is made, and a
+failure reverses the log; the import record is written before any pane starts, so a crash
+while starting panes still leaves a return trip possible. Scratch folders hold plaintext
+code and conversations, so they are owner-only on Linux and swept at boot.
+
 Before restore, undrained root lifecycle hooks may update conversation metadata across
 long downtime. Recovery does not replay status, permission, input or orchestration effects.
 Provider and cwd bindings prevent a retained handle from crossing agent or folder changes;
