@@ -35,6 +35,7 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
 /// Runs off the async runtime via `spawn_blocking` so the window can paint
 /// before the agent hook configs are refreshed.
 pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
+    spawn_cli_probe_prime(daemon);
     let bound_port = daemon.bound_port();
     let env = daemon.env();
     let daemon = daemon.clone();
@@ -46,4 +47,12 @@ pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     crate::mcp_register::spawn_at_boot(env.clone());
     crate::mcp_register_codex::spawn_at_boot(env.clone(), bound_port);
     crate::mcp_register_antigravity::spawn_at_boot(env.clone());
+}
+
+/// Fills the CLI version cache off the async runtime, beside the hook refresh rather
+/// than after it, so the first hooks listing and the first spawn read answers instead
+/// of running `--version` probes. A rescan requested mid-sweep shares the one after it.
+pub fn spawn_cli_probe_prime(daemon: &Arc<Daemon>) {
+    let daemon = daemon.clone();
+    tokio::task::spawn_blocking(move || daemon.rescan_cli_probes());
 }
