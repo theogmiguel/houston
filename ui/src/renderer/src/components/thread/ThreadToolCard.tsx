@@ -1,9 +1,11 @@
 import { memo, useState } from 'react'
-import { IconFileDiff, IconFileText, IconSearch, IconSquareTerminal, IconWrench, type IconComponent } from '../icons'
+import { IconFileDiff, IconFileText, IconGlobe, IconMessageSquare, IconPencil, IconPlug, IconSearch, IconSparkles, IconSquareTerminal, IconTaskStatusTodo, IconUsers, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
 import { Button } from '../ui/Button'
-import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
+import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadLineCounts, ThreadToolSection, ThreadWorkRow, type ThreadToolState } from '../ui/Thread'
 import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
+import { displayTarget, summaryOf, toolVerb } from '../../thread/threadTurns'
+import type { ToolKind } from '../../thread/threadTypes'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
 type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
@@ -11,14 +13,19 @@ type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
 const INPUT_CAP_NOTE = 'Input cut at 8 KiB by Houston.'
 const OUTPUT_CAP_NOTE = 'Output cut at 16 KiB by Houston.'
 
-const TOOL_GLYPH: Record<string, IconComponent> = {
-  Bash: IconSquareTerminal,
-  Edit: IconFileDiff,
-  MultiEdit: IconFileDiff,
-  Write: IconFileDiff,
-  Read: IconFileText,
-  Grep: IconSearch,
-  Glob: IconSearch
+const TOOL_GLYPH: Record<ToolKind, IconComponent> = {
+  read: IconFileText,
+  search: IconSearch,
+  web: IconGlobe,
+  command: IconSquareTerminal,
+  edit: IconFileDiff,
+  write: IconPencil,
+  todo: IconTaskStatusTodo,
+  question: IconMessageSquare,
+  plan: IconSparkles,
+  task: IconUsers,
+  mcp: IconPlug,
+  other: IconWrench
 }
 
 function stateOf(item: ToolItem): ThreadToolState {
@@ -101,6 +108,7 @@ function ToolBody({ item }: { item: ToolItem }): React.JSX.Element {
     </>
   }
   return <>
+    {input === null && item.summary?.target ? <ThreadCaption>{item.summary.target}</ThreadCaption> : null}
     {item.input !== '' && <ThreadToolSection label="Input"><ThreadCodeBlock>{prettyInput(item.input)}</ThreadCodeBlock></ThreadToolSection>}
     {capNote}
     <OutputSection item={item} />
@@ -124,7 +132,7 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
   connected: boolean
   onAnswer: (requestId: string, allow: boolean) => void
 }): React.JSX.Element {
-  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, result: null, settled: true }
+  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, summary: null, result: null, settled: true }
   const hidden = hiddenInputBytes(item)
   const locked = answering || !connected
   return (
@@ -149,18 +157,21 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
   )
 })
 
-export const ThreadToolRow = memo(function ThreadToolRow({ item }: { item: ToolItem }): React.JSX.Element {
+export const ThreadToolRow = memo(function ThreadToolRow({ item, cwd }: { item: ToolItem; cwd?: string }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const summary = summaryOf(item)
+  const counted = summary.kind === 'edit' || summary.kind === 'write'
   return (
-    <ToolCardFrame
-      glyph={TOOL_GLYPH[item.name] ?? IconWrench}
-      name={item.name}
-      summary={toolSummary(item.input)}
+    <ThreadWorkRow
+      glyph={TOOL_GLYPH[summary.kind]}
+      verb={toolVerb(item.name, summary.kind)}
+      target={displayTarget(summary.target, cwd)}
+      result={counted ? <ThreadLineCounts added={summary.added ?? null} removed={summary.removed ?? null} /> : undefined}
       state={stateOf(item)}
       open={open}
       onToggle={() => setOpen((value) => !value)}
     >
       <ToolBody item={item} />
-    </ToolCardFrame>
+    </ThreadWorkRow>
   )
 })

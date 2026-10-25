@@ -29,6 +29,16 @@ describe('ThreadSessionStore', () => {
     expect(s.getSnapshot().events.map((event) => event.kind.type)).toEqual(['user_message', 'assistant_message'])
   })
 
+  it('drops a reasoning block’s deltas once the stored block arrives, and ignores late ones', () => {
+    const { store: s } = store()
+    s.attach()
+    s.onHistory(history([ev(1, user('hi'))]))
+    s.onEvents(live([ev(2, { type: 'reasoning_delta', message_id: 'r', text: '', estimated_tokens: 50 })]))
+    s.onEvents(live([ev(3, { type: 'reasoning', message_id: 'r', text: '', truncated: false, duration_ms: 900, estimated_tokens: 196, redacted: false })]))
+    s.onEvents(live([ev(4, { type: 'reasoning_delta', message_id: 'r', text: '', estimated_tokens: 200 })]))
+    expect(s.getSnapshot().events.map((event) => event.kind.type)).toEqual(['user_message', 'reasoning'])
+  })
+
   it('keeps approval events through delta dropping and pairs a request with a resolution from a later page', () => {
     const { store: s } = store()
     s.attach()

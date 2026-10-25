@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { IconArrowUp, IconStopCircle } from '../icons'
@@ -21,12 +21,15 @@ import {
   ThreadScroll,
   ThreadStoppedMarker,
   ThreadSurface,
+  ThreadTurnFold,
   ThreadUserMessage
 } from '../ui/Thread'
 import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
+import { ThreadChangesCard, ThreadReasoningItem } from './ThreadWorkLog'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { sendThreadMessage, setThreadPermissionMode, stopThread, useThread } from '../../thread/threadStore'
+import { foldThreadRows } from '../../thread/threadTurns'
 import type { ThreadPermissionMode } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
@@ -46,12 +49,14 @@ function useMarkdownPipeline(): PipelineModule | null {
 
 type AnswerApproval = (requestId: string, allow: boolean) => void
 
-const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, onAnswer }: {
+const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, cwd, onAnswer, onToggleTurn }: {
   item: ThreadItem
   markdown: PipelineModule | null
   answering: boolean
   connected: boolean
+  cwd: string | undefined
   onAnswer: AnswerApproval
+  onToggleTurn: (turn: string) => void
 }): React.JSX.Element {
   switch (item.kind) {
     case 'user':
@@ -63,8 +68,14 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
           {item.truncated && <ThreadCaption>Answer cut at 256 KiB by Houston.</ThreadCaption>}
         </ThreadAssistantBlock>
       )
+    case 'reasoning':
+      return <ThreadReasoningItem item={item} />
     case 'tool':
-      return <ThreadToolRow item={item} />
+      return <ThreadToolRow item={item} cwd={cwd} />
+    case 'turn':
+      return <ThreadTurnFold label={item.label} outcome={item.outcome} open={item.expanded} onToggle={() => onToggleTurn(item.turn)} />
+    case 'changes':
+      return <ThreadChangesCard item={item} cwd={cwd} />
     case 'notice':
       return <ThreadNotice>{item.text}</ThreadNotice>
     case 'error':
@@ -74,7 +85,7 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
     case 'approval':
       return <ThreadApprovalRow item={item} answering={answering} connected={connected} onAnswer={onAnswer} />
   }
-}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.answering === b.answering && a.connected === b.connected && sameThreadItem(a.item, b.item))
+}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.onToggleTurn === b.onToggleTurn && a.answering === b.answering && a.connected === b.connected && a.cwd === b.cwd && sameThreadItem(a.item, b.item))
 
 const PERMISSION_MODES: readonly { value: ThreadPermissionMode; label: string }[] = [
   { value: 'default', label: 'Ask before tools' },
@@ -216,17 +227,25 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
   const thread = useThread(client, info.id, connected)
   const markdown = useMarkdownPipeline()
   const [win, setWin] = useState<ThreadWindow>(LATEST_WINDOW)
+  // Turns the reader opened, by the seq of their first message; settled turns start folded.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleTurn = useCallback((turn: string) => setExpanded((current) => {
+    const next = new Set(current)
+    if (!next.delete(turn)) next.add(turn)
+    return next
+  }), [])
+  const rows = useMemo(() => foldThreadRows(thread.timeline, expanded), [thread.timeline, expanded])
   const scroll = useRef<HTMLDivElement>(null)
-  const { start, end } = windowBounds(thread.items, win)
-  const shown = thread.items.slice(start, end)
-  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, start, end, markdown], win.end === null)
+  const { start, end } = windowBounds(rows, win)
+  const shown = rows.slice(start, end)
+  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [rows, start, end, markdown], win.end === null)
   const growOnArrival = useRef(false)
   useEffect(() => {
     if (thread.loadingEarlier || !growOnArrival.current) return
     growOnArrival.current = false
     holdFromBottom()
-    setWin((current) => showEarlier(thread.items, current))
-  }, [thread.loadingEarlier, thread.items, holdFromBottom])
+    setWin((current) => showEarlier(rows, current))
+  }, [thread.loadingEarlier, rows, holdFromBottom])
   const earlier = (): void => {
     if (start === 0) {
       growOnArrival.current = true
@@ -234,7 +253,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
       return
     }
     holdFromBottom()
-    setWin((current) => showEarlier(thread.items, current))
+    setWin((current) => showEarlier(rows, current))
   }
   return (
     <ThreadSurface>
@@ -248,11 +267,11 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
             </Button>
           </ThreadHistoryControl>
         )}
-        {thread.loaded && thread.items.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
-        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} onAnswer={thread.answer} />)}
+        {thread.loaded && rows.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
+        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} cwd={info.cwd} onAnswer={thread.answer} onToggleTurn={toggleTurn} />)}
         {win.end !== null && (
           <ThreadHistoryControl>
-            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(thread.items, current))}>Show later</Button>
+            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(rows, current))}>Show later</Button>
             <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => { setWin(LATEST_WINDOW); thread.followLatest() }}>Jump to latest</Button>
           </ThreadHistoryControl>
         )}

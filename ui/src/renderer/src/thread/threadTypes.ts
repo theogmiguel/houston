@@ -4,6 +4,8 @@ export type { SessionView } from '../houston/generated/SessionView'
 export type { ThreadEvent } from '../houston/generated/ThreadEvent'
 export type { ThreadEventKind } from '../houston/generated/ThreadEventKind'
 export type { TurnOutcome } from '../houston/generated/TurnOutcome'
+export type { ToolKind } from '../houston/generated/ToolKind'
+export type { ToolSummary } from '../houston/generated/ToolSummary'
 export type { ThreadPermissionMode } from '../houston/generated/ThreadPermissionMode'
 
 export type ThreadEventsMsg = Extract<ServerMsg, { type: 'thread_events' }>

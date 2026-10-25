@@ -65,7 +65,7 @@ output readers.
 ## Threads
 
 A **thread** shows a Claude session as a conversation instead of a terminal: your
-messages, Claude's answers rendered as Markdown, and one collapsed card per tool call.
+messages, Claude's answers rendered as Markdown, and a work log of what Claude did.
 Open one from the pane **+** menu under **Thread**, or choose **Claude thread** in an
 empty grid. Threads sit in the grid beside terminal panes, keep the same pane header and
 menu, and run at the same time. Only Claude supports the thread view; other agents open
@@ -79,9 +79,21 @@ answer it was writing stays in the thread, marked "Stopped · Claude will not re
 this partial answer": the next message resumes the conversation without it. The pane
 menu's text size and Handoff actions apply to terminal panes only.
 
-Expand a tool card to see its input and output. Shell commands show the command and its
-output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and
-output at 16 KiB and says so on the card. Houston keeps each thread's history on this
+The work log shows each tool call as one row: what Claude did and to what (for example
+**Read**, **Edited** or **Ran**), with line counts for an edit and **Failed** for a call
+that returned an error. Select a row to see its input and output: shell commands show the
+command and its output, and file edits and writes show a diff. Houston cuts tool input at
+8 KiB and output at 16 KiB and says so in the row. When Claude reasons before a step, a
+row reads **Thinking** and then, for example, "Thought for 12s · ~800 tokens", with Claude's
+own estimate of the reasoning's size. Claude does not send its reasoning text to a thread,
+so the row has nothing to open.
+
+When a turn ends, its work folds into one summary row, such as "Worked for 2m 14s · Read 6
+files · Changed 2 files", "Stopped after 41s" or "Failed after 3m 02s". Select it to open
+the turn again. The final answer, failed calls and notices stay visible in a folded turn.
+A turn that edited files ends with a list of those files and their line counts; **Open
+diff** opens the Changes panel at that file, which shows the file's current changes in the
+repository rather than only this turn's. Houston keeps each thread's history on this
 machine, up to 20,000 events or 8 MiB, removing the oldest first with a note in the
 thread; the history is deleted when you close the pane. A pane shows the latest
 messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.

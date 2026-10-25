@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
-import { buildThreadItems, type ThreadItem } from './threadModel'
-import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
+import { buildThreadTimeline, type ThreadTimeline } from './threadModel'
+import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventKind, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -24,6 +24,18 @@ export interface ThreadSnapshot {
 }
 
 const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set() }
+
+type LiveDelta = Extract<ThreadEventKind, { type: 'assistant_delta' | 'reasoning_delta' }>
+
+/** Deltas are never stored: their `seq` is not a history position. */
+function isLiveDelta(kind: ThreadEventKind): kind is LiveDelta {
+  return kind.type === 'assistant_delta' || kind.type === 'reasoning_delta'
+}
+
+/** The block a stored event supersedes the deltas of. */
+function storedBlockId(kind: ThreadEventKind): string | null {
+  return kind.type === 'assistant_message' || kind.type === 'reasoning' ? kind.message_id : null
+}
 
 /** `beforeSeq: null` is the latest page. */
 interface HistoryRequest { beforeSeq: number | null }
@@ -60,7 +72,7 @@ export class ThreadSessionStore {
   }
 
   loadEarlier(): void {
-    const first = this.snapshot.events.find((event) => event.kind.type !== 'assistant_delta')
+    const first = this.snapshot.events.find((event) => !isLiveDelta(event.kind))
     if (!this.snapshot.loaded || !this.snapshot.hasMore || this.snapshot.loadingEarlier || first === undefined) return
     this.set({ ...this.snapshot, loadingEarlier: true })
     this.request(first.seq)
@@ -138,16 +150,17 @@ export class ThreadSessionStore {
     let events: ThreadEvent[] | null = null
     for (const event of fresh) {
       const kind = event.kind
-      if (kind.type === 'assistant_delta') {
+      if (isLiveDelta(kind)) {
         if (this.superseded.includes(kind.message_id)) continue
       } else {
         if (event.seq <= this.lastStoredSeq) continue
         this.lastStoredSeq = event.seq
       }
       events ??= [...base]
-      if (kind.type === 'assistant_message') {
-        this.supersede(kind.message_id)
-        events = events.filter((prior) => prior.kind.type !== 'assistant_delta' || prior.kind.message_id !== kind.message_id)
+      const block = storedBlockId(kind)
+      if (block !== null) {
+        this.supersede(block)
+        events = events.filter((prior) => !isLiveDelta(prior.kind) || prior.kind.message_id !== block)
       }
       events.push(event)
     }
@@ -161,9 +174,10 @@ export class ThreadSessionStore {
 
   private noteStored(events: readonly ThreadEvent[]): void {
     for (const event of events) {
-      if (event.kind.type === 'assistant_delta') continue
+      if (isLiveDelta(event.kind)) continue
       this.lastStoredSeq = Math.max(this.lastStoredSeq, event.seq)
-      if (event.kind.type === 'assistant_message') this.supersede(event.kind.message_id)
+      const block = storedBlockId(event.kind)
+      if (block !== null) this.supersede(block)
     }
   }
 
@@ -259,7 +273,7 @@ export function setThreadPermissionMode(client: HoustonClient, session: number, 
 }
 
 export interface ThreadView extends ThreadSnapshot {
-  items: ThreadItem[]
+  timeline: ThreadTimeline
   loadEarlier: () => void
   retry: () => void
   answer: (requestId: string, allow: boolean) => void
@@ -277,9 +291,9 @@ export function useThread(client: HoustonClient, session: number, connected: boo
   useEffect(() => {
     if (connected) store.attach()
   }, [store, connected])
-  const items = useMemo(() => buildThreadItems(snapshot.events), [snapshot.events])
+  const timeline = useMemo(() => buildThreadTimeline(snapshot.events), [snapshot.events])
   const answer = useCallback((requestId: string, allow: boolean) => {
     if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
   }, [client, session, store])
-  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest() }
+  return { ...snapshot, timeline, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest() }
 }

@@ -76,9 +76,38 @@ describe('buildThreadItems', () => {
       { type: 'turn_end', outcome: 'completed', error: null }
     ]))
     expect(items).toEqual([
-      { kind: 'tool', key: '1', name: 'Bash', input: '{"command":"ls"}', inputTruncated: false, result: { isError: false, output: 'x', truncated: true }, settled: false },
-      { kind: 'tool', key: '3', name: 'Read', input: '{}', inputTruncated: false, result: null, settled: true }
+      { kind: 'tool', key: '1', name: 'Bash', input: '{"command":"ls"}', inputTruncated: false, summary: null, result: { isError: false, output: 'x', truncated: true }, settled: false },
+      { kind: 'tool', key: '3', name: 'Read', input: '{}', inputTruncated: false, summary: null, result: null, settled: true }
     ])
+  })
+
+  it('streams reasoning into one row that its stored block replaces, beside the answer', () => {
+    const items = buildThreadItems(events([
+      { type: 'user_message', text: 'why?' },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50 },
+      delta('m1', 'Because'),
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: null },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 196 }
+    ]))
+    expect(items.slice(1)).toEqual([
+      { kind: 'reasoning', key: 'delta-2', streaming: true, redacted: false, durationMs: null, tokens: 196 },
+      { kind: 'assistant', key: 'delta-3', text: 'Because', streaming: true, truncated: false }
+    ])
+    const stored = buildThreadItems(events([
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 50 },
+      { type: 'reasoning', message_id: 'r0', text: '', truncated: false, duration_ms: 14_000, estimated_tokens: 812, redacted: false },
+      { type: 'reasoning_delta', message_id: 'r0', text: '', estimated_tokens: 900 }
+    ]))
+    expect(stored).toEqual([{ kind: 'reasoning', key: '2', streaming: false, redacted: false, durationMs: 14_000, tokens: 812 }])
+  })
+
+  it('stops a reasoning row streaming when its turn ends', () => {
+    const items = buildThreadItems(events([
+      { type: 'user_message', text: 'go' },
+      { type: 'reasoning_delta', message_id: 'r1', text: '' },
+      { type: 'turn_end', outcome: 'completed', error: null }
+    ]))
+    expect(items[1]).toMatchObject({ kind: 'reasoning', streaming: false, tokens: null })
   })
 
   it('keeps a result whose call is on an earlier, unloaded page', () => {

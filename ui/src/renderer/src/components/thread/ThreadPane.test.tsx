@@ -119,6 +119,30 @@ describe('ThreadPane', () => {
     expect(container.querySelector('[data-streaming]')).toBeNull()
   })
 
+  it('folds a settled turn into its summary and opens it on click, while a live turn stays open', () => {
+    mount({ cwd: '/repo' })
+    const call = (id: string, name: string, input: object): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name, input: JSON.stringify(input), truncated: false })
+    const result = (id: string, isError = false): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: isError, output: 'out', truncated: false })
+    history([
+      { seq: 1, at_ms: 0, kind: user('fix it') },
+      { seq: 2, at_ms: 10, kind: call('e', 'Edit', { file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'b' }) },
+      { seq: 3, at_ms: 20, kind: result('e') },
+      { seq: 4, at_ms: 30, kind: call('b', 'Bash', { command: 'false' }) },
+      { seq: 5, at_ms: 40, kind: result('b', true) },
+      { seq: 6, at_ms: 14_000, kind: said('m', 'Fixed.') },
+      { seq: 7, at_ms: 14_000, kind: turnEnd() },
+      { seq: 8, at_ms: 15_000, kind: user('again') },
+      { seq: 9, at_ms: 15_100, kind: call('r', 'Read', { file_path: '/repo/src/a.ts' }) }
+    ])
+    expect(rows('turn')).toEqual(['Worked for 14s · Changed 1 file · Ran 1 command'])
+    expect(rows('tool')).toEqual(['RanfalseFailed', 'Readsrc/a.tsRunning'])
+    expect(rows('assistant')).toEqual(['Fixed.'])
+    expect(rows('changes')[0]).toContain('src/a.ts')
+    act(() => container.querySelector<HTMLButtonElement>('[data-thread-item="turn"] button')!.click())
+    expect(rows('tool')).toHaveLength(3)
+    expect(container.querySelector('[data-thread-item="turn"] button')!.getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('ignores a history reply that answers no request of this pane', () => {
     mount()
     history([ev(1, user('stale page'))], false, 999)
