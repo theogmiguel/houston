@@ -97,6 +97,8 @@ pub(crate) struct NightShiftCtx {
     pr_fates_for_test: Mutex<Option<HashMap<u32, String>>>,
     /// PR heads whose checks are in a detached thread: `(run, entry, sha)`.
     checks_running: Mutex<HashSet<(u32, u32, String)>>,
+    /// PRs whose CI action (re-run or fixer spawn) is in a detached thread.
+    ci_actions: Mutex<HashSet<(u32, u32)>>,
 }
 
 /// Removes a PR head from `checks_running` however its checking thread ends.
@@ -112,6 +114,23 @@ impl Drop for NightChecksRun {
             .checks_running
             .lock()
             .expect("night checks")
+            .remove(&self.key);
+    }
+}
+
+/// Removes a PR from `ci_actions` however the detached action ends.
+struct NightCiAction {
+    daemon: Arc<Daemon>,
+    key: (u32, u32),
+}
+
+impl Drop for NightCiAction {
+    fn drop(&mut self) {
+        self.daemon
+            .night
+            .ci_actions
+            .lock()
+            .expect("night ci actions")
             .remove(&self.key);
     }
 }
@@ -215,6 +234,18 @@ fn required<'a>(args: &'a Value, key: &str, max: usize) -> Result<&'a str> {
     text_arg(args, key, max)?
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| anyhow!("{key} is required"))
+}
+
+fn names_or_unknown(names: &[String]) -> String {
+    if names.is_empty() {
+        "the failing checks (names not recorded)".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+fn fixer_role(number: u32) -> String {
+    format!("fixer-{number}")
 }
 
 fn bool_arg(args: &Value, key: &str) -> Result<Option<bool>> {
@@ -2957,6 +2988,12 @@ impl Daemon {
         if failed.is_empty() {
             return;
         }
+        let gh_run = failed.iter().find_map(|name| {
+            check_runs
+                .iter()
+                .find(|(n, _)| n == name)
+                .and_then(|(_, id)| *id)
+        });
         let mut texts = Vec::new();
         for name in &failed {
             texts.push(name.clone());
@@ -2971,7 +3008,7 @@ impl Daemon {
                 }
             }
         }
-        if let Err(e) = self.night_shift_ci_failed(session, number, &texts) {
+        if let Err(e) = self.night_shift_ci_failed(session, number, &failed, &texts, gh_run) {
             tracing::warn!("Night shift CI pass for PR #{number}: {e:#}");
         }
     }
@@ -3016,16 +3053,20 @@ impl Daemon {
         }
     }
 
-    /// `texts` are the failed checks' names and log lines. Answers whether a
-    /// re-run was asked for; a test re-runs once per PR.
+    /// `checks` are the failed checks' names, `texts` their names and log
+    /// lines. Houston re-runs a known flaky failure once, then starts a fixer
+    /// pane. Both run off the caller's thread; answers what it dispatched.
     pub fn night_shift_ci_failed(
         self: &Arc<Self>,
         session: u32,
         number: u32,
+        checks: &[String],
         texts: &[String],
-    ) -> Result<bool> {
+        gh_run: Option<u64>,
+    ) -> Result<Option<crate::night_shift::CiAction>> {
+        use crate::night_shift::{CiAction, CI_FIXES_PER_PR, CI_FIX_EXCERPT_CHARS};
         let Some((routine_id, run_id, orchestrator)) = self.night_run_of_pane(session) else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(entry) = self
             .db
@@ -3033,66 +3074,356 @@ impl Daemon {
             .into_iter()
             .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
         else {
-            return Ok(false);
+            return Ok(None);
         };
+        if self.night_live_fixer(run_id, number).is_some() {
+            return Ok(None);
+        }
         let flaky = self.db.night_flaky_tests(routine_id)?;
         let hit = crate::night_shift::flaky_match(&flaky, texts).map(str::to_string);
-        let mut gates = entry.gates;
-        let rerun = hit.is_some() && gates.reruns == 0;
-        if rerun {
-            gates.reruns += 1;
-            gates.ci = proto::NightGate::Pending;
-        } else {
-            gates.ci = proto::NightGate::Failed;
+        let mut plan = crate::night_shift::ci_failure_plan(
+            hit.as_deref(),
+            entry.gates.reruns,
+            entry.gates.fixes,
+        );
+        let mut rerun_missing = None;
+        if matches!(plan, CiAction::Rerun { .. }) && gh_run.is_none() {
+            rerun_missing = Some(
+                "its failed check has no Actions run id, so Houston could not re-run it"
+                    .to_string(),
+            );
+            plan = if entry.gates.fixes >= CI_FIXES_PER_PR {
+                CiAction::GiveUp {
+                    why: format!(
+                        "the pull request has {} fixer panes already used of its \
+                         {CI_FIXES_PER_PR}; Houston leaves the failure to the orchestrator",
+                        entry.gates.fixes
+                    ),
+                }
+            } else {
+                CiAction::Fix
+            };
         }
-        self.db.set_night_entry_gates(entry.id, &gates)?;
-        let (title, body) = match (hit, rerun) {
-            (Some(test), true) => (
-                format!("Night shift: re-run CI on PR #{number}"),
-                format!(
-                    "CI on PR #{number} failed on {test}, a known flaky test in the ledger. \
-                     Re-run the failed jobs once (gh run rerun RUN_ID --failed); Houston \
-                     recorded the re-run. If it fails again, treat it as a real failure."
-                ),
-            ),
-            (Some(test), false) => (
-                format!("Night shift: PR #{number} failed again"),
-                format!(
-                    "CI on PR #{number} failed on {test} again after its one re-run: hand it \
-                     to a fixer pane as a real failure."
-                ),
-            ),
-            (None, _) => (
-                format!("Night shift: PR #{number} CI failed"),
-                format!(
-                    "CI on PR #{number} failed on no known flaky test: hand the failure to a \
-                     fixer pane."
-                ),
-            ),
+        let Some(guard) = self.night_ci_claim(run_id, number) else {
+            return Ok(None);
         };
         let workspace = self
             .db
             .night_run(run_id)?
             .map(|r| r.workspace)
             .unwrap_or_default();
-        if let Err(e) = self.inbox_write(
+        let configured: Vec<String> = self
+            .night_settings(routine_id)
+            .map(|s| s.checks.into_iter().map(|c| c.command).collect())
+            .unwrap_or_default();
+        let head = entry.detail.head_sha.clone();
+        let excerpt = crate::night_shift::bounded_excerpt(texts, CI_FIX_EXCERPT_CHARS);
+        let checks = checks.to_vec();
+        match plan.clone() {
+            CiAction::Rerun { test } => {
+                let gh_run = gh_run.expect("a rerun plan has an Actions run id");
+                let me = Arc::clone(self);
+                let spawned = std::thread::Builder::new()
+                    .name(format!("night-rerun-{run_id}-{number}"))
+                    .spawn(move || {
+                        let _guard = guard;
+                        me.night_ci_rerun(
+                            run_id,
+                            entry.id,
+                            number,
+                            orchestrator,
+                            &test,
+                            gh_run,
+                            &workspace,
+                            &checks,
+                            &configured,
+                            head.as_deref(),
+                            &excerpt,
+                        );
+                    });
+                if let Err(e) = spawned {
+                    tracing::warn!("starting the re-run of PR #{number}: {e}");
+                }
+            }
+            CiAction::Fix => {
+                let me = Arc::clone(self);
+                let spawned = std::thread::Builder::new()
+                    .name(format!("night-fixer-{run_id}-{number}"))
+                    .spawn(move || {
+                        let _guard = guard;
+                        me.night_ci_spawn_fixer(
+                            run_id,
+                            number,
+                            orchestrator,
+                            &checks,
+                            &configured,
+                            head.as_deref(),
+                            &excerpt,
+                            rerun_missing.as_deref(),
+                        );
+                    });
+                if let Err(e) = spawned {
+                    tracing::warn!("starting the fixer of PR #{number}: {e}");
+                }
+            }
+            CiAction::GiveUp { why } => {
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} CI needs you"),
+                    &format!(
+                        "CI on PR #{number} failed on {}. Houston stopped after the cap: {why}.",
+                        names_or_unknown(&checks)
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+                drop(guard);
+            }
+        }
+        Ok(Some(plan))
+    }
+
+    /// The PR's live fixer pane, from the delegation role Houston gives it.
+    fn night_live_fixer(&self, run_id: u32, number: u32) -> Option<u32> {
+        let tree = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .cloned()?;
+        let role = fixer_role(number);
+        self.night_live_panes(&tree)
+            .into_iter()
+            .filter(|id| *id != tree.orchestrator)
+            .find(|id| {
+                self.db
+                    .delegation_for_child(*id)
+                    .ok()
+                    .flatten()
+                    .and_then(|d| d.role)
+                    .is_some_and(|r| r == role)
+            })
+    }
+
+    /// Takes the PR's one CI action slot; `None` while another action runs.
+    fn night_ci_claim(self: &Arc<Self>, run_id: u32, number: u32) -> Option<NightCiAction> {
+        let key = (run_id, number);
+        self.night
+            .ci_actions
+            .lock()
+            .expect("night ci actions")
+            .insert(key)
+            .then(|| NightCiAction {
+                daemon: Arc::clone(self),
+                key,
+            })
+    }
+
+    /// Requests one re-run of the failed jobs, then records it. A failed
+    /// request is a real failure: Houston says so and starts the fixer.
+    #[allow(clippy::too_many_arguments)]
+    fn night_ci_rerun(
+        self: &Arc<Self>,
+        run_id: u32,
+        entry_id: u32,
+        number: u32,
+        orchestrator: u32,
+        test: &str,
+        gh_run: u64,
+        workspace: &str,
+        checks: &[String],
+        configured: &[String],
+        head: Option<&str>,
+        excerpt: &str,
+    ) {
+        match crate::gh::rerun_failed_jobs(Path::new(workspace), gh_run) {
+            Ok(()) => {
+                self.night_ci_set_gates(entry_id, |gates| proto::NightGates {
+                    reruns: gates.reruns + 1,
+                    ci: proto::NightGate::Pending,
+                    ..*gates
+                });
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: re-run requested for PR #{number}"),
+                    &format!(
+                        "CI on PR #{number} failed on {test}, a known flaky test in the ledger. \
+                         Houston re-ran the failed jobs once (gh run rerun {gh_run} --failed). If \
+                         it fails again Houston starts a fixer pane."
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+            }
+            Err(e) => {
+                tracing::warn!("re-running the failed jobs of PR #{number}: {e:#}");
+                self.night_ci_set_gates(entry_id, |gates| proto::NightGates {
+                    ci: proto::NightGate::Failed,
+                    ..*gates
+                });
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} re-run failed"),
+                    &format!(
+                        "Houston could not re-run the failed jobs of PR #{number}: {e:#}. It \
+                         treats the failure as real and starts a fixer pane."
+                    ),
+                );
+                self.night_ci_spawn_fixer(
+                    run_id,
+                    number,
+                    orchestrator,
+                    checks,
+                    configured,
+                    head,
+                    excerpt,
+                    Some("Houston could not re-run the failed jobs"),
+                );
+            }
+        }
+    }
+
+    /// Starts a fixer pane under the run's orchestrator, in the run's worktree.
+    /// Every attempt counts towards `CI_FIXES_PER_PR`, a refused spawn included,
+    /// so a broken provider chain cannot loop all night.
+    #[allow(clippy::too_many_arguments)]
+    fn night_ci_spawn_fixer(
+        self: &Arc<Self>,
+        run_id: u32,
+        number: u32,
+        orchestrator: u32,
+        checks: &[String],
+        configured: &[String],
+        head: Option<&str>,
+        excerpt: &str,
+        why: Option<&str>,
+    ) {
+        use crate::night_shift::CI_FIXES_PER_PR;
+        let Some(row) = self.db.night_run(run_id).ok().flatten() else {
+            return;
+        };
+        let Some(entry) = self.db.night_entries(run_id).ok().and_then(|rows| {
+            rows.into_iter()
+                .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+        }) else {
+            return;
+        };
+        let fixes = entry.gates.fixes;
+        if fixes >= CI_FIXES_PER_PR {
+            self.night_tell_orchestrator(
+                run_id,
+                &format!("Night shift: PR #{number} CI needs you"),
+                &format!(
+                    "CI on PR #{number} failed on {}. Houston started no fixer: the pull \
+                     request has {fixes} fixer panes already used of its {CI_FIXES_PER_PR}.",
+                    names_or_unknown(checks)
+                ),
+            );
+            self.broadcast_night_run(run_id);
+            return;
+        }
+        self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+            fixes: gates.fixes + 1,
+            ci: proto::NightGate::Failed,
+            ..*gates
+        });
+        let settings = match self.night_settings(row.routine_id) {
+            Ok(s) => s,
+            Err(e) => {
+                self.night_fixer_refused(
+                    run_id,
+                    number,
+                    &format!("reading the run's settings: {e:#}"),
+                );
+                return;
+            }
+        };
+        let Some(worker) = settings.workers.first() else {
+            self.night_fixer_refused(
+                run_id,
+                number,
+                "no worker provider is configured for this routine",
+            );
+            return;
+        };
+        let (provider, substituted) =
+            match self.night_shift_spawn_provider(orchestrator, worker.provider, false) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+                    return;
+                }
+            };
+        let prompt = crate::night_shift::fixer_prompt(number, checks, head, excerpt, configured);
+        let spawned = self.orchestrate_spawn_with_options(
             orchestrator,
-            &workspace,
+            provider,
             None,
             None,
-            crate::orchestrate::InboxKind::OperatorNote,
-            &title,
-            &body,
-            Vec::new(),
+            crate::orchestrate::Brief::from(prompt),
             None,
+            None,
+            Some(fixer_role(number)),
             None,
             false,
-            true,
-        ) {
-            tracing::warn!("telling night run {run_id} about PR #{number}: {e:#}");
+            None,
+            None,
+        );
+        let session = match spawned {
+            Ok(s) => s,
+            Err(e) => {
+                self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+                return;
+            }
+        };
+        if let Err(e) = self.night_shift_spawned(orchestrator, session.id) {
+            self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+            return;
         }
+        let slug = crate::agent_hooks::provider_slug(provider);
+        let substitute = substituted
+            .map(|w| format!(" {}", w.message))
+            .unwrap_or_default();
+        let cause = why.map(|w| format!(" {w}.")).unwrap_or_default();
+        self.night_tell_orchestrator(
+            run_id,
+            &format!("Night shift: fixer started on PR #{number}"),
+            &format!(
+                "CI on PR #{number} failed on {}. Houston started pane {} ({slug}) as its \
+                 fixer; it works in the run's worktree, checks out the pull request's branch \
+                 and pushes a fix commit.{cause}{substitute}",
+                names_or_unknown(checks),
+                session.id
+            ),
+        );
         self.broadcast_night_run(run_id);
-        Ok(rerun)
+    }
+
+    fn night_fixer_refused(self: &Arc<Self>, run_id: u32, number: u32, why: &str) {
+        self.night_tell_orchestrator(
+            run_id,
+            &format!("Night shift: PR #{number} fixer did not start"),
+            &format!(
+                "Houston could not start a fixer pane for PR #{number}: {why}. The failure \
+                 stays with the orchestrator; no further fixer is started for this attempt."
+            ),
+        );
+        self.broadcast_night_run(run_id);
+    }
+
+    fn night_ci_set_gates(
+        &self,
+        entry_id: u32,
+        change: impl FnOnce(&proto::NightGates) -> proto::NightGates,
+    ) {
+        let Ok(Some(entry)) = self.db.night_entry(entry_id) else {
+            return;
+        };
+        if let Err(e) = self
+            .db
+            .set_night_entry_gates(entry_id, &change(&entry.gates))
+        {
+            tracing::warn!("recording CI gates of entry {entry_id}: {e:#}");
+        }
     }
 
     fn night_zcode_turn_ended(&self, session: u32) {

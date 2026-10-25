@@ -7854,6 +7854,7 @@ mod tests {
                 ci: NightGate::Failed,
                 verify: NightGate::Passed,
                 reruns: 1,
+                fixes: 2,
             },
             created_at_ms: 5,
             decided_at_ms: None,

@@ -2132,9 +2132,61 @@ async fn build_slot_waits_for_the_memory_floor() {
 
 // ---- S6 ----
 
+fn install_fake_gh() -> (tempfile::TempDir, PathBuf, common::PathPrepend) {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::copy(
+        env!("CARGO_BIN_EXE_fake_gh"),
+        bin.join(format!("gh{}", std::env::consts::EXE_SUFFIX)),
+    )
+    .unwrap();
+    let prepend = common::prepend_path(&bin);
+    (dir, bin, prepend)
+}
+
+fn fixer_pane(r: &Rig, run: u32, number: u32) -> Option<u32> {
+    let role = format!("fixer-{number}");
+    r.run(run)
+        .crew
+        .into_iter()
+        .find(|c| c.role.as_deref() == Some(role.as_str()))
+        .map(|c| c.session_id)
+}
+
+async fn ci_failure(
+    r: &Rig,
+    o: u32,
+    number: u32,
+    checks: &[String],
+    log: &[String],
+    gh: Option<u64>,
+) -> Option<houston_core::night_shift::CiAction> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(action) = r
+            .daemon
+            .night_shift_ci_failed(o, number, checks, log, gh)
+            .unwrap()
+        {
+            return Some(action);
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "PR #{number}'s CI action never became available"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 #[tokio::test]
-async fn flaky_failure_rerun_once() {
+async fn flaky_failure_rerun_once_then_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
     let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
@@ -2150,32 +2202,196 @@ async fn flaky_failure_rerun_once() {
     ] {
         assert_eq!(r.night(o, verb, body).await.0, 200);
     }
+    let checks = vec!["core-checks".to_string()];
     let log = vec![
         "core-checks".to_string(),
         "test pty::resize_race ... FAILED".to_string(),
     ];
-    assert!(r.daemon.night_shift_ci_failed(o, 21, &log).unwrap());
-    let pr = |r: &Rig| {
-        r.run(run.run_id)
-            .entries
-            .into_iter()
-            .find(|e| e.pr_number == Some(21))
-            .unwrap()
-    };
-    assert_eq!(pr(&r).gates.reruns, 1);
-    assert_eq!(pr(&r).gates.ci, proto::NightGate::Pending);
-    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
-    assert!(
-        !r.daemon.night_shift_ci_failed(o, 21, &log).unwrap(),
-        "a second failure is not re-run again"
+    let action = r
+        .daemon
+        .night_shift_ci_failed(o, 21, &checks, &log, Some(777))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
     );
-    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
-    assert_eq!(r.notes(o, "Night shift: PR #21 failed again"), 1);
-    assert_eq!(pr(&r).gates.reruns, 1);
-    assert_eq!(pr(&r).gates.ci, proto::NightGate::Failed);
-    assert!(
-        !r.daemon.night_shift_ci_failed(o, 99, &log).unwrap(),
+    wait_until("the re-run to be recorded", || {
+        pr_entry(&r, run.run_id, 21).gates.reruns == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 21);
+    assert_eq!(pr.gates.ci, proto::NightGate::Pending);
+    assert_eq!(pr.gates.fixes, 0);
+    let calls = std::fs::read_to_string(gh_bin.join("gh.log")).unwrap_or_default();
+    assert!(calls.contains("run rerun 777 --failed"), "{calls}");
+    assert_eq!(
+        r.notes(o, "Night shift: re-run requested for PR #21"),
+        1,
+        "the orchestrator is told Houston re-ran it"
+    );
+
+    // The same failure again is real: Houston starts a fixer pane.
+    let action = ci_failure(&r, o, 21, &checks, &log, Some(777)).await;
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 21).is_some()
+    })
+    .await;
+    wait_until("the fixer to be counted", || {
+        pr_entry(&r, run.run_id, 21).gates.fixes == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 21);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(pr.gates.reruns, 1, "a flaky test is re-run only once");
+    assert_eq!(r.notes(o, "Night shift: fixer started on PR #21"), 1);
+    let fixer = fixer_pane(&r, run.run_id, 21).expect("the fixer is live");
+    assert!(r.live(fixer));
+    assert_eq!(
+        r.daemon
+            .night_shift_ci_failed(o, 99, &checks, &log, None)
+            .unwrap(),
+        None,
         "a PR the run never recorded is not its business"
+    );
+}
+
+#[tokio::test]
+async fn a_real_ci_failure_starts_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 22, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let action = r
+        .daemon
+        .night_shift_ci_failed(
+            o,
+            22,
+            &["core-checks".into()],
+            &["lint failed".into()],
+            None,
+        )
+        .unwrap();
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 22).is_some()
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 22);
+    assert_eq!(pr.gates.fixes, 1);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(r.notes(o, "Night shift: fixer started on PR #22"), 1);
+}
+
+#[tokio::test]
+async fn a_pr_gets_at_most_two_fixer_panes() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 23, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let checks = vec!["core-checks".to_string()];
+    let log = vec!["lint failed".to_string()];
+    for fixes in 1..=2 {
+        assert_eq!(
+            ci_failure(&r, o, 23, &checks, &log, None).await,
+            Some(CiAction::Fix)
+        );
+        wait_until("the fixer to appear", || {
+            fixer_pane(&r, run.run_id, 23).is_some()
+        })
+        .await;
+        wait_until("the fixer to be counted", || {
+            pr_entry(&r, run.run_id, 23).gates.fixes == fixes
+        })
+        .await;
+        let fixer = fixer_pane(&r, run.run_id, 23).expect("the fixer is live");
+        r.daemon.kill(fixer).unwrap();
+        wait_until("the fixer to exit", || !r.live(fixer)).await;
+    }
+    let action = ci_failure(&r, o, 23, &checks, &log, None).await;
+    assert!(
+        matches!(action, Some(CiAction::GiveUp { ref why }) if why.contains("2 fixer panes")),
+        "{action:?}"
+    );
+    assert!(fixer_pane(&r, run.run_id, 23).is_none(), "no third fixer");
+    assert_eq!(r.notes(o, "Night shift: PR #23 CI needs you"), 1);
+}
+
+#[tokio::test]
+async fn a_refused_fixer_spawn_is_reported_with_its_reason() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 24, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let action = r
+        .daemon
+        .night_shift_ci_failed(
+            o,
+            24,
+            &["core-checks".into()],
+            &["lint failed".into()],
+            None,
+        )
+        .unwrap();
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the refusal note", || {
+        r.notes(o, "Night shift: PR #24 fixer did not start") == 1
+    })
+    .await;
+    let note = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("PR #24 fixer did not start"))
+        .expect("the refusal is recorded");
+    assert!(
+        note.body.contains("agent spawning is switched off"),
+        "{}",
+        note.body
+    );
+    assert_eq!(pr_entry(&r, run.run_id, 24).gates.fixes, 1);
+    assert!(
+        fixer_pane(&r, run.run_id, 24).is_none(),
+        "a refused spawn starts no pane"
     );
 }
 
@@ -2245,19 +2461,24 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
         12,
         "statusCheckRollup",
         json!([{ "__typename": "CheckRun", "name": "test pty::resize_race",
-                 "status": "COMPLETED", "conclusion": "FAILURE" }]),
+                 "status": "COMPLETED", "conclusion": "FAILURE",
+                 "detailsUrl": "https://github.com/owner/repo/actions/runs/4242/job/1" }]),
     );
     gh.read_pass().await;
+    wait_until("Houston's one re-run to be recorded", || {
+        entry(&d).gates.reruns == 1
+    })
+    .await;
     let pr = entry(&d);
     assert_eq!(
         (pr.gates.reruns, pr.gates.ci),
         (1, proto::NightGate::Pending)
     );
     assert!(
-        d.inbox_rows_for_test(o)
-            .iter()
-            .any(|row| row.summary.contains("Night shift: re-run CI on PR #12")),
-        "the orchestrator is asked for one re-run"
+        d.inbox_rows_for_test(o).iter().any(|row| row
+            .summary
+            .contains("Night shift: re-run requested for PR #12")),
+        "the orchestrator is told Houston re-ran it"
     );
 
     gh.pr_set(12, "state", json!("MERGED"));

@@ -1400,6 +1400,33 @@ pub fn pr_check_log(dir: &Path, run_id: u64) -> Result<PrCheckLog> {
     })
 }
 
+/// `gh run rerun <id> --failed`: GitHub re-runs exactly the jobs that failed.
+pub fn rerun_failed_jobs(dir: &Path, run_id: u64) -> Result<()> {
+    ready(dir, "re-run failed jobs")?;
+    let argv = rerun_failed_argv(run_id);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let out = run(dir, &args)?;
+    if !out.ok {
+        let output = first_meaningful_line(&out.stderr)
+            .or_else(|| first_meaningful_line(&out.stdout))
+            .unwrap_or_else(|| "no output".into());
+        bail!(
+            "gh run rerun {run_id} --failed failed (exit {:?}): {output}",
+            out.code
+        );
+    }
+    Ok(())
+}
+
+fn rerun_failed_argv(run_id: u64) -> Vec<String> {
+    vec![
+        "run".into(),
+        "rerun".into(),
+        run_id.to_string(),
+        "--failed".into(),
+    ]
+}
+
 /// `gh pr diff --color never`, cut to [`PR_DIFF_MAX_BYTES`] on a character
 /// boundary when GitHub serves more; the flag says which it was.
 pub fn pr_diff(dir: &Path, number: u32) -> Result<(String, bool)> {
@@ -1854,6 +1881,16 @@ mod tests {
                 "{field} missing from {PR_DETAIL_FIELDS}"
             );
         }
+    }
+
+    #[test]
+    fn a_rerun_asks_gh_for_only_the_failed_jobs_of_that_run() {
+        assert_eq!(
+            rerun_failed_argv(42),
+            ["run", "rerun", "42", "--failed"]
+                .map(str::to_string)
+                .to_vec()
+        );
     }
 
     #[test]

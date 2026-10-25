@@ -374,6 +374,10 @@ pub struct NightGates {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reruns: u32,
+    /// Fixer panes Houston started for this PR's CI failures.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub fixes: u32,
 }
 
 /// What a planned change must make true, with a concrete value, and the
