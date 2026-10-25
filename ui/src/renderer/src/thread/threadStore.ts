@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { buildThreadItems, type ThreadItem } from './threadModel'
-import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueueMsg, type ThreadQueuedMessage } from './threadTypes'
+import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type ThreadClientMsg, type ThreadCommands, type ThreadCommandsMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadExcerpt, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueueMsg, type ThreadQueuedMessage } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -25,9 +25,11 @@ export interface ThreadSnapshot {
   queue: readonly ThreadQueuedMessage[]
   /** The daemon's last refusal of a message or queue request, until dismissed. */
   refusal: string | null
+  /** The `/` commands Claude last reported; null until the daemon answers. */
+  commands: ThreadCommands | null
 }
 
-const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set(), queue: [], refusal: null }
+const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set(), queue: [], refusal: null, commands: null }
 
 /** `beforeSeq: null` is the latest page. */
 interface HistoryRequest { beforeSeq: number | null }
@@ -55,12 +57,17 @@ export class ThreadSessionStore {
   attach(): void {
     // The queue is small and changes while the client is away, so every attach rereads it.
     this.send({ type: 'thread_queue_list', session: this.session })
+    this.send({ type: 'thread_commands_list', session: this.session })
     if (this.snapshot.loaded || this.pending.some((request) => request.beforeSeq === null)) return
     this.request(null)
   }
 
   onQueue(msg: ThreadQueueMsg): void {
     this.set({ ...this.snapshot, queue: msg.items })
+  }
+
+  onCommands(msg: ThreadCommandsMsg): void {
+    this.set({ ...this.snapshot, commands: { commands: msg.commands, skills: msg.skills, terminal_only: msg.terminal_only } })
   }
 
   refused(reason: string): void {
@@ -220,6 +227,7 @@ function registryFor(client: HoustonClient): Registry {
   const offEvents = client.subscribe('thread_events', (msg) => stores.get(msg.session)?.store.onEvents(msg))
   const offHistory = client.subscribe('thread_history', (msg) => stores.get(msg.session)?.store.onHistory(msg))
   const offQueue = client.subscribe('thread_queue', (msg) => stores.get(msg.session)?.store.onQueue(msg))
+  const offCommands = client.subscribe('thread_commands', (msg) => stores.get(msg.session)?.store.onCommands(msg))
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
     if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
@@ -228,7 +236,7 @@ function registryFor(client: HoustonClient): Registry {
     const queue = THREAD_QUEUE_REFUSAL.exec(msg.message)
     if (queue) stores.get(Number(queue[1]))?.store.refused(msg.message)
   })
-  const off = (): void => { offEvents(); offHistory(); offQueue(); offError() }
+  const off = (): void => { offEvents(); offHistory(); offQueue(); offCommands(); offError() }
   const registry = { stores, off }
   registries.set(client, registry)
   return registry
@@ -262,8 +270,8 @@ export function retainThreadStore(client: HoustonClient, session: number): { sto
 }
 
 /** Whether the message was written to the socket; a closed socket drops it. `steer` stops an open turn and sends this first. */
-export function sendThreadMessage(client: HoustonClient, session: number, text: string, steer = false): boolean {
-  return client.trySend({ type: 'thread_send', session, text, steer })
+export function sendThreadMessage(client: HoustonClient, session: number, text: string, steer = false, excerpts: readonly ThreadExcerpt[] = []): boolean {
+  return client.trySend({ type: 'thread_send', session, text, steer, excerpts: [...excerpts] })
 }
 
 export type QueueAction = { type: 'edit'; id: string; text: string } | { type: 'remove'; id: string } | { type: 'send'; id: string } | { type: 'steer'; id: string }

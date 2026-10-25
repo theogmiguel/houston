@@ -7,7 +7,7 @@ function ev(seq: number, kind: ThreadEventKind): ThreadEvent {
   return { seq, at_ms: seq, kind }
 }
 
-const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text })
+const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text, excerpts: [] })
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 
 function store(): { store: ThreadSessionStore; sent: ThreadClientMsg[] } {
@@ -90,7 +90,7 @@ describe('ThreadSessionStore', () => {
   it('rereads the queue on every attach and keeps it across a history reload', () => {
     const { store: s, sent } = store()
     s.attach()
-    s.onQueue({ type: 'thread_queue', session: 7, items: [{ id: 'q1', text: 'next', state: 'queued', hold_reason: null, created_at_ms: 1 }] })
+    s.onQueue({ type: 'thread_queue', session: 7, items: [{ id: 'q1', text: 'next', state: 'queued', hold_reason: null, created_at_ms: 1, excerpts: [] }] })
     s.onHistory(history([ev(1, user('go'))]))
     expect(s.getSnapshot().queue.map((item) => item.id)).toEqual(['q1'])
     s.attach()

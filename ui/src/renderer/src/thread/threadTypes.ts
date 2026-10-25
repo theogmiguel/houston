@@ -6,11 +6,15 @@ export type { ThreadEventKind } from '../houston/generated/ThreadEventKind'
 export type { TurnOutcome } from '../houston/generated/TurnOutcome'
 export type { ThreadPermissionMode } from '../houston/generated/ThreadPermissionMode'
 export type { ThreadQueuedMessage } from '../houston/generated/ThreadQueuedMessage'
+export type { ThreadExcerpt } from '../houston/generated/ThreadExcerpt'
 
 export type ThreadEventsMsg = Extract<ServerMsg, { type: 'thread_events' }>
 export type ThreadHistoryMsg = Extract<ServerMsg, { type: 'thread_history' }>
 export type ThreadQueueMsg = Extract<ServerMsg, { type: 'thread_queue' }>
-export type ThreadClientMsg = Extract<ClientMsg, { type: 'thread_send' | 'thread_stop' | 'thread_history' | 'thread_approve' | 'thread_set_permission_mode' | 'thread_queue_list' | 'thread_queue_edit' | 'thread_queue_remove' | 'thread_queue_send' | 'thread_steer' }>
+export type ThreadCommandsMsg = Extract<ServerMsg, { type: 'thread_commands' }>
+/** The `/` commands Claude last reported, without the session. */
+export type ThreadCommands = Omit<ThreadCommandsMsg, 'type' | 'session'>
+export type ThreadClientMsg = Extract<ClientMsg, { type: 'thread_send' | 'thread_stop' | 'thread_history' | 'thread_approve' | 'thread_set_permission_mode' | 'thread_queue_list' | 'thread_queue_edit' | 'thread_queue_remove' | 'thread_queue_send' | 'thread_steer' | 'thread_commands_list' }>
 
 /** The daemon's refusal of a `thread_history` request names the session; the thread pane shows it. */
 export const THREAD_HISTORY_REFUSAL = /^thread_history refused for session (\d+)/

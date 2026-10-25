@@ -1,4 +1,4 @@
-import type { ThreadEvent } from './threadTypes'
+import type { ThreadEvent, ThreadExcerpt } from './threadTypes'
 
 export interface ToolResultView {
   isError: boolean
@@ -10,13 +10,16 @@ export interface ToolResultView {
 export type ApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
 
 export type ThreadItem =
-  | { kind: 'user'; key: string; text: string; steered: boolean }
+  | { kind: 'user'; key: string; text: string; steered: boolean; excerpts: readonly ThreadExcerpt[] }
   | { kind: 'assistant'; key: string; text: string; streaming: boolean; truncated: boolean }
   | { kind: 'tool'; key: string; name: string; input: string; inputTruncated: boolean; result: ToolResultView | null; settled: boolean }
   | { kind: 'notice'; key: string; text: string }
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
   | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; inputBytes: number; state: ApprovalState; reason: string | null }
+
+// Shared so rows without excerpts compare equal across rebuilds.
+const NO_EXCERPTS: readonly ThreadExcerpt[] = []
 
 // Folds the event log into rows. Deltas stream into one row per message until its stored
 // `assistant_message` replaces them; deltas arriving after that are stale and skipped.
@@ -47,7 +50,7 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
       case 'user_message':
         freeze()
         turnStart = items.length
-        items.push({ kind: 'user', key, text: kind.text, steered: kind.delivery === 'steered' })
+        items.push({ kind: 'user', key, text: kind.text, steered: kind.delivery === 'steered', excerpts: kind.excerpts ?? NO_EXCERPTS })
         break
       case 'assistant_delta': {
         if (stored.has(kind.message_id)) break
@@ -141,7 +144,7 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false
   switch (a.kind) {
     case 'user':
-      return a.text === (b as typeof a).text && a.steered === (b as typeof a).steered
+      return a.text === (b as typeof a).text && a.steered === (b as typeof a).steered && a.excerpts === (b as typeof a).excerpts
     case 'notice':
     case 'error':
       return a.text === (b as typeof a).text

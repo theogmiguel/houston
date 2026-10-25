@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
-import { IconArrowUp, IconClock, IconStopCircle, IconZap } from '../icons'
+import { IconArrowUp, IconClock, IconSquareTerminal, IconStopCircle, IconZap } from '../icons'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { Tooltip } from '../ui/Tooltip'
@@ -27,10 +27,15 @@ import {
   ThreadUserMessage
 } from '../ui/Thread'
 import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
+import { ComposerMenu, ExcerptList, selectionEntries, useComposerMenu, type MenuActions } from './ThreadComposerParts'
+import { viewSwitchRefusal } from '../../thread/viewSwitch'
+import { insertAtToken } from '../../thread/composerMenu'
+import { composedRefusal, quoteRefusal } from '../../thread/excerpts'
+import { quotableSelections, type QuotableSelection } from '../../pane/terminalSelection'
 import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { actOnQueue, sendThreadMessage, setThreadPermissionMode, stopThread, useThread, type QueueAction } from '../../thread/threadStore'
-import type { ThreadPermissionMode, ThreadQueuedMessage } from '../../thread/threadTypes'
+import type { ThreadCommands, ThreadExcerpt, ThreadPermissionMode, ThreadQueuedMessage } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
 
@@ -58,7 +63,7 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
 }): React.JSX.Element {
   switch (item.kind) {
     case 'user':
-      return <ThreadUserMessage steered={item.steered}>{item.text}</ThreadUserMessage>
+      return <ThreadUserMessage steered={item.steered} excerpts={item.excerpts.length > 0 ? <ExcerptList excerpts={item.excerpts} /> : undefined}>{item.text}</ThreadUserMessage>
     case 'assistant':
       return (
         <ThreadAssistantBlock streaming={item.streaming}>
@@ -142,7 +147,9 @@ function submitsOnEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
   return e.key === 'Enter' && !e.shiftKey && !isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })
 }
 
-export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDismissDaemonRefusal, strip, onSend, onStop }: {
+const NO_TERMINAL: MenuActions['terminalRefusal'] = 'This thread cannot open in a terminal from here'
+
+export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDismissDaemonRefusal, strip, commands = null, root = '', terminal, onSend, onStop }: {
   stoppable: boolean
   disabledReason: string | null
   /** The daemon's last refusal of a message or queue request. */
@@ -150,49 +157,147 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
   onDismissDaemonRefusal?: () => void
   /** The queue's summary, shown above the field. */
   strip?: React.ReactNode
+  /** The `/` menu's commands, as Claude last reported them. */
+  commands?: ThreadCommands | null
+  /** The directory `@` paths are relative to: the session's cwd. */
+  root?: string
+  /** "Open in terminal" for `/terminal` and terminal-only commands; `refusal` says why it is unavailable. */
+  terminal?: { refusal: string | null; open: () => void }
   /** Whether the message was written; the text stays in the field when it was not. `steer` stops the open turn. */
-  onSend: (text: string, steer: boolean) => boolean
+  onSend: (text: string, steer: boolean, excerpts: readonly ThreadExcerpt[]) => boolean
   onStop: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
+  const [caret, setCaret] = useState(0)
+  const [excerpts, setExcerpts] = useState<readonly ThreadExcerpt[]>([])
   const [refusal, setRefusal] = useState<string | null>(null)
+  const [active, setActive] = useState(0)
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const [quoting, setQuoting] = useState<readonly QuotableSelection[] | null>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  const pendingCaret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const at = pendingCaret.current
+    if (at === null || !input.current) return
+    pendingCaret.current = null
+    input.current.focus()
+    input.current.setSelectionRange(at, at)
+  })
+  const actions: MenuActions = {
+    insert: (token, insert) => {
+      const next = insertAtToken(text, token, insert)
+      setText(next.text)
+      setCaret(next.caret)
+      pendingCaret.current = next.caret
+    },
+    openInTerminal: () => {
+      setText('')
+      terminal?.open()
+    },
+    terminalRefusal: terminal ? terminal.refusal : NO_TERMINAL
+  }
+  const menu = useComposerMenu({ text, caret, commands, root, actions })
+  const tokenKey = menu.token ? `${menu.token.start}:${menu.token.trigger}` : null
+  const quote = (selection: QuotableSelection): void => {
+    setQuoting(null)
+    const refused = quoteRefusal(excerpts, selection.text)
+    if (refused !== null) return setRefusal(refused)
+    setRefusal(null)
+    setExcerpts([...excerpts, { source: selection.name, session: selection.session, text: selection.text }])
+    pendingCaret.current = caret
+  }
+  const quoteEntries = quoting === null ? null : selectionEntries(quoting, quote)
+  const menuOpen = quoteEntries !== null || (menu.token !== null && tokenKey !== dismissed && (menu.entries.length > 0 || menu.notice !== null))
+  const entries = quoteEntries ?? menu.entries
+  const activeIndex = Math.min(active, Math.max(0, entries.length - 1))
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
   const send = (steer: boolean): void => {
-    if (disabledReason !== null || text.trim() === '') return
-    const tooLarge = utf8Refusal(text)
+    if (disabledReason !== null || (text.trim() === '' && excerpts.length === 0)) return
+    const tooLarge = composedRefusal(text, excerpts)
     if (tooLarge !== null) {
       setRefusal(tooLarge)
       return
     }
-    if (!onSend(text, steer)) {
+    if (!onSend(text, steer, excerpts)) {
       setRefusal('Message not sent: the connection to the daemon is closed. Your text is kept.')
       return
     }
     setRefusal(null)
     setText('')
+    setExcerpts([])
   }
-  const empty = text.trim() === ''
+  const startQuote = (): void => {
+    const selections = quotableSelections()
+    if (selections.length === 0) return setRefusal('Nothing to quote: select text in a terminal pane of this grid first.')
+    const only = selections[0]
+    if (selections.length === 1 && only) return quote(only)
+    setActive(0)
+    setQuoting(selections)
+  }
+  const onMenuKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!menuOpen) return false
+    if (e.key === 'Escape') {
+      setQuoting(null)
+      setDismissed(tokenKey)
+      return true
+    }
+    if (entries.length === 0) return false
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      setActive((activeIndex + step + entries.length) % entries.length)
+      return true
+    }
+    if ((e.key === 'Enter' && !e.shiftKey && !isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })) || e.key === 'Tab') {
+      const entry = entries[activeIndex]
+      if (entry && !entry.disabledReason) {
+        setActive(0)
+        entry.run()
+      }
+      return true
+    }
+    return false
+  }
+  const empty = text.trim() === '' && excerpts.length === 0
   const blocked = disabledReason !== null
   return (
     <ThreadComposerFrame>
       {refusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => setRefusal(null) }}>{refusal}</Notice>}
       {daemonRefusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => onDismissDaemonRefusal?.() }}>{daemonRefusal}</Notice>}
       {strip}
+      {menuOpen && <ComposerMenu entries={entries} notice={quoteEntries === null ? menu.notice : null} active={activeIndex} onActive={setActive} label={quoteEntries !== null ? 'Quote selection from' : menu.token?.trigger === '@' ? 'Files' : 'Commands'} />}
+      <ExcerptList excerpts={excerpts} onRemove={(index) => setExcerpts(excerpts.filter((_, at) => at !== index))} />
       <ThreadComposerInput
+        ref={input}
         data-testid="thread-composer-input"
         aria-label="Message Claude"
-        placeholder={disabledReason ?? 'Message Claude'}
+        aria-expanded={menuOpen}
+        aria-autocomplete="list"
+        placeholder={disabledReason ?? 'Message Claude · / for commands · @ for files'}
         rows={rows}
         value={text}
         disabled={disabledReason !== null}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value)
+          setCaret(e.target.selectionStart)
+          setActive(0)
+          setQuoting(null)
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onBlur={() => setQuoting(null)}
         onKeyDown={(e) => {
+          if (onMenuKey(e)) {
+            e.preventDefault()
+            return
+          }
           if (!submitsOnEnter(e)) return
           e.preventDefault()
           send(composerIntent(stoppable, e.ctrlKey) === 'steer')
         }}
       />
       <ThreadComposerActions hint={stoppable ? 'Enter queues · Ctrl+Enter steers · Shift+Enter adds a line' : 'Enter sends · Shift+Enter adds a line'}>
+        <Tooltip label="Quote the text selected in a terminal pane of this grid. You see the full text before it is sent; Houston does not redact it.">
+          <Button data-testid="thread-quote" variant="ghost" size="sm" icon={IconSquareTerminal} disabled={blocked} onMouseDown={(e) => e.preventDefault()} onClick={startQuote}>Quote selection</Button>
+        </Tooltip>
         {!stoppable && <Button data-testid="thread-send" variant="primary" size="sm" icon={IconArrowUp} disabled={blocked || empty} onClick={() => send(false)}>Send</Button>}
         {stoppable && empty && <Button data-testid="thread-stop" variant="primary" size="sm" icon={IconStopCircle} disabled={blocked} onClick={onStop}>Stop</Button>}
         {stoppable && !empty && (
@@ -275,7 +380,7 @@ function QueuedRow({ message, disabled, editing, onEdit, onAct }: {
               }}
             />
           </>
-        : <ThreadQueuedText>{message.text}</ThreadQueuedText>}
+        : <><ExcerptList excerpts={message.excerpts} /><ThreadQueuedText>{message.text}</ThreadQueuedText></>}
     </ThreadQueuedMessageRow>
   )
 }
@@ -390,11 +495,17 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
         daemonRefusal={thread.refusal}
         onDismissDaemonRefusal={thread.dismissRefusal}
         strip={<QueueStrip queue={thread.queue} disabled={queueDisabled} onAct={act} />}
-        onSend={(text, steer) => {
+        commands={thread.commands}
+        root={info.cwd}
+        terminal={{
+          refusal: thread.queue.length > 0 ? `${thread.queue.length} queued ${thread.queue.length === 1 ? 'message waits' : 'messages wait'} in this thread; send or remove them first` : viewSwitchRefusal(info),
+          open: () => client.send({ type: 'session_set_view', session: info.id, view: 'terminal' })
+        }}
+        onSend={(text, steer, excerpts) => {
           setWin(LATEST_WINDOW)
           thread.followLatest()
           thread.dismissRefusal()
-          return sendThreadMessage(client, info.id, text, steer)
+          return sendThreadMessage(client, info.id, text, steer, excerpts)
         }}
         onStop={() => stopThread(client, info.id)}
       />

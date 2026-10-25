@@ -1,8 +1,11 @@
 import type { ReactNode, Ref, TextareaHTMLAttributes } from 'react'
-import { IconCheck, IconChevronDown, IconChevronRight, IconClock, IconInfo, IconShieldAlert, IconStopCircle, IconWrench, type IconComponent } from '../icons'
+import { IconCheck, IconChevronDown, IconChevronRight, IconClock, IconInfo, IconShieldAlert, IconSquareTerminal, IconStopCircle, IconWrench, type IconComponent } from '../icons'
+import { AttachmentChipFilename, AttachmentChipFrame, AttachmentRemoveButton } from './AttachmentChipParts'
 import { Button } from './Button'
 import { Chip } from './Chip'
 import { Icon } from './Icon'
+import { OptionCandidateList } from './OptionCandidateList'
+import { ROW_HIGHLIGHT } from './rowState'
 import { Prose } from './Prose'
 import { FOCUS_RING_ACCENT_INSET_45_CLS } from './shadowChrome'
 import { Text } from './Text'
@@ -20,12 +23,13 @@ export function ThreadScroll({ children, ref, onScroll }: { children: ReactNode;
   )
 }
 
-/** The user's message; `steered` marks one that stopped the running turn to go first. */
-export function ThreadUserMessage({ steered = false, children }: { steered?: boolean; children: ReactNode }): React.JSX.Element {
+/** The user's message; `steered` marks one that stopped the running turn to go first, `excerpts` its quoted selections. */
+export function ThreadUserMessage({ steered = false, excerpts, children }: { steered?: boolean; excerpts?: ReactNode; children: ReactNode }): React.JSX.Element {
   return (
     <div data-thread-item="user" data-steered={steered || undefined} className="flex flex-col items-end gap-[var(--space-1)]">
       {steered && <Chip variant="label" label="Steered" />}
-      <Text as="div" size="body" weight="body" tone="primary" leading="chatMarkdown" className="max-w-[85%] whitespace-pre-wrap break-words rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-3)] py-[var(--space-2)]">{children}</Text>
+      {excerpts && <div className="flex w-[85%] min-w-0 flex-col items-end gap-[var(--space-1)]">{excerpts}</div>}
+      {children !== '' && <Text as="div" size="body" weight="body" tone="primary" leading="chatMarkdown" className="max-w-[85%] whitespace-pre-wrap break-words rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-3)] py-[var(--space-2)]">{children}</Text>}
     </div>
   )
 }
@@ -237,6 +241,68 @@ export function ThreadComposerActions({ hint, children }: { hint?: ReactNode; ch
   )
 }
 
+/** The `/` or `@` menu docked above the composer field; its rows are `ThreadMenuRow`s under `ThreadMenuGroup` labels. */
+export function ThreadComposerMenu({ id, label, children }: { id: string; label: string; children: ReactNode }): React.JSX.Element {
+  return <OptionCandidateList id={id} role="listbox" aria-label={label} data-testid="thread-composer-menu">{children}</OptionCandidateList>
+}
+
+export function ThreadMenuGroup({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" role="presentation" size="label" weight="label" tone="faint" className="px-[var(--space-2)] pt-[var(--space-1-5)] pb-[var(--space-0-5)]">{children}</Text>
+}
+
+/** One menu entry: the name, a muted detail, and a trailing action word such as "Open in terminal". */
+export function ThreadMenuRow({ id, active, name, detail, action, disabled = false, onSelect, onHover }: {
+  id: string
+  active: boolean
+  name: string
+  detail?: string
+  action?: string
+  disabled?: boolean
+  onSelect: () => void
+  onHover: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="option"
+      aria-selected={active}
+      aria-disabled={disabled || undefined}
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onMouseMove={onHover}
+      onClick={() => { if (!disabled) onSelect() }}
+      className={`flex min-h-[var(--h-ctl)] w-full min-w-0 items-center gap-[var(--space-2)] border-0 px-[var(--space-2)] text-left ${ROW_HIGHLIGHT[active ? 'selected' : 'rest']} ${disabled ? 'opacity-55' : 'cursor-pointer'}`}
+    >
+      <Text as="span" size="small" weight="medium" tone="primary" mono className="flex-none">{name}</Text>
+      {detail && <Text as="span" size="small" tone="muted" className="min-w-0 flex-1 truncate">{detail}</Text>}
+      {action && <Text as="span" size="small" tone="faint" className="ml-auto flex-none">{action}</Text>}
+    </button>
+  )
+}
+
+/** A quoted terminal selection: the pane and line count; pressing it shows the full text. */
+export function ThreadExcerptChip({ label, expanded, onToggle, onRemove }: { label: string; expanded: boolean; onToggle: () => void; onRemove?: () => void }): React.JSX.Element {
+  return (
+    <span className="relative inline-flex max-w-full" data-testid="thread-excerpt-chip">
+      <AttachmentChipFrame pressable hasRemove={!!onRemove} aria-expanded={expanded} onClick={onToggle}>
+        <Icon glyph={IconSquareTerminal} role="small" className="flex-none" />
+        <AttachmentChipFilename>{label}</AttachmentChipFilename>
+      </AttachmentChipFrame>
+      {onRemove && <AttachmentRemoveButton filename={label} onRemove={onRemove} />}
+    </span>
+  )
+}
+
+export function ThreadExcerptChips({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="flex min-w-0 flex-wrap gap-[var(--space-1-5)]">{children}</div>
+}
+
+/** An excerpt's full text, exactly as Claude will read it inside its fence. */
+export function ThreadExcerptPreview({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div data-testid="thread-excerpt-preview" className="min-w-0"><ThreadCodeBlock>{children}</ThreadCodeBlock></div>
+}
+
 export function ThreadSpecimen(): React.JSX.Element {
   return (
     <div data-testid="thread-specimen" className="grid max-w-[var(--w-thread-column)] gap-[var(--space-3)]">
@@ -262,6 +328,17 @@ export function ThreadSpecimen(): React.JSX.Element {
       <ThreadQueuedMessageRow state="held" reason="Houston restarted before this message was sent." actions={<><Button variant="ghost" size="sm">Send</Button><Button variant="ghost" size="sm">Remove</Button></>}>
         <ThreadQueuedText>Commit when they pass.</ThreadQueuedText>
       </ThreadQueuedMessageRow>
+      <ThreadUserMessage excerpts={<ThreadExcerptChips><ThreadExcerptChip label="build · 2 lines" expanded={false} onToggle={() => {}} /></ThreadExcerptChips>}>Why does this fail?</ThreadUserMessage>
+      <ThreadComposerMenu id="thread-specimen-menu" label="Commands">
+        <ThreadMenuGroup>Houston</ThreadMenuGroup>
+        <ThreadMenuRow id="thread-specimen-terminal" active name="/terminal" detail="Open this conversation in a terminal pane" onSelect={() => {}} onHover={() => {}} />
+        <ThreadMenuGroup>Terminal only</ThreadMenuGroup>
+        <ThreadMenuRow id="thread-specimen-model" active={false} name="/model" action="Open in terminal" onSelect={() => {}} onHover={() => {}} />
+      </ThreadComposerMenu>
+      <ThreadExcerptChips>
+        <ThreadExcerptChip label="tests · 12 lines" expanded onToggle={() => {}} onRemove={() => {}} />
+      </ThreadExcerptChips>
+      <ThreadExcerptPreview>FAILED src/parse.test.ts &gt; rejects an empty header</ThreadExcerptPreview>
       <ThreadComposerFrame>
         <ThreadQueueStrip label="Queued 2" held={false}><Button variant="ghost" size="sm">Steer</Button><Button variant="ghost" size="sm">Clear</Button></ThreadQueueStrip>
         <ThreadComposerInput rows={1} placeholder="Message Claude" />

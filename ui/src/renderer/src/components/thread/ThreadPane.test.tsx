@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../../houston/client'
 import { THREAD_HISTORY_PAGE } from '../../thread/threadStore'
 import { THREAD_WINDOW_MAX, THREAD_WINDOW_PAGE } from '../../thread/threadModel'
@@ -9,6 +9,13 @@ import type { ThreadEvent, ThreadEventKind, ThreadQueuedMessage } from '../../th
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { THREAD_STOPPED_COPY } from '../ui/Thread'
 import { ThreadPane, composerIntent, queueSummary } from './ThreadPane'
+import { registerTerminalSelection } from '../../pane/terminalSelection'
+
+const search = vi.hoisted(() => vi.fn())
+vi.mock('../../houston/bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../houston/bridge')>()
+  return { ...actual, searchFilePaths: search }
+})
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -50,7 +57,7 @@ function ev(seq: number, kind: ThreadEventKind): ThreadEvent {
   return { seq, at_ms: seq, kind }
 }
 
-const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text })
+const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text, excerpts: [] })
 const said = (id: string, text: string, truncated = false): ThreadEventKind => ({ type: 'assistant_message', message_id: id, text, truncated })
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 const turnEnd = (outcome: 'completed' | 'interrupted' = 'completed'): ThreadEventKind => ({ type: 'turn_end', outcome, error: null })
@@ -102,7 +109,7 @@ describe('ThreadPane', () => {
 
   it('asks for the latest history page on attach and appends only newer live events', () => {
     mount()
-    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
+    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_commands_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
     live([ev(2, user('early live'))])
     history([ev(1, user('first')), ev(2, user('early live'))])
     live([ev(2, user('early live')), ev(3, user('next'))])
@@ -133,7 +140,7 @@ describe('ThreadPane', () => {
     expect(container.textContent).toContain('Thread history was not requested: the connection to the daemon is closed.')
     fake.setOpen(true)
     act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Retry') as HTMLButtonElement).click())
-    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
+    expect(fake.sent).toEqual([{ type: 'thread_queue_list', session: 7 }, { type: 'thread_commands_list', session: 7 }, { type: 'thread_history', session: 7, before_seq: null, limit: THREAD_HISTORY_PAGE }])
     history([ev(1, user('back'))])
     expect(rows('user')).toEqual(['back'])
     expect(container.textContent).not.toContain('was not requested')
@@ -159,7 +166,7 @@ describe('ThreadPane', () => {
     press({ shiftKey: true })
     expect(sends()).toEqual([])
     press({})
-    expect(sends()).toEqual([{ type: 'thread_send', session: 7, text: 'line one', steer: false }])
+    expect(sends()).toEqual([{ type: 'thread_send', session: 7, text: 'line one', steer: false, excerpts: [] }])
     expect(input().value).toBe('')
   })
 
@@ -327,7 +334,7 @@ describe('ThreadPane', () => {
 
   describe('queue', () => {
     const queued = (id: string, text: string, state: 'queued' | 'held' = 'queued', reason: string | null = null): ThreadQueuedMessage =>
-      ({ id, text, state, hold_reason: reason, created_at_ms: 1 })
+      ({ id, text, state, hold_reason: reason, created_at_ms: 1, excerpts: [] })
     const snapshot = (items: ThreadQueuedMessage[]): void => {
       act(() => fake.emit({ type: 'thread_queue', session: 7, items }))
     }
@@ -341,16 +348,16 @@ describe('ThreadPane', () => {
       expect(container.querySelector('[data-testid="thread-stop"]')).toBeNull()
       expect(container.textContent).toContain('Enter queues · Ctrl+Enter steers')
       press({})
-      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'next', steer: false })
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'next', steer: false, excerpts: [] })
       type('now')
       press({ ctrlKey: true })
-      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'now', steer: true })
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'now', steer: true, excerpts: [] })
       type('by button')
       click('thread-steer')
-      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'by button', steer: true })
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'by button', steer: true, excerpts: [] })
       type('queued by button')
       click('thread-queue')
-      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'queued by button', steer: false })
+      expect(last()).toEqual({ type: 'thread_send', session: 7, text: 'queued by button', steer: false, excerpts: [] })
     })
 
     it('never steers when no turn is open', () => {
@@ -421,12 +428,123 @@ describe('ThreadPane', () => {
 
     it('marks a steered message', () => {
       mount()
-      history([ev(1, { type: 'user_message', delivery: 'steered', text: 'first' }), ev(2, user('plain'))])
+      history([ev(1, { type: 'user_message', delivery: 'steered', text: 'first', excerpts: [] }), ev(2, user('plain'))])
       expect([...container.querySelectorAll('[data-thread-item="user"]')].map((row) => row.hasAttribute('data-steered'))).toEqual([true, false])
     })
 
     it('summarises an empty queue as nothing', () => {
       expect(queueSummary([])).toBeNull()
+    })
+  })
+
+  describe('composer menus and quoted selections', () => {
+    const options = (): string[] => [...container.querySelectorAll('[role="option"]')].map((row) => row.textContent ?? '')
+    const key = (k: string): void => {
+      act(() => { input().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })) })
+    }
+    const listCommands = (): void => {
+      act(() => fake.emit({ type: 'thread_commands', session: 7, commands: ['compact'], skills: ['code-review'], terminal_only: ['model'] }))
+    }
+
+    it('asks for the commands on attach and inserts a sendable one without sending it', () => {
+      mount()
+      history([])
+      expect(fake.sent).toContainEqual({ type: 'thread_commands_list', session: 7 })
+      listCommands()
+      type('/')
+      expect(options()).toEqual([
+        expect.stringContaining('/terminal'),
+        expect.stringContaining('/code-review'),
+        expect.stringContaining('/compact'),
+        expect.stringMatching(/\/model.*Open in terminal/)
+      ])
+      expect(container.textContent).toContain('Terminal only')
+      type('/com')
+      expect(options()).toEqual([expect.stringContaining('/compact')])
+      press({})
+      expect(input().value).toBe('/compact ')
+      expect(sends()).toEqual([])
+      key('Escape')
+      expect(options()).toEqual([])
+    })
+
+    it('says Claude has not listed commands yet, and a terminal-only command opens the terminal', () => {
+      mount()
+      history([])
+      type('/')
+      expect(container.textContent).toContain('Claude lists its commands and skills when this thread’s first message runs.')
+      listCommands()
+      type('/mod')
+      press({})
+      expect(fake.sent).toContainEqual({ type: 'session_set_view', session: 7, view: 'terminal' })
+      expect(sends()).toEqual([])
+    })
+
+    it('keeps Open in terminal unavailable while the agent works, naming why', () => {
+      mount({ status: 'working' })
+      history([])
+      listCommands()
+      type('/terminal')
+      press({})
+      expect(fake.sent.some((msg) => msg.type === 'session_set_view')).toBe(false)
+      expect(container.querySelector('[role="option"]')?.getAttribute('aria-disabled')).toBe('true')
+    })
+
+    it('lists files under the session directory for @ and inserts the relative path', async () => {
+      search.mockResolvedValue({ items: [{ path: 'src/main.ts', name: 'main.ts', isDir: false, nameIndices: [], pathIndices: [] }], total: 1, truncated: false })
+      mount({ cwd: '/work/repo' })
+      history([])
+      type('read @ma')
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
+      expect(search).toHaveBeenCalledWith('/work/repo', 'ma', 50)
+      expect(options()).toEqual([expect.stringContaining('src/main.ts')])
+      press({})
+      expect(input().value).toBe('read @src/main.ts ')
+      expect(sends()).toEqual([])
+    })
+
+    it('quotes a terminal selection as a chip that shows its text, and sends it as an excerpt', () => {
+      const selected = 'error[E0308]\nat main.rs:4'
+      const off = registerTerminalSelection(9, () => selected, { name: () => 'build', hidden: () => false })
+      const hidden = registerTerminalSelection(10, () => 'other grid', { name: () => 'elsewhere', hidden: () => true })
+      try {
+        mount()
+        history([])
+        click('thread-quote')
+        const chip = container.querySelector('[data-testid="thread-excerpt-chip"] button') as HTMLButtonElement
+        expect(chip.textContent).toBe('build · 2 lines')
+        expect(container.querySelector('[data-testid="thread-excerpt-preview"]')).toBeNull()
+        act(() => chip.click())
+        expect(container.querySelector('[data-testid="thread-excerpt-preview"]')?.textContent).toBe(selected)
+        type('Why?')
+        press({})
+        expect(sends()).toEqual([{ type: 'thread_send', session: 7, text: 'Why?', steer: false, excerpts: [{ source: 'build', session: 9, text: selected }] }])
+        expect(container.querySelector('[data-testid="thread-excerpt-chip"]')).toBeNull()
+      } finally {
+        off()
+        hidden()
+      }
+    })
+
+    it('names an empty selection and lets a removed chip go', () => {
+      mount()
+      history([])
+      click('thread-quote')
+      expect(container.textContent).toContain('Nothing to quote: select text in a terminal pane of this grid first.')
+      const off = registerTerminalSelection(9, () => 'x', { name: () => 'build', hidden: () => false })
+      try {
+        click('thread-quote')
+        act(() => (container.querySelector('[aria-label="Remove build · 1 line"]') as HTMLButtonElement).click())
+        expect(container.querySelector('[data-testid="thread-excerpt-chip"]')).toBeNull()
+      } finally {
+        off()
+      }
+    })
+
+    it('draws a sent message’s selections as chips from its excerpts', () => {
+      mount()
+      history([ev(1, { type: 'user_message', delivery: 'direct', text: 'Why?', excerpts: [{ source: 'build', session: 9, text: 'a\nb' }] })])
+      expect(rows('user')).toEqual(['build · 2 linesWhy?'])
     })
   })
 })

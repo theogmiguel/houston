@@ -221,9 +221,15 @@
     "view switching adds the pane menu's Open as thread / Open in terminal row, the",
     "default-view hook applied by the new pane flows and the WSL routes for the",
     "three new protocol messages; the Default view settings row is on the lazy",
-    "Settings chunk."
+    "Settings chunk.",
+    "",
+    "Re-cut against 954,039 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "a thread's Quote selection reads the selection registry every terminal pane",
+    "joins on mount, so each pane's name and grid visibility are registered there,",
+    "and the WSL routes carry the two new command messages; the menus and chips",
+    "load with the thread pane."
   ],
-  "maxBootBytes": 953720,
+  "maxBootBytes": 954240,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

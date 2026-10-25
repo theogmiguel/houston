@@ -2,12 +2,13 @@ import React from 'react'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../src/houston/client'
 import { SessionPane } from '../src/components/SessionPane'
 import { DefaultViewSetting } from '../src/components/settings/DefaultViewSetting'
-import type { ThreadEvent, ThreadEventKind, ThreadQueuedMessage } from '../src/thread/threadTypes'
+import type { ThreadCommands, ThreadEvent, ThreadEventKind, ThreadQueuedMessage } from '../src/thread/threadTypes'
+import { registerTerminalSelection } from '../src/pane/terminalSelection'
 
 const noop = (): void => {}
 
-/** A client that answers `thread_history` and `thread_queue_list` from fixtures and ignores every other message. */
-function fixtureClient(events: ThreadEvent[], hasMore = false, queue: ThreadQueuedMessage[] = []): HoustonClient {
+/** A client that answers `thread_history`, `thread_queue_list` and `thread_commands_list` from fixtures and ignores every other message. */
+function fixtureClient(events: ThreadEvent[], hasMore = false, queue: ThreadQueuedMessage[] = [], commands: ThreadCommands | null = null): HoustonClient {
   const listeners = new Set<(msg: ServerMsg) => void>()
   const target = {
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
@@ -17,6 +18,11 @@ function fixtureClient(events: ThreadEvent[], hasMore = false, queue: ThreadQueu
     },
     sessionCwd: () => Promise.resolve('/home/dev/code/houston'),
     trySend: (msg: { type: string; session?: number; before_seq?: number | null }) => {
+      if (msg.type === 'thread_commands_list' && commands !== null) {
+        const reply = { type: 'thread_commands', session: msg.session, ...commands }
+        queueMicrotask(() => { for (const listener of listeners) listener(reply as unknown as ServerMsg) })
+        return true
+      }
       if (msg.type === 'thread_queue_list') {
         const reply = { type: 'thread_queue', session: msg.session, items: queue }
         queueMicrotask(() => { for (const listener of listeners) listener(reply as unknown as ServerMsg) })
@@ -43,7 +49,7 @@ function timeline(kinds: ThreadEventKind[]): ThreadEvent[] {
   return kinds.map((kind, i) => ({ seq: i + 1, at_ms: start + i * 1500, kind }))
 }
 
-const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text })
+const user = (text: string): ThreadEventKind => ({ type: 'user_message', delivery: 'direct', text, excerpts: [] })
 const said = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_message', message_id: id, text, truncated: false })
 const delta = (id: string, text: string): ThreadEventKind => ({ type: 'assistant_delta', message_id: id, text })
 const call = (id: string, name: string, input: object): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name, input: JSON.stringify(input), truncated: false })
@@ -89,8 +95,8 @@ function threadInfo(over: Partial<SessionInfo>): SessionInfo {
   } as unknown as SessionInfo
 }
 
-function ThreadFrame({ events, info, hasMore, expandTools = 0, menu = false, queue, draft }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number; menu?: boolean; queue?: ThreadQueuedMessage[]; draft?: string }): React.JSX.Element {
-  const client = React.useMemo(() => fixtureClient(timeline(events), hasMore, queue), [events, hasMore, queue])
+function ThreadFrame({ events, info, hasMore, expandTools = 0, menu = false, queue, draft, commands = null, quote = false }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number; menu?: boolean; queue?: ThreadQueuedMessage[]; draft?: string; commands?: ThreadCommands | null; quote?: boolean }): React.JSX.Element {
+  const client = React.useMemo(() => fixtureClient(timeline(events), hasMore, queue, commands), [events, hasMore, queue, commands])
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     if (expandTools === 0) return
@@ -106,7 +112,8 @@ function ThreadFrame({ events, info, hasMore, expandTools = 0, menu = false, que
     if (draft === undefined) return
     const timer = window.setInterval(() => {
       const field = ref.current?.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]')
-      if (!field || ref.current?.querySelector('[data-thread-item="queued"]') === null) return
+      if (!field || (queue !== undefined && ref.current?.querySelector('[data-thread-item="queued"]') === null)) return
+      if (quote) ref.current?.querySelector<HTMLButtonElement>('[data-testid="thread-quote"]')?.click()
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(field, draft)
       field.dispatchEvent(new Event('input', { bubbles: true }))
       window.clearInterval(timer)
@@ -200,14 +207,14 @@ const QUEUED_TURN: ThreadEventKind[] = [
   ...HISTORY.slice(1, 8),
   user('Make the sort stable.'),
   { type: 'turn_end', outcome: 'interrupted', error: null },
-  { type: 'user_message', delivery: 'steered', text: 'Sort by pane id, not by title.' },
+  { type: 'user_message', delivery: 'steered', text: 'Sort by pane id, not by title.', excerpts: [] },
   call('q1', 'Edit', { file_path: 'ui/src/renderer/src/railView.ts', old_string: '.sort(byStatus)', new_string: '.sort(byId)', replace_all: false }),
   delta('q2', 'Changed the rail to sort by pane id. Running the rail view tests next')
 ]
 
 const QUEUED: ThreadQueuedMessage[] = [
-  { id: 'q-1', text: 'Then run the rail view tests.', state: 'queued', hold_reason: null, created_at_ms: Date.UTC(2026, 9, 24, 9, 2, 0) },
-  { id: 'q-2', text: 'Commit with a conventional message when they pass.', state: 'queued', hold_reason: null, created_at_ms: Date.UTC(2026, 9, 24, 9, 2, 10) }
+  { id: 'q-1', text: 'Then run the rail view tests.', state: 'queued', hold_reason: null, created_at_ms: Date.UTC(2026, 9, 24, 9, 2, 0), excerpts: [] },
+  { id: 'q-2', text: 'Commit with a conventional message when they pass.', state: 'queued', hold_reason: null, created_at_ms: Date.UTC(2026, 9, 24, 9, 2, 10), excerpts: [] }
 ]
 
 /** A running turn that a steered message started, two messages queued behind it and a third being written. */
@@ -220,6 +227,32 @@ const HELD: ThreadQueuedMessage[] = QUEUED.map((message) => ({ ...message, state
 /** After a daemon restart the queue waits for the user: nothing is sent until they send it. */
 export function ThreadHeldQueueStory(): React.JSX.Element {
   return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={HISTORY} info={threadInfo({ title: 'Rail flicker' })} queue={HELD} /></div>
+}
+
+const BUILD_ERROR = [
+  'error[E0308]: mismatched types',
+  '  --> src/rail.rs:42:18',
+  '   |',
+  '42 |     let id: u32 = pane.id;',
+  '   |             ---   ^^^^^^^ expected `u32`, found `u64`'
+].join('\n')
+
+const COMPOSER_TURN: ThreadEventKind[] = [
+  { type: 'user_message', delivery: 'direct', text: 'Why does the rail build fail?', excerpts: [{ source: 'cargo check', session: 41, text: BUILD_ERROR }] },
+  said('c1', '`pane.id` is a `u64` since the id widening; the rail still stores `u32`. Widen the field or convert with `u32::try_from`.'),
+  done
+]
+
+const COMPOSER_COMMANDS: ThreadCommands = {
+  commands: ['compact', 'context', 'clear', 'init', 'usage'],
+  skills: ['code-review', 'simplify'],
+  terminal_only: ['config', 'model', 'doctor']
+}
+
+/** The composer with a quoted terminal selection and the `/` menu open; the sent message above shows its chip. */
+export function ThreadComposerStory(): React.JSX.Element {
+  React.useEffect(() => registerTerminalSelection(41, () => BUILD_ERROR, { name: () => 'cargo check', hidden: () => false }), [])
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={COMPOSER_TURN} info={threadInfo({ title: 'Rail build' })} commands={COMPOSER_COMMANDS} quote draft="/co" /></div>
 }
 
 /** One long thread, for measuring the rendered DOM against the row window. */
