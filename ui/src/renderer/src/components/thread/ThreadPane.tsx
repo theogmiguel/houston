@@ -27,10 +27,10 @@ import {
   ThreadUserMessage
 } from '../ui/Thread'
 import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
-import { ExcerptList, useComposerMenus } from './ThreadComposerParts'
+import { CommandRefusal, ExcerptList, useComposerMenus } from './ThreadComposerParts'
 import { viewSwitchRefusal } from '../../thread/viewSwitch'
 import { composedRefusal } from '../../thread/excerpts'
-import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
+import { commandRefusal } from '../../thread/composerMenu'
 import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { actOnQueue, sendThreadMessage, setThreadPermissionMode, stopThread, useThread, type QueueAction } from '../../thread/threadStore'
 import type { ThreadCommands, ThreadExcerpt, ThreadPermissionMode, ThreadQueuedMessage } from '../../thread/threadTypes'
@@ -119,10 +119,6 @@ function ThreadPermissionControl({ client, info, connected, events }: { client: 
   )
 }
 
-function utf8Length(text: string): number {
-  return new TextEncoder().encode(text).length
-}
-
 /** Enter that confirms an IME candidate; WebKit reports it after `compositionend` with key code 229. */
 export function isImeEnter(event: { key: string; keyCode: number; isComposing: boolean }): boolean {
   return event.isComposing || event.keyCode === 229 || event.key === 'Process'
@@ -132,12 +128,6 @@ export function isImeEnter(event: { key: string; keyCode: number; isComposing: b
 export function composerIntent(stoppable: boolean, ctrlKey: boolean): 'send' | 'queue' | 'steer' {
   if (!stoppable) return 'send'
   return ctrlKey ? 'steer' : 'queue'
-}
-
-/** Why a message is too large for Claude, or null; the composer and a queued row's edit field both check it. */
-function utf8Refusal(text: string): string | null {
-  const size = utf8Length(text)
-  return size > THREAD_USER_MESSAGE_MAX_BYTES ? `Message not sent: it is ${size.toLocaleString()} bytes and a thread message is limited to ${THREAD_USER_MESSAGE_MAX_BYTES.toLocaleString()} bytes.` : null
 }
 
 /** Enter submits, Shift+Enter and an IME confirmation do not. */
@@ -196,6 +186,7 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
   const [text, setText] = useState('')
   const [excerpts, setExcerpts] = useState<readonly ThreadExcerpt[]>([])
   const [refusal, setRefusal] = useState<string | null>(null)
+  const [command, setCommand] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const menus = useComposerMenus({ draft: { text, setText, excerpts, setExcerpts, setRefusal }, commands, root, terminal, input })
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
@@ -204,6 +195,8 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
     if (disabledReason !== null || empty) return
     const tooLarge = composedRefusal(text, excerpts)
     if (tooLarge !== null) return setRefusal(tooLarge)
+    const blocked = commandRefusal(text, excerpts.length > 0, commands)
+    if (blocked !== null) return setCommand(blocked)
     if (!onSend(text, steer, excerpts)) return setRefusal('Message not sent: the connection to the daemon is closed. Your text is kept.')
     setRefusal(null)
     setText('')
@@ -213,6 +206,7 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
     <ThreadComposerFrame>
       {refusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => setRefusal(null) }}>{refusal}</Notice>}
       {daemonRefusal && <Notice tone="danger" inset="compact-inline" action={{ label: 'Dismiss', onClick: () => onDismissDaemonRefusal?.() }}>{daemonRefusal}</Notice>}
+      {command && <CommandRefusal reason={command} terminal={terminal} onDismiss={() => setCommand(null)} />}
       {strip}
       {menus.menu}
       <ExcerptList excerpts={excerpts} onRemove={(index) => setExcerpts(excerpts.filter((_, at) => at !== index))} />
@@ -228,6 +222,7 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
         disabled={disabledReason !== null}
         onChange={(e) => {
           setText(e.target.value)
+          setCommand(null)
           menus.onEdit(e.target.selectionStart)
         }}
         onSelect={(e) => menus.onCaret(e.currentTarget.selectionStart)}
@@ -272,9 +267,9 @@ function QueuedRow({ message, disabled, editing, onEdit, onAct }: {
   const [refusal, setRefusal] = useState<string | null>(null)
   const held = message.state === 'held'
   const save = (): void => {
-    const tooLarge = utf8Refusal(draft)
+    const tooLarge = composedRefusal(draft, message.excerpts)
     if (tooLarge !== null) return setRefusal(tooLarge)
-    if (draft.trim() === '') return setRefusal('A queued message cannot be empty; remove it instead.')
+    if (draft.trim() === '' && message.excerpts.length === 0) return setRefusal('A queued message cannot be empty; remove it instead.')
     setRefusal(null)
     if (draft !== message.text) onAct({ type: 'edit', id: message.id, text: draft })
     onEdit(false)
@@ -296,6 +291,7 @@ function QueuedRow({ message, disabled, editing, onEdit, onAct }: {
       {editing
         ? <>
             {refusal && <Notice tone="danger" inset="compact-inline">{refusal}</Notice>}
+            <ExcerptList excerpts={message.excerpts} />
             <ThreadComposerInput
               data-testid="thread-queued-input"
               aria-label="Edit queued message"

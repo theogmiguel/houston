@@ -448,6 +448,8 @@ export interface FileSearchResult {
   path: string
   name: string
   isDir: false
+  /** A symbolic link, whose target may lie outside the searched folder. */
+  symlink?: boolean
   nameIndices: number[]
   pathIndices: number[]
 }

@@ -74,3 +74,12 @@ export function slashRows(commands: ThreadCommands | null, query: string): Slash
   }
   return rows.slice(0, SLASH_ROWS_MAX)
 }
+
+/** The daemon's command refusal for names Claude listed, shown before sending; the daemon also refuses the rest. */
+export function commandRefusal(text: string, hasExcerpts: boolean, commands: ThreadCommands | null): string | null {
+  const name = /^\s*\/([A-Za-z0-9:_.-]+)(?:\s|$)/.exec(text)?.[1]
+  if (name === undefined || commands === null) return null
+  if (commands.terminal_only.includes(name)) return `/${name} runs only in a terminal pane; open this conversation there to run it.`
+  if (hasExcerpts && (commands.commands.includes(name) || commands.skills.includes(name))) return `/${name} is a command, and a command cannot carry quoted selections; remove them or send the command alone.`
+  return null
+}

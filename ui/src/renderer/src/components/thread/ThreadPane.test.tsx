@@ -478,6 +478,37 @@ describe('ThreadPane', () => {
       press({})
       expect(fake.sent).toContainEqual({ type: 'session_set_view', session: 7, view: 'terminal' })
       expect(sends()).toEqual([])
+      expect(input().value).toBe('/mod')
+    })
+
+    it('does not send a typed terminal-only command, and offers to open the terminal instead', () => {
+      mount()
+      history([])
+      listCommands()
+      type('/model claude-opus-5-5')
+      press({})
+      expect(sends()).toEqual([])
+      expect(container.textContent).toContain('Not sent: /model runs only in a terminal pane')
+      act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Open in terminal') as HTMLButtonElement).click())
+      expect(fake.sent).toContainEqual({ type: 'session_set_view', session: 7, view: 'terminal' })
+      expect(input().value).toBe('/model claude-opus-5-5')
+    })
+
+    it('refuses a command that carries a quoted selection', () => {
+      const off = registerTerminalSelection(9, () => 'x', { name: () => 'build', hidden: () => false })
+      try {
+        mount()
+        history([])
+        listCommands()
+        click('thread-quote')
+        type('/compact')
+        key('Escape')
+        press({})
+        expect(sends()).toEqual([])
+        expect(container.textContent).toContain('cannot carry quoted selections')
+      } finally {
+        off()
+      }
     })
 
     it('keeps Open in terminal unavailable while the agent works, naming why', () => {
@@ -501,6 +532,35 @@ describe('ThreadPane', () => {
       press({})
       expect(input().value).toBe('read @src/main.ts ')
       expect(sends()).toEqual([])
+    })
+
+    it('leaves symbolic links out of the @ menu', async () => {
+      search.mockResolvedValue({
+        items: [
+          { path: 'link-to-home.txt', name: 'link-to-home.txt', isDir: false, symlink: true, nameIndices: [], pathIndices: [] },
+          { path: 'notes.txt', name: 'notes.txt', isDir: false, symlink: false, nameIndices: [], pathIndices: [] }
+        ],
+        total: 2,
+        truncated: false
+      })
+      mount({ cwd: '/work/repo' })
+      history([])
+      type('@txt')
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
+      expect(options()).toEqual([expect.stringContaining('notes.txt')])
+    })
+
+    it('shows a queued message’s selections while it is edited, and lets an excerpt carry it', () => {
+      mount({ status: 'working' })
+      history([ev(1, user('go'))])
+      act(() => fake.emit({ type: 'thread_queue', session: 7, items: [{ id: 'q1', text: 'why?', state: 'queued', hold_reason: null, created_at_ms: 1, excerpts: [{ source: 'build', session: 9, text: 'a\nb' }] }] }))
+      click('thread-queued-edit')
+      expect(container.querySelector('[data-thread-item="queued"] [data-testid="thread-excerpt-chip"]')?.textContent).toBe('build · 2 lines')
+      const field = container.querySelector('[data-testid="thread-queued-input"]') as HTMLTextAreaElement
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      act(() => { setter.call(field, ''); field.dispatchEvent(new Event('input', { bubbles: true })) })
+      act(() => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+      expect(fake.sent.at(-1)).toEqual({ type: 'thread_queue_edit', session: 7, id: 'q1', text: '' })
     })
 
     it('quotes a terminal selection as a chip that shows its text, and sends it as an excerpt', () => {

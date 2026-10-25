@@ -4,6 +4,7 @@ import { atMention, insertAtToken, menuToken, SLASH_GROUP_LABEL, slashRows, type
 import { excerptLabel, lineCount, quoteRefusal } from '../../thread/excerpts'
 import type { ThreadCommands, ThreadExcerpt } from '../../thread/threadTypes'
 import { quotableSelections, type QuotableSelection } from '../../pane/terminalSelection'
+import { Notice } from '../ui/Notice'
 import { ThreadComposerMenu, ThreadExcerptChip, ThreadExcerptChips, ThreadExcerptPreview, ThreadMenuGroup, ThreadMenuRow } from '../ui/Thread'
 
 /** One selectable menu row; `run` acts on it (insert text, open the terminal, quote a pane). */
@@ -53,7 +54,7 @@ function slashEntries(commands: ThreadCommands | null, token: MenuToken, actions
   })
 }
 
-/** Paths under the session's directory for an `@` query, from the same index Quick Open reads. */
+/** Paths under the session's directory for an `@` query, from the same index Quick Open reads; links are left out because Claude reads an `@` target without a permission prompt. */
 function useAtSearch(root: string, token: MenuToken | null): { paths: string[]; loading: boolean; error: string | null } {
   const query = token?.trigger === '@' ? token.query : null
   const [state, setState] = useState<{ paths: string[]; loading: boolean; error: string | null }>({ paths: [], loading: false, error: null })
@@ -63,7 +64,7 @@ function useAtSearch(root: string, token: MenuToken | null): { paths: string[]; 
     setState((current) => ({ ...current, loading: true, error: null }))
     const timer = window.setTimeout(() => {
       searchFilePaths(root, query, AT_RESULTS_MAX)
-        .then((result) => { if (live) setState({ paths: result.items.map((item) => item.path), loading: false, error: null }) })
+        .then((result) => { if (live) setState({ paths: result.items.filter((item) => item.symlink !== true).map((item) => item.path), loading: false, error: null }) })
         .catch((failure: unknown) => { if (live) setState({ paths: [], loading: false, error: failure instanceof Error ? failure.message : String(failure) }) })
     }, AT_SEARCH_DEBOUNCE_MS)
     return () => { live = false; window.clearTimeout(timer) }
@@ -211,10 +212,7 @@ export function useComposerMenus({ draft, commands, root, terminal, input }: {
       setCaret(next.caret)
       pendingCaret.current = next.caret
     },
-    openInTerminal: () => {
-      setText('')
-      terminal?.open()
-    },
+    openInTerminal: () => terminal?.open(),
     terminalRefusal: terminal ? terminal.refusal : NO_TERMINAL
   }
   const typed = useComposerMenu({ text, caret, commands, root, actions })
@@ -273,4 +271,18 @@ export function useComposerMenus({ draft, commands, root, terminal, input }: {
     closePicker: () => setQuoting(null),
     startQuote
   }
+}
+
+/** A command Claude runs only in its terminal interface: the reason, and Open in terminal when the pane can switch now. */
+export function CommandRefusal({ reason, terminal, onDismiss }: {
+  reason: string
+  terminal?: { refusal: string | null; open: () => void }
+  onDismiss: () => void
+}): React.JSX.Element {
+  const openable = terminal !== undefined && terminal.refusal === null && reason.includes('runs only in a terminal pane')
+  return (
+    <Notice tone="danger" inset="compact-inline" action={openable ? { label: 'Open in terminal', onClick: () => terminal.open() } : { label: 'Dismiss', onClick: onDismiss }}>
+      {`Not sent: ${reason}`}
+    </Notice>
+  )
 }

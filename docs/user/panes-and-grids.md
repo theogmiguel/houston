@@ -91,22 +91,30 @@ to terminal panes only.
 
 Type **/** at the start of a message to pick a command. Skills, and the Claude commands
 that work in a thread such as `/compact`, `/context`, `/clear` and `/init`, go into the box
-and run when you send the message. Every other Claude command, including those that change
-Claude's settings or sign-in such as `/model`, `/config` and `/login`, runs only in a
-terminal: choosing one, or `/terminal`, opens the conversation in a terminal pane (see
-below). Claude lists its commands when a thread's first message runs, so a new thread
-offers only `/terminal` until then. After `/clear` the thread notes that Claude no longer
-remembers the messages above it; they stay visible. A command name Claude does not know
-reaches Claude as ordinary text.
+and run when you send the message. Every other Claude command runs only in a terminal,
+and so do skills that edit Claude's settings, permissions or plugins. This includes those
+that change Claude's settings or sign-in, such as `/model`, `/config` and `/login`.
+Choosing one, or `/terminal`, opens the conversation in a terminal pane (see below). A
+thread refuses such a command when you type it, edit it into a queued message or an agent
+sends it, and says why. Claude lists its commands when a thread's first message runs, so a
+new thread offers only `/terminal` until then. A command name Claude does not know reaches
+Claude as ordinary text.
+
+After `/clear` the thread notes that Claude no longer remembers the messages above it;
+they stay visible. Houston keeps the new conversation as the one to resume, so Open in
+terminal, Restart and a Houston restart continue it, not the cleared one.
 
 Type **@** to pick a file under the session's working directory. Houston inserts the path
-relative to that directory, and Claude reads the file when the message runs.
+relative to that directory, and Claude reads the file when the message runs, without
+asking. The menu leaves out symbolic links, because their target can lie outside the
+directory.
 
 **Quote selection** adds the text you selected in a terminal pane of the same grid to the
 message, as a chip named after that pane. Select a chip to read the full text before you
 send it. Houston does not redact the text, so check it for secrets. A message quotes at
 most four selections of 16 KiB each, and the whole message, selections included, stays
-within 256 KiB. Claude receives each selection as a quoted block before your text.
+within 256 KiB; this also holds when you edit a queued message. A `/` command cannot carry
+quoted selections. Claude receives each selection as a quoted block before your text.
 
 Expand a tool card to see its input and output. Shell commands show the command and its
 output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { atMention, insertAtToken, menuToken, slashRows, SLASH_ROWS_MAX } from './composerMenu'
+import { atMention, commandRefusal, insertAtToken, menuToken, slashRows, SLASH_ROWS_MAX } from './composerMenu'
 
 const commands = { commands: ['compact', 'clear', 'context'], skills: ['code-review'], terminal_only: ['model', 'doctor', 'config'] }
 
@@ -42,5 +42,17 @@ describe('slashRows', () => {
     expect(slashRows(null, '')).toEqual([{ group: 'houston', name: 'terminal' }])
     const many = { commands: [], skills: Array.from({ length: 100 }, (_, n) => `skill-${n}`), terminal_only: [] }
     expect(slashRows(many, '')).toHaveLength(SLASH_ROWS_MAX)
+  })
+})
+
+describe('commandRefusal', () => {
+  it('refuses a listed terminal-only command and a command carrying quoted selections', () => {
+    expect(commandRefusal('/model claude-opus-5-5', false, commands)).toContain('/model runs only in a terminal pane')
+    expect(commandRefusal('  /doctor', false, commands)).toContain('/doctor runs only')
+    expect(commandRefusal('/compact', true, commands)).toContain('cannot carry quoted selections')
+    expect(commandRefusal('/code-review', true, commands)).toContain('cannot carry quoted selections')
+    for (const text of ['/compact', '/code-review src', 'see /model', '/etc/hosts', '/unknown with', '']) expect(commandRefusal(text, false, commands)).toBeNull()
+    expect(commandRefusal('/unknown', true, commands)).toBeNull()
+    expect(commandRefusal('/model', false, null)).toBeNull()
   })
 })
