@@ -55,7 +55,7 @@ export class InspectorClient {
       number, repository: 'owner/houston', url: `https://github.com/owner/houston/pull/${number}`, title, head_ref: `houston/change-${number}`, head_sha: sha,
       base_ref: 'main', depends_on: null, session: null, position, enqueued_at_ms: Date.now() - position * 600_000, read_at_ms: Date.now() - 20_000,
       status: reason ? 'blocked' : 'ready', reason,
-      gates: gates(reason && reason.includes('thread') ? reason : null, policy ? verification('pending', 'Runs when it is first in line') : verification('not_applicable', 'No verification command is set')),
+      gates: gates(reason && reason.includes('thread') ? reason : null, policy ? verification('pending', 'Runs when it goes next') : verification('not_applicable', 'No verification command is set')),
       verification: null, failure: null, worktree: null, verifying_since_ms: null, ...extra
     })
     const base = 'a91c2e4b7d0f13c58e62a90b1d4f7c3e8a5b6d21'
@@ -102,7 +102,7 @@ export class InspectorClient {
       verification, failure: null, worktree: '/repo/.houston/worktrees/csv-export', verifying_since_ms: null,
       github: watching ? { mode: 'merge_queue', head_sha: restacked, base_ref: 'main', base_sha: base, method: null, unattended: true, at_ms: at(3) } : null
     }
-    const next = { ...head, number: 90, title: 'refactor(ui): every screen composes components/ui roles', url: 'https://github.com/owner/houston/pull/90', head_ref: 'houston/ui-roles', head_sha: old, position: 2, status: 'ready', reason: null, verification: null, github: null, worktree: null, gates: head.gates.map((g) => g.kind === 'verification' ? { ...g, state: 'pending', reason: 'Runs when it is first in line' } : g) }
+    const next = { ...head, number: 90, title: 'refactor(ui): every screen composes components/ui roles', url: 'https://github.com/owner/houston/pull/90', head_ref: 'houston/ui-roles', head_sha: old, position: 2, status: 'ready', reason: null, verification: null, github: null, worktree: null, gates: head.gates.map((g) => g.kind === 'verification' ? { ...g, state: 'pending', reason: 'Runs when it goes next' } : g) }
     const row = (kind: string, minutes: number, extra: Record<string, unknown>) => ({ kind, number: 79, repository: 'owner/houston', url: head.url, title: head.title, ref_name: null, old_sha: null, new_sha: null, head_sha: null, method: null, detail: null, unattended: true, at_ms: at(minutes), fork_sha: null, ...extra })
     const log = [
       ...(watching ? [row('hand_off', 3, { ref_name: 'main', head_sha: restacked, detail: 'Added to GitHub’s merge queue' })] : []),

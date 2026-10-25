@@ -17,7 +17,11 @@ branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and st
 pane there, including an independent pane when combined with `handoff: true`.
 The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
 it does not follow the caller's feature branch. `branch` names the new branch, not its
-base; `pane_spawn` has no base override. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
+base; `pane_spawn` has no base override. The exception is a `branch` that only one remote
+has: it starts from that remote branch and tracks it, unless the base already holds its
+changes (a merged PR whose remote ref is still fetched). `pane_spawn`'s derived
+`houston/<slug>` never does, so a reused slug cannot pick up an old pushed branch; a task's
+derived branch does, so a task restarted after its local branch was deleted continues it. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
 that cannot be removed keeps its branch and record. Removing a worktree from the Changes
 pane drops its record, and a new worktree at a recorded path replaces the stale record, so
@@ -61,7 +65,8 @@ that weakens one of them changes this list in the same PR.
 - **No lost signal.** A row is persisted before any door reads it. A crash between a child's
   `pane_submit` and the end of its round cannot leave a result that is neither stored nor
   eligible (`ready_at` is set in the transaction that closes the round). Restart recovery
-  releases reservations and returns unconfirmed pastes to pending.
+  releases reservations and returns unconfirmed pastes to pending until they reach
+  `PASTE_ATTEMPTS_MAX`.
 - **At-least-once, recognisably.** Delivery is never claimed exactly-once. A redelivered row
   keeps its `pane_inbox.id`, carries a new `delivery_id` and says "possibly delivered before";
   a stale confirmation cannot mark a later attempt.
@@ -193,7 +198,7 @@ spelling, or a verb that is CLI-only).
 | `pane_message` | `mcp_orchestration.rs` | `hs-pane message` | send text to a live sibling with an open request, addressed by role or session id; the parent gets no copy |
 | `pane_deny` | `mcp_orchestration.rs` | `hs-pane deny CHILD --episode-id ID` | deny an exact pending descendant permission with verified provider input |
 | `pane_escalate` | `mcp_orchestration.rs` | `hs-pane escalate` | transfer an unresolved descendant input request to the user with a reason |
-| `pane_pr_enqueue` / `pane_pr_dequeue` | `mcp_orchestration.rs` | `hs-pane pr-enqueue` / `pr-dequeue` | add an open pull request of the caller's workspace repository to its merge queue (`depends_on` names a queued pull request it must follow), or remove one. There is deliberately no merge verb, and no verb reaches the queue's settings: the user merges the queue head (`Daemon::merge_queue_merge_head`), or the daemon does under the policy the user turned on |
+| `pane_pr_enqueue` / `pane_pr_dequeue` | `mcp_orchestration.rs` | `hs-pane pr-enqueue` / `pr-dequeue` | add an open pull request of the caller's workspace repository to its merge queue (`depends_on` names a queued pull request it must follow), or remove one. There is deliberately no merge verb, and no verb reaches the queue's settings: the user merges the entry that goes next (`Daemon::merge_queue_merge_head`), or the daemon does under the policy the user turned on |
 | `pane_instruction_list` / `pane_instruction_get` | `mcp_orchestration.rs` | `hs-pane instruction-list` / `instruction-get` | inspect durable instruction delivery states or explicitly read a retained body |
 | `pane_instruction_cancel` / `pane_instruction_resume` | `mcp_orchestration.rs` | `hs-pane instruction-cancel` / `instruction-resume` | cancel an inactive pending instruction or explicitly resume an untouched recovery-held instruction |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
@@ -748,8 +753,10 @@ window. Three refusals hold it back, and the rows stay pending through all of th
   live ancestor inherits the row; only the absence of a live ancestor reaches the operator.
 
 The framing's first line carries the `delivery_id`. For providers whose prompt hooks
-include text, the next prompt hook whose prompt head carries that exact id sets
-`confirmed_at`; payloads without prompt text cannot provide this confirmation.
+include text, the next prompt hook whose framing header carries that exact id sets
+`confirmed_at`; payloads without prompt text cannot provide this confirmation. The header
+is the first prompt line that starts with `--- Houston`, not necessarily the first line:
+Claude Code reports a pasted prompt inside a `<pasted_content>` element.
 A partial paste keeps a durable receipt associated with its row. If the operator submits
 that complete receipt header from the composer, the prompt hook resolves the wait-only row
 before a later wait can deliver it again. An incomplete header provides no such proof.
@@ -952,7 +959,9 @@ restarts produce one state, and it runs **after** restore:
    back, not the empty roster boot started with — a respawned husk keeps its own rows
    addressed to it instead of re-addressing them to the operator on the strength of an
    empty live set. It releases every reservation; puts `paste` rows sent and unconfirmed
-   back to pending (the paste may or may not have landed; the row keeps its attempt count);
+   back to pending (the paste may or may not have landed; the row keeps its attempt count)
+   until the row has spent `PASTE_ATTEMPTS_MAX` attempts, after which the last submitted
+   paste stands as its delivery;
    puts unacked `operator` rows back to unread; leaves `wait` and `stop_hook` rows final and
    untouched; and re-addresses rows whose `to_session` did not survive to the nearest
    live ancestor, or the operator if none remains, with `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one

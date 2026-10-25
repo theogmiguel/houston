@@ -91,7 +91,7 @@ describe('MergeQueueView', () => {
       { kind: 'mergeable', state: 'passed', reason: null },
       { kind: 'review_threads', state: 'failed', reason: 'PR #13 has 1 unresolved review thread' },
       { kind: 'reviewer', state: 'failed', reason: 'HOU-7 has no reviewer verdict yet' },
-      { kind: 'verification', state: 'pending', reason: 'Runs when it is first in line' }
+      { kind: 'verification', state: 'pending', reason: 'Runs when it goes next' }
     ]
   })
 
@@ -102,7 +102,7 @@ describe('MergeQueueView', () => {
     const rows = screen.getAllByTestId('list-detail-row')
     expect(rows).toHaveLength(5)
     expect(rows[0].textContent).toContain('1#12Change 12')
-    expect(rows[0].textContent).toContain('First in line, ready to merge')
+    expect(rows[0].textContent).toContain('Next in line, ready to merge')
     expect(rows[1].textContent).toContain('PR #13 has 1 unresolved review thread')
     expect(rows[2].textContent).toContain('#209')
     expect(rows[2].textContent).toContain('Parked')
@@ -128,6 +128,21 @@ describe('MergeQueueView', () => {
     expect(within(screen.getByRole('list', { name: 'Gates' })).getByLabelText('Verification: not run yet')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Dequeue' }))
     expect(queue.dequeue).toHaveBeenCalledWith(13)
+  })
+
+  it('passes over a blocked first entry: the next one gets the Merge and the line says it goes next', () => {
+    const first = { ...blocked, position: 1 }
+    const queue = controller({ entries: [first, entry(14, { position: 2 }), entry(15, { position: 3 })] })
+    render(<MergeQueueView now={NOW} queue={queue} />)
+    const rows = screen.getAllByTestId('list-detail-row')
+    expect(rows[0].textContent).toContain('PR #13 has 1 unresolved review thread')
+    expect(rows[1].textContent).toContain('Next in line, ready to merge')
+    expect(rows[2].textContent).toContain('Merges after #14')
+    fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
+    expect(screen.queryByTestId('merge-queue-merge')).toBeNull()
+    fireEvent.click(screen.getAllByTestId('list-detail-item')[1])
+    fireEvent.click(screen.getByTestId('merge-queue-merge'))
+    expect(queue.mergeHead).toHaveBeenCalledWith(14, SHA, 'squash')
   })
 
   it('with the policy on, names it with the command, gives the head no Merge, and counts the run against its limit', () => {
@@ -236,8 +251,13 @@ describe('MergeQueueView', () => {
     expect(queue.revert).toHaveBeenCalledWith(211)
   })
 
-  it('keeps a blocked head’s Merge disabled', () => {
-    render(<MergeQueueView now={NOW} queue={controller({ entries: [entry(12, { status: 'blocked', reason: 'PR #12 is behind main' })] })} />)
+  it('gives a blocked first entry no Merge, since it does not go next, and a waiting one a disabled Merge', () => {
+    const { unmount } = render(<MergeQueueView now={NOW} queue={controller({ entries: [entry(12, { status: 'blocked', reason: 'PR #12 is behind main' })] })} />)
+    fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
+    expect(screen.queryByTestId('merge-queue-merge')).toBeNull()
+    expect(screen.getAllByTestId('list-detail-row')[0].textContent).toContain('PR #12 is behind main')
+    unmount()
+    render(<MergeQueueView now={NOW} queue={controller({ entries: [entry(12, { status: 'waiting_for_slot' })] })} />)
     fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
     expect((screen.getByTestId('merge-queue-merge') as HTMLButtonElement).disabled).toBe(true)
   })
