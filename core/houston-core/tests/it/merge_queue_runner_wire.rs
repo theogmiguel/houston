@@ -536,9 +536,9 @@ async fn a_rebase_needs_no_configured_git_identity_and_commits_as_the_head_autho
     let rig = Rig::new().await;
     rig.change(1, "one", "one.txt", "one\n");
     let base = rig.advance_base("base.txt", "base\n");
-    // The daemon's test HOME has no global identity, and git may not guess one.
-    git(&rig.root, &["config", "--unset", "user.name"]);
-    git(&rig.root, &["config", "--unset", "user.email"]);
+    // Empty local values override any global identity; git may not guess one.
+    git(&rig.root, &["config", "user.name", ""]);
+    git(&rig.root, &["config", "user.email", ""]);
     git(&rig.root, &["config", "user.useConfigOnly", "true"]);
     rig.settings(true, NEEDS_BASE);
     rig.enqueue(1, None);
@@ -561,10 +561,14 @@ async fn a_rebase_needs_no_configured_git_identity_and_commits_as_the_head_autho
         git(&rig.root, &["config", "--get", "user.useConfigOnly"]),
         "true"
     );
-    assert!(
-        git(&rig.root, &["config", "--list", "--local"])
-            .lines()
-            .all(|l| !l.starts_with("user.name") && !l.starts_with("user.email")),
+    assert_eq!(
+        git(&rig.root, &["config", "--local", "--get", "user.name"]),
+        "",
+        "no identity was written to the repository's config"
+    );
+    assert_eq!(
+        git(&rig.root, &["config", "--local", "--get", "user.email"]),
+        "",
         "no identity was written to the repository's config"
     );
 }
