@@ -118,8 +118,10 @@ directory changed, or Houston never received its resume handle), the session sta
 fresh in the new view and the pane says why. Switching is refused while Claude's status
 is Working, Starting or Needs input, while a thread turn is still open or an approval card
 waits for an answer, while the session is sleeping or not running, and while it has live
-child panes. Messages and keystrokes
-sent to the pane during the switch are refused rather than lost to the restart.
+child panes. A child pane, one another agent started, cannot open as a thread: its parent
+could not see the thread's questions or permission requests, so it stays a terminal.
+Messages and keystrokes sent to the pane during the switch are refused rather than lost
+to the restart.
 
 Turns taken while a session is a terminal are not shown in its thread. Houston counts
 them from Claude's turn-end reports and, when the session opens as a thread, adds one
