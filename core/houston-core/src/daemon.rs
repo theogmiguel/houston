@@ -19862,9 +19862,10 @@ impl Daemon {
     fn first_prompt_wait_ready(
         &self,
         session: u32,
-        deadline: Instant,
+        wait: Duration,
         paste_unready: bool,
     ) -> Result<()> {
+        let deadline = Instant::now() + wait;
         loop {
             let Ok(s) = self.get(session) else {
                 bail!("the pane closed first");
@@ -19897,7 +19898,7 @@ impl Daemon {
                         "the CLI drew nothing".to_string()
                     }
                 });
-                bail!("{}", first_prompt_deadline_text(&why, paste_unready));
+                bail!("{}", first_prompt_deadline_text(&why, wait));
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
@@ -19932,13 +19933,9 @@ impl Daemon {
         if submit {
             let deadline =
                 Duration::from_millis(self.first_prompt_deadline_ms.load(Ordering::Relaxed));
-            self.first_prompt_wait_ready(session, Instant::now() + deadline, true)?;
+            self.first_prompt_wait_ready(session, deadline, true)?;
         } else {
-            self.first_prompt_wait_ready(
-                session,
-                Instant::now() + FIRST_PROMPT_PREFILL_DEADLINE,
-                false,
-            )?;
+            self.first_prompt_wait_ready(session, FIRST_PROMPT_PREFILL_DEADLINE, false)?;
         }
         let agent = self.get(session).map(|s| s.info.agent)?;
         // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
@@ -19980,7 +19977,7 @@ impl Daemon {
         if self.first_prompt_confirmed_within(session, wait) {
             return Ok(FirstPromptOutcome::Confirmed);
         }
-        self.first_prompt_wait_ready(session, Instant::now() + wait, true)?;
+        self.first_prompt_wait_ready(session, wait, true)?;
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
         if self.first_prompt_confirmed_within(session, wait) {
@@ -29247,13 +29244,13 @@ mod handoff_stranding_tests {
 }
 
 /// A paste that timed out says which limit it waited past.
-fn first_prompt_deadline_text(why: &str, paste_unready: bool) -> String {
-    let limit = if paste_unready {
-        FIRST_PROMPT_DEADLINE
+fn first_prompt_deadline_text(why: &str, limit: Duration) -> String {
+    let ms = limit.as_millis();
+    if ms.is_multiple_of(1000) {
+        format!("{why} within {} s", ms / 1000)
     } else {
-        FIRST_PROMPT_PREFILL_DEADLINE
-    };
-    format!("{why} within {} s", limit.as_secs())
+        format!("{why} within {ms} ms")
+    }
 }
 
 #[cfg(test)]
@@ -29263,12 +29260,27 @@ mod first_prompt_deadline_tests {
     #[test]
     fn the_deadline_error_names_the_limit() {
         assert_eq!(
-            first_prompt_deadline_text("the CLI drew nothing", true),
+            first_prompt_deadline_text("the CLI drew nothing", FIRST_PROMPT_DEADLINE),
             "the CLI drew nothing within 60 s"
         );
         assert_eq!(
-            first_prompt_deadline_text("its composer never took input", false),
+            first_prompt_deadline_text(
+                "its composer never took input",
+                FIRST_PROMPT_PREFILL_DEADLINE
+            ),
             "its composer never took input within 900 s"
+        );
+    }
+
+    #[test]
+    fn a_shortened_deadline_names_its_milliseconds() {
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", Duration::from_millis(1500)),
+            "the CLI drew nothing within 1500 ms"
+        );
+        assert_eq!(
+            first_prompt_deadline_text("the CLI drew nothing", Duration::from_secs(2)),
+            "the CLI drew nothing within 2 s"
         );
     }
 }
