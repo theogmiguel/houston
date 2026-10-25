@@ -259,17 +259,23 @@ function storageClient(): HoustonClient {
       return () => { handlers.delete(handler) }
     },
     send(message: { type: string }) {
-      if (message.type !== 'storage_reclaim') return
-      const reply: ServerMsg = { type: 'storage_reclaimed', before_bytes: 214_958_080, after_bytes: 25_165_824, refusal: null }
+      const reply: ServerMsg | null =
+        message.type === 'storage_reclaim'
+          ? { type: 'storage_reclaimed', before_bytes: 214_958_080, after_bytes: 25_165_824, refusal: null }
+          : message.type === 'diagnostics_collect'
+            ? { type: 'diagnostics_collected', path: '/home/dev/.houston/diagnostics/houston-diagnostics-20261024T120000Z.txt', bytes: 187_392, error: null }
+            : null
+      if (!reply) return
       setTimeout(() => { for (const handler of handlers) handler(reply) }, 0)
     }
   } as unknown as HoustonClient
 }
 
-function StorageDiagnosticsStory({ reclaim }: { reclaim: boolean }): React.JSX.Element {
+function StorageDiagnosticsStory({ reclaim, saveFile = false }: { reclaim: boolean; saveFile?: boolean }): React.JSX.Element {
   React.useEffect(() => {
     if (reclaim) document.querySelector<HTMLButtonElement>('[data-testid="settings-storage-reclaim"]')?.click()
-  }, [reclaim])
+    if (saveFile) document.querySelector<HTMLButtonElement>('[data-testid="settings-diagnostics-file"]')?.click()
+  }, [reclaim, saveFile])
   return (
     <SessionsStoreContext.Provider value={createSessionsStore(new Map())}>
       <div style={{ padding: 'var(--space-4)' }}>
@@ -291,6 +297,10 @@ export function SettingsDiagnosticsStorage(): React.JSX.Element {
 
 export function SettingsDiagnosticsStorageReclaimed(): React.JSX.Element {
   return <StorageDiagnosticsStory reclaim />
+}
+
+export function SettingsDiagnosticsFileSaved(): React.JSX.Element {
+  return <StorageDiagnosticsStory reclaim={false} saveFile />
 }
 
 export function SettingsDaemon(): React.JSX.Element {

@@ -570,6 +570,8 @@ pub struct Session {
     state: Mutex<proto::SessionState>,
     title: Mutex<String>,
     project_dir: Mutex<String>,
+    // Spawn cwd; `info.cwd` keeps the original, and relocation re-roots this one.
+    cwd: Mutex<String>,
     detected: Mutex<Option<proto::AgentKind>>,
     running: Mutex<Option<proto::AgentKind>>,
     blocks: Option<Mutex<BlockTracker>>,
@@ -1286,6 +1288,10 @@ impl Backend {
 }
 
 impl Session {
+    fn cwd(&self) -> String {
+        self.cwd.lock().expect("cwd lock").clone()
+    }
+
     fn remove_shell_token_file(&self) {
         let Some(path) = &self.shell_token_file else {
             return;
@@ -1340,6 +1346,7 @@ impl Session {
         info.state = *self.state.lock().expect("state lock");
         (info.title, info.title_source) = self.snapshot_title();
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
+        info.cwd = self.cwd();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.running_agent = *self.running.lock().expect("running lock");
         info.status = *self.status.lock().expect("status lock");
@@ -1538,6 +1545,7 @@ mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
 mod merge_queue_runner;
+mod pane_notes;
 mod provider_deny;
 mod remote;
 mod remote_phone;
@@ -1724,6 +1732,7 @@ pub struct Daemon {
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
+    notes: Mutex<HashMap<u32, proto::PaneNote>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
     // Listing reads checkout identity from spawn or from here and never runs git: a hello
     // waited on two git processes per session. `None` asks the HEAD watcher to resolve it.
@@ -1761,6 +1770,7 @@ pub struct Daemon {
     delegation_wake: Arc<tokio::sync::Notify>,
     idle_tick_counts: [AtomicU64; 2],
     checkpoint_lock: Mutex<()>,
+    pr_status_store: crate::pr_status_store::PrStatusStore,
     /// Serialises scrollback file writes, which share one temporary path per pane and may
     /// sleep in Windows retries, so the ring's own lock is held only to take a snapshot.
     scrollback_writes: Mutex<()>,
@@ -3364,6 +3374,7 @@ impl Daemon {
         }
         let tag_registry: BTreeMap<u32, proto::TagInfo> =
             db.tag_list()?.into_iter().map(|t| (t.id, t)).collect();
+        let notes: HashMap<u32, proto::PaneNote> = db.session_notes()?.into_iter().collect();
         let adopted_ids: HashSet<u32> = adopted
             .as_ref()
             .map(|v| v.iter().map(|(s, _)| s.info.id).collect())
@@ -3513,6 +3524,7 @@ impl Daemon {
             next_id: AtomicU32::new(next_id),
             sessions: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
+            notes: Mutex::new(notes),
             dead: Mutex::new(dead),
             checkouts: Mutex::new(HashMap::new()),
             dead_geometry: Mutex::new(HashMap::new()),
@@ -3550,6 +3562,10 @@ impl Daemon {
             delegation_wake: Arc::new(tokio::sync::Notify::new()),
             idle_tick_counts: [AtomicU64::new(0), AtomicU64::new(0)],
             checkpoint_lock: Mutex::new(()),
+            pr_status_store: crate::pr_status_store::PrStatusStore::load(
+                state_dir.join(crate::pr_status_store::FILE_NAME),
+                now_ms(),
+            ),
             scrollback_writes: Mutex::new(()),
             reap_armed: Mutex::new(None),
             reap_generation: AtomicU64::new(0),
@@ -4454,11 +4470,23 @@ impl Daemon {
         );
     }
 
+    /// PR status for `dir` and whether it came from the previous daemon's file, in
+    /// which case the caller re-asks at once so the stored answer is replaced.
+    pub fn pr_status(&self, dir: &Path) -> (crate::gh::PrStatus, bool) {
+        if let Some(seed) = self.pr_status_store.take_seed(dir, now_ms()) {
+            return (seed, true);
+        }
+        let status = crate::gh::pr_status_cached(dir);
+        self.pr_status_store.record(dir, &status, now_ms());
+        (status, false)
+    }
+
     pub fn mark_clean_shutdown(&self) -> Result<()> {
         self.write_file_atomic(&self.marker_path(), b"")
     }
 
     pub fn persist_all(&self) {
+        self.pr_status_store.flush();
         if let Err(e) = self.checkpoint_scrollback() {
             tracing::warn!("persist_all: checkpoint failed: {e:#}");
             return;
@@ -4875,6 +4903,7 @@ impl Daemon {
                 unterminated,
             });
         }
+        self.pr_status_store.flush();
         if let Err(e) = self.checkpoint_scrollback() {
             self.shutting_down.store(false, Ordering::Release);
             return Err(ShutdownFailure {
@@ -5162,6 +5191,8 @@ impl Daemon {
         let listener = UnixListener::bind(&socket_path)
             .map_err(|e| format!("binding adoption socket {path_str}: {e}"))?;
 
+        // The candidate loads the PR status file at startup.
+        self.pr_status_store.flush();
         self.request_spawn_next(
             &candidate.to_string_lossy(),
             &["--adopt".to_string(), path_str.clone()],
@@ -5442,6 +5473,7 @@ impl Daemon {
             }
         });
         let info = proto::SessionInfo {
+            note: None,
             title_source,
             checkout: None,
             activity: None,
@@ -5494,6 +5526,7 @@ impl Daemon {
             state: Mutex::new(m.state),
             title: Mutex::new(m.title.clone()),
             project_dir: Mutex::new(m.project_dir.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -5651,7 +5684,7 @@ impl Daemon {
                 status: *s.status.lock().expect("status lock"),
                 hidden: s.info.hidden,
                 project_dir: s.project_dir.lock().expect("project dir lock").clone(),
-                cwd: s.info.cwd.clone(),
+                cwd: s.cwd(),
                 title,
                 title_source: Some(title_source),
                 codename: s.info.codename.clone(),
@@ -5956,6 +5989,44 @@ impl Daemon {
             );
         }
         Ok(())
+    }
+
+    /// What removing `worktree` would interrupt or lose. Never fails: a part that could
+    /// not look is reported as a gap.
+    pub fn worktree_check(
+        &self,
+        repo: &std::path::Path,
+        worktree: &std::path::Path,
+    ) -> proto::WorktreeCheckResult {
+        let key = worktree
+            .canonicalize()
+            .unwrap_or_else(|_| worktree.to_path_buf());
+        let recorded_base = self
+            .db
+            .managed_worktrees()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|row| std::path::Path::new(&row.path) == key)
+            .and_then(|row| row.base_branch);
+        let mut check = crate::worktree_check::check(repo, worktree, recorded_base);
+        let in_tree: Vec<u32> = self
+            .live_session_cwds()
+            .into_iter()
+            .filter(|(_, cwd)| cwd.starts_with(&key))
+            .map(|(id, _)| id)
+            .collect();
+        let sessions = self.sessions.lock().expect("sessions lock");
+        check.panes = in_tree
+            .into_iter()
+            .filter_map(|id| {
+                let session = sessions.get(&id)?;
+                Some(proto::WorktreeCheckPane {
+                    session: id,
+                    title: session.snapshot_title().0,
+                })
+            })
+            .collect();
+        check
     }
 
     fn broadcast_live_children(&self, parent: u32) {
@@ -9143,6 +9214,7 @@ impl Daemon {
             Vec::new()
         });
         for info in out.iter_mut() {
+            info.note = self.note_of(info.id);
             info.task = bindings
                 .iter()
                 .find(|binding| binding.run.session_id == Some(info.id))
@@ -9277,6 +9349,214 @@ impl Daemon {
         }
         self.db.rename_workspace(path, name)?;
         self.workspace_list()
+    }
+
+    /// Re-point a workspace whose folder moved or was renamed on disk. `to` must be
+    /// the same repository: every managed worktree of the old checkout that still
+    /// exists has to link to a worktree entry `to` holds.
+    pub fn workspace_relocate(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<proto::WorkspaceRelocateMoved> {
+        use crate::paths::relocated;
+        let _membership = self
+            .workspace_membership
+            .lock()
+            .expect("workspace_membership lock");
+        let known = self.workspace_list()?;
+        let Some(current) = known.iter().find(|w| w.path == from) else {
+            bail!("unknown workspace path: {from}");
+        };
+        if Path::new(from).exists() {
+            bail!("workspace {from} still exists on disk; relocation is for a folder that moved or was renamed");
+        }
+        if known.iter().any(|w| w.path == to) {
+            bail!("{to} is already a workspace; pick the folder {from} moved to");
+        }
+        let target = Path::new(to);
+        if !target.is_dir() {
+            bail!("relocation target does not exist or is not a directory: {to}");
+        }
+        let facts = crate::git::checkout_facts(target);
+        let is_root = facts.toplevel.as_deref().is_some_and(|top| {
+            matches!((Path::new(top).canonicalize(), target.canonicalize()), (Ok(a), Ok(b)) if a == b)
+        });
+        let common_dir = match (is_root, facts.common_dir) {
+            (true, Some(dir)) if !dir.is_empty() => dir,
+            _ => bail!(
+                "relocation target {to} is not a git repository root (toplevel {:?}); expected the folder {from} moved to",
+                facts.toplevel.as_deref().unwrap_or("none")
+            ),
+        };
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|s| {
+                s.state.lock().expect("state lock").is_live()
+                    && relocated(from, to, &s.project_dir.lock().expect("project_dir lock"))
+                        .is_some()
+            })
+            .count();
+        if live > 0 {
+            bail!("{live} running session(s) are rooted in {from}; close them before relocating the workspace");
+        }
+        if let Some(swarm) = self
+            .db
+            .list_swarms()?
+            .into_iter()
+            .find(|s| relocated(from, to, &s.root_dir).is_some())
+        {
+            bail!(
+                "swarm {} ({:?}) is rooted in {from}; remove it before relocating the workspace",
+                swarm.id,
+                swarm.name
+            );
+        }
+
+        let mut moved = proto::WorkspaceRelocateMoved::default();
+        let mut worktrees = Vec::new();
+        let mut present = Vec::new();
+        let admin_root = Path::new(&common_dir).join("worktrees");
+        for row in self.db.managed_worktrees()? {
+            let ours = relocated(from, to, &row.repo_common_dir);
+            let path = relocated(from, to, &row.path);
+            if ours.is_none() && path.is_none() {
+                continue;
+            }
+            let path = path.unwrap_or_else(|| row.path.clone());
+            let dir = PathBuf::from(&path);
+            match crate::git::worktree_admin_dir(&dir) {
+                Some(admin) => {
+                    let home = relocated(from, to, &admin.to_string_lossy())
+                        .or_else(|| relocated(to, to, &admin.to_string_lossy()));
+                    let entry = admin.file_name().map(|n| admin_root.join(n));
+                    if home.is_none() || !entry.as_deref().is_some_and(Path::is_dir) {
+                        bail!(
+                            "worktree {path} links to {}, which is not a worktree entry of {to}; {to} is not the repository {from} held",
+                            admin.display()
+                        );
+                    }
+                    present.push(dir.clone());
+                }
+                None if dir.is_dir() => moved.notes.push(format!(
+                    "worktree {path} has no .git link; git cannot repair it"
+                )),
+                None => moved.notes.push(format!(
+                    "worktree {path} is gone; its row stays for cleanup"
+                )),
+            }
+            let stored = dir
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or(path);
+            let common = if ours.is_some() {
+                common_dir.clone()
+            } else {
+                row.repo_common_dir.clone()
+            };
+            worktrees.push((row.path, stored, common));
+        }
+        if present.is_empty() {
+            moved.notes.push(format!(
+                "{from} had no linked worktree to compare; {to} was accepted as a git repository root"
+            ));
+        }
+
+        let folder = |p: &str| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        };
+        let name = match (folder(from), folder(to)) {
+            (Some(old), Some(new)) if current.name == old => new,
+            _ => current.name.clone(),
+        };
+        self.db.relocate_workspace(from, to, &name, &worktrees)?;
+        moved.worktrees = worktrees.len() as u32;
+        let re_root = |slot: &mut String| match relocated(from, to, slot) {
+            Some(path) => {
+                *slot = path;
+                true
+            }
+            None => false,
+        };
+        let mut reparented = Vec::new();
+        for session in self.sessions.lock().expect("sessions lock").values() {
+            let mut project_dir = session.project_dir.lock().expect("project_dir lock");
+            let mut hit = re_root(&mut project_dir);
+            hit |= re_root(&mut session.cwd.lock().expect("cwd lock"));
+            if let Some(cwd) = session.hook_cwd.lock().expect("hook_cwd lock").as_mut() {
+                hit |= re_root(cwd);
+            }
+            let mut osc = session.osc_cwd.lock().expect("osc_cwd lock");
+            if let Some(dir) = osc
+                .as_deref()
+                .and_then(|d| relocated(from, to, &d.to_string_lossy()))
+            {
+                *osc = Some(PathBuf::from(dir));
+                hit = true;
+            }
+            if hit {
+                reparented.push((session.info.id, project_dir.clone()));
+            }
+        }
+        for info in self.dead.lock().expect("dead lock").values_mut() {
+            let mut hit = re_root(&mut info.project_dir);
+            hit |= re_root(&mut info.cwd);
+            if let Some(root) = info.checkout_root.as_mut() {
+                hit |= re_root(root);
+            }
+            if let Some(worktree) = info.worktree.as_mut() {
+                hit |= re_root(&mut worktree.path);
+                hit |= re_root(&mut worktree.repo_common_dir);
+            }
+            if let Some(checkout) = info.checkout.as_mut() {
+                hit |= re_root(&mut checkout.root);
+            }
+            if hit {
+                reparented.push((info.id, info.project_dir.clone()));
+            }
+        }
+        // As in `reparent_session`: the HEAD watcher re-resolves each moved checkout.
+        let mut checkouts = self.checkouts.lock().expect("checkouts lock");
+        for (id, _) in &reparented {
+            checkouts.insert(*id, None);
+        }
+        drop(checkouts);
+        moved.sessions = reparented.len() as u32;
+        self.install_workspace_hooks(to);
+
+        if !present.is_empty() {
+            match crate::git::worktree_repair(target, &present) {
+                Ok(()) => {
+                    moved.repaired = present
+                        .iter()
+                        .filter(|dir| {
+                            crate::git::worktree_admin_dir(dir).is_some_and(|admin| {
+                                relocated(to, to, &admin.to_string_lossy()).is_some()
+                            })
+                        })
+                        .count() as u32;
+                }
+                Err(e) => moved.notes.push(format!("{e:#}")),
+            }
+        }
+        // First, so a client moves its layouts before a pane leaves the old workspace.
+        self.broadcast_control(&proto::ServerMsg::WorkspaceRelocated {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            moved: moved.clone(),
+        });
+        for (session, project_dir) in reparented {
+            self.broadcast_control(&proto::ServerMsg::SessionReparented {
+                session,
+                project_dir,
+            });
+        }
+        Ok(moved)
     }
 
     pub fn workspace_remove(self: &Arc<Self>, path: &str) -> Result<Vec<proto::Workspace>> {
@@ -9741,7 +10021,7 @@ impl Daemon {
                 Some(s) => (
                     s.pid,
                     s.osc_cwd.lock().expect("osc_cwd lock").clone(),
-                    PathBuf::from(&s.info.cwd),
+                    PathBuf::from(s.cwd()),
                 ),
                 None => {
                     let dead = self.dead.lock().expect("dead lock");
@@ -9779,7 +10059,7 @@ impl Daemon {
             return Ok(dir.display().to_string());
         }
         if let Some(s) = self.sessions.lock().expect("sessions lock").get(&id) {
-            return Ok(s.info.cwd.clone());
+            return Ok(s.cwd());
         }
         if let Some(info) = self.dead.lock().expect("dead lock").get(&id) {
             return Ok(info.cwd.clone());
@@ -10064,9 +10344,7 @@ impl Daemon {
             if let Err(error) = self.reclaim_previous_workload(old_id) {
                 *old.recovery_notice.lock().expect("recovery notice lock") =
                     Some(format!("Session {old_id} replacement deferred: {error:#}"));
-                self.broadcast_control(&proto::ServerMsg::SessionUpdated {
-                    info: old.snapshot_info(),
-                });
+                self.broadcast_session_updated(old.snapshot_info());
                 return Err(error);
             }
             // The drained reader may have supplied a final shell cwd. Commit its
@@ -10080,7 +10358,7 @@ impl Daemon {
                     .lock()
                     .expect("hook_cwd lock")
                     .clone()
-                    .unwrap_or_else(|| old.info.cwd.clone()),
+                    .unwrap_or_else(|| old.cwd()),
                 old.custom_cmd.clone(),
                 title,
                 title_source,
@@ -10432,6 +10710,7 @@ impl Daemon {
         self.voice.forget_session(old_id);
         self.frame_taps.forget_session(old_id);
         self.forget_session_visibility(old_id);
+        self.forget_note(old_id);
         self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: old_id });
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
@@ -10685,7 +10964,7 @@ impl Daemon {
             state: proto::SessionState::Sleeping,
             exit_code: None,
         });
-        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        self.broadcast_session_updated(info);
         self.write_run_state();
         Ok(())
     }
@@ -11945,6 +12224,7 @@ impl Daemon {
             .and_then(shell_startup_provider)
             .filter(|_| shellint_token.is_some());
         let mut info = proto::SessionInfo {
+            note: None,
             title_source,
             checkout: None,
             activity: None,
@@ -12005,6 +12285,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(detected_agent.filter(|kind| detection_relabels(agent, *kind))),
             running: Mutex::new(hosted_provider),
             blocks: shellint_token.as_ref().map(|token| {
@@ -12298,6 +12579,7 @@ impl Daemon {
             self.record_launch_conversation(id, resumed, conversation_link);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
+            created.note = self.note_of(id);
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
         }
         if let Some(token_file) = shellint_token_file {
@@ -12607,6 +12889,7 @@ impl Daemon {
             let id = self.next_id.fetch_add(1, Ordering::Relaxed);
             let title = self.next_codename();
             let mut info = proto::SessionInfo {
+                note: None,
                 title_source: Default::default(),
                 checkout: None,
                 activity: None,
@@ -12656,6 +12939,7 @@ impl Daemon {
                 state: Mutex::new(proto::SessionState::Running),
                 title: Mutex::new(title),
                 project_dir: Mutex::new(info.project_dir.clone()),
+                cwd: Mutex::new(info.cwd.clone()),
                 detected: Mutex::new(None),
                 running: Mutex::new(None),
                 blocks: None,
@@ -13768,7 +14052,7 @@ impl Daemon {
                 .lock()
                 .expect("hook cwd lock")
                 .clone()
-                .unwrap_or_else(|| session.info.cwd.clone());
+                .unwrap_or_else(|| session.cwd());
             self.resume_check(
                 id,
                 resume_agent,
@@ -13885,7 +14169,7 @@ impl Daemon {
                     state: proto::SessionState::Sleeping,
                     exit_code: None,
                 });
-                self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+                self.broadcast_session_updated(info);
             }
             self.write_run_state();
             Ok(())
@@ -13920,7 +14204,7 @@ impl Daemon {
                     })
                 };
                 if let Some(info) = updated {
-                    self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+                    self.broadcast_session_updated(info);
                 }
                 Err(error)
             }
@@ -14348,6 +14632,7 @@ impl Daemon {
             self.frame_taps.forget_session(id);
             self.voice.forget_session(id);
             self.forget_session_visibility(id);
+            self.forget_note(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             if let Some(parent) = session.info.spawned_by {
                 self.broadcast_live_children(parent);
@@ -14364,6 +14649,7 @@ impl Daemon {
             self.remove_persisted_scrollback(id);
             self.voice.forget_session(id);
             self.forget_session_visibility(id);
+            self.forget_note(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
@@ -17724,6 +18010,78 @@ impl Daemon {
             })
     }
 
+    /// Blocking: reads the log tail and writes the file. Callers run it off the connection loop.
+    pub fn collect_diagnostics(&self, app_version: &str) -> proto::ServerMsg {
+        let generated = ::time::OffsetDateTime::now_utc();
+        let sessions = self.list();
+        let hooks = self.agent_hooks_state();
+        let log_lines = crate::diagnostics::read_log_tail(
+            &self.state_dir.join("logs"),
+            crate::diagnostics::FILE_MAX_BYTES as u64,
+        );
+        let workspaces: Vec<String> = self
+            .workspace_list()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing workspaces: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let worktrees: Vec<String> = self
+            .db
+            .managed_worktrees()
+            .inspect_err(|e| tracing::warn!("diagnostics: listing managed worktrees: {e:#}"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        let env = self.env();
+        let mut homes: Vec<PathBuf> = ["HOME", "USERPROFILE"]
+            .iter()
+            .filter_map(|name| env.var_os(name).filter(|v| !v.is_empty()))
+            .map(PathBuf::from)
+            .chain(env.home_dir())
+            .collect();
+        let canonical: Vec<PathBuf> = homes
+            .iter()
+            .filter_map(|h| std::fs::canonicalize(h).ok())
+            .collect();
+        homes.extend(canonical);
+        let text = crate::diagnostics::compose(&crate::diagnostics::Inputs {
+            generated,
+            app_version,
+            daemon_version: env!("CARGO_PKG_VERSION"),
+            build_commit: build_commit(),
+            channel: self.channel().unwrap_or("release"),
+            uptime: self.started.elapsed(),
+            sessions: &sessions,
+            hooks: &hooks,
+            log_lines: &log_lines,
+            workspaces: &workspaces,
+            worktrees: &worktrees,
+            homes: &homes,
+        });
+        let dir = self.state_dir.join("diagnostics");
+        match crate::diagnostics::write(&dir, generated, &text) {
+            Ok(path) => {
+                tracing::info!(
+                    "diagnostics: wrote {} ({} bytes)",
+                    path.display(),
+                    text.len()
+                );
+                proto::ServerMsg::DiagnosticsCollected {
+                    path: Some(path.display().to_string()),
+                    bytes: text.len() as u64,
+                    error: None,
+                }
+            }
+            Err(e) => proto::ServerMsg::DiagnosticsCollected {
+                path: None,
+                bytes: 0,
+                error: Some(format!("{e:#}")),
+            },
+        }
+    }
+
     /// Blocking: runs VACUUM on the session database. Callers run it off the connection loop.
     pub fn reclaim_storage(&self) -> proto::ServerMsg {
         let before_bytes = crate::storage::db_footprint(&self.db_path);
@@ -17945,6 +18303,7 @@ impl Daemon {
         };
         self.voice_release_monitor(conn);
         self.browser_relay.forget(conn);
+        self.remote.forget_presence(conn);
         if remaining == 0 {
             if let Err(e) = self.checkpoint_scrollback() {
                 tracing::warn!("checkpoint on last client detach: {e:#}");
@@ -20458,7 +20817,7 @@ impl Daemon {
                         .lock()
                         .expect("hook_cwd lock")
                         .clone()
-                        .unwrap_or_else(|| parent.info.cwd.clone())
+                        .unwrap_or_else(|| parent.cwd())
                 })
                 .map(PathBuf::from)
                 .filter(|cwd| {
@@ -20858,7 +21217,7 @@ impl Daemon {
             .filter(|id| *id != child)
             .filter(|id| {
                 self.get(*id).ok().is_some_and(|session| {
-                    crate::git::checkout_facts(Path::new(&session.info.cwd))
+                    crate::git::checkout_facts(Path::new(&session.cwd()))
                         .toplevel
                         .as_deref()
                         == Some(root.as_str())
@@ -21783,7 +22142,7 @@ impl Daemon {
             let sessions = self.sessions.lock().expect("sessions lock");
             sessions
                 .get(&child)
-                .map(|s| PathBuf::from(s.info.cwd.clone()))
+                .map(|s| PathBuf::from(s.cwd()))
                 .unwrap_or_else(|| root.clone())
         };
         let mut out = Vec::with_capacity(artifacts.len());
@@ -27670,6 +28029,7 @@ mod kill_teardown_tests {
         // exists without a local process: the SSH stub keeps the test off the network.
         let project = state.display().to_string();
         let info = proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -27717,6 +28077,7 @@ mod kill_teardown_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("ssh".into()),
             project_dir: Mutex::new(project.clone()),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,
@@ -28094,6 +28455,7 @@ mod shell_restore_bookkeeping_tests {
 
     fn stub_child(project: &str, id: u32) -> proto::SessionInfo {
         proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -28361,6 +28723,7 @@ mod force_respawn_guard_tests {
         // exists without a local process: the SSH stub keeps the test off the network.
         let project = state.display().to_string();
         let info = proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -28408,6 +28771,7 @@ mod force_respawn_guard_tests {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new("custom".into()),
             project_dir: Mutex::new(project),
+            cwd: Mutex::new(info.cwd.clone()),
             detected: Mutex::new(None),
             running: Mutex::new(None),
             blocks: None,

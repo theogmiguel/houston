@@ -1,4 +1,4 @@
-# Wire protocol v149
+# Wire protocol v150
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -111,6 +111,7 @@ failure not given a typed refusal comes back as `error`.
 | `generated_titles_get` | — | `generated_titles` with the current off-default setting |
 | `generated_titles_set` | `enabled` | `generated_titles` (bcast) |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
+| `session_note_clear` | `session` (an active or restored session) | `session_note` (bcast) with `note: null` |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
 | `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
 | `tag_update` | `tag`, `name`, `color` (same rules as `tag_create`) | `tag_list` (bcast); sessions follow — they carry the id |
@@ -140,6 +141,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_add` | `path` | `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_remove` | `path` | kills and removes every session rooted there; `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
+| `workspace_relocate` | `from`, `to` | re-points a workspace whose folder moved. Refused when `from` is unknown or still exists, `to` is registered or is not a git repository root, a session is live or a swarm is rooted in `from`, or a managed worktree of `from` links outside `to`. One transaction moves every row keyed by the path, then `git worktree repair` relinks the worktrees; `workspace_relocated` + `workspace_list` (bcast), plus `session_reparented` per restored session that moved |
 | `workspace_list` | — | `workspace_list` (direct) |
 | `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
 
@@ -195,6 +197,7 @@ failure not given a typed refusal comes back as `error`.
 | `git_worktree_create` | `dir`, `name`, `base?` | `git_worktrees` carrying a `message` naming the new path and branch |
 | `git_worktree_remove` | `dir`, `path`, `force` (a dirty worktree without it is refused) | `git_worktrees` carrying a `message` |
 | `git_worktree_prune` | `dir` | `git_worktrees` carrying a `message` (the summary, or "Nothing to prune.") |
+| `worktree_check` | `dir`, `path` | `worktree_check` (direct); read-only, asked before a removal is confirmed. Each git call has a 15 s limit, and at most seven run (three of them only to find a base no worktree row recorded), so the reply comes within 105 s |
 | `worktree_cleanup_status` | `dir` (a registered workspace) | `worktree_cleanup` (direct) from the last pass's cache; nothing is measured and `gh` is not called |
 | `worktree_cleanup_run` | `dir` (a registered workspace), `paths?: string[]` | `worktree_cleanup` (bcast) after one pass, whatever the setting. It removes only those `paths` that the pass still finds nothing keeping; stale entries are never removed by this message. With `paths` empty or absent it only checks and measures. A second run while one is going is refused: "a worktree cleanup pass is already running for <dir>" |
 | `worktree_idle_removal_days_get` | — | `worktree_idle_removal_days` (direct) |
@@ -203,8 +206,8 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh` |
-| `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape |
+| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer |
+| `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape, plus a second reply for each directory first answered from the stored file |
 | `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
 | `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |
@@ -399,6 +402,7 @@ every refusal names the setting.
 | `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
 | `remote_device_set_tier` | `id`, `tier: RemoteTier` | `remote_state` (bcast) with the device's new `tier`; an unknown id is an `error` with `context: "remote"`. Applies from the device's next HTTP request |
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
+| `desktop_presence` | `active: bool` | none. The renderer sends `true` while someone uses its window or focuses its docked browser (at most every 30 s) and `false` on hiding or on a blur that does not move focus into that browser. Phone notifications that come due wait until `DESKTOP_AWAY_SECS` (180) after the last `true` from any connection; `false` from the connection holding them, or closing it, sends them at once. The daemon applies reports on the connection task, in socket order and outside control admission. A daemon with no report never holds a notification |
 
 ### Host and usage
 
@@ -406,6 +410,7 @@ every refusal names the setting.
 |---|---|---|
 | `host_info_get` | — | `host_info` (direct), never a broadcast — a point-in-time snapshot the client re-polls (~30 s is the recommended cadence) |
 | `storage_reclaim` | — | `storage_reclaimed` (direct), then `host_info` (bcast) after a reclaim. Checkpoints the WAL (`TRUNCATE`), runs `VACUUM` and checkpoints again, off the connection task. Refused, with nothing changed, while any session is live or when the free space on the state directory's volume is below twice the combined size of the database and its WAL. Never automatic |
+| `diagnostics_collect` | `app_version` (the renderer's version, recorded beside the daemon's) | `diagnostics_collected` (direct). Off the connection task, the daemon writes `<state_dir>/diagnostics/houston-diagnostics-<UTC stamp>.txt` and keeps the five newest such files. The file holds versions, channel, platform, a roster of session id, agent, state and status (no titles, paths or output), hook health and the newest daemon log lines. Control characters are stripped; registered workspaces, managed worktrees and other session folders read `<workspace N>`, `<worktree N>` and `<folder N>`, current non-codename titles `<title>`, SSH hosts `<host>` and the home directory `~` (on Windows in every case and separator spelling); every line then passes the secret redactor. Redaction is best-effort: log lines can still name branches, files and closed panes' titles. At most 1 MiB, dropping the oldest log lines first. Nothing is uploaded |
 | `restore_budget_set` | `budget` (`0..=RESTORE_BUDGET_MAX`) | `host_info` (bcast); out of range is an `error` naming ceiling and value |
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
@@ -431,6 +436,7 @@ every refusal names the setting.
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
 | `session_renamed` | `session`, `title`, `title_source: TitleSource` | bcast after a manual rename, reset or automatic title update |
+| `session_note` | `session`, `note?: PaneNote` | bcast when the pane's agent writes a note (`pane_note`, `hs-pane note`) or a client clears it; absent `note` means cleared. `PaneNote` is `text` (one line, at most `PANE_NOTE_MAX_BYTES` = 512 bytes), `phase?: PanePhase` (`todo`, `in_progress`, `in_review`, `done`) and `at_ms`. `SessionInfo.note` carries the current note in lists and session updates |
 | `session_tags_set` | `session`, `tags: u32[]` | v100: bcast after `session_set_tags` — the whole set, client replaces |
 | `compactions_changed` | `session`, `compactions` | v122: bcast each time the agent's compaction hook fires; at every `HANDOFF_OFFER_AFTER_COMPACTIONS` (3) a top-level pane with children and no earlier handoff also gets one `operator_note` inbox row with reason `handoff_offer` |
 | `session_resumable` | `session`, `resumable` | v119: bcast when a live session gains its first resume handle (a turn in its root conversation) or loses it (kill, close) |
@@ -455,7 +461,8 @@ every refusal names the setting.
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
-| `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename/relocate |
+| `workspace_relocated` | `from`, `to`, `moved: WorkspaceRelocateMoved` | v150: bcast after `workspace_relocate`; clients move their own state keyed by `from` |
 | `workspace_focus` | `path` | bcast after `/manage workspace_open` added `path`; clients select that workspace |
 | `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
 | `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
@@ -472,7 +479,7 @@ every refusal names the setting.
 | `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
-| `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
+| `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?`, `not_a_repo`, `operation?: GitOperation` | direct reply to `git_status` and to every mutating git message. `operation` (`merge`, `rebase`, `cherry_pick`) is a git operation paused in the checkout, read from the markers in its own git dir (`rebase-merge/`, `rebase-apply/` without `applying`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`); absent when none is paused |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
 | `git_branch` | `dir`, `branch?`, `toplevel?`, `common_dir?` | direct reply to `git_branch`; the branch comes from the checkout's HEAD and one `rev-parse --show-toplevel --path-format=absolute --git-common-dir` answers the identity. `toplevel` names the work tree (equal means one checkout), `common_dir` the repository (equal means main checkout plus worktree); both null outside a work tree |
 | `git_branch_commits` | `dir`, `commits: GitBranchCommit[]`, `total`, `truncated` | direct reply to `git_branch_commits`; each `GitBranchCommit` carries a short `sha`, `subject` and `author_time_ms` |
@@ -481,6 +488,7 @@ every refusal names the setting.
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
 | `git_worktrees` | `dir`, `worktrees: GitWorktreeInfo[]`, `message?` | direct reply to `git_worktrees` and every worktree mutation; `message` is the mutation's note |
 | `worktree_cleanup` | `dir`, `entries: ManagedWorktreeInfo[]`, `removed: RemovedWorktree[]` | direct reply to `worktree_cleanup_status` (`removed` empty); bcast after every pass over `dir`, by cleanup, stale removal, or the 6-hourly loop (which runs only while `worktree_cleanup_enabled` is on) |
+| `worktree_check` | `dir`, `path`, `check: WorktreeCheckResult` | direct reply to `worktree_check`. `dirty_files`, `newest_change_ms` (newest modification among the uncommitted files that still exist), `base`, `ahead` (commits on `HEAD` the base lacks), `unpushed` (commits no remote-tracking ref has) and `panes` (Houston panes whose working directory is inside the tree). A part that could not look is `null` with a `gaps` entry naming its `part` (`changes`, `commits`, `unpushed`) and the `reason`; the reply is never an error |
 | `worktree_idle_removal_days` | `days` | direct reply to `worktree_idle_removal_days_get` |
 | `git_checkpoints` | `dir`, `checkpoints: GitCheckpointInfo[]` | direct reply to `git_checkpoints` and every checkpoint mutation |
 | `git_checkpoint_diff` | `dir`, `ref`, `patch`, `truncated`, `redacted` | direct reply to `git_checkpoint_diff` |
@@ -557,6 +565,7 @@ every refusal names the setting.
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change or a reclaim |
 | `storage_reclaimed` | `before_bytes`, `after_bytes` (database plus WAL), `refusal?` | direct reply to `storage_reclaim`; `refusal` names the blocking condition (live session count, or free and required bytes) or the SQLite failure, and then both sizes are the current size |
+| `diagnostics_collected` | `path?`, `bytes`, `error?` | direct reply to `diagnostics_collect`: the absolute path and size of the file written, or `error` naming the path that could not be created or written |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only. A request refused by the control handler limits (16 per connection, 64 per process) carries `context: "control_admission:<type>[:<dir|request>]"` naming its message type and its `dir` or `request` id, and never replies otherwise. A failed `session_close`, `session_respawn`, `session_wake`, `session_attach`, `session_resize` or `session_visibility` carries `context: "session:<id>"` naming the session it asked about |
@@ -662,7 +671,10 @@ InboxKind          snake: restored | result | no_handback | needs_input | exited
                    | progress | question | blocked | reply (v133)
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
 RoleRoute          pattern (1..128 bytes), model (1..128 bytes), effort?: ChatEffort
-Workspace          path, name
+Workspace          path, name, missing? (v150: true when the folder is gone on disk)
+WorkspaceRelocateMoved v150: worktrees, sessions, repaired, notes (managed worktree rows and
+                   restored sessions re-pointed, worktrees `git worktree repair` relinked,
+                   and non-fatal follow-up notes)
 TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32) chars, unique
                    case-insensitively), color (#rrggbb, one of TAG_PALETTE's eleven fills —
                    fixed, because the chrome's 4.5:1 ink/ground gate can only clear colors
@@ -1401,6 +1413,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 150 | **Seven additive features: a paused-git banner, worktree removal facts, desktop-aware phone alerts, a diagnostics file, rail status notes and workspace relocation.** `git_status` gains `operation?: GitOperation` (`merge`, `rebase`, `cherry_pick`), read from the checkout's git dir. New read-only `worktree_check{dir, path}`, answered by `worktree_check{dir, path, check: WorktreeCheckResult}` (uncommitted files and the newest change, commits ahead of the base and not on any remote, and the panes inside the tree; a part that could not look names why in `gaps`). New `desktop_presence {active}` client message with no reply: while a recent `true` report stands, due ntfy notifications are held and are sent once on the holding connection's `false`, on its disconnect, or when the report lapses after `DESKTOP_AWAY_SECS`. New `diagnostics_collect {app_version}`, answered by `diagnostics_collected {path?, bytes, error?}`: the daemon writes a redacted file under `<state_dir>/diagnostics/`, keeps the five newest, caps each at 1 MiB and includes no terminal output. `SessionInfo` gains `note?: PaneNote` (`text`, `phase?: PanePhase`, `at_ms`); new `session_note_clear{session}` and the `session_note{session, note?}` broadcast; agents write the note through the `pane_note` MCP tool or `hs-pane note`, and a note over 512 bytes is refused naming the limit. `Workspace` gains `missing?`, true when the folder is gone on disk; new `workspace_relocate{from, to}` checks that `to` is the same repository, re-points every row keyed by the path in one transaction, relinks worktrees with `git worktree repair`, and answers `workspace_relocated{from, to, moved: WorkspaceRelocateMoved}` plus `workspace_list` (both bcast). Existing messages are otherwise unchanged |
 | 149 | **Diagnostics reports storage and can reclaim space.** `host_info` gains `session_db_wal_bytes`, `session_db_free_bytes`, `scrollback_bytes` and `logs_bytes`. New `storage_reclaim`, answered by `storage_reclaimed{before_bytes, after_bytes, refusal?}`, runs `VACUUM` only when no session is live and the volume has room for a copy of the database |
 | 148 | **A pull request's discussion can hide bot comments.** `PrComment` and `PrThreadComment` gain `bot`: true when GitHub's GraphQL types the author as `Bot`. The review-thread read asks for each author's `__typename`; conversation comments take the mark by node id from the same read, so a detail whose thread read failed leaves every `bot` false. Existing messages are unchanged |
 | 147 | **A Claude pane that reports a rate limit shows Limited.** `SessionInfo` gains a runtime-only `limit?: SessionLimit` (`error`, `details?`, `since_ms`) and a matching `session_limit` broadcast. Claude's root `StopFailure` with `error: rate_limit` sets it; the next root `UserPromptSubmit` or a `quota_auto_resume_fired` notification clears it. No hook reports a reset time |

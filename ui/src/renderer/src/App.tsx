@@ -9,6 +9,8 @@ import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { RelocateState } from "./workspaceRelocate";
+import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
@@ -47,6 +49,7 @@ import type { AgentAccountIdentity } from "./houston/generated/AgentAccountIdent
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
+import { useDesktopPresence } from "./houston/useDesktopPresence";
 import {
   clearVoiceIndicators,
   insertVoiceText,
@@ -511,6 +514,7 @@ type RosterPatchMsg = Extract<
       | "delegation_changed"
       | "session_tags_set"
       | "session_resumable"
+      | "session_note"
       | "agent_running";
   }
 >;
@@ -525,6 +529,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "session_note",
   "agent_running",
 ]);
 
@@ -558,6 +563,8 @@ function patchRosterFields(
                 ? { tags: msg.tags }
                 : msg.type === "session_resumable"
                   ? { resumable: msg.resumable }
+                  : msg.type === "session_note"
+                    ? { note: msg.note ?? null }
                   : msg.type === "agent_running"
                     ? { running_agent: msg.agent ?? null }
                     : { delegation: msg.delegation };
@@ -1816,6 +1823,7 @@ export function App(): React.JSX.Element {
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
   useRemoteGridPublish(readyClient(conn));
+  useDesktopPresence(readyClient(conn));
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);
@@ -2909,6 +2917,20 @@ export function App(): React.JSX.Element {
     dropWorkspaceBuffers(path);
   }, []);
 
+  const relocateStateRef = useRef<RelocateState | null>(null);
+  relocateStateRef.current = {
+    gridsByWs: gridsByWsRef.current,
+    setWsColors, setLayouts, setGridsByWs, setSelectedGridByWs,
+    setWsPinned, setWsOrder, setWsRenaming, setSelectedWs,
+  };
+  useWorkspaceRelocated(conn, relocateStateRef, pushNotice);
+
+  const locateWorkspace = useCallback(async (path: string): Promise<void> => {
+    if (conn.kind !== "ready") return;
+    // Loading it first lets the reply move the layouts before the panes' reparents arrive.
+    await (await import("./workspaceRelocate")).locateMovedFolder(conn.client, path, pushError);
+  }, [conn, pushError]);
+
   const confirmRemoveWorkspace = useCallback(() => {
     if (!confirmRemoveWs || conn.kind !== "ready") {
       setConfirmRemoveWs(null);
@@ -3706,6 +3728,9 @@ export function App(): React.JSX.Element {
               taskTurnCount={taskTurnCount}
               mergeQueueParked={mergeQueueParked}
               onRemoveWorkspace={removeWorkspace}
+              onLocateStart={(path) => {
+                void locateWorkspace(path);
+              }}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
                 setSidebarRail(false);

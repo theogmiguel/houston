@@ -96,6 +96,7 @@ pub async fn start_with_listener(
         )
         .route("/orchestrate/pr-watch", post(orch_pr_watch))
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
+        .route("/orchestrate/note", post(orch_note))
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
         .route("/harness/publish", post(harness_publish))
@@ -891,6 +892,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
             | proto::ClientMsg::WorktreeCleanupStatus { .. }
+            | proto::ClientMsg::WorktreeCheck { .. }
             | proto::ClientMsg::WorktreeIdleRemovalDaysGet
             | proto::ClientMsg::GitCheckpoints { .. }
             | proto::ClientMsg::GitCheckpointDiff { .. }
@@ -1577,6 +1579,13 @@ async fn handle_control(
         }
     };
 
+    // A mutex write: on the connection task, reports apply in socket order and never
+    // wait for, or lose to, a full set of control slots.
+    if let proto::ClientMsg::DesktopPresence { active } = msg {
+        daemon.remote_desktop_presence(conn_id, active);
+        return;
+    }
+
     if daemon.refusing_mutations() && !is_read_only_during_shutdown(&msg) {
         let (message, context) = if daemon.is_handing_off() {
             (
@@ -1959,6 +1968,18 @@ async fn dispatch(
         }
         proto::ClientMsg::HostInfoGet => {
             let _ = send_msg(sink, &daemon.host_info()).await;
+            Ok(())
+        }
+        proto::ClientMsg::DiagnosticsCollect { app_version } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.collect_diagnostics(&app_version))
+                .await
+                .unwrap_or_else(|e| proto::ServerMsg::DiagnosticsCollected {
+                    path: None,
+                    bytes: 0,
+                    error: Some(format!("diagnostics collection panicked: {e}")),
+                });
+            let _ = send_msg(sink, &reply).await;
             Ok(())
         }
         proto::ClientMsg::StorageReclaim => {
@@ -2854,6 +2875,12 @@ async fn dispatch(
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("title reset task panicked: {e}")))
         }
+        proto::ClientMsg::SessionNoteClear { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.pane_note_clear(session).map(|_| ()))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note clear panicked: {e}")))
+        }
         proto::ClientMsg::SessionRename { session, title } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.rename(session, &title))
@@ -2919,6 +2946,23 @@ async fn dispatch(
                     });
             match result {
                 Ok(workspaces) => {
+                    daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        proto::ClientMsg::WorkspaceRelocate { from, to } => {
+            let daemon_bg = Arc::clone(daemon);
+            let result =
+                tokio::task::spawn_blocking(move || daemon_bg.workspace_relocate(&from, &to))
+                    .await
+                    .unwrap_or_else(|e| {
+                        Err(anyhow::anyhow!("workspace relocate task panicked: {e}"))
+                    });
+            match result {
+                Ok(_) => {
+                    let workspaces = daemon.workspace_list().unwrap_or_default();
                     daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
                     Ok(())
                 }
@@ -3231,68 +3275,10 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
-        proto::ClientMsg::PrStatus { dir } => {
-            let d = PathBuf::from(&dir);
-            let st = tokio::task::spawn_blocking(move || crate::gh::pr_status_cached(&d))
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::error!("pr_status: spawn_blocking join failed for {dir:?}: {e}");
-                    crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    }
-                });
-            let _ = send_msg(
-                sink,
-                &proto::ServerMsg::PrStatus {
-                    dir,
-                    gh: st.gh,
-                    has_upstream: st.has_upstream,
-                    pr: st.pr,
-                    hint: st.hint,
-                },
-            )
-            .await;
-            Ok(())
-        }
+        proto::ClientMsg::PrStatus { dir } => send_pr_statuses(daemon, sink, vec![dir]).await,
         proto::ClientMsg::PrStatusBatch { dirs } => {
             check_pr_status_batch_size(dirs.len())?;
-            let requested = dirs.len();
-            let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
-            let statuses = tokio::task::spawn_blocking(move || {
-                paths
-                    .iter()
-                    .map(|path| crate::gh::pr_status_cached(path))
-                    .collect::<Vec<_>>()
-            })
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("pr_status batch: spawn_blocking join failed: {e}");
-                (0..requested)
-                    .map(|_| crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    })
-                    .collect()
-            });
-            for (dir, st) in dirs.into_iter().zip(statuses) {
-                let _ = send_msg(
-                    sink,
-                    &proto::ServerMsg::PrStatus {
-                        dir,
-                        gh: st.gh,
-                        has_upstream: st.has_upstream,
-                        pr: st.pr,
-                        hint: st.hint,
-                    },
-                )
-                .await;
-            }
-            Ok(())
+            send_pr_statuses(daemon, sink, dirs).await
         }
         proto::ClientMsg::PrCheckLog { dir, run_id } => {
             let d = PathBuf::from(&dir);
@@ -4048,6 +4034,16 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
+        proto::ClientMsg::WorktreeCheck { dir, path } => {
+            let d = PathBuf::from(&dir);
+            let wt = PathBuf::from(&path);
+            let daemon = Arc::clone(daemon);
+            let check = tokio::task::spawn_blocking(move || daemon.worktree_check(&d, &wt))
+                .await
+                .map_err(|e| anyhow::anyhow!("worktree check task panicked: {e}"))?;
+            let _ = send_msg(sink, &proto::ServerMsg::WorktreeCheck { dir, path, check }).await;
+            Ok(())
+        }
         proto::ClientMsg::GitWorktreePrune { dir } => {
             let d = PathBuf::from(&dir);
             let result = tokio::task::spawn_blocking(move || crate::worktrees::prune(&d))
@@ -4435,6 +4431,10 @@ async fn dispatch(
             }
             Ok(())
         }
+        proto::ClientMsg::DesktopPresence { active } => {
+            daemon.remote_desktop_presence(conn_id, active);
+            Ok(())
+        }
     }
 }
 
@@ -4455,20 +4455,27 @@ async fn send_git_status(
         // A missing directory stays an error; one that exists without git is
         // a workspace the panel reports as such, not a failed request.
         if d.is_dir() && !crate::git::probe_repo(&d)? {
-            return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
+            return anyhow::Ok((
+                Vec::new(),
+                crate::git::SyncStatus::default(),
+                None,
+                true,
+                None,
+            ));
         }
         let (files, sync) = match b.as_deref() {
             Some(base) => (crate::git::status_vs_base(&d, base)?, crate::git::sync(&d)),
             None => crate::git::status_and_sync(&d)?,
         };
         let default_base = crate::git::default_base_cached(&d);
-        anyhow::Ok((files, sync, default_base, false))
+        let operation = crate::git::paused_operation(&d);
+        anyhow::Ok((files, sync, default_base, false, operation))
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")));
     // The rail and overview poll every workspace in the background, so the
     // context lets clients keep these failures out of global notices.
-    let (files, sync, default_base, not_a_repo) = match probed {
+    let (files, sync, default_base, not_a_repo, operation) = match probed {
         Ok(status) => status,
         Err(e) => {
             send_error(
@@ -4492,6 +4499,7 @@ async fn send_git_status(
             base,
             default_base,
             not_a_repo,
+            operation,
         },
     )
     .await;
@@ -5458,6 +5466,61 @@ async fn pr_stack_merge(
     .await;
 }
 
+/// One `PrStatus` per dir. A dir answered from the previous daemon's file is
+/// re-asked of gh at once and answered again, so the stored answer only fills
+/// the gap until the fresh one arrives.
+async fn send_pr_statuses(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    mut dirs: Vec<String>,
+) -> anyhow::Result<()> {
+    while !dirs.is_empty() {
+        let requested = dirs.len();
+        let d = Arc::clone(daemon);
+        let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        let statuses = tokio::task::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| d.pr_status(path))
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("pr_status: spawn_blocking join failed for {dirs:?}: {e}");
+            (0..requested)
+                .map(|_| {
+                    let st = crate::gh::PrStatus {
+                        gh: proto::GhState::Missing,
+                        has_upstream: false,
+                        pr: None,
+                        hint: Some(crate::gh::MISSING_HINT.to_string()),
+                    };
+                    (st, false)
+                })
+                .collect()
+        });
+        let mut seeded = Vec::new();
+        for (dir, (st, from_store)) in dirs.into_iter().zip(statuses) {
+            if from_store {
+                seeded.push(dir.clone());
+            }
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::PrStatus {
+                    dir,
+                    gh: st.gh,
+                    has_upstream: st.has_upstream,
+                    pr: st.pr,
+                    hint: st.hint,
+                },
+            )
+            .await;
+        }
+        dirs = seeded;
+    }
+    Ok(())
+}
+
 async fn send_msg(
     sink: &mut (impl SinkExt<Message> + Unpin),
     msg: &proto::ServerMsg,
@@ -5987,6 +6050,41 @@ async fn orch_pr_watch(
             .unwrap_or_else(|e| Err(anyhow::anyhow!("PR watch panicked: {e}")));
     match result {
         Ok(()) => (StatusCode::OK, axum::Json(json!({"watching": true, "pr": target, "note": "End your turn now; Houston wakes this pane on the next PR change."}))).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct NoteBody {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    phase: Option<proto::PanePhase>,
+    #[serde(default)]
+    clear: bool,
+}
+
+async fn orch_note(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<NoteBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.pane_note_request(
+            scope.session_id,
+            body.text.as_deref(),
+            body.phase,
+            body.clear,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note panicked: {e}")));
+    match result {
+        Ok(value) => (StatusCode::OK, axum::Json(value)).into_response(),
         Err(e) => orch_err_response(e),
     }
 }

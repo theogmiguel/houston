@@ -4,7 +4,7 @@ import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
-import { ChangesStory } from './changesStories'
+import { ChangesPausedRebaseStory, ChangesStory } from './changesStories'
 import { ChangesFindStory, PrFilesFindCapture } from './diffFindStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
@@ -30,7 +30,7 @@ import {
 } from './browserStories'
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDiagnosticsStorage, SettingsDiagnosticsStorageReclaimed, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsNotificationsUnavailable, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDiagnosticsStorage, SettingsDiagnosticsStorageReclaimed, SettingsDiagnosticsFileSaved, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsNotificationsUnavailable, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -102,7 +102,8 @@ import {
   LegacyShortcutStory,
   LegacySshStory,
   LegacyTagsStory,
-  LegacyUpdateStory
+  LegacyUpdateStory,
+  WorktreeRemoveCheckStory
 } from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { TagPopoverHost } from '../src/components/tags/TagPopover'
@@ -283,6 +284,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'changes/maximized': () => <ChangesStory ready maximized />,
   'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
+  'changes/paused-rebase': () => <ChangesPausedRebaseStory />,
   'changes/find': () => <ChangesFindStory />,
   'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
@@ -328,6 +330,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'ui-primitives': () => <UiPrimitivesStory />,
   'ui-primitives/phone-pairing': () => <PhonePairingSpecimen />,
   'git/worktree-stale': () => <StaleWorktreesStory />,
+  'git/worktree-remove-check': () => <WorktreeRemoveCheckStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,
@@ -457,6 +460,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/diagnostics-open-hooks': () => <SettingsDiagnosticsOpenHooks />,
   'settings/diagnostics-storage': () => <SettingsDiagnosticsStorage />,
   'settings/diagnostics-storage-reclaimed': () => <SettingsDiagnosticsStorageReclaimed />,
+  'settings/diagnostics-file-saved': () => <SettingsDiagnosticsFileSaved />,
   'settings/daemon': () => <SettingsDaemon />,
   'settings/daemon-error': () => <SettingsDaemonError />,
   'settings/orchestration': () => <SettingsOrchestration />,

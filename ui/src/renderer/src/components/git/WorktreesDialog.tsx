@@ -8,11 +8,11 @@ import {
 } from './branches'
 import {
   worktreeActionDisabledReason,
-  worktreeRemoveConfirm,
   worktreeSubtitle,
-  worktreeTitle
+  worktreeTitle,
+  type WorktreeCheckView
 } from './worktrees'
-import { ConfirmModal } from '../ConfirmModal'
+import { WorktreeRemoveConfirm } from './WorktreeRemoveConfirm'
 import { WorktreeCleanupSection } from './WorktreeCleanupSection'
 import type { WorktreeCleanupView } from './worktreeCleanup'
 import { Select } from '../ui/Select'
@@ -25,6 +25,7 @@ export interface WorktreesDialogProps {
   dir: string | null
   worktrees: GitWorktreeInfo[]
   cleanup: WorktreeCleanupView
+  removeCheck: WorktreeCheckView | null
   branches: GitBranchInfo[]
   defaultBranch: string | null
   busy: boolean
@@ -32,6 +33,7 @@ export interface WorktreesDialogProps {
   onClose: () => void
   onRefresh: () => void
   onCreate: (name: string, base: string | null) => void
+  onCheckRemove: (path: string) => void
   onRemove: (path: string, force: boolean) => void
   onPrune: () => void
   onCheckCleanup: () => void
@@ -45,6 +47,7 @@ export function WorktreesDialog({
   dir,
   worktrees,
   cleanup,
+  removeCheck,
   branches,
   defaultBranch,
   busy,
@@ -52,6 +55,7 @@ export function WorktreesDialog({
   onClose,
   onRefresh,
   onCreate,
+  onCheckRemove,
   onRemove,
   onPrune,
   onCheckCleanup,
@@ -184,6 +188,7 @@ export function WorktreesDialog({
                           onClick={() => {
                             setForce(w.dirty)
                             setRemoving(w)
+                            onCheckRemove(w.path)
                           }}
                         ><Icon glyph={IconTrash} role="label" /></Button>
                       </Tooltip>
@@ -198,10 +203,11 @@ export function WorktreesDialog({
         </Card>
       </GitDialogShell>
       {removing && (
-        <ConfirmModal
-          title={force ? 'FORCE REMOVE WORKTREE' : 'REMOVE WORKTREE'}
-          message={worktreeRemoveConfirm(removing, force)}
-          confirmLabel={force ? 'Force remove' : 'Remove'}
+        <WorktreeRemoveConfirm
+          worktree={removing}
+          force={force}
+          check={removeCheck}
+          nowMs={nowMs ?? Date.now()}
           onConfirm={() => {
             onRemove(removing.path, force)
             setRemoving(null)

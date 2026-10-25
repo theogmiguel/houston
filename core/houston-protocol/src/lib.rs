@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 149;
+pub const PROTOCOL_VERSION: u32 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2363,6 +2363,35 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
+    /// The status line the pane's agent last wrote with `pane_note`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub note: Option<PaneNote>,
+}
+
+/// A note longer than this is refused; it is one line on the rail card.
+pub const PANE_NOTE_MAX_BYTES: usize = 512;
+
+/// Where the agent says its work stands, alongside its note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum PanePhase {
+    Todo,
+    InProgress,
+    InReview,
+    Done,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PaneNote {
+    pub text: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub phase: Option<PanePhase>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2781,6 +2810,23 @@ pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+    /// The folder is gone on disk, e.g. moved or renamed outside Houston; the
+    /// workspace keeps its rows until it is relocated or removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional))]
+    pub missing: Option<bool>,
+}
+
+/// What a `workspace_relocate` re-pointed, so the client can say what followed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceRelocateMoved {
+    pub worktrees: u32,
+    pub sessions: u32,
+    /// Managed worktrees whose git links `git worktree repair` re-attached.
+    pub repaired: u32,
+    /// Non-fatal follow-up problems, one line each.
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2799,6 +2845,16 @@ pub struct LocalServer {
     pub process: String,
     pub session: u32,
     pub pane_title: String,
+}
+
+/// A git operation stopped part-way in a checkout, waiting for the user to continue it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum GitOperation {
+    Merge,
+    Rebase,
+    CherryPick,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2981,6 +3037,50 @@ pub struct ManagedWorktreeInfo {
     /// `None` until a pass has evaluated it; `keep: None` means nothing only then.
     #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub checked_at_ms: Option<i64>,
+}
+
+/// The part of a worktree check that could not look.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeCheckPart {
+    /// Uncommitted files and the age of the newest one.
+    Changes,
+    /// Commits on `HEAD` that the base lacks.
+    Commits,
+    /// Commits on `HEAD` that no remote-tracking ref has.
+    Unpushed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckGap {
+    pub part: WorktreeCheckPart,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckPane {
+    pub session: u32,
+    pub title: String,
+}
+
+/// What removing a worktree would interrupt or lose. A part that could not look is
+/// `None` with a gap naming why, so a failed check still reads as a finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckResult {
+    pub dirty_files: Option<u32>,
+    /// The newest modification among the uncommitted files that still exist.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+    pub newest_change_ms: Option<i64>,
+    pub base: Option<String>,
+    pub ahead: Option<u32>,
+    pub unpushed: Option<u32>,
+    /// Houston panes whose working directory is inside the tree.
+    pub panes: Vec<WorktreeCheckPane>,
+    pub gaps: Vec<WorktreeCheckGap>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3823,6 +3923,9 @@ pub struct RemoteInfo {
 }
 
 pub const REMOTE_NOTIFY_DELAY_MAX_SECS: u32 = 600;
+// Matches the system idle threshold desktop presence commonly uses: long enough
+// to read a reply, short enough that a phone hears about a desk left behind.
+pub const DESKTOP_AWAY_SECS: u32 = 180;
 
 /// A desktop grid as a paired device shows it: the panes it holds, in the
 /// grid's reading order. Grids live in renderer storage; this copy is how the
@@ -4027,6 +4130,13 @@ pub enum ClientMsg {
         path: String,
         name: String,
     },
+    /// Re-point a workspace whose folder moved on disk. `from` is the
+    /// registered path, `to` the moved location; the daemon verifies the new
+    /// path is the same repository first.
+    WorkspaceRelocate {
+        from: String,
+        to: String,
+    },
     WorkspaceList,
     WorkspaceLocalServers {
         workspace: String,
@@ -4040,6 +4150,10 @@ pub enum ClientMsg {
     SessionRename {
         session: u32,
         title: String,
+    },
+    /// Removes the pane's note; answered by the `session_note` broadcast.
+    SessionNoteClear {
+        session: u32,
     },
     SessionTitleGenerate {
         session: u32,
@@ -4454,6 +4568,11 @@ pub enum ClientMsg {
     },
     GitWorktreePrune {
         dir: String,
+    },
+    /// Read-only: what removing `path` would interrupt or lose, asked before the confirm.
+    WorktreeCheck {
+        dir: String,
+        path: String,
     },
     /// Both halves of the setting at once, as `HostInfo` reports them.
     WorktreeCleanupSet {
@@ -5077,6 +5196,11 @@ pub enum ClientMsg {
     HostInfoGet,
     /// Checkpoints the WAL and runs VACUUM on the channel database. Never automatic.
     StorageReclaim,
+    /// Writes a redacted diagnostics file under the state directory for a bug report.
+    /// `app_version` is the renderer's version, recorded beside the daemon's.
+    DiagnosticsCollect {
+        app_version: String,
+    },
     RestoreBudgetSet {
         budget: u32,
     },
@@ -5193,6 +5317,12 @@ pub enum ClientMsg {
     RemoteGridsPublish {
         grids: Vec<RemoteGrid>,
     },
+    /// Whether someone is using the desktop app. No reply. `active` holds phone
+    /// notifications for `DESKTOP_AWAY_SECS` from receipt; `false`, or closing
+    /// the connection, releases them.
+    DesktopPresence {
+        active: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5280,6 +5410,12 @@ pub enum ServerMsg {
     WorkspaceList {
         workspaces: Vec<Workspace>,
     },
+    /// Broadcast after `workspace_relocate` moved a workspace and its rows.
+    WorkspaceRelocated {
+        from: String,
+        to: String,
+        moved: WorkspaceRelocateMoved,
+    },
     /// Broadcast after `/manage workspace_open`: clients select this workspace.
     WorkspaceFocus {
         path: String,
@@ -5303,6 +5439,11 @@ pub enum ServerMsg {
     SessionTagsSet {
         session: u32,
         tags: Vec<u32>,
+    },
+    /// Broadcast when a pane's note is written or cleared; `None` means cleared.
+    SessionNote {
+        session: u32,
+        note: Option<PaneNote>,
     },
     SessionResumable {
         session: u32,
@@ -5446,6 +5587,10 @@ pub enum ServerMsg {
         /// `dir` exists but is outside any work tree; every other field is empty.
         #[serde(default)]
         not_a_repo: bool,
+        /// A merge, rebase or cherry-pick paused in this checkout, read from its git dir.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        operation: Option<GitOperation>,
     },
     GitDiff {
         dir: String,
@@ -5644,6 +5789,11 @@ pub enum ServerMsg {
     },
     WorktreeIdleRemovalDays {
         days: u32,
+    },
+    WorktreeCheck {
+        dir: String,
+        path: String,
+        check: WorktreeCheckResult,
     },
     GitCheckpoints {
         dir: String,
@@ -6101,6 +6251,17 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
+    },
+    /// Reply to `diagnostics_collect`: the file written, or why none was.
+    DiagnosticsCollected {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        path: Option<String>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        error: Option<String>,
     },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,
@@ -6779,6 +6940,7 @@ mod tests {
             base: None,
             default_base: Some("main".into()),
             not_a_repo: false,
+            operation: Some(GitOperation::CherryPick),
         };
         let value = serde_json::to_value(&msg).unwrap();
         let obj = value.as_object().unwrap();
@@ -6796,8 +6958,10 @@ mod tests {
             "base",
             "default_base",
             "not_a_repo",
+            "operation",
         ];
         expected.sort_unstable();
+        assert_eq!(obj["operation"], serde_json::json!("cherry_pick"));
         assert_eq!(keys, expected);
         assert_eq!(obj["base"], serde_json::json!(null));
         assert_eq!(obj["default_base"], serde_json::json!("main"));

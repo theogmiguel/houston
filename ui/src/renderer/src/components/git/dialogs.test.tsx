@@ -208,6 +208,7 @@ describe('WorktreesDialog', () => {
           worktree({ dirty: true })
         ]}
         cleanup={{ status: 'ready', entries: [] }}
+        removeCheck={{ path: '/state/worktrees/repo/task', status: 'ready', check: { dirty_files: 1, newest_change_ms: null, base: 'main', ahead: 0, unpushed: 0, panes: [], gaps: [] } }}
         branches={[branch()]}
         defaultBranch="main"
         busy={false}
@@ -215,6 +216,7 @@ describe('WorktreesDialog', () => {
         onClose={noop}
         onRefresh={noop}
         onCreate={onCreate}
+        onCheckRemove={noop}
         onRemove={onRemove}
         onPrune={noop}
         onCheckCleanup={noop}
@@ -238,6 +240,55 @@ describe('WorktreesDialog', () => {
     const confirm = qa('button').find((b) => b.textContent === 'Force remove')!
     click(confirm)
     expect(onRemove).toHaveBeenCalledWith('/state/worktrees/repo/task', true)
+  })
+
+  it('names unpushed commits and open panes before the remove can proceed', () => {
+    const onCheckRemove = vi.fn()
+    const onRemove = vi.fn()
+    const props = {
+      dir: '/repo',
+      worktrees: [worktree()],
+      cleanup: { status: 'ready' as const, entries: [] },
+      branches: [branch()],
+      defaultBranch: 'main',
+      busy: false,
+      error: null,
+      onClose: noop,
+      onRefresh: noop,
+      onCreate: noop,
+      onCheckRemove,
+      onRemove,
+      onPrune: noop,
+      onCheckCleanup: noop,
+      onCleanNow: noop,
+      onRemoveStale: noop,
+      onAddWorkspace: noop
+    }
+    const path = '/state/worktrees/repo/task'
+    mount(<WorktreesDialog {...props} removeCheck={{ path, status: 'pending' }} />)
+    click(q('[data-testid="worktree-remove"]'))
+    expect(onCheckRemove).toHaveBeenCalledWith(path)
+    const pending = qa<HTMLButtonElement>('button').find((b) => b.textContent === 'Checking…')!
+    expect(pending.disabled).toBe(true)
+    click(pending)
+    expect(onRemove).not.toHaveBeenCalled()
+
+    const check = {
+      dirty_files: 0,
+      newest_change_ms: null,
+      base: 'main',
+      ahead: 3,
+      unpushed: 2,
+      panes: [{ session: 12, title: 'Max' }],
+      gaps: []
+    }
+    act(() => root!.render(<WorktreesDialog {...props} removeCheck={{ path, status: 'ready', check }} />))
+    const findings = q('[data-testid="worktree-check-findings"]').textContent
+    expect(findings).toContain('3 commits not on main')
+    expect(findings).toContain('2 commits not pushed to any remote')
+    expect(findings).toContain('1 pane working here: Max (#12)')
+    click(qa('button').find((b) => b.textContent === 'Remove')!)
+    expect(onRemove).toHaveBeenCalledWith(path, false)
   })
 })
 

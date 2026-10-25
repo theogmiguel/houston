@@ -1,3 +1,4 @@
+import type { PaneNote } from '../src/houston/generated/PaneNote'
 import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { Sidebar } from '../src/components/Sidebar'
@@ -139,6 +140,7 @@ function RailFixture({
         onAddWorkspace={noop}
         onRemoveWorkspace={noop}
         onRenameStart={noop}
+        onLocateStart={noop}
         onRenameSubmit={noop}
         onRenameCancel={noop}
         onChangeColor={noop}
@@ -372,7 +374,10 @@ function RailCardGitFixture(): null {
   return null
 }
 
-function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu }: { gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
+// A note the Codex pane in "Inspector polish" wrote with `pane_note` three minutes ago.
+const CARD_NOTE: PaneNote = { text: '4 commits in; running the inspector tests', phase: 'in_progress', at_ms: CARD_NOW - 3 * 60_000 }
+
+function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu, notes = false }: { notes?: boolean; gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
   const compact = initialCompact
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -438,7 +443,7 @@ function RailCardModes({ openTagPopover = false, openOptions = false, optionsPan
         cardMode={compact ? 'compact' : 'detailed'}
         tagDisplay={tagDisplay}
         tagFilter={tagFilter}
-        sessions={CARD_SESSIONS}
+        sessions={notes ? CARD_SESSIONS.map((s) => s.id === 7 ? { ...s, note: CARD_NOTE } : s) : CARD_SESSIONS}
         gridsByWorkspace={CARD_GRIDS}
         pinnedGridIds={['terminal', 'mensageria']}
         showTags
@@ -511,6 +516,7 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
     finishedUnseen={new Set([7])}
   />,
   'rail/card-modes': () => <RailCardModes />,
+  'rail/card-notes': () => <RailCardModes notes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,
   'rail/card-modes-options-sort': () => <RailCardModes optionsPanel="sort" />,
   'rail/card-modes-options-display': () => <RailCardModes optionsPanel="display" />,
@@ -529,6 +535,10 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/renaming-expanded': () => <RailRename workspace="acme-api" />,
   'rail/ws-menu': () => <RailMenu target='[data-ws-idx="3"]' />,
   'rail/ws-menu-pinned': () => <RailMenu target='[data-ws-idx="0"]' />,
+  'rail/ws-menu-missing': () => <RailMenu
+    target='[data-ws-idx="3"]'
+    workspaces={[ws('acme-core'), ws('acme-api'), ws('bridge'), { ...ws('acme-ui'), missing: true }, ws('houston')]}
+  />,
   'rail/grid-menu': () => <RailMenu target={GRID_ROW} />,
   'rail/grid-rename': () => <RailMenu target={GRID_ROW} pick="Rename" freezeCaret />,
   'rail/nav-menu': () => <RailMenu target='[data-testid="rail-nav-row"]' />,

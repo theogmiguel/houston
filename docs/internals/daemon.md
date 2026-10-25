@@ -930,7 +930,13 @@ Subprocesses run with `GIT_TERMINAL_PROMPT=0`, and diffs pass `redact_review_sec
 display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs
 `gh pr create --fill` then re-reads. A missing or unauthenticated `gh` is a **typed state**,
-never a wire error — a wire error here becomes a toast loop. Pull-request check logs are
+never a wire error — a wire error here becomes a toast loop. `pr_status_store.rs` keeps the
+last answer per directory in `pr-status-cache.json` (versioned, at most 256 entries,
+rewritten at most every 30 s when an answer changed, every 30 min for an unchanged one, and
+before orderly shutdown or a live handoff; PR metadata only). A restarted daemon
+answers a directory's first `pr_status` from that file when the entry is under an hour old,
+then asks `gh` at once and sends a second `pr_status` with the fresh answer; each stored
+entry is served once. Pull-request check logs are
 returned as bounded tails of at most `MAX_CHECK_LOG_LINES` lines and
 `MAX_CHECK_LOG_BYTES` bytes, keeping a failing run's output from growing a control reply
 without limit.

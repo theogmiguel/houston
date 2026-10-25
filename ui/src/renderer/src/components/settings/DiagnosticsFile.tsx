@@ -1,0 +1,86 @@
+import { useEffect, useState } from 'react'
+import type { HoustonClient } from '../../houston/client'
+import { showItemInFolder } from '../../houston/bridge'
+import { parseControlAdmission } from '../../houston/controlAdmission'
+import { Button, Inline } from '../ui'
+import { formatBytes, Row } from './shared'
+
+type Collect =
+  | { phase: 'idle' }
+  | { phase: 'running' }
+  | { phase: 'done'; path: string; bytes: number }
+  | { phase: 'failed'; error: string }
+
+const DESC =
+  'Writes a file for a bug report: versions, sessions without output, hook health and the recent daemon log, with secrets, folders and pane titles replaced where Houston can find them. It stays on this computer.'
+
+/** Far past a 1 MiB read and write; a dropped send or a lost reply ends here. */
+export const REPLY_TIMEOUT_MS = 30_000
+
+export function folderOf(path: string): string {
+  return path.replace(/[\\/][^\\/]*$/, '')
+}
+
+/** Asks the daemon to write a redacted diagnostics file and offers its folder. */
+export function DiagnosticsFileRow({ client }: { client: HoustonClient | null }): React.JSX.Element {
+  const [collect, setCollect] = useState<Collect>({ phase: 'idle' })
+  useEffect(() => {
+    if (!client) return
+    const off = client.subscribeAll((msg) => {
+      if (msg.type === 'error' && parseControlAdmission(msg.context)?.kind === 'diagnostics_collect') {
+        setCollect((cur) => (cur.phase === 'running' ? { phase: 'failed', error: msg.message } : cur))
+        return
+      }
+      if (msg.type !== 'diagnostics_collected') return
+      setCollect(
+        msg.path
+          ? { phase: 'done', path: msg.path, bytes: msg.bytes }
+          : { phase: 'failed', error: msg.error ?? 'the daemon wrote no file and gave no reason' }
+      )
+    })
+    return () => {
+      off()
+      setCollect({ phase: 'idle' })
+    }
+  }, [client])
+  useEffect(() => {
+    if (collect.phase !== 'running') return
+    const timer = setTimeout(
+      () => setCollect({ phase: 'failed', error: `the daemon did not answer within ${REPLY_TIMEOUT_MS / 1000} s` }),
+      REPLY_TIMEOUT_MS
+    )
+    return () => clearTimeout(timer)
+  }, [collect.phase])
+
+  const start = (): void => {
+    if (!client) return
+    setCollect({ phase: 'running' })
+    client.send({ type: 'diagnostics_collect', app_version: __APP_VERSION__ })
+  }
+
+  const desc =
+    collect.phase === 'done'
+      ? `Saved ${collect.path} (${formatBytes(collect.bytes)}). Read it before attaching it to an issue.`
+      : collect.phase === 'failed'
+        ? `No file was written: ${collect.error}`
+        : DESC
+  return (
+    <Row title="Save diagnostics file" desc={<span data-testid="settings-diagnostics-file-desc">{desc}</span>}>
+      <Inline gap="small">
+        {collect.phase === 'done' && (
+          <Button variant="legacy-ghost" onClick={() => void showItemInFolder(folderOf(collect.path))}>
+            Show folder
+          </Button>
+        )}
+        <Button
+          variant="legacy-ghost"
+          data-testid="settings-diagnostics-file"
+          disabled={!client || collect.phase === 'running'}
+          onClick={start}
+        >
+          {collect.phase === 'running' ? 'Saving…' : 'Save file'}
+        </Button>
+      </Inline>
+    </Row>
+  )
+}

@@ -24,6 +24,18 @@ A grid can also hold Files or editor panes. Browser, Changes, Pull request and L
 requests are side-panel surfaces; see [Files, editor and browser](files-editor-browser.md)
 and [Changes](changes.md).
 
+### A workspace folder that moved
+
+If you move or rename a workspace's folder outside Houston, right-click the workspace and
+choose **Locate moved folder…**, then pick its new location. Houston accepts only the same
+git repository: each of its managed worktrees must belong to the folder you pick. Closed
+sessions, worktrees, tasks, the merge queue, saved actions and the grid layout follow the
+folder, and `git worktree repair` relinks the worktrees. A workspace whose name was its
+folder name takes the new folder name. Close the workspace's running sessions and remove a
+swarm rooted there first. A Codex pane resumes its conversation at the new path. Claude and
+ZCode store conversations per folder, so a relocated Claude or ZCode pane starts a new
+conversation and says why.
+
 ## Launching sessions
 
 Choose **New session** beside a workspace to create a new empty grid. Choose **Terminal**
@@ -295,6 +307,23 @@ space inside the database rather than returning it to the disk. **Reclaim space*
 size before and after. It runs only when you click it, only while every pane is closed or
 asleep, and only when the disk has at least twice as much free space as the database and
 its write-ahead log occupy; otherwise it names the condition that blocked it.
+
+## Diagnostics for a bug report
+
+**Settings ▸ Daemon ▸ Logs ▸ Save diagnostics file** writes a text file for a bug report
+under the current channel's state directory, in `diagnostics/`, and **Show folder** opens
+that folder. The file lists the app and daemon versions, the channel and platform, each
+session's id, agent, state and status, the hook health of each agent CLI, and the most
+recent daemon log lines. It never contains terminal output. Redaction is best-effort:
+recognised secret shapes, such as tokens, keys, passwords in URLs and `NAME_TOKEN=`
+assignments, are removed; your home directory is shown as `~`; registered workspace
+folders, managed worktrees and other pane folders become `<workspace N>`, `<worktree N>`
+and `<folder N>`; and the titles and SSH hosts of current panes become `<title>` and
+`<host>`. Log lines can still name branches, files, routines, SSH profiles and the titles
+of panes closed since the daemon started. The file is at most 1 MiB; older log lines are
+left out first. Houston keeps the five newest files and sends none of them anywhere: read
+the file before you attach it to an issue.
+The file describes only the daemon on this computer; the daemon of a WSL environment is not included.
 
 ## Killing a pane
 

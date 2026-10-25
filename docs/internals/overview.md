@@ -523,6 +523,7 @@ docs/                     this tree; see docs/README.md
 |---|---|---|
 | SQLite `houston.db` (WAL) | workspaces, sessions roster, SSH profiles, settings KV, routines and their runs, command history, MCP/skill bookkeeping, legacy swarm tables | `db.rs`; migrations are `CREATE TABLE IF NOT EXISTS` + `add_column_if_missing`, no `user_version` |
 | `scrollback/<id>.bin` | 4 MiB ring per session, written on session end, shutdown and every 30 s while it has new output | `scrollback.rs` |
+| `pr-status-cache.json` | last PR status per directory, so a restarted daemon answers at once before re-asking `gh` | `pr_status_store.rs` |
 | OS keychain | SSH credentials, Groq API key | `ssh_credentials.rs`, `voice/cloud.rs` |
 | `localStorage` (per channel webview) | grids, split trees (written 300 ms after the last change, at once when the page is hidden or unloaded), workspace order and pins, sidebar state, chrome theme | `layout/tree.ts` |
 | in memory only | live sessions, handoff jobs, hook/mail scope state | `daemon.rs` |

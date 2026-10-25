@@ -731,6 +731,10 @@ export class HoustonClient {
     this.send({ type: 'workspace_rename', path, name })
   }
 
+  relocateWorkspace(from: string, to: string): void {
+    this.send({ type: 'workspace_relocate', from, to })
+  }
+
   gitBranch(dir: string): void {
     this.send({ type: 'git_branch', dir })
   }
@@ -807,8 +811,16 @@ export class HoustonClient {
     this.send({ type: 'git_worktree_create', dir, name, base })
   }
 
+  sessionNoteClear(session: number): void {
+    this.send({ type: 'session_note_clear', session })
+  }
+
   gitWorktreeRemove(dir: string, path: string, force: boolean): void {
     this.send({ type: 'git_worktree_remove', dir, path, force })
+  }
+
+  worktreeCheck(dir: string, path: string): void {
+    this.send({ type: 'worktree_check', dir, path })
   }
 
   gitWorktreePrune(dir: string): void {

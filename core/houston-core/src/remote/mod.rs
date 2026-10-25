@@ -754,6 +754,13 @@ pub(crate) struct PendingNotification {
     pub due: tokio::time::Instant,
 }
 
+/// The connection that last reported the desktop in use, and when that report lapses.
+#[derive(Debug, Clone, Copy)]
+struct DesktopPresence {
+    conn: u64,
+    until: tokio::time::Instant,
+}
+
 /// In-memory remote state owned by the daemon. Configuration persists in the
 /// settings table; everything here is rebuilt at boot.
 pub struct Runtime {
@@ -769,6 +776,7 @@ pub struct Runtime {
     pub(crate) retention: Mutex<()>,
     pub(crate) notifications: Mutex<HashMap<u32, PendingNotification>>,
     pub(crate) notification_wake: tokio::sync::Notify,
+    presence: Mutex<Option<DesktopPresence>>,
     pub(crate) last_seen_written: Mutex<HashMap<i64, u64>>,
     status_tx: tokio::sync::mpsc::Sender<StatusEvent>,
     /// Taken by the notifier loop; transitions before it starts wait in the channel.
@@ -825,6 +833,7 @@ impl Runtime {
             retention: Mutex::new(()),
             notifications: Mutex::new(HashMap::new()),
             notification_wake: tokio::sync::Notify::new(),
+            presence: Mutex::new(None),
             last_seen_written: Mutex::new(HashMap::new()),
             status_tx,
             status_rx: Mutex::new(Some(status_rx)),
@@ -1055,6 +1064,43 @@ impl Runtime {
         from
     }
 
+    /// `active` holds notifications for `DESKTOP_AWAY_SECS`; away from the holding
+    /// connection releases them at once, so an unknown desktop never silences the phone.
+    pub(crate) fn report_presence(&self, conn: u64, active: bool) {
+        let away = Duration::from_secs(u64::from(proto::DESKTOP_AWAY_SECS));
+        self.hold_until(conn, active.then(|| tokio::time::Instant::now() + away));
+    }
+
+    /// Any connection may hold; only the holder's own away report releases.
+    fn hold_until(&self, conn: u64, until: Option<tokio::time::Instant>) {
+        let mut presence = self.presence.lock().expect("remote presence lock");
+        match until {
+            Some(until) => *presence = Some(DesktopPresence { conn, until }),
+            None if presence.is_some_and(|p| p.conn == conn) => *presence = None,
+            None => return,
+        }
+        drop(presence);
+        self.notification_wake.notify_one();
+    }
+
+    pub(crate) fn forget_presence(&self, conn: u64) {
+        let mut presence = self.presence.lock().expect("remote presence lock");
+        if presence.is_some_and(|p| p.conn == conn) {
+            *presence = None;
+            drop(presence);
+            self.notification_wake.notify_one();
+        }
+    }
+
+    /// When held notifications may go out; `None` while the desktop is away or unknown.
+    pub(crate) fn presence_hold(&self) -> Option<tokio::time::Instant> {
+        self.presence
+            .lock()
+            .expect("remote presence lock")
+            .map(|p| p.until)
+            .filter(|until| *until > tokio::time::Instant::now())
+    }
+
     pub(crate) fn seen(&self, session: u32) -> Option<SeenStatus> {
         self.seen
             .lock()
@@ -1149,6 +1195,43 @@ mod tests {
         assert!(parse_public_url("https://box/x").is_err());
         assert!(parse_public_url("ftp://box").is_err());
         assert!(parse_public_url("https://u:p@box").is_err());
+    }
+
+    #[test]
+    fn desktop_presence_holds_until_away_closed_or_stale() {
+        let rt = Runtime::new();
+        assert!(rt.presence_hold().is_none(), "unknown presence never holds");
+        rt.report_presence(1, true);
+        let hold = rt.presence_hold().expect("an active report holds");
+        assert!(hold > tokio::time::Instant::now() + Duration::from_secs(170));
+        rt.report_presence(1, false);
+        assert!(rt.presence_hold().is_none(), "away releases at once");
+
+        rt.report_presence(1, true);
+        rt.forget_presence(2);
+        assert!(
+            rt.presence_hold().is_some(),
+            "another connection closing keeps it"
+        );
+        rt.report_presence(2, false);
+        assert!(
+            rt.presence_hold().is_some(),
+            "another connection going away keeps it"
+        );
+        rt.forget_presence(1);
+        assert!(
+            rt.presence_hold().is_none(),
+            "the reporter closing releases it"
+        );
+
+        rt.hold_until(
+            1,
+            Some(tokio::time::Instant::now() - Duration::from_millis(1)),
+        );
+        assert!(
+            rt.presence_hold().is_none(),
+            "a lapsed report reads as away"
+        );
     }
 
     #[test]
