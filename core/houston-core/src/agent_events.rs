@@ -148,6 +148,12 @@ const ZCODE_EVENTS: [(&str, AgentEvent); 4] = [
 
 pub const ZCODE_CORRELATION_EVENTS: [&str; 3] = ["PreToolUse", "PostToolUse", "PostToolUseFailure"];
 
+/// Codex's StopFailure comes from the pane-owned app-server observer, not a
+/// hook, so its hook config must not carry it.
+pub fn hook_is_installed(provider: proto::AgentKind, event: &str) -> bool {
+    !(provider == proto::AgentKind::Codex && event == "StopFailure")
+}
+
 pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentEvent)] {
     match provider {
         proto::AgentKind::Claude => &CLAUDE_EVENTS,

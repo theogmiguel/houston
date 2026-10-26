@@ -180,6 +180,7 @@ fn install_with(
     let path = config_path(provider, home)?;
     let mut commands: Vec<(&'static str, String)> = crate::agent_events::events_for(provider)
         .iter()
+        .filter(|(event, _)| crate::agent_events::hook_is_installed(provider, event))
         .map(|(event, _)| (*event, hook_command(launcher, provider, event, sentinel)))
         .collect();
     if commands.is_empty() {
@@ -539,6 +540,7 @@ fn codex_trust_entries(path: &Path, sentinel: &str) -> Result<Vec<(String, Strin
     let events = crate::agent_events::events_for(proto::AgentKind::Codex)
         .iter()
         .map(|(event, _)| *event)
+        .filter(|event| crate::agent_events::hook_is_installed(proto::AgentKind::Codex, event))
         .chain(
             crate::agent_events::CODEX_CORRELATION_EVENTS
                 .iter()
@@ -1536,10 +1538,15 @@ mod tests {
         assert!(cmds.iter().any(|c| c == "my-own-hook"), "{cmds:?}");
         assert!(cmds.iter().any(|c| has_sentinel(c, DEV)), "{cmds:?}");
         assert!(is_installed(proto::AgentKind::Codex, &h, DEV));
-        let events = crate::agent_events::events_for(proto::AgentKind::Codex);
-        assert_eq!(events.len(), 5, "Codex maps lifecycle plus interruption");
+        let events = crate::agent_events::events_for(proto::AgentKind::Codex)
+            .iter()
+            .filter(|(event, _)| {
+                crate::agent_events::hook_is_installed(proto::AgentKind::Codex, event)
+            })
+            .count();
+        assert_eq!(events, 5, "Codex installs lifecycle plus interruption");
         let extra = crate::agent_events::CODEX_CORRELATION_EVENTS.len() + 1; // compaction
-        assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
+        assert_eq!(cmds.len(), events + extra + 1, "{cmds:?}");
         let root: serde_json::Value =
             serde_json::from_str(&read(&path)).expect("valid Codex hooks JSON");
         assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "*");
@@ -1548,7 +1555,7 @@ mod tests {
         install(proto::AgentKind::Codex, &h, &launcher(), DEV).expect("reinstall");
         assert_eq!(
             hooks_json_commands(&read(&path)).len(),
-            events.len() + extra + 1,
+            events + extra + 1,
             "a reinstall replaces Houston's entries rather than adding a second set"
         );
 
