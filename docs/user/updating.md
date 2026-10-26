@@ -46,7 +46,8 @@ a choice about them:
 - **Keep sessions running** (the default) — the update installs, Houston reopens, and the
   running sessions move to a new daemon on the new build. If the move fails, they stay on
   the current daemon. A session in thread view restarts on the new daemon and continues
-  its conversation; a reply still being written when the update starts is cut off.
+  its conversation. A reply still being written when the sessions move is cut off; a
+  refused move leaves it running.
 - **Stop everything and update** — the dialog lists the sessions that will end. Houston
   stops exactly those sessions, installs, and reopens on a fresh daemon. If the running
   sessions change while the dialog is open, Houston refreshes the list and asks again

@@ -5428,8 +5428,8 @@ impl Daemon {
         }
         std::thread::sleep(Duration::from_millis(adoption::HANDOFF_MCP_DRAIN_MS));
 
-        // A thread has no descriptor to transfer: it ends as at shutdown, and the new
-        // generation resumes its conversation from the database.
+        // A thread has no descriptor to transfer: it ends as at shutdown, once the
+        // candidate has prepared, and the new generation resumes its conversation.
         let live_threads: Vec<u32> = {
             let sessions = self.sessions.lock().expect("sessions lock");
             sessions
@@ -5440,23 +5440,6 @@ impl Daemon {
                 .map(|(id, _)| *id)
                 .collect()
         };
-        for id in &live_threads {
-            if let Err(error) = self.stop_session_for_recovery(*id) {
-                return Err(refuse(
-                    &mut sock,
-                    format!("closing thread session {id} for the handoff: {error:#}"),
-                ));
-            }
-            closed_threads.push(*id);
-        }
-        let step_timeout_ms = step_timeout.as_millis();
-        let unclosed = self.wait_for_sessions_to_end(&live_threads, step_timeout);
-        if !unclosed.is_empty() {
-            return Err(refuse(
-                &mut sock,
-                format!("thread session(s) {unclosed:?} did not end within {step_timeout_ms}ms"),
-            ));
-        }
 
         let live_ids: Vec<u32> = {
             let sessions = self.sessions.lock().expect("sessions lock");
@@ -5530,7 +5513,7 @@ impl Daemon {
             }
         };
 
-        let manifest = match self.build_handoff_manifest(generation, &live_ids, closed_threads) {
+        let manifest = match self.build_handoff_manifest(generation, &live_ids, &live_threads) {
             Ok(m) => m,
             Err(reason) => {
                 self.resume_sessions(&parked);
@@ -5598,6 +5581,25 @@ impl Daemon {
                 self.resume_sessions(&parked);
                 return Err("unexpected candidate reply while awaiting prepared".to_string());
             }
+        }
+
+        // Every refusal is behind us; the candidate waits for the commit without a timeout.
+        for id in &live_threads {
+            if let Err(error) = self.stop_session_for_recovery(*id) {
+                self.resume_sessions(&parked);
+                return Err(format!(
+                    "closing thread session {id} for the handoff: {error:#}"
+                ));
+            }
+            closed_threads.push(*id);
+        }
+        let unclosed = self.wait_for_sessions_to_end(&live_threads, step_timeout);
+        if !unclosed.is_empty() {
+            self.resume_sessions(&parked);
+            return Err(format!(
+                "thread session(s) {unclosed:?} did not end within {}ms",
+                step_timeout.as_millis()
+            ));
         }
 
         if let Err(e) = adoption::write_frame(&mut sock, &adoption::FromOld::Commit { generation })
