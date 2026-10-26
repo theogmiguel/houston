@@ -119,6 +119,13 @@ pub fn evaluate(
             });
         }
     }
+    // A flaky check Houston re-runs leaves failure for queued or running. Its
+    // next failure on the same head is news again, so it leaves the failed set.
+    for check in &detail.checks {
+        if check.state != proto::PrCheckState::Failing {
+            state.failed_checks.remove(&check.name);
+        }
+    }
 
     // `gh pr view` omits GitHub's per-context `isRequired`, so every reported check is a gate.
     let checks_passed = !detail.checks.is_empty()
@@ -474,6 +481,48 @@ pub(crate) mod tests {
             None,
         );
         assert!(second.changes.is_empty());
+    }
+
+    #[test]
+    fn a_rerun_that_leaves_failing_reports_its_next_failure_again() {
+        let link = link(proto::PullRequestState::Open);
+        let mut failing = detail("abc");
+        failing.checks.push(proto::PrCheck {
+            run_id: Some(7),
+            name: "build".into(),
+            state: proto::PrCheckState::Failing,
+            url: None,
+            duration_ms: None,
+        });
+        let first = evaluate(settled(), &link, &failing, None, None);
+        assert!(matches!(
+            first.changes.as_slice(),
+            [Change::FailedCheck { name, .. }] if name == "build"
+        ));
+        let mut rerunning = failing.clone();
+        rerunning.checks[0].state = proto::PrCheckState::Running;
+        let queued = evaluate(first.state.unwrap(), &link, &rerunning, None, None);
+        assert!(
+            queued.changes.is_empty(),
+            "leaving failure is not a wake: {:?}",
+            queued.changes
+        );
+        let again = evaluate(queued.state.unwrap(), &link, &failing, None, None);
+        assert_eq!(
+            again.changes,
+            [Change::FailedCheck {
+                sha: "abc".into(),
+                name: "build".into(),
+                status: "failure".into(),
+            }],
+            "the re-run's failure is a new event on the same head"
+        );
+        let still = evaluate(again.state.unwrap(), &link, &failing, None, None);
+        assert!(
+            still.changes.is_empty(),
+            "a failure that never left failing wakes once: {:?}",
+            still.changes
+        );
     }
 
     #[test]

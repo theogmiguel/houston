@@ -3051,6 +3051,15 @@ async fn dispatch(
         .await
         .map_err(|_| anyhow::anyhow!("sending generated-title setting failed")),
         proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
+        proto::ClientMsg::ZcodeQuotaCheckGet {} => send_msg(
+            sink,
+            &proto::ServerMsg::ZcodeQuotaCheck {
+                enabled: daemon.zcode_quota_check_enabled(),
+            },
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("sending ZCode quota check setting failed")),
+        proto::ClientMsg::ZcodeQuotaCheckSet { enabled } => daemon.set_zcode_quota_check(enabled),
         proto::ClientMsg::SessionTitleReset { session } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.reset_title(session))

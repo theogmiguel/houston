@@ -432,11 +432,28 @@ export function SettingsRemoteUnconfigured(): React.JSX.Element {
 }
 
 export function SettingsAgentSetup({ detail = false, rename = false }: { detail?: boolean; rename?: boolean } = {}): React.JSX.Element {
+  const client = React.useMemo(() => {
+    let enabled = false
+    const listeners = new Set<(message: ServerMsg) => void>()
+    return new Proxy({
+      subscribeAll(handler: (message: ServerMsg) => void) {
+        listeners.add(handler)
+        return () => { listeners.delete(handler) }
+      },
+      send(message: { type: string; enabled?: boolean }) {
+        if (message.type === 'zcode_quota_check_set') enabled = message.enabled === true
+        if (message.type === 'zcode_quota_check_get' || message.type === 'zcode_quota_check_set') {
+          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'zcode_quota_check', enabled }) })
+        }
+      }
+    }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient
+  }, [])
   React.useEffect(() => {
     if (detail) document.querySelector<HTMLButtonElement>('[data-provider="claude"] button')?.click()
     if (rename) [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Rename')?.click()
   }, [detail, rename])
   return <SettingsScreen section="agents-clis" props={{
+    daemonClient: client,
     agentHooks: agentHookFixture,
     agentProfiles: {
       profiles: [

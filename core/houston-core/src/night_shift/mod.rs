@@ -4,11 +4,12 @@ pub mod apps;
 pub mod awake;
 pub mod brief;
 pub mod cli;
+pub mod cost;
 pub mod detect;
 pub mod preflight;
+pub mod provider_probe;
 pub mod settings;
 pub mod window;
-pub mod zcode_probe;
 
 use std::path::{Path, PathBuf};
 
@@ -23,6 +24,117 @@ pub const ROUTINE_PROMPT: &str =
 /// QA pane, so a gate never waits for a worker slot.
 pub const GATE_PANES: u32 = 2;
 
+/// Fixer panes one pull request may receive. The first fixer's patch may miss
+/// the failure; one retry catches a second attempt without looping all night.
+pub const CI_FIXES_PER_PR: u32 = 2;
+
+/// The failing log a fixer prompt quotes, from the already-fetched check lines.
+pub const CI_FIX_EXCERPT_CHARS: usize = 1_500;
+
+/// Refused `/goal` follow-ups before Houston stops trying for the run; a pane
+/// may spend its first hooks behind a trust prompt.
+pub const GOAL_ATTEMPTS: u32 = 3;
+
+/// Whether another refused `/goal` attempt is worth making.
+pub fn goal_retry_after(refusals: u32) -> bool {
+    refusals < GOAL_ATTEMPTS
+}
+
+/// What Houston does with a pull request's CI failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CiAction {
+    /// Re-run the failed jobs once after a known flaky test matched.
+    Rerun { test: String },
+    /// Start a fixer pane for a real failure.
+    Fix,
+    /// Stop; another attempt would loop.
+    GiveUp { why: String },
+}
+
+/// The failure plan. A known flaky failure is re-run once; anything else, or
+/// the same flaky failure again, goes to a fixer until the per-PR cap.
+pub fn ci_failure_plan(flaky_hit: Option<&str>, reruns: u32, fixes: u32) -> CiAction {
+    if let Some(test) = flaky_hit {
+        if reruns == 0 {
+            return CiAction::Rerun {
+                test: test.to_string(),
+            };
+        }
+    }
+    if fixes >= CI_FIXES_PER_PR {
+        return CiAction::GiveUp {
+            why: format!(
+                "the pull request has {fixes} fixer panes already used of its \
+                 {CI_FIXES_PER_PR}; Houston leaves the failure to the orchestrator"
+            ),
+        };
+    }
+    CiAction::Fix
+}
+
+/// Whether the plan records the pull request's CI gate as failed. A fixer or a
+/// give-up leaves the failure visible; a re-run stays pending until it answers.
+pub fn ci_gate_failed(action: &CiAction) -> bool {
+    matches!(action, CiAction::Fix | CiAction::GiveUp { .. })
+}
+
+/// The last `max` characters of the check lines, on a character boundary.
+pub fn bounded_excerpt(lines: &[String], max: usize) -> String {
+    let joined = lines.join("\n");
+    let count = joined.chars().count();
+    if count <= max {
+        return joined;
+    }
+    joined.chars().skip(count - max).collect()
+}
+
+/// The bounded check excerpt after redaction, so a credential a CI log echoed
+/// never reaches a fixer's prompt, its brief or the inbox.
+pub fn redacted_excerpt(lines: &[String], max: usize) -> String {
+    let redacted: Vec<String> = lines
+        .iter()
+        .map(|line| crate::sanitize::redact_secrets(line).0)
+        .collect();
+    bounded_excerpt(&redacted, max)
+}
+
+/// The fixer's brief: which pull request and checks failed, what the log says,
+/// where to work and what to run. It carries no token or terminal transcript.
+pub fn fixer_prompt(
+    number: u32,
+    checks: &[String],
+    head: Option<&str>,
+    excerpt: &str,
+    configured_checks: &[String],
+) -> String {
+    let checks = if checks.is_empty() {
+        "the failing check names were not recorded".to_string()
+    } else {
+        checks.join(", ")
+    };
+    let head = head.unwrap_or("not recorded");
+    let configured = if configured_checks.is_empty() {
+        "none configured".to_string()
+    } else {
+        configured_checks.join(", ")
+    };
+    format!(
+        "Night shift: fix CI on pull request #{number}.\n\n\
+         Failed checks: {checks}\n\
+         The pull request's head is {head}. You start in your own fresh worktree at the \
+         workspace's HEAD, so the run's own worktree stays untouched. Fetch the pull \
+         request's head with `git fetch origin pull/{number}/head` and create your fix \
+         branch from `FETCH_HEAD`; do not rewrite published history.\n\n\
+         Last lines of the failing log:\n{excerpt}\n\n\
+         Find the cause, fix it and push one commit to the pull request's head branch. Read \
+         its name with `gh pr view {number} --json headRefName` and push with \
+         `git push origin HEAD:<headRefName>`. Do not force-push. Run the checks Houston \
+         runs on every pull request: {configured}. Then submit with pane_submit: the cause, \
+         the fix, the commit and each check's result. If you cannot push, submit with what \
+         you found instead of guessing."
+    )
+}
+
 /// The ledger verbs, as MCP tools (`night_<verb>`) and `hs-night <verb>`.
 /// `verdict` is the verifier's; the others are the orchestrator's.
 pub const VERBS: [&str; 7] = [
@@ -31,6 +143,37 @@ pub const VERBS: [&str; 7] = [
 
 pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
     state_dir.join("night-shift").join(run_id.to_string())
+}
+
+/// One failed check as the CI pass sees it: its name, the Actions run that
+/// owns it (when GitHub reported one) and its own log lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedCheck {
+    pub name: String,
+    pub run: Option<u64>,
+    pub lines: Vec<String>,
+}
+
+/// The flaky test to re-run and the run to re-run it in. Each check matches
+/// its own name and lines, so a real failure in another workflow never spends
+/// the pull request's one re-run; a hit with a run id wins.
+pub fn flaky_rerun<'a>(
+    flaky: &'a [String],
+    checks: &[FailedCheck],
+) -> Option<(&'a str, Option<u64>)> {
+    let hits: Vec<(&str, Option<u64>)> = checks
+        .iter()
+        .filter_map(|check| {
+            let mut texts = Vec::with_capacity(check.lines.len() + 1);
+            texts.push(check.name.clone());
+            texts.extend(check.lines.iter().cloned());
+            flaky_match(flaky, &texts).map(|test| (test, check.run))
+        })
+        .collect();
+    hits.iter()
+        .find(|(_, run)| run.is_some())
+        .or_else(|| hits.first())
+        .copied()
 }
 
 /// The first flaky test name that appears in a failed check's name or log.
@@ -62,6 +205,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_goal_stops_after_three_refusals() {
+        assert!(goal_retry_after(0), "the first attempt");
+        assert!(goal_retry_after(GOAL_ATTEMPTS - 1));
+        assert!(!goal_retry_after(GOAL_ATTEMPTS));
+        assert!(!goal_retry_after(GOAL_ATTEMPTS + 1));
+    }
+
+    #[test]
     fn flaky_names_match_inside_log_lines() {
         let flaky = vec!["pty::resize_race".to_string(), "x".to_string()];
         let log = vec![
@@ -83,6 +234,148 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_flaky_failure_is_rerun_once_then_fixed() {
+        assert_eq!(
+            ci_failure_plan(Some("pty::resize_race"), 0, 0),
+            CiAction::Rerun {
+                test: "pty::resize_race".into()
+            }
+        );
+        assert_eq!(
+            ci_failure_plan(Some("pty::resize_race"), 1, 0),
+            CiAction::Fix
+        );
+        assert_eq!(
+            ci_failure_plan(Some("pty::resize_race"), 1, CI_FIXES_PER_PR),
+            CiAction::GiveUp {
+                why: format!(
+                    "the pull request has {CI_FIXES_PER_PR} fixer panes already used of its \
+                     {CI_FIXES_PER_PR}; Houston leaves the failure to the orchestrator"
+                )
+            }
+        );
+    }
+
+    #[test]
+    fn a_flaky_hit_is_chosen_from_its_own_check_and_its_own_run() {
+        let flaky = vec!["pty::resize_race".to_string()];
+        let checks = vec![
+            FailedCheck {
+                name: "real-checks".into(),
+                run: Some(20),
+                lines: vec!["assert_eq! failed".into()],
+            },
+            FailedCheck {
+                name: "core-checks".into(),
+                run: Some(10),
+                lines: vec!["test pty::resize_race ... FAILED".into()],
+            },
+        ];
+        assert_eq!(
+            flaky_rerun(&flaky, &checks),
+            Some(("pty::resize_race", Some(10))),
+            "the flaky failure's own workflow is re-run, not the first failed one"
+        );
+        let no_run = vec![
+            FailedCheck {
+                name: "core-checks".into(),
+                run: None,
+                lines: vec!["test pty::resize_race ... FAILED".into()],
+            },
+            checks[1].clone(),
+        ];
+        assert_eq!(
+            flaky_rerun(&flaky, &no_run),
+            Some(("pty::resize_race", Some(10))),
+            "a hit with a run id wins"
+        );
+        assert_eq!(
+            flaky_rerun(
+                &flaky,
+                &[FailedCheck {
+                    name: "core-checks".into(),
+                    run: None,
+                    lines: vec!["test pty::resize_race ... FAILED".into()]
+                }]
+            ),
+            Some(("pty::resize_race", None))
+        );
+        assert_eq!(
+            flaky_rerun(&flaky, &checks[..1]),
+            None,
+            "another workflow's log does not match"
+        );
+    }
+
+    #[test]
+    fn only_a_pending_rerun_leaves_the_ci_gate_open() {
+        assert!(ci_gate_failed(&CiAction::Fix));
+        assert!(ci_gate_failed(&CiAction::GiveUp { why: "cap".into() }));
+        assert!(!ci_gate_failed(&CiAction::Rerun { test: "t".into() }));
+    }
+
+    #[test]
+    fn a_real_failure_goes_to_a_fixer_until_the_cap() {
+        assert_eq!(ci_failure_plan(None, 0, 0), CiAction::Fix);
+        assert_eq!(ci_failure_plan(None, 0, 1), CiAction::Fix);
+        assert!(matches!(
+            ci_failure_plan(None, 1, CI_FIXES_PER_PR),
+            CiAction::GiveUp { why } if why.contains("2 fixer panes")
+        ));
+        assert!(matches!(
+            ci_failure_plan(None, 0, CI_FIXES_PER_PR + 1),
+            CiAction::GiveUp { .. }
+        ));
+    }
+
+    #[test]
+    fn a_fixer_prompt_names_the_pr_checks_log_and_worktree() {
+        let prompt = fixer_prompt(
+            12,
+            &["core-checks".into(), "renderer-checks".into()],
+            Some("abc123"),
+            "test pty::resize_race ... FAILED",
+            &["cargo test -p houston-core".into()],
+        );
+        for needle in [
+            "pull request #12",
+            "core-checks, renderer-checks",
+            "abc123",
+            "own fresh worktree",
+            "git fetch origin pull/12/head",
+            "FETCH_HEAD",
+            "gh pr view 12 --json headRefName",
+            "git push origin HEAD:<headRefName>",
+            "Do not force-push",
+            "test pty::resize_race ... FAILED",
+            "cargo test -p houston-core",
+            "pane_submit",
+        ] {
+            assert!(prompt.contains(needle), "{needle:?} missing: {prompt}");
+        }
+        assert!(fixer_prompt(3, &[], None, "", &[]).contains("not recorded"));
+    }
+
+    #[test]
+    fn the_fixer_excerpt_keeps_the_tail_on_a_character_boundary() {
+        let lines: Vec<String> = (0..5).map(|i| format!("linha {i} ção")).collect();
+        let short = bounded_excerpt(&lines, 1_000);
+        assert_eq!(short, lines.join("\n"));
+        let capped = bounded_excerpt(&lines, 12);
+        assert_eq!(capped.chars().count(), 12);
+        assert!(short.ends_with(&capped), "the tail is kept: {capped:?}");
+    }
+
+    #[test]
+    fn a_fixer_excerpt_never_keeps_a_credential_it_quoted() {
+        let token = "ghp_0123456789abcdefghijklmnopqrstuvwxyzABCD";
+        let lines = vec![format!("push failed with {token} in the log")];
+        let excerpt = redacted_excerpt(&lines, CI_FIX_EXCERPT_CHARS);
+        assert!(!excerpt.contains(token), "{excerpt}");
+        assert!(excerpt.contains("[redacted:github_token]"), "{excerpt}");
+    }
+
     /// Quota resets are never spent automatically: no Night shift code path
     /// names one.
     #[test]
@@ -95,11 +388,13 @@ mod tests {
             "night_shift/awake.rs",
             "night_shift/brief.rs",
             "night_shift/cli.rs",
+            "night_shift/cost.rs",
             "night_shift/preflight.rs",
             "night_shift/settings.rs",
             "night_shift/window.rs",
-            "night_shift/zcode_probe.rs",
+            "night_shift/provider_probe.rs",
             "daemon/night_shift.rs",
+            "daemon/zcode_quota.rs",
             "mcp_night.rs",
         ];
         let needles = [

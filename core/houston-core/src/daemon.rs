@@ -548,8 +548,6 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
 const SLEEP_CUE_MAX_CHARS: usize = 2000;
-/// Claude's `StopFailure` error class for a plan or rate limit.
-const CLAUDE_LIMIT_ERROR: &str = "rate_limit";
 
 pub(crate) fn bounded_hook_text(value: &str) -> String {
     crate::sanitize::redact_secrets(value)
@@ -1570,6 +1568,7 @@ pub(crate) mod tasks;
 mod title_generation;
 mod transfer;
 mod worktree_pass;
+mod zcode_quota;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
 
@@ -1874,6 +1873,7 @@ pub struct Daemon {
     antigravity_roots: Mutex<HashMap<u32, String>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
     night: night_shift::NightShiftCtx,
+    zcode_quota: Mutex<zcode_quota::ZcodeQuotaState>,
     /// Last transcript path and native id written per session, so a drop
     /// repeating them costs no write.
     transcript_links: Mutex<HashMap<u32, TranscriptLink>>,
@@ -3729,6 +3729,7 @@ impl Daemon {
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
             routine_runs: Mutex::new(HashMap::new()),
             night: night_shift::NightShiftCtx::default(),
+            zcode_quota: Mutex::new(zcode_quota::ZcodeQuotaState::default()),
             transcript_links: Mutex::new(HashMap::new()),
             resume_launches: Mutex::new(HashMap::new()),
             pending_shell_children: Mutex::new(HashMap::new()),
@@ -7845,6 +7846,7 @@ impl Daemon {
     #[doc(hidden)]
     pub fn routine_tick_at(self: &Arc<Self>, now_ms: i64) {
         self.night_shift_tick_at(now_ms);
+        self.zcode_quota_tick_at(now_ms.max(0) as u64);
         if self.refusing_mutations() {
             self.stop_routine_runs_past_the_cap(now_ms);
             return;
@@ -16053,35 +16055,17 @@ impl Daemon {
         matches!(kind, "permission_prompt" | "agent_needs_input") || kind.starts_with("elicitation")
     }
 
-    /// Claude's root `StopFailure` with `error: rate_limit` is the only limit a hook reports;
-    /// it carries no reset time.
-    fn reported_limit(
-        provider: proto::AgentKind,
-        d: &crate::hook_drop::HookDrop,
-    ) -> Option<proto::SessionLimit> {
-        (provider == proto::AgentKind::Claude
-            && d.event == "StopFailure"
-            && d.agent_id.is_none()
-            && d.error.as_deref() == Some(CLAUDE_LIMIT_ERROR))
-        .then(|| proto::SessionLimit {
-            error: CLAUDE_LIMIT_ERROR.to_string(),
-            details: d
-                .error_details
-                .as_deref()
-                .map(bounded_hook_text)
-                .filter(|details| !details.is_empty()),
-            since_ms: now_ms(),
-        })
-    }
-
+    /// A root event that ends a reported limit. Every provider with a typed
+    /// limit signal gets one; quota resets are never spent automatically.
     fn ends_limit(provider: proto::AgentKind, d: &crate::hook_drop::HookDrop) -> bool {
-        provider == proto::AgentKind::Claude
-            && d.agent_id.is_none()
+        d.agent_id.is_none()
             && d.subagent_type.is_none()
-            && (crate::agent_events::AgentEvent::from_provider(provider, &d.event)
-                == Some(crate::agent_events::AgentEvent::PromptSubmitted)
-                || (d.event == "Notification"
-                    && d.notification_type.as_deref() == Some("quota_auto_resume_fired")))
+            && crate::limits::ends_limit(
+                provider,
+                cfg!(windows),
+                &d.event,
+                d.notification_type.as_deref(),
+            )
     }
 
     /// Records a reported limit; true only when it starts a new limit episode.
@@ -16228,97 +16212,39 @@ impl Daemon {
             if !session.state.lock().expect("state lock").is_live() {
                 return crate::hook_drop::DropVerdict::Applied;
             }
-            let limit = Self::reported_limit(provider, d);
+            let limit = crate::limits::hook_limit(provider, d);
             let limit_started = limit
                 .clone()
                 .is_some_and(|limit| self.mark_limited(d.session, &session, limit));
             if limit_started {
-                self.night_shift_provider_limited(d.session, provider, "StopFailure rate_limit");
-            }
-            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
-                let name = crate::agent_hooks::provider_slug(provider);
-                let reason = format!(
-                    "{name} {}: {}{}",
-                    d.event,
-                    d.error
-                        .as_deref()
-                        .or(d.reason.as_deref())
-                        .unwrap_or("turn_failed"),
-                    d.error_details
-                        .as_ref()
-                        .map(|details| format!("; {details}"))
-                        .unwrap_or_default()
+                self.night_shift_provider_limited(
+                    d.session,
+                    provider,
+                    &format!("{} {}", d.event, crate::limits::LIMIT_ERROR),
                 );
-                let profile = self
-                    .db
-                    .session_profile_label(d.session)
-                    .ok()
-                    .flatten()
-                    .or_else(|| session.info.profile_label.clone());
-                let (title, body) = match limit.as_ref() {
-                    Some(_) => (
-                        format!("{name} limited"),
-                        orchestrate::limit_note_body(&reason, name, profile.as_deref()),
-                    ),
-                    None => (format!("{name} turn_failed"), reason.clone()),
-                };
-                if row.state != "failed" {
-                    let note = orchestrate::inbox_row_new(
-                        row.parent_session,
-                        &self.current_workspace(d.session).unwrap_or_default(),
-                        Some(d.session),
-                        Some(row.round),
-                        orchestrate::InboxKind::OperatorNote,
-                        &title,
-                        &body,
-                        Vec::new(),
-                        false,
-                        None,
-                        Some("turn_failed"),
-                        true,
-                    );
-                    let written = note.and_then(|mut note| {
-                        // A failed live turn must also wake a parent waiting only for results.
-                        note.urgent = true;
-                        self.db.delegation_close_round(
-                            d.session,
-                            "failed",
-                            Some(&reason),
-                            true,
-                            crate::db::RoundHandback::Write(&note),
-                            now_ms(),
-                        )
-                    });
-                    match written {
-                        Ok(Some(id)) => {
-                            self.broadcast_inbox_row(id);
-                            self.inbox_notify(row.parent_session, true);
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            tracing::warn!("recording failed turn for child {}: {e}", d.session);
-                            return crate::hook_drop::DropVerdict::Retry;
-                        }
-                    }
-                    self.broadcast_delegation(d.session);
-                } else if limit_started {
-                    if let Err(e) = self.inbox_write(
-                        row.parent_session,
-                        &self.current_workspace(d.session).unwrap_or_default(),
-                        Some(d.session),
-                        Some(row.round),
-                        orchestrate::InboxKind::OperatorNote,
-                        &title,
-                        &body,
-                        Vec::new(),
-                        Some("turn_failed"),
-                        None,
-                        false,
-                        true,
-                    ) {
-                        tracing::warn!("recording limit for child {}: {e}", d.session);
-                    }
-                }
+            }
+            let name = crate::agent_hooks::provider_slug(provider);
+            let reason = format!(
+                "{name} {}: {}{}",
+                d.event,
+                d.error
+                    .as_deref()
+                    .or(d.reason.as_deref())
+                    .unwrap_or("turn_failed"),
+                d.error_details
+                    .as_ref()
+                    .map(|details| format!("; {details}"))
+                    .unwrap_or_default()
+            );
+            if self.record_failed_turn(
+                d.session,
+                provider,
+                &reason,
+                limit.is_some(),
+                limit_started,
+                session.info.profile_label.clone(),
+            ) {
+                return crate::hook_drop::DropVerdict::Retry;
             }
         }
         let session = self
@@ -16451,6 +16377,14 @@ impl Daemon {
                     .expect("input answer lock") = d.prompt.as_deref().map(bounded_hook_text);
             }
         }
+        // The brief is in the CLI's hands at its first lifecycle hook after
+        // the pane opens; a Claude orchestrator's direction becomes a /goal.
+        if matches!(d.event.as_str(), "SessionStart" | "UserPromptSubmit")
+            && d.agent_id.is_none()
+            && d.subagent_type.is_none()
+        {
+            self.night_shift_goal_prompt(d.session);
+        }
         if Self::ends_limit(provider, d) {
             self.clear_limit(d.session);
         }
@@ -16525,6 +16459,95 @@ impl Daemon {
         self.note_context_from_hook(d.session, provider, d);
         drop(lifecycle.take());
         verdict
+    }
+
+    /// A failed live turn: close the child's delegation round with one `limited`
+    /// or `turn_failed` row. Returns true when recording it must be retried.
+    fn record_failed_turn(
+        self: &Arc<Self>,
+        session: u32,
+        provider: proto::AgentKind,
+        reason: &str,
+        limited: bool,
+        limit_started: bool,
+        profile_hint: Option<String>,
+    ) -> bool {
+        let Ok(Some(row)) = self.db.delegation_for_child(session) else {
+            return false;
+        };
+        let name = crate::agent_hooks::provider_slug(provider);
+        let profile = self
+            .db
+            .session_profile_label(session)
+            .ok()
+            .flatten()
+            .or(profile_hint);
+        let (title, body) = if limited {
+            (
+                format!("{name} limited"),
+                orchestrate::limit_note_body(reason, name, profile.as_deref()),
+            )
+        } else {
+            (format!("{name} turn_failed"), reason.to_string())
+        };
+        if row.state != "failed" {
+            let note = orchestrate::inbox_row_new(
+                row.parent_session,
+                &self.current_workspace(session).unwrap_or_default(),
+                Some(session),
+                Some(row.round),
+                orchestrate::InboxKind::OperatorNote,
+                &title,
+                &body,
+                Vec::new(),
+                false,
+                None,
+                Some("turn_failed"),
+                true,
+            );
+            let written = note.and_then(|mut note| {
+                // A failed live turn must also wake a parent waiting only for results.
+                note.urgent = true;
+                self.db.delegation_close_round(
+                    session,
+                    "failed",
+                    Some(reason),
+                    true,
+                    crate::db::RoundHandback::Write(&note),
+                    now_ms(),
+                )
+            });
+            match written {
+                Ok(Some(id)) => {
+                    self.broadcast_inbox_row(id);
+                    self.inbox_notify(row.parent_session, true);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("recording failed turn for child {session}: {e}");
+                    return true;
+                }
+            }
+            self.broadcast_delegation(session);
+        } else if limit_started {
+            if let Err(e) = self.inbox_write(
+                row.parent_session,
+                &self.current_workspace(session).unwrap_or_default(),
+                Some(session),
+                Some(row.round),
+                orchestrate::InboxKind::OperatorNote,
+                &title,
+                &body,
+                Vec::new(),
+                Some("turn_failed"),
+                None,
+                false,
+                true,
+            ) {
+                tracing::warn!("recording limit for child {session}: {e}");
+            }
+        }
+        false
     }
 
     fn note_transcript_link(
@@ -18392,7 +18415,7 @@ impl Daemon {
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
             workspaces,
-            workspace_filter: workspace,
+            workspace_filters: workspace.into_iter().collect(),
         });
         if let Err(e) = self.db.usage_daily_rollup_upsert(&outcome.rollups) {
             tracing::warn!("persisting usage daily rollups failed: {e:#}");
@@ -20499,7 +20522,7 @@ impl Daemon {
                     "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
                     "dialogue_tools_permission": !crate::launch::dialogue_permission_args(provider).is_empty(),
                     "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
-                    "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
+                    "turn_failure": crate::agent_events::reports_turn_failure(provider, cfg!(windows)),
                 },
                 "capability_note": orchestrate::capability_note(provider),
             })

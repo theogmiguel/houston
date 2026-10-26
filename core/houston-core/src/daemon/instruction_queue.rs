@@ -2,6 +2,10 @@ use super::*;
 use crate::db::{InstructionRow, MessageReceipt};
 use proto::{InstructionMode as Mode, InstructionState as State};
 
+/// Houston's own input has no orchestration request; it is adopted and
+/// completed through the same evidence, not a delegation round.
+pub(super) const DAEMON_INSTRUCTION_ORIGIN: u32 = 0;
+
 impl Daemon {
     fn instruction_scope(&self, caller: Option<u32>, target: u32) -> Result<()> {
         anyhow::ensure!(
@@ -358,6 +362,54 @@ impl Daemon {
             source,
             self.session_status(target).ok().flatten(),
         ))
+    }
+
+    /// Houston's own follow-up input to a live pane (a Night shift run's
+    /// `/goal`), through the same held, confirmed delivery as an instruction.
+    pub(super) fn instruction_accept_daemon(
+        self: &Arc<Self>,
+        target: u32,
+        text: &str,
+    ) -> Result<String> {
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "Houston follow-up input")?;
+        let _dispatch = self
+            .instruction_dispatch_lock
+            .lock()
+            .expect("instruction dispatch lock");
+        let session = self.get(target)?;
+        anyhow::ensure!(
+            session.state.lock().expect("state lock").is_live(),
+            "session {target} is not live; Houston's follow-up input needs a live pane"
+        );
+        anyhow::ensure!(
+            self.session_status(target)? != Some(proto::AgentStatus::NeedsInput),
+            "refused: pane {target} needs input; inspect it and answer before Houston's follow-up"
+        );
+        let receipt = MessageReceipt {
+            caller: DAEMON_INSTRUCTION_ORIGIN,
+            key: None,
+            operation: "pane_prompt",
+            digest: String::new(),
+        };
+        let row = self.db.instruction_accept(
+            target,
+            &self.instruction_context(target)?,
+            Mode::Queue,
+            text,
+            &receipt,
+            now_ms(),
+        )?;
+        self.cancel_temporary_cleanup_locked(target);
+        self.broadcast_instruction_queue(target);
+        drop(_dispatch);
+        drop(_cleanup);
+        self.instruction_dispatch(target)?;
+        self.instruction_wake(target)?;
+        Ok(row.info.id)
     }
 
     fn instruction_wake(self: &Arc<Self>, target: u32) -> Result<()> {
@@ -833,6 +885,11 @@ impl Daemon {
             return Ok(false);
         };
         let Some(request) = row.info.request_id else {
+            if row.origin == DAEMON_INSTRUCTION_ORIGIN {
+                self.db.instruction_adopt(&row.info.id, now_ms())?;
+                self.broadcast_instruction_queue(child);
+                return Ok(true);
+            }
             return Ok(false);
         };
         if named.is_some_and(|named| named != request) {
@@ -1024,6 +1081,13 @@ impl Daemon {
                             Some("target ended before delivery; inspect retained instruction"),
                             now_ms(),
                         )?;
+                    } else if row.origin == DAEMON_INSTRUCTION_ORIGIN
+                        && row.info.state == State::Delivered
+                        && !row.completed
+                    {
+                        // Houston's own input has no later round to complete it.
+                        self.db.instruction_adopt(&row.info.id, now_ms())?;
+                        self.db.instruction_complete(&row.info.id, now_ms())?;
                     }
                 }
             }

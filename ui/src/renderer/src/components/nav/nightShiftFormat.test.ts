@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checksSummary, ownLimitNote, suggestFocus } from './nightShiftFormat'
+import { checksSummary, ownLimitNote, providerCostSub, providerCostValue, suggestFocus, tokenBreakdown, tokenTotal } from './nightShiftFormat'
 import { nightDefaults } from '../../test/nightShiftFixtures'
 
 describe('nightShiftFormat', () => {
@@ -34,6 +34,23 @@ describe('nightShiftFormat', () => {
   it('names the own pane limit only above the global child panes per agent', () => {
     expect(ownLimitNote(4, 6)).toBeNull()
     expect(ownLimitNote(5, 6)).toBe('Own limit: 7 panes · other agents keep 6')
+  })
+
+  it('totals the Usage token classes and leaves reasoning inside output', () => {
+    const tokens = { uncached_input_tokens: 1_000, cached_input_tokens: 2_000, cache_creation_tokens: 300, output_tokens: 500, reasoning_tokens: 200 }
+    expect(tokenTotal(tokens)).toBe(3_800)
+    expect(tokenBreakdown(tokens)).toBe('1K input · 500 output · 2K cache read · 300 cache write')
+  })
+
+  it('shows tokens when reported, never a zero when a provider hides them', () => {
+    const tokens = { uncached_input_tokens: 1_000, cached_input_tokens: 2_000, cache_creation_tokens: 300, output_tokens: 500, reasoning_tokens: 0 }
+    const tracked = { provider: 'claude' as const, panes: 2, pane_hours: 5, tokens }
+    expect(providerCostValue(tracked)).toBe('3.8K tokens')
+    expect(providerCostSub(tracked)).toBe('2 panes · 1K input · 500 output · 2K cache read · 300 cache write')
+    const untracked = { provider: 'zcode' as const, panes: 1, pane_hours: 2.5 }
+    expect(providerCostValue(untracked)).toBe('tokens not tracked')
+    expect(providerCostValue(untracked)).not.toMatch(/^0/)
+    expect(providerCostSub(untracked)).toBe('1 pane')
   })
 
   it('never overwrites an area changed by hand, and falls back without a match', () => {

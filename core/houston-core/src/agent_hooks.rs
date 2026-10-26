@@ -180,6 +180,7 @@ fn install_with(
     let path = config_path(provider, home)?;
     let mut commands: Vec<(&'static str, String)> = crate::agent_events::events_for(provider)
         .iter()
+        .filter(|(event, _)| crate::agent_events::hook_is_installed(provider, event))
         .map(|(event, _)| (*event, hook_command(launcher, provider, event, sentinel)))
         .collect();
     if commands.is_empty() {
@@ -539,6 +540,7 @@ fn codex_trust_entries(path: &Path, sentinel: &str) -> Result<Vec<(String, Strin
     let events = crate::agent_events::events_for(proto::AgentKind::Codex)
         .iter()
         .map(|(event, _)| *event)
+        .filter(|event| crate::agent_events::hook_is_installed(proto::AgentKind::Codex, event))
         .chain(
             crate::agent_events::CODEX_CORRELATION_EVENTS
                 .iter()
@@ -1035,7 +1037,12 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         const id = p?.sessionID ?? \"\"\n\
          \x20         if (!id || await parentOf(id)) return\n\
          \x20         const message = p?.error?.data?.message ?? \"Session error\"\n\
-         \x20         await run(t, {{ session_id: id, message }})\n\
+         \x20         // Only the typed provider error carries a usage-limit class.\n\
+         \x20         const code = p?.error?.data?.statusCode\n\
+         \x20         const limited = p?.error?.name === \"APIError\" && (code === 429 || code === 402)\n\
+         \x20         await run(t, limited\n\
+         \x20           ? {{ session_id: id, message, error: \"rate_limit\", error_details: message }}\n\
+         \x20           : {{ session_id: id, message }})\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"session.compacted\") {{\n\
@@ -1531,10 +1538,15 @@ mod tests {
         assert!(cmds.iter().any(|c| c == "my-own-hook"), "{cmds:?}");
         assert!(cmds.iter().any(|c| has_sentinel(c, DEV)), "{cmds:?}");
         assert!(is_installed(proto::AgentKind::Codex, &h, DEV));
-        let events = crate::agent_events::events_for(proto::AgentKind::Codex);
-        assert_eq!(events.len(), 5, "Codex maps lifecycle plus interruption");
+        let events = crate::agent_events::events_for(proto::AgentKind::Codex)
+            .iter()
+            .filter(|(event, _)| {
+                crate::agent_events::hook_is_installed(proto::AgentKind::Codex, event)
+            })
+            .count();
+        assert_eq!(events, 5, "Codex installs lifecycle plus interruption");
         let extra = crate::agent_events::CODEX_CORRELATION_EVENTS.len() + 1; // compaction
-        assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
+        assert_eq!(cmds.len(), events + extra + 1, "{cmds:?}");
         let root: serde_json::Value =
             serde_json::from_str(&read(&path)).expect("valid Codex hooks JSON");
         assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "*");
@@ -1543,7 +1555,7 @@ mod tests {
         install(proto::AgentKind::Codex, &h, &launcher(), DEV).expect("reinstall");
         assert_eq!(
             hooks_json_commands(&read(&path)).len(),
-            events.len() + extra + 1,
+            events + extra + 1,
             "a reinstall replaces Houston's entries rather than adding a second set"
         );
 
@@ -1940,6 +1952,48 @@ console.log(JSON.stringify(calls))
                 "session.idle"
             ],
             "{calls:?}"
+        );
+    }
+
+    #[test]
+    fn the_opencode_plugin_forwards_a_typed_quota_error_as_rate_limit() {
+        let error = |session: &str, name: &str, code: u16, text: &str| {
+            serde_json::json!({"type": "session.error", "properties": {
+                "sessionID": session,
+                "error": {"name": name, "data": {"statusCode": code, "message": text}}}})
+        };
+        let events = serde_json::json!([
+            error("ses_root", "APIError", 429, "usage limit reached"),
+            error("ses_root", "APIError", 402, "payment required"),
+            error("ses_root", "APIError", 500, "server error"),
+            error("child_1", "APIError", 429, "child usage limit"),
+            error("ses_root", "ProviderAuthError", 429, "token expired"),
+        ]);
+        let Some(calls) = drive_plugin(&events) else {
+            return;
+        };
+        let names: Vec<&str> = calls.iter().map(|c| c["cmd"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "session.error",
+                "session.error",
+                "session.error",
+                "session.error"
+            ],
+            "a child's error is not the pane's: {calls:?}"
+        );
+        assert_eq!(calls[0]["payload"]["error"], "rate_limit");
+        assert_eq!(calls[0]["payload"]["error_details"], "usage limit reached");
+        assert_eq!(calls[1]["payload"]["error"], "rate_limit");
+        assert_eq!(calls[2]["payload"]["message"], "server error");
+        assert!(
+            calls[2]["payload"].get("error").is_none(),
+            "a 500 is a plain failed turn: {calls:?}"
+        );
+        assert!(
+            calls[3]["payload"].get("error").is_none(),
+            "only an APIError carries the quota status: {calls:?}"
         );
     }
 
