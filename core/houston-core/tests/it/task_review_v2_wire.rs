@@ -579,3 +579,43 @@ async fn an_auto_rework_is_the_only_delivery_of_its_findings() {
     let _ = rig.daemon.kill(impl_session);
     let _ = rig.daemon.kill(caller);
 }
+
+#[tokio::test]
+async fn every_push_does_not_review_uncommitted_worktree_changes() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "Review only committed work");
+    set_review(
+        &rig,
+        Some(proto::AgentKind::Claude),
+        proto::TaskReviewMode::EveryPush,
+        proto::TaskReviewFocus::Full,
+    );
+    let (impl_session, worktree, branch) = start_implementation(&rig, task, caller);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    git(&worktree, &["push", "-q", "origin", &branch]);
+    rig.pr(99, &branch);
+    rig.daemon.pr_watch_start(caller, "99").unwrap();
+    let pushed = git(&worktree, &["rev-parse", "HEAD"]);
+    std::fs::write(worktree.join("review.txt"), "uncommitted change\n").unwrap();
+
+    rig.daemon.task_pr_watch_tick();
+    let review = latest_review(&rig, task).expect("the pushed head is reviewed");
+    let session = review.session_id.expect("the review pane");
+    let tree = PathBuf::from(review.worktree_path.expect("the review worktree"));
+    assert_ne!(tree, worktree, "a dirty implementation tree is not reused");
+    assert_eq!(git(&tree, &["rev-parse", "HEAD"]), pushed);
+    assert_eq!(
+        std::fs::read_to_string(tree.join("review.txt"))
+            .unwrap()
+            .lines()
+            .count(),
+        80,
+        "the reviewer sees the pushed commit, not the uncommitted edit"
+    );
+    let _ = rig.daemon.kill(session);
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}

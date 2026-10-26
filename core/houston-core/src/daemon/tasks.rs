@@ -4932,10 +4932,12 @@ impl Daemon {
             .as_deref()
             .map(PathBuf::from)
             .filter(|dir| dir.is_dir());
-        let impl_matches = impl_tree.as_ref().is_some_and(|dir| {
-            pinned_head
-                .map(|head| crate::git::head_sha(dir).ok().as_deref() == Some(head))
-                .unwrap_or(!run_is_open(impl_run.state))
+        let impl_matches = impl_tree.as_ref().is_some_and(|dir| match pinned_head {
+            Some(head) => {
+                crate::git::head_sha(dir).ok().as_deref() == Some(head)
+                    && crate::git::status(dir).is_ok_and(|files| files.is_empty())
+            }
+            None => !run_is_open(impl_run.state),
         });
         if impl_matches {
             if let Some(dir) = impl_tree {
