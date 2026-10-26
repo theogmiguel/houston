@@ -94,8 +94,22 @@ pub fn classify(
     }
 }
 
-/// Runs the probe with `program` from `cwd`; blocks for up to `TIMEOUT`.
-pub fn run(program: &Path, provider: AgentKind, cwd: &Path) -> Outcome {
+/// The config-dir variable a pane of `provider` gets from its active agent
+/// profile, so a probe reads the same account a pane would.
+pub fn profile_env(provider: AgentKind, config_dir: Option<&str>) -> Vec<(String, String)> {
+    let key = match provider {
+        AgentKind::Claude => "CLAUDE_CONFIG_DIR",
+        AgentKind::Codex => "CODEX_HOME",
+        _ => return Vec::new(),
+    };
+    config_dir
+        .filter(|dir| !dir.trim().is_empty())
+        .map(|dir| vec![(key.to_string(), dir.to_string())])
+        .unwrap_or_default()
+}
+
+/// Runs the probe with `program` and `env` from `cwd`; blocks for up to `TIMEOUT`.
+pub fn run(program: &Path, provider: AgentKind, cwd: &Path, env: &[(String, String)]) -> Outcome {
     let Some(args) = argv(provider) else {
         return Outcome::Failed(format!(
             "{} has no headless probe",
@@ -104,6 +118,9 @@ pub fn run(program: &Path, provider: AgentKind, cwd: &Path) -> Outcome {
     };
     let mut cmd = crate::spawn::command(program);
     cmd.args(args).current_dir(cwd);
+    for (name, value) in env {
+        cmd.env(name, value);
+    }
     match crate::spawn::output_within(cmd, TIMEOUT) {
         Ok(Some(out)) => classify(
             provider,
@@ -174,6 +191,24 @@ mod tests {
         ] {
             assert_eq!(argv(provider), None, "{provider:?} has no probe");
         }
+    }
+
+    #[test]
+    fn a_probe_gets_the_profile_config_dir_its_panes_get() {
+        assert_eq!(
+            profile_env(AgentKind::Claude, Some("/home/me/.claude-work")),
+            [(
+                "CLAUDE_CONFIG_DIR".to_string(),
+                "/home/me/.claude-work".to_string()
+            )]
+        );
+        assert_eq!(
+            profile_env(AgentKind::Codex, Some("/home/me/.codex-work")),
+            [("CODEX_HOME".to_string(), "/home/me/.codex-work".to_string())]
+        );
+        assert_eq!(profile_env(AgentKind::Zcode, Some("/z")), []);
+        assert_eq!(profile_env(AgentKind::Claude, Some("  ")), []);
+        assert_eq!(profile_env(AgentKind::Codex, None), []);
     }
 
     #[test]
@@ -254,7 +289,7 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            run(&script, AgentKind::Zcode, dir.path()),
+            run(&script, AgentKind::Zcode, dir.path(), &[]),
             Outcome::Failed("[1310][limit]".into())
         );
         let args = std::fs::read_to_string(dir.path().join("args")).unwrap();

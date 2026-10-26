@@ -4064,10 +4064,15 @@ impl Daemon {
             .cloned()
             .or_else(|| crate::exe_path::resolve_in(&self.env(), slug));
         let cwd = self.state_dir.join("night-shift").join("probe");
+        let profile = self.active_agent_profile_env(provider);
+        let env = provider_probe::profile_env(
+            provider,
+            profile.as_ref().map(|(_, config_dir)| config_dir.as_str()),
+        );
         match program {
             None => provider_probe::Outcome::Failed(format!("{slug} is not on PATH")),
             Some(program) => match std::fs::create_dir_all(&cwd) {
-                Ok(()) => provider_probe::run(&program, provider, &cwd),
+                Ok(()) => provider_probe::run(&program, provider, &cwd, &env),
                 Err(e) => {
                     provider_probe::Outcome::Failed(format!("creating {}: {e}", cwd.display()))
                 }
