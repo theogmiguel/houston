@@ -122,8 +122,8 @@ on #N instead**. Before you confirm, the drawer states exactly what will be sent
 repository and under which `gh` account. The account name is read from your local `gh`
 configuration; the only request before you confirm is the duplicate search. **Create issue** or **Add comment to #N** is the only
 action that sends it; closing the drawer sends nothing. A GitHub rate-limit pause leaves the
-draft usable, returns no duplicates and says so. A workspace on a forge other than GitHub is
-refused by name.
+draft usable, returns no duplicates and says so. Filing issues supports github.com only: a
+workspace remote on another host, including GitHub Enterprise Server, is refused by name.
 
 Settings ▸ Agents ▸ Review counts undecided suspected defects with the review's attention. At
 most once a day, a workspace-top notice names a new suspected defect; **Review** opens it.

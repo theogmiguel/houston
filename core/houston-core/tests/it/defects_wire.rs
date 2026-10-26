@@ -685,6 +685,7 @@ async fn a_workspace_on_another_forge_is_refused_by_name_before_any_gh_call() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("Bitbucket Cloud"), "{err}");
+    assert!(err.contains("github.com only"), "{err}");
     assert!(
         rig.calls("search issues").is_empty(),
         "{:?}",

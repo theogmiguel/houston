@@ -328,13 +328,10 @@ pub fn issue_repository(dir: &Path) -> Result<String> {
     match resolve_url(&url) {
         ForgeResolution::Ready(Forge::GitHub) => github_repository(&url),
         ForgeResolution::Ready(Forge::Bitbucket { .. }) => {
-            bail!("Bitbucket Cloud is not supported here; refusing to file an issue")
+            bail!("Bitbucket Cloud is not github.com; filing issues supports github.com only")
         }
-        ForgeResolution::Unsupported { host } => {
-            bail!("{host} is not supported here; refusing to file an issue")
-        }
-        ForgeResolution::Unknown { host } => {
-            bail!("{host} is not GitHub; refusing to file an issue")
+        ForgeResolution::Unsupported { host } | ForgeResolution::Unknown { host } => {
+            bail!("{host} is not github.com; filing issues supports github.com only")
         }
         ForgeResolution::NoRemote => {
             bail!(
