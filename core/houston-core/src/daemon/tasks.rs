@@ -4608,7 +4608,9 @@ impl Daemon {
         }
         if run_is_open(impl_run.state) {
             if let Some(session) = impl_run.session_id {
-                let status = self.session_status(session)?;
+                // A pane that already exited has no live turn; an unknown id is
+                // idle rather than an error, since the run is what is reviewed.
+                let status = self.session_status(session).ok().flatten();
                 if !Self::review_idle_allows(status) {
                     let status = status
                         .map(|status| crate::db::wire_name(&status))
