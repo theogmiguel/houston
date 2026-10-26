@@ -49,6 +49,7 @@ export interface GridRailRowProps {
   /** True while another surface (any context menu, a grid drag) owns the pointer; the preview stays closed and an open one closes. */
   hoverSuppressed?: boolean
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
+  onClearNote?: (session: number) => void
 }
 
 function checkoutFor(identity: CheckoutIdentity): { checkout: SessionCheckout | null; remoteHost?: string } {
@@ -122,6 +123,7 @@ export function GridRailRow({
   menuOpen,
   hoverSuppressed = false,
   onOpenInspector,
+  onClearNote,
   onRemove,
 }: GridRailRowProps): React.JSX.Element {
   const [hoverPosition, setHoverPosition] = useState<{ left: number; top: number } | null>(null)
@@ -266,6 +268,7 @@ export function GridRailRow({
       onFocusPane={onFocusPane}
       onContextMenu={onContextMenu}
       onOpenInspector={onOpenInspector}
+      onClearNote={onClearNote}
       card={card}
       primary={primary}
       checkoutLabel={checkoutLabel}

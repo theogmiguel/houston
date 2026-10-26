@@ -380,6 +380,15 @@ recording over the limit.
    topic apply when the delay ends; turning off finished-turn notifications also
    cancels finished-turn notifications still waiting to be sent.
 
+While you are using the Houston window on the computer, phone notifications wait: a
+notification whose delay has ended is held until the window loses focus, is hidden, or
+receives no input for about three minutes, and is then sent once. Clicking into the
+built-in browser docked in a pane counts as using the window, but Houston cannot see input
+inside the page, so reading there for more than about three minutes sends held
+notifications. A browser detached into its own window counts as away. A pane answered or
+resumed at the desk in the meantime sends nothing. When Houston is closed or not connected,
+notifications are sent as usual.
+
 Tapping a notification with a pane link opens that pane on the paired device. A late link
 shows **Already answered** when the conversation reports an answer, or **No request
 waiting** when no decision remains. **Also when a turn finishes**

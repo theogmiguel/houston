@@ -12,6 +12,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     for (i, dir) in dirs.iter().enumerate() {
         db.insert_session(&proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -52,6 +53,8 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             slept_at_ms: None,
             limit: None,
             view: Default::default(),
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
     }
@@ -70,6 +73,7 @@ fn seed_one(
 ) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -110,6 +114,8 @@ fn seed_one(
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
 }
@@ -316,6 +322,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
     drop(gone);
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -356,6 +363,8 @@ fn invalid_cwd_is_deferred_not_respawned() {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
     drop(db);
@@ -608,6 +617,7 @@ fn no_flags_set_runs_normal_restore_policy() {
 
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -648,6 +658,8 @@ fn no_flags_set_runs_normal_restore_policy() {
         slept_at_ms: None,
         limit: None,
         view: Default::default(),
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
     drop(db);

@@ -395,6 +395,7 @@ impl Daemon {
         target: &str,
         depends_on: Option<u32>,
     ) -> Result<proto::MergeQueueEntry> {
+        self.night_shift_enqueue_gate(caller, target)?;
         let workspace = self.current_workspace(caller)?;
         self.merge_queue_enqueue(&workspace, target, depends_on, Some(caller))
     }

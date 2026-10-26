@@ -719,6 +719,7 @@ async fn the_group_record_is_cleared_whenever_the_daemon_ends_the_tree() {
 fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
     let dir: PathBuf = project.to_path_buf();
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -759,6 +760,8 @@ fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
         slept_at_ms: None,
         limit: None,
         view: proto::SessionView::Thread,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 
