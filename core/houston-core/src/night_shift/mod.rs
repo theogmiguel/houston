@@ -88,6 +88,16 @@ pub fn bounded_excerpt(lines: &[String], max: usize) -> String {
     joined.chars().skip(count - max).collect()
 }
 
+/// The bounded check excerpt after redaction, so a credential a CI log echoed
+/// never reaches a fixer's prompt, its brief or the inbox.
+pub fn redacted_excerpt(lines: &[String], max: usize) -> String {
+    let redacted: Vec<String> = lines
+        .iter()
+        .map(|line| crate::sanitize::redact_secrets(line).0)
+        .collect();
+    bounded_excerpt(&redacted, max)
+}
+
 /// The fixer's brief: which pull request and checks failed, what the log says,
 /// where to work and what to run. It carries no token or terminal transcript.
 pub fn fixer_prompt(
@@ -355,6 +365,15 @@ mod tests {
         let capped = bounded_excerpt(&lines, 12);
         assert_eq!(capped.chars().count(), 12);
         assert!(short.ends_with(&capped), "the tail is kept: {capped:?}");
+    }
+
+    #[test]
+    fn a_fixer_excerpt_never_keeps_a_credential_it_quoted() {
+        let token = "ghp_0123456789abcdefghijklmnopqrstuvwxyzABCD";
+        let lines = vec![format!("push failed with {token} in the log")];
+        let excerpt = redacted_excerpt(&lines, CI_FIX_EXCERPT_CHARS);
+        assert!(!excerpt.contains(token), "{excerpt}");
+        assert!(excerpt.contains("[redacted:github_token]"), "{excerpt}");
     }
 
     /// Quota resets are never spent automatically: no Night shift code path

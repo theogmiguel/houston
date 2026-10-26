@@ -2758,6 +2758,24 @@ fn fixer_pane(r: &Rig, run: u32, number: u32) -> Option<u32> {
         .map(|c| c.session_id)
 }
 
+/// The shape the PR watch hands Houston: one failed check with its own run and
+/// lines, or none when no check was reported.
+fn failed_checks(
+    checks: &[String],
+    texts: &[String],
+    run: Option<u64>,
+) -> Vec<houston_core::night_shift::FailedCheck> {
+    if checks.is_empty() {
+        Vec::new()
+    } else {
+        vec![houston_core::night_shift::FailedCheck {
+            name: checks.join(", "),
+            run,
+            lines: texts.to_vec(),
+        }]
+    }
+}
+
 async fn ci_failure(
     r: &Rig,
     o: u32,
@@ -2770,7 +2788,7 @@ async fn ci_failure(
     loop {
         if let Some(action) = r
             .daemon
-            .night_shift_ci_failed(o, number, checks, log, gh)
+            .night_shift_ci_failed_checks(o, number, &failed_checks(checks, log, gh))
             .unwrap()
         {
             return Some(action);
@@ -2813,7 +2831,7 @@ async fn flaky_failure_rerun_once_then_a_fixer() {
     ];
     let action = r
         .daemon
-        .night_shift_ci_failed(o, 21, &checks, &log, Some(777))
+        .night_shift_ci_failed_checks(o, 21, &failed_checks(&checks, &log, Some(777)))
         .unwrap();
     assert_eq!(
         action,
@@ -2855,7 +2873,7 @@ async fn flaky_failure_rerun_once_then_a_fixer() {
     assert!(r.live(fixer));
     assert_eq!(
         r.daemon
-            .night_shift_ci_failed(o, 99, &checks, &log, None)
+            .night_shift_ci_failed_checks(o, 99, &failed_checks(&checks, &log, None))
             .unwrap(),
         None,
         "a PR the run never recorded is not its business"
@@ -2899,7 +2917,7 @@ async fn a_rerun_waits_while_the_run_has_jobs_in_progress() {
     ];
     let action = r
         .daemon
-        .night_shift_ci_failed(o, 24, &checks, &log, Some(778))
+        .night_shift_ci_failed_checks(o, 24, &failed_checks(&checks, &log, Some(778)))
         .unwrap();
     assert_eq!(
         action,
@@ -2968,7 +2986,7 @@ async fn a_rerun_refused_after_the_run_completed_starts_a_fixer() {
     ];
     let action = r
         .daemon
-        .night_shift_ci_failed(o, 25, &checks, &log, Some(779))
+        .night_shift_ci_failed_checks(o, 25, &failed_checks(&checks, &log, Some(779)))
         .unwrap();
     assert_eq!(
         action,
@@ -3014,12 +3032,10 @@ async fn a_real_ci_failure_starts_a_fixer() {
     );
     let action = r
         .daemon
-        .night_shift_ci_failed(
+        .night_shift_ci_failed_checks(
             o,
             22,
-            &["core-checks".into()],
-            &["lint failed".into()],
-            None,
+            &failed_checks(&["core-checks".into()], &["lint failed".into()], None),
         )
         .unwrap();
     assert_eq!(action, Some(CiAction::Fix));
@@ -3099,12 +3115,10 @@ async fn a_refused_fixer_spawn_is_reported_with_its_reason() {
     );
     let action = r
         .daemon
-        .night_shift_ci_failed(
+        .night_shift_ci_failed_checks(
             o,
             24,
-            &["core-checks".into()],
-            &["lint failed".into()],
-            None,
+            &failed_checks(&["core-checks".into()], &["lint failed".into()], None),
         )
         .unwrap();
     assert_eq!(action, Some(CiAction::Fix));

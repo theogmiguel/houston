@@ -3412,32 +3412,9 @@ impl Daemon {
         }
     }
 
-    /// Flat form for one failure whose checks share an Actions run: `checks`
-    /// are their names, `texts` their names and log lines. Real callers carry
-    /// each check's own run and lines through `night_shift_ci_failed_checks`.
-    pub fn night_shift_ci_failed(
-        self: &Arc<Self>,
-        session: u32,
-        number: u32,
-        checks: &[String],
-        texts: &[String],
-        gh_run: Option<u64>,
-    ) -> Result<Option<crate::night_shift::CiAction>> {
-        let failed = if checks.is_empty() {
-            Vec::new()
-        } else {
-            vec![crate::night_shift::FailedCheck {
-                name: checks.join(", "),
-                run: gh_run,
-                lines: texts.to_vec(),
-            }]
-        };
-        self.night_shift_ci_failed_checks(session, number, &failed)
-    }
-
     /// Houston re-runs a known flaky failure once, then starts a fixer pane.
     /// Both run off the caller's thread; answers what it dispatched.
-    fn night_shift_ci_failed_checks(
+    pub fn night_shift_ci_failed_checks(
         self: &Arc<Self>,
         session: u32,
         number: u32,
@@ -3512,7 +3489,7 @@ impl Daemon {
             .iter()
             .flat_map(|c| std::iter::once(c.name.clone()).chain(c.lines.iter().cloned()))
             .collect();
-        let excerpt = crate::night_shift::bounded_excerpt(&texts, CI_FIX_EXCERPT_CHARS);
+        let excerpt = crate::night_shift::redacted_excerpt(&texts, CI_FIX_EXCERPT_CHARS);
         match plan.clone() {
             CiAction::Rerun { test } => {
                 let gh_run = gh_run.expect("a rerun plan has an Actions run id");
