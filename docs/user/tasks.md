@@ -153,16 +153,26 @@ This is all or nothing: when the
 pane has fewer free child slots than asked, nothing starts and the refusal names the cap,
 the free count and the requested count. Nothing is queued silently.
 
-Review is off by default. Settings ▸ Tasks ▸ Review sets the workspace's default reviewer
-(none) and the automatic **rework rounds** (0, at most `TASKS_REWORK_ROUNDS_MAX`). A task
-an orchestrator starts with a reviewer gets an independent, read-only reviewer on the same
-branch once the implementer hands back; the reviewer's input is the task text, the
-acceptance list, the diff range and the implementation summary, labelled untrusted. A pass
-writes a verdict comment and leaves the task **In review** for you. A fail writes the
+Review is off by default. Settings ▸ Tasks ▸ Review sets the workspace's **review mode**,
+**review focus**, default reviewer and automatic **rework rounds** (0, at most
+`TASKS_REWORK_ROUNDS_MAX`). The mode chooses when a review starts on its own: **Manual
+only**, **On handback**, or **On every push to an open PR**. The focus is **Bugs** (the
+default), **Security**, **Performance** or **Full**, and becomes part of the reviewer's
+brief. A review sends the branch diff to the reviewer's provider.
+
+A task an orchestrator starts with a reviewer gets an independent, read-only reviewer on the
+same branch when the mode and task state call for one; the reviewer's input is the task text,
+the acceptance list, the diff range and the implementation summary, labelled untrusted. A
+pass writes a verdict comment and leaves the task **In review** for you. A fail writes the
 findings as a comment and marks the run as needing review; **Retry** opens the next attempt
 in the same worktree with those findings attached. With rework rounds above zero Houston
 retries automatically, at most that many rounds, and records each round in the task's
 history. The reviewer never closes a task.
+
+The execution card shows the reviewed head, the focus and the verdict. Structured findings
+name their file and line, severity, category and message. A diff too small for a reviewer is
+**Skipped** with the reason. A later push leaves the verdict pinned to the head it read and
+marks it **Review outdated**.
 
 The implementing child reports through a short structured line in its final handoff; that is
 how acceptance items are ticked by name, the summary is kept as a comment and the task moves

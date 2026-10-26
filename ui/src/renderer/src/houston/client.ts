@@ -19,6 +19,9 @@ import type { HarnessFindingState } from './generated/HarnessFindingState'
 import type { NightShiftSettings } from './generated/NightShiftSettings'
 import type { TaskPatch } from './generated/TaskPatch'
 import type { TaskPromptDelivery } from './generated/TaskPromptDelivery'
+import type { TaskReviewFocus } from './generated/TaskReviewFocus'
+import type { TaskReviewMode } from './generated/TaskReviewMode'
+import type { ReviewRequestMode } from './generated/ReviewRequestMode'
 import type { TaskRunAction } from './generated/TaskRunAction'
 import type { TasksAccess } from './generated/TasksAccess'
 import type { GitDiscardKind } from './generated/GitDiscardKind'
@@ -1827,8 +1830,30 @@ export class HoustonClient {
     this.send({ type: 'task_review_settings_get', workspace })
   }
 
-  taskReviewSettingsSet(workspace: string, reviewer: AgentKind | null, reworkRounds: number): void {
-    this.send({ type: 'task_review_settings_set', workspace, reviewer, rework_rounds: reworkRounds })
+  taskReviewSettingsSet(
+    workspace: string,
+    reviewer: AgentKind | null,
+    reworkRounds: number,
+    mode: TaskReviewMode = 'manual',
+    focus: TaskReviewFocus = 'bugs'
+  ): void {
+    this.send({ type: 'task_review_settings_set', workspace, reviewer, rework_rounds: reworkRounds, mode, focus })
+  }
+
+  reviewRequestsGet(): void {
+    this.send({ type: 'review_requests_get' })
+  }
+
+  reviewRequestsSet(mode: ReviewRequestMode): void {
+    this.send({ type: 'review_requests_set', mode })
+  }
+
+  reviewRequestDismiss(id: number): void {
+    this.send({ type: 'review_request_dismiss', id })
+  }
+
+  reviewRequestReopen(id: number): void {
+    this.send({ type: 'review_request_reopen', id })
   }
 
   workspaceActionsGet(workspace: string): void {
