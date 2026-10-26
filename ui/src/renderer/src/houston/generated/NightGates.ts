@@ -15,4 +15,8 @@ verify: NightGate,
 /**
  * CI re-runs Houston asked for after a known flaky failure.
  */
-reruns: number, };
+reruns: number,
+/**
+ * Fixer panes Houston started for this PR's CI failures.
+ */
+fixes: number, };

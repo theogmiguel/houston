@@ -11,7 +11,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 151;
+pub const PROTOCOL_VERSION: u32 = 152;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -4372,6 +4372,11 @@ pub enum ClientMsg {
     GeneratedTitlesSet {
         enabled: bool,
     },
+    /// The opt-in ZCode quota check for a pane that stalls outside Night shift.
+    ZcodeQuotaCheckGet {},
+    ZcodeQuotaCheckSet {
+        enabled: bool,
+    },
     SessionTitleReset {
         session: u32,
     },
@@ -5613,6 +5618,10 @@ pub enum ClientMsg {
 #[allow(clippy::large_enum_variant)]
 pub enum ServerMsg {
     GeneratedTitles {
+        enabled: bool,
+    },
+
+    ZcodeQuotaCheck {
         enabled: bool,
     },
 
@@ -7854,6 +7863,7 @@ mod tests {
                 ci: NightGate::Failed,
                 verify: NightGate::Passed,
                 reruns: 1,
+                fixes: 2,
             },
             created_at_ms: 5,
             decided_at_ms: None,
@@ -7908,6 +7918,7 @@ mod tests {
                     provider: AgentKind::Claude,
                     panes: 2,
                     pane_hours: 1.5,
+                    tokens: None,
                 }],
             },
             limited: vec![AgentKind::Claude],

@@ -251,15 +251,15 @@ fn workspace_filter_counts_only_sessions_in_that_workspace() {
             profile_name: None,
         }],
         workspaces: vec!["/project/one".into(), "/project/two".into()],
-        workspace_filter: Some("/project/one".into()),
+        workspace_filters: vec!["/project/one".into()],
     };
     let out = scan(&request);
     assert_eq!(out.buckets.len(), 1);
     assert_eq!(out.sources[0].distinct_sessions, 1);
     // Repeat from the transcript cache with a different selection.
-    request.workspace_filter = Some("/project/missing".into());
+    request.workspace_filters = vec!["/project/missing".into()];
     assert_eq!(scan(&request).sources[0].distinct_sessions, 0);
-    request.workspace_filter = None;
+    request.workspace_filters.clear();
     assert_eq!(scan(&request).sources[0].distinct_sessions, 2);
 }
 
@@ -354,7 +354,7 @@ fn model_sessions_are_distinct_across_hours_days_and_workspace_filtered() {
             profile_name: None,
         }],
         workspaces: vec![workspace_path.clone(), other_path],
-        workspace_filter: Some(workspace_path),
+        workspace_filters: vec![workspace_path],
     };
     let first_day = local_day(&stamps[0]);
     let second_day = local_day(&stamps[3]);

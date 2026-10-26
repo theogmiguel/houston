@@ -1,4 +1,5 @@
 import { GeneratedTitlesSetting } from './settings/GeneratedTitlesSetting'
+import { ZcodeQuotaCheckSetting } from './settings/ZcodeQuotaCheckSetting'
 import type { VoiceExternalModel } from '../houston/generated/VoiceExternalModel'
 import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
 import { AgentsOverview } from './settings/AgentsOverview'
@@ -361,6 +362,7 @@ function SectionDispatch({
               onAgentProfileDelete={onAgentProfileDelete}
               onAgentProfileSetActive={onAgentProfileSetActive}
             />
+            <ZcodeQuotaCheckSetting client={daemonClient} />
           </>
         )}
 

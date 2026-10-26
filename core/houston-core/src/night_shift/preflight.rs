@@ -1,8 +1,8 @@
 //! Preflight: what blocks or warns before a run starts, from facts the daemon
 //! and the machine report. Evaluation is pure; probes read the platform.
 use houston_protocol::{
-    AgentKind, NightShiftSettings, NightWindow, PreflightItem, PreflightStatus,
-    NIGHT_SHIFT_DISK_FLOOR_MIB, NIGHT_SHIFT_MEMORY_FLOOR_MIB,
+    AgentAccountIdentity, AgentKind, AgentSignIn, NightShiftSettings, NightWindow, PreflightItem,
+    PreflightStatus, NIGHT_SHIFT_DISK_FLOOR_MIB, NIGHT_SHIFT_MEMORY_FLOOR_MIB,
 };
 
 use super::settings::{clock_label, minutes_between};
@@ -19,6 +19,20 @@ pub struct MachineFacts {
     pub inhibitor_available: bool,
 }
 
+/// What a provider's own local sign-in state proves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignIn {
+    /// A signed-in account; `identity` is what its files carry (an email,
+    /// "API key" or provider names), never a credential.
+    In(Option<String>),
+    /// The provider's own credential store explicitly records no sign-in.
+    Out,
+    /// The files show no account, but the CLI documents another way in.
+    Ambiguous,
+    /// Houston could not read the state, or the provider keeps none locally.
+    Unknown,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderFacts {
     pub provider: AgentKind,
@@ -27,6 +41,114 @@ pub struct ProviderFacts {
     /// Whether its MCP configuration has a server named `rea`; `None` when
     /// Houston cannot read that configuration.
     pub rea: Option<bool>,
+    pub sign_in: SignIn,
+    /// The environment variable the CLI documents for a credential, when the
+    /// daemon's environment carries one. A name only, never its value.
+    pub env_credential: Option<&'static str>,
+}
+
+/// Environment credentials named by the CLIs' authentication docs:
+/// `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` and
+/// `CLAUDE_CODE_USE_VERTEX` for Claude; `OPENAI_API_KEY` for Codex.
+pub const ENV_CREDENTIALS: &[(AgentKind, &str)] = &[
+    (AgentKind::Claude, "ANTHROPIC_API_KEY"),
+    (AgentKind::Claude, "ANTHROPIC_AUTH_TOKEN"),
+    (AgentKind::Claude, "CLAUDE_CODE_USE_BEDROCK"),
+    (AgentKind::Claude, "CLAUDE_CODE_USE_VERTEX"),
+    (AgentKind::Codex, "OPENAI_API_KEY"),
+];
+
+/// The first documented environment credential set for `provider`. An empty
+/// value, "0" or "false" reads as absent, so a disabled switch is not a
+/// credential.
+pub fn env_credential(
+    provider: AgentKind,
+    mut var: impl FnMut(&str) -> Option<String>,
+) -> Option<&'static str> {
+    ENV_CREDENTIALS.iter().find_map(|(p, name)| {
+        let set = *p == provider
+            && var(name).is_some_and(|v| {
+                let v = v.trim();
+                !v.is_empty() && !v.eq_ignore_ascii_case("0") && !v.eq_ignore_ascii_case("false")
+            });
+        set.then_some(*name)
+    })
+}
+
+/// One provider's sign-in state from the identities Houston read. Signed in
+/// when any readable account is; signed out only when every row is that
+/// provider's own definitive signal; unknown when a row could not be read.
+pub fn login_fact(rows: &[AgentAccountIdentity], provider: AgentKind) -> SignIn {
+    let mut identity = None;
+    let mut signed_in = false;
+    let mut signed_out = false;
+    let mut ambiguous = false;
+    let mut unknown = false;
+    let mut seen = false;
+    for row in rows.iter().filter(|r| r.agent == provider) {
+        seen = true;
+        match row.sign_in {
+            AgentSignIn::SignedIn => {
+                signed_in = true;
+                if identity.is_none() {
+                    identity = row.identity.clone();
+                }
+            }
+            AgentSignIn::SignedOut => {
+                signed_out = true;
+                match signed_out_state(provider, row) {
+                    SignedOutState::Definitive => {}
+                    SignedOutState::Ambiguous => ambiguous = true,
+                    SignedOutState::Unreadable => unknown = true,
+                }
+            }
+            AgentSignIn::Unknown => unknown = true,
+        }
+    }
+    if signed_in {
+        SignIn::In(identity)
+    } else if !seen || unknown {
+        SignIn::Unknown
+    } else if signed_out && !ambiguous {
+        SignIn::Out
+    } else {
+        SignIn::Ambiguous
+    }
+}
+
+/// The reasons `codex_identity` reports for a store that is absent and for a
+/// readable store that holds no credential. A change to either string fails
+/// `codex_reasons_classify_from_the_real_identity_output`.
+const CODEX_STORE_MISSING: &str = "does not exist";
+const CODEX_NO_CREDENTIAL: &str = "has neither tokens.id_token nor an API key";
+
+/// How a signed-out row bears on a provider's sign-in state.
+enum SignedOutState {
+    /// The provider's readable store explicitly records no credential.
+    Definitive,
+    /// The provider may authenticate through a path Houston does not read.
+    Ambiguous,
+    /// Houston could not read or decode the store.
+    Unreadable,
+}
+
+/// Only Codex's readable store proves a sign-out. Other CLIs document another
+/// way in, `verified` guards the read, and an unreadable store proves nothing.
+fn signed_out_state(provider: AgentKind, row: &AgentAccountIdentity) -> SignedOutState {
+    if provider != AgentKind::Codex {
+        return SignedOutState::Ambiguous;
+    }
+    if !row.verified {
+        return SignedOutState::Ambiguous;
+    }
+    let Some(reason) = row.reason.as_deref() else {
+        return SignedOutState::Ambiguous;
+    };
+    if reason.contains(CODEX_STORE_MISSING) || reason.contains(CODEX_NO_CREDENTIAL) {
+        SignedOutState::Definitive
+    } else {
+        SignedOutState::Unreadable
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +279,9 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
                 format!("{slug} is installed and its hooks are on"),
             ));
         }
+        if let Some(f) = f.filter(|f| f.cli_present) {
+            out.push(sign_in_item(provider, &f.sign_in, f.env_credential));
+        }
     }
     let m = &facts.machine;
     out.push(match m.on_battery {
@@ -220,6 +345,76 @@ pub fn evaluate(s: &NightShiftSettings, facts: &Facts, run: &NightWindow) -> Vec
     out.extend(restart_items(m.reboot_pending, m.active_hours, run));
     out.extend(super::awake::inhibitor_item(m.inhibitor_available));
     out
+}
+
+/// What the provider's own local sign-in files say, or an environment
+/// credential it documents. The detail names the identifier or variable only;
+/// Houston never reads or shows a token.
+fn sign_in_item(
+    provider: AgentKind,
+    sign_in: &SignIn,
+    env_credential: Option<&str>,
+) -> PreflightItem {
+    let slug = crate::agent_hooks::provider_slug(provider);
+    let id = format!("signin:{slug}");
+    match sign_in {
+        SignIn::In(identity) => item(
+            id,
+            PreflightStatus::Ok,
+            "Sign-in",
+            match identity {
+                Some(identity) => format!("signed in as {identity}"),
+                None => format!("signed in; {slug} stores no readable identifier"),
+            },
+        ),
+        // A store that says it holds no credential still warns when the
+        // environment supplies one: Houston cannot confirm that key works.
+        _ if env_credential.is_some() => item(
+            id,
+            if *sign_in == SignIn::Out {
+                PreflightStatus::Warn
+            } else {
+                PreflightStatus::Ok
+            },
+            "Sign-in",
+            format!(
+                "credentials from the environment ({})",
+                env_credential.unwrap_or_default()
+            ),
+        ),
+        // Out only reaches here from a provider whose own store records it;
+        // another provider's row is the ambiguous absence its CLI allows.
+        SignIn::Out if provider == AgentKind::Codex => item(
+            id,
+            PreflightStatus::Block,
+            "Sign-in",
+            format!("{slug} is signed out, which blocks this run: run `{slug}` and sign in"),
+        ),
+        SignIn::Out | SignIn::Ambiguous => item(
+            id,
+            PreflightStatus::Warn,
+            "Sign-in",
+            format!(
+                "no {slug} account sign-in found; fine if you use an API key or a cloud \
+                 provider, otherwise run `{slug}` and sign in"
+            ),
+        ),
+        SignIn::Unknown if provider == AgentKind::Zcode => item(
+            id,
+            PreflightStatus::Warn,
+            "Sign-in",
+            "could not tell whether zcode is signed in; the quota probe decides".into(),
+        ),
+        SignIn::Unknown => item(
+            id,
+            PreflightStatus::Warn,
+            "Sign-in",
+            format!(
+                "could not tell whether {slug} is signed in; Houston reads only its local \
+                 sign-in files, so start it once and sign in if it asks"
+            ),
+        ),
+    }
 }
 
 /// An installed-app competitor is analysed with REA by the scouts, which run
@@ -564,6 +759,11 @@ mod tests {
                     hooks_on: true,
                     cli_present: true,
                     rea: Some(provider == AgentKind::Claude),
+                    sign_in: SignIn::In(Some(format!(
+                        "{}@example.com",
+                        crate::agent_hooks::provider_slug(provider)
+                    ))),
+                    env_credential: None,
                 })
                 .collect(),
             machine,
@@ -590,11 +790,468 @@ mod tests {
         s
     }
 
+    fn all_provider_settings() -> NightShiftSettings {
+        let mut s = settings();
+        s.reviewer = Some(houston_protocol::NightAgent {
+            provider: AgentKind::Codex,
+            model: None,
+        });
+        s.workers = [
+            AgentKind::Opencode,
+            AgentKind::Antigravity,
+            AgentKind::Zcode,
+        ]
+        .into_iter()
+        .map(|provider| houston_protocol::NightAgent {
+            provider,
+            model: None,
+        })
+        .collect();
+        s
+    }
+
+    fn all_provider_facts(sign_in: SignIn) -> Facts {
+        Facts {
+            orchestration_enabled: true,
+            providers: providers_of(&all_provider_settings())
+                .into_iter()
+                .map(|provider| ProviderFacts {
+                    provider,
+                    hooks_on: true,
+                    cli_present: true,
+                    rea: None,
+                    sign_in: sign_in.clone(),
+                    env_credential: None,
+                })
+                .collect(),
+            machine: healthy(),
+        }
+    }
+
     fn blocks(items: &[PreflightItem]) -> Vec<&PreflightItem> {
         items
             .iter()
             .filter(|i| i.status == PreflightStatus::Block)
             .collect()
+    }
+
+    fn signin_item<'a>(items: &'a [PreflightItem], slug: &str) -> &'a PreflightItem {
+        items
+            .iter()
+            .find(|i| i.id == format!("signin:{slug}"))
+            .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"))
+    }
+
+    fn set_codex_sign_in(f: &mut Facts, sign_in: SignIn, env: Option<&'static str>) {
+        let codex = f
+            .providers
+            .iter_mut()
+            .find(|p| p.provider == AgentKind::Codex)
+            .expect("the fixture lists Codex");
+        codex.sign_in = sign_in;
+        codex.env_credential = env;
+    }
+
+    #[test]
+    fn signed_in_providers_report_the_identity_label() {
+        let s = all_provider_settings();
+        let items = evaluate(
+            &s,
+            &all_provider_facts(SignIn::In(Some("dev@example.com".into()))),
+            &s.window,
+        );
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            assert_eq!(item.status, PreflightStatus::Ok, "{item:?}");
+            assert_eq!(item.detail, "signed in as dev@example.com");
+        }
+    }
+
+    /// Only a provider whose own store says it holds no credential blocks:
+    /// the others document an API key, a cloud provider or another store.
+    #[test]
+    fn a_signed_out_provider_blocks_only_when_its_cli_says_so() {
+        let s = all_provider_settings();
+        let items = evaluate(&s, &all_provider_facts(SignIn::Out), &s.window);
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            if provider == AgentKind::Codex {
+                assert_eq!(item.status, PreflightStatus::Block, "{item:?}");
+                assert!(
+                    item.detail.contains(&format!("run `{slug}` and sign in")),
+                    "{item:?}"
+                );
+            } else {
+                assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+                assert!(
+                    item.detail.contains("fine if you use an API key"),
+                    "{item:?}"
+                );
+                assert!(
+                    item.detail.contains(&format!("run `{slug}` and sign in")),
+                    "{item:?}"
+                );
+            }
+        }
+        assert_eq!(
+            blocks(&items)
+                .iter()
+                .map(|b| b.id.as_str())
+                .collect::<Vec<_>>(),
+            ["signin:codex"]
+        );
+    }
+
+    #[test]
+    fn an_environment_credential_is_ok_and_names_the_variable_only() {
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::Ambiguous);
+        for provider in &mut f.providers {
+            provider.env_credential = match provider.provider {
+                AgentKind::Claude => Some("ANTHROPIC_API_KEY"),
+                AgentKind::Codex => Some("OPENAI_API_KEY"),
+                _ => None,
+            };
+        }
+        let items = evaluate(&s, &f, &s.window);
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            match provider {
+                AgentKind::Claude => {
+                    assert_eq!(item.status, PreflightStatus::Ok, "{item:?}");
+                    assert_eq!(
+                        item.detail,
+                        "credentials from the environment (ANTHROPIC_API_KEY)"
+                    );
+                }
+                AgentKind::Codex => {
+                    assert_eq!(item.status, PreflightStatus::Ok, "{item:?}");
+                    assert_eq!(
+                        item.detail,
+                        "credentials from the environment (OPENAI_API_KEY)"
+                    );
+                }
+                _ => assert_eq!(item.status, PreflightStatus::Warn, "{item:?}"),
+            }
+        }
+    }
+
+    /// A missing Codex store is a signed-out row, so it blocks unless the
+    /// daemon's own environment carries the documented credential.
+    #[test]
+    fn a_missing_codex_store_blocks_without_an_environment_credential() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = [crate::cli_accounts::codex_identity(dir.path(), None)];
+        let sign_in = login_fact(&rows, AgentKind::Codex);
+        assert_eq!(sign_in, SignIn::Out);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        set_codex_sign_in(&mut f, sign_in.clone(), None);
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Block, "{item:?}");
+        assert!(item.detail.contains("run `codex` and sign in"), "{item:?}");
+
+        set_codex_sign_in(&mut f, sign_in, Some("OPENAI_API_KEY"));
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert_eq!(
+            item.detail,
+            "credentials from the environment (OPENAI_API_KEY)"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
+    /// A store Houston could not read or decode is not proof of a sign-out.
+    #[test]
+    fn a_corrupt_codex_store_warns_instead_of_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("auth.json"), "[1,2").unwrap();
+        let rows = [crate::cli_accounts::codex_identity(dir.path(), None)];
+        let sign_in = login_fact(&rows, AgentKind::Codex);
+        assert_eq!(sign_in, SignIn::Unknown);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        set_codex_sign_in(&mut f, sign_in, None);
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert!(
+            item.detail
+                .contains("could not tell whether codex is signed in"),
+            "{item:?}"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
+    /// Claude omits `oauthAccount` for an API key, Bedrock, Vertex and a setup
+    /// token, so its signed-out row stays ambiguous.
+    #[test]
+    fn a_claude_store_without_an_oauth_account_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(".claude.json");
+        std::fs::write(&file, "{}").unwrap();
+        let rows = [crate::cli_accounts::claude_identity(&file, None)];
+        let sign_in = login_fact(&rows, AgentKind::Claude);
+        assert_eq!(sign_in, SignIn::Ambiguous);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        f.providers
+            .iter_mut()
+            .find(|p| p.provider == AgentKind::Claude)
+            .expect("the fixture lists Claude")
+            .sign_in = sign_in;
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "claude");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert!(
+            item.detail.contains("fine if you use an API key"),
+            "{item:?}"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
+    #[test]
+    fn unknown_sign_in_warns_and_zcode_names_the_quota_probe() {
+        let s = all_provider_settings();
+        let items = evaluate(&s, &all_provider_facts(SignIn::Unknown), &s.window);
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+        for provider in providers_of(&s) {
+            let slug = crate::agent_hooks::provider_slug(provider);
+            let item = items
+                .iter()
+                .find(|i| i.id == format!("signin:{slug}"))
+                .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"));
+            assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        }
+        let zcode = items
+            .iter()
+            .find(|i| i.id == "signin:zcode")
+            .expect("ZCode has a sign-in item");
+        assert_eq!(
+            zcode.detail,
+            "could not tell whether zcode is signed in; the quota probe decides"
+        );
+    }
+
+    #[test]
+    fn login_fact_reads_accounts_of_every_provider() {
+        let row = |agent, sign_in, identity: Option<&str>, reason: Option<&str>| {
+            houston_protocol::AgentAccountIdentity {
+                agent,
+                profile_id: None,
+                sign_in,
+                identity: identity.map(str::to_string),
+                detail: None,
+                providers: Vec::new(),
+                reason: reason.map(str::to_string),
+                verified: true,
+            }
+        };
+        let rows = vec![
+            row(
+                AgentKind::Claude,
+                AgentSignIn::SignedIn,
+                Some("dev@example.com"),
+                None,
+            ),
+            row(
+                AgentKind::Claude,
+                AgentSignIn::SignedOut,
+                None,
+                Some("no oauthAccount.emailAddress"),
+            ),
+            row(
+                AgentKind::Codex,
+                AgentSignIn::SignedOut,
+                None,
+                Some("has neither tokens.id_token nor an API key"),
+            ),
+            row(AgentKind::Opencode, AgentSignIn::SignedOut, None, None),
+            row(AgentKind::Zcode, AgentSignIn::Unknown, None, None),
+        ];
+        assert_eq!(
+            login_fact(&rows, AgentKind::Claude),
+            SignIn::In(Some("dev@example.com".into()))
+        );
+        assert_eq!(login_fact(&rows, AgentKind::Codex), SignIn::Out);
+        assert_eq!(login_fact(&rows, AgentKind::Opencode), SignIn::Ambiguous);
+        assert_eq!(login_fact(&rows, AgentKind::Zcode), SignIn::Unknown);
+        assert_eq!(login_fact(&rows, AgentKind::Antigravity), SignIn::Unknown);
+    }
+
+    fn signed_out_row(
+        agent: AgentKind,
+        verified: bool,
+        reason: &str,
+    ) -> houston_protocol::AgentAccountIdentity {
+        houston_protocol::AgentAccountIdentity {
+            agent,
+            profile_id: None,
+            sign_in: AgentSignIn::SignedOut,
+            identity: None,
+            detail: None,
+            providers: Vec::new(),
+            reason: Some(reason.into()),
+            verified,
+        }
+    }
+
+    /// A signed-out row from an unverified store, a store Houston could not
+    /// read, or a provider with another way in is not a definitive sign-out.
+    #[test]
+    fn only_a_verified_provider_specific_signed_out_row_is_definitive() {
+        let definitive = |agent| signed_out_row(agent, true, "auth.json has neither x");
+        for provider in [
+            AgentKind::Claude,
+            AgentKind::Opencode,
+            AgentKind::Antigravity,
+            AgentKind::Zcode,
+        ] {
+            assert_eq!(
+                login_fact(&[definitive(provider)], provider),
+                SignIn::Ambiguous,
+                "{provider:?}"
+            );
+        }
+        let codex_caught = |reason: &str| {
+            login_fact(
+                &[signed_out_row(AgentKind::Codex, true, reason)],
+                AgentKind::Codex,
+            )
+        };
+        assert_eq!(codex_caught(CODEX_NO_CREDENTIAL), SignIn::Out);
+        assert_eq!(codex_caught(CODEX_STORE_MISSING), SignIn::Out);
+        assert_eq!(
+            codex_caught("auth.json: tokens.id_token is not a decodable JWT"),
+            SignIn::Unknown,
+            "a corrupt store does not prove a sign-out"
+        );
+        assert_eq!(
+            login_fact(
+                &[signed_out_row(AgentKind::Codex, false, "store read")],
+                AgentKind::Codex
+            ),
+            SignIn::Ambiguous,
+            "an unconfirmed store does not prove a sign-out"
+        );
+        assert_eq!(
+            login_fact(
+                &[
+                    signed_out_row(AgentKind::Codex, true, CODEX_NO_CREDENTIAL),
+                    signed_out_row(AgentKind::Zcode, true, "store read")
+                ],
+                AgentKind::Codex
+            ),
+            SignIn::Out,
+            "another provider's row does not count"
+        );
+    }
+
+    /// The classifier must keep reading the reason strings `codex_identity`
+    /// actually produces; a renamed reason would otherwise change it silently.
+    #[test]
+    fn codex_reasons_classify_from_the_real_identity_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert_eq!(missing.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(
+            login_fact(&[missing], AgentKind::Codex),
+            SignIn::Out,
+            "a missing store is a definitive sign-out"
+        );
+
+        std::fs::write(dir.path().join("auth.json"), r#"{"auth_mode":"chatgpt"}"#).unwrap();
+        let empty = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert_eq!(empty.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(
+            login_fact(&[empty], AgentKind::Codex),
+            SignIn::Out,
+            "a readable store with neither token nor key is a definitive sign-out"
+        );
+
+        std::fs::write(dir.path().join("auth.json"), "[1,2").unwrap();
+        let malformed = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert!(malformed
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("not valid JSON"));
+        assert_eq!(
+            login_fact(&[malformed], AgentKind::Codex),
+            SignIn::Unknown,
+            "an unreadable store is unknown"
+        );
+
+        std::fs::write(
+            dir.path().join("auth.json"),
+            r#"{"tokens":{"id_token":"not-a-jwt"}}"#,
+        )
+        .unwrap();
+        let corrupt = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert!(corrupt
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("not a decodable JWT"));
+        assert_eq!(
+            login_fact(&[corrupt], AgentKind::Codex),
+            SignIn::Unknown,
+            "a corrupt token is unknown"
+        );
+    }
+
+    #[test]
+    fn environment_credentials_name_the_first_documented_variable() {
+        fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| (*v).to_string())
+            }
+        }
+        assert_eq!(
+            env_credential(AgentKind::Claude, env(&[("ANTHROPIC_API_KEY", "x")])),
+            Some("ANTHROPIC_API_KEY")
+        );
+        assert_eq!(
+            env_credential(AgentKind::Claude, env(&[("CLAUDE_CODE_USE_VERTEX", "1")])),
+            Some("CLAUDE_CODE_USE_VERTEX")
+        );
+        assert_eq!(
+            env_credential(AgentKind::Codex, env(&[("OPENAI_API_KEY", "sk-x")])),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            env_credential(
+                AgentKind::Claude,
+                env(&[("CLAUDE_CODE_USE_BEDROCK", "false")])
+            ),
+            None,
+            "a disabled switch is not a credential"
+        );
+        assert_eq!(
+            env_credential(AgentKind::Opencode, env(&[("ANTHROPIC_API_KEY", "x")])),
+            None,
+            "another provider's variable is not this provider's credential"
+        );
     }
 
     /// The restart warning judges the window the run will cover: an

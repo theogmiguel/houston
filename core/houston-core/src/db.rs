@@ -10344,4 +10344,47 @@ pub(crate) mod tests {
         assert!(db.predicted_conflicts().unwrap().is_empty());
         assert!(db.predicted_conflict_note("pair", 3).unwrap());
     }
+
+    #[test]
+    fn night_token_recovery_selects_only_unscanned_settled_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let run = |run_id: u32, ended_at_ms: Option<i64>, tokens_scanned: bool| NightRunRow {
+            run_id,
+            routine_id: 1,
+            workspace: "/project".into(),
+            trigger: proto::RoutineTrigger::Manual,
+            phase: proto::NightRunPhase::Settled,
+            session_id: None,
+            started_at_ms: 100,
+            wrap_up_at_ms: 200,
+            hard_stop_at_ms: 300,
+            ended_at_ms,
+            report_path: format!("/state/night-shift/{run_id}/report.md"),
+            report_published: false,
+            summary: None,
+            wrap_up_sent: false,
+            goal_sent: false,
+            tokens_scanned,
+            stop_reason: None,
+            stop_detail: None,
+            interruptions: Vec::new(),
+            cost: proto::NightCost::default(),
+            limited: Vec::new(),
+            preflight: Vec::new(),
+            keep_awake: proto::NightKeepAwake::Off,
+            merge_order: Vec::new(),
+            crew: Vec::new(),
+        };
+        db.create_night_run(&run(1, Some(150), true)).unwrap();
+        db.create_night_run(&run(2, Some(150), false)).unwrap();
+        db.create_night_run(&run(3, None, false)).unwrap();
+        let rows = db.night_runs_unscanned(0, 10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.run_id).collect::<Vec<_>>(),
+            [2],
+            "a finished empty scan is not retried and an unfinished run is not scanned"
+        );
+        assert!(db.night_run(1).unwrap().unwrap().tokens_scanned);
+    }
 }

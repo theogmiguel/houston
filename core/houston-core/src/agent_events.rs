@@ -84,10 +84,12 @@ pub const CLAUDE_CORRELATION_EVENTS: [&str; 5] = [
     "PostToolUseFailure",
 ];
 
-const CODEX_EVENTS: [(&str, AgentEvent); 5] = [
+const CODEX_EVENTS: [(&str, AgentEvent); 6] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
+    // The pane-owned app-server writes this on a typed usage-limit event.
+    ("StopFailure", AgentEvent::TurnFailed),
     ("Interrupt", AgentEvent::TurnInterrupted),
     ("PermissionRequest", AgentEvent::NeedsInput),
 ];
@@ -146,6 +148,12 @@ const ZCODE_EVENTS: [(&str, AgentEvent); 4] = [
 
 pub const ZCODE_CORRELATION_EVENTS: [&str; 3] = ["PreToolUse", "PostToolUse", "PostToolUseFailure"];
 
+/// Codex's StopFailure comes from the pane-owned app-server observer, not a
+/// hook, so its hook config must not carry it.
+pub fn hook_is_installed(provider: proto::AgentKind, event: &str) -> bool {
+    !(provider == proto::AgentKind::Codex && event == "StopFailure")
+}
+
 pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentEvent)] {
     match provider {
         proto::AgentKind::Claude => &CLAUDE_EVENTS,
@@ -155,6 +163,15 @@ pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentE
         proto::AgentKind::Zcode => &ZCODE_EVENTS,
         _ => &[],
     }
+}
+
+/// Whether a provider reports a failed turn. Codex's table row comes from the
+/// Unix-only app-server observer; Windows uses its stall probe instead.
+pub fn reports_turn_failure(provider: proto::AgentKind, windows: bool) -> bool {
+    !(provider == proto::AgentKind::Codex && windows)
+        && events_for(provider)
+            .iter()
+            .any(|(_, event)| *event == AgentEvent::TurnFailed)
 }
 
 // Sub-agent lifecycle events, and OpenCode prompts raised inside a child
@@ -260,6 +277,7 @@ mod tests {
                     ("SessionStart", AgentEvent::SessionStarted),
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
+                    ("StopFailure", AgentEvent::TurnFailed),
                     ("Interrupt", AgentEvent::TurnInterrupted),
                     ("PermissionRequest", AgentEvent::NeedsInput),
                 ],
@@ -326,6 +344,31 @@ mod tests {
         proto::AgentKind::Aider,
         proto::AgentKind::Ssh,
     ];
+
+    #[test]
+    fn codex_reports_turn_failure_only_where_its_observer_runs() {
+        for kind in EVERY_KIND {
+            let table_has_it = events_for(kind)
+                .iter()
+                .any(|(_, ev)| *ev == AgentEvent::TurnFailed);
+            assert_eq!(
+                reports_turn_failure(kind, false),
+                table_has_it,
+                "{kind:?} on Unix"
+            );
+            assert_eq!(
+                reports_turn_failure(kind, true),
+                table_has_it && kind != proto::AgentKind::Codex,
+                "{kind:?} on Windows"
+            );
+        }
+        assert!(reports_turn_failure(proto::AgentKind::Claude, true));
+        assert!(reports_turn_failure(proto::AgentKind::Opencode, true));
+        assert!(
+            !reports_turn_failure(proto::AgentKind::Codex, true),
+            "Windows has no app-server observer; the stall probe is its equivalent"
+        );
+    }
 
     #[test]
     fn every_provider_ends_a_turn_at_most_once() {

@@ -234,13 +234,13 @@ pub fn minutes_between(from: NightClock, to: NightClock) -> u32 {
 }
 
 /// Providers that never report a usage limit: a run could not switch away
-/// from them when they stop working.
+/// from them when they stop working. See `crate::limits`.
 pub fn reports_no_limit(provider: AgentKind) -> bool {
-    matches!(
-        provider,
-        AgentKind::Cursor | AgentKind::Antigravity | AgentKind::Grok
-    )
+    crate::limits::reports_no_limit(provider, cfg!(windows))
 }
+
+/// Which providers do report one, named in every refusal.
+const LIMIT_PROVIDERS: &str = "claude, codex, opencode and zcode";
 
 pub fn is_worker_provider(provider: AgentKind) -> bool {
     matches!(
@@ -327,7 +327,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
         if reports_no_limit(w.provider) {
             bail!(
                 "{} cannot be a Night shift worker: it reports no usage limit, so a run \
-                 could not switch away from it",
+                 could not switch away from it; providers that report one are {LIMIT_PROVIDERS}",
                 crate::agent_hooks::provider_slug(w.provider)
             );
         }
@@ -353,7 +353,7 @@ pub fn validate(s: &NightShiftSettings, facts: &WorkspaceFacts) -> Result<()> {
     if let Some(r) = &s.reviewer {
         if !is_worker_provider(r.provider) || reports_no_limit(r.provider) {
             bail!(
-                "{} cannot review for Night shift; expected claude, codex, opencode or zcode",
+                "{} cannot review for Night shift; expected one of {LIMIT_PROVIDERS}",
                 crate::agent_hooks::provider_slug(r.provider)
             );
         }

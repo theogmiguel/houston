@@ -319,6 +319,38 @@ fn squash(origin: &str, base: &str, head: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// `run view N --log-failed` answers `run-N.log` (or `run.log`); `run view N
+/// --json status,conclusion` answers `run-status-N.json`, a completed failure by
+/// default; `run rerun N --failed` records `rerun-N` or fails with `rerun-refused`.
+fn run_command(args: &[String]) {
+    let id = args.get(2).map(String::as_str).unwrap_or_default();
+    match args.get(1).map(String::as_str) {
+        Some("view") if args.iter().any(|a| a == "--json") => {
+            print!(
+                "{}",
+                read(&format!("run-status-{id}.json")).unwrap_or_else(|| {
+                    r#"{"status":"completed","conclusion":"failure"}"#.to_string()
+                })
+            );
+        }
+        Some("view") => {
+            print!(
+                "{}",
+                read(&format!("run-{id}.log"))
+                    .or_else(|| read("run.log"))
+                    .unwrap_or_default()
+            );
+        }
+        Some("rerun") if args.iter().any(|a| a == "--failed") => {
+            if let Some(refused) = read("rerun-refused") {
+                fail(refused.trim());
+            }
+            write(&format!("rerun-{id}"), "1");
+        }
+        _ => fail(&format!("fake gh: unsupported run call {args:?}")),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Concurrent calls (a read's access and thread queries) each append whole lines.
@@ -347,6 +379,7 @@ fn main() {
         }
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
+        ("run", _) => run_command(&args),
         ("api", "graphql") => graphql(),
         ("api", _) => fail("gh: Not Found (HTTP 404)"),
         _ => fail(&format!("fake gh: unsupported call {args:?}")),

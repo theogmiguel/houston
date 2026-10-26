@@ -929,8 +929,9 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
     if agent == proto::AgentKind::Zcode {
         notes.push(format!(
             "{provider} reports no turn end for a failed turn (API error, exhausted quota, \
-             network) or an interrupt; the pane stays working until its \
-             next prompt"
+             network) or an interrupt; the pane stays working until its next prompt, unless \
+             Settings ▸ Agents ▸ Check ZCode plan quota when a pane stalls is on, which probes \
+             a stalled pane and marks it Limited"
         ));
     }
     if notes.is_empty() {
@@ -5162,8 +5163,9 @@ mod tests {
             Some(
                 "zcode has no handback-only launch rule configured; pane_submit follows its \
                  approval mode; zcode reports no turn end for a failed turn (API error, \
-                 exhausted quota, network) or an interrupt; the pane stays \
-                 working until its next prompt"
+                 exhausted quota, network) or an interrupt; the pane stays working until its \
+                 next prompt, unless Settings ▸ Agents ▸ Check ZCode plan quota when a pane \
+                 stalls is on, which probes a stalled pane and marks it Limited"
             )
         );
         for kind in [
