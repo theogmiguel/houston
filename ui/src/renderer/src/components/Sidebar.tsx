@@ -473,11 +473,12 @@ interface Props {
   chromeTheme: ChromeTheme;
   onToggleChromeTheme: (origin: HTMLElement) => void;
   updateVersion?: string | null;
-  harnessAttention?: number;
   agentAttention?: AgentAttention;
   taskTurnCount?: number;
   /** Parked merge queue entries; the Pull requests row counts them in accent. */
   mergeQueueParked?: number;
+  /** New review requests; the Pull requests row counts them in warn ink. */
+  reviewRequestCount?: number;
 
   className?: string;
   gridArea?: 'rail';
@@ -669,10 +670,16 @@ const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Elem
     usage: IconChartArea,
   });
 
-/** A rail row's count: the task turns in warn ink, parked merge queue entries in accent. */
-function railCount(view: RailView, taskTurnCount: number, mergeQueueParked = 0): React.JSX.Element | null {
+/** A rail row's count: task turns in warn ink, review requests in warn ink and
+ *  parked merge queue entries in accent, side by side when both exist. */
+function railCount(view: RailView, taskTurnCount: number, mergeQueueParked = 0, reviewRequestCount = 0): React.JSX.Element | null {
   if (view === "tasks" && taskTurnCount > 0) return <Count value={taskTurnCount} from="warn" />;
-  if (view === "prs" && mergeQueueParked > 0) return <Count value={mergeQueueParked} from="accent" />;
+  if (view === "prs" && (mergeQueueParked > 0 || reviewRequestCount > 0)) {
+    return <span className="flex items-center gap-[var(--space-1)]">
+      {reviewRequestCount > 0 && <Count value={reviewRequestCount} from="warn" />}
+      {mergeQueueParked > 0 && <Count value={mergeQueueParked} from="accent" />}
+    </span>;
+  }
   return null;
 }
 
@@ -682,6 +689,7 @@ function RailNav({
   paletteChord,
   taskTurnCount,
   mergeQueueParked,
+  reviewRequestCount,
   onOpenPalette,
   onSelect,
   onRowMenu,
@@ -691,6 +699,7 @@ function RailNav({
   paletteChord: string | null | undefined;
   taskTurnCount: number;
   mergeQueueParked: number | undefined;
+  reviewRequestCount: number | undefined;
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
@@ -713,7 +722,7 @@ function RailNav({
             selected={on}
             onClick={() => onSelect(v)}
             onContextMenu={(e) => onRowMenu(e, v)}
-            trailing={railCount(v, taskTurnCount, mergeQueueParked)}
+            trailing={railCount(v, taskTurnCount, mergeQueueParked, reviewRequestCount)}
           />
         );
       })}
@@ -1276,6 +1285,7 @@ export function Sidebar({
   agentAttention,
   taskTurnCount = 0,
   mergeQueueParked,
+  reviewRequestCount,
   className = "",
   gridArea,
   onHeadMouseDown,
@@ -1910,6 +1920,7 @@ export function Sidebar({
           paletteChord={paletteChord}
           taskTurnCount={taskTurnCount}
           mergeQueueParked={mergeQueueParked}
+          reviewRequestCount={reviewRequestCount}
           onOpenPalette={onOpenPalette ?? (() => {})}
           onSelect={selectRailView}
           onRowMenu={openNavMenu}

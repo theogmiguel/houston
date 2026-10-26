@@ -262,15 +262,33 @@ struct Run {
     summary: Option<String>,
 }
 
+/// A change above `REVIEW_SKIP_MAX_LINES`, so a review is not skipped.
+fn large_change(run: &Run) {
+    let tree = Path::new(run.worktree_path.as_deref().expect("a worktree"));
+    std::fs::write(tree.join("review.txt"), "line\n".repeat(40)).unwrap();
+    git(tree, &["add", "review.txt"]);
+    git(tree, &["commit", "-q", "-m", "implementation"]);
+}
+
 #[tokio::test]
 async fn a_failed_review_leaves_the_findings_as_a_comment_and_the_run_needing_review() {
     let _guard = SERIAL.lock().await;
     let r = rig("review-fail").await;
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon
+        .tasks_review_settings_set(
+            &r.workspace(),
+            None,
+            0,
+            proto::TaskReviewMode::Handback,
+            proto::TaskReviewFocus::Bugs,
+        )
+        .unwrap();
     let parent = r.parent();
     let id = r.create_task();
 
     let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
+    large_change(&impl_run);
     r.submit_complete(impl_run.session_id.unwrap());
     assert_eq!(r.task_status(id), "inreview");
 
@@ -302,11 +320,21 @@ async fn retry_with_findings_opens_attempt_n_plus_one_in_the_same_worktree() {
     let _guard = SERIAL.lock().await;
     let r = rig("review-retry").await;
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon
+        .tasks_review_settings_set(
+            &r.workspace(),
+            None,
+            0,
+            proto::TaskReviewMode::Handback,
+            proto::TaskReviewFocus::Bugs,
+        )
+        .unwrap();
     let parent = r.parent();
     let id = r.create_task();
 
     let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
     let first_tree = impl_run.worktree_path.clone().unwrap();
+    large_change(&impl_run);
     r.submit_complete(impl_run.session_id.unwrap());
     let review_run = r.open_run_of("review");
     r.submit_fail(review_run.session_id.unwrap());
@@ -363,12 +391,19 @@ async fn automatic_rework_stops_at_the_configured_cap() {
     let r = rig("review-auto-rework").await;
     r.daemon.orchestration_set(true).unwrap();
     r.daemon
-        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Codex), 1)
+        .tasks_review_settings_set(
+            &r.workspace(),
+            Some(proto::AgentKind::Codex),
+            1,
+            proto::TaskReviewMode::Handback,
+            proto::TaskReviewFocus::Bugs,
+        )
         .unwrap();
     let parent = r.parent();
     let id = r.create_task();
 
     let impl_one = r.start_execute(id, parent, None);
+    large_change(&impl_one);
     r.submit_complete(impl_one.session_id.unwrap());
     let review_one = r.open_run_of("review");
     r.submit_fail(review_one.session_id.unwrap());
@@ -411,34 +446,56 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
     let _guard = SERIAL.lock().await;
     let r = rig("review-settings").await;
     let proto::ServerMsg::TaskReviewSettings {
+        workspace,
         reviewer,
         rework_rounds,
-        ..
+        mode,
+        focus,
     } = r.daemon.tasks_review_settings_state(&r.workspace())
     else {
         panic!("expected TaskReviewSettings");
     };
+    assert_eq!(workspace, r.workspace());
     assert_eq!(reviewer, None, "review is off by default");
     assert_eq!(rework_rounds, 0);
+    assert_eq!(mode, proto::TaskReviewMode::Manual);
+    assert_eq!(focus, proto::TaskReviewFocus::Bugs);
 
     let msg = r
         .daemon
-        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Codex), 2)
+        .tasks_review_settings_set(
+            &r.workspace(),
+            Some(proto::AgentKind::Codex),
+            2,
+            proto::TaskReviewMode::Handback,
+            proto::TaskReviewFocus::Security,
+        )
         .unwrap();
     let proto::ServerMsg::TaskReviewSettings {
+        workspace,
         reviewer,
         rework_rounds,
-        ..
+        mode,
+        focus,
     } = msg
     else {
         panic!("expected TaskReviewSettings, got {msg:?}");
     };
+    assert_eq!(workspace, r.workspace());
     assert_eq!(reviewer, Some(proto::AgentKind::Codex));
     assert_eq!(rework_rounds, 2);
+    assert_eq!(mode, proto::TaskReviewMode::Handback);
+    assert_eq!(focus, proto::TaskReviewFocus::Security);
 
     let msg = r
         .daemon
-        .tasks_review_settings_set(&r.workspace(), Some(proto::AgentKind::Droid), 2)
+        .tasks_review_settings_set(
+            &r.workspace(),
+            Some(proto::AgentKind::Droid),
+            2,
+            proto::TaskReviewMode::Manual,
+            proto::TaskReviewFocus::Bugs,
+        )
         .unwrap();
     let proto::ServerMsg::TaskRefused { kind, message, .. } = msg else {
         panic!("expected TaskRefused, got {msg:?}");
@@ -452,6 +509,8 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
             &r.workspace(),
             Some(proto::AgentKind::Codex),
             proto::TASKS_REWORK_ROUNDS_MAX + 1,
+            proto::TaskReviewMode::Manual,
+            proto::TaskReviewFocus::Bugs,
         )
         .unwrap();
     let proto::ServerMsg::TaskRefused {

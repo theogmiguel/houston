@@ -539,7 +539,7 @@ async fn pr_detail_over_the_wire_reads_the_branch_pull_request() {
     match expect_pr_detail(&mut ws).await {
         proto::ServerMsg::PrDetail {
             request,
-            gh,
+            access,
             link,
             detail,
             linked,
@@ -547,7 +547,12 @@ async fn pr_detail_over_the_wire_reads_the_branch_pull_request() {
             ..
         } => {
             assert_eq!(request, 7, "the reply echoes the request id");
-            assert_eq!(gh, proto::GhState::Ready);
+            assert_eq!(
+                access,
+                proto::ForgeAccess::Github {
+                    gh: proto::GhState::Ready
+                }
+            );
             assert!(!linked, "a branch pull request is not a manual association");
             assert_eq!(message, None);
             let link = link.expect("a link");

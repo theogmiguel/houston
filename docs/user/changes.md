@@ -115,6 +115,35 @@ pane** removes the local association without closing the request on GitHub. Clos
 requests can be reopened when permitted. If no PR exists, create one for the branch or
 link an existing request by number.
 
+## Review requests
+
+The **Review requests** view on the Pull requests page lists pull requests where GitHub asks
+you to review. Turn the queue on in **Settings ▸ Workspaces ▸ Review requests**:
+
+- **Off** (the default) requests nothing.
+- **Notify** asks GitHub every 2 minutes, through your `gh` login, which pull requests await
+  your review, reads their size and files, and tells you.
+- **Review** also checks out the pull request head in a worktree for medium and large requests
+  and starts the workspace's default agent in it: the diff goes to that agent's provider, and a
+  pull request from someone else can bring its own agent configuration (project settings,
+  hooks, MCP servers, instruction files) that the agent will load. Prefer **Notify** for
+  repositories whose authors you do not trust. Houston never approves a pull request or posts
+  anything to GitHub.
+
+Each row names its repository and number, title, author and one of three tiers. The tier is
+never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
+more than 400 lines or a documentation-only change. A row with no matching local checkout
+says so, because Houston has nowhere to open the review pane. **Dismiss** records your
+decision and **Reopen** withdraws it. The rail's **Pull requests** item counts new requests.
+GitHub rate-limit pauses and credential problems appear as a notice in the view and in
+Settings without dropping the rows.
+
+While the queue is on, Houston runs `gh search prs --review-requested=@me` against GitHub
+about every two minutes and, for a new or updated request, one `gh pr view` for its head,
+files, base branch and check state. Both use your `gh` login; no repository content is sent
+for detection or triage. The queue keeps each request's repository, number, head commit,
+tier, triage reasons and your Dismiss or Reopen decision in the local Houston database.
+
 ## Merge queue
 
 The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull
@@ -224,8 +253,9 @@ Houston's gates and verification always run first. Then:
 - **GitHub's merge queue** on the base branch: Houston adds the verified pull request to
   GitHub's merge queue instead of merging it. Nothing is pushed for it, because GitHub's merge
   group tests the real merge; only a restacked branch is pushed first.
-- **Auto-merge** allowed with required checks on the base: Houston pushes the verified commit
-  and turns auto-merge on for exactly that commit, with the repository's merge method.
+- **Auto-merge** allowed with required checks on the base, whether classic branch
+  protection or a ruleset requires them: Houston pushes the verified commit and turns
+  auto-merge on for exactly that commit, with the repository's merge method.
 
 The queue view's policy line names the path, such as **Hands off to GitHub's merge queue**.
 While GitHub holds the pull request it shows **Watching**, keeps its place, and its detail
@@ -234,9 +264,13 @@ base moved and logs the merge, as for its own merges. When GitHub removes it fro
 queue, turns auto-merge off or a check fails, the entry fails with GitHub's reason. **Dequeue**
 and **Pause** take the pull request back from GitHub first; a paused entry loses its place in
 GitHub's merge queue and is added again when you resume. Houston learns which path applies
-from the pull request reads it already makes. If GitHub hides that from your account, Houston
-merges itself; if GitHub then refuses because the branch requires its merge queue, the entry
-fails with GitHub's message and later landings use the merge queue.
+from the pull request reads it already makes. Checks a ruleset requires count like classic
+required checks: Houston reads the base branch's rules through `gh` (`api.github.com`, or your
+GitHub Enterprise host) at most once an hour per base branch, read-only; a failed read is
+retried after ten minutes. If they cannot be read, Houston keeps merging itself. If GitHub
+hides the path from your account, Houston also merges itself; if
+GitHub then refuses because the branch requires its merge queue, the entry fails with GitHub's
+message and later landings use the merge queue.
 
 **Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
 the command palette, stops pushes and merges at once; entries keep their place and any
@@ -368,6 +402,9 @@ also fetches that one ref, `refs/pull/<number>/head`, from the remote whose URL 
 PR's repository, using your own git credentials. Without `gh`, a check sends nothing and
 fetches nothing.
 
+Worktrees of a Bitbucket repository are not checked yet: they stay listed with `gh`
+unavailable, and a check sends nothing to Bitbucket for them.
+
 ## Fetching and pulling
 
 Fetch brings remote-tracking branches up to date and reports what changed. Pull is
@@ -376,3 +413,42 @@ rather than creating a merge commit behind your back.
 
 Push remains independent of GitHub: it needs a configured git remote and credentials,
 not the GitHub CLI.
+
+### Bitbucket Cloud
+
+A workspace whose git remote is on `bitbucket.org` can show its pull request in the same
+tab, read-only: title, state, author, branches, changed lines and files, commits, build
+statuses as checks, approvals and change requests, comments and inline threads. Houston
+does not create, comment on, review or merge Bitbucket pull requests; **Open on
+Bitbucket** opens the pull request's page instead. Linking a pull request by number and
+unlinking it work as they do for GitHub. Bitbucket Data Center and Server are not
+supported.
+
+To turn it on:
+
+1. In your Atlassian account settings, create an API token with the
+   `read:pullrequest:bitbucket` and `read:repository:bitbucket` scopes. Bitbucket makes
+   the token expire within a year; create a new one when it does.
+2. In Settings ▸ Agents ▸ CLIs ▸ Bitbucket Cloud, enter your Atlassian account e-mail and the
+   token, and turn on **Read pull requests on Bitbucket** (off by default).
+
+The token is stored in your OS keychain, never in Houston's settings or logs, and is not
+shown again. **Disconnect** removes it from the keychain. If the keychain is unavailable,
+the tab says so and Houston stores nothing.
+
+While the setting is off, or no token is stored, Houston sends nothing to Bitbucket.
+When it is on, Houston contacts `api.bitbucket.org` over HTTPS only while the Pull
+request tab is open, when you press Refresh and when you link a pull request by number;
+never in the background. Each read sends:
+
+- your Atlassian e-mail and API token, as the request's `Authorization` header;
+- a `User-Agent` header naming Houston and its version (`houston/<version>`);
+- the workspace and repository names, and the pull request number;
+- paging parameters (`pagelen` and Bitbucket's page cursor);
+- to find the branch's own pull request, the local branch name, with the pull request
+  states searched, the sort order and the response fields wanted.
+
+It sends no file content, diff or agent transcript. One refresh makes about six
+requests. Bitbucket allows 1,000 API requests per hour per user, shared with your other
+tools that use the same account; when the limit is reached, the tab says so and Houston
+does not retry.

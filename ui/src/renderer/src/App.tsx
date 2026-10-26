@@ -220,6 +220,7 @@ import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { handleNightShiftNotice, setNightShiftFocus } from "./nightShiftNav";
+import { handleDefectNotice } from "./defectNotice";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -665,8 +666,24 @@ function offeredUpdate(
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
+const ReviewRequestSignals = lazy(() => import('./components/ReviewRequestSignals').then((module) => ({ default: module.ReviewRequestSignals })))
 
-
+function reviewRequestSignalsFor(
+  connection: Conn,
+  desktopNotificationMode: DesktopNotificationMode,
+  onCount: (count: number) => void,
+): React.JSX.Element | null {
+  if (connection.kind !== "ready") return null;
+  return (
+    <Suspense fallback={null}>
+      <ReviewRequestSignals
+        client={connection.client}
+        desktopNotificationMode={desktopNotificationMode}
+        onCount={onCount}
+      />
+    </Suspense>
+  );
+}
 
 function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, activeId: number | null, layerArmed: boolean): boolean {
   if (activeId === null || layerArmed) return false;
@@ -688,11 +705,6 @@ function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: 
     if (resolveGlobalMatch(entry, overrides)(e)) return { target, step };
   }
   return null;
-}
-
-function harnessAttentionFor(overview: readonly { workspace: string; attention: number }[], workspace: string): number {
-  if (workspace === "all") return overview.reduce((total, row) => total + row.attention, 0);
-  return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
 }
 
 function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
@@ -829,7 +841,6 @@ export function App(): React.JSX.Element {
     setSelectedWs((cur) => cur === "all" || workspaces.some((w) => w.path === cur) ? cur : workspaces[0].path);
   }, [conn.kind, environmentRosterPending, workspaces]);
   const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
-  const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
   const [taskTurnCount, setTaskTurnCount] = useState(0);
   const {
     activeId,
@@ -1070,6 +1081,7 @@ export function App(): React.JSX.Element {
     changeFont,
     changeZoom,
   } = usePreferences();
+  const [reviewRequestCount, setReviewRequestCount] = useState(0);
   const terminalTuning = useMemo(
     () => ({
       lineHeight: terminalLineHeight,
@@ -1421,6 +1433,11 @@ export function App(): React.JSX.Element {
         handleNightShiftNotice(msg, pushNotice, workspacesRef.current, (workspace, runId) => {
           setNightShiftFocus({ workspace, runId });
           setRailView("routines");
+        });
+        handleDefectNotice(msg, pushNotice, workspacesRef.current, (workspace) => {
+          setSelectedWs(workspace);
+          setSettingsSection("agents-review");
+          setSettings(true);
         });
         switch (msg.type) {
           case "hello_ok":
@@ -3758,10 +3775,10 @@ export function App(): React.JSX.Element {
                 )
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
-              harnessAttention={harnessAttention}
               agentAttention={agentAttention}
               taskTurnCount={taskTurnCount}
               mergeQueueParked={mergeQueueParked}
+              reviewRequestCount={reviewRequestCount}
               onRemoveWorkspace={removeWorkspace}
               onLocateStart={(path) => {
                 void locateWorkspace(path);
@@ -3932,6 +3949,8 @@ export function App(): React.JSX.Element {
               />
             </Suspense>
           )}
+
+          {reviewRequestSignalsFor(conn, desktopNotificationMode, setReviewRequestCount)}
 
           {}
           {}
@@ -4214,6 +4233,10 @@ export function App(): React.JSX.Element {
                       onRefresh={prScreen.refresh}
                       onOpenSurface={openPanelSurface}
                       onOpenMergeQueueSettings={() => {
+                        setSettingsSection("workspaces");
+                        setSettings(true);
+                      }}
+                      onOpenReviewSettings={() => {
                         setSettingsSection("workspaces");
                         setSettings(true);
                       }}

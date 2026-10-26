@@ -1,4 +1,4 @@
-# Wire protocol v152
+# Wire protocol v153
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -222,10 +222,10 @@ stores.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer |
+| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer. For a remote on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps), `gh` is not run: the reply is `gh: missing` with a `hint` naming the forge. Any other host, including GitHub Enterprise Server and SSH host aliases, is left to `gh` |
 | `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape, plus a second reply for each directory first answered from the stored file |
-| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
-| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
+| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract; a remote on a forge known not to be GitHub is refused in `message` by forge and operation |
+| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — the forge is resolved from the remote first; a forge that cannot read is `access` + `hint`, a failed read is `message`. A Bitbucket Cloud read contacts `api.bitbucket.org` only when `access` is `bitbucket{ready}` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |
 | `pr_unlink` | `dir`, `request` | `pr_unlinked` then a fresh `pr_detail` carrying the same `request`; the reply names the number that was removed |
 | `pr_merge` | `dir`, `number`, `method: PrMergeMethod`, `expected_head_sha`, `request` | `pr_merged` then a fresh `pr_detail` on success. The daemon re-reads the pull request, refuses a moved head, re-runs the merge gate, and calls `gh pr merge --match-head-commit`; never `--admin`, `--auto` or branch deletion |
@@ -257,6 +257,8 @@ stores.
 | `merge_queue_revert` | `dir`, `number`, `request` | `merge_queue_reply` naming the revert pull request GitHub opened for that queue merge; a number with no merge row in the log is refused by name. Nothing is pushed to the base |
 | `merge_queue_acknowledge` | `dir` | a `merge_queue` bcast whose `away` is empty: the user saw the unattended merges and parks |
 | `merge_queue_summary_get` | — | `merge_queue_summary` (direct); the renderer sends it to every environment |
+
+Every pull-request write (`pr_merge`, `pr_action`, `pr_edit`, `pr_comment`, `pr_comment_edit`, `pr_review`, `pr_thread_*`, `pr_reaction`, `pr_reviewer_set`, `pr_label_set`, `pr_stack_merge`) and every GitHub-only read (`pr_reviewers`, `pr_labels`, `pr_list`, `pr_diff`, `pr_stack`) is refused before any network call when the remote is on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps); the refusal names the forge and the operation. Any other host is left to `gh`.
 
 ### History
 
@@ -334,6 +336,24 @@ stores.
 | `harness_overview_get` | — | `harness_overview` (direct), one row per workspace with Harness reviews |
 | `harness_seen` | `workspace`, `review_id` | `harness_changed` (bcast); the stored cursor advances monotonically and is capped at the latest published review |
 
+### Suspected defects
+
+| Message | Fields | Reply |
+|---|---|---|
+| `defects_get` | `workspace` | `suspected_defects` (direct) |
+| `defect_decide` | `workspace`, `key`, `decision: DefectDecision` (`reopen` withdraws the decision) | `suspected_defects` (bcast); `error` when the workspace has no defect with that key |
+| `defect_issue_draft` | `workspace`, `key`, `request` | `defect_issue_draft` (direct), correlated by `request`. One `gh search issues` call looks for open duplicates; the reply carries the redacted title and body, the destination repository, the gh account and a `transmits` sentence. A GitHub rate-limit pause returns no duplicates and a `note`, and leaves the draft fileable |
+| `defect_issue_file` | `workspace`, `key`, `request`, `title` (1–`DEFECT_ISSUE_TITLE_MAX` bytes), `body` (1–`DEFECT_ISSUE_BODY_MAX` bytes), `destination_repo` (`owner/name`), `comment_on?` (an open issue number) | `defect_issue_filed` (direct), correlated by `request`; this is the only message that creates an issue or comment. `error` for a refused repository, a non-GitHub workspace remote by name, or an empty/oversized title or body |
+
+### Review requests
+
+| Message | Fields | Reply |
+|---|---|---|
+| `review_requests_get` | - | `review_requests` (direct) |
+| `review_requests_set` | `mode: ReviewRequestMode` (`off` default, `notify`, `review`) | `review_requests` (bcast); the setting is global, reversible and visible. `off` leaves the loop fully idle and makes no request |
+| `review_request_dismiss` | `id` | `review_requests` (bcast); `error` naming the value when no request has that id |
+| `review_request_reopen` | `id` | `review_requests` (bcast); `error` naming the value when no request has that id |
+
 ### Night shift
 
 A workspace has at most one Night shift routine. It is listed with `routine_list` and
@@ -391,7 +411,7 @@ every refusal names the setting.
 | `task_start_settings_get` | `workspace` | `task_start_settings` (direct) |
 | `task_start_settings_set` | `workspace`, `agent: AgentKind`, `delivery: TaskPromptDelivery` | `task_start_settings` (bcast); `task_refused` `invalid` for an unspawnable provider, named. Per workspace, default claude and `send`, stored in the settings KV |
 | `task_review_settings_get` | `workspace` | `task_review_settings` (direct) |
-| `task_review_settings_set` | `workspace`, `reviewer?` (`null` or omitted = none), `rework_rounds` (`0..=TASKS_REWORK_ROUNDS_MAX`) | `task_review_settings` (bcast); `task_refused` `invalid` for an unspawnable reviewer, `limit` for a round count over the cap, both named. Per workspace, default none and 0 |
+| `task_review_settings_set` | `workspace`, `reviewer?` (`null` or omitted = none), `rework_rounds` (`0..=TASKS_REWORK_ROUNDS_MAX`), `mode: TaskReviewMode` (default `manual`), `focus: TaskReviewFocus` (default `bugs`) | `task_review_settings` (bcast); `task_refused` `invalid` for an unspawnable reviewer, `limit` for a round count over the cap, both named. Per workspace, default none, 0, `manual` and `bugs` |
 | `task_queue_run` | `orchestrator_session`, `count` (`1..=TASK_LIST_MAX`), `agent?` (omitted uses the workspace's Start default) | `task_queue_result` (direct); `task_refused` (direct) `limit` when the orchestrator's free child slots are fewer than `count` (`limit` is the cap, `requested` the count, the message names both and says nothing was queued), `invalid` when count is out of range or orchestration is off, plus the shared access refusal. Starts the top `count` ready tasks (todo, workspace, verifiable acceptance, no unanswered questions, unapproved Plan, unresolved conflicts or unfinished blockers; priority then number) as children of that session, all or nothing at the slot check |
 
 ### Skill sync and push
@@ -439,6 +459,17 @@ every refusal names the setting.
 | `remote_device_set_tier` | `id`, `tier: RemoteTier` | `remote_state` (bcast) with the device's new `tier`; an unknown id is an `error` with `context: "remote"`. Applies from the device's next HTTP request |
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
 | `desktop_presence` | `active: bool` | none. The renderer sends `true` while someone uses its window or focuses its docked browser (at most every 30 s) and `false` on hiding or on a blur that does not move focus into that browser. Phone notifications that come due wait until `DESKTOP_AWAY_SECS` (180) after the last `true` from any connection; `false` from the connection holding them, or closing it, sends them at once. The daemon applies reports on the connection task, in socket order and outside control admission. A daemon with no report never holds a notification |
+
+### Forge
+
+| Message | Fields | Reply |
+|---|---|---|
+| `forge_settings_get` | — | `forge_settings` (direct) |
+| `bitbucket_enabled_set` | `enabled` | `forge_settings` (bcast). Off by default; while off, no Bitbucket request is made |
+| `bitbucket_token_set` | `email` (1–`BITBUCKET_EMAIL_LEN_MAX` bytes), `token` (1–`BITBUCKET_TOKEN_LEN_MAX` bytes) | `forge_settings` (bcast). Written to the daemon's keychain entry and **read back** before success; an empty or oversized value is an `error` naming the limit and the length. The token is never echoed by any reply |
+| `bitbucket_token_clear` | — | `forge_settings` (bcast) |
+
+A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_clear` replies with `error.context = "forge_settings"` and broadcasts nothing.
 
 ### Host and usage
 
@@ -534,7 +565,7 @@ every refusal names the setting.
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
 | `pr_check_log` | `dir`, `run_id`, `lines: string[]`, `truncated`, `available` | direct reply; bounded to 40 lines and 16 KiB; `available: false` when this check has no fetchable Actions log |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
-| `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
+| `pr_detail` | `dir`, `request`, `access: ForgeAccess`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate; `detail.read_only` names why no write is offered |
 | `pr_watch_list` | `watches: SessionPrWatches[]` | direct reply; contains the watches currently owned by each session |
 | `pr_watch_changed` | `session`, `watches: PrWatchInfo[]` | bcast after a session starts or stops a watch, a watch ends, or a read completes; `PrWatchInfo.last_checked_at_ms?` is the time of the last completed read, including failed reads |
 | `merge_queue` | `workspace`, `dir?`, `entries: MergeQueueEntry[]`, `log: MergeQueueLogEntry[]`, `settings?: MergeQueueSettings`, `global_paused`, `away: MergeQueueAway`, `message?` | direct reply to `merge_queue_get`, which alone carries `dir` and `message`; bcast after every enqueue, dequeue, settings change, pause, retry, verification start and outcome, push and queue merge, after a read changes an entry's answer, when an entry leaves because its pull request merged or closed outside the queue, and when a task run of the workspace changes. `entries` are in queue order: entries in line carry `position` from 1, and parked, fixing and held entries carry 0. Each carries one `status` (`ready`, `blocked`, `verifying` with `verifying_since_ms`, `waiting_for_slot`, `fixing`, `parked`, `paused`, `watching` with `github` while GitHub's merge queue or auto-merge holds the verified head), at most one `reason`, four gates (the fourth is `verification`, which may be `pending`), the `verification` that holds for its head, the `failure` that keeps it out of line, and the `worktree` Houston created on its branch. `log` holds the last day's pushes, merges, parks, restacks (with `fork_sha`), retargets and hand-offs, newest first, at most `MERGE_QUEUE_HISTORY_MAX`; `away` counts unattended merges and parks since the last `merge_queue_acknowledge`. `hand_off` is who merges in this workspace, cached from the pull request reads the queue already makes (never a read of its own): `houston`, GitHub's `merge_queue` where the base requires it, or `auto_merge` where the repository allows auto-merge and the base requires checks; a field GitHub hides from the viewer counts as `houston`. GitHub merging a held head runs the same after-merge steps as a queue merge; GitHub ejecting it, turning its auto-merge off or failing a check on it takes the failure path with GitHub's reason |
@@ -576,6 +607,10 @@ every refusal names the setting.
 | `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
+| `suspected_defects` | `workspace`, `defects: SuspectedDefect[]` (newest occurrence first, at most `SUSPECTED_DEFECTS_PER_WORKSPACE_MAX`) | direct reply to `defects_get`; bcast when a defect is recorded, decided, reopened or filed |
+| `defect_issue_draft` | `workspace`, `key`, `request`, `destination: DefectDestination`, `destination_repo`, `account?` (the gh login), `title`, `body`, `transmits` (exactly what sending transmits, to which repository and account), `duplicates: DefectIssueMatch[]` (at most `DEFECT_ISSUE_DUPLICATES_MAX`), `note?` | direct reply to `defect_issue_draft` |
+| `defect_issue_filed` | `workspace`, `key`, `request`, `number`, `issue_url`, `note?` | direct reply to `defect_issue_file`; the defect becomes `resolved` with the issue recorded |
+| `defect_notice` | `workspace`, `count` (undecided defects), `title` (newest) | bcast — at most once per workspace per UTC day, when a new undecided defect is recorded |
 | `task_snapshot` | `scope`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
 | `task_projects_state` | `workspace`, `projects: TaskProject[]` | reply to `task_projects_list` |
 | `task_project_state` | `project?: TaskProject` | reply to `task_project_get` |
@@ -592,10 +627,13 @@ every refusal names the setting.
 | `task_refused` | `id?`, `kind: TaskErrorKind`, `limit?`, `requested?`, `expected?`, `actual?`, `message` | direct reply only; nothing changed. `conflict` carries the task, the expected revision and the actual one; `limit` carries the limit and the actual value; `busy` carries the live-run limit and the requested count, and the message names the holding run and pane; `access_off` and `read_only` name Settings ▸ Tasks |
 | `task_run_changed` | `run: TaskRun` | bcast — one run changed state or binding (started, needs input, handed back, interrupted, resumed, stopped, retried, the reviewer's verdict, or its PR-watch reason changed) |
 | `task_start_settings` | `workspace`, `agent: AgentKind`, `delivery: TaskPromptDelivery` | direct reply to `task_start_settings_get`; bcast after `task_start_settings_set` |
-| `task_review_settings` | `workspace`, `reviewer?: AgentKind` (`null` = none), `rework_rounds` | direct reply to `task_review_settings_get`; bcast after `task_review_settings_set`. `reviewer` is the workspace default an orchestrator `task_execute` uses when it names none; `rework_rounds` is how many automatic rework rounds a failed review may take |
+| `task_review_settings` | `workspace`, `reviewer?: AgentKind` (`null` = none), `rework_rounds`, `mode: TaskReviewMode`, `focus: TaskReviewFocus` | direct reply to `task_review_settings_get`; bcast after `task_review_settings_set`. `reviewer` is the workspace default an orchestrator `task_execute` uses when it names none; `rework_rounds` is how many automatic rework rounds a failed review may take; `mode` says when a review starts on its own and `focus` is put into the reviewer's brief |
+| `review_requests` | `mode: ReviewRequestMode`, `items: ReviewRequest[]` (newest head first, at most `REVIEW_REQUESTS_MAX`), `paused_until_ms?`, `note?` | direct reply to `review_requests_get`; bcast after a mode change, a dismissal, a reopen, and each triage tick that changes the list. `paused_until_ms` and `note` show a rate-limit pause or a credential problem without failing the queue |
+| `review_request_notice` | `id`, `repo`, `number`, `title`, `tier: ReviewTier` | bcast once for a newly triaged request; never for the first run that absorbs already-open requests |
 | `task_queue_result` | `workspace`, `started: string[]` (task keys, picking order), `refused: TaskQueueRefusal[]` (a ready task that could not start, with the refusal message a direct Start would have given), `ready_count` (what the roster's queue button shows), `free_children` (the orchestrator's remaining slots) | direct reply to `task_queue_run`; the started tasks each broadcast their own `task_changed`/`task_run_changed` |
 | `tasks_access` | `workspace`, `access: TasksAccess` | direct reply to `tasks_access_get`; bcast after `tasks_access_set` |
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
+| `forge_settings` | `bitbucket_enabled`, `bitbucket_account?` (the stored e-mail), `keyring_error?` | direct reply to `forge_settings_get`; bcast after any Bitbucket setting or token change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
 | `voice_transcript` | `session`, `text` (the engine's transcript), `insert` (what to put in the prompt: the trimmed text plus one space, led by the agent preamble on the pane's first dictation when `output_mode` is `english` and `agent_preamble` is on; empty when there is nothing to insert), `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start`. The daemon tracks which panes already received the preamble, for the desktop and paired devices together, and forgets a pane when it is removed |
@@ -762,6 +800,9 @@ GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sens
 GitReviewSection   scope (staged | unstaged | untracked), patch
 GitDiscardKind     staged | unstaged | untracked
 GhState            missing | unauthenticated | ready
+ForgeAccess        tag "forge": github{gh: GhState} | bitbucket{state: BitbucketAccess} | unsupported{host}
+                   — `host` is the remote's host without userinfo, or the forge's name
+BitbucketAccess    off | no_token | keychain_unavailable | ready
 PrChecks           none | running | passing | failing
 PrInfo             number, url, state, title, head_ref, additions, deletions, is_draft,
                    review_decision?, checks: PrChecks
@@ -779,10 +820,11 @@ PrDetail           body?, author?, base_ref?, head_ref?, head_sha, commit_count,
                    merge_state (clean | behind | blocked | dirty | draft | has_hooks |
                    unstable | unknown), checks: PrCheck[], comments: PrComment[],
                    reviews: PrReview[], comments_total, reviews_total, merge_disabled_reason?,
-                   merge_methods, github_merge?: PrGitHubMerge
+                   merge_methods, github_merge?: PrGitHubMerge,
+                   read_only? (set when Houston cannot write to this forge; no write control is offered)
 PrGitHubMerge      merge_queue_required?, auto_merge_allowed?, required_checks?,
                    queue_entry?: {state, position?, head_sha?}, removal?: {reason, at_ms}
-                   — `None` wherever GitHub did not show the viewer the field
+                   - `None` wherever GitHub did not show the viewer the field
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
                    url?, duration_ms?, run_id?
 PrCheckLog         dir, run_id, lines, truncated, available
@@ -912,9 +954,18 @@ HarnessFindingPhase open | fixing | awaiting_verification | not_seen | resolved 
 HarnessFindingTask task_id, key (`HOU-<number>`), status: TaskStatus, landed_at_ms?
 HarnessVerification review_id, verdict: HarnessVerdict, sessions_after, quotes
 HarnessVerdict gone | still_present | inconclusive
-HarnessAttention workspace, counts for each finding phase, latest_published_review_id?,
-                 seen_review_id, attention
+HarnessAttention workspace, counts for each finding phase, suspected_defects (undecided
+                  defects, also counted in attention), latest_published_review_id?,
+                  seen_review_id, attention
 HarnessProviderCoverage agent: AgentKind (OpenCode, Cursor, Grok or Antigravity), sessions
+DefectSource       agent | detector
+DefectDestination  houston | workspace
+DefectDecision     dismiss | not_a_bug | reopen
+SuspectedDefect    workspace, key, title, source: DefectSource, detector?, evidence[],
+                   destination: DefectDestination, count, first_seen_ms, last_seen_ms,
+                   state: HarnessFindingState, recurred, issue_url?, decided_at_ms?
+DefectIssueMatch   number, title, url
+
 
 TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number>`), title,
                    status: TaskStatus, priority: TaskPriority,
@@ -938,7 +989,24 @@ TaskRun            id, task_id, attempt, kind: TaskRunKind, state: TaskRunState,
                    reason? (why the run is not running: an interrupted pane, a missing or
                    unauthenticated `gh` during the PR watch, or a refused resume),
                    started_at_ms, ended_at_ms?, pr_url? (the pull request `gh` found for the
-                   branch when a Slack-filed run was handed back)
+                   branch when a Slack-filed run was handed back),
+                   review? (a review run's TaskReviewVerdict)
+TaskReviewMode     manual | handback | every_push (default manual)
+TaskReviewFocus    bugs | security | performance | full (default bugs)
+TaskReviewSeverity high | medium | low | nit
+TaskReviewCategory bug | security | performance | other
+TaskReviewOutcome  pass | fail | skipped
+TaskReviewFinding  path (repository-relative), line (>= 1), severity, category, message
+TaskReviewVerdict  head_sha, verdict: TaskReviewOutcome, focus: TaskReviewFocus,
+                   findings[] (at most TASK_REVIEW_FINDINGS_MAX), skipped_reason?,
+                   outdated (the branch tip moved past head_sha)
+ReviewRequestMode  off | notify | review (default off, global)
+ReviewTier         a | b | c (a is deferred until triage is calibrated; an
+                   A-qualifying pull request is reported as b with that reason)
+ReviewRequestState new | reviewing | reviewed | dismissed
+ReviewRequest      id, host, repo, number, title, author, url, head_sha, tier,
+                   reasons[], state, workspace? (a matching registered checkout),
+                   provider? (that workspace's default task agent)
 TaskRunKind        implementation | review
 TaskRunState       preparing | running | waiting_for_input | validating | handed_back |
                    needs_review | failed | cancelled | interrupted
@@ -1535,6 +1603,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 153 | **The Pull request tab reads a Bitbucket Cloud pull request (opt-in, read-only).** `pr_detail`'s reply replaces `gh: GhState` with `access: ForgeAccess`; `PrDetail` gains `read_only?`. New `forge_settings_get`, `bitbucket_enabled_set`, `bitbucket_token_set` and `bitbucket_token_clear`, answered by `forge_settings`; a refused change is an `error` with `context = "forge_settings"`. Every pull-request write and GitHub-only read refuses a remote on a forge known not to be GitHub by forge and operation. **Suspected defects.** New `defects_get`, `defect_decide`, `defect_issue_draft` and `defect_issue_file`, answered by `suspected_defects`, `defect_issue_draft`, `defect_issue_filed` and the once-daily `defect_notice`; new `SuspectedDefect`, `DefectSource`, `DefectDestination`, `DefectDecision` and `DefectIssueMatch`; `HarnessAttention` gains `suspected_defects`; `pane_report` gains the `finding` kind with `title`, `evidence[]` and `destination`. **Review.** `task_review_settings` and its set request gain `mode: TaskReviewMode` and `focus: TaskReviewFocus`; `TaskRun` gains `review?: TaskReviewVerdict` with `TaskReviewOutcome`, `TaskReviewFinding`, `TaskReviewSeverity` and `TaskReviewCategory`. **Review requests.** New `review_requests_get`, `review_requests_set`, `review_request_dismiss` and `review_request_reopen`, answered by `review_requests` and the new-request `review_request_notice`; new `ReviewRequestMode`, `ReviewTier`, `ReviewRequestState` and `ReviewRequest` |
 | 152 | **Night shift fixes real CI failures and reports token cost; an opt-in ZCode quota check marks a stalled pane Limited.** `NightGates` gains `fixes` (fixer panes Houston started for the pull request, beside `reruns`). `NightCostLine` gains `tokens?: UsageTokenTotals`, the provider's own token counts for the run's window, absent when its CLI exposes none. New `zcode_quota_check_get` and `zcode_quota_check_set {enabled}`, answered by `zcode_quota_check {enabled}` (bcast); the setting is off by default. Existing messages are otherwise unchanged |
 | 151 | **Night shift runs an orchestrator for a window and leaves a morning report; a workspace moves to another computer in an encrypted file.** `RoutineKind` gains `night_shift`. New `night_shift_create`, `night_shift_state`, `night_shift_update`, `night_shift_run_now`, `night_shift_wrap_up`, `night_shift_stop`, `night_shift_decide`, `night_shift_qa_passed` and `night_shift_report`, answered by `night_shift_state` (with `revision`, `machine: NightMachine` and `merge_verify_command`), `night_shift_run_event`, `night_shift_notice` and `night_shift_report`. New types: `NightShiftSettings`, `NightWindow`, `NightClock`, `NightFocus`, `NightFocusLevel`, `NightAgent`, `NightAppCheck`, `NightOutput`, `NightQuestions`, `NightRun`, `NightRunPhase`, `NightStopReason`, `NightEntry`, `NightEntryKind`, `NightGates`, `NightGate`, `NightInterruption`, `NightCost`, `NightCostLine`, `NightCrewMember`, `NightKeepAwake`, `NightMachine`, `PreflightItem` and `PreflightStatus`. Refusals carry `context: "night_shift"`; `routine_update` and `routine_run_now` refuse a Night shift routine. Workspace transfer: New `transfer_export`, `transfer_inspect` and `transfer_import`, answered by `transfer_progress`, `transfer_exported`, `transfer_inspected`, `transfer_imported` and `transfer_refused`, with `TransferPassphrase`, `TransferStage`, `TransferRefusalCode`, `TransferRefusal`, `TransferPane`, `TransferSkipped`, `TransferCliVersion`, `TransferExportSummary`, `TransferProfileNeed`, `TransferFileSummary`, `TransferProfileChoice`, `TransferSessionMapping` and `TransferImportResult`. `SessionInfo` gains `transferred_at_ms?` and `transfer_fork?`. Existing messages are unchanged |
 | 150 | **Seven additive features: a paused-git banner, worktree removal facts, desktop-aware phone alerts, a diagnostics file, rail status notes and workspace relocation.** `git_status` gains `operation?: GitOperation` (`merge`, `rebase`, `cherry_pick`), read from the checkout's git dir. New read-only `worktree_check{dir, path}`, answered by `worktree_check{dir, path, check: WorktreeCheckResult}` (uncommitted files and the newest change, commits ahead of the base and not on any remote, and the panes inside the tree; a part that could not look names why in `gaps`). New `desktop_presence {active}` client message with no reply: while a recent `true` report stands, due ntfy notifications are held and are sent once on the holding connection's `false`, on its disconnect, or when the report lapses after `DESKTOP_AWAY_SECS`. New `diagnostics_collect {app_version}`, answered by `diagnostics_collected {path?, bytes, error?}`: the daemon writes a redacted file under `<state_dir>/diagnostics/`, keeps the five newest, caps each at 1 MiB and includes no terminal output. `SessionInfo` gains `note?: PaneNote` (`text`, `phase?: PanePhase`, `at_ms`); new `session_note_clear{session}` and the `session_note{session, note?}` broadcast; agents write the note through the `pane_note` MCP tool or `hs-pane note`, and a note over 512 bytes is refused naming the limit. `Workspace` gains `missing?`, true when the folder is gone on disk; new `workspace_relocate{from, to}` checks that `to` is the same repository, re-points every row keyed by the path in one transaction, relinks worktrees with `git worktree repair`, and answers `workspace_relocated{from, to, moved: WorkspaceRelocateMoved}` plus `workspace_list` (both bcast). Existing messages are otherwise unchanged |

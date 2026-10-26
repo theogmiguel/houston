@@ -1,0 +1,7 @@
+{
+  "pagelen": 100,
+  "values": [
+    { "type": "commit", "hash": "0123456789abcdef0123456789abcdef01234567", "date": "2026-10-01T12:00:00+00:00", "message": "read statuses\n", "author": { "type": "author", "raw": "Ana Author <ana@example.com>" } },
+    { "type": "commit", "hash": "1111111111abcdef0123456789abcdef01234567", "date": "2026-09-30T10:00:00+00:00", "message": "read the pull request\n", "author": { "type": "author", "raw": "Ana Author <ana@example.com>" } }
+  ]
+}

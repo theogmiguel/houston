@@ -44,6 +44,14 @@ pub(crate) fn slashed(path: &Path) -> String {
     path.display().to_string().replace('\\', "/")
 }
 
+/// The GitHub remote `url`, with its transfers pointed at the local bare
+/// repository: the queue must see GitHub, while git never leaves the machine.
+pub(crate) fn github_remote(dir: &Path, url: &str, origin: &Path) {
+    git(dir, &["remote", "add", "origin", url]);
+    let local = format!("file:///{}", slashed(origin).trim_start_matches('/'));
+    git(dir, &["config", &format!("url.{local}.insteadOf"), url]);
+}
+
 /// A pane that lives until the test ends: an agent pane, so it is an owner.
 pub(crate) fn agent_pane(daemon: &Arc<Daemon>, dir: &Path) -> u32 {
     // An agent pane's launch appends the CLI's own arguments: a script ignores them.
@@ -95,6 +103,8 @@ pub(crate) struct Rig {
 impl Rig {
     pub(crate) async fn new() -> Self {
         let (_addr, state, daemon) = start_daemon_with_handle().await;
+        // The hand-off schema hosts are process-wide, unlike a daemon: start clean.
+        houston_core::pull_requests::clear_hand_off_hosts_for_test();
         let origin = state
             .path()
             .join("github.com")
@@ -113,7 +123,7 @@ impl Rig {
             git(&root, &["config", key, value]);
         }
         commit(&root, "app.txt", "one\ntwo\nthree\n", "init");
-        git(&root, &["remote", "add", "origin", &slashed(&origin)]);
+        github_remote(&root, "git@github.com:owner/repo.git", &origin);
         git(&root, &["push", "-q", "origin", "main"]);
         let workspace = root.display().to_string();
         daemon.workspace_add(&workspace).unwrap();

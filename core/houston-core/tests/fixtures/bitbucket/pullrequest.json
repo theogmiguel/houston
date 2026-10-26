@@ -1,0 +1,44 @@
+{
+  "type": "pullrequest",
+  "id": 7,
+  "title": "Add the read-only adapter",
+  "description": "Reads one pull request.\n\nNo writes.",
+  "summary": { "type": "rendered", "raw": "Reads one pull request.\n\nNo writes.", "markup": "markdown", "html": "<p>Reads one pull request.</p>" },
+  "state": "OPEN",
+  "draft": true,
+  "author": { "type": "user", "display_name": "Ana Author", "nickname": "ana", "uuid": "{11111111-1111-1111-1111-111111111111}", "account_id": "557058:aaaa" },
+  "source": {
+    "branch": { "name": "feat/reader" },
+    "commit": { "type": "commit", "hash": "0123456789ab" },
+    "repository": { "type": "repository", "full_name": "ws/repo", "name": "repo", "uuid": "{22222222-2222-2222-2222-222222222222}" }
+  },
+  "destination": {
+    "branch": { "name": "main" },
+    "commit": { "type": "commit", "hash": "fedcba987654" },
+    "repository": { "type": "repository", "full_name": "ws/repo", "name": "repo", "uuid": "{22222222-2222-2222-2222-222222222222}" }
+  },
+  "merge_commit": null,
+  "comment_count": 5,
+  "task_count": 0,
+  "close_source_branch": false,
+  "closed_by": null,
+  "reason": "",
+  "created_on": "2026-09-30T10:00:00.000000+00:00",
+  "updated_on": "2026-10-01T12:30:00.123456+00:00",
+  "reviewers": [
+    { "type": "user", "display_name": "Rui Reviewer", "nickname": "rui", "uuid": "{33333333-3333-3333-3333-333333333333}" }
+  ],
+  "participants": [
+    { "type": "participant", "user": { "type": "user", "display_name": "Rui Reviewer", "nickname": "rui", "uuid": "{33333333-3333-3333-3333-333333333333}" }, "role": "REVIEWER", "approved": true, "state": "approved", "participated_on": "2026-10-01T09:00:00.000000+00:00" },
+    { "type": "participant", "user": { "type": "user", "display_name": "Cris Critic", "nickname": "cris", "uuid": "{44444444-4444-4444-4444-444444444444}" }, "role": "PARTICIPANT", "approved": false, "state": "changes_requested", "participated_on": "2026-10-01T10:00:00.000000+00:00" },
+    { "type": "participant", "user": { "type": "user", "display_name": "Ana Author", "nickname": "ana", "uuid": "{11111111-1111-1111-1111-111111111111}" }, "role": "PARTICIPANT", "approved": false, "state": null, "participated_on": "2026-10-01T11:00:00.000000+00:00" }
+  ],
+  "links": {
+    "self": { "href": "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests/7" },
+    "html": { "href": "https://bitbucket.org/ws/repo/pull-requests/7" },
+    "statuses": { "href": "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests/7/statuses" },
+    "comments": { "href": "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests/7/comments" },
+    "diffstat": { "href": "https://api.bitbucket.org/2.0/repositories/ws/repo/diffstat/ws/repo:0123456789ab%0Dfedcba987654?from_pullrequest_id=7" },
+    "commits": { "href": "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests/7/commits" }
+  }
+}

@@ -1548,6 +1548,9 @@ impl DelegationSettleSample {
 
 mod child_inputs;
 mod conflict_pass;
+pub mod defect_detectors;
+mod defects;
+mod forge_settings;
 mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
@@ -1557,6 +1560,7 @@ mod pane_notes;
 mod provider_deny;
 mod remote;
 mod remote_phone;
+mod review_requests;
 mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;
@@ -1774,6 +1778,8 @@ pub struct Daemon {
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
     channel: Option<String>,
+    /// Where the Bitbucket reader sends its requests; only a test changes it.
+    bitbucket_api_base: Mutex<String>,
     started: Instant,
     swarm_mail: Mutex<HashMap<u64, SwarmMailScope>>,
     swarm_mail_wake: Arc<tokio::sync::Notify>,
@@ -3575,6 +3581,7 @@ impl Daemon {
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
             channel: crate::paths::channel_of_state_dir(&state_dir),
+            bitbucket_api_base: Mutex::new(crate::pull_requests::bitbucket::API_BASE.to_string()),
             started: Instant::now(),
             swarm_mail: Mutex::new(HashMap::new()),
             swarm_mail_wake: Arc::clone(&swarm_mail_wake),
@@ -4503,6 +4510,16 @@ impl Daemon {
     pub fn pr_status(&self, dir: &Path) -> (crate::gh::PrStatus, bool) {
         if let Some(seed) = self.pr_status_store.take_seed(dir, now_ms()) {
             return (seed, true);
+        }
+        // `gh` cannot answer for a forge known not to be GitHub; nothing is run.
+        if let Some(hint) = crate::forge::status_hint(dir) {
+            let status = crate::gh::PrStatus {
+                gh: proto::GhState::Missing,
+                has_upstream: crate::git::sync(dir).upstream.is_some(),
+                pr: None,
+                hint: Some(hint),
+            };
+            return (status, false);
         }
         let status = crate::gh::pr_status_cached(dir);
         self.pr_status_store.record(dir, &status, now_ms());
@@ -22492,6 +22509,45 @@ impl Daemon {
         mut report: orchestrate::WorkerReport,
     ) -> Result<serde_json::Value> {
         report.body = orchestrate::report_text(&report.body)?;
+        if report.kind == orchestrate::ReportKind::Finding {
+            let (title, evidence, destination) = orchestrate::finding_fields(&report)?;
+            let key = report.client_request_id.take();
+            let receipt = crate::db::MessageReceipt::new(
+                child,
+                key,
+                "pane_report",
+                &serde_json::to_value(&report)?,
+            )?;
+            self.orchestrate_whoami(child)?;
+            let guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+                return Ok(result);
+            }
+            let workspace = self.current_workspace(child)?;
+            let input = crate::db::DefectInput {
+                workspace: workspace.clone(),
+                source: proto::DefectSource::Agent,
+                detector: None,
+                title,
+                description: report.body.clone(),
+                evidence,
+                destination,
+                reporter_session: Some(child),
+            };
+            let (result, record) = self.db.record_agent_finding(
+                &input,
+                &receipt,
+                u64::try_from(now_unix_ms()).unwrap_or(0),
+            )?;
+            drop(guard);
+            if record.count > 0 {
+                self.note_defect_recorded(&workspace, &record);
+            }
+            return Ok(result);
+        }
         let key = report.client_request_id.take();
         let receipt = crate::db::MessageReceipt::new(
             child,
@@ -22516,7 +22572,12 @@ impl Daemon {
             "report refused: request_id {} for pane {child} has already closed",
             report.request_id
         );
-        let kind = report.kind.inbox_kind();
+        let Some(kind) = report.kind.inbox_kind() else {
+            bail!(
+                "report refused: kind {:?} has no inbox row; use pane_report finding for a suspected defect",
+                report.kind
+            );
+        };
         let workspace = self.current_workspace(child)?;
         let row = orchestrate::inbox_row_new(
             parent,
@@ -22556,6 +22617,12 @@ impl Daemon {
         drop(guard);
         self.mcp_notify.tools_changed_for_session(recipient);
         self.inbox_notify(recipient, kind.urgent());
+        if matches!(
+            report.kind,
+            orchestrate::ReportKind::Question | orchestrate::ReportKind::Blocked
+        ) {
+            self.detect_reply_reasked(&workspace, child, &report.body);
+        }
         Ok(result)
     }
 
@@ -22626,9 +22693,18 @@ impl Daemon {
             None,
             true,
         )?;
-        let result =
-            self.db
-                .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms())?;
+        let result = self
+            .db
+            .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms());
+        let result = match result {
+            Ok(result) => result,
+            Err(e) => {
+                if question.resolved_at.is_some() {
+                    self.detect_reply_refused_resolved(&question.workspace, reply.message_id);
+                }
+                return Err(e);
+            }
+        };
         let id = result["message_id"].as_i64().expect("stored reply id");
         self.broadcast_delegation(child);
         self.tasks_on_input_ownership(child);

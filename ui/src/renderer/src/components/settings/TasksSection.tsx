@@ -3,9 +3,11 @@ import type { HoustonClient } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Workspace } from '../../houston/generated/Workspace'
 import type { TaskPromptDelivery } from '../../houston/generated/TaskPromptDelivery'
+import type { TaskReviewFocus } from '../../houston/generated/TaskReviewFocus'
+import type { TaskReviewMode } from '../../houston/generated/TaskReviewMode'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import { TASKS_REWORK_ROUNDS_MAX } from '../../houston/generated/DEFAULTS'
-import { useTaskReviewSettings, useTaskStartSettings, useTasksAccess } from '../../houston/useTasks'
+import { useTaskReviewSettings, useTaskStartSettings, useTasksAccess, type TaskReviewSettings } from '../../houston/useTasks'
 import { IconAgent } from '../icons'
 import { Segmented } from '../ui/SegmentedControl'
 import { Select, type SelectOption } from '../ui/Select'
@@ -141,39 +143,13 @@ export function TasksSection({
         </Row>
       </SettingsList>
       <SubHead>Review</SubHead>
-      <SettingsList>
-        <Row
-          title="Independent reviewer"
-          desc={<><span>Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done.</span><SettingsScope workspace={workspaceName} /></>}
-        >
-          <Select
-            aria-label="Independent reviewer"
-            data-testid="settings-tasks-reviewer"
-            value={review?.reviewer ?? 'none'}
-            options={REVIEWER_OPTIONS}
-            disabled={workspace === null || review === null}
-            prefix={
-              review?.reviewer != null ? (
-                <IconAgent agent={review.reviewer} brand className="w-3.5 h-3.5 flex-none" />
-              ) : undefined
-            }
-            width="task-setting"
-            onChange={(value) =>
-              setReviewSettings(value === 'none' ? null : (value as AgentKind), review?.reworkRounds ?? 0)
-            }
-          />
-        </Row>
-        <Row
-          title="Automatic rework rounds"
-          desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} /></>}
-        >
-          <ReworkRoundsInput
-            value={review?.reworkRounds ?? null}
-            disabled={workspace === null || review === null}
-            onCommit={(rounds) => setReviewSettings(review?.reviewer ?? null, rounds)}
-          />
-        </Row>
-      </SettingsList>
+      <ReviewSettings
+        review={review}
+        workspace={workspace}
+        workspaceName={workspaceName}
+        noWorkspaceReason={noWorkspaceReason}
+        setReviewSettings={setReviewSettings}
+      />
       {reviewRefusal !== null && (
         <TaskReviewRefusal testId="settings-tasks-review-refusal">
           {reviewRefusal.message}
@@ -181,6 +157,93 @@ export function TasksSection({
       )}
       <TaskTrackerSettingsSection client={client} workspace={workspace} workspaceName={workspaceName} />
     </>
+  )
+}
+
+/// The review rows: when a review starts, what it looks for and who runs it,
+/// followed by the automatic rework cap.
+function ReviewSettings({
+  review,
+  workspace,
+  workspaceName,
+  noWorkspaceReason,
+  setReviewSettings
+}: {
+  review: TaskReviewSettings | null
+  workspace: string | null
+  workspaceName: string | null
+  noWorkspaceReason: string
+  setReviewSettings: (reviewer: AgentKind | null, reworkRounds: number, mode: TaskReviewMode, focus: TaskReviewFocus) => void
+}): React.JSX.Element {
+  return (
+    <SettingsList>
+      <Row
+        title="Review mode"
+        desc={<><span className="grid gap-[var(--space-0-5)]">
+          <span>Manual only: a review starts only when you ask.</span>
+          <span>On handback: a review starts when the implementer hands the task back.</span>
+          <span>On every push to an open PR: a review starts on each new commit pushed to the task&apos;s pull request.</span>
+        </span><SettingsScope workspace={workspaceName} /></>}
+      >
+        <Segmented
+          aria-label="Review mode"
+          value={review?.mode}
+          loading={workspace !== null && review === null}
+          options={REVIEW_MODE_OPTIONS.map((option) => ({
+            ...option,
+            disabled: workspace === null,
+            disabledReason: workspace === null ? noWorkspaceReason : undefined,
+            testId: `settings-tasks-review-mode-${option.value}`
+          }))}
+          onChange={(value) => setReviewSettings(review?.reviewer ?? null, review?.reworkRounds ?? 0, value as TaskReviewMode, review?.focus ?? 'bugs')}
+        />
+      </Row>
+      <Row
+        title="Review focus"
+        desc={<><span>The reviewer is asked to look for this. Bugs and regressions are the default.</span><SettingsScope workspace={workspaceName} /></>}
+      >
+        <Select
+          aria-label="Review focus"
+          data-testid="settings-tasks-review-focus"
+          value={review?.focus ?? 'bugs'}
+          options={FOCUS_OPTIONS}
+          disabled={workspace === null || review === null}
+          width="task-setting"
+          onChange={(value) => setReviewSettings(review?.reviewer ?? null, review?.reworkRounds ?? 0, review?.mode ?? 'manual', value as TaskReviewFocus)}
+        />
+      </Row>
+      <Row
+        title="Independent reviewer"
+        desc={<><span>Runs read-only in the same worktree when a review starts. Reports evidence; it does not mark a task done. A review sends the branch diff to the reviewer&apos;s provider.</span><SettingsScope workspace={workspaceName} /></>}
+      >
+        <Select
+          aria-label="Independent reviewer"
+          data-testid="settings-tasks-reviewer"
+          value={review?.reviewer ?? 'none'}
+          options={REVIEWER_OPTIONS}
+          disabled={workspace === null || review === null}
+          prefix={
+            review?.reviewer != null ? (
+              <IconAgent agent={review.reviewer} brand className="w-3.5 h-3.5 flex-none" />
+            ) : undefined
+          }
+          width="task-setting"
+          onChange={(value) =>
+            setReviewSettings(value === 'none' ? null : (value as AgentKind), review?.reworkRounds ?? 0, review?.mode ?? 'manual', review?.focus ?? 'bugs')
+          }
+        />
+      </Row>
+      <Row
+        title="Automatic rework rounds"
+        desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} /></>}
+      >
+        <ReworkRoundsInput
+          value={review?.reworkRounds ?? null}
+          disabled={workspace === null || review === null}
+          onCommit={(rounds) => setReviewSettings(review?.reviewer ?? null, rounds, review?.mode ?? 'manual', review?.focus ?? 'bugs')}
+        />
+      </Row>
+    </SettingsList>
   )
 }
 
@@ -302,4 +365,17 @@ const DELIVERY_OPTIONS: { value: TaskPromptDelivery; label: string }[] = [
 const REVIEWER_OPTIONS: SelectOption[] = [
   { value: 'none', label: 'None' },
   ...TASK_AGENTS.map((value) => ({ value, label: taskAgentLabel(value) }))
+]
+
+const REVIEW_MODE_OPTIONS: { value: TaskReviewMode; label: string }[] = [
+  { value: 'manual', label: 'Manual only' },
+  { value: 'handback', label: 'On handback' },
+  { value: 'every_push', label: 'On every push to an open PR' }
+]
+
+const FOCUS_OPTIONS: SelectOption[] = [
+  { value: 'bugs', label: 'Bugs' },
+  { value: 'security', label: 'Security' },
+  { value: 'performance', label: 'Performance' },
+  { value: 'full', label: 'Full' }
 ]

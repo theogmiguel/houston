@@ -26,6 +26,10 @@ function fakeClient() {
     harnessFixTask: vi.fn(),
     harnessSeen: vi.fn(),
     harnessOverviewGet: vi.fn(),
+    defectsGet: vi.fn(),
+    defectDecide: vi.fn(),
+    defectIssueDraft: vi.fn(),
+    defectIssueFile: vi.fn(),
     routineRunNow: vi.fn(),
     routineUpdate: vi.fn()
   }
@@ -174,6 +178,38 @@ describe('HarnessView', () => {
     expect(client.harnessDecide).toHaveBeenCalledWith(WS, 'denied-push', 'dismissed')
   })
 
+  it('lists suspected defects even without a review routine and sends their decisions', () => {
+    const { client, emit, asClient } = fakeClient()
+    render(asClient)
+    emit({
+      type: 'harness_state', workspace: WS, routine: null, reviews: [], findings: [], models: [], provider_coverage: [], engine_refusals: []
+    })
+    emit({
+      type: 'suspected_defects',
+      workspace: WS,
+      defects: [{
+        workspace: WS,
+        key: 'repeated-refusal',
+        title: 'A pane_reply was refused twice for one question',
+        source: 'detector',
+        detector: 'reply_refused',
+        evidence: ['message 91'],
+        destination: 'houston',
+        count: 2,
+        first_seen_ms: 1,
+        last_seen_ms: 2,
+        state: 'open',
+        recurred: false,
+        issue_url: null,
+        decided_at_ms: null
+      }]
+    })
+    expect(container.textContent).toContain('Suspected defects')
+    expect(container.textContent).toContain('A pane_reply was refused twice for one question')
+    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Dismiss')!.click())
+    expect(client.defectDecide).toHaveBeenCalledWith(WS, 'repeated-refusal', 'dismiss')
+  })
+
   it('a refused routine creation is shown with its limit', () => {
     const { emit, asClient } = fakeClient()
     render(asClient)
@@ -207,7 +243,7 @@ describe('HarnessView', () => {
     })
     act(() => root.render(
       <HarnessView client={asClient} workspaces={[{ id: WS, name: 'proj' }]} selectedWorkspace={WS} routinesRunning={[]} attentionRows={[{
-        workspace: WS, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, latest_published_review_id: 2, seen_review_id: 1, attention: 1
+        workspace: WS, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, latest_published_review_id: 2, seen_review_id: 1, attention: 1
       }]} onOpenFile={vi.fn()} onReveal={vi.fn()} />
     ))
     const notice = container.querySelector('[data-tone="info"] button') as HTMLButtonElement

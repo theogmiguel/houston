@@ -39,6 +39,18 @@ pub fn viewer_login(dir: &Path) -> Result<Option<String>> {
     Ok((!out.stdout.trim().is_empty()).then(|| out.stdout.trim().to_string()))
 }
 
+/// The login gh's local configuration names for github.com. This reads the
+/// config only; a draft must not spend a network request before the operator
+/// confirms, so it never asks `gh api user`.
+pub fn configured_login(dir: &Path) -> Option<String> {
+    let out = run(dir, &["config", "get", "user", "--host", "github.com"]).ok()?;
+    if !out.ok {
+        return None;
+    }
+    let login = out.stdout.trim();
+    (!login.is_empty()).then(|| login.to_string())
+}
+
 // Coalesce page refreshes while letting a changed signed-in account appear within a minute.
 const VIEWER_LOGIN_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 // Bound memory when a daemon visits many repositories over its lifetime.
@@ -961,6 +973,388 @@ pub fn graphql(dir: &Path, query: &str, variables: serde_json::Value) -> Result<
     Ok(value)
 }
 
+/// One REST GET through `gh api`, answered as JSON. The access query cannot
+/// carry a branch's effective rules, so the merge queue's hand-off reads them
+/// here instead.
+pub fn api_get(dir: &Path, path: &str) -> Result<serde_json::Value> {
+    let out = run(dir, &["api", path]).context("running gh api")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr)
+                .unwrap_or_else(|| format!("gh api {path} failed (exit {:?})", out.code))
+        );
+    }
+    serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh api {path} returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })
+}
+
+/// One open issue matching a suspected defect's title words, as `gh search`
+/// reports it.
+pub struct IssueMatch {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+}
+
+/// One `gh search issues` page through the operator's own account. The caller
+/// makes this call once per draft; it is the only network read before filing.
+pub fn search_open_issues(
+    dir: &Path,
+    repository: &str,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<IssueMatch>> {
+    let limit = limit.clamp(1, 10).to_string();
+    let out = run(
+        dir,
+        &[
+            "search",
+            "issues",
+            "--repo",
+            repository,
+            "--match",
+            "title",
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,url",
+            "--",
+            query,
+        ],
+    )
+    .context("running gh search issues")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh search issues in {repository} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&out.stdout).with_context(|| {
+            let head: String = out.stdout.chars().take(400).collect();
+            format!(
+                "gh search issues in {repository} returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+                out.stdout.len()
+            )
+        })?;
+    let rows = value.as_array().ok_or_else(|| {
+        anyhow::anyhow!(
+            "gh search issues in {repository} answered {}; expected a JSON array of issues",
+            json_kind(&value)
+        )
+    })?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            Some(IssueMatch {
+                number: u32::try_from(row.get("number")?.as_u64()?).ok()?,
+                title: row.get("title")?.as_str()?.to_string(),
+                url: row.get("url")?.as_str()?.to_string(),
+            })
+        })
+        .collect())
+}
+
+/// One pull request GitHub says the operator was asked to review.
+pub struct ReviewRequestedPr {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+    pub repo: String,
+    pub author: String,
+    pub updated_at: String,
+    pub is_draft: bool,
+}
+
+/// The review requests of the signed-in account, one `gh search prs` page.
+/// `gh search prs` has no head field, so the caller resolves it with one
+/// `gh pr view` for a request it has not seen.
+pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewRequestedPr>> {
+    let limit = limit.clamp(1, 100).to_string();
+    let out = run(
+        dir,
+        &[
+            "search",
+            "prs",
+            "--review-requested=@me",
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,url,repository,author,isDraft,updatedAt",
+        ],
+    )
+    .context("running gh search prs")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr)
+                .unwrap_or_else(|| format!("gh search prs failed (exit {:?})", out.code))
+        );
+    }
+    let value: serde_json::Value = serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh search prs returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })?;
+    let rows = value.as_array().ok_or_else(|| {
+        anyhow::anyhow!(
+            "gh search prs answered {}; expected a JSON array of pull requests",
+            json_kind(&value)
+        )
+    })?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let number = u32::try_from(row.get("number")?.as_u64()?).ok()?;
+            let url = row.get("url")?.as_str()?.to_string();
+            let repo = row
+                .get("repository")
+                .and_then(|repository| repository.get("nameWithOwner"))
+                .and_then(|name| name.as_str())
+                .map(str::to_string)
+                .or_else(|| repository_from_pr_url(&url))?;
+            Some(ReviewRequestedPr {
+                number,
+                title: row.get("title")?.as_str()?.to_string(),
+                url,
+                repo,
+                author: row
+                    .get("author")
+                    .and_then(|author| author.get("login"))
+                    .and_then(|login| login.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                updated_at: row
+                    .get("updatedAt")
+                    .and_then(|updated| updated.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                is_draft: row
+                    .get("isDraft")
+                    .and_then(|draft| draft.as_bool())
+                    .unwrap_or(false),
+            })
+        })
+        .collect())
+}
+
+fn repository_from_pr_url(url: &str) -> Option<String> {
+    let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
+    let pull = parts
+        .iter()
+        .position(|part| *part == "pull" || *part == "pulls")?;
+    (pull >= 2).then(|| format!("{}/{}", parts[pull - 2], parts[pull - 1]))
+}
+
+/// The facts triage needs from one `gh pr view`: the head, changed files, base
+/// branch and whether every check passed. No body or comment is read.
+pub struct ReviewRequestFacts {
+    pub head_sha: String,
+    pub files: Vec<(String, u32, u32)>,
+    pub base: String,
+    pub ci_green: bool,
+}
+
+pub fn review_request_facts(dir: &Path, repo: &str, number: u32) -> Result<ReviewRequestFacts> {
+    let number_text = number.to_string();
+    let out = run(
+        dir,
+        &[
+            "pr",
+            "view",
+            &number_text,
+            "--repo",
+            repo,
+            "--json",
+            "headRefOid,files,baseRefName,statusCheckRollup",
+        ],
+    )
+    .context("running gh pr view for review triage")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh pr view {number} --repo {repo} for review triage failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let value: serde_json::Value = serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh pr view {number} --repo {repo} returned unreadable JSON for review triage; {} \
+             bytes, first 400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })?;
+    let head_sha = value
+        .get("headRefOid")
+        .and_then(|sha| sha.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if head_sha.is_empty() {
+        bail!(
+            "gh pr view {number} --repo {repo} left out headRefOid; expected the pull request head"
+        );
+    }
+    let files = value
+        .get("files")
+        .and_then(|files| files.as_array())
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|file| {
+                    Some((
+                        file.get("path")?.as_str()?.to_string(),
+                        u32::try_from(file.get("additions")?.as_u64()?).ok()?,
+                        u32::try_from(file.get("deletions")?.as_u64()?).ok()?,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let base = value
+        .get("baseRefName")
+        .and_then(|base| base.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let checks = value
+        .get("statusCheckRollup")
+        .and_then(|checks| checks.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let ci_green = !checks.is_empty()
+        && checks.iter().all(|check| {
+            let state = check
+                .get("conclusion")
+                .or_else(|| check.get("state"))
+                .and_then(|state| state.as_str())
+                .unwrap_or_default();
+            matches!(
+                state.to_ascii_uppercase().as_str(),
+                "SUCCESS" | "SKIPPED" | "NEUTRAL" | "PASSED" | "COMPLETED"
+            )
+        });
+    Ok(ReviewRequestFacts {
+        head_sha,
+        files,
+        base,
+        ci_green,
+    })
+}
+
+fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "a boolean",
+        serde_json::Value::Number(_) => "a number",
+        serde_json::Value::String(_) => "a string",
+        serde_json::Value::Array(_) => "an array",
+        serde_json::Value::Object(_) => "an object",
+    }
+}
+
+/// `gh issue create` with the body on stdin, so no issue text reaches argv. The
+/// URL gh prints names the new issue and its number.
+pub fn issue_create(
+    dir: &Path,
+    repository: &str,
+    title: &str,
+    body: &str,
+) -> Result<(u32, String)> {
+    let out = run_stdin(
+        dir,
+        &[
+            "issue",
+            "create",
+            "--repo",
+            repository,
+            "--title",
+            title,
+            "--body-file",
+            "-",
+        ],
+        body,
+    )
+    .context("running gh issue create")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh issue create in {repository} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let url = out
+        .stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.starts_with("https://"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh issue create in {repository} printed no issue URL; expected one https:// line, got {:?}",
+                out.stdout.trim()
+            )
+        })?;
+    let number = url
+        .rsplit('/')
+        .next()
+        .and_then(|n| n.parse::<u32>().ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh issue create in {repository} printed {url:?}; expected a URL ending in the issue number"
+            )
+        })?;
+    Ok((number, url.to_string()))
+}
+
+/// `gh issue comment` with the body on stdin; answers the issue URL.
+pub fn issue_comment(dir: &Path, repository: &str, number: u32, body: &str) -> Result<String> {
+    let number_arg = number.to_string();
+    let out = run_stdin(
+        dir,
+        &[
+            "issue",
+            "comment",
+            &number_arg,
+            "--repo",
+            repository,
+            "--body-file",
+            "-",
+        ],
+        body,
+    )
+    .context("running gh issue comment")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh issue comment on {repository}#{number} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    Ok(format!("https://github.com/{repository}/issues/{number}"))
+}
+
 /// A reply on an inline review discussion.
 pub fn pr_thread_reply(dir: &Path, thread_id: &str, body: &str) -> Outcome {
     if let Some(refusal) = body_refusal(body) {
@@ -1736,9 +2130,9 @@ pub fn pr_stack_merge(
     }
 }
 
-/// A path segment's reserved characters, so a job id from GitHub can never name
-/// a different endpoint.
-fn percent_encode_path(value: &str) -> String {
+/// A path segment's reserved characters, so a job id or branch name from GitHub
+/// can never name a different endpoint.
+pub(crate) fn percent_encode_path(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {
@@ -2175,6 +2569,14 @@ mod tests {
         );
         assert_eq!(split_repository(""), None);
         assert_eq!(split_repository("owner"), None);
+    }
+
+    #[test]
+    fn a_branch_name_is_one_encoded_path_segment() {
+        assert_eq!(
+            percent_encode_path("release/1.0 #7"),
+            "release%2F1.0%20%237"
+        );
     }
 
     #[test]

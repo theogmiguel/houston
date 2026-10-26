@@ -9,6 +9,7 @@ const GAP = {
 const ALIGN = { center: 'items-center', baseline: 'items-baseline', start: 'items-start', end: 'items-end' } as const
 
 export function Inline({
+  as: Tag = 'div',
   gap = 'medium',
   wrap = false,
   align = 'center',
@@ -16,7 +17,8 @@ export function Inline({
   className = '',
   children,
   ...props
-}: HTMLAttributes<HTMLDivElement> & {
+}: HTMLAttributes<HTMLElement> & {
+  as?: 'div' | 'span'
   gap?: keyof typeof GAP
   wrap?: boolean
   align?: keyof typeof ALIGN
@@ -24,12 +26,12 @@ export function Inline({
   children: ReactNode
 }): React.JSX.Element {
   return (
-    <div
+    <Tag
       {...props}
       className={`${insetTop ? 'pt-[var(--space-2)]' : ''} flex ${ALIGN[align]} ${GAP[gap]} ${wrap ? 'flex-wrap' : ''} ${className}`}
     >
       {children}
-    </div>
+    </Tag>
   )
 }
 
@@ -44,6 +46,7 @@ export function InlineSpecimen(): React.JSX.Element {
         <span>Code</span>
         <div>Route<br />Connection URL</div>
       </Inline>
+      <p>Text with <Inline as="span" gap="small" wrap><span>a</span><span>b</span></Inline> continuing.</p>
     </>
   )
 }

@@ -169,3 +169,103 @@ fn a_linked_pull_request_is_kept_when_a_different_one_is_unlinked() {
     ));
     assert!(linked.is_none());
 }
+
+#[test]
+fn a_remote_urls_credentials_never_reach_an_unsupported_host_refusal() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    run_git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://x-token-auth:SECRET@git.example.com/a/b.git",
+        ],
+    );
+    let err = pull_requests::ensure_supported(repo.path())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("git.example.com"),
+        "the refusal names the host: {err}"
+    );
+    assert!(
+        !err.contains("SECRET"),
+        "the refusal leaked the remote's credentials: {err}"
+    );
+    assert!(
+        !err.contains("x-token-auth"),
+        "the refusal leaked the remote's user: {err}"
+    );
+    assert_eq!(
+        pull_requests::classify_remote("https://x-token-auth:SECRET@git.example.com/a/b.git"),
+        Host::Unknown("git.example.com".to_string())
+    );
+}
+
+#[test]
+fn a_github_ssh_host_alias_is_github() {
+    for url in [
+        "git@github.com-work:owner/repo.git",
+        "ssh://git@github.com-work/owner/repo.git",
+    ] {
+        assert_eq!(pull_requests::classify_remote(url), Host::GitHub, "{url}");
+    }
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    run_git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "git@github.com-work:owner/repo.git",
+        ],
+    );
+    assert_eq!(
+        pull_requests::ensure_supported(repo.path()).unwrap(),
+        Host::GitHub
+    );
+}
+
+/// Every remote `gh` answered for before forge resolution still reaches it;
+/// only a forge known not to be GitHub is refused.
+#[test]
+fn only_a_known_non_github_forge_is_kept_from_gh() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    run_git(
+        repo.path(),
+        &["remote", "add", "origin", "git@github.com:owner/repo.git"],
+    );
+    for url in [
+        "https://github.mycorp.com/owner/repo.git",
+        "git@git.example.com:owner/repo.git",
+        "git@github.com-work:owner/repo.git",
+        "/srv/git/repo.git",
+    ] {
+        run_git(repo.path(), &["remote", "set-url", "origin", url]);
+        houston_core::forge::require_github(repo.path(), "create a pull request")
+            .unwrap_or_else(|e| panic!("{url} was refused: {e}"));
+        assert_eq!(houston_core::forge::status_hint(repo.path()), None, "{url}");
+    }
+    for (url, forge) in [
+        ("git@bitbucket.org:ws/repo.git", "Bitbucket"),
+        (
+            "https://bitbucket.corp.example/scm/a/b.git",
+            "Bitbucket Data Center",
+        ),
+        ("https://gitlab.com/owner/repo.git", "GitLab"),
+    ] {
+        run_git(repo.path(), &["remote", "set-url", "origin", url]);
+        let err = houston_core::forge::require_github(repo.path(), "create a pull request")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(forge), "{url}: {err}");
+        assert!(
+            houston_core::forge::status_hint(repo.path()).is_some(),
+            "{url}"
+        );
+    }
+}

@@ -6,8 +6,11 @@ import type { AgentKind } from "./AgentKind";
 import type { AgentProfile } from "./AgentProfile";
 import type { AgentProfileActive } from "./AgentProfileActive";
 import type { AgentStatus } from "./AgentStatus";
+import type { DefectDestination } from "./DefectDestination";
+import type { DefectIssueMatch } from "./DefectIssueMatch";
 import type { DelegationInfo } from "./DelegationInfo";
 import type { DelegationResult } from "./DelegationResult";
+import type { ForgeAccess } from "./ForgeAccess";
 import type { GhState } from "./GhState";
 import type { GitBranchCommit } from "./GitBranchCommit";
 import type { GitBranchInfo } from "./GitBranchInfo";
@@ -58,6 +61,9 @@ import type { PullRequestLink } from "./PullRequestLink";
 import type { RecoverySummary } from "./RecoverySummary";
 import type { RemoteInfo } from "./RemoteInfo";
 import type { RemovedWorktree } from "./RemovedWorktree";
+import type { ReviewRequest } from "./ReviewRequest";
+import type { ReviewRequestMode } from "./ReviewRequestMode";
+import type { ReviewTier } from "./ReviewTier";
 import type { RoleRoute } from "./RoleRoute";
 import type { Routine } from "./Routine";
 import type { RoutineEngineRefusal } from "./RoutineEngineRefusal";
@@ -80,6 +86,7 @@ import type { SkillToolState } from "./SkillToolState";
 import type { SlackInfo } from "./SlackInfo";
 import type { SshConfigHost } from "./SshConfigHost";
 import type { SshProfile } from "./SshProfile";
+import type { SuspectedDefect } from "./SuspectedDefect";
 import type { SwarmAgentInfo } from "./SwarmAgentInfo";
 import type { SwarmMessage } from "./SwarmMessage";
 import type { TagInfo } from "./TagInfo";
@@ -94,6 +101,8 @@ import type { TaskHistoryEntry } from "./TaskHistoryEntry";
 import type { TaskProject } from "./TaskProject";
 import type { TaskPromptDelivery } from "./TaskPromptDelivery";
 import type { TaskQueueRefusal } from "./TaskQueueRefusal";
+import type { TaskReviewFocus } from "./TaskReviewFocus";
+import type { TaskReviewMode } from "./TaskReviewMode";
 import type { TaskRun } from "./TaskRun";
 import type { TaskSummary } from "./TaskSummary";
 import type { TaskTrackerProvider } from "./TaskTrackerProvider";
@@ -157,7 +166,7 @@ common_dir?: string | null, } | { "type": "git_branch_commits", dir: string, com
  * Echoes the request; a detail pushed after link/unlink/merge carries
  * that mutation's id, so a client can drop anything it has superseded.
  */
-request: number, gh: GhState, has_upstream: boolean,
+request: number, access: ForgeAccess, has_upstream: boolean,
 /**
  * The pull request on screen: the manually linked one when one exists,
  * else the branch's own. `None` when nothing resolves.
@@ -219,11 +228,23 @@ merge_verify_command: boolean,
  * The global child panes per agent; a run's orchestrator has its own
  * limit of live workers plus two instead.
  */
-child_cap: number, detected: NightDetected, } | { "type": "night_shift_run_event", run: NightRun, } | { "type": "night_shift_notice", workspace: string, run_id: number, headline: string, } | { "type": "night_shift_report", run_id: number, markdown: string, truncated: boolean, } | { "type": "harness_overview", rows: Array<HarnessAttention>, } | { "type": "harness_report", review_id: number, markdown: string, truncated: boolean, } | { "type": "harness_changed", workspace: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, } | { "type": "task_queue_result", workspace: string,
+child_cap: number, detected: NightDetected, } | { "type": "night_shift_run_event", run: NightRun, } | { "type": "night_shift_notice", workspace: string, run_id: number, headline: string, } | { "type": "night_shift_report", run_id: number, markdown: string, truncated: boolean, } | { "type": "harness_overview", rows: Array<HarnessAttention>, } | { "type": "harness_report", review_id: number, markdown: string, truncated: boolean, } | { "type": "harness_changed", workspace: string, } | { "type": "suspected_defects", workspace: string, defects: Array<SuspectedDefect>, } | { "type": "defect_issue_draft", workspace: string, key: string, request: number, destination: DefectDestination, destination_repo: string, account?: string | null, title: string, body: string,
+/**
+ * Exactly what sending will transmit, to which repository and account.
+ */
+transmits: string, duplicates: Array<DefectIssueMatch>,
+/**
+ * Why the duplicate search did not run or returned nothing; still fileable.
+ */
+note?: string | null, } | { "type": "defect_issue_filed", workspace: string, key: string, request: number, number: number, issue_url: string, note?: string | null, } | { "type": "defect_notice", workspace: string, count: number, title: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, mode: TaskReviewMode, focus: TaskReviewFocus, } | { "type": "review_requests", mode: ReviewRequestMode, items: Array<ReviewRequest>, paused_until_ms?: number | null, note?: string | null, } | { "type": "review_request_notice", id: number, repo: string, number: number, title: string, tier: ReviewTier, } | { "type": "task_queue_result", workspace: string,
 /**
  * The started tasks' keys, in the order they were picked.
  */
-started: Array<string>, refused: Array<TaskQueueRefusal>, ready_count: number, free_children: number, } | { "type": "tasks_access", workspace: string, access: TasksAccess, } | { "type": "voice_settings", settings: VoiceSettings, cloud_key_present: boolean, keyring_error: string | null, models: Array<VoiceModelState>, } | { "type": "voice_devices", devices: Array<VoiceDevice>, } | { "type": "voice_state", state: VoiceState, } | { "type": "voice_transcript", session: number, text: string,
+started: Array<string>, refused: Array<TaskQueueRefusal>, ready_count: number, free_children: number, } | { "type": "tasks_access", workspace: string, access: TasksAccess, } | { "type": "voice_settings", settings: VoiceSettings, cloud_key_present: boolean, keyring_error: string | null, models: Array<VoiceModelState>, } | { "type": "forge_settings", bitbucket_enabled: boolean,
+/**
+ * The e-mail the stored token belongs to; `None` when none is stored.
+ */
+bitbucket_account: string | null, keyring_error: string | null, } | { "type": "voice_devices", devices: Array<VoiceDevice>, } | { "type": "voice_state", state: VoiceState, } | { "type": "voice_transcript", session: number, text: string,
 /**
  * What to insert into the pane's prompt, assembled by the daemon: the
  * trimmed text, the agent preamble on the pane's first English-output

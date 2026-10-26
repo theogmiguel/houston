@@ -239,24 +239,36 @@ pub struct WorkerReport {
     pub kind: ReportKind,
     pub body: String,
     pub request_id: u32,
+    /// A `finding`'s title, bounded by `SUSPECTED_DEFECT_TITLE_MAX`.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Where a `finding` belongs: Houston itself or the workspace's repository.
+    #[serde(default)]
+    pub destination: Option<proto::DefectDestination>,
+    /// Identifiers, refusals and file:line; never terminal text.
+    #[serde(default)]
+    pub evidence: Vec<String>,
     #[serde(default)]
     pub client_request_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportKind {
     Progress,
     Question,
     Blocked,
+    /// A suspected defect; it does not open an inbox row or block the worker.
+    Finding,
 }
 
 impl ReportKind {
-    pub fn inbox_kind(self) -> InboxKind {
+    pub fn inbox_kind(self) -> Option<InboxKind> {
         match self {
-            Self::Progress => InboxKind::Progress,
-            Self::Question => InboxKind::Question,
-            Self::Blocked => InboxKind::Blocked,
+            Self::Progress => Some(InboxKind::Progress),
+            Self::Question => Some(InboxKind::Question),
+            Self::Blocked => Some(InboxKind::Blocked),
+            Self::Finding => None,
         }
     }
 }
@@ -299,6 +311,58 @@ pub fn report_text(text: &str) -> anyhow::Result<String> {
         "report/reply refused: body is empty after terminal escape removal; expected visible text"
     );
     Ok(text)
+}
+
+/// A `pane_report finding`: the title, evidence and destination, each bounded
+/// and named in the refusal. `body` is the description `report_text` already checked.
+pub fn finding_fields(
+    report: &WorkerReport,
+) -> anyhow::Result<(String, Vec<String>, proto::DefectDestination)> {
+    let title = report
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "pane_report finding refused: title is missing; expected 1..={} characters",
+                proto::SUSPECTED_DEFECT_TITLE_MAX
+            )
+        })?;
+    let title_len = title.chars().count();
+    anyhow::ensure!(
+        title_len <= usize::try_from(proto::SUSPECTED_DEFECT_TITLE_MAX).unwrap_or(120),
+        "pane_report finding refused: title has {title_len} characters; expected 1..={}",
+        proto::SUSPECTED_DEFECT_TITLE_MAX
+    );
+    let destination = report.destination.ok_or_else(|| {
+        anyhow::anyhow!(
+            "pane_report finding refused: destination is missing; expected `houston` or `workspace`"
+        )
+    })?;
+    let evidence_max = usize::try_from(proto::SUSPECTED_DEFECT_EVIDENCE_MAX).unwrap_or(10);
+    let evidence_len_max = usize::try_from(proto::SUSPECTED_DEFECT_EVIDENCE_LEN_MAX).unwrap_or(500);
+    anyhow::ensure!(
+        report.evidence.len() <= evidence_max,
+        "pane_report finding refused: evidence has {} items; expected at most {evidence_max}",
+        report.evidence.len()
+    );
+    let mut evidence = Vec::new();
+    for item in &report.evidence {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let len = item.chars().count();
+        anyhow::ensure!(
+            len <= evidence_len_max,
+            "pane_report finding refused: one evidence item has {len} characters; expected at most {evidence_len_max}"
+        );
+        if !evidence.iter().any(|known| known == item) {
+            evidence.push(item.to_string());
+        }
+    }
+    Ok((title.to_string(), evidence, destination))
 }
 
 impl From<String> for Submission {
@@ -1270,7 +1334,15 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "report",
         tool: Some("pane_report"),
-        args: &["kind", "body", "request_id", "client_request_id"],
+        args: &[
+            "kind",
+            "body",
+            "request_id",
+            "client_request_id",
+            "title",
+            "destination",
+            "evidence",
+        ],
     },
     VerbSpec {
         cli: "reply",
@@ -3053,6 +3125,9 @@ hs-pane — a Houston pane controlling sibling agent panes
                                           split on newlines)
   hs-pane kill <id> [--yes]              (--yes confirms killing live children)
   hs-pane report <progress|question|blocked> <body…> --request-id ID [--client-request-id KEY]
+  hs-pane report finding --title T --destination houston|workspace [--evidence E]… <body…>
+                                         --request-id ID [--client-request-id KEY]
+                                         (records a suspected defect; no inbox row, no block)
   hs-pane reply <message-id> <text…> [--client-request-id KEY]
   hs-pane message <role|session> <body…> [--client-request-id KEY]
                                          (to a live sibling with an open request;
@@ -3141,6 +3216,15 @@ pub(crate) fn parse_flags(
         }
     }
     (positional, flags)
+}
+
+/// A flag that may repeat; `parse_flags` keeps only the last value.
+fn repeated_flag(args: &[String], name: &str) -> Vec<String> {
+    let flag = format!("--{name}");
+    args.windows(2)
+        .filter(|pair| pair[0] == flag && !pair[1].starts_with("--"))
+        .map(|pair| pair[1].clone())
+        .collect()
 }
 
 pub(crate) fn cli_call(
@@ -3232,14 +3316,34 @@ fn pane_cli_inner(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Re
                 })?;
                 json!({"to":to,"body":join_rest(&positional[1..], "message body")?})
             } else if cmd == "report" {
-                let kind = positional
-                    .first()
-                    .ok_or_else(|| anyhow::anyhow!("report needs progress, question or blocked"))?;
+                let kind = positional.first().ok_or_else(|| {
+                    anyhow::anyhow!("report needs progress, question, blocked or finding")
+                })?;
                 let request: u32 = flags
                     .get("request-id")
                     .ok_or_else(|| anyhow::anyhow!("report needs --request-id ID from whoami"))?
                     .parse()?;
-                json!({"kind":kind,"body":join_rest(&positional[1..], "report body")?,"request_id":request})
+                let mut body = json!({"kind":kind,"body":join_rest(&positional[1..], "report body")?,"request_id":request});
+                if kind == "finding" {
+                    let title = flags
+                        .get("title")
+                        .ok_or_else(|| anyhow::anyhow!("report finding needs --title T"))?;
+                    let destination = flags.get("destination").ok_or_else(|| {
+                        anyhow::anyhow!("report finding needs --destination houston|workspace")
+                    })?;
+                    if !matches!(destination.as_str(), "houston" | "workspace") {
+                        anyhow::bail!(
+                            "--destination {destination:?}: expected houston or workspace"
+                        );
+                    }
+                    let evidence = repeated_flag(&args[1..], "evidence");
+                    body["title"] = json!(title);
+                    body["destination"] = json!(destination);
+                    if !evidence.is_empty() {
+                        body["evidence"] = json!(evidence);
+                    }
+                }
+                body
             } else {
                 let message: i64 = positional
                     .first()

@@ -135,6 +135,36 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
     super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
     super::add_column_if_missing(
         conn,
+        "backlog_task_runs",
+        "review_head_sha",
+        "review_head_sha TEXT",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_runs",
+        "review_focus",
+        "review_focus TEXT",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_runs",
+        "review_verdict",
+        "review_verdict TEXT",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_runs",
+        "review_findings",
+        "review_findings TEXT",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_runs",
+        "review_skipped_reason",
+        "review_skipped_reason TEXT",
+    )?;
+    super::add_column_if_missing(
+        conn,
         "backlog_task_domain",
         "planning_session_id",
         "planning_session_id INTEGER",
@@ -356,6 +386,11 @@ pub struct TaskRunRow {
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
     pub pr_url: Option<String>,
+    pub review_head_sha: Option<String>,
+    pub review_focus: Option<proto::TaskReviewFocus>,
+    pub review_verdict: Option<proto::TaskReviewOutcome>,
+    pub review_findings: Vec<proto::TaskReviewFinding>,
+    pub review_skipped_reason: Option<String>,
 }
 
 /// The fields a new run is inserted with; `attempt` is allocated as the task's
@@ -551,12 +586,14 @@ pub(crate) const TASK_COLUMN_COUNT: usize = 14;
 /// The columns `map_task_run_offset` reads, in order.
 pub(crate) const TASK_RUN_COLUMNS: &str = "id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at, pr_url";
-pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 18;
+    reason, started_at, ended_at, pr_url, review_head_sha, review_focus, review_verdict, \
+    review_findings, review_skipped_reason";
+pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 23;
 
 const TASK_RUN_SELECT: &str = "SELECT id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at, pr_url FROM backlog_task_runs";
+    reason, started_at, ended_at, pr_url, review_head_sha, review_focus, review_verdict, \
+    review_findings, review_skipped_reason FROM backlog_task_runs";
 
 /// The column list of a two-table join, qualified per alias.
 fn prefixed_columns(columns: &str, alias: &str) -> String {
@@ -644,6 +681,32 @@ fn map_task_run_offset(r: &rusqlite::Row, base: usize) -> rusqlite::Result<TaskR
         started_at_ms: r.get(base + 15)?,
         ended_at_ms: r.get(base + 16)?,
         pr_url: r.get(base + 17)?,
+        review_head_sha: r.get(base + 18)?,
+        review_focus: match r.get::<_, Option<String>>(base + 19)? {
+            Some(raw) => Some(from_wire::<proto::TaskReviewFocus>(&raw).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    format!("backlog_task_runs {id} has unknown review focus {raw:?} (expected bugs, security, performance or full)").into(),
+                )
+            })?),
+            None => None,
+        },
+        review_verdict: match r.get::<_, Option<String>>(base + 20)? {
+            Some(raw) => Some(from_wire::<proto::TaskReviewOutcome>(&raw).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    format!("backlog_task_runs {id} has unknown review verdict {raw:?} (expected pass, fail or skipped)").into(),
+                )
+            })?),
+            None => None,
+        },
+        review_findings: r
+            .get::<_, Option<String>>(base + 21)?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default(),
+        review_skipped_reason: r.get(base + 22)?,
     })
 }
 
@@ -875,6 +938,17 @@ impl Db {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Whether this exact comment already exists, so an automatic note is
+    /// recorded once rather than on every watch tick.
+    pub fn task_comment_exists(&self, task_id: i64, body: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM backlog_task_comments WHERE task_id = ?1 AND body = ?2)",
+            rusqlite::params![task_id, body],
+            |row| row.get(0),
+        )?)
     }
 
     /// Every scoped task, archived included: the cap counts them all.
@@ -1110,6 +1184,41 @@ impl Db {
         conn.execute(
             "UPDATE backlog_task_runs SET delegation_id = ?2 WHERE id = ?1",
             rusqlite::params![run_id, delegation_id],
+        )?;
+        Ok(())
+    }
+
+    /// Pins a review run to the head and focus it was opened for, before any
+    /// reviewer exists. An attempt cap and the `outdated` read both need it.
+    pub fn task_run_set_review_start(
+        &self,
+        run_id: i64,
+        head_sha: &str,
+        focus: proto::TaskReviewFocus,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE backlog_task_runs SET review_head_sha = ?2, review_focus = ?3 WHERE id = ?1",
+            rusqlite::params![run_id, head_sha, wire_name(&focus)?],
+        )?;
+        Ok(())
+    }
+
+    /// Records a reviewer's verdict and findings, or the numbers that justified
+    /// skipping the diff. The findings are stored once and read back for the wire.
+    pub fn task_run_set_review_result(
+        &self,
+        run_id: i64,
+        verdict: proto::TaskReviewOutcome,
+        findings: &[proto::TaskReviewFinding],
+        skipped_reason: Option<&str>,
+    ) -> Result<()> {
+        let raw = serde_json::to_string(findings)?;
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE backlog_task_runs SET review_verdict = ?2, review_findings = ?3, \
+                 review_skipped_reason = ?4 WHERE id = ?1",
+            rusqlite::params![run_id, wire_name(&verdict)?, raw, skipped_reason],
         )?;
         Ok(())
     }

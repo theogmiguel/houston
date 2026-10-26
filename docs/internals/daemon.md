@@ -59,6 +59,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `routines.rs` | Routines — the pure half of the routine record |
 | integrations | `git.rs` | Git queries for the Changes pane; every operation shells out |
 | | `gh.rs` | One PR status line, through the GitHub CLI |
+| | `forge.rs`, `forge_credentials.rs` | Which forge serves a workspace's remote; the Bitbucket Cloud token in the keychain |
 | | `ssh.rs` | SSH panes: a remote shell as a normal grid pane |
 | | `ssh_config.rs`, `ssh_credentials.rs` | Four config directives; credentials in the keychain |
 | | `usage/` | Token-usage reporting for the agent CLIs Houston hosts (7 files) |
@@ -729,8 +730,14 @@ the renderer finds the next entry by the same rule without a wire field. The con
 - **Hand-off to GitHub.** The access query the shared reader already makes also asks for
   `isMergeQueueEnabled`, `autoMergeAllowed`, the base's `refUpdateRule` required checks,
   the merge queue entry, the armed auto-merge and the last merge queue removal or
-  auto-merge disable; it costs one GraphQL point, as before. Each read refreshes the
-  workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
+  auto-merge disable; it costs one GraphQL point, as before. `refUpdateRule` reports classic
+  branch protection only, so when auto-merge is allowed and it names no check the reader also
+  GETs `repos/{owner}/{name}/rules/branches/{branch}` through `gh api`, read-only, and folds
+  every `required_status_checks` rule's contexts into the same list. That answer is cached per
+  workspace and base branch for an hour, or ten minutes for a failure, and only an access read
+  that needs it checks the TTL; there is no timer. A base branch whose rules cannot be read keeps
+  Houston merging until that TTL passes. Each read refreshes
+  the workspace's cached hand-off path (`hand_off_json` in `merge_queue_settings`), which the
   policy line shows with no read of its own. A field GitHub hides from the viewer counts as
   "Houston merges", never as a hand-off; when GitHub then refuses Houston's merge naming
   its merge queue, the refusal takes the failure path unchanged and the cache learns the
@@ -796,6 +803,21 @@ sibling conflicts reach each recipient as one note per branch, listing its partn
 Merge-tree needs Git 2.38: an older or missing Git is
 refused by name, once per creating session. Only committed heads are compared, so
 uncommitted work is invisible to it.
+
+`suspected_defects` records agent findings and three named detectors in
+`daemon/defect_detectors.rs`: `reply_reasked` compares a new question or blocker with
+the question behind a delivered reply, `reply_refused_resolved` watches the reply
+refusal, and `conflict_note_merged_branch` consults only `SharedReads::branch_state`
+(the cached PR read, never a new request). Each detector is bounded to
+`DEFECT_DETECTOR_DAILY_CAP` (5) occurrences per workspace per UTC day; the store keeps
+200 rows per workspace and prunes the oldest decided one. Decisions reuse
+`harness_decisions`, so a later occurrence after a decision reopens the defect as
+`recurred`. None of this reads terminal pixels or text: the reported-status invariant
+holds. The issue draft redacts `defect_redaction` values and makes one
+`gh search issues` request; `defect_issue_file` is the only message that runs
+`gh issue create` or `gh issue comment`, and it redacts the client's title and body
+again before sending.
+
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
@@ -960,6 +982,24 @@ entry is served once. Pull-request check logs are
 returned as bounded tails of at most `MAX_CHECK_LOG_LINES` lines and
 `MAX_CHECK_LOG_BYTES` bytes, keeping a failing run's output from growing a control reply
 without limit.
+
+`forge.rs` resolves the forge from the remote's host once per request, before any `gh`
+probe. A host containing `github.com` (including SSH aliases such as `github.com-work`)
+reads through `gh`; `bitbucket.org` reads through `pull_requests/bitbucket.rs` over REST;
+Bitbucket Data Center, GitLab and Azure DevOps hosts are refused by name. Any other host,
+such as GitHub Enterprise Server, is left to `gh` exactly as before forge resolution
+existed: only the Pull request tab's read refuses it. The resolved host is parsed without
+its userinfo, because a remote URL can embed a token and refusals reach the screen.
+Bitbucket workspace and repository slugs are checked before they enter an API path.
+Pull-request reads dispatch on the forge; every write, listing, diff and stack read stays
+GitHub-only behind one guard, `forge::require_github`, which refuses a known non-GitHub
+forge before any network call. The Bitbucket reader runs only when the user has enabled it
+and a token is in the keychain entry of the daemon's own state directory (`houston-forge`
+for the installed one, `houston-forge-<channel>` or `houston-forge-dir-<digest>`
+otherwise), so a development or test daemon never reads or deletes the installed build's
+token. The reader sends credentials only to its configured API origin and refuses a
+pagination link elsewhere. The worktree sweep asks `forge::merged_facts`, which does not
+contact Bitbucket.
 
 ## Voice
 

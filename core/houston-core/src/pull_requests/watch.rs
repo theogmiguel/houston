@@ -446,6 +446,7 @@ pub(crate) mod tests {
             cross_repository: false,
             merge_methods: Vec::new(),
             github_merge: None,
+            read_only: None,
         }
     }
 

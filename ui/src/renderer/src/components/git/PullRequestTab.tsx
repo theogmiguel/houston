@@ -13,7 +13,6 @@ import { SectionHead } from '../ui/SectionHead'
 import { PullRequestReviewBody } from '../ui/PullRequestState'
 import { useEffect, useRef, useState } from 'react'
 import type {
-  GhState,
   HoustonClient,
   PrCheck,
   PrCheckState,
@@ -40,9 +39,11 @@ import { PrReviewBar } from './PrReviewBar'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
 import { PrBranchSummary } from './PrSummary'
+import { PrReadOnlyDiscussion, PrReadOnlyNotice } from './PrReadOnly'
+import { forgeBlocked, type ForgeBlock } from './forgeAccess'
 import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
 import { type CheckAgentTarget } from '../prs/ChecksList'
-import { usePrChecksState } from '../prs/usePrChecksState'
+import { PrChecksList, usePrChecksState, type PrChecksState } from '../prs/usePrChecksState'
 import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
@@ -166,29 +167,16 @@ function PrWatchContent({
 }
 
 function PrBlocked({
-  gh,
-  hint,
+  block,
   onRetry
 }: {
-  gh: GhState
-  hint: string | null
+  block: ForgeBlock
   onRetry: () => void
 }): React.JSX.Element {
-  const headline = gh === 'missing' ? 'GitHub CLI not found' : 'GitHub CLI needs authentication'
-  const body =
-    hint ??
-    (gh === 'missing' ? (
-      <>
-        <PullRequestRole as="span" role="pull-request-command">gh</PullRequestRole> is not on PATH, so Houston cannot read pull requests. Install it and press
-        Retry — nothing else in source control depends on it.
-      </>
-    ) : (
-      'gh is not authenticated, so Houston cannot read pull requests.'
-    ))
   return (
-    <PullRequestRole data-testid="pr-detail-blocked" as="div" role="empty-panel">
-      <PullRequestRole as="div" role="empty-heading">{headline}</PullRequestRole>
-      <PullRequestRole as="p" role="empty-description">{body}</PullRequestRole>
+    <PullRequestRole data-testid="pr-detail-blocked" data-blocked={block.kind} as="div" role="empty-panel">
+      <PullRequestRole as="div" role="empty-heading">{block.headline}</PullRequestRole>
+      <PullRequestRole as="p" role="empty-description">{block.body}</PullRequestRole>
       <LazyLegacyButton type="button" variant="legacy-secondary" data-testid="pr-retry" onClick={onRetry}>
         Retry
       </LazyLegacyButton>
@@ -274,6 +262,7 @@ function PrEmpty({
   onBrowse: () => void
   linkMessage: React.ReactNode
 }): React.JSX.Element {
+  const writable = view.access.forge === 'github'
   return (
     <PullRequestRole data-testid="pr-detail-empty" as="div" role="detail-error-panel">
       {view.message !== null ? (
@@ -291,20 +280,22 @@ function PrEmpty({
               ? 'This branch has no pull request yet.'
               : 'This branch has no upstream, so it cannot have a pull request yet.'}
           </PullRequestRole>
-          <PullRequestRole as="div" role="action-row">
-            <Tooltip
-              inline
-              label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
-            >
-              <ReviewButton type="button" variant="pull-request-primary-action"
-                data-testid="pr-create"
-                disabled={!view.hasUpstream || pr.createBusy}
-                onClick={pr.create}
+          {writable && (
+            <PullRequestRole as="div" role="action-row">
+              <Tooltip
+                inline
+                label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
               >
-                {pr.createBusy ? 'Creating…' : 'Create pull request'}
-              </ReviewButton>
-            </Tooltip>
-          </PullRequestRole>
+                <ReviewButton type="button" variant="pull-request-primary-action"
+                  data-testid="pr-create"
+                  disabled={!view.hasUpstream || pr.createBusy}
+                  onClick={pr.create}
+                >
+                  {pr.createBusy ? 'Creating…' : 'Create pull request'}
+                </ReviewButton>
+              </Tooltip>
+            </PullRequestRole>
+          )}
           {!view.hasUpstream && onShowChanges && (
             <div>
               <LazyLegacyButton type="button" variant="legacy-secondary"
@@ -321,20 +312,24 @@ function PrEmpty({
         <PullRequestRole as="div" role="header-actions">
           <PullRequestRole as="span" role="viewed-label">or link an existing one</PullRequestRole>
           <PrLinkForm pr={pr} />
+          {writable && (
+            <Button type="button" variant="legacy-ghost"
+              data-testid="pr-browse-open"
+              onClick={onBrowse}
+            >
+              Browse…
+            </Button>
+          )}
+        </PullRequestRole>
+      ) : (
+        writable && (
           <Button type="button" variant="legacy-ghost"
             data-testid="pr-browse-open"
             onClick={onBrowse}
           >
             Browse…
           </Button>
-        </PullRequestRole>
-      ) : (
-        <Button type="button" variant="legacy-ghost"
-          data-testid="pr-browse-open"
-          onClick={onBrowse}
-        >
-          Browse…
-        </Button>
+        )
       )}
       {linkMessage}
       {pr.createMessage !== null && (
@@ -707,6 +702,76 @@ function PrDetailBody({
   )
 }
 
+/** A pull request Houston can only show: no write control is drawn at all. */
+function PrReadOnlyView({
+  link,
+  detail,
+  reason,
+  onOpenUrlInPane,
+  linkMessage,
+  linked,
+  pr,
+  checkState
+}: {
+  link: PullRequestLink
+  detail: PrDetail
+  reason: string
+  onOpenUrlInPane?: (url: string) => void
+  linkMessage: React.ReactNode
+  linked: boolean
+  pr: PrDetailController
+  checkState: PrChecksState
+}): React.JSX.Element {
+  return (
+    <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
+      <PrHeaderFrame
+        top={
+          <>
+            <PrStatusWord data-testid="pr-state" tone={link.is_draft ? 'muted' : link.state === 'merged' ? 'info' : link.state === 'closed' ? 'stop' : 'ok'}>
+              {stateLabel(link)}
+            </PrStatusWord>
+            <PrHeaderNumber>#{link.number}</PrHeaderNumber>
+            <PrHeaderActions>
+              {onOpenUrlInPane && <ReviewButton variant="pull-request-external-action" type="button" data-testid="pr-open" onClick={() => onOpenUrlInPane(link.url)}>Bitbucket<Icon glyph={IconExternal} role="small" /></ReviewButton>}
+            </PrHeaderActions>
+          </>
+        }
+        title={link.title ?? `Pull request #${link.number}`}
+        sentence={
+          <PrHeaderSentence>
+            <PrHeaderAvatar author={detail.author} />
+            <span>
+              <PrHeaderAuthor>{detail.author ?? 'Author unavailable'}</PrHeaderAuthor>{' '}wants to merge{' '}
+              <PrHeaderRef>{detail.head_ref ?? 'source branch unavailable'}</PrHeaderRef>{' '}into{' '}
+              <PrHeaderRef>{detail.base_ref ?? 'base branch unavailable'}</PrHeaderRef>{' '}· {prRelativeAge(detail.updated_at)}
+            </span>
+          </PrHeaderSentence>
+        }
+      />
+      <PrReadOnlyNotice
+        reason={reason}
+        url={link.url}
+        onOpenUrlInPane={onOpenUrlInPane}
+        link={{ number: link.number, linked, busy: pr.linkBusy, onLink: pr.link, onUnlink: pr.unlink }}
+      />
+      {linkMessage}
+      <PullRequestRole as="div" role="scroll-area" data-testid="pr-scroll-area">
+        <PrBranchSummary
+          detail={detail}
+          people={<PrChangeStats additions={link.additions} deletions={link.deletions} files={link.changed_files} commits={detail.commit_count} />}
+          descriptionAction={<></>}
+        />
+        <PullRequestRole as="div" role="summary-content">
+          <PrChecksList state={checkState} />
+          <PullRequestRole as="div" role="secondary-caption">Review: {reviewLabel(link.review_decision)}</PullRequestRole>
+          {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+          <PrReadOnlyDiscussion detail={detail} />
+        </PullRequestRole>
+      </PullRequestRole>
+    </PullRequestRole>
+  )
+}
+
 function PrDetailView({
   view,
   client,
@@ -804,6 +869,21 @@ function PrDetailView({
   const removeDraft = (draft: PrReviewDraft): void => {
     setDrafts((prev) =>
       prev.filter((d) => `${d.path}:${d.side}:${d.line}` !== `${draft.path}:${draft.side}:${draft.line}`)
+    )
+  }
+
+  if (detail.read_only !== null && detail.read_only !== undefined) {
+    return (
+      <PrReadOnlyView
+        link={link}
+        detail={detail}
+        reason={detail.read_only}
+        onOpenUrlInPane={onOpenUrlInPane}
+        linkMessage={linkMessage}
+        linked={view.linked}
+        pr={pr}
+        checkState={checkState}
+      />
     )
   }
 
@@ -979,7 +1059,8 @@ function PullRequestTabContent({
     </ScmNotice>
   ) : null
 
-  if (view.gh !== 'ready') return <PrWatchContent rows={watchRows}><PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} /></PrWatchContent>
+  const block = forgeBlocked(view.access, view.hint)
+  if (block !== null) return <PrWatchContent rows={watchRows}><PrBlocked block={block} onRetry={pr.refresh} /></PrWatchContent>
   if (view.message !== null || view.link === null) {
     return (
       <PrWatchContent rows={watchRows}>

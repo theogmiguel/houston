@@ -12,6 +12,8 @@ import type { TaskPatch } from './generated/TaskPatch'
 import type { TaskPromptDelivery } from './generated/TaskPromptDelivery'
 import type { TaskQueueRefusal } from './generated/TaskQueueRefusal'
 import type { TaskRun } from './generated/TaskRun'
+import type { TaskReviewFocus } from './generated/TaskReviewFocus'
+import type { TaskReviewMode } from './generated/TaskReviewMode'
 import type { TaskRunAction } from './generated/TaskRunAction'
 import type { TaskSummary } from './generated/TaskSummary'
 import type { TasksAccess } from './generated/TasksAccess'
@@ -72,18 +74,20 @@ export interface UseTasks {
 export interface TaskReviewSettings {
   reviewer: AgentKind | null
   reworkRounds: number
+  mode: TaskReviewMode
+  focus: TaskReviewFocus
 }
 
-/// Settings ▸ Tasks ▸ Review edits the workspace's reviewer and rework rounds;
-/// the daemon's broadcast is the only thing that moves the controls, and its
-/// refusal (over the cap) is kept until the next successful set.
+/// Settings ▸ Tasks ▸ Review edits the workspace's reviewer, rework rounds,
+/// start mode and focus; the daemon's broadcast is the only thing that moves the
+/// controls, and its refusal (over the cap) is kept until the next successful set.
 export function useTaskReviewSettings(
   client: HoustonClient | null,
   workspace: string | null
 ): {
   settings: TaskReviewSettings | null
   refusal: TaskRefusal | null
-  setReviewSettings: (reviewer: AgentKind | null, reworkRounds: number) => void
+  setReviewSettings: (reviewer: AgentKind | null, reworkRounds: number, mode: TaskReviewMode, focus: TaskReviewFocus) => void
 } {
   const [settings, setSettings] = useState<TaskReviewSettings | null>(null)
   const [refusal, setRefusal] = useState<TaskRefusal | null>(null)
@@ -98,7 +102,12 @@ export function useTaskReviewSettings(
       if (msg.workspace !== workspace) return
       pending.current = false
       setRefusal(null)
-      setSettings({ reviewer: msg.reviewer ?? null, reworkRounds: msg.rework_rounds })
+      setSettings({
+        reviewer: msg.reviewer ?? null,
+        reworkRounds: msg.rework_rounds,
+        mode: msg.mode,
+        focus: msg.focus
+      })
     })
     const offRefused = client.subscribe('task_refused', (msg) => {
       if (!pending.current) return
@@ -121,11 +130,11 @@ export function useTaskReviewSettings(
   }, [client, workspace])
 
   const setReviewSettings = useCallback(
-    (reviewer: AgentKind | null, reworkRounds: number) => {
+    (reviewer: AgentKind | null, reworkRounds: number, mode: TaskReviewMode, focus: TaskReviewFocus) => {
       if (!client || !workspace) return
       pending.current = true
       setRefusal(null)
-      client.taskReviewSettingsSet(workspace, reviewer, reworkRounds)
+      client.taskReviewSettingsSet(workspace, reviewer, reworkRounds, mode, focus)
     },
     [client, workspace]
   )
