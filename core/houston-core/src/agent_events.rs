@@ -165,6 +165,15 @@ pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentE
     }
 }
 
+/// Whether a provider reports a failed turn. Codex's table row comes from the
+/// Unix-only app-server observer; Windows uses its stall probe instead.
+pub fn reports_turn_failure(provider: proto::AgentKind, windows: bool) -> bool {
+    !(provider == proto::AgentKind::Codex && windows)
+        && events_for(provider)
+            .iter()
+            .any(|(_, event)| *event == AgentEvent::TurnFailed)
+}
+
 // Sub-agent lifecycle events, and OpenCode prompts raised inside a child
 // session, can carry the child's conversation id instead of the pane's own.
 pub fn names_root_conversation(provider: proto::AgentKind, event: &str) -> bool {
@@ -335,6 +344,31 @@ mod tests {
         proto::AgentKind::Aider,
         proto::AgentKind::Ssh,
     ];
+
+    #[test]
+    fn codex_reports_turn_failure_only_where_its_observer_runs() {
+        for kind in EVERY_KIND {
+            let table_has_it = events_for(kind)
+                .iter()
+                .any(|(_, ev)| *ev == AgentEvent::TurnFailed);
+            assert_eq!(
+                reports_turn_failure(kind, false),
+                table_has_it,
+                "{kind:?} on Unix"
+            );
+            assert_eq!(
+                reports_turn_failure(kind, true),
+                table_has_it && kind != proto::AgentKind::Codex,
+                "{kind:?} on Windows"
+            );
+        }
+        assert!(reports_turn_failure(proto::AgentKind::Claude, true));
+        assert!(reports_turn_failure(proto::AgentKind::Opencode, true));
+        assert!(
+            !reports_turn_failure(proto::AgentKind::Codex, true),
+            "Windows has no app-server observer; the stall probe is its equivalent"
+        );
+    }
 
     #[test]
     fn every_provider_ends_a_turn_at_most_once() {

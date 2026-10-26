@@ -20505,7 +20505,7 @@ impl Daemon {
                     "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
                     "dialogue_tools_permission": !crate::launch::dialogue_permission_args(provider).is_empty(),
                     "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
-                    "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
+                    "turn_failure": crate::agent_events::reports_turn_failure(provider, cfg!(windows)),
                 },
                 "capability_note": orchestrate::capability_note(provider),
             })
