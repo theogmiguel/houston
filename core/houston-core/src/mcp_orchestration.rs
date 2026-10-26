@@ -881,13 +881,16 @@ impl OrchestrationTools {
             },
             ToolSpec {
                 name: "pane_report".into(),
-                title: "Report progress or ask your parent".into(),
-                description: "Report progress/questions/blockers with context. pane_wait without session receives replies. Not completion or CLI approval; client_request_id deduplicates.".into(),
+                title: "Report progress, ask your parent, or report a suspected defect".into(),
+                description: "Report progress/questions/blockers with context. A finding records a suspected defect (title, evidence, destination) without an inbox row or a block; it counts toward the report cap. pane_wait without session receives replies. Not completion or CLI approval; client_request_id deduplicates.".into(),
                 input_schema: json!({"type":"object","properties":{
-                    "kind":{"type":"string","enum":["progress","question","blocked"]},
+                    "kind":{"type":"string","enum":["progress","question","blocked","finding"]},
                     "body":{"type":"string","minLength":1,"maxLength":orchestrate::SUBMIT_BODY_MAX_CHARS},
                     "request_id":{"type":"integer","minimum":1,"description":"Current request from workspace_info or the prompt header."},
-                    "client_request_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_.-]+$"}
+                    "client_request_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_.-]+$"},
+                    "title":{"type":"string","minLength":1,"maxLength":houston_protocol::SUSPECTED_DEFECT_TITLE_MAX,"description":"A finding's title."},
+                    "destination":{"type":"string","enum":["houston","workspace"],"description":"A finding's repository: Houston itself, or this workspace's."},
+                    "evidence":{"type":"array","maxItems":houston_protocol::SUSPECTED_DEFECT_EVIDENCE_MAX,"items":{"type":"string","minLength":1,"maxLength":houston_protocol::SUSPECTED_DEFECT_EVIDENCE_LEN_MAX},"description":"Message ids, refusals, file:line; never terminal text."}
                 },"required":["kind","body","request_id"],"additionalProperties":false}),
                 annotations: Annotations::local_write(),
             },

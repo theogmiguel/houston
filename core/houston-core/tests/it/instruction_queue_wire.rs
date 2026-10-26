@@ -470,6 +470,9 @@ async fn steer_adoption_releases_the_old_staged_result_as_interrupted_without_a_
                 kind: houston_core::orchestrate::ReportKind::Progress,
                 body: "Adopted replacement".into(),
                 request_id: 2,
+                title: None,
+                destination: None,
+                evidence: Vec::new(),
                 client_request_id: None,
             },
         )
@@ -663,6 +666,9 @@ async fn an_old_stop_cannot_dispatch_c_before_b_has_started() {
                 kind: houston_core::orchestrate::ReportKind::Progress,
                 body: "B adopted without a prompt hook".into(),
                 request_id: 2,
+                title: None,
+                destination: None,
+                evidence: Vec::new(),
                 client_request_id: None,
             },
         )

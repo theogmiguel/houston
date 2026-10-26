@@ -11925,6 +11925,9 @@ async fn prompt_modes_deliver_steer_now_and_queue_at_turn_end() {
                         kind: houston_core::orchestrate::ReportKind::Progress,
                         body: "Adopted the steer request".into(),
                         request_id: 2,
+                        title: None,
+                        destination: None,
+                        evidence: Vec::new(),
                         client_request_id: None,
                     },
                 )
@@ -13564,6 +13567,9 @@ fn input_policy_report(r: &Rig, child: u32, kind: houston_core::orchestrate::Rep
                 kind,
                 body: "Which fixture should I use?".into(),
                 request_id: 1,
+                title: None,
+                destination: None,
+                evidence: Vec::new(),
                 client_request_id: None,
             },
         )
@@ -15409,6 +15415,9 @@ fn input_policy_report_text(
                 kind,
                 body: body.into(),
                 request_id: 1,
+                title: None,
+                destination: None,
+                evidence: Vec::new(),
                 client_request_id: None,
             },
         )
