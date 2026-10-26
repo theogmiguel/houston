@@ -31,7 +31,7 @@ export function nightDefaults(): NightShiftSettings {
 export function nightEntry(overrides: Partial<NightEntry>): NightEntry {
   return {
     id: 1, run_id: 7, kind: 'plan', title: 'Entry', theme: null, status: null, pr_number: null, visible: false, qa_passed: false,
-    body: '', gates: { checks: 'none', review: 'none', qa: 'none', ci: 'none', verify: 'none', reruns: 0 }, created_at_ms: NIGHT_NOW,
+    body: '', gates: { checks: 'none', review: 'none', qa: 'none', ci: 'none', verify: 'none', reruns: 0, fixes: 0 }, created_at_ms: NIGHT_NOW,
     decided_at_ms: null, choice: null, detail: { claims: [], plans: [], head_sha: null, built_by: [], checks_run: [], verdicts: [] }, ...overrides
   }
 }
@@ -43,7 +43,10 @@ export function nightRun(overrides: Partial<NightRun> = {}): NightRun {
     ended_at_ms: null, report_path: '/s/night-shift/7/report.md', report_published: false, summary: null, stop_reason: null,
     stop_detail: null,
     interruptions: [{ at_ms: NIGHT_NOW - 3_600_000, resumed_at_ms: NIGHT_NOW - 3_500_000, detail: 'the daemon restarted; the run continued', resumed: true }],
-    cost: { pane_hours: 7.5, panes: 3, per_provider: [{ provider: 'claude', panes: 2, pane_hours: 5 }, { provider: 'zcode', panes: 1, pane_hours: 2.5 }] },
+    cost: { pane_hours: 7.5, panes: 3, per_provider: [
+      { provider: 'claude', panes: 2, pane_hours: 5, tokens: { uncached_input_tokens: 12_000, cached_input_tokens: 80_000, cache_creation_tokens: 4_000, output_tokens: 6_000, reasoning_tokens: 900 } },
+      { provider: 'zcode', panes: 1, pane_hours: 2.5 }
+    ] },
     limited: [], preflight: [], keep_awake: 'held', merge_order: [],
     entries: [
       nightEntry({ id: 1, kind: 'plan', title: 'Faster attach', theme: 'performance' }),
