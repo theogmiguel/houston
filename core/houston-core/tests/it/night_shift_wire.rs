@@ -2167,10 +2167,6 @@ async fn start_probe_covers_every_worker_provider() {
         "{args}"
     );
     assert!(
-        args.contains("exec --sandbox read-only --skip-git-repo-check --ephemeral"),
-        "Codex's probe is read-only: {args}"
-    );
-    assert!(
         args.contains("run Reply with the single word OK. --agent plan --pure"),
         "OpenCode's probe uses its plan agent: {args}"
     );
@@ -2179,6 +2175,10 @@ async fn start_probe_covers_every_worker_provider() {
         "{args}"
     );
     let spent = std::fs::read_to_string(spent_args.expect("Codex's arg log")).unwrap();
+    assert!(
+        spent.contains("exec --sandbox read-only --skip-git-repo-check --ephemeral --color never"),
+        "Codex's probe is read-only: {spent}"
+    );
     assert_eq!(spent.lines().count(), 1, "{spent}");
 }
 
