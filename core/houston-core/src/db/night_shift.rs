@@ -417,6 +417,20 @@ impl Db {
         Ok(rows)
     }
 
+    /// Settled runs since `since_ms` with no provider tokens stored, newest
+    /// first: the ones an interrupted run-end scan may have missed.
+    pub fn night_runs_without_tokens(&self, since_ms: i64, limit: u32) -> Result<Vec<NightRunRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{RUN_SELECT} WHERE ended_at_ms IS NOT NULL AND ended_at_ms >= ?1 \
+             AND cost_json NOT LIKE '%\"tokens\":{{%' ORDER BY run_id DESC LIMIT ?2"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![since_ms, limit], map_run)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn insert_night_entry(&self, w: &NightEntryWrite<'_>) -> Result<u32> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(

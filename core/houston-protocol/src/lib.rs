@@ -7918,6 +7918,7 @@ mod tests {
                     provider: AgentKind::Claude,
                     panes: 2,
                     pane_hours: 1.5,
+                    tokens: None,
                 }],
             },
             limited: vec![AgentKind::Claude],

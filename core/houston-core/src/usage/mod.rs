@@ -1,6 +1,6 @@
 //! Token-usage reporting is the third, narrowly granted carve-out from "Houston
-//! reads no transcripts": a usage screen IS transcript reading. The bounds any
-//! edit must preserve: read-only and on demand, counts only, fail-soft.
+//! reads no transcripts". Bounds: read-only and on demand (Settings ▸ Usage, and
+//! once per Night shift run end), counts only, fail-soft; carve-out 8 in invariants.
 pub mod aggregate;
 pub mod cache;
 pub mod pricing;

@@ -2,7 +2,7 @@
 //! window, keeps a run ledger and leaves a morning report.
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentKind, AgentStatus, RoutineTrigger};
+use crate::{AgentKind, AgentStatus, RoutineTrigger, UsageTokenTotals};
 
 /// The `v` of a stored settings document.
 pub const NIGHT_SHIFT_SETTINGS_VERSION: u32 = 2;
@@ -315,6 +315,14 @@ pub struct NightCostLine {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub panes: u32,
     pub pane_hours: f64,
+    /// The provider's own token counts for the run's window; `None` when its
+    /// CLI exposes none to Houston. Never a zero standing in for "unknown".
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-gen",
+        ts(optional = nullable, type = "UsageTokenTotals | null")
+    )]
+    pub tokens: Option<UsageTokenTotals>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

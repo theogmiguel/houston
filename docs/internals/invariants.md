@@ -139,7 +139,7 @@ Houston does not parse `~/.claude/projects/*.jsonl` and does not speak Claude Co
 `control_request` stdio protocol. Integration goes through hooks, `--permission-prompt-tool`,
 documented flags (`--print --output-format stream-json`), ACP, and official SDKs.
 
-Seven recorded carve-outs stand. Further exceptions need the same recorded treatment.
+Eight recorded carve-outs stand. Further exceptions need the same recorded treatment.
 
 | # | File | Bound |
 |---|---|---|
@@ -150,6 +150,7 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 | 5 | `<the CLI's own transcript_path>, Claude and Codex only` | Read only on turn completion, from the hook-reported path; at most the last 8 MiB. Claude's latest main-agent usage and Codex's latest `token_count` provide context occupancy. Retain only token counts, model id and compaction state; never drive agent status, retain content, scan directories or watch transcripts. Missing data hides the indicator. Terms: `core/houston-core/src/context_window.rs` |
 | 6 | `~/.claude/projects/<workspace slug>*/*.jsonl` (and `$CLAUDE_CONFIG_DIR/projects`), `~/.codex/sessions/**/*.jsonl` (or `$CODEX_HOME/sessions`), Claude and Codex only | Read by `hs-harness digest`, never by the daemon or the app: the agent of a harness review run calls it inside its own visible pane, and it refuses unless `HOUSTON_ROUTINE_RUN` is set, which only a routine run's pane has. Only transcripts whose cwd is the workspace or below it; OpenCode, Cursor, Grok and Antigravity are refused by name (Cursor and Grok are recognised only). Output only under `<workspace>/.houston/harness/<run>/`, capped at 64 KiB per session line and 2 MiB per digest; the digest never enters the database and nothing drives status. What enters it is what the run's agent publishes through `harness_publish`: the bounded fields of `findings.json`, including its short quotes. No timer, watcher or boot scan: a run happens because the user created the review routine and pressed Run review or enabled its cadence. Terms: `core/houston-core/src/harness/` |
 | 7 | `<the CLI's own transcript_path>`, Claude and Codex only | Metadata only: before a respawn passes its exact-ID resume arguments, `fs::metadata` on the path the hook reported with that id says whether the transcript exists and is non-empty. The file is never opened, the path is never constructed, and nothing drives status. Terms: `daemon.rs::resume_check` |
+| 8 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Daemon-initiated once per Night shift run end; counts only; fail-soft; drives no status or behaviour; restricted to the run's window and workspace, with at most one retry after a daemon restart while its tokens are absent. Terms: `daemon/night_shift.rs` |
 
 ### App-initiated config writes use reversible managed markers
 

@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::{now_unix_ms, Daemon, RoutineRun};
 use crate::db::{NightEntryWrite, NightMember, NightRunRow};
 use crate::limits::LimitSignal;
-use crate::night_shift::{awake, brief, preflight, provider_probe, settings, window};
+use crate::night_shift::{awake, brief, cost, preflight, provider_probe, settings, window};
 
 type AwakeHook = Arc<dyn Fn(u32, bool) + Send + Sync>;
 
@@ -100,6 +100,8 @@ pub(crate) struct NightShiftCtx {
     checks_running: Mutex<HashSet<(u32, u32, String)>>,
     /// PRs whose CI action (re-run or fixer spawn) is in a detached thread.
     ci_actions: Mutex<HashSet<(u32, u32)>>,
+    /// Runs whose run-end token scan has already been started.
+    token_scans: Mutex<HashSet<u32>>,
 }
 
 /// Removes a PR head from `checks_running` however its checking thread ends.
@@ -153,6 +155,11 @@ const NIGHT_CHECK_NOTE_CHARS: usize = 1_500;
 /// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
+/// Settled runs an after-restart pass retries the token scan for; a run whose
+/// scan never finished before the daemon stopped is recent.
+const NIGHT_TOKEN_RECOVERY_SCANS: u32 = 4;
+/// How far back that pass looks for a settled run without tokens.
+const NIGHT_TOKEN_RECOVERY_WINDOW_MS: i64 = 24 * 60 * MINUTE_MS;
 
 /// A run's worktree, detached at the workspace's HEAD under its
 /// `.houston/worktrees/` like a `pane_spawn` worktree: the run's panes then keep
@@ -186,6 +193,7 @@ fn count_crew(row: &mut NightRunRow) {
                 provider: m.provider,
                 panes: 0,
                 pane_hours: 0.0,
+                tokens: None,
             });
         }
     }
@@ -1530,6 +1538,7 @@ impl Daemon {
                     provider,
                     panes: 0,
                     pane_hours: hours,
+                    tokens: None,
                 }),
             }
         }
@@ -1811,6 +1820,87 @@ impl Daemon {
                     .then(|| row.stop_detail.as_deref().unwrap_or("it was refused")),
             ),
         });
+        self.night_start_token_scan(run_id);
+    }
+
+    /// One token scan when a run ends, on a detached thread: the same parsers
+    /// Settings ▸ Usage uses, over the run's window and workspace.
+    fn night_start_token_scan(&self, run_id: u32) {
+        if !self
+            .night
+            .token_scans
+            .lock()
+            .expect("night token scans")
+            .insert(run_id)
+        {
+            return;
+        }
+        let Some(me) = self.self_weak.lock().expect("self_weak lock").upgrade() else {
+            return;
+        };
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-tokens-{run_id}"))
+            .spawn(move || me.night_scan_tokens(run_id));
+        if let Err(e) = spawned {
+            tracing::warn!("scanning Night shift run {run_id}'s token usage: {e}");
+        }
+    }
+
+    fn night_scan_tokens(self: &Arc<Self>, run_id: u32) {
+        let Ok(Some(row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let Some(ended_at_ms) = row.ended_at_ms else {
+            return;
+        };
+        if row.cost.per_provider.iter().any(|l| l.tokens.is_some()) {
+            return;
+        }
+        let covered = row.crew.iter().any(|member| {
+            proto::UsageProvider::ALL
+                .iter()
+                .any(|provider| provider.agent_kind() == member.provider)
+        });
+        if !covered {
+            return;
+        }
+        let outcome = crate::usage::scan(&crate::usage::ScanRequest {
+            since_ms: row.started_at_ms,
+            until_ms: ended_at_ms.max(row.started_at_ms + 1),
+            catalog: self.model_catalog.load(false, false),
+            state_dir: self.state_dir.clone(),
+            sources: self.usage_sources(),
+            workspaces: vec![row.workspace.clone()],
+            workspace_filter: Some(row.workspace.clone()),
+        });
+        for source in &outcome.sources {
+            if source.status == proto::UsageSourceStatus::Failed {
+                tracing::warn!(
+                    "Night shift run {run_id}: reading {} for token counts failed: {}",
+                    source.path,
+                    source.message.as_deref().unwrap_or("no detail reported")
+                );
+            }
+        }
+        let totals = cost::totals_by_provider(&outcome.buckets);
+        if totals.is_empty() {
+            return;
+        }
+        {
+            let _guard = self.night.lock.lock().expect("night lock");
+            let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+                return;
+            };
+            if row.cost.per_provider.iter().any(|l| l.tokens.is_some()) {
+                return;
+            }
+            cost::add_tokens(&mut row.cost, &totals);
+            if let Err(e) = self.db.save_night_run(&row) {
+                tracing::warn!("recording Night shift run {run_id}'s tokens: {e:#}");
+                return;
+            }
+        }
+        self.broadcast_night_run(run_id);
     }
 
     // ---- restart recovery ----
@@ -1921,6 +2011,20 @@ impl Daemon {
                 .insert(row.run_id, now_ms);
             self.broadcast_night_run(row.run_id);
             self.broadcast_control(&self.routine_list());
+        }
+        // A run that settled just before the daemon stopped may have lost its
+        // scan; retry only while it has no tokens yet.
+        let rows = self.db.night_runs_without_tokens(
+            now_ms - NIGHT_TOKEN_RECOVERY_WINDOW_MS,
+            NIGHT_TOKEN_RECOVERY_SCANS,
+        );
+        match rows {
+            Ok(rows) => {
+                for row in rows {
+                    self.night_start_token_scan(row.run_id);
+                }
+            }
+            Err(e) => tracing::warn!("reading Night shift runs to scan for tokens: {e:#}"),
         }
     }
 

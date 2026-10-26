@@ -867,6 +867,73 @@ async fn cost_counts_the_orchestrator_and_its_crew() {
     }
 }
 
+/// A settled run totals its providers' tokens from the local session logs of
+/// its own workspace and below; another workspace's sessions stay out.
+#[tokio::test]
+async fn a_settled_run_records_its_workspace_tokens_only() {
+    let r = rig().await;
+    let routine = r.ready(|s| {
+        s.orchestrator = proto::NightAgent {
+            provider: proto::AgentKind::Claude,
+            model: None,
+        }
+    });
+    let run = r.run_now(routine.id, 120);
+    let other = std::fs::canonicalize(r.state.path())
+        .unwrap()
+        .join("elsewhere");
+    std::fs::create_dir_all(&other).unwrap();
+    let root = shim_dir().join("home/.claude/projects/night-token-wire");
+    std::fs::create_dir_all(&root).unwrap();
+    let stamp = houston_core::harness::window::format_ms(houston_core::daemon::now_unix_ms());
+    let record = |id: &str, cwd: &Path, output: u64| {
+        json!({
+            "type": "assistant", "timestamp": stamp, "sessionId": id,
+            "cwd": cwd.display().to_string(), "requestId": format!("request-{id}"),
+            "message": {"id": id, "model": "claude-opus-5",
+                "usage": {"input_tokens": 10, "output_tokens": output}}
+        })
+        .to_string()
+    };
+    std::fs::write(
+        root.join("run.jsonl"),
+        format!(
+            "{}\n{}\n",
+            record("inside", &r.ws, 120),
+            record("outside", &other, 900)
+        ),
+    )
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+    wait_until("the run's token totals", || {
+        r.run(run.run_id)
+            .cost
+            .per_provider
+            .iter()
+            .any(|line| line.tokens.is_some())
+    })
+    .await;
+    let cost = r.run(run.run_id).cost;
+    let claude = cost
+        .per_provider
+        .iter()
+        .find(|line| line.provider == proto::AgentKind::Claude)
+        .expect("the Claude line");
+    let tokens = claude.tokens.as_ref().expect("Claude's token totals");
+    assert_eq!(
+        tokens.output_tokens, 120,
+        "only the run's workspace counts: {cost:?}"
+    );
+    assert!(
+        cost.per_provider
+            .iter()
+            .all(|line| line.provider == proto::AgentKind::Claude),
+        "no line for a provider that never ran: {cost:?}"
+    );
+}
+
 /// Direction steers the run from inside the brief; a Claude orchestrator is
 /// sent no `/goal`, which would make it a completion condition.
 #[tokio::test]

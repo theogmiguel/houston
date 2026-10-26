@@ -4,6 +4,7 @@ pub mod apps;
 pub mod awake;
 pub mod brief;
 pub mod cli;
+pub mod cost;
 pub mod detect;
 pub mod preflight;
 pub mod provider_probe;
@@ -256,6 +257,7 @@ mod tests {
             "night_shift/awake.rs",
             "night_shift/brief.rs",
             "night_shift/cli.rs",
+            "night_shift/cost.rs",
             "night_shift/preflight.rs",
             "night_shift/settings.rs",
             "night_shift/window.rs",
