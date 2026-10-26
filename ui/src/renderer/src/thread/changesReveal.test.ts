@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CHANGES_REVEAL_EVENT, CHANGES_REVEAL_TTL_MS, repoRelativePath, revealInChanges, takeChangesReveal } from './changesReveal'
+import { CHANGES_REVEAL_EVENT, CHANGES_REVEAL_TTL_MS, changesListStamp, repoRelativePath, revealInChanges, takeChangesReveal } from './changesReveal'
 
 describe('changes reveal', () => {
   afterEach(() => {
     vi.useRealTimers()
-    takeChangesReveal('/', [])
+    takeChangesReveal('/', [], changesListStamp())
   })
 
   it('resolves a path against the session directory and the repository', () => {
@@ -22,22 +22,35 @@ describe('changes reveal', () => {
     revealInChanges({ path: '/repo/a.ts', cwd: '/repo' })
     window.removeEventListener(CHANGES_REVEAL_EVENT, listener)
     expect(heard).toBe(1)
-    expect(takeChangesReveal('/repo', null)).toBeNull()
-    expect(takeChangesReveal('/other', ['a.ts'])).toBeNull()
-    expect(takeChangesReveal('/repo', ['a.ts', 'b.ts'])).toBe('a.ts')
-    expect(takeChangesReveal('/repo', ['a.ts'])).toBeNull()
+    expect(takeChangesReveal('/repo', null, changesListStamp())).toBeNull()
+    expect(takeChangesReveal('/other', ['a.ts'], changesListStamp())).toBeNull()
+    expect(takeChangesReveal('/repo', ['a.ts', 'b.ts'], changesListStamp())).toBe('a.ts')
+    expect(takeChangesReveal('/repo', ['a.ts'], changesListStamp())).toBeNull()
   })
 
   it('drops a request for a file its repository does not list, so a later list never moves the selection', () => {
     revealInChanges({ path: '/repo/a.ts', cwd: '/repo' })
-    expect(takeChangesReveal('/repo', ['b.ts'])).toBeNull()
-    expect(takeChangesReveal('/repo', ['a.ts', 'b.ts'])).toBeNull()
+    expect(takeChangesReveal('/repo', ['b.ts'], changesListStamp())).toBeNull()
+    expect(takeChangesReveal('/repo', ['a.ts', 'b.ts'], changesListStamp())).toBeNull()
+  })
+
+  it('keeps a request that a list received before it does not show, until a newer list does', () => {
+    const stale = changesListStamp()
+    revealInChanges({ path: '/repo/new.ts', cwd: '/repo' })
+    expect(takeChangesReveal('/repo', ['old.ts'], stale)).toBeNull()
+    expect(takeChangesReveal('/repo', ['old.ts', 'new.ts'], changesListStamp())).toBe('new.ts')
+  })
+
+  it('takes a file a list received before the request already shows', () => {
+    const earlier = changesListStamp()
+    revealInChanges({ path: '/repo/a.ts', cwd: '/repo' })
+    expect(takeChangesReveal('/repo', ['a.ts'], earlier)).toBe('a.ts')
   })
 
   it('drops a request nobody took within its lifetime', () => {
     vi.useFakeTimers()
     revealInChanges({ path: '/elsewhere/a.ts', cwd: '/elsewhere' })
     vi.advanceTimersByTime(CHANGES_REVEAL_TTL_MS + 1)
-    expect(takeChangesReveal('/elsewhere', ['a.ts'])).toBeNull()
+    expect(takeChangesReveal('/elsewhere', ['a.ts'], changesListStamp())).toBeNull()
   })
 })
