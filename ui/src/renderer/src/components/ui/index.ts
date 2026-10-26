@@ -307,3 +307,10 @@ export { BrowserSurface } from '../browser/BrowserSurface'
 export type { BrowserSurfaceProps } from '../browser/BrowserSurface'
 
 export { OrchestrationBody, OrchestrationDetails, OrchestrationInset, OrchestrationReason, OrchestrationContentSpecimen } from './OrchestrationContent'
+
+export {
+  GateChip, InfoTip, NightBox, NightChoice, NightChoiceGrid, NightDisclosureBody, NightDividedRow, NightField, NightFieldGrid, NightGrow,
+  NightPlanBoard, NightPlanColumn, NightPlanItem, NightQuestion, NightReveal, NightSetupFooter, NightSetupHeader, NightShiftSpecimen, NightStep,
+  NightWindowStrip
+} from './NightShift'
+export type { GateState, NightBadgeTone, WindowMark, WindowMarkKind } from './NightShift'

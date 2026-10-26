@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod night_shift;
+pub use night_shift::*;
 pub mod task_trackers;
 pub use task_trackers::{
     TaskExternalLink, TaskExternalLinkSource, TaskTrackerConflictResolution,
@@ -9,7 +11,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 154;
+pub const PROTOCOL_VERSION: u32 = 156;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -232,6 +234,8 @@ pub enum RoutineKind {
     #[default]
     User,
     HarnessReview,
+    /// At most one per workspace; its settings live beside the routine row.
+    NightShift,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2670,6 +2674,43 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub permission_mode: Option<ThreadPermissionMode>,
+    /// When this pane's conversation left in a workspace transfer; its process stopped then.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub transferred_at_ms: Option<u64>,
+    /// The pane resumed a conversation after it left in a transfer: it continues a fork.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(as = "Option<bool>", optional))]
+    pub transfer_fork: bool,
+    /// The status line the pane's agent last wrote with `pane_note`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub note: Option<PaneNote>,
+}
+
+/// A note longer than this is refused; it is one line on the rail card.
+pub const PANE_NOTE_MAX_BYTES: usize = 512;
+
+/// Where the agent says its work stands, alongside its note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum PanePhase {
+    Todo,
+    InProgress,
+    InReview,
+    Done,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PaneNote {
+    pub text: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub phase: Option<PanePhase>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3088,6 +3129,221 @@ pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+    /// The folder is gone on disk, e.g. moved or renamed outside Houston; the
+    /// workspace keeps its rows until it is relocated or removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional))]
+    pub missing: Option<bool>,
+}
+
+/// What a `workspace_relocate` re-pointed, so the client can say what followed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceRelocateMoved {
+    pub worktrees: u32,
+    pub sessions: u32,
+    /// Managed worktrees whose git links `git worktree repair` re-attached.
+    pub repaired: u32,
+    /// Non-fatal follow-up problems, one line each.
+    pub notes: Vec<String>,
+}
+
+/// The passphrase of a workspace transfer file. It is sent for one operation and is
+/// never shown by `Debug`, logged or stored.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export, type = "string"))]
+#[serde(transparent)]
+pub struct TransferPassphrase(String);
+
+impl TransferPassphrase {
+    pub fn new(passphrase: impl Into<String>) -> Self {
+        Self(passphrase.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for TransferPassphrase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TransferPassphrase(<redacted>)")
+    }
+}
+
+impl Drop for TransferPassphrase {
+    fn drop(&mut self) {
+        let mut bytes = std::mem::take(&mut self.0).into_bytes();
+        bytes.iter_mut().for_each(|byte| *byte = 0);
+        std::hint::black_box(&bytes);
+    }
+}
+
+/// The step a workspace transfer is on, for the dialog's progress line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TransferStage {
+    Checking,
+    Packing,
+    Decrypting,
+    RestoringCode,
+    PlacingConversations,
+    StartingPanes,
+}
+
+/// Why a workspace transfer was refused. Every refusal uses `TransferRefusal`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TransferRefusalCode {
+    UnknownWorkspace,
+    NotGitRepository,
+    WslWorkspace,
+    BusyPanes,
+    NothingToTransfer,
+    TooLarge,
+    DestinationExists,
+    PartiallyStaged,
+    TransferRunning,
+    PassphraseRequired,
+    WrongPassphrase,
+    NotTransferFile,
+    UnknownFormat,
+    OtherOperatingSystem,
+    CliMissing,
+    CliTooOld,
+    DirtyCheckout,
+    MissingCommits,
+    BranchDiverged,
+    BranchCheckedOut,
+    ChangesDoNotApply,
+    PathsExist,
+    ConversationOpen,
+    ProfileChoiceMissing,
+    ReturnTreeChanged,
+    ReturnForked,
+    ImportUndone,
+}
+
+/// A refusal states what is wrong (`problem`), the exact paths or values involved
+/// (`items`) and the steps that remove it (`steps`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferRefusal {
+    pub code: TransferRefusalCode,
+    pub problem: String,
+    pub items: Vec<String>,
+    pub steps: Vec<String>,
+}
+
+/// One pane a transfer file carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferPane {
+    pub session: u32,
+    pub title: String,
+    pub provider: AgentKind,
+    /// `main checkout`, or `worktree <slug>`.
+    pub checkout: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub profile_label: Option<String>,
+}
+
+/// A pane of the workspace a transfer does not carry, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferSkipped {
+    pub session: u32,
+    pub title: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferCliVersion {
+    pub provider: AgentKind,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferExportSummary {
+    pub transfer_id: String,
+    pub file: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub bytes: u64,
+    pub panes: Vec<TransferPane>,
+    pub skipped: Vec<TransferSkipped>,
+    /// Untracked entries the file does not carry: symbolic links and other
+    /// non-regular paths.
+    pub skipped_links: Vec<String>,
+}
+
+/// An agent profile a transfer file's panes name, and whether this computer has one
+/// with the same label for that provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferProfileNeed {
+    pub provider: AgentKind,
+    pub label: String,
+    pub matched: bool,
+}
+
+/// What `transfer_inspect` read from a file, before anything changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferFileSummary {
+    pub transfer_id: String,
+    pub source_os: String,
+    pub source_workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub remote_url: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: u64,
+    pub panes: Vec<TransferPane>,
+    pub skipped: Vec<TransferSkipped>,
+    pub cli_versions: Vec<TransferCliVersion>,
+    /// The registered workspace whose git remote matches the file's.
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub proposed_workspace: Option<String>,
+    pub profiles: Vec<TransferProfileNeed>,
+    /// The file continues a transfer this computer exported.
+    pub return_trip: bool,
+}
+
+/// The user's answer for a profile label without a match: a local profile label,
+/// or `None` for the default account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferProfileChoice {
+    pub provider: AgentKind,
+    pub label: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub use_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferSessionMapping {
+    pub from: u32,
+    pub to: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TransferImportResult {
+    pub transfer_id: String,
+    pub workspace: String,
+    pub source_workspace: String,
+    /// Source pane id to the new pane id, for remapping the grids.
+    pub sessions: Vec<TransferSessionMapping>,
+    /// Panes of an earlier export from this computer that a return trip resumed.
+    pub updated_in_place: Vec<TransferSessionMapping>,
+    /// The source workspace's grid entries, unchanged; `None` on a return trip.
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub grids: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3106,6 +3362,16 @@ pub struct LocalServer {
     pub process: String,
     pub session: u32,
     pub pane_title: String,
+}
+
+/// A git operation stopped part-way in a checkout, waiting for the user to continue it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum GitOperation {
+    Merge,
+    Rebase,
+    CherryPick,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3288,6 +3554,50 @@ pub struct ManagedWorktreeInfo {
     /// `None` until a pass has evaluated it; `keep: None` means nothing only then.
     #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub checked_at_ms: Option<i64>,
+}
+
+/// The part of a worktree check that could not look.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeCheckPart {
+    /// Uncommitted files and the age of the newest one.
+    Changes,
+    /// Commits on `HEAD` that the base lacks.
+    Commits,
+    /// Commits on `HEAD` that no remote-tracking ref has.
+    Unpushed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckGap {
+    pub part: WorktreeCheckPart,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckPane {
+    pub session: u32,
+    pub title: String,
+}
+
+/// What removing a worktree would interrupt or lose. A part that could not look is
+/// `None` with a gap naming why, so a failed check still reads as a finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorktreeCheckResult {
+    pub dirty_files: Option<u32>,
+    /// The newest modification among the uncommitted files that still exist.
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+    pub newest_change_ms: Option<i64>,
+    pub base: Option<String>,
+    pub ahead: Option<u32>,
+    pub unpushed: Option<u32>,
+    /// Houston panes whose working directory is inside the tree.
+    pub panes: Vec<WorktreeCheckPane>,
+    pub gaps: Vec<WorktreeCheckGap>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4130,6 +4440,9 @@ pub struct RemoteInfo {
 }
 
 pub const REMOTE_NOTIFY_DELAY_MAX_SECS: u32 = 600;
+// Matches the system idle threshold desktop presence commonly uses: long enough
+// to read a reply, short enough that a phone hears about a desk left behind.
+pub const DESKTOP_AWAY_SECS: u32 = 180;
 
 /// A desktop grid as a paired device shows it: the panes it holds, in the
 /// grid's reading order. Grids live in renderer storage; this copy is how the
@@ -4385,6 +4698,13 @@ pub enum ClientMsg {
         path: String,
         name: String,
     },
+    /// Re-point a workspace whose folder moved on disk. `from` is the
+    /// registered path, `to` the moved location; the daemon verifies the new
+    /// path is the same repository first.
+    WorkspaceRelocate {
+        from: String,
+        to: String,
+    },
     WorkspaceList,
     WorkspaceLocalServers {
         workspace: String,
@@ -4398,6 +4718,10 @@ pub enum ClientMsg {
     SessionRename {
         session: u32,
         title: String,
+    },
+    /// Removes the pane's note; answered by the `session_note` broadcast.
+    SessionNoteClear {
+        session: u32,
     },
     SessionTitleGenerate {
         session: u32,
@@ -4813,6 +5137,11 @@ pub enum ClientMsg {
     GitWorktreePrune {
         dir: String,
     },
+    /// Read-only: what removing `path` would interrupt or lose, asked before the confirm.
+    WorktreeCheck {
+        dir: String,
+        path: String,
+    },
     /// Both halves of the setting at once, as `HostInfo` reports them.
     WorktreeCleanupSet {
         enabled: bool,
@@ -5123,6 +5452,48 @@ pub enum ClientMsg {
     /// A published review's `report.md`, at most `HARNESS_REPORT_MAX_BYTES`.
     HarnessReport {
         review_id: u32,
+    },
+    /// Creates the workspace's paused Night shift routine, or answers the
+    /// existing one; answers `night_shift_state`.
+    NightShiftCreate {
+        workspace: String,
+    },
+    /// `preflight_until_ms` also runs preflight for a start lasting until then.
+    NightShiftState {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        preflight_until_ms: Option<i64>,
+    },
+    NightShiftUpdate {
+        routine_id: u32,
+        settings: NightShiftSettings,
+        expected_revision: String,
+    },
+    /// Starts a run now whose hard stop is `until_ms`.
+    NightShiftRunNow {
+        routine_id: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+    },
+    NightShiftWrapUp {
+        run_id: u32,
+    },
+    NightShiftStop {
+        run_id: u32,
+    },
+    /// Answers a parked decision; a decision is answered once.
+    NightShiftDecide {
+        entry_id: u32,
+        choice: String,
+    },
+    /// Marks a held PR as QA passed, releasing it to the merge queue.
+    NightShiftQaPassed {
+        entry_id: u32,
+    },
+    /// A run's `report.md`, at most `NIGHT_SHIFT_REPORT_MAX_BYTES`.
+    NightShiftReport {
+        run_id: u32,
     },
     /// Records the operator's decision on a finding; `open` withdraws it.
     HarnessDecide {
@@ -5435,6 +5806,11 @@ pub enum ClientMsg {
     HostInfoGet,
     /// Checkpoints the WAL and runs VACUUM on the channel database. Never automatic.
     StorageReclaim,
+    /// Writes a redacted diagnostics file under the state directory for a bug report.
+    /// `app_version` is the renderer's version, recorded beside the daemon's.
+    DiagnosticsCollect {
+        app_version: String,
+    },
     RestoreBudgetSet {
         budget: u32,
     },
@@ -5551,6 +5927,40 @@ pub enum ClientMsg {
     RemoteGridsPublish {
         grids: Vec<RemoteGrid>,
     },
+    /// Whether someone is using the desktop app. No reply. `active` holds phone
+    /// notifications for `DESKTOP_AWAY_SECS` from receipt; `false`, or closing
+    /// the connection, releases them.
+    DesktopPresence {
+        active: bool,
+    },
+    /// Writes the workspace's Claude and Codex panes, code state and `grids` (the
+    /// renderer's grid entries, stored uninterpreted) to `destination`. Replies
+    /// `transfer_exported` or `transfer_refused` with the same `request`.
+    TransferExport {
+        request: u32,
+        workspace: String,
+        destination: String,
+        /// The save dialog confirmed replacing `destination`; otherwise an existing file
+        /// there is refused.
+        #[serde(default)]
+        overwrite: bool,
+        passphrase: TransferPassphrase,
+        grids: String,
+    },
+    /// Reads a transfer file's summary without changing anything.
+    TransferInspect {
+        request: u32,
+        path: String,
+        passphrase: TransferPassphrase,
+    },
+    /// Restores a transfer file into `workspace` and resumes its panes.
+    TransferImport {
+        request: u32,
+        path: String,
+        passphrase: TransferPassphrase,
+        workspace: String,
+        profiles: Vec<TransferProfileChoice>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5654,6 +6064,12 @@ pub enum ServerMsg {
     WorkspaceList {
         workspaces: Vec<Workspace>,
     },
+    /// Broadcast after `workspace_relocate` moved a workspace and its rows.
+    WorkspaceRelocated {
+        from: String,
+        to: String,
+        moved: WorkspaceRelocateMoved,
+    },
     /// Broadcast after `/manage workspace_open`: clients select this workspace.
     WorkspaceFocus {
         path: String,
@@ -5677,6 +6093,11 @@ pub enum ServerMsg {
     SessionTagsSet {
         session: u32,
         tags: Vec<u32>,
+    },
+    /// Broadcast when a pane's note is written or cleared; `None` means cleared.
+    SessionNote {
+        session: u32,
+        note: Option<PaneNote>,
     },
     SessionResumable {
         session: u32,
@@ -5820,6 +6241,10 @@ pub enum ServerMsg {
         /// `dir` exists but is outside any work tree; every other field is empty.
         #[serde(default)]
         not_a_repo: bool,
+        /// A merge, rebase or cherry-pick paused in this checkout, read from its git dir.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        operation: Option<GitOperation>,
     },
     GitDiff {
         dir: String,
@@ -6018,6 +6443,11 @@ pub enum ServerMsg {
     },
     WorktreeIdleRemovalDays {
         days: u32,
+    },
+    WorktreeCheck {
+        dir: String,
+        path: String,
+        check: WorktreeCheckResult,
     },
     GitCheckpoints {
         dir: String,
@@ -6260,6 +6690,47 @@ pub enum ServerMsg {
         #[serde(default)]
         engine_refusals: Vec<RoutineEngineRefusal>,
     },
+    /// Newest run first, at most `NIGHT_SHIFT_RUNS_PAGE`. `revision` guards
+    /// `night_shift_update`.
+    NightShiftState {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        routine: Option<Routine>,
+        settings: NightShiftSettings,
+        revision: String,
+        runs: Vec<NightRun>,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        preflight: Option<Vec<PreflightItem>>,
+        machine: NightMachine,
+        /// Whether the workspace's merge queue has a verification command,
+        /// which merge queue output needs.
+        #[serde(default)]
+        merge_verify_command: bool,
+        /// The global child panes per agent; a run's orchestrator has its own
+        /// limit of live workers plus two instead.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        child_cap: u32,
+        #[serde(default)]
+        detected: NightDetected,
+    },
+    /// One run changed (started, wrap-up, ledger, settled); broadcast.
+    NightShiftRunEvent {
+        run: NightRun,
+    },
+    /// One per settled run, for the morning: "7 draft PRs, 2 decisions".
+    NightShiftNotice {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u32,
+        headline: String,
+    },
+    NightShiftReport {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u32,
+        markdown: String,
+        truncated: bool,
+    },
     HarnessOverview {
         rows: Vec<HarnessAttention>,
     },
@@ -6476,6 +6947,17 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
+    /// Reply to `diagnostics_collect`: the file written, or why none was.
+    DiagnosticsCollected {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        path: Option<String>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        bytes: u64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        error: Option<String>,
+    },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,
     },
@@ -6524,6 +7006,26 @@ pub enum ServerMsg {
         qr_svg: String,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expires_at: u64,
+    },
+    TransferProgress {
+        request: u32,
+        stage: TransferStage,
+    },
+    TransferExported {
+        request: u32,
+        summary: TransferExportSummary,
+    },
+    TransferInspected {
+        request: u32,
+        summary: TransferFileSummary,
+    },
+    TransferImported {
+        request: u32,
+        result: TransferImportResult,
+    },
+    TransferRefused {
+        request: u32,
+        refusal: TransferRefusal,
     },
 }
 
@@ -6939,6 +7441,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_transfer_passphrase_never_appears_in_debug_output() {
+        let msg: ClientMsg = serde_json::from_str(
+            r#"{"type":"transfer_inspect","request":1,"path":"/tmp/a.houston-transfer","passphrase":"hunter2"}"#,
+        )
+        .unwrap();
+        let shown = format!("{msg:?}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
+        let ClientMsg::TransferInspect { passphrase, .. } = msg else {
+            panic!("expected transfer_inspect");
+        };
+        assert_eq!(passphrase.expose(), "hunter2");
+    }
+
+    #[test]
     fn dictation_defaults_to_portuguese_rather_than_auto_detect() {
         assert_eq!(
             VoiceSettings::default().input_language.as_deref(),
@@ -7153,6 +7670,7 @@ mod tests {
             base: None,
             default_base: Some("main".into()),
             not_a_repo: false,
+            operation: Some(GitOperation::CherryPick),
         };
         let value = serde_json::to_value(&msg).unwrap();
         let obj = value.as_object().unwrap();
@@ -7170,8 +7688,10 @@ mod tests {
             "base",
             "default_base",
             "not_a_repo",
+            "operation",
         ];
         expected.sort_unstable();
+        assert_eq!(obj["operation"], serde_json::json!("cherry_pick"));
         assert_eq!(keys, expected);
         assert_eq!(obj["base"], serde_json::json!(null));
         assert_eq!(obj["default_base"], serde_json::json!("main"));
@@ -7619,6 +8139,253 @@ mod tests {
         }
     }
 
+    fn night_settings_sample() -> NightShiftSettings {
+        let at = |hour, minute| NightClock { hour, minute };
+        NightShiftSettings {
+            v: NIGHT_SHIFT_SETTINGS_VERSION,
+            enabled: false,
+            window: NightWindow {
+                start: at(23, 30),
+                wrap_up: at(6, 45),
+                hard_stop: at(7, 30),
+                nights: vec![2, 3],
+            },
+            focus: NightFocus {
+                reliability: NightFocusLevel::Normal,
+                performance: NightFocusLevel::High,
+                ui_polish: NightFocusLevel::Off,
+                competitor_gaps: NightFocusLevel::Low,
+                docs_accuracy: NightFocusLevel::Off,
+                test_gaps: NightFocusLevel::Off,
+            },
+            direction: "faster attach".into(),
+            competitors: vec![
+                NightCompetitor::Repo {
+                    repo: "pingdotgg/t3code".into(),
+                },
+                NightCompetitor::App {
+                    name: "Orca".into(),
+                    version: "1.4.238".into(),
+                    path: "/opt/orca/orca".into(),
+                },
+            ],
+            orchestrator: NightAgent {
+                provider: AgentKind::Claude,
+                model: Some("opus".into()),
+            },
+            workers: vec![NightAgent {
+                provider: AgentKind::Zcode,
+                model: None,
+            }],
+            live_workers: 4,
+            reviewer: None,
+            output: NightOutput::MergeQueue,
+            pr_size: NightPrSize::Related { max_changes: 5 },
+            screenshots: true,
+            app_qa: NightAppQa {
+                enabled: true,
+                start_command: "scripts/dev.sh".into(),
+                source: "AGENTS.md".into(),
+                address: String::new(),
+                smoke_flows: vec!["open a pane".into()],
+            },
+            hold_for_qa: true,
+            checks: vec![NightCheck {
+                command: "cargo test".into(),
+                source: "added by you".into(),
+            }],
+            verification: NightVerification::Standard,
+            questions: NightQuestions::Park,
+        }
+    }
+
+    #[test]
+    fn night_shift_round_trip() {
+        let settings = night_settings_sample();
+        let item = PreflightItem {
+            id: "memory".into(),
+            status: PreflightStatus::Block,
+            label: "Free memory".into(),
+            detail: "4 GiB free".into(),
+            limit: Some("6144 MiB".into()),
+            actual: Some("4096 MiB".into()),
+        };
+        let entry = NightEntry {
+            id: 9,
+            run_id: 3,
+            kind: NightEntryKind::Pr,
+            title: "Faster attach".into(),
+            theme: Some("performance".into()),
+            status: Some("draft".into()),
+            pr_number: Some(41),
+            visible: true,
+            qa_passed: false,
+            body: String::new(),
+            gates: NightGates {
+                checks: NightGate::Passed,
+                review: NightGate::Passed,
+                qa: NightGate::Pending,
+                ci: NightGate::Failed,
+                verify: NightGate::Passed,
+                reruns: 1,
+            },
+            created_at_ms: 5,
+            decided_at_ms: None,
+            choice: None,
+            detail: NightEntryDetail {
+                claims: Vec::new(),
+                plans: vec![8],
+                head_sha: Some("abc123".into()),
+                built_by: vec![12],
+                checks_run: vec![NightCheckRun {
+                    command: "cargo fmt --check".into(),
+                    passed: false,
+                    code: Some(1),
+                    tail: "Diff in src/lib.rs".into(),
+                }],
+                verdicts: vec![NightVerdict {
+                    plan: 8,
+                    claim: 0,
+                    passed: true,
+                    evidence: "core/tests/attach.rs:42 passed".into(),
+                    fault: None,
+                    verifier: 13,
+                }],
+            },
+        };
+        let run = NightRun {
+            run_id: 3,
+            routine_id: 2,
+            workspace: "/w".into(),
+            trigger: RoutineTrigger::Manual,
+            phase: NightRunPhase::WrappingUp,
+            session_id: Some(7),
+            started_at_ms: 1,
+            wrap_up_at_ms: 2,
+            hard_stop_at_ms: 3,
+            ended_at_ms: None,
+            report_path: "/s/night-shift/3/report.md".into(),
+            report_published: false,
+            summary: None,
+            stop_reason: Some(NightStopReason::HardStop),
+            stop_detail: Some("07:30".into()),
+            interruptions: vec![NightInterruption {
+                at_ms: 1,
+                resumed_at_ms: 2,
+                detail: "daemon restart".into(),
+                resumed: true,
+            }],
+            cost: NightCost {
+                pane_hours: 1.5,
+                panes: 2,
+                per_provider: vec![NightCostLine {
+                    provider: AgentKind::Claude,
+                    panes: 2,
+                    pane_hours: 1.5,
+                }],
+            },
+            limited: vec![AgentKind::Claude],
+            preflight: vec![item.clone()],
+            keep_awake: NightKeepAwake::Held,
+            merge_order: vec![41],
+            entries: vec![entry],
+            crew: vec![NightCrewMember {
+                session_id: 7,
+                provider: AgentKind::Claude,
+                role: None,
+                status: Some(AgentStatus::Working),
+                started_at_ms: 1,
+                limited: false,
+            }],
+        };
+        let client = [
+            ClientMsg::NightShiftCreate {
+                workspace: "/w".into(),
+            },
+            ClientMsg::NightShiftState {
+                workspace: "/w".into(),
+                preflight_until_ms: Some(10),
+            },
+            ClientMsg::NightShiftUpdate {
+                routine_id: 2,
+                settings: settings.clone(),
+                expected_revision: "r".into(),
+            },
+            ClientMsg::NightShiftRunNow {
+                routine_id: 2,
+                until_ms: 10,
+            },
+            ClientMsg::NightShiftWrapUp { run_id: 3 },
+            ClientMsg::NightShiftStop { run_id: 3 },
+            ClientMsg::NightShiftDecide {
+                entry_id: 9,
+                choice: "ship".into(),
+            },
+            ClientMsg::NightShiftQaPassed { entry_id: 9 },
+            ClientMsg::NightShiftReport { run_id: 3 },
+        ];
+        for msg in client {
+            let json = serde_json::to_string(&msg).unwrap();
+            let back: ClientMsg = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), json);
+            assert!(json.contains("\"type\":\"night_shift_"), "{json}");
+        }
+        let server = [
+            ServerMsg::NightShiftState {
+                workspace: "/w".into(),
+                routine: None,
+                settings,
+                revision: "r".into(),
+                runs: vec![run.clone()],
+                preflight: Some(vec![item]),
+                machine: NightMachine {
+                    memory_free_mib: Some(1),
+                    disk_free_mib: None,
+                    on_battery: Some(false),
+                    keep_awake: NightKeepAwake::Off,
+                },
+                merge_verify_command: true,
+                child_cap: 6,
+                detected: NightDetected {
+                    checks: vec![NightCheck {
+                        command: "cargo fmt --check".into(),
+                        source: "ci.yml · core-checks".into(),
+                    }],
+                    start_command: Some(NightCheck {
+                        command: "node ui/harness/shot.mjs <story> <out.png>".into(),
+                        source: "ui/harness/shot.mjs".into(),
+                    }),
+                    apps: vec![NightInstalledApp {
+                        name: "Orca".into(),
+                        version: String::new(),
+                        path: "/opt/orca/orca".into(),
+                    }],
+                    apps_note: None,
+                },
+            },
+            ServerMsg::NightShiftRunEvent { run },
+            ServerMsg::NightShiftNotice {
+                workspace: "/w".into(),
+                run_id: 3,
+                headline: "1 draft PR, 0 decisions".into(),
+            },
+            ServerMsg::NightShiftReport {
+                run_id: 3,
+                markdown: "# Night".into(),
+                truncated: false,
+            },
+        ];
+        for msg in server {
+            let json = serde_json::to_string(&msg).unwrap();
+            let back: ServerMsg = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), json);
+        }
+        let kind: RoutineKind = serde_json::from_str("\"night_shift\"").unwrap();
+        assert_eq!(kind, RoutineKind::NightShift);
+        let stored = serde_json::to_value(night_settings_sample()).unwrap();
+        assert_eq!(stored["v"], serde_json::json!(2));
+    }
+
     #[test]
     fn state_predicates() {
         assert!(SessionState::Running.is_live());
@@ -7914,7 +8681,7 @@ mod tests {
         .unwrap();
         assert!(
             matches!(stored, ThreadEventKind::ToolCall { summary: None, .. }),
-            "events stored before v153 have no summary"
+            "events stored before v155 have no summary"
         );
         let block: ThreadEventKind =
             serde_json::from_str(r#"{"type":"reasoning","message_id":"m2"}"#).unwrap();

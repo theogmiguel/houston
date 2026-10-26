@@ -62,6 +62,15 @@ Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
 review; Cancel sends nothing at all.
 
+When a merge, rebase or cherry-pick stops part-way in the checkout, Changes shows a banner
+naming the operation and its conflicted files. **Resolve with agent** opens the same engine
+picker and starts the chosen agent in a new pane in that checkout. Its brief lists the
+conflicted files and the command that continues the operation without opening an editor,
+and tells the agent to run `git diff --check`, never to reset, restore, clean, stash or
+abort, and to report what it resolved. The banner leaves once git no longer reports the
+operation. A paused revert, or a cherry-pick range whose current commit was already made
+by hand, shows no banner.
+
 ## Pull requests
 
 Open **Pull requests** from the rail or press the prefix key followed by `R` to browse
@@ -288,10 +297,13 @@ workspace:
   says what would be lost. A branch that another worktree has checked out says so instead
   of offering the switch.
 - **Worktrees** adds a worktree beside the repository (Houston names its branch
-  `houston/<name>`), removes one — a worktree with uncommitted changes asks first — and
-  prunes registrations whose directory is already gone. A new worktree receives the ignored
-  files listed in `.worktreeinclude` and has its declared submodules initialised (see
-  [orchestration](orchestration.md)). "Add as workspace" turns a
+  `houston/<name>`), removes one, and prunes registrations whose directory is already
+  gone. Before a removal is confirmed, Houston lists what it would interrupt or lose:
+  uncommitted files and how recently the newest changed, commits not on the base branch or
+  on any remote, and the panes working inside the worktree. A check that could not look
+  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree
+  receives the ignored files listed in `.worktreeinclude` and has its declared submodules
+  initialised (see [orchestration](orchestration.md)). "Add as workspace" turns a
   worktree into a workspace you can open panes in.
 - **Checkpoints** captures the working tree and staging area as a snapshot you can come
   back to. Inspect shows what a checkpoint would change; Restore replaces the current
