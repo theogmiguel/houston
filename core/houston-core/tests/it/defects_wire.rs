@@ -159,6 +159,58 @@ async fn an_agent_finding_is_recorded_and_deduped_without_an_inbox_row() {
 }
 
 #[tokio::test]
+async fn an_agent_finding_is_stored_and_served_without_secrets_or_the_home_path() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let github = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    let anthropic = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz";
+    let home = rig
+        .daemon
+        .env()
+        .home_dir()
+        .expect("the rig has a home directory")
+        .display()
+        .to_string();
+    let mut report = finding(
+        &format!("Leaked {github} in a title"),
+        proto::DefectDestination::Workspace,
+        vec![
+            &format!("GITHUB_TOKEN={github}"),
+            &format!("curl -H 'x-api-key: {anthropic}' {home}/.config/a"),
+            &format!("file {}/src/a.rs", rig.workspace),
+        ],
+    );
+    report.body = format!("The worker printed ANTHROPIC_API_KEY={anthropic} from {home}/.zshrc");
+    rig.daemon.orchestrate_report(pane, report).unwrap();
+
+    let rows = rig.daemon.suspected_defect_rows(&rig.workspace).unwrap();
+    let wire = serde_json::to_string(&json!({
+        "title": rows[0].title,
+        "evidence": rows[0].evidence,
+    }))
+    .unwrap();
+    let stored: String = rig
+        .db()
+        .query_row(
+            "SELECT title || description || evidence FROM suspected_defects",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    for (what, text) in [("wire reply", &wire), ("database row", &stored)] {
+        for secret in [github, anthropic, home.as_str(), rig.workspace.as_str()] {
+            assert!(!text.contains(secret), "{what} holds {secret:?}: {text}");
+        }
+    }
+    assert!(rows[0]
+        .evidence
+        .iter()
+        .any(|e| e.contains("<workspace>/src/a.rs")));
+    let _ = rig.daemon.kill(pane);
+}
+
+#[tokio::test]
 async fn the_workspace_defect_limit_is_named_in_the_refusal() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
