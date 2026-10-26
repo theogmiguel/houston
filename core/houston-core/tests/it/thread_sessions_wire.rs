@@ -739,6 +739,59 @@ async fn a_refused_queued_row_does_not_stop_the_drain() {
         .any(|text| text.contains("/plug:cmd")));
 }
 
+/// A prompt accepted before the thread listed its command as terminal-only is not stranded
+/// at dispatch: it goes behind its request header, so Claude reads it as text, never as a
+/// command, and the dispatch gate has nothing to refuse.
+#[tokio::test]
+async fn a_prompt_named_terminal_only_after_acceptance_goes_behind_its_request_header() {
+    let mut rig = Rig::new().await;
+    let parent = rig.create("shell", "terminal").await.unwrap().id;
+    let id = rig.thread().await;
+    let db = Db::open(&rig._state.path().join("test.db")).unwrap();
+    db.delegation_create(
+        parent,
+        id,
+        Some("worker"),
+        "task",
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    rig.daemon.orchestration_set(true).unwrap();
+    let (_gate, open) = rig.gated_turn(id, "a").await;
+    let daemon = Arc::clone(&rig.daemon);
+    tokio::task::spawn_blocking(move || {
+        daemon.orchestrate_instruction_request(parent, id, "/plug:cmd", None, None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    db.set_thread_commands(
+        id,
+        &houston_core::thread_session::ThreadCommandList {
+            commands: vec![],
+            skills: vec![],
+            terminal_only: vec!["plug:cmd".into()],
+        },
+    )
+    .unwrap();
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the prompt to be delivered", || {
+        rig.stdin_texts()
+            .iter()
+            .any(|text| text.contains("/plug:cmd"))
+    })
+    .await;
+    let written = rig.stdin_texts();
+    let prompt = written
+        .iter()
+        .find(|text| text.contains("/plug:cmd"))
+        .unwrap();
+    assert!(
+        prompt.starts_with("This is request #") && !prompt.starts_with('/'),
+        "{written:?}"
+    );
+}
+
 /// A queued message stored before this daemon checked commands is refused when it would be
 /// sent, and stays held with the reason, so Send, steer and the drain never write it.
 #[tokio::test]
