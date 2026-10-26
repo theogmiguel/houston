@@ -5935,7 +5935,10 @@ impl Daemon {
         let Some(head_sha) = head_sha else {
             return;
         };
-        let Some(reviewer) = self.tasks_default_reviewer(workspace) else {
+        let Some(reviewer) = impl_run
+            .reviewer
+            .or_else(|| self.tasks_default_reviewer(workspace))
+        else {
             return;
         };
         let runs = match self.db.task_runs(task.id, proto::RUNS_PER_TASK) {
