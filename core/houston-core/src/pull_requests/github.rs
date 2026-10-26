@@ -657,9 +657,8 @@ fn merged_required_checks(classic: Option<Vec<String>>, rules: Vec<String>) -> V
 }
 
 /// Fills in the base branch's ruleset checks when the hand-off could use them:
-/// auto-merge is allowed and classic branch protection names no check. Any
-/// failure leaves the list as the access query answered, so the queue keeps
-/// Houston merging rather than guessing that GitHub may merge on its own.
+/// auto-merge is allowed and classic branch protection names no check. A failed
+/// read leaves the access query's list, so the queue never guesses.
 fn add_rules_checks(
     dir: &Path,
     repository: &str,
