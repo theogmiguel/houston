@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentStatus, SessionInfo } from '../houston/client'
-import { attentionStatus } from '../sessionAttention'
+import { askedOrchestrator, attentionStatus } from '../sessionAttention'
 import { useSession } from '../sessionsStore'
 import { StatusNote } from './ui/StatusNote'
 
@@ -14,12 +14,21 @@ export interface AnnouncerSnapshot {
   pane: number | null
   title: string
   status: AgentStatus | null
+  /** A child blocked on a decision its orchestrator owns; its reported status reads idle, but it has not finished. */
+  waitingOnOrchestrator: boolean
   /** Panes other than the focused one whose input request the user owns. */
   othersNeedingYou: number
 }
 
-function statusPhrase(title: string, from: AgentStatus | null, to: AgentStatus | null): string | null {
+type Spoken = AgentStatus | 'waiting-on-orchestrator' | null
+
+function spoken(snapshot: AnnouncerSnapshot): Spoken {
+  return snapshot.waitingOnOrchestrator ? 'waiting-on-orchestrator' : snapshot.status
+}
+
+function statusPhrase(title: string, from: Spoken, to: Spoken): string | null {
   if (to === from) return null
+  if (to === 'waiting-on-orchestrator') return `${title} is waiting on the orchestrator`
   if (to === 'working') return `${title} is working`
   if (to === 'needs-input') return `${title} needs your input`
   if (to === 'idle') return from === 'working' ? `${title} finished` : `${title} is ready`
@@ -35,7 +44,7 @@ function countPhrase(count: number): string {
 export function announcement(from: AnnouncerSnapshot, to: AnnouncerSnapshot): string | null {
   if (from.pane !== to.pane) return null
   const parts = [
-    to.pane === null ? null : statusPhrase(to.title, from.status, to.status),
+    to.pane === null ? null : statusPhrase(to.title, spoken(from), spoken(to)),
     from.othersNeedingYou === to.othersNeedingYou ? null : countPhrase(to.othersNeedingYou),
   ].filter((part): part is string => part !== null)
   return parts.length === 0 ? null : `${parts.join('. ')}.`
@@ -46,6 +55,7 @@ export function announcerSnapshot(session: SessionInfo | undefined, needingYou: 
     pane: session ? session.id : null,
     title: session?.title ?? '',
     status: session ? attentionStatus(session) ?? null : null,
+    waitingOnOrchestrator: session ? askedOrchestrator(session) && attentionStatus(session) !== 'working' : false,
     othersNeedingYou: needingYou.filter((id) => id !== session?.id).length,
   }
 }
@@ -63,7 +73,7 @@ export function StatusAnnouncerRegion({ snapshot }: { snapshot: AnnouncerSnapsho
   const latest = useRef(snapshot)
   latest.current = snapshot
   // The title is read when the timer fires, not watched: CLI titles can update faster than the settle window.
-  const { pane, status, othersNeedingYou } = snapshot
+  const { pane, status, waitingOnOrchestrator, othersNeedingYou } = snapshot
   useEffect(() => {
     if (spoken.current.pane !== pane) {
       spoken.current = latest.current
@@ -75,7 +85,7 @@ export function StatusAnnouncerRegion({ snapshot }: { snapshot: AnnouncerSnapsho
       if (next !== null) setMessage(next)
     }, ANNOUNCE_SETTLE_MS)
     return () => window.clearTimeout(settle)
-  }, [pane, status, othersNeedingYou])
+  }, [pane, status, waitingOnOrchestrator, othersNeedingYou])
   useEffect(() => {
     if (message === '') return
     const clear = window.setTimeout(() => setMessage(''), ANNOUNCE_CLEAR_MS)

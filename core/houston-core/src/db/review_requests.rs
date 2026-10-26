@@ -1,6 +1,6 @@
 //! The review-request queue: one row per pull request head, with the triage
 //! reasons and the operator's state. A new head is a new row, so a re-push is
-//! triaged again without erasing the previous request.
+//! triaged again; only the newest head of each pull request is listed.
 
 use anyhow::Result;
 use houston_protocol as proto;
@@ -280,6 +280,25 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
             "{SELECT} ORDER BY first_seen_ms DESC, id DESC LIMIT ?1"
+        ))?;
+        let rows = stmt
+            .query_map([limit], map)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// One row per pull request: its newest head. Older heads stay stored (they
+    /// carry the reviewed history and dedupe a head seen again) but are
+    /// superseded, so they are neither listed, counted nor reviewed.
+    pub fn review_requests_current(&self, limit: u32) -> Result<Vec<ReviewRequestRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{SELECT} WHERE id = (
+                 SELECT newer.id FROM review_requests newer
+                 WHERE newer.host = review_requests.host AND newer.repo = review_requests.repo
+                   AND newer.number = review_requests.number
+                 ORDER BY newer.first_seen_ms DESC, newer.id DESC LIMIT 1)
+             ORDER BY first_seen_ms DESC, id DESC LIMIT ?1"
         ))?;
         let rows = stmt
             .query_map([limit], map)?

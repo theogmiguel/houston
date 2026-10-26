@@ -134,7 +134,9 @@ Each row names its repository and number, title, author and one of three tiers. 
 never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
 more than 400 lines or a documentation-only change. A row with no matching local checkout
 says so, because Houston has nowhere to open the review pane. **Dismiss** records your
-decision and **Reopen** withdraws it. The rail's **Pull requests** item counts new requests.
+decision and **Reopen** withdraws it. A pull request has one row, for its newest head: a new push
+replaces the row and is triaged again. The rail's **Pull requests** item counts new requests. In
+**Review** mode, the review worktree is removed once its pane has exited.
 GitHub rate-limit pauses and credential problems appear as a notice in the view and in
 Settings without dropping the rows.
 

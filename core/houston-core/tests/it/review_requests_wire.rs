@@ -159,7 +159,11 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     rig.daemon.review_request_tick();
     let found = notices(&mut updates);
     let (_, items, _) = state(&rig);
-    assert_eq!(items.len(), 2, "a new head is a new request");
+    assert_eq!(
+        items.len(),
+        1,
+        "a new head replaces the older head of the same pull request: {items:?}"
+    );
     let new = items.iter().find(|item| item.head_sha == "head-b").unwrap();
     assert_eq!(new.tier, proto::ReviewTier::C);
     assert!(new
@@ -184,7 +188,7 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
         reads,
         "an unchanged updatedAt is not re-read"
     );
-    assert_eq!(state(&rig).1.len(), 2);
+    assert_eq!(state(&rig).1.len(), 1);
 
     search(
         &rig,
@@ -193,8 +197,113 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     head(&rig, 1, "head-c");
     rig.daemon.review_request_tick();
     let (_, items, _) = state(&rig);
-    assert_eq!(items.len(), 3);
-    assert!(items.iter().any(|item| item.head_sha == "head-c"));
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].head_sha, "head-c");
+    let stored: i64 = rig
+        .db()
+        .query_row("SELECT COUNT(*) FROM review_requests", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(stored, 3, "superseded heads stay stored so they dedupe");
+}
+
+#[tokio::test]
+async fn a_superseded_head_is_not_reviewed_and_a_closed_review_pane_takes_its_worktree() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    install_fake_provider(&rig);
+    let first = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\n",
+        "head a",
+    );
+    git(&rig.root, &["push", "-q", "origin", "main"]);
+    git(&rig.origin, &["update-ref", "refs/pull/5/head", &first]);
+    // Prime with an empty search so head A is a live request, not an absorbed one.
+    search(&rig, &[]);
+    rig.daemon
+        .review_requests_set(proto::ReviewRequestMode::Notify)
+        .unwrap();
+    rig.daemon.review_request_tick();
+    pr(
+        &rig,
+        5,
+        "houston/review-five",
+        json!([{"path": "src/lib.rs", "additions": 30, "deletions": 0}]),
+        "main",
+        true,
+    );
+    search(
+        &rig,
+        &[("owner/repo", 5, "2026-10-26T00:00:00Z", "First head")],
+    );
+    head(&rig, 5, &first);
+    rig.daemon.review_request_tick();
+    assert_eq!(state(&rig).1.len(), 1);
+
+    let second = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\nsix\n",
+        "head b",
+    );
+    git(&rig.root, &["push", "-q", "origin", "main"]);
+    git(&rig.origin, &["update-ref", "refs/pull/5/head", &second]);
+    search(
+        &rig,
+        &[("owner/repo", 5, "2026-10-26T00:01:00Z", "Second head")],
+    );
+    head(&rig, 5, &second);
+    rig.daemon.review_request_tick();
+    let (_, items, _) = state(&rig);
+    assert_eq!(items.len(), 1, "one entry per pull request: {items:?}");
+    assert_eq!(items[0].head_sha, second, "the newest head is the entry");
+    assert_eq!(items[0].state, proto::ReviewRequestState::New);
+
+    // Head A is still a stored `new` row; review mode must spend one pane, on head B.
+    rig.daemon
+        .review_requests_set(proto::ReviewRequestMode::Review)
+        .unwrap();
+    let panes_before = rig.daemon.list().len();
+    rig.daemon.review_request_tick();
+    assert_eq!(rig.daemon.list().len(), panes_before + 1, "one review pane");
+    let (_, items, note) = state(&rig);
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(
+        items[0].state,
+        proto::ReviewRequestState::Reviewing,
+        "{note:?}"
+    );
+    let old_state: String = rig
+        .db()
+        .query_row(
+            "SELECT state FROM review_requests WHERE head_sha = ?1",
+            [&first],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(old_state, "new", "the superseded head was never reviewed");
+
+    let slug = format!(
+        "review-{}-5-{}",
+        houston_core::git::ref_slug("owner/repo"),
+        &second[..8]
+    );
+    let worktree =
+        houston_core::worktrees::default_path(rig.daemon.state_dir(), &rig.workspace, &slug);
+    assert!(
+        worktree.exists(),
+        "the live review pane works in {worktree:?}"
+    );
+    let session = rig.daemon.list().last().expect("the review pane").id;
+    rig.daemon.kill(session).unwrap();
+    rig.daemon.review_request_tick();
+    let (_, items, _) = state(&rig);
+    assert_eq!(items[0].state, proto::ReviewRequestState::Reviewed);
+    assert!(
+        !worktree.exists(),
+        "a closed review pane leaves no worktree behind: {worktree:?}"
+    );
 }
 
 #[tokio::test]

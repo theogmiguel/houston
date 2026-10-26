@@ -84,7 +84,7 @@ impl Daemon {
             .filter(|note| !note.trim().is_empty());
         let items = self
             .db
-            .review_requests(proto::REVIEW_REQUESTS_MAX)
+            .review_requests_current(proto::REVIEW_REQUESTS_MAX)
             .unwrap_or_default()
             .into_iter()
             .map(|row| {
@@ -424,8 +424,22 @@ impl Daemon {
                         row.repo,
                         row.number
                     );
+                    self.discard_finished_review_worktree(&row);
                 }
             }
+        }
+    }
+
+    /// The review pane is gone and its worktree was read-only and detached, so
+    /// nothing in it is worth keeping; the worktree, its branch and its record go.
+    fn discard_finished_review_worktree(&self, row: &ReviewRequestRow) {
+        let Some(workspace) = row.workspace.as_deref() else {
+            return;
+        };
+        let (branch, slug) = review_worktree_names(row);
+        let dest = crate::worktrees::default_path(self.state_dir(), workspace, &slug);
+        if dest.exists() {
+            self.discard_review_request_worktree(Path::new(workspace), &dest, &branch);
         }
     }
 
@@ -437,7 +451,7 @@ impl Daemon {
     }
 
     fn spawn_pending_reviews(self: &Arc<Self>) {
-        let rows = match self.db.review_requests(proto::REVIEW_REQUESTS_MAX) {
+        let rows = match self.db.review_requests_current(proto::REVIEW_REQUESTS_MAX) {
             Ok(rows) => rows,
             Err(_) => return,
         };
@@ -500,18 +514,7 @@ impl Daemon {
         if !project.is_dir() {
             bail!("workspace {workspace} is not a directory");
         }
-        let branch = format!(
-            "houston/review-{}-{}-{}",
-            crate::git::ref_slug(&row.repo),
-            row.number,
-            &row.head_sha[..row.head_sha.len().min(8)]
-        );
-        let slug = format!(
-            "review-{}-{}-{}",
-            crate::git::ref_slug(&row.repo),
-            row.number,
-            &row.head_sha[..row.head_sha.len().min(8)]
-        );
+        let (branch, slug) = review_worktree_names(row);
         let dest = crate::worktrees::default_path(self.state_dir(), workspace, &slug);
         if let Some(parent) = dest.parent() {
             crate::worktrees::ensure_ignored(parent)?;
@@ -619,6 +622,17 @@ impl Daemon {
             );
         }
     }
+}
+
+/// The branch and worktree slug of one request's review pane; both name the head, so each head has its own.
+fn review_worktree_names(row: &ReviewRequestRow) -> (String, String) {
+    let slug = format!(
+        "review-{}-{}-{}",
+        crate::git::ref_slug(&row.repo),
+        row.number,
+        &row.head_sha[..row.head_sha.len().min(8)]
+    );
+    (format!("houston/{slug}"), slug)
 }
 
 fn triage_facts(facts: &crate::gh::ReviewRequestFacts) -> crate::review_triage::Verdict {
