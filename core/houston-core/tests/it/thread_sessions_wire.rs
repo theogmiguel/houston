@@ -692,6 +692,53 @@ async fn a_late_exit_of_a_resumed_thread_keeps_its_conversation() {
     daemon.close(id).unwrap();
 }
 
+/// A queued row whose command Claude later lists as terminal-only goes back held with the
+/// reason, and the drain goes on to the next queued row instead of stopping.
+#[tokio::test]
+async fn a_refused_queued_row_does_not_stop_the_drain() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_gate, open) = rig.gated_turn(id, "a").await;
+    rig.say(id, "/plug:cmd go").await;
+    rig.say(id, "after").await;
+    rig.queue_until(id, |items| items.len() == 2).await;
+    Db::open(&rig._state.path().join("test.db"))
+        .unwrap()
+        .set_thread_commands(
+            id,
+            &houston_core::thread_session::ThreadCommandList {
+                commands: vec![],
+                skills: vec![],
+                terminal_only: vec!["plug:cmd".into()],
+            },
+        )
+        .unwrap();
+    std::fs::write(&open, b"").unwrap();
+    wait_until("the row behind the refused one to be sent", || {
+        rig.stdin_texts().iter().any(|text| text == "after")
+    })
+    .await;
+    let items = match rig.daemon.thread_queue_list(id).unwrap() {
+        proto::ServerMsg::ThreadQueue { items, .. } => items,
+        other => panic!("expected the queue, got {other:?}"),
+    };
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].text, "/plug:cmd go");
+    assert_eq!(items[0].state, proto::QueuedState::Held);
+    assert!(
+        items[0]
+            .hold_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("/plug:cmd runs only"),
+        "{items:?}"
+    );
+    assert!(!rig
+        .stdin_texts()
+        .iter()
+        .any(|text| text.contains("/plug:cmd")));
+}
+
 /// A queued message stored before this daemon checked commands is refused when it would be
 /// sent, and stays held with the reason, so Send, steer and the drain never write it.
 #[tokio::test]

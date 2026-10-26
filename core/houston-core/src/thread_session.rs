@@ -121,6 +121,26 @@ impl std::fmt::Display for ThreadBusy {
 
 impl std::error::Error for ThreadBusy {}
 
+/// The adapter refused the message, for example a command that runs only in the provider's
+/// terminal interface. Retrying cannot help, so the drain holds it with the reason.
+#[derive(Debug)]
+struct CommandRefused {
+    session: u32,
+    reason: String,
+}
+
+impl std::fmt::Display for CommandRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "message refused for thread session {}: {}",
+            self.session, self.reason
+        )
+    }
+}
+
+impl std::error::Error for CommandRefused {}
+
 /// One user message on its way to the provider.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutgoingMessage {
@@ -1321,10 +1341,11 @@ impl StructuredRuntime {
         };
         let commands = self.host.stored_commands(self.session);
         if let Some(reason) = self.adapter.message_refusal(&message, commands.as_ref()) {
-            bail!(
-                "message refused for thread session {}: {reason}",
-                self.session
-            );
+            return Err(CommandRefused {
+                session: self.session,
+                reason,
+            }
+            .into());
         }
         Ok(())
     }
@@ -1476,29 +1497,33 @@ impl StructuredRuntime {
             if state.turn_open || state.process.is_none() {
                 return;
             }
-            let row = match self.host.queue_take(self.session, None) {
-                Ok(Some(row)) => row,
-                Ok(None) => return,
-                Err(error) => {
-                    tracing::warn!("session {}: reading its queue: {error:#}", self.session);
-                    return;
-                }
-            };
-            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
-            match self.deliver(
-                &mut state,
-                &text,
-                &excerpts,
-                MessageDelivery::Queued,
-                Some(row),
-            ) {
-                Ok(pending) => pending,
-                Err(error) => {
-                    tracing::warn!(
-                        "session {}: sending its queued message: {error:#}",
-                        self.session
-                    );
-                    return;
+            loop {
+                let row = match self.host.queue_take(self.session, None) {
+                    Ok(Some(row)) => row,
+                    Ok(None) => return,
+                    Err(error) => {
+                        tracing::warn!("session {}: reading its queue: {error:#}", self.session);
+                        return;
+                    }
+                };
+                let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+                match self.deliver(
+                    &mut state,
+                    &text,
+                    &excerpts,
+                    MessageDelivery::Queued,
+                    Some(row),
+                ) {
+                    Ok(pending) => break pending,
+                    // The refused row went back held with its reason; the next one may go.
+                    Err(error) if error.is::<CommandRefused>() => continue,
+                    Err(error) => {
+                        tracing::warn!(
+                            "session {}: sending its queued message: {error:#}",
+                            self.session
+                        );
+                        return;
+                    }
                 }
             }
         };
