@@ -203,6 +203,12 @@ crash (see [panes](panes-and-grids.md#idle-and-restore-behavior)).
 ZCode has no read-only mode on its command line (it turns planning on only inside its own
 interface, with `/plan`), so Houston does not use it to plan a task; see
 [Tasks](tasks.md#planning-a-task).
+A ZCode turn that fails is not reported, so its pane keeps showing Working. With
+Settings ▸ Agents ▸ **Check ZCode plan quota when a pane stalls** on, Houston waits
+20 minutes after the pane last changed status and then runs one headless `zcode -p`
+request with the prompt "Reply with the single word OK."; a failed request marks the pane
+Limited and tells its parent. The check spends a little of your ZCode plan quota and is off
+by default.
 ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way,
 and Skills shows and copies it that way while a ZCode pane is focused. ZCode finds skills
 in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project, not in

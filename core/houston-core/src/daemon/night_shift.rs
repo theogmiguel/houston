@@ -725,6 +725,13 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn set_session_status_since_for_test(&self, session: u32, ms: u64) {
+        if let Ok(s) = self.get(session) {
+            *s.status_since_ms.lock().expect("status since lock") = Some(ms);
+        }
+    }
+
+    #[doc(hidden)]
     /// The program a provider's quota probe runs instead of the one on PATH.
     pub fn set_night_shift_probe_for_test(
         &self,
@@ -3631,11 +3638,20 @@ impl Daemon {
     }
 
     fn night_probe_begin(&self, run_id: u32, provider: proto::AgentKind) -> bool {
-        self.night
+        let mut quota = self.zcode_quota.lock().expect("zcode quota");
+        if provider == proto::AgentKind::Zcode && quota.probe_busy {
+            return false;
+        }
+        let inserted = self
+            .night
             .probing
             .lock()
             .expect("probe set")
-            .insert((run_id, crate::agent_hooks::provider_slug(provider)))
+            .insert((run_id, crate::agent_hooks::provider_slug(provider)));
+        if inserted && provider == proto::AgentKind::Zcode {
+            quota.probe_busy = true;
+        }
+        inserted
     }
 
     fn night_probe_end(&self, run_id: u32, provider: proto::AgentKind) {
@@ -3644,10 +3660,22 @@ impl Daemon {
             .lock()
             .expect("probe set")
             .remove(&(run_id, crate::agent_hooks::provider_slug(provider)));
+        if provider == proto::AgentKind::Zcode {
+            self.zcode_quota.lock().expect("zcode quota").probe_busy = false;
+        }
+    }
+
+    fn night_probe_run(&self, run_id: u32, provider: proto::AgentKind) -> provider_probe::Outcome {
+        let outcome = self.quota_probe_run(provider);
+        tracing::info!(
+            "Night shift run {run_id}: {} quota probe {outcome:?}",
+            crate::agent_hooks::provider_slug(provider)
+        );
+        outcome
     }
 
     /// The probe itself: its own program, its own scratch directory.
-    fn night_probe_run(&self, run_id: u32, provider: proto::AgentKind) -> provider_probe::Outcome {
+    pub(super) fn quota_probe_run(&self, provider: proto::AgentKind) -> provider_probe::Outcome {
         let slug = crate::agent_hooks::provider_slug(provider);
         let program = self
             .night
@@ -3658,7 +3686,7 @@ impl Daemon {
             .cloned()
             .or_else(|| crate::exe_path::resolve_in(&self.env(), slug));
         let cwd = self.state_dir.join("night-shift").join("probe");
-        let outcome = match program {
+        match program {
             None => provider_probe::Outcome::Failed(format!("{slug} is not on PATH")),
             Some(program) => match std::fs::create_dir_all(&cwd) {
                 Ok(()) => provider_probe::run(&program, provider, &cwd),
@@ -3666,9 +3694,7 @@ impl Daemon {
                     provider_probe::Outcome::Failed(format!("creating {}: {e}", cwd.display()))
                 }
             },
-        };
-        tracing::info!("Night shift run {run_id}: {slug} quota probe {outcome:?}");
-        outcome
+        }
     }
 
     /// Runs a stall probe off the caller's thread; `done` gets its outcome.

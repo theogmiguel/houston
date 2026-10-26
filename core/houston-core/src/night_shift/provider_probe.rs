@@ -110,6 +110,16 @@ pub fn run(program: &Path, provider: AgentKind, cwd: &Path) -> Outcome {
     }
 }
 
+/// The reset time ZCode's typed provider error carries in its
+/// `[... reset at <timestamp>]` form, if any.
+pub fn reset_at(reason: &str) -> Option<&str> {
+    let start = reason.find("reset at ")? + "reset at ".len();
+    let rest = &reason[start..];
+    let end = rest.find(']').unwrap_or(rest.len());
+    let value = rest[..end].trim();
+    (!value.is_empty() && value.chars().count() <= 40).then_some(value)
+}
+
 /// How many minutes a pane has been Working with no turn end, once it reaches
 /// `stall_ms`. Not working resets the clock to `now_ms`.
 pub fn stalled_minutes(working: bool, since_ms: i64, now_ms: i64, stall_ms: i64) -> Option<u32> {
@@ -158,6 +168,14 @@ mod tests {
         ] {
             assert_eq!(argv(provider), None, "{provider:?} has no probe");
         }
+    }
+
+    #[test]
+    fn a_typed_reset_time_is_lifted_from_the_provider_error() {
+        assert_eq!(reset_at(SPENT), Some("2026-10-24 22:18:34"));
+        assert_eq!(reset_at("[1310][limit]"), None);
+        assert_eq!(reset_at("reset at "), None);
+        assert_eq!(reset_at("limit; reset at ]"), None);
     }
 
     #[test]

@@ -214,6 +214,12 @@ provider limited for the run, so later spawns use the next worker provider; at t
 also recorded as a warning on the run. A probe answered at the start is recorded as an
 answered check, and a provider whose sign-in check already blocked is not probed.
 
+Outside a Night shift run, Settings ▸ Agents ▸ **Check ZCode plan quota when a pane stalls**
+applies the same ZCode probe to a pane that has shown Working for 20 minutes: at most one
+probe runs at a time, and a pane is probed at most once per stall window. A failed probe marks
+the pane Limited, ends the failed turn and tells its parent once. The setting is off by
+default and spends a little of your ZCode plan quota.
+
 If the daemon restarts during a run, the run continues when the orchestrator pane is still
 running (a Linux daemon handover keeps it), or when the daemon is back before wrap-up and
 the orchestrator pane was restored: held instructions resume, keep-awake is taken again and

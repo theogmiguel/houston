@@ -261,6 +261,7 @@ mod tests {
             "night_shift/window.rs",
             "night_shift/provider_probe.rs",
             "daemon/night_shift.rs",
+            "daemon/zcode_quota.rs",
             "mcp_night.rs",
         ];
         let needles = [

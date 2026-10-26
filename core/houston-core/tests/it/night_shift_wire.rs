@@ -1959,7 +1959,7 @@ fn probe_script(dir: &Path, name: &str, ok: bool) -> (PathBuf, PathBuf) {
     let body = if ok {
         "echo OK"
     } else {
-        "echo 'ProviderBusinessError: [1310][Weekly/Monthly Limit Exhausted.]' >&2; exit 1"
+        "echo 'ProviderBusinessError: [1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 22:18:34]' >&2; exit 1"
     };
     std::fs::write(
         &path,
@@ -2004,6 +2004,29 @@ fn probe_scripts(
             .set_night_shift_probe_for_test(provider, Some(script));
     }
     (answer_args, spent.map(|(_, _, args)| args))
+}
+
+/// A parent pane outside any routine, so its delegated child is not a Night
+/// shift pane.
+fn plain_parent(r: &Rig) -> u32 {
+    r.daemon
+        .create_session(houston_core::daemon::CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: r.ws.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "sleep 60".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap()
+        .id
 }
 
 #[tokio::test]
@@ -2157,6 +2180,82 @@ async fn start_probe_covers_every_worker_provider() {
     );
     let spent = std::fs::read_to_string(spent_args.expect("Codex's arg log")).unwrap();
     assert_eq!(spent.lines().count(), 1, "{spent}");
+}
+
+/// Outside Night shift, a stalled delegated ZCode pane becomes Limited and its
+/// parent gets one `limited` row, but only when the opt-in check is on.
+#[tokio::test]
+async fn a_stalled_zcode_pane_is_limited_when_the_check_is_on() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
+    r.daemon
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
+    r.daemon.set_zcode_quota_check(true).unwrap();
+    assert!(r.daemon.zcode_quota_check_enabled());
+    let parent = plain_parent(&r);
+    let (status, body) = r.spawn_child(parent, "zcode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .set_session_status_for_test(child, proto::AgentStatus::Working);
+    let t0 = houston_core::daemon::now_unix_ms();
+    r.daemon.set_session_status_since_for_test(child, t0 as u64);
+    r.daemon.zcode_quota_tick_at((t0 + 21 * MINUTE) as u64);
+    wait_until("ZCode to be limited", || {
+        r.daemon
+            .session_limit(child)
+            .is_some_and(|limit| limit.error == "quota")
+    })
+    .await;
+    let limit = r.daemon.session_limit(child).expect("the pane is limited");
+    let details = limit.details.expect("the probe's reason");
+    assert!(details.contains("[1310]"), "{details}");
+    assert!(
+        details.contains("reset at 2026-10-24 22:18:34"),
+        "the typed reset time is kept: {details}"
+    );
+    assert_eq!(
+        r.daemon.session_status(child).unwrap(),
+        Some(proto::AgentStatus::Idle),
+        "the failed turn ended"
+    );
+    wait_until("the parent to be told once", || {
+        r.notes(parent, "zcode limited") == 1
+    })
+    .await;
+    let args = std::fs::read_to_string(&spent_args).unwrap();
+    assert_eq!(args.lines().count(), 1, "{args}");
+    r.daemon.zcode_quota_tick_at((t0 + 42 * MINUTE) as u64);
+    assert_eq!(
+        r.notes(parent, "zcode limited"),
+        1,
+        "one row per failed turn"
+    );
+}
+
+#[tokio::test]
+async fn the_stalled_zcode_check_does_nothing_when_off() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
+    r.daemon
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
+    assert!(!r.daemon.zcode_quota_check_enabled(), "the check is opt-in");
+    let parent = plain_parent(&r);
+    let (status, body) = r.spawn_child(parent, "zcode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .set_session_status_for_test(child, proto::AgentStatus::Working);
+    let t0 = houston_core::daemon::now_unix_ms();
+    r.daemon.set_session_status_since_for_test(child, t0 as u64);
+    r.daemon.zcode_quota_tick_at((t0 + 21 * MINUTE) as u64);
+    assert_eq!(r.daemon.session_limit(child), None);
+    assert!(!spent_args.exists(), "no probe ran");
+    assert_eq!(r.notes(parent, "zcode limited"), 0);
 }
 
 #[tokio::test]

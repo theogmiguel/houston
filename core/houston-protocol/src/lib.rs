@@ -4372,6 +4372,11 @@ pub enum ClientMsg {
     GeneratedTitlesSet {
         enabled: bool,
     },
+    /// The opt-in ZCode quota check for a pane that stalls outside Night shift.
+    ZcodeQuotaCheckGet {},
+    ZcodeQuotaCheckSet {
+        enabled: bool,
+    },
     SessionTitleReset {
         session: u32,
     },
@@ -5613,6 +5618,10 @@ pub enum ClientMsg {
 #[allow(clippy::large_enum_variant)]
 pub enum ServerMsg {
     GeneratedTitles {
+        enabled: bool,
+    },
+
+    ZcodeQuotaCheck {
         enabled: bool,
     },
 
