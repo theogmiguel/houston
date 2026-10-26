@@ -2359,6 +2359,8 @@ async fn messages_sent_during_a_turn_wait_and_go_once_each_in_order() {
     let id = rig.thread().await;
     let (gate, open) = rig.gated_turn(id, "a").await;
     rig.say(id, "second").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "third").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     assert_eq!(
@@ -2409,6 +2411,8 @@ async fn steering_a_queued_message_stops_the_turn_and_sends_it_first() {
     let id = rig.thread().await;
     let (gate, _open) = rig.gated_turn(id, "a").await;
     rig.say(id, "second").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "third").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     rig.send(json!({"type":"thread_steer","session":id,"id":queued[1].id}))
@@ -2922,6 +2926,8 @@ async fn queue_snapshots_arrive_in_the_order_the_queue_changed() {
     let id = rig.thread().await;
     let (_, open) = rig.gated_turn(id, "a").await;
     rig.say(id, "first").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "second").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     let barrier = TestBarrier::arm("thread-queue-publish");
