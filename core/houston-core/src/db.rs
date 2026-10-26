@@ -7,11 +7,13 @@ use std::path::Path;
 use std::sync::Mutex;
 
 mod child_inputs;
+mod defects;
 mod harness;
 mod instructions;
 mod intake;
 mod merge_queue;
 mod night_shift;
+pub use defects::{defect_key, DefectInput, DefectRecord, DefectRow};
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
@@ -170,6 +172,7 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("harness_routines", "workspace"),
     ("harness_reviews", "workspace"),
     ("harness_decisions", "workspace"),
+    ("suspected_defects", "workspace"),
     ("harness_finding_tasks", "workspace"),
     ("intake_events", "workspace"),
     ("task_tracker_settings", "workspace"),
@@ -194,7 +197,12 @@ const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
 ];
 
 /// Settings stored per workspace as `<prefix><workspace path>`.
-const WORKSPACE_SETTING_PREFIXES: &[&str] = &["workspace_actions:", "workspace_routing:"];
+const WORKSPACE_SETTING_PREFIXES: &[&str] = &[
+    "workspace_actions:",
+    "workspace_routing:",
+    "defect_detector_day:",
+    "defect_notice_day:",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedWorktreeRow {
@@ -2074,6 +2082,7 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        defects::migrate(&conn)?;
         night_shift::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
