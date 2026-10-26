@@ -96,8 +96,10 @@ pub fn login_fact(rows: &[AgentAccountIdentity], provider: AgentKind) -> SignIn 
             }
             AgentSignIn::SignedOut => {
                 signed_out = true;
-                if !signed_out_is_definitive(provider, row) {
-                    ambiguous = true;
+                match signed_out_state(provider, row) {
+                    SignedOutState::Definitive => {}
+                    SignedOutState::Ambiguous => ambiguous = true,
+                    SignedOutState::Unreadable => unknown = true,
                 }
             }
             AgentSignIn::Unknown => unknown = true,
@@ -114,14 +116,39 @@ pub fn login_fact(rows: &[AgentAccountIdentity], provider: AgentKind) -> SignIn 
     }
 }
 
-/// Whether a signed-out row is the provider's own explicit signal. Only
-/// Codex's store qualifies; the other CLIs document another way in or keep
-/// the credential somewhere Houston does not read.
-fn signed_out_is_definitive(provider: AgentKind, row: &AgentAccountIdentity) -> bool {
-    // Claude leaves `oauthAccount` empty for an API key, Bedrock, Vertex or a
-    // setup token; OpenCode 2 imports `auth.json` into a database Houston
-    // cannot read. `verified` keeps an unconfirmed store from proving a sign-out.
-    provider == AgentKind::Codex && row.verified && row.reason.is_some()
+/// The reasons `codex_identity` reports for a store that is absent and for a
+/// readable store that holds no credential. A change to either string fails
+/// `codex_reasons_classify_from_the_real_identity_output`.
+const CODEX_STORE_MISSING: &str = "does not exist";
+const CODEX_NO_CREDENTIAL: &str = "has neither tokens.id_token nor an API key";
+
+/// How a signed-out row bears on a provider's sign-in state.
+enum SignedOutState {
+    /// The provider's readable store explicitly records no credential.
+    Definitive,
+    /// The provider may authenticate through a path Houston does not read.
+    Ambiguous,
+    /// Houston could not read or decode the store.
+    Unreadable,
+}
+
+/// Only Codex's readable store proves a sign-out. Other CLIs document another
+/// way in, `verified` guards the read, and an unreadable store proves nothing.
+fn signed_out_state(provider: AgentKind, row: &AgentAccountIdentity) -> SignedOutState {
+    if provider != AgentKind::Codex {
+        return SignedOutState::Ambiguous;
+    }
+    if !row.verified {
+        return SignedOutState::Ambiguous;
+    }
+    let Some(reason) = row.reason.as_deref() else {
+        return SignedOutState::Ambiguous;
+    };
+    if reason.contains(CODEX_STORE_MISSING) || reason.contains(CODEX_NO_CREDENTIAL) {
+        SignedOutState::Definitive
+    } else {
+        SignedOutState::Unreadable
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -340,9 +367,15 @@ fn sign_in_item(
                 None => format!("signed in; {slug} stores no readable identifier"),
             },
         ),
+        // A store that says it holds no credential still warns when the
+        // environment supplies one: Houston cannot confirm that key works.
         _ if env_credential.is_some() => item(
             id,
-            PreflightStatus::Ok,
+            if *sign_in == SignIn::Out {
+                PreflightStatus::Warn
+            } else {
+                PreflightStatus::Ok
+            },
             "Sign-in",
             format!(
                 "credentials from the environment ({})",
@@ -802,6 +835,23 @@ mod tests {
             .collect()
     }
 
+    fn signin_item<'a>(items: &'a [PreflightItem], slug: &str) -> &'a PreflightItem {
+        items
+            .iter()
+            .find(|i| i.id == format!("signin:{slug}"))
+            .unwrap_or_else(|| panic!("{slug} has a sign-in item: {items:?}"))
+    }
+
+    fn set_codex_sign_in(f: &mut Facts, sign_in: SignIn, env: Option<&'static str>) {
+        let codex = f
+            .providers
+            .iter_mut()
+            .find(|p| p.provider == AgentKind::Codex)
+            .expect("the fixture lists Codex");
+        codex.sign_in = sign_in;
+        codex.env_credential = env;
+    }
+
     #[test]
     fn signed_in_providers_report_the_identity_label() {
         let s = all_provider_settings();
@@ -898,6 +948,85 @@ mod tests {
         }
     }
 
+    /// A missing Codex store is a signed-out row, so it blocks unless the
+    /// daemon's own environment carries the documented credential.
+    #[test]
+    fn a_missing_codex_store_blocks_without_an_environment_credential() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = [crate::cli_accounts::codex_identity(dir.path(), None)];
+        let sign_in = login_fact(&rows, AgentKind::Codex);
+        assert_eq!(sign_in, SignIn::Out);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        set_codex_sign_in(&mut f, sign_in.clone(), None);
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Block, "{item:?}");
+        assert!(item.detail.contains("run `codex` and sign in"), "{item:?}");
+
+        set_codex_sign_in(&mut f, sign_in, Some("OPENAI_API_KEY"));
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert_eq!(
+            item.detail,
+            "credentials from the environment (OPENAI_API_KEY)"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
+    /// A store Houston could not read or decode is not proof of a sign-out.
+    #[test]
+    fn a_corrupt_codex_store_warns_instead_of_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("auth.json"), "[1,2").unwrap();
+        let rows = [crate::cli_accounts::codex_identity(dir.path(), None)];
+        let sign_in = login_fact(&rows, AgentKind::Codex);
+        assert_eq!(sign_in, SignIn::Unknown);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        set_codex_sign_in(&mut f, sign_in, None);
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "codex");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert!(
+            item.detail
+                .contains("could not tell whether codex is signed in"),
+            "{item:?}"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
+    /// Claude omits `oauthAccount` for an API key, Bedrock, Vertex and a setup
+    /// token, so its signed-out row stays ambiguous.
+    #[test]
+    fn a_claude_store_without_an_oauth_account_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(".claude.json");
+        std::fs::write(&file, "{}").unwrap();
+        let rows = [crate::cli_accounts::claude_identity(&file, None)];
+        let sign_in = login_fact(&rows, AgentKind::Claude);
+        assert_eq!(sign_in, SignIn::Ambiguous);
+
+        let s = all_provider_settings();
+        let mut f = all_provider_facts(SignIn::In(None));
+        f.providers
+            .iter_mut()
+            .find(|p| p.provider == AgentKind::Claude)
+            .expect("the fixture lists Claude")
+            .sign_in = sign_in;
+        let items = evaluate(&s, &f, &s.window);
+        let item = signin_item(&items, "claude");
+        assert_eq!(item.status, PreflightStatus::Warn, "{item:?}");
+        assert!(
+            item.detail.contains("fine if you use an API key"),
+            "{item:?}"
+        );
+        assert!(blocks(&items).is_empty(), "{:?}", blocks(&items));
+    }
+
     #[test]
     fn unknown_sign_in_warns_and_zcode_names_the_quota_probe() {
         let s = all_provider_settings();
@@ -967,20 +1096,28 @@ mod tests {
         assert_eq!(login_fact(&rows, AgentKind::Antigravity), SignIn::Unknown);
     }
 
-    /// A signed-out row from an unverified store, or from a provider with
-    /// another way in, is not a definitive sign-out.
-    #[test]
-    fn only_a_verified_provider_specific_signed_out_row_is_definitive() {
-        let row = |agent, verified| houston_protocol::AgentAccountIdentity {
+    fn signed_out_row(
+        agent: AgentKind,
+        verified: bool,
+        reason: &str,
+    ) -> houston_protocol::AgentAccountIdentity {
+        houston_protocol::AgentAccountIdentity {
             agent,
             profile_id: None,
             sign_in: AgentSignIn::SignedOut,
             identity: None,
             detail: None,
             providers: Vec::new(),
-            reason: Some("store read".into()),
+            reason: Some(reason.into()),
             verified,
-        };
+        }
+    }
+
+    /// A signed-out row from an unverified store, a store Houston could not
+    /// read, or a provider with another way in is not a definitive sign-out.
+    #[test]
+    fn only_a_verified_provider_specific_signed_out_row_is_definitive() {
+        let definitive = |agent| signed_out_row(agent, true, "auth.json has neither x");
         for provider in [
             AgentKind::Claude,
             AgentKind::Opencode,
@@ -988,27 +1125,95 @@ mod tests {
             AgentKind::Zcode,
         ] {
             assert_eq!(
-                login_fact(&[row(provider, true)], provider),
+                login_fact(&[definitive(provider)], provider),
                 SignIn::Ambiguous,
                 "{provider:?}"
             );
         }
+        let codex_caught = |reason: &str| {
+            login_fact(
+                &[signed_out_row(AgentKind::Codex, true, reason)],
+                AgentKind::Codex,
+            )
+        };
+        assert_eq!(codex_caught(CODEX_NO_CREDENTIAL), SignIn::Out);
+        assert_eq!(codex_caught(CODEX_STORE_MISSING), SignIn::Out);
         assert_eq!(
-            login_fact(&[row(AgentKind::Codex, true)], AgentKind::Codex),
-            SignIn::Out
+            codex_caught("auth.json: tokens.id_token is not a decodable JWT"),
+            SignIn::Unknown,
+            "a corrupt store does not prove a sign-out"
         );
         assert_eq!(
-            login_fact(&[row(AgentKind::Codex, false)], AgentKind::Codex),
+            login_fact(
+                &[signed_out_row(AgentKind::Codex, false, "store read")],
+                AgentKind::Codex
+            ),
             SignIn::Ambiguous,
             "an unconfirmed store does not prove a sign-out"
         );
         assert_eq!(
             login_fact(
-                &[row(AgentKind::Codex, true), row(AgentKind::Zcode, true)],
+                &[
+                    signed_out_row(AgentKind::Codex, true, CODEX_NO_CREDENTIAL),
+                    signed_out_row(AgentKind::Zcode, true, "store read")
+                ],
                 AgentKind::Codex
             ),
             SignIn::Out,
             "another provider's row does not count"
+        );
+    }
+
+    /// The classifier must keep reading the reason strings `codex_identity`
+    /// actually produces; a renamed reason would otherwise change it silently.
+    #[test]
+    fn codex_reasons_classify_from_the_real_identity_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert_eq!(missing.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(
+            login_fact(&[missing], AgentKind::Codex),
+            SignIn::Out,
+            "a missing store is a definitive sign-out"
+        );
+
+        std::fs::write(dir.path().join("auth.json"), r#"{"auth_mode":"chatgpt"}"#).unwrap();
+        let empty = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert_eq!(empty.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(
+            login_fact(&[empty], AgentKind::Codex),
+            SignIn::Out,
+            "a readable store with neither token nor key is a definitive sign-out"
+        );
+
+        std::fs::write(dir.path().join("auth.json"), "[1,2").unwrap();
+        let malformed = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert!(malformed
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("not valid JSON"));
+        assert_eq!(
+            login_fact(&[malformed], AgentKind::Codex),
+            SignIn::Unknown,
+            "an unreadable store is unknown"
+        );
+
+        std::fs::write(
+            dir.path().join("auth.json"),
+            r#"{"tokens":{"id_token":"not-a-jwt"}}"#,
+        )
+        .unwrap();
+        let corrupt = crate::cli_accounts::codex_identity(dir.path(), None);
+        assert!(corrupt
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("not a decodable JWT"));
+        assert_eq!(
+            login_fact(&[corrupt], AgentKind::Codex),
+            SignIn::Unknown,
+            "a corrupt token is unknown"
         );
     }
 
