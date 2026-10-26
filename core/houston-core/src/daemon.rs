@@ -22512,10 +22512,12 @@ impl Daemon {
             "report refused: request_id {} for pane {child} has already closed",
             report.request_id
         );
-        let kind = report
-            .kind
-            .inbox_kind()
-            .expect("non-finding reports carry an inbox kind");
+        let Some(kind) = report.kind.inbox_kind() else {
+            bail!(
+                "report refused: kind {:?} has no inbox row; use pane_report finding for a suspected defect",
+                report.kind
+            );
+        };
         let workspace = self.current_workspace(child)?;
         let row = orchestrate::inbox_row_new(
             parent,
