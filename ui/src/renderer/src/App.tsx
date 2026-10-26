@@ -3,12 +3,17 @@ import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
+import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
+import { useSessionUpdates } from './useSessionUpdates';
+import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { RelocateState } from "./workspaceRelocate";
+import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
 import type { NoticeInput } from './notices';
@@ -47,6 +52,7 @@ import type { AgentAccountIdentity } from "./houston/generated/AgentAccountIdent
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
+import { useDesktopPresence } from "./houston/useDesktopPresence";
 import {
   clearVoiceIndicators,
   insertVoiceText,
@@ -214,6 +220,7 @@ import { paletteNavActions } from "./components/paletteNav";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
+import { handleNightShiftNotice, setNightShiftFocus } from "./nightShiftNav";
 import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
 import { mergeQueuePaletteActions, mergeQueuePauseAction, requestPrsView } from "./components/prs/prsView";
 import { useMergeQueueAwayNotice, useMergeQueueParked } from "./components/prs/mergeQueueSignals";
@@ -257,6 +264,7 @@ import { useCheckoutFacts } from "./useCheckoutFacts";
 import { isBackgroundAdmissionRefusal } from "./houston/controlAdmission";
 import {
   addGrid,
+  appendGrids,
   autoNameGrid,
   findEditorByPath,
   findPane,
@@ -512,6 +520,7 @@ type RosterPatchMsg = Extract<
       | "delegation_changed"
       | "session_tags_set"
       | "session_resumable"
+      | "session_note"
       | "agent_running";
   }
 >;
@@ -526,6 +535,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "session_note",
   "agent_running",
 ]);
 
@@ -559,6 +569,8 @@ function patchRosterFields(
                 ? { tags: msg.tags }
                 : msg.type === "session_resumable"
                   ? { resumable: msg.resumable }
+                  : msg.type === "session_note"
+                    ? { note: msg.note ?? null }
                   : msg.type === "agent_running"
                     ? { running_agent: msg.agent ?? null }
                     : { delegation: msg.delegation };
@@ -919,6 +931,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  useSessionUpdates(readyClient(conn), setSessions);
   const openMergeQueue = useCallback((): void => {
     requestPrsView({ view: "queue" });
     setSettings(false);
@@ -1406,6 +1419,10 @@ export function App(): React.JSX.Element {
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
         if (voice.handleMessage(msg)) return;
+        handleNightShiftNotice(msg, pushNotice, workspacesRef.current, (workspace, runId) => {
+          setNightShiftFocus({ workspace, runId });
+          setRailView("routines");
+        });
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1817,6 +1834,7 @@ export function App(): React.JSX.Element {
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
   useRemoteGridPublish(readyClient(conn));
+  useDesktopPresence(readyClient(conn));
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);
@@ -2863,6 +2881,31 @@ export function App(): React.JSX.Element {
     [conn, workspaces],
   );
 
+  // Imported grids join the target workspace's own; panes auto-placed before the reply
+  // leave the grid they landed in, so each pane appears once.
+  const applyTransferGrids = useCallback(async (result: TransferImportResult, target: string): Promise<void> => {
+    if (!result.grids) return;
+    const { placeTransferGrids, vacateMovedPanes } = await import('./layout/transferGrids');
+    const existing = gridsByWsRef.current.get(target) ?? loadGrids(target);
+    const vacated = vacateMovedPanes(target, existing, result.sessions.map((m) => m.to));
+    const kept = existing.filter((grid) => !vacated.emptied.includes(grid.id));
+    const placed = placeTransferGrids(result.grids, result.source_workspace, target, result.sessions, kept);
+    if (placed.grids.length === 0) return;
+    const updates = new Map<string, LayoutState>([...vacated.layouts, ...placed.layouts]);
+    for (const [key, state] of updates) saveLayout(key, state);
+    // Appended first, so removing the emptied grids never leaves the workspace without one.
+    let grids = appendGrids(target, placed.grids);
+    for (const id of vacated.emptied) grids = removeGrid(target, id);
+    setLayouts((prev) => {
+      const next = new Map(prev);
+      for (const [key, state] of updates) next.set(key, state);
+      for (const id of vacated.emptied) next.delete(gridStorageKey(target, id));
+      return next;
+    });
+    setGridsByWs((prev) => new Map(prev).set(target, grids));
+    setSelectedGridByWs((prev) => new Map(prev).set(target, placed.grids[0].id));
+  }, []);
+
   const dropWorkspaceLocalState = useCallback((path: string): void => {
     setWsColors((prev) => {
       if (!(path in prev)) return prev;
@@ -2909,6 +2952,20 @@ export function App(): React.JSX.Element {
     forgetLayout(path);
     dropWorkspaceBuffers(path);
   }, []);
+
+  const relocateStateRef = useRef<RelocateState | null>(null);
+  relocateStateRef.current = {
+    gridsByWs: gridsByWsRef.current,
+    setWsColors, setLayouts, setGridsByWs, setSelectedGridByWs,
+    setWsPinned, setWsOrder, setWsRenaming, setSelectedWs,
+  };
+  useWorkspaceRelocated(conn, relocateStateRef, pushNotice);
+
+  const locateWorkspace = useCallback(async (path: string): Promise<void> => {
+    if (conn.kind !== "ready") return;
+    // Loading it first lets the reply move the layouts before the panes' reparents arrive.
+    await (await import("./workspaceRelocate")).locateMovedFolder(conn.client, path, pushError);
+  }, [conn, pushError]);
 
   const confirmRemoveWorkspace = useCallback(() => {
     if (!confirmRemoveWs || conn.kind !== "ready") {
@@ -3708,6 +3765,9 @@ export function App(): React.JSX.Element {
               taskTurnCount={taskTurnCount}
               mergeQueueParked={mergeQueueParked}
               onRemoveWorkspace={removeWorkspace}
+              onLocateStart={(path) => {
+                void locateWorkspace(path);
+              }}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
                 setSidebarRail(false);
@@ -4672,6 +4732,13 @@ export function App(): React.JSX.Element {
           </AnimOut>
 
           <ConnectPhoneHost client={readyClient(conn)} />
+
+          <WorkspaceTransferHost
+            client={readyClient(conn)}
+            workspaces={workspaces}
+            agentProfiles={agentProfiles}
+            onImported={(result, target) => void applyTransferGrids(result, target)}
+          />
 
           <UpdateInstallHost
             update={update}

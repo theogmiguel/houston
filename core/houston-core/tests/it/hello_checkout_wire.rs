@@ -179,6 +179,7 @@ async fn attaching_a_window_lists_current_checkouts_without_running_git() {
 
 fn stored_session(id: u32, dir: &Path) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -220,6 +221,8 @@ fn stored_session(id: u32, dir: &Path) -> proto::SessionInfo {
         limit: None,
         view: Default::default(),
         permission_mode: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 

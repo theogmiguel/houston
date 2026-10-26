@@ -15,6 +15,7 @@ import type { ChatEffort } from './generated/ChatEffort'
 import type { ChatPermissionMode } from './generated/ChatPermissionMode'
 import type { Cadence } from './generated/Cadence'
 import type { HarnessFindingState } from './generated/HarnessFindingState'
+import type { NightShiftSettings } from './generated/NightShiftSettings'
 import type { TaskPatch } from './generated/TaskPatch'
 import type { TaskPromptDelivery } from './generated/TaskPromptDelivery'
 import type { TaskRunAction } from './generated/TaskRunAction'
@@ -256,6 +257,7 @@ export class HoustonClient {
 
   private kindSubscribers = new Map<string, Set<(msg: ServerMsg) => void>>()
   private allSubscribers = new Set<(msg: ServerMsg) => void>()
+  private closeSubscribers = new Set<() => void>()
   onFrame: (session: number, offset: number, payload: Uint8Array) => void = () => {}
   onReplay: (session: number, data: Uint8Array, bytesSeen: number) => void = () => {}
   onSnapshot: (session: number, state: Uint8Array, outputOffset: number) => void = () => {}
@@ -290,6 +292,24 @@ export class HoustonClient {
     this.allSubscribers.add(wrapper)
     return () => {
       this.allSubscribers.delete(wrapper)
+    }
+  }
+
+  /** Calls `handler` when the connection closes, or when `close` ends the client. */
+  subscribeClose(handler: () => void): () => void {
+    this.closeSubscribers.add(handler)
+    return () => {
+      this.closeSubscribers.delete(handler)
+    }
+  }
+
+  private notifyClosed(): void {
+    for (const handler of [...this.closeSubscribers]) {
+      try {
+        handler()
+      } catch (err) {
+        console.error('houston: close subscriber threw', err)
+      }
     }
   }
 
@@ -457,6 +477,7 @@ export class HoustonClient {
     }
     ws.onclose = () => {
       wsTransport.dispose()
+      client.notifyClosed()
       client.onClose()
     }
 
@@ -737,6 +758,10 @@ export class HoustonClient {
     this.send({ type: 'workspace_rename', path, name })
   }
 
+  relocateWorkspace(from: string, to: string): void {
+    this.send({ type: 'workspace_relocate', from, to })
+  }
+
   gitBranch(dir: string): void {
     this.send({ type: 'git_branch', dir })
   }
@@ -813,8 +838,16 @@ export class HoustonClient {
     this.send({ type: 'git_worktree_create', dir, name, base })
   }
 
+  sessionNoteClear(session: number): void {
+    this.send({ type: 'session_note_clear', session })
+  }
+
   gitWorktreeRemove(dir: string, path: string, force: boolean): void {
     this.send({ type: 'git_worktree_remove', dir, path, force })
+  }
+
+  worktreeCheck(dir: string, path: string): void {
+    this.send({ type: 'worktree_check', dir, path })
   }
 
   gitWorktreePrune(dir: string): void {
@@ -1144,6 +1177,7 @@ export class HoustonClient {
   }
 
   close(): void {
+    this.notifyClosed()
     this.kindSubscribers.clear()
     this.allSubscribers.clear()
     this.onFrame = () => {}
@@ -1643,6 +1677,43 @@ export class HoustonClient {
 
   harnessSeen(workspace: string, reviewId: number): void {
     this.send({ type: 'harness_seen', workspace, review_id: reviewId })
+  }
+
+  nightShiftCreate(workspace: string): void {
+    this.send({ type: 'night_shift_create', workspace })
+  }
+
+  /** `preflightUntilMs` also runs preflight for a start lasting until then. */
+  nightShiftState(workspace: string, preflightUntilMs: number | null = null): void {
+    this.send({ type: 'night_shift_state', workspace, preflight_until_ms: preflightUntilMs })
+  }
+
+  nightShiftUpdate(routineId: number, settings: NightShiftSettings, expectedRevision: string): void {
+    this.send({ type: 'night_shift_update', routine_id: routineId, settings, expected_revision: expectedRevision })
+  }
+
+  nightShiftRunNow(routineId: number, untilMs: number): void {
+    this.send({ type: 'night_shift_run_now', routine_id: routineId, until_ms: untilMs })
+  }
+
+  nightShiftWrapUp(runId: number): void {
+    this.send({ type: 'night_shift_wrap_up', run_id: runId })
+  }
+
+  nightShiftStop(runId: number): void {
+    this.send({ type: 'night_shift_stop', run_id: runId })
+  }
+
+  nightShiftDecide(entryId: number, choice: string): void {
+    this.send({ type: 'night_shift_decide', entry_id: entryId, choice })
+  }
+
+  nightShiftQaPassed(entryId: number): void {
+    this.send({ type: 'night_shift_qa_passed', entry_id: entryId })
+  }
+
+  nightShiftReport(runId: number): void {
+    this.send({ type: 'night_shift_report', run_id: runId })
   }
 
   taskSnapshot(scope: string): void {

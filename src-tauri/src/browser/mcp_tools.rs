@@ -1319,13 +1319,13 @@ mod tests {
              codex gateway {gateway_bytes} B / {gateway_count} tools"
         );
 
-        // Two merge queue verbs (#124); measured 57 tools and 28,441 bytes after adding them.
-        assert_eq!(enabled_count, 57, "{enabled_specs:?}");
+        // `pane_note` after the merge queue verbs (#124); measured 58 tools and 29,203 bytes.
+        assert_eq!(enabled_count, 58, "{enabled_specs:?}");
         assert_eq!(disabled_count, 37, "{disabled_specs:?}");
         assert_eq!(gateway_count, 2, "{gateway_specs:?}");
         assert!(
-            enabled_bytes < 29_000,
-            "claude/enabled catalogue is {enabled_bytes} B; expected less than 29000 B"
+            enabled_bytes < 29_750,
+            "claude/enabled catalogue is {enabled_bytes} B; expected less than 29750 B"
         );
         assert!(
             disabled_bytes < 16_700,

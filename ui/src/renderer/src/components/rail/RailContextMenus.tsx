@@ -5,12 +5,16 @@ import { closeWorkspaceShortcut, effectiveLabel, renameWorkspaceShortcut } from 
 import { gridStorageKey } from "../../layout/tree";
 import { RAIL_VIEW_LABEL, type RailView } from "../../railView";
 import { showItemInFolder } from "../../houston/bridge";
+import { openWorkspaceTransfer } from "../../houston/transferOpen";
 import {
+  IconArrowUpRight,
   IconChevronRight,
   IconClose,
   IconCodeXml,
   IconEyeOff,
+  IconFileDown,
   IconFolder,
+  IconFolderOpen,
   IconGrid,
   IconPencil,
   IconPin,
@@ -42,6 +46,8 @@ export interface CtxMenu {
   pinned: boolean;
   /** True when this is the selected workspace, the one the F2 and close shortcuts act on. */
   selected: boolean;
+  /** The workspace folder is gone on disk, e.g. it was moved or renamed. */
+  missing?: boolean;
 }
 
 export interface GridCtxMenu {
@@ -119,6 +125,7 @@ export function WorkspaceContextMenu({
   onRemoveWorkspace,
   onOpenExternalError,
   onTogglePin,
+  onLocateStart,
 }: {
   menu: CtxMenu;
   onClose: () => void;
@@ -127,6 +134,7 @@ export function WorkspaceContextMenu({
   onRemoveWorkspace: (path: string) => void;
   onOpenExternalError?: (message: string) => void;
   onTogglePin: (path: string) => void;
+  onLocateStart?: (path: string) => void;
 }): React.JSX.Element {
   const keymapOverrides = useContext(KeymapOverridesContext);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -190,6 +198,20 @@ export function WorkspaceContextMenu({
           <Icon glyph={IconPin} role="ui" />
           <span>{menu.pinned ? "Unpin workspace" : "Pin workspace"}</span>
         </ContextMenuItem>
+        {menu.missing && onLocateStart && (
+          <ContextMenuItem
+            role="menuitem"
+            data-testid="ws-locate-moved"
+            onClick={() => {
+              const { path } = menu;
+              onClose();
+              onLocateStart(path);
+            }}
+          >
+            <Icon glyph={IconFolderOpen} role="ui" />
+            <span>Locate moved folder…</span>
+          </ContextMenuItem>
+        )}
         <ContextMenuItem
 
           role="menuitem"
@@ -210,6 +232,30 @@ export function WorkspaceContextMenu({
           onDone={onClose}
           onError={onOpenExternalError ?? (() => {})}
         />
+        <ContextMenuItem
+          role="menuitem"
+          data-testid="ws-transfer-export"
+          onClick={() => {
+            const { path, name } = menu;
+            onClose();
+            openWorkspaceTransfer({ mode: "export", workspace: path, name });
+          }}
+        >
+          <Icon glyph={IconArrowUpRight} role="ui" />
+          <span>Export transfer…</span>
+        </ContextMenuItem>
+        <ContextMenuItem
+          role="menuitem"
+          data-testid="ws-transfer-import"
+          onClick={() => {
+            const { path } = menu;
+            onClose();
+            openWorkspaceTransfer({ mode: "import", workspace: path });
+          }}
+        >
+          <Icon glyph={IconFileDown} role="ui" />
+          <span>Import transfer…</span>
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem danger
 
