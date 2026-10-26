@@ -3155,7 +3155,43 @@ pub fn run_pane_cli(args: &[String]) -> i32 {
     run_pane_cli_in(&crate::host_env::HostEnv::capture(), args)
 }
 
+/// The `USAGE` entries for one subcommand: its `  hs-pane <cmd>` lines and their indented continuations.
+fn usage_for(cmd: &str) -> Option<String> {
+    let head = format!("  hs-pane {cmd}");
+    let mut out = Vec::new();
+    let mut in_entry = false;
+    for line in USAGE.lines().skip(1) {
+        if line.starts_with("  hs-pane ") {
+            in_entry = line
+                .strip_prefix(head.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '-']));
+        } else if !line.starts_with(' ') {
+            in_entry = false;
+        }
+        if in_entry {
+            out.push(line);
+        }
+    }
+    (!out.is_empty()).then(|| out.join("\n"))
+}
+
+/// `hs-pane --help`, `hs-pane help`, `hs-pane <cmd> --help` and `-h`: usage on stdout, before any pane
+/// environment is needed. Only the first argument after the subcommand counts, so note text that
+/// mentions `-h` is still text.
+fn help_text(args: &[String]) -> Option<String> {
+    let is_help = |a: Option<&String>| matches!(a.map(String::as_str), Some("--help" | "-h"));
+    match args.first().map(String::as_str) {
+        Some("--help" | "-h" | "help") => Some(USAGE.to_string()),
+        Some(cmd) if is_help(args.get(1)) => usage_for(cmd),
+        _ => None,
+    }
+}
+
 pub fn run_pane_cli_in(env: &crate::host_env::HostEnv, args: &[String]) -> i32 {
+    if let Some(help) = help_text(args) {
+        println!("{help}");
+        return 0;
+    }
     if args.first().map(String::as_str) == Some("heavy") {
         return match heavy_cli(env, &args[1..]) {
             Ok(code) => code,
@@ -5616,6 +5652,39 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("until is gone"), "{err:#}");
+    }
+
+    #[test]
+    fn every_hs_pane_subcommand_answers_help_with_its_own_usage() {
+        let mut commands: Vec<&str> = USAGE
+            .lines()
+            .filter_map(|l| l.strip_prefix("  hs-pane "))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        commands.dedup();
+        assert!(commands.contains(&"note"), "{commands:?}");
+        for cmd in commands {
+            for flag in ["--help", "-h"] {
+                let args = vec![cmd.to_string(), flag.to_string()];
+                let help = help_text(&args).unwrap_or_else(|| panic!("{cmd} {flag}: no help"));
+                assert!(help.contains(&format!("hs-pane {cmd}")), "{cmd}: {help}");
+                // No pane environment, no daemon: help must not need either.
+                let env = crate::host_env::HostEnv::from_pairs(Vec::<(&str, &str)>::new());
+                assert_eq!(run_pane_cli_in(&env, &args), 0, "{cmd} {flag}");
+            }
+        }
+        let note = help_text(&["note".to_string(), "--help".to_string()]).unwrap();
+        assert!(
+            note.contains("--clear") && !note.contains("hs-pane kill"),
+            "{note}"
+        );
+        assert!(help_text(&["--help".to_string()])
+            .unwrap()
+            .contains("hs-pane kill"));
+        assert!(
+            help_text(&["note".to_string(), "see".to_string(), "-h".to_string()]).is_none(),
+            "note text that mentions -h is still text"
+        );
     }
 
     /// Answers one request with `status`/`body` and hands back what the CLI sent.
