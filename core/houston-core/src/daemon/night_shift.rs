@@ -3288,6 +3288,12 @@ impl Daemon {
             return Ok(None);
         };
         if self.night_live_fixer(run_id, number).is_some() {
+            // The live fixer is working on this failure; the gate stays failed
+            // so a later report never shows it as pending or green.
+            self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                ci: proto::NightGate::Failed,
+                ..*gates
+            });
             return Ok(None);
         }
         let flaky = self.db.night_flaky_tests(routine_id)?;
@@ -3378,6 +3384,12 @@ impl Daemon {
                 }
             }
             CiAction::GiveUp { why } => {
+                if crate::night_shift::ci_gate_failed(&plan) {
+                    self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                        ci: proto::NightGate::Failed,
+                        ..*gates
+                    });
+                }
                 self.night_tell_orchestrator(
                     run_id,
                     &format!("Night shift: PR #{number} CI needs you"),
@@ -3520,6 +3532,10 @@ impl Daemon {
         };
         let fixes = entry.gates.fixes;
         if fixes >= CI_FIXES_PER_PR {
+            self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                ci: proto::NightGate::Failed,
+                ..*gates
+            });
             self.night_tell_orchestrator(
                 run_id,
                 &format!("Night shift: PR #{number} CI needs you"),

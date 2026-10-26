@@ -63,6 +63,12 @@ pub fn ci_failure_plan(flaky_hit: Option<&str>, reruns: u32, fixes: u32) -> CiAc
     CiAction::Fix
 }
 
+/// Whether the plan records the pull request's CI gate as failed. A fixer or a
+/// give-up leaves the failure visible; a re-run stays pending until it answers.
+pub fn ci_gate_failed(action: &CiAction) -> bool {
+    matches!(action, CiAction::Fix | CiAction::GiveUp { .. })
+}
+
 /// The last `max` characters of the check lines, on a character boundary.
 pub fn bounded_excerpt(lines: &[String], max: usize) -> String {
     let joined = lines.join("\n");
@@ -191,6 +197,13 @@ mod tests {
                 )
             }
         );
+    }
+
+    #[test]
+    fn only_a_pending_rerun_leaves_the_ci_gate_open() {
+        assert!(ci_gate_failed(&CiAction::Fix));
+        assert!(ci_gate_failed(&CiAction::GiveUp { why: "cap".into() }));
+        assert!(!ci_gate_failed(&CiAction::Rerun { test: "t".into() }));
     }
 
     #[test]
