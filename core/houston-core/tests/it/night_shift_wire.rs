@@ -1056,7 +1056,10 @@ async fn a_refused_goal_is_retried_by_the_next_hook() {
         ..Default::default()
     })
     .await;
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    wait_until("the refused goal attempt", || {
+        r.daemon.night_shift_goal_refusals_for_test(run.run_id) == 1
+    })
+    .await;
     let refused = std::fs::read_to_string(&typed).unwrap_or_default();
     assert!(!refused.contains("/goal"), "{refused:?}");
     assert!(
@@ -1107,15 +1110,18 @@ async fn three_refused_goals_write_one_note_and_stop() {
     let session = run.session_id.unwrap();
     r.daemon
         .set_session_status_for_test(session, proto::AgentStatus::NeedsInput);
-    for event in ["SessionStart", "SessionStart", "SessionStart"] {
+    for attempt in 1..=3 {
         r.drop_hook(HookDrop {
             session,
             agent: Some("claude".into()),
-            event: event.into(),
+            event: "SessionStart".into(),
             ..Default::default()
         })
         .await;
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        wait_until("the refused goal attempt", || {
+            r.daemon.night_shift_goal_refusals_for_test(run.run_id) == attempt
+        })
+        .await;
     }
     wait_until("the give-up note", || {
         r.run(run.run_id).interruptions.len() == 1

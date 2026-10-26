@@ -4198,4 +4198,16 @@ impl Daemon {
             .iter()
             .any(|(run, _)| *run == run_id)
     }
+
+    /// Refused `/goal` attempts since this daemon started.
+    #[doc(hidden)]
+    pub fn night_shift_goal_refusals_for_test(&self, run_id: u32) -> u32 {
+        self.night
+            .goal_refusals
+            .lock()
+            .expect("night goal refusals")
+            .get(&run_id)
+            .copied()
+            .unwrap_or(0)
+    }
 }
