@@ -6,3 +6,11 @@
 [env]
 HOUSTON_UPDATE_MANIFEST_URL = "http://127.0.0.1:9/latest.json"
 HOUSTON_MODEL_CATALOG_URL = "http://127.0.0.1:9/model-prices.json"
+
+# A workspace transfer file's scrypt cost takes about 40 s unoptimised; dev builds and
+# tests export and import files too.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.salsa20]
+opt-level = 3

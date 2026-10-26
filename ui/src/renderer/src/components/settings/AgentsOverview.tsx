@@ -11,7 +11,7 @@ import { useOverviewReviews } from './useOverviewReviews'
 
 const LABEL: Record<AgentSetupSection, string> = { 'agents-clis': 'CLIs', 'agents-skills': 'Skills', 'agents-mcp': 'MCP servers', 'agents-review': 'Review' }
 function issueHeading(issue: AgentAttentionIssue): string {
-  return issue.provider ? `${issue.provider === 'opencode' ? 'OpenCode' : engineLabel(issue.provider)} stopped reporting status` : issue.title
+  return issue.provider ? `${engineLabel(issue.provider)} stopped reporting status` : issue.title
 }
 function summary(attention: AgentAttention, section: AgentSetupSection, reviews: HarnessState[]): string {
   const problem = attention.issues.find((issue) => issue.section === section)

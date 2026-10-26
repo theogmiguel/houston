@@ -11,6 +11,7 @@ import { useSessions } from '../../sessionsStore'
 import { Table } from '../ui/Table'
 import { formatBytes, Row, SubHead } from './shared'
 import { StorageDiagnostics } from './StorageDiagnostics'
+import { DiagnosticsFileRow } from './DiagnosticsFile'
 
 function formatUptime(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000)
@@ -291,6 +292,7 @@ export function DiagnosticsSection({
           </Button>
         </Row>
         {hostInfo && <DiagnosticsCopyRow hostInfo={hostInfo} agentHooks={agentHooks} />}
+        <DiagnosticsFileRow client={client} />
       </SettingsList>
     </>
   )

@@ -49,6 +49,7 @@ export function GitToolsDialogs({
           dir={dir}
           worktrees={tools.worktrees}
           cleanup={tools.cleanup}
+          removeCheck={tools.removeCheck}
           branches={tools.branches}
           defaultBranch={tools.defaultBranch ?? fallbackBase}
           busy={busy}
@@ -59,6 +60,7 @@ export function GitToolsDialogs({
             tools.refreshWorktrees()
           }}
           onCreate={(name, base) => tools.createWorktree(name, base)}
+          onCheckRemove={tools.checkWorktree}
           onRemove={(path, force) => tools.removeWorktree(path, force)}
           onPrune={tools.pruneWorktrees}
           onCheckCleanup={tools.checkCleanup}

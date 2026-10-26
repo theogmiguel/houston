@@ -4,7 +4,7 @@ import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
-import { ChangesStory } from './changesStories'
+import { ChangesPausedRebaseStory, ChangesStory } from './changesStories'
 import { ChangesFindStory, PrFilesFindCapture } from './diffFindStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
@@ -30,7 +30,7 @@ import {
 } from './browserStories'
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDiagnosticsStorage, SettingsDiagnosticsStorageReclaimed, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsNotificationsUnavailable, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDiagnosticsStorage, SettingsDiagnosticsStorageReclaimed, SettingsDiagnosticsFileSaved, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsNotificationsUnavailable, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -62,6 +62,7 @@ import {
   HarnessHistoryEmptyStory,
   HarnessFindingsDismissedStory
 } from './navStories'
+import { NightShiftSetupStory } from './nightShiftStories'
 import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory, ParentFirstAttentionStory, ArchivedResultsStory, InstructionRecoveryStory, PermissionOwnershipStory } from './orchestrationStories'
 import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
 import { RenameTitleStory } from './renameTitleStories'
@@ -102,7 +103,8 @@ import {
   LegacyShortcutStory,
   LegacySshStory,
   LegacyTagsStory,
-  LegacyUpdateStory
+  LegacyUpdateStory,
+  WorktreeRemoveCheckStory
 } from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { TagPopoverHost } from '../src/components/tags/TagPopover'
@@ -114,12 +116,13 @@ import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRu
 import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { DefaultViewSettingStory, ThreadApprovalStory, ThreadHeldQueueStory, ThreadIdleStory, ThreadLongStory, ThreadPlanStory, ThreadQuestionStory, ThreadQueueStory, ThreadStatesStory, ThreadStoppedStory, ThreadStreamingStory, ThreadToolsStory, ThreadWorkLogOpenStory, ThreadWorkLogStory, ViewSwitchBusyStory, ViewSwitchMenuStory } from './threadStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTransferredStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
 import { ImagePreviewZoomStory } from './imagePreviewStories'
 import { RailUndoStory } from './railUndoStories'
+import { TransferExportStory, TransferImportStory, TransferRefusalStory, WorkspaceMenuStory } from './transferStories'
 
 const noop = (): void => {}
 
@@ -265,6 +268,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'connect-phone/scan': () => <ConnectPhoneStory scenario="scan" />,
   'connect-phone/expired': () => <ConnectPhoneStory scenario="expired" />,
   'connect-phone/connected': () => <ConnectPhoneStory scenario="connected" />,
+  'transfer/export': () => <TransferExportStory />,
+  'transfer/import': () => <TransferImportStory />,
+  'transfer/refusal': () => <TransferRefusalStory />,
+  'transfer/workspace-menu': () => <WorkspaceMenuStory />,
   'legacy/handoff': () => <LegacyHandoffStory />,
   'legacy/pane-handoff': () => <LegacyPaneHandoffStory />,
   'legacy/tags': () => <LegacyTagsStory />,
@@ -284,6 +291,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'changes/maximized': () => <ChangesStory ready maximized />,
   'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
+  'changes/paused-rebase': () => <ChangesPausedRebaseStory />,
   'changes/find': () => <ChangesFindStory />,
   'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
@@ -329,6 +337,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'ui-primitives': () => <UiPrimitivesStory />,
   'ui-primitives/phone-pairing': () => <PhonePairingSpecimen />,
   'git/worktree-stale': () => <StaleWorktreesStory />,
+  'git/worktree-remove-check': () => <WorktreeRemoveCheckStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,
@@ -458,6 +467,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/diagnostics-open-hooks': () => <SettingsDiagnosticsOpenHooks />,
   'settings/diagnostics-storage': () => <SettingsDiagnosticsStorage />,
   'settings/diagnostics-storage-reclaimed': () => <SettingsDiagnosticsStorageReclaimed />,
+  'settings/diagnostics-file-saved': () => <SettingsDiagnosticsFileSaved />,
   'settings/daemon': () => <SettingsDaemon />,
   'settings/daemon-error': () => <SettingsDaemonError />,
   'settings/orchestration': () => <SettingsOrchestration />,
@@ -504,6 +514,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines-review-setup': () => <NavRoutines setup />,
   'nav/routines-review-report': () => <NavRoutines report />,
   'nav/routines-empty': () => <NavRoutinesEmpty />,
+  'nav/night-shift-setup': () => <NightShiftSetupStory />,
+  'nav/night-shift-setup-open': () => <NightShiftSetupStory open />,
   'nav/routine-editor': () => <NavRoutineEditor />,
   'nav/routine-editor-clock': () => <NavRoutineEditorClock />,
   'nav/routine-editor-interval': () => <NavRoutineEditorInterval />,
@@ -588,6 +600,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'panes/view-switch-busy': () => <ViewSwitchBusyStory />,
   'settings/default-view': () => <DefaultViewSettingStory />,
   'panes/limited': () => <PaneLimitedStory />,
+  'panes/transferred': () => <PaneTransferredStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,
