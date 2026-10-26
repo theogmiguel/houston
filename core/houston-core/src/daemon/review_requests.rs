@@ -146,9 +146,7 @@ impl Daemon {
             // One immediate catch-up tick after a sleep or a long stall, then
             // the normal interval with ±20 % jitter.
             let interval = if gap
-                > Duration::from_millis(
-                    base.saturating_mul(proto::REVIEW_REQUEST_CATCH_UP_FACTOR),
-                )
+                > Duration::from_millis(base.saturating_mul(proto::REVIEW_REQUEST_CATCH_UP_FACTOR))
             {
                 1_000
             } else {
