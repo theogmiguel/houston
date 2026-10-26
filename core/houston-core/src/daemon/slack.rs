@@ -2255,7 +2255,7 @@ impl Daemon {
             anyhow!("{key} was not filed from Slack, so there is no thread to ask in; ask the question in the pane")
         })?;
         if !self.slack_enabled() {
-            bail!("the Slack intake is off (Settings ▸ Accounts ▸ Slack), so the question cannot reach {key}'s thread; ask in the pane");
+            bail!("the Slack intake is off (Tasks ▸ Sources ▸ Slack), so the question cannot reach {key}'s thread; ask in the pane");
         }
         if let Some(open) = self.db.intake_open_question(row.id)? {
             bail!("{key} already has a question waiting in its thread (question {}); end your turn and wait for its answer", open.id);
@@ -2952,7 +2952,7 @@ impl Daemon {
         tokens: &credentials::Tokens,
     ) -> Result<String> {
         let owner = self.slack_config().owner.ok_or_else(|| {
-            anyhow!("no owner is configured (Settings ▸ Accounts ▸ Slack), so there is no one to message directly")
+            anyhow!("no owner is configured (Tasks ▸ Sources ▸ Slack), so there is no one to message directly")
         })?;
         if let Some((cached_owner, channel)) =
             &self.slack.state.lock().expect("slack state lock").dm

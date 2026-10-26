@@ -190,7 +190,7 @@ fn open_bitbucket(workspace: String, repo: String, ctx: &ForgeContext) -> Opened
     if !ctx.bitbucket_enabled {
         return blocked(
             proto::BitbucketAccess::Off,
-            "Bitbucket Cloud pull requests are off; turn them on in Settings ▸ Accounts"
+            "Bitbucket Cloud pull requests are off; turn them on in Settings ▸ Agents ▸ CLIs"
                 .to_string(),
         );
     }
@@ -199,7 +199,7 @@ fn open_bitbucket(workspace: String, repo: String, ctx: &ForgeContext) -> Opened
         Ok(None) => {
             return blocked(
                 proto::BitbucketAccess::NoToken,
-                "no Bitbucket API token is stored; add one in Settings ▸ Accounts".to_string(),
+                "no Bitbucket API token is stored; add one in Settings ▸ Agents ▸ CLIs".to_string(),
             )
         }
         Err(e) => return blocked(proto::BitbucketAccess::KeychainUnavailable, e.to_string()),
@@ -416,6 +416,21 @@ mod tests {
 
     fn unknown(host: &str) -> ForgeResolution {
         ForgeResolution::Unknown { host: host.into() }
+    }
+
+    #[test]
+    fn the_off_hint_points_at_the_settings_page_that_holds_the_bitbucket_switch() {
+        let ctx = ForgeContext {
+            bitbucket_enabled: false,
+            bitbucket_api_base: String::new(),
+            keychain_service: String::new(),
+        };
+        let opened = open_bitbucket("ws".into(), "repo".into(), &ctx);
+        let hint = opened
+            .hint
+            .expect("a blocked Bitbucket read explains itself");
+        assert!(hint.contains("Settings ▸ Agents ▸ CLIs"), "{hint}");
+        assert!(!hint.contains("Accounts"), "{hint}");
     }
 
     #[test]
