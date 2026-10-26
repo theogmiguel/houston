@@ -346,13 +346,34 @@ pub fn issue_repository(dir: &Path) -> Result<String> {
 }
 
 fn github_repository(url: &str) -> Result<String> {
-    crate::gh::split_repository(url)
-        .map(|(owner, name)| format!("{owner}/{name}"))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "a GitHub remote must name an `owner/name` repository; refusing to file an issue"
-            )
-        })
+    let refusal = || {
+        anyhow::anyhow!(
+            "a GitHub remote must name an `owner/name` repository; refusing to file an issue"
+        )
+    };
+    let Some(after_host) = url
+        .trim()
+        .trim_end_matches(".git")
+        .split("github.com")
+        .nth(1)
+    else {
+        return Err(refusal());
+    };
+    let parts: Vec<&str> = after_host
+        .trim_start_matches(['/', ':'])
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    // An `ssh://` URL may name a port before the path.
+    let (owner, name) = match parts.as_slice() {
+        [port, owner, name] if port.chars().all(|c| c.is_ascii_digit()) => (*owner, *name),
+        [owner, name] => (*owner, *name),
+        _ => return Err(refusal()),
+    };
+    if !is_slug(owner) || !is_slug(name) {
+        return Err(refusal());
+    }
+    Ok(format!("{owner}/{name}"))
 }
 
 /// The name of a forge known not to be GitHub, for a caller that only asks
@@ -467,6 +488,27 @@ mod tests {
             resolve_url("https://bitbucket.org/my-ws_1/repo.name.git"),
             bitbucket("my-ws_1", "repo.name")
         );
+    }
+
+    #[test]
+    fn an_issue_destination_is_a_plain_owner_and_name() {
+        assert_eq!(
+            github_repository("git@github.com:owner/repo.git").unwrap(),
+            "owner/repo"
+        );
+        assert_eq!(
+            github_repository("https://github.com/my-org/repo.name").unwrap(),
+            "my-org/repo.name"
+        );
+        assert_eq!(
+            github_repository("ssh://git@ssh.github.com:443/owner/repo.git").unwrap(),
+            "owner/repo"
+        );
+        // An SSH alias names no path gh could address as `owner/name`; refusing
+        // keeps it from being filed into an unrelated same-named repository.
+        assert!(github_repository("git@github.com-work:owner/repo.git").is_err());
+        assert!(github_repository("https://github.com/owner").is_err());
+        assert!(github_repository("https://github.com/../repo").is_err());
     }
 
     #[test]
