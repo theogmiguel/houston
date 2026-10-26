@@ -264,9 +264,15 @@ struct Run {
 
 /// A change above `REVIEW_SKIP_MAX_LINES`, so a review is not skipped.
 fn large_change(run: &Run) {
+    large_change_in(run, "review.txt");
+}
+
+/// A rework round is measured from the commit it started at, so each round commits its own
+/// file: re-committing the previous round's file would leave a zero-line diff to skip.
+fn large_change_in(run: &Run, file: &str) {
     let tree = Path::new(run.worktree_path.as_deref().expect("a worktree"));
-    std::fs::write(tree.join("review.txt"), "line\n".repeat(40)).unwrap();
-    git(tree, &["add", "review.txt"]);
+    std::fs::write(tree.join(file), "line\n".repeat(40)).unwrap();
+    git(tree, &["add", file]);
     git(tree, &["commit", "-q", "-m", "implementation"]);
 }
 
@@ -415,6 +421,7 @@ async fn automatic_rework_stops_at_the_configured_cap() {
         "impl 1, review 2, rework 3: {:?}",
         r.run_rows()
     );
+    large_change_in(&impl_two, "rework.txt");
     r.submit_complete(impl_two.session_id.unwrap());
     let review_two = r.open_run_of("review");
     r.submit_fail(review_two.session_id.unwrap());
