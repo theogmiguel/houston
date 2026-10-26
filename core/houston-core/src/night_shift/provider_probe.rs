@@ -86,6 +86,9 @@ pub fn classify(
                 })
                 .or_else(|| lines().find(|l| !l.is_empty()))
                 .unwrap_or("the probe exited with an error and printed nothing");
+            // The reason reaches the run's notes and the database, so a
+            // credential the CLI echoed never leaves this function.
+            let reason = crate::sanitize::redact_secrets(reason).0;
             Outcome::Failed(reason.chars().take(REASON_MAX).collect())
         }
     }
@@ -210,6 +213,20 @@ mod tests {
         assert!(
             matches!(classify(AgentKind::Claude, Some(false), "", ""), Outcome::Failed(w) if w.contains("printed nothing"))
         );
+    }
+
+    #[test]
+    fn a_probe_reason_never_keeps_a_credential_it_echoed() {
+        let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.\
+                     dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+        let stderr =
+            format!("ProviderBusinessError: request failed with Authorization: Bearer {token}\n");
+        let Outcome::Failed(why) = classify(AgentKind::Opencode, Some(false), "", &stderr) else {
+            panic!("a failed probe keeps a reason");
+        };
+        assert!(!why.contains(token), "{why}");
+        assert!(why.contains("[redacted:"), "{why}");
+        assert!(why.chars().count() <= REASON_MAX);
     }
 
     #[test]
