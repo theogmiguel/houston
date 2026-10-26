@@ -446,6 +446,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
     let _guard = SERIAL.lock().await;
     let r = rig("review-settings").await;
     let proto::ServerMsg::TaskReviewSettings {
+        workspace,
         reviewer,
         rework_rounds,
         mode,
@@ -454,6 +455,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
     else {
         panic!("expected TaskReviewSettings");
     };
+    assert_eq!(workspace, r.workspace());
     assert_eq!(reviewer, None, "review is off by default");
     assert_eq!(rework_rounds, 0);
     assert_eq!(mode, proto::TaskReviewMode::Manual);
@@ -470,6 +472,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
         )
         .unwrap();
     let proto::ServerMsg::TaskReviewSettings {
+        workspace,
         reviewer,
         rework_rounds,
         mode,
@@ -478,6 +481,7 @@ async fn review_settings_default_off_and_refuse_the_cap_and_a_dead_provider() {
     else {
         panic!("expected TaskReviewSettings, got {msg:?}");
     };
+    assert_eq!(workspace, r.workspace());
     assert_eq!(reviewer, Some(proto::AgentKind::Codex));
     assert_eq!(rework_rounds, 2);
     assert_eq!(mode, proto::TaskReviewMode::Handback);
