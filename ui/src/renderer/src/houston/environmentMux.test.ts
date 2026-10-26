@@ -313,6 +313,18 @@ describe('environmentMux', () => {
     ])
   })
 
+  it('retags the panes a WSL worktree check names', () => {
+    const r = rig()
+    const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }])
+    const check = { dirty_files: 0, newest_change_ms: null, base: 'main', ahead: 0, unpushed: 0, gaps: [] }
+    sockets.get('Ubuntu')!.receive({
+      type: 'worktree_check', dir: '/w', path: '/w/t', check: { ...check, panes: [{ session: 5, title: 'Max' }] }
+    })
+    expect(r.deliveredJson().slice(-1)).toEqual([
+      { type: 'worktree_check', dir: '/w', path: '/w/t', check: { ...check, panes: [{ session: tagSession(1, 5), title: 'Max' }] } }
+    ])
+  })
+
   it('retags nested archived result and instruction replies without changing task identities', () => {
     const r = rig()
     const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }, { entry: wslEntry('Debian', 2) }])
@@ -402,6 +414,23 @@ describe('environmentMux', () => {
 
     expect(ubuntu.json()).toEqual([{ type: 'workspace_add', path: '/home/u/p' }])
     expect(r.local.sent).toEqual([])
+  })
+
+  it('relocates a wsl workspace within its distro and refuses a move across environments', () => {
+    const r = rig()
+    const ubuntu = connect(r, [
+      { entry: wslEntry('Ubuntu', 1), workspaces: [{ path: '/home/u/p', name: 'p' }] }
+    ]).get('Ubuntu')!
+
+    r.clientSend({ type: 'workspace_relocate', from: '/home/u/p', to: '\\\\wsl.localhost\\Ubuntu\\home\\u\\q' })
+    expect(ubuntu.json()).toEqual([{ type: 'workspace_relocate', from: '/home/u/p', to: '/home/u/q' }])
+
+    r.clientSend({ type: 'workspace_relocate', from: 'C:\\work\\p', to: '\\\\wsl.localhost\\Ubuntu\\home\\u\\q' })
+    expect(ubuntu.json()).toHaveLength(1)
+    expect(r.local.sent).toEqual([])
+    const errors = r.deliveredJson().filter((m) => m.type === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('another environment')
   })
 
   it('merges list replies across environments', () => {

@@ -70,12 +70,29 @@ cat >"$APPS/houston.desktop" <<EOF
 Type=Application
 Name=Houston
 Comment=Mission control for CLI coding agents
-Exec=$LIBDIR/launch.sh
+Exec=$LIBDIR/launch.sh %f
 Terminal=false
 Icon=houston
 Categories=Development;
 StartupWMClass=houston
+MimeType=application/x-houston-transfer;
 EOF
+
+# Workspace transfer files open with Houston, which shows the import dialog.
+MIME="$HOME/.local/share/mime"
+mkdir -p "$MIME/packages"
+cat >"$MIME/packages/houston-transfer.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-houston-transfer">
+    <comment>Houston workspace transfer</comment>
+    <glob pattern="*.houston-transfer"/>
+  </mime-type>
+</mime-info>
+EOF
+if command -v update-mime-database >/dev/null; then
+  update-mime-database "$MIME" >/dev/null 2>&1 || true
+fi
 
 repo_leak=0
 for f in "$LIBDIR/launch.sh" "$LIBDIR/start.sh" "$APPS/houston.desktop"; do
@@ -117,4 +134,5 @@ if command -v update-desktop-database >/dev/null; then
 fi
 
 echo "installed: $APPS/houston.desktop"
+echo "installed: $MIME/packages/houston-transfer.xml"
 echo "installed: $ICONS/{48,64,128,256,512}x*/apps/houston.png"
