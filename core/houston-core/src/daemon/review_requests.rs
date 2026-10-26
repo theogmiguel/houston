@@ -527,6 +527,20 @@ impl Daemon {
             &format!("pull/{}/head:refs/heads/{branch}", row.number),
         )
         .context("fetching the pull request head")?;
+        // The request names the head triage read; the fetch takes whatever the
+        // head is now. A push in between would put the pane on a commit the
+        // row, the branch name and the verdict do not describe.
+        let fetched = crate::git::branch_tip(&project, &branch)
+            .context("reading the fetched pull request head")?;
+        if fetched != row.head_sha {
+            let _ = crate::git::delete_branch(&project, &branch, true);
+            bail!(
+                "pull request {}#{} moved to {fetched} after triage read {}; expected the recorded head, so no review pane was opened",
+                row.repo,
+                row.number,
+                row.head_sha
+            );
+        }
         let _ = crate::worktrees::prune(&project);
         if let Err(e) = crate::worktrees::create_detached(&project, &branch, &dest) {
             self.discard_review_request_worktree(&project, &dest, &branch);

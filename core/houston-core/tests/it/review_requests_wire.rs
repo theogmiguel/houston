@@ -389,6 +389,59 @@ async fn a_stale_review_worktree_is_cleaned_before_the_retry() {
 }
 
 #[tokio::test]
+async fn a_head_that_moved_after_triage_opens_no_review_pane() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    install_fake_provider(&rig);
+    let triaged = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\n",
+        "triaged head",
+    );
+    let pushed_since = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\nsix\n",
+        "pushed after triage",
+    );
+    git(&rig.root, &["push", "-q", "origin", "main"]);
+    git(
+        &rig.origin,
+        &["update-ref", "refs/pull/11/head", &pushed_since],
+    );
+    rig.daemon
+        .review_requests_set(proto::ReviewRequestMode::Review)
+        .unwrap();
+    search(&rig, &[]);
+    rig.daemon.review_request_tick();
+    search(&rig, &[("owner/repo", 11, "2026-10-26T00:00:00Z", "Moved")]);
+    pr(
+        &rig,
+        11,
+        "houston/review-eleven",
+        json!([{"path": "src/lib.rs", "additions": 30, "deletions": 0}]),
+        "main",
+        true,
+    );
+    head(&rig, 11, &triaged);
+
+    rig.daemon.review_request_tick();
+    let (_, items, note) = state(&rig);
+    let row = items
+        .iter()
+        .find(|item| item.head_sha == triaged)
+        .expect("the request");
+    assert_eq!(row.state, proto::ReviewRequestState::New, "{note:?}");
+    assert!(rig.daemon.list().is_empty(), "no review pane opened");
+    let note = note.expect("the refusal is visible");
+    assert!(
+        note.contains(&pushed_since) && note.contains(&triaged),
+        "the note names both heads: {note}"
+    );
+}
+
+#[tokio::test]
 async fn a_bitbucket_workspace_is_refused_by_name() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
