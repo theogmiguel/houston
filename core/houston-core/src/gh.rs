@@ -1073,12 +1073,14 @@ pub struct ReviewRequestedPr {
     pub url: String,
     pub repo: String,
     pub author: String,
-    pub head_sha: String,
+    pub updated_at: String,
     pub is_draft: bool,
 }
 
 /// The review requests of the signed-in account, one `gh search prs` page.
-/// Newest first is gh's own order; the caller dedupes by head.
+/// Newest first is gh's own order. `gh search prs` has no head commit field, so
+/// the caller resolves that with one `gh pr view` for a request it has not seen
+/// before.
 pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewRequestedPr>> {
     let limit = limit.clamp(1, 100).to_string();
     let out = run(
@@ -1092,7 +1094,7 @@ pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewR
             "--limit",
             &limit,
             "--json",
-            "number,title,url,repository,author,headRefOid,isDraft",
+            "number,title,url,repository,author,isDraft,updatedAt",
         ],
     )
     .context("running gh search prs")?;
@@ -1138,9 +1140,9 @@ pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewR
                     .and_then(|login| login.as_str())
                     .unwrap_or_default()
                     .to_string(),
-                head_sha: row
-                    .get("headRefOid")
-                    .and_then(|sha| sha.as_str())
+                updated_at: row
+                    .get("updatedAt")
+                    .and_then(|updated| updated.as_str())
                     .unwrap_or_default()
                     .to_string(),
                 is_draft: row
@@ -1149,7 +1151,6 @@ pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewR
                     .unwrap_or(false),
             })
         })
-        .filter(|pr| !pr.head_sha.trim().is_empty())
         .collect())
 }
 
@@ -1161,24 +1162,27 @@ fn repository_from_pr_url(url: &str) -> Option<String> {
     (pull >= 2).then(|| format!("{}/{}", parts[pull - 2], parts[pull - 1]))
 }
 
-/// The facts triage needs from one `gh pr view`: changed files, base branch and
-/// whether every check passed. No body or comment is read.
+/// The facts triage needs from one `gh pr view`: the head, changed files, base
+/// branch and whether every check passed. No body or comment is read.
 pub struct ReviewRequestFacts {
+    pub head_sha: String,
     pub files: Vec<(String, u32, u32)>,
     pub base: String,
     pub ci_green: bool,
 }
 
-pub fn review_request_facts(dir: &Path, number: u32) -> Result<ReviewRequestFacts> {
-    let number = number.to_string();
+pub fn review_request_facts(dir: &Path, repo: &str, number: u32) -> Result<ReviewRequestFacts> {
+    let number_text = number.to_string();
     let out = run(
         dir,
         &[
             "pr",
             "view",
-            &number,
+            &number_text,
+            "--repo",
+            repo,
             "--json",
-            "files,baseRefName,statusCheckRollup",
+            "headRefOid,files,baseRefName,statusCheckRollup",
         ],
     )
     .context("running gh pr view for review triage")?;
@@ -1186,7 +1190,7 @@ pub fn review_request_facts(dir: &Path, number: u32) -> Result<ReviewRequestFact
         bail!(
             "{}",
             first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
-                "gh pr view {number} for review triage failed (exit {:?})",
+                "gh pr view {number} --repo {repo} for review triage failed (exit {:?})",
                 out.code
             ))
         );
@@ -1194,11 +1198,22 @@ pub fn review_request_facts(dir: &Path, number: u32) -> Result<ReviewRequestFact
     let value: serde_json::Value = serde_json::from_str(&out.stdout).with_context(|| {
         let head: String = out.stdout.chars().take(400).collect();
         format!(
-            "gh pr view {number} returned unreadable JSON for review triage; {} bytes, first \
-             400 chars: {head:?}",
+            "gh pr view {number} --repo {repo} returned unreadable JSON for review triage; {} \
+             bytes, first 400 chars: {head:?}",
             out.stdout.len()
         )
     })?;
+    let head_sha = value
+        .get("headRefOid")
+        .and_then(|sha| sha.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if head_sha.is_empty() {
+        bail!(
+            "gh pr view {number} --repo {repo} left out headRefOid; expected the pull request head"
+        );
+    }
     let files = value
         .get("files")
         .and_then(|files| files.as_array())
@@ -1238,6 +1253,7 @@ pub fn review_request_facts(dir: &Path, number: u32) -> Result<ReviewRequestFact
             )
         });
     Ok(ReviewRequestFacts {
+        head_sha,
         files,
         base,
         ci_green,

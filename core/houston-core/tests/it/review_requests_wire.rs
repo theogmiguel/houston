@@ -19,19 +19,23 @@ fn install_fake_provider(rig: &Rig) {
 fn search(rig: &Rig, entries: &[(&str, u32, &str, &str)]) {
     let rows: Vec<Value> = entries
         .iter()
-        .map(|(repo, number, head, title)| {
+        .map(|(repo, number, updated_at, title)| {
             json!({
                 "number": number,
                 "title": title,
                 "url": format!("https://github.com/{repo}/pull/{number}"),
                 "repository": {"nameWithOwner": repo},
                 "author": {"login": "author"},
-                "headRefOid": head,
-                "isDraft": false
+                "isDraft": false,
+                "updatedAt": updated_at
             })
         })
         .collect();
     rig.flag("review-requested-prs.json", &Value::Array(rows).to_string());
+}
+
+fn head(rig: &Rig, number: u32, sha: &str) {
+    rig.pr_set(number, "headRefOid", json!(sha));
 }
 
 fn pr(rig: &Rig, number: u32, branch: &str, files: Value, base: &str, green: bool) {
@@ -103,7 +107,10 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     let rig = Rig::new().await;
     let _pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
     let branch = "houston/review-one";
-    search(&rig, &[("owner/repo", 1, "head-a", "Old request")]);
+    search(
+        &rig,
+        &[("owner/repo", 1, "2026-10-26T00:00:00Z", "Old request")],
+    );
     pr(
         &rig,
         1,
@@ -112,6 +119,7 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
         "main",
         true,
     );
+    head(&rig, 1, "head-a");
     rig.daemon
         .review_requests_set(proto::ReviewRequestMode::Notify)
         .unwrap();
@@ -119,8 +127,8 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     rig.daemon.review_request_tick();
     assert_eq!(
         rig.calls("pr view").len(),
-        before,
-        "absorbing makes no triage call"
+        before + 1,
+        "the first tick resolves the head"
     );
     let (_, items, _) = state(&rig);
     assert_eq!(items.len(), 1);
@@ -135,7 +143,10 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     );
 
     let mut updates = rig.daemon.subscribe();
-    search(&rig, &[("owner/repo", 1, "head-b", "New push")]);
+    search(
+        &rig,
+        &[("owner/repo", 1, "2026-10-26T00:01:00Z", "New push")],
+    );
     pr(
         &rig,
         1,
@@ -144,6 +155,7 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
         "main",
         true,
     );
+    head(&rig, 1, "head-b");
     rig.daemon.review_request_tick();
     let found = notices(&mut updates);
     let (_, items, _) = state(&rig);
@@ -165,16 +177,20 @@ async fn the_first_tick_absorbs_then_a_new_head_is_triaged_notified_and_deduped(
     assert_eq!(*number, 1);
     assert_eq!(*tier, proto::ReviewTier::C);
 
-    let triage_calls = rig.calls("pr view").len();
+    let reads = rig.calls("pr view").len();
     rig.daemon.review_request_tick();
     assert_eq!(
         rig.calls("pr view").len(),
-        triage_calls,
-        "same head is not re-triaged"
+        reads,
+        "an unchanged updatedAt is not re-read"
     );
     assert_eq!(state(&rig).1.len(), 2);
 
-    search(&rig, &[("owner/repo", 1, "head-c", "Another push")]);
+    search(
+        &rig,
+        &[("owner/repo", 1, "2026-10-26T00:02:00Z", "Another push")],
+    );
+    head(&rig, 1, "head-c");
     rig.daemon.review_request_tick();
     let (_, items, _) = state(&rig);
     assert_eq!(items.len(), 3);
@@ -223,7 +239,10 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
     let _pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
     let first =
         crate::merge_queue_rig::commit(&rig.root, "app.txt", "one\ntwo\nthree\nfour\n", "base");
-    search(&rig, &[("owner/repo", 1, first.as_str(), "Absorbed")]);
+    search(
+        &rig,
+        &[("owner/repo", 1, "2026-10-26T00:00:00Z", "Absorbed")],
+    );
     pr(
         &rig,
         1,
@@ -232,6 +251,7 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
         "main",
         true,
     );
+    head(&rig, 1, &first);
     rig.daemon
         .review_requests_set(proto::ReviewRequestMode::Review)
         .unwrap();
@@ -250,7 +270,11 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
     );
     git(&rig.root, &["push", "-q", "origin", "main"]);
     git(&rig.origin, &["update-ref", "refs/pull/1/head", &second]);
-    search(&rig, &[("owner/repo", 1, second.as_str(), "Review this")]);
+    search(
+        &rig,
+        &[("owner/repo", 1, "2026-10-26T00:01:00Z", "Review this")],
+    );
+    head(&rig, 1, &second);
     rig.daemon.review_request_tick();
     let (_, items, _) = state(&rig);
     let row = items.iter().find(|item| item.head_sha == second).unwrap();
@@ -279,7 +303,10 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
         .review_requests_set(proto::ReviewRequestMode::Notify)
         .unwrap();
     rig.daemon.review_request_tick();
-    search(&rig, &[("owner/repo", 2, "head-c", "Notify only")]);
+    search(
+        &rig,
+        &[("owner/repo", 2, "2026-10-26T00:02:00Z", "Notify only")],
+    );
     pr(
         &rig,
         2,
@@ -288,6 +315,7 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
         "main",
         true,
     );
+    head(&rig, 2, "head-c");
     rig.daemon.review_request_tick();
     let (_, items, _) = state(&rig);
     let row = items.iter().find(|item| item.head_sha == "head-c").unwrap();
@@ -334,7 +362,10 @@ async fn dismiss_and_reopen_are_visible_decisions() {
         .review_requests_set(proto::ReviewRequestMode::Notify)
         .unwrap();
     rig.daemon.review_request_tick();
-    search(&rig, &[("owner/repo", 3, "head-d", "Dismiss me")]);
+    search(
+        &rig,
+        &[("owner/repo", 3, "2026-10-26T00:03:00Z", "Dismiss me")],
+    );
     pr(
         &rig,
         3,
@@ -343,6 +374,7 @@ async fn dismiss_and_reopen_are_visible_decisions() {
         "main",
         true,
     );
+    head(&rig, 3, "head-d");
     rig.daemon.review_request_tick();
     let (_, items, _) = state(&rig);
     let id = items[0].id;

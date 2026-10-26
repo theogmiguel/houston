@@ -215,28 +215,85 @@ impl Daemon {
             if request.is_draft {
                 continue;
             }
-            // A head already in the queue needs no second triage or notice.
-            match self.db.review_request_exists(
+            // The search carries no head. An unchanged forge `updatedAt` is the
+            // only cheap proof that nothing needs another per-request read.
+            let latest = match self.db.review_request_latest_head(
                 "github.com",
                 &request.repo,
                 request.number,
-                &request.head_sha,
             ) {
-                Ok(true) => continue,
-                Ok(false) => {}
+                Ok(latest) => latest,
                 Err(e) => {
                     tracing::warn!(
-                        "review requests: checking {}#{}: {e:#}",
+                        "review requests: reading the latest head of {}#{}: {e:#}",
                         request.repo,
                         request.number
                     );
                     continue;
                 }
+            };
+            if !request.updated_at.is_empty()
+                && matches!(
+                    &latest,
+                    Some((_, Some(seen))) if seen == &request.updated_at
+                )
+            {
+                continue;
             }
             let matched = workspaces
                 .iter()
                 .find(|(_, repo)| repo.eq_ignore_ascii_case(&request.repo))
                 .cloned();
+            if let Some((dir, _)) = &matched {
+                let _ = crate::git::fetch(dir);
+            }
+            let facts =
+                match crate::gh::review_request_facts(poll_dir, &request.repo, request.number) {
+                    Ok(facts) => facts,
+                    Err(e) => {
+                        self.note_review_requests(format!(
+                            "{}#{} was not read: {e:#}",
+                            request.repo, request.number
+                        ));
+                        continue;
+                    }
+                };
+            if match self.db.review_request_exists(
+                "github.com",
+                &request.repo,
+                request.number,
+                &facts.head_sha,
+            ) {
+                Ok(exists) => exists,
+                Err(e) => {
+                    tracing::warn!(
+                        "review requests: checking {}#{}/{}: {e:#}",
+                        request.repo,
+                        request.number,
+                        facts.head_sha
+                    );
+                    continue;
+                }
+            } {
+                if let Err(e) = self.db.review_request_touch(
+                    "github.com",
+                    &request.repo,
+                    request.number,
+                    &request.title,
+                    &request.author,
+                    &request.url,
+                    &request.updated_at,
+                    now,
+                ) {
+                    tracing::warn!(
+                        "review requests: recording {}#{} at {}: {e:#}",
+                        request.repo,
+                        request.number,
+                        facts.head_sha
+                    );
+                }
+                continue;
+            }
             let provider = matched
                 .as_ref()
                 .map(|(dir, _)| self.tasks_start_agent(&dir.display().to_string()));
@@ -245,14 +302,9 @@ impl Daemon {
                     proto::ReviewTier::B,
                     vec!["absorbed on first run; a new push is triaged".to_string()],
                 )
-            } else if let Some((dir, _)) = &matched {
-                match self.triage_request(dir, request.number) {
-                    Ok(verdict) => (verdict.tier, verdict.reasons),
-                    Err(e) => (
-                        proto::ReviewTier::B,
-                        vec![format!("triage did not run: {e:#}")],
-                    ),
-                }
+            } else if matched.is_some() {
+                let verdict = triage_facts(&facts);
+                (verdict.tier, verdict.reasons)
             } else {
                 (
                     proto::ReviewTier::B,
@@ -264,7 +316,7 @@ impl Daemon {
                 host: "github.com",
                 repo: &request.repo,
                 number: request.number,
-                head_sha: &request.head_sha,
+                head_sha: &facts.head_sha,
                 title: &request.title,
                 author: &request.author,
                 url: &request.url,
@@ -273,6 +325,7 @@ impl Daemon {
                 workspace: workspace_path.as_deref(),
                 provider,
                 absorbed: !primed,
+                updated_at: &request.updated_at,
             };
             let (row, inserted) = match self.db.review_request_seen(&write, now) {
                 Ok(result) => result,
@@ -311,26 +364,6 @@ impl Daemon {
             let state = self.review_requests_state();
             self.broadcast_control(&state);
         }
-    }
-
-    fn triage_request(&self, dir: &Path, number: u32) -> Result<crate::review_triage::Verdict> {
-        let _ = crate::git::fetch(dir);
-        let facts = crate::gh::review_request_facts(dir, number)?;
-        Ok(crate::review_triage::triage(&crate::review_triage::Facts {
-            files: facts
-                .files
-                .into_iter()
-                .map(
-                    |(path, additions, deletions)| crate::review_triage::FileFacts {
-                        path,
-                        additions,
-                        deletions,
-                    },
-                )
-                .collect(),
-            base: facts.base,
-            ci_green: facts.ci_green,
-        }))
     }
 
     fn github_workspaces(&self) -> Vec<(PathBuf, String)> {
@@ -530,6 +563,24 @@ impl Daemon {
             .context("opening the review pane")?;
         Ok(info.id)
     }
+}
+
+fn triage_facts(facts: &crate::gh::ReviewRequestFacts) -> crate::review_triage::Verdict {
+    crate::review_triage::triage(&crate::review_triage::Facts {
+        files: facts
+            .files
+            .iter()
+            .map(
+                |(path, additions, deletions)| crate::review_triage::FileFacts {
+                    path: path.clone(),
+                    additions: *additions,
+                    deletions: *deletions,
+                },
+            )
+            .collect(),
+        base: facts.base.clone(),
+        ci_green: facts.ci_green,
+    })
 }
 
 fn spawnable(agent: proto::AgentKind) -> bool {

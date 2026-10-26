@@ -271,7 +271,38 @@ fn search_issues() {
 
 /// `review-requested-prs.json` is the one `gh search prs` answer, and
 /// `review-requested-prs-error` fails the call for the pause and credential paths.
-fn search_prs() {
+/// Only the fields `gh search prs` really offers are accepted.
+const SEARCH_PR_FIELDS: &[&str] = &[
+    "assignees",
+    "author",
+    "authorAssociation",
+    "body",
+    "closedAt",
+    "commentsCount",
+    "createdAt",
+    "id",
+    "isDraft",
+    "isLocked",
+    "isPullRequest",
+    "labels",
+    "number",
+    "repository",
+    "state",
+    "title",
+    "updatedAt",
+    "url",
+];
+
+fn search_prs(args: &[String]) {
+    let fields = flag(args, "--json").unwrap_or_default();
+    for field in fields.split(',').map(str::trim).filter(|f| !f.is_empty()) {
+        if !SEARCH_PR_FIELDS.contains(&field) {
+            fail(&format!(
+                "gh search prs: unknown JSON field {field:?}; expected one of {}",
+                SEARCH_PR_FIELDS.join(", ")
+            ));
+        }
+    }
     if let Some(error) = read("review-requested-prs-error") {
         fail(&error);
     }
@@ -473,7 +504,7 @@ fn main() {
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
         ("search", "issues") => search_issues(),
-        ("search", "prs") => search_prs(),
+        ("search", "prs") => search_prs(&args),
         ("issue", "create") => issue_create(&args),
         ("issue", "comment") => issue_comment(&args),
         ("api", "user") => viewer_login(),

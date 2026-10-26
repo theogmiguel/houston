@@ -27,6 +27,8 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> Result<()> {
             session_id INTEGER,
             first_seen_ms INTEGER NOT NULL,
             last_seen_ms INTEGER NOT NULL,
+            absorbed INTEGER NOT NULL DEFAULT 0,
+            source_updated_at TEXT,
             UNIQUE(host, repo, number, head_sha)
         );
         CREATE INDEX IF NOT EXISTS idx_review_requests_seen
@@ -37,6 +39,12 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> Result<()> {
         "review_requests",
         "absorbed",
         "absorbed INTEGER NOT NULL DEFAULT 0",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "review_requests",
+        "source_updated_at",
+        "source_updated_at TEXT",
     )?;
     Ok(())
 }
@@ -60,6 +68,9 @@ pub struct ReviewRequestRow {
     /// Recorded by the first poll after the mode was enabled: visible in the
     /// queue, never reviewed or notified about.
     pub absorbed: bool,
+    /// The forge's own `updatedAt` for the pull request when its head was last
+    /// resolved; an unchanged value skips the per-request `gh pr view`.
+    pub source_updated_at: Option<String>,
     pub first_seen_ms: i64,
     pub last_seen_ms: i64,
 }
@@ -77,11 +88,12 @@ pub struct ReviewRequestWrite<'a> {
     pub workspace: Option<&'a str>,
     pub provider: Option<proto::AgentKind>,
     pub absorbed: bool,
+    pub updated_at: &'a str,
 }
 
 const SELECT: &str = "SELECT id, host, repo, number, head_sha, title, author, url, tier, reasons, \
-    state, workspace, provider, session_id, first_seen_ms, last_seen_ms, absorbed \
-    FROM review_requests";
+    state, workspace, provider, session_id, first_seen_ms, last_seen_ms, absorbed, \
+    source_updated_at FROM review_requests";
 
 fn map(row: &Row<'_>) -> rusqlite::Result<ReviewRequestRow> {
     let id: i64 = row.get(0)?;
@@ -140,6 +152,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<ReviewRequestRow> {
         first_seen_ms: row.get(14)?,
         last_seen_ms: row.get(15)?,
         absorbed: row.get(16)?,
+        source_updated_at: row.get(17)?,
     })
 }
 
@@ -157,8 +170,10 @@ impl Db {
         let inserted = conn.execute(
             "INSERT OR IGNORE INTO review_requests
                 (host, repo, number, head_sha, title, author, url, tier, reasons, state,
-                 workspace, provider, session_id, first_seen_ms, last_seen_ms, absorbed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'new', ?10, ?11, NULL, ?12, ?12, ?13)",
+                 workspace, provider, session_id, first_seen_ms, last_seen_ms, absorbed,
+                 source_updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'new', ?10, ?11, NULL, ?12, ?12, ?13,
+                     ?14)",
             rusqlite::params![
                 write.host,
                 write.repo,
@@ -173,10 +188,12 @@ impl Db {
                 provider,
                 now_ms,
                 write.absorbed,
+                write.updated_at,
             ],
         )? == 1;
         conn.execute(
-            "UPDATE review_requests SET last_seen_ms = ?5, title = ?6, author = ?7, url = ?8
+            "UPDATE review_requests SET last_seen_ms = ?5, title = ?6, author = ?7, url = ?8, \
+                 source_updated_at = ?9
              WHERE host = ?1 AND repo = ?2 AND number = ?3 AND head_sha = ?4",
             rusqlite::params![
                 write.host,
@@ -187,6 +204,7 @@ impl Db {
                 write.title,
                 write.author,
                 write.url,
+                write.updated_at,
             ],
         )?;
         let row = conn.query_row(
@@ -211,6 +229,51 @@ impl Db {
             rusqlite::params![host, repo, number, head_sha],
             |row| row.get(0),
         )?)
+    }
+
+    /// The newest head this pull request was resolved at, and the forge
+    /// `updatedAt` that read saw. Equal `updatedAt` means nothing changed.
+    pub fn review_request_latest_head(
+        &self,
+        host: &str,
+        repo: &str,
+        number: u32,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT head_sha, source_updated_at FROM review_requests
+                 WHERE host = ?1 AND repo = ?2 AND number = ?3
+                 ORDER BY first_seen_ms DESC, id DESC LIMIT 1",
+                rusqlite::params![host, repo, number],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// Records the forge timestamp for a pull request already in the queue, so
+    /// a tick that learned nothing new makes no per-request read. The timestamp
+    /// belongs to the pull request, not one head, so every row carries it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn review_request_touch(
+        &self,
+        host: &str,
+        repo: &str,
+        number: u32,
+        title: &str,
+        author: &str,
+        url: &str,
+        updated_at: &str,
+        now_ms: i64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE review_requests SET source_updated_at = ?4, last_seen_ms = ?5, title = ?6, \
+                 author = ?7, url = ?8
+             WHERE host = ?1 AND repo = ?2 AND number = ?3",
+            rusqlite::params![host, repo, number, updated_at, now_ms, title, author, url],
+        )?;
+        Ok(())
     }
 
     pub fn review_requests(&self, limit: u32) -> Result<Vec<ReviewRequestRow>> {
