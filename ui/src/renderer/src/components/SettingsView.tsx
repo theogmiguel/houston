@@ -362,7 +362,7 @@ function SectionDispatch({
               onAgentProfileDelete={onAgentProfileDelete}
               onAgentProfileSetActive={onAgentProfileSetActive}
             />
-            <ZcodeQuotaCheckSetting client={daemonClient ?? null} />
+            <ZcodeQuotaCheckSetting client={daemonClient} />
           </>
         )}
 

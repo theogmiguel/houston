@@ -7,7 +7,7 @@ import { Row, SubHead } from './shared'
 // the generated defaults do not export it.
 const STALL_MINUTES = 20
 
-export function ZcodeQuotaCheckSetting({ client }: { client: HoustonClient | null }): React.JSX.Element {
+export function ZcodeQuotaCheckSetting({ client }: { client: HoustonClient | null | undefined }): React.JSX.Element {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   useEffect(() => {
     setEnabled(null)
