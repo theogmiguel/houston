@@ -506,11 +506,6 @@ impl Daemon {
             row.number,
             &row.head_sha[..row.head_sha.len().min(8)]
         );
-        crate::git::fetch_ref(
-            &project,
-            &format!("pull/{}/head:refs/heads/{branch}", row.number),
-        )
-        .context("fetching the pull request head")?;
         let slug = format!(
             "review-{}-{}-{}",
             crate::git::ref_slug(&row.repo),
@@ -521,9 +516,22 @@ impl Daemon {
         if let Some(parent) = dest.parent() {
             crate::worktrees::ensure_ignored(parent)?;
         }
+        // A failed earlier attempt may have left this request's worktree and
+        // branch behind. Both names belong to this request and head, so they
+        // can be cleaned before the fetch makes them again.
+        if dest.exists() {
+            self.discard_review_request_worktree(&project, &dest, &branch);
+        }
+        crate::git::fetch_ref(
+            &project,
+            &format!("pull/{}/head:refs/heads/{branch}", row.number),
+        )
+        .context("fetching the pull request head")?;
         let _ = crate::worktrees::prune(&project);
-        crate::worktrees::create_detached(&project, &branch, &dest)
-            .context("opening the read-only review worktree")?;
+        if let Err(e) = crate::worktrees::create_detached(&project, &branch, &dest) {
+            self.discard_review_request_worktree(&project, &dest, &branch);
+            return Err(e).context("opening the read-only review worktree");
+        }
         if let Ok(common) = crate::git::checkout_facts(&project)
             .common_dir
             .ok_or_else(|| anyhow::anyhow!("no git common directory"))
@@ -544,24 +552,58 @@ impl Daemon {
         }
         let focus = self.tasks_review_focus(workspace);
         let brief = review_request_brief(row, &focus);
-        let info = self
-            .create_session(CreateParams {
-                agent: provider,
-                project_dir: dest,
-                cmd: None,
-                cols: 120,
-                rows: 32,
-                cwd_from: None,
-                shell_integration: false,
-                auto_approve: false,
-                acp: None,
-                profile: None,
-                prompt: Some(brief),
-                model: None,
-                effort: None,
-            })
-            .context("opening the review pane")?;
+        let info = match self.create_session(CreateParams {
+            agent: provider,
+            project_dir: dest.clone(),
+            cmd: None,
+            cols: 120,
+            rows: 32,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: Some(brief),
+            model: None,
+            effort: None,
+        }) {
+            Ok(info) => info,
+            Err(e) => {
+                self.discard_review_request_worktree(&project, &dest, &branch);
+                return Err(e).context("opening the review pane");
+            }
+        };
         Ok(info.id)
+    }
+
+    /// Undoes a review-request worktree that no pane came to own. The worktree
+    /// goes with force, then its branch and any managed-worktree row.
+    fn discard_review_request_worktree(&self, project: &Path, dest: &Path, branch: &str) {
+        if dest.exists() {
+            if let Err(e) = crate::worktrees::remove(project, dest, true) {
+                tracing::warn!("removing review-request worktree {}: {e:#}", dest.display());
+            }
+        }
+        if dest.exists() {
+            // A directory git no longer registers is still this request's own
+            // leftover path; remove it so the retry is not "already occupied".
+            if let Err(e) = std::fs::remove_dir_all(dest) {
+                tracing::warn!(
+                    "clearing stale review-request path {}: {e:#}",
+                    dest.display()
+                );
+                return;
+            }
+        }
+        if let Err(e) = crate::git::delete_branch(project, branch, true) {
+            tracing::debug!("deleting review-request branch {branch:?}: {e:#}");
+        }
+        if let Err(e) = self.db.managed_worktree_delete(&dest.display().to_string()) {
+            tracing::warn!(
+                "dropping the managed worktree row for {}: {e:#}",
+                dest.display()
+            );
+        }
     }
 }
 

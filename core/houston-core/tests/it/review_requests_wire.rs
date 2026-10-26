@@ -330,6 +330,65 @@ async fn review_mode_opens_one_read_only_pane_and_notify_opens_none() {
 }
 
 #[tokio::test]
+async fn a_stale_review_worktree_is_cleaned_before_the_retry() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    install_fake_provider(&rig);
+    let pushed = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\n",
+        "review me",
+    );
+    git(&rig.root, &["push", "-q", "origin", "main"]);
+    git(&rig.origin, &["update-ref", "refs/pull/9/head", &pushed]);
+    rig.daemon
+        .review_requests_set(proto::ReviewRequestMode::Review)
+        .unwrap();
+    // Prime the queue with an empty search, so this request is not absorbed.
+    search(&rig, &[]);
+    rig.daemon.review_request_tick();
+    search(
+        &rig,
+        &[("owner/repo", 9, "2026-10-26T00:00:00Z", "Retry me")],
+    );
+    pr(
+        &rig,
+        9,
+        "houston/review-nine",
+        json!([{"path": "src/lib.rs", "additions": 30, "deletions": 0}]),
+        "main",
+        true,
+    );
+    head(&rig, 9, &pushed);
+    let slug = format!(
+        "review-{}-9-{}",
+        houston_core::git::ref_slug("owner/repo"),
+        &pushed[..8]
+    );
+    let stale =
+        houston_core::worktrees::default_path(rig.daemon.state_dir(), &rig.workspace, &slug);
+    houston_core::worktrees::create_detached(Path::new(&rig.workspace), &pushed, &stale).unwrap();
+
+    rig.daemon.review_request_tick();
+    let (_, items, note) = state(&rig);
+    let row = items
+        .iter()
+        .find(|item| item.head_sha == pushed)
+        .expect("the request");
+    assert_eq!(
+        row.state,
+        proto::ReviewRequestState::Reviewing,
+        "the stale attempt's worktree is cleaned before the retry: {note:?}"
+    );
+    let sessions = rig.daemon.list();
+    assert_eq!(sessions.len(), 1, "exactly one review pane on the retry");
+    for session in sessions {
+        let _ = rig.daemon.kill(session.id);
+    }
+}
+
+#[tokio::test]
 async fn a_bitbucket_workspace_is_refused_by_name() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
