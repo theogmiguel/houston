@@ -934,8 +934,8 @@ async fn a_settled_run_records_its_workspace_tokens_only() {
     );
 }
 
-/// Direction steers the run from inside the brief; a Claude orchestrator is
-/// sent no `/goal`, which would make it a completion condition.
+/// Direction steers the run from inside the brief; the brief itself never
+/// carries a `/goal`, which is sent separately for Claude.
 #[tokio::test]
 async fn direction_is_not_typed_as_a_goal() {
     let r = rig().await;
@@ -958,6 +958,98 @@ async fn direction_is_not_typed_as_a_goal() {
     let text = std::fs::read_to_string(&typed).unwrap();
     assert!(!text.contains("/goal"), "{text:?}");
     assert!(text.contains("CI stays green"), "{text:?}");
+}
+
+/// A Claude orchestrator with a Direction gets one `/goal` follow-up after its
+/// first lifecycle hook, and never a second one for the same run.
+#[tokio::test]
+async fn a_claude_orchestrator_gets_its_direction_once_as_a_goal() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "Stop".into(),
+        ..Default::default()
+    })
+    .await;
+    wait_until("the /goal follow-up", || {
+        std::fs::read_to_string(&typed).is_ok_and(|text| text.contains("/goal"))
+    })
+    .await;
+    let first = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(first.matches("/goal").count(), 1, "{first:?}");
+    assert!(first.contains("CI stays green"), "{first:?}");
+    assert!(first.contains("night_report"), "{first:?}");
+
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "SessionStart".into(),
+        ..Default::default()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let after = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(
+        after.matches("/goal").count(),
+        1,
+        "the goal is sent once per run: {after:?}"
+    );
+}
+
+/// The other orchestrator providers have no `/goal`; the brief alone steers.
+#[tokio::test]
+async fn another_orchestrator_provider_gets_no_goal() {
+    let r = rig().await;
+    let typed = r.ws.join("codex-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| {
+        s.orchestrator = proto::NightAgent {
+            provider: proto::AgentKind::Codex,
+            model: None,
+        };
+        s.direction = "CI stays green".into();
+    });
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    for event in ["UserPromptSubmit", "Stop", "SessionStart"] {
+        r.drop_hook(HookDrop {
+            session,
+            agent: Some("codex".into()),
+            event: event.into(),
+            ..Default::default()
+        })
+        .await;
+    }
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let text = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!text.contains("/goal"), "{text:?}");
 }
 
 #[tokio::test]

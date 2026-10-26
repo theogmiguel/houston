@@ -16362,6 +16362,14 @@ impl Daemon {
                     .expect("input answer lock") = d.prompt.as_deref().map(bounded_hook_text);
             }
         }
+        // The brief is in the CLI's hands at its first lifecycle hook after
+        // the pane opens; a Claude orchestrator's direction becomes a /goal.
+        if matches!(d.event.as_str(), "SessionStart" | "UserPromptSubmit")
+            && d.agent_id.is_none()
+            && d.subagent_type.is_none()
+        {
+            self.night_shift_goal_prompt(d.session);
+        }
         if Self::ends_limit(provider, d) {
             self.clear_limit(d.session);
         }

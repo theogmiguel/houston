@@ -956,6 +956,7 @@ impl Daemon {
             report_published: false,
             summary: None,
             wrap_up_sent: false,
+            goal_sent: false,
             stop_reason: None,
             stop_detail: None,
             interruptions: Vec::new(),
@@ -1579,6 +1580,90 @@ impl Daemon {
         ) {
             tracing::warn!("telling night run {run_id}'s orchestrator {title:?}: {e:#}");
         }
+    }
+
+    /// A Claude orchestrator's first hook after accepting the brief sets its
+    /// `/goal` once; no other provider has one.
+    pub(super) fn night_shift_goal_prompt(self: &Arc<Self>, session: u32) {
+        let Some((_, run)) = self
+            .night_runs_live()
+            .into_iter()
+            .find(|(_, run)| run.session_id == Some(session))
+        else {
+            return;
+        };
+        let goal = {
+            let _guard = self.night.lock.lock().expect("night lock");
+            let Ok(Some(mut row)) = self.db.night_run(run.run_id) else {
+                return;
+            };
+            if row.goal_sent || row.ended_at_ms.is_some() {
+                return;
+            }
+            let settings = match self.night_settings(row.routine_id) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    tracing::warn!(
+                        "reading Night shift run {}'s settings for /goal: {e:#}",
+                        row.run_id
+                    );
+                    return;
+                }
+            };
+            let (_, stop) = brief::window_labels(
+                row.wrap_up_at_ms,
+                row.hard_stop_at_ms,
+                window::local_offset_ms,
+            );
+            let Some(goal) = brief::goal_for(
+                settings.orchestrator.provider,
+                &settings.direction,
+                row.run_id,
+                &stop,
+            ) else {
+                return;
+            };
+            row.goal_sent = true;
+            if let Err(e) = self.db.save_night_run(&row) {
+                tracing::warn!("recording Night shift run {}'s /goal: {e:#}", row.run_id);
+                return;
+            }
+            goal
+        };
+        let daemon = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-goal-{}", run.run_id))
+            .spawn(move || {
+                if let Err(e) = daemon.instruction_accept_daemon(session, &goal) {
+                    daemon.night_goal_failed(run.run_id, &format!("{e:#}"));
+                }
+            });
+        if let Err(e) = spawned {
+            self.night_goal_failed(run.run_id, &format!("starting the follow-up: {e}"));
+        }
+    }
+
+    /// The run continues; a refused `/goal` is an event in its report.
+    fn night_goal_failed(&self, run_id: u32, why: &str) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let now = now_unix_ms();
+        row.interruptions.push(proto::NightInterruption {
+            at_ms: now,
+            resumed_at_ms: now,
+            detail: format!(
+                "Houston could not send this run's /goal to the Claude orchestrator: {why}"
+            ),
+            resumed: true,
+        });
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s /goal failure: {e:#}");
+            return;
+        }
+        drop(_guard);
+        self.broadcast_night_run(run_id);
     }
 
     fn night_send_wrap_up(self: &Arc<Self>, run_id: u32) {

@@ -91,7 +91,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Window: start, wrap-up, hard stop | 23:30, 06:45, 07:30 (local time, at most 16 hours) |
 | Nights | None: it runs only with **Run now** until you choose nights and turn it on |
 | Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, docs accuracy and test gaps Off |
-| Direction | Empty. Where the run should go, in plain words; the brief makes it a priority within the focus areas. Typing it in Setup suggests matching focus areas, and an area you changed yourself is left alone |
+| Direction | Empty. Where the run should go, in plain words; the brief makes it a priority within the focus areas. For a Claude orchestrator Houston also sends it once as the session's `/goal`, with the hard stop as the condition's end; other orchestrators use the brief only. Typing it in Setup suggests matching focus areas, and an area you changed yourself is left alone |
 | Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator. The orchestrator is Claude, Codex or OpenCode: a ZCode orchestrator is refused because a pull request watch cannot wake it to follow CI |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
@@ -182,6 +182,15 @@ cannot hand off a pane outside it. While a run is in flight Houston keeps the ma
 releases it when the run ends or the daemon exits. The window bounds the run; agent time
 (pane-hours, summed over the run's panes while Houston runs) is reported in the morning
 report's cost and never ends a run.
+
+With a Claude orchestrator and a Direction, Houston sends one follow-up `/goal` after the
+orchestrator has accepted the brief. Its condition names the run, makes progress on your
+direction the goal within the brief's focus areas, and stops only when the morning report is
+published or the hard stop has passed. A direction longer than the condition allows is
+shortened with a visible truncated marker. The clause arrives once per run and is not sent
+again after a daemon restart; a refused send is recorded as an interruption and the run
+continues. Codex and OpenCode orchestrators have no equivalent condition and use the brief's
+Direction only.
 
 The **Live run** view shows the time left, the timeline with any interruptions, the crew
 and their status, the machine's free memory and disk and the plan board. When a worker's

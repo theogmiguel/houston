@@ -72,6 +72,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "detail_json",
         "detail_json TEXT NOT NULL DEFAULT '{}'",
     )?;
+    super::add_column_if_missing(
+        conn,
+        "night_runs",
+        "goal_sent",
+        "goal_sent INTEGER NOT NULL DEFAULT 0",
+    )?;
     widen_entry_kinds(conn)
 }
 
@@ -144,6 +150,8 @@ pub struct NightRunRow {
     pub report_published: bool,
     pub summary: Option<String>,
     pub wrap_up_sent: bool,
+    /// The Claude orchestrator was sent this run's `/goal` once.
+    pub goal_sent: bool,
     pub stop_reason: Option<proto::NightStopReason>,
     pub stop_detail: Option<String>,
     pub interruptions: Vec<proto::NightInterruption>,
@@ -159,7 +167,8 @@ pub struct NightRunRow {
 const RUN_SELECT: &str = "SELECT run_id, routine_id, workspace, trigger, phase, session_id, \
     started_at_ms, wrap_up_at_ms, hard_stop_at_ms, ended_at_ms, report_path, report_published, \
     summary, wrap_up_sent, stop_reason, stop_detail, interruptions_json, cost_json, \
-    limited_json, preflight_json, keep_awake, merge_order_json, crew_json FROM night_runs";
+    limited_json, preflight_json, keep_awake, merge_order_json, crew_json, goal_sent \
+    FROM night_runs";
 
 fn bad(col: usize, what: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, what.into())
@@ -220,6 +229,7 @@ fn map_run(r: &rusqlite::Row) -> rusqlite::Result<NightRunRow> {
         keep_awake: wire_col(r, 20, run_id)?,
         merge_order: json_col(r, 21, run_id)?,
         crew: json_col(r, 22, run_id)?,
+        goal_sent: r.get::<_, i64>(23)? != 0,
     })
 }
 
@@ -356,7 +366,7 @@ impl Db {
              hard_stop_at_ms = ?5, ended_at_ms = ?6, report_published = ?7, summary = ?8, \
              wrap_up_sent = ?9, stop_reason = ?10, stop_detail = ?11, interruptions_json = ?12, \
              cost_json = ?13, limited_json = ?14, preflight_json = ?15, keep_awake = ?16, \
-             merge_order_json = ?17, crew_json = ?18 WHERE run_id = ?1",
+             merge_order_json = ?17, crew_json = ?18, goal_sent = ?19 WHERE run_id = ?1",
             rusqlite::params![
                 row.run_id,
                 wire_name(&row.phase)?,
@@ -376,6 +386,7 @@ impl Db {
                 wire_name(&row.keep_awake)?,
                 serde_json::to_string(&row.merge_order)?,
                 serde_json::to_string(&row.crew)?,
+                row.goal_sent as i64,
             ],
         )
         .with_context(|| format!("saving night run {}", row.run_id))?;
