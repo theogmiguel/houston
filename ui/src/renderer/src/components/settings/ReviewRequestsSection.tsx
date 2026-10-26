@@ -23,8 +23,9 @@ const MODE_LABEL: Readonly<Record<ReviewRequestMode, string>> = {
 
 /** Settings ▸ Workspaces: the global GitHub review-request queue. The list lives
  *  on the Pull requests surface; this only sets how much Houston may do. */
-export function ReviewRequestsSection({ client }: { client: HoustonClient | null }): React.JSX.Element {
-  const { state, setMode } = useReviewRequests(client)
+export function ReviewRequestsSection({ client }: { client?: HoustonClient | null }): React.JSX.Element {
+  const daemonClient = client ?? null
+  const { state, setMode } = useReviewRequests(daemonClient)
   const mode = state?.mode ?? null
   return (
     <>
@@ -44,11 +45,11 @@ export function ReviewRequestsSection({ client }: { client: HoustonClient | null
             <Segmented
               aria-label="Review requests"
               value={mode ?? undefined}
-              loading={client !== null && state === null}
+              loading={daemonClient !== null && state === null}
               options={MODE_OPTIONS.map((option) => ({
                 ...option,
-                disabled: client === null,
-                disabledReason: client === null ? 'Connect to the daemon to change review requests' : undefined,
+                disabled: daemonClient === null,
+                disabledReason: daemonClient === null ? 'Connect to the daemon to change review requests' : undefined,
                 testId: `settings-review-requests-${option.value}`
               }))}
               onChange={(value) => setMode(value as ReviewRequestMode)}
@@ -60,7 +61,7 @@ export function ReviewRequestsSection({ client }: { client: HoustonClient | null
           <Button
             variant="secondary"
             size="sm"
-            disabled={client === null}
+            disabled={daemonClient === null}
             data-testid="settings-review-requests-open"
             onClick={() => { setSettingsOpen(false); requestPrsView({ view: 'review-requests' }); setRailView('prs') }}
           >

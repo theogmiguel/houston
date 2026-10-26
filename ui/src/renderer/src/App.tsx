@@ -668,7 +668,22 @@ const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
 const ReviewRequestSignals = lazy(() => import('./components/ReviewRequestSignals').then((module) => ({ default: module.ReviewRequestSignals })))
 
-
+function reviewRequestSignalsFor(
+  connection: Conn,
+  desktopNotificationMode: DesktopNotificationMode,
+  onCount: (count: number) => void,
+): React.JSX.Element | null {
+  if (connection.kind !== "ready") return null;
+  return (
+    <Suspense fallback={null}>
+      <ReviewRequestSignals
+        client={connection.client}
+        desktopNotificationMode={desktopNotificationMode}
+        onCount={onCount}
+      />
+    </Suspense>
+  );
+}
 
 function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, activeId: number | null, layerArmed: boolean): boolean {
   if (activeId === null || layerArmed) return false;
@@ -3935,15 +3950,7 @@ export function App(): React.JSX.Element {
             </Suspense>
           )}
 
-          {conn.kind === "ready" && (
-            <Suspense fallback={null}>
-              <ReviewRequestSignals
-                client={conn.client}
-                desktopNotificationMode={desktopNotificationMode}
-                onCount={setReviewRequestCount}
-              />
-            </Suspense>
-          )}
+          {reviewRequestSignalsFor(conn, desktopNotificationMode, setReviewRequestCount)}
 
           {}
           {}

@@ -13,7 +13,7 @@ interface ForgeSettingsView {
 /** Bitbucket Cloud's daemon setting and token. The token is sent once and never
  *  returns; a refused change keeps the field and shows the daemon's reason.
  *  These messages skip `client.ts` so the boot chunk does not carry them. */
-export function BitbucketAccount({ client }: { client: HoustonClient | null }): React.JSX.Element {
+export function BitbucketAccount({ client }: { client?: HoustonClient | null }): React.JSX.Element {
   const [settings, setSettings] = useState<ForgeSettingsView | null>(null)
   const [email, setEmail] = useState('')
   const [token, setToken] = useState('')

@@ -352,7 +352,7 @@ function SectionDispatch({
         {section === 'agents-clis' && (
           <>
             <AgentStatusSection
-              client={daemonClient ?? null}
+              client={daemonClient}
               providers={agentHooks}
               agentAccounts={agentAccounts}
               onSet={onAgentHooksSet}
@@ -436,7 +436,7 @@ function SectionDispatch({
             onSessionPolicy={onSessionPolicy}
           />
           <MergeQueueSettingsSection client={daemonClient} workspace={historyWorkspace} />
-          <ReviewRequestsSection client={daemonClient ?? null} />
+          <ReviewRequestsSection client={daemonClient} />
           </>
         )}
 

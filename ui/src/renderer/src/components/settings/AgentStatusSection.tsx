@@ -177,7 +177,7 @@ function AgentDetail({ state, pending, onSet }: { state: AgentHookState; pending
 
 export function AgentStatusSection({
   providers,
-  client = null,
+  client,
   agentAccounts = null,
   onSet,
   onRefresh,
