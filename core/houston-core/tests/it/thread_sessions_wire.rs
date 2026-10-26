@@ -1655,9 +1655,17 @@ async fn the_permission_mode_follows_what_claude_reports() {
         Some("default")
     );
 
+    // Control requests run concurrently: a send racing the stop would reach the plan process.
+    let (plan, _) = rig.launches().last().unwrap().clone();
     rig.send(json!({"type":"thread_stop","session":id})).await;
+    wait_until("the stop to end the plan process", || {
+        !houston_core::pid::process_is_alive(plan)
+    })
+    .await;
     rig.turn(id, "replay:warm").await;
-    let restarted = rig.launches().last().unwrap().1.clone();
+    let launches = rig.launches();
+    assert_eq!(launches.len(), 3, "the turn after the stop relaunches");
+    let restarted = launches.last().unwrap().1.clone();
     assert!(
         !restarted.iter().any(|arg| arg == "--permission-mode"),
         "a restart after leaving plan mode does not return to it: {restarted:?}"
