@@ -1,6 +1,6 @@
 import { useVoiceSettings } from "./voice/useVoiceSettings";
 import { useAgentSettingsReads } from './useAgentSettingsReads'
-import { useAgentAttention, harnessAttentionCount } from './useAgentAttention'
+import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
@@ -666,6 +666,7 @@ function offeredUpdate(
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
+const ReviewRequestSignals = lazy(() => import('./components/ReviewRequestSignals').then((module) => ({ default: module.ReviewRequestSignals })))
 
 
 
@@ -689,12 +690,6 @@ function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: 
     if (resolveGlobalMatch(entry, overrides)(e)) return { target, step };
   }
   return null;
-}
-
-function harnessAttentionFor(overview: readonly { workspace: string; attention: number; suspected_defects: number }[], workspace: string): number {
-  if (workspace === "all") return overview.reduce((total, row) => total + harnessAttentionCount(row), 0);
-  const row = overview.find((entry) => entry.workspace === workspace);
-  return row ? harnessAttentionCount(row) : 0;
 }
 
 function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
@@ -831,7 +826,6 @@ export function App(): React.JSX.Element {
     setSelectedWs((cur) => cur === "all" || workspaces.some((w) => w.path === cur) ? cur : workspaces[0].path);
   }, [conn.kind, environmentRosterPending, workspaces]);
   const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
-  const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
   const [taskTurnCount, setTaskTurnCount] = useState(0);
   const {
     activeId,
@@ -1072,6 +1066,7 @@ export function App(): React.JSX.Element {
     changeFont,
     changeZoom,
   } = usePreferences();
+  const [reviewRequestCount, setReviewRequestCount] = useState(0);
   const terminalTuning = useMemo(
     () => ({
       lineHeight: terminalLineHeight,
@@ -3765,10 +3760,10 @@ export function App(): React.JSX.Element {
                 )
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
-              harnessAttention={harnessAttention}
               agentAttention={agentAttention}
               taskTurnCount={taskTurnCount}
               mergeQueueParked={mergeQueueParked}
+              reviewRequestCount={reviewRequestCount}
               onRemoveWorkspace={removeWorkspace}
               onLocateStart={(path) => {
                 void locateWorkspace(path);
@@ -3936,6 +3931,16 @@ export function App(): React.JSX.Element {
                   clearTimeout(retryTimerRef.current);
                   reconnectRef.current();
                 }}
+              />
+            </Suspense>
+          )}
+
+          {conn.kind === "ready" && (
+            <Suspense fallback={null}>
+              <ReviewRequestSignals
+                client={conn.client}
+                desktopNotificationMode={desktopNotificationMode}
+                onCount={setReviewRequestCount}
               />
             </Suspense>
           )}
@@ -4221,6 +4226,10 @@ export function App(): React.JSX.Element {
                       onRefresh={prScreen.refresh}
                       onOpenSurface={openPanelSurface}
                       onOpenMergeQueueSettings={() => {
+                        setSettingsSection("workspaces");
+                        setSettings(true);
+                      }}
+                      onOpenReviewSettings={() => {
                         setSettingsSection("workspaces");
                         setSettings(true);
                       }}

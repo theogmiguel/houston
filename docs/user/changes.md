@@ -115,6 +115,26 @@ pane** removes the local association without closing the request on GitHub. Clos
 requests can be reopened when permitted. If no PR exists, create one for the branch or
 link an existing request by number.
 
+## Review requests
+
+The **Review requests** view on the Pull requests page lists pull requests where GitHub asks
+you to review. Turn the queue on in **Settings ▸ Workspaces ▸ Review requests**:
+
+- **Off** (the default) requests nothing.
+- **Notify** asks GitHub every 2 minutes, through your `gh` login, which pull requests await
+  your review, reads their size and files, and tells you.
+- **Review** also starts a read-only review pane for medium and large requests with the
+  workspace's default agent. That sends the diff to that agent's provider. Houston never
+  approves a pull request or posts anything to GitHub.
+
+Each row names its repository and number, title, author and one of three tiers. The tier is
+never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
+more than 400 lines or a documentation-only change. A row with no matching local checkout
+says so, because Houston has nowhere to open the review pane. **Dismiss** records your
+decision and **Reopen** withdraws it. The rail's **Pull requests** item counts new requests.
+GitHub rate-limit pauses and credential problems appear as a notice in the view and in
+Settings without dropping the rows.
+
 ## Merge queue
 
 The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull

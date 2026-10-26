@@ -28,6 +28,7 @@ import { PageFrame, type PageWidth } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { MergeQueueSettingsSection } from './settings/MergeQueueSettingsSection'
+import { ReviewRequestsSection } from './settings/ReviewRequestsSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { MascotSettings } from './settings/MascotSettings'
 import { TerminalSection } from './settings/TerminalSection'
@@ -435,6 +436,7 @@ function SectionDispatch({
             onSessionPolicy={onSessionPolicy}
           />
           <MergeQueueSettingsSection client={daemonClient} workspace={historyWorkspace} />
+          <ReviewRequestsSection client={daemonClient ?? null} />
           </>
         )}
 

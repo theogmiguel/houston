@@ -11,6 +11,8 @@ import { Segmented } from '../ui/Segmented'
 import { MergeQueueView, type MergeQueueHandOff } from './MergeQueueView'
 import { useMergeQueue } from './useMergeQueue'
 import { useTaskStartSettings } from '../../houston/useTasks'
+import { newReviewRequestCount, useReviewRequests } from '../../houston/useReviewRequests'
+import { ReviewRequestsList } from './ReviewRequestsList'
 import { clearPrsViewRequest, usePrsViewRequest, type PrsView } from './prsView'
 import { PrStatusWord } from '../ui/PrPresentation'
 import { ContextMenu, ContextMenuItem, ContextMenuItems } from '../ui/ContextMenu'
@@ -20,7 +22,7 @@ import { PullRequestTab } from '../git/PullRequestTab'
 import type { SurfaceKind } from '../../scmPanel'
 
 export interface PullRequestsScreenProps {
-  repoName: string; workspace: string; currentUser: string; items: PrListItem[]; client?: HoustonClient | null; directory?: string | null; selectedNumber?: number | null; state?: PrListState; sort?: PrSort; loading?: boolean; workspaces?: readonly Workspace[]; onWorkspaceChange?: (workspace: string) => void; onStateChange?: (state: PrListState) => void; onSortChange?: (sort: PrSort) => void; onRefresh?: () => void; onOpenPullRequest?: (item: PrListItem) => void; onCheckoutInWorktree?: (item: PrListItem) => void; onOpenSurface?: (surface: SurfaceKind) => void; onOpenUrlInPane?: (url: string) => void; onHandOff?: MergeQueueHandOff; onOpenMergeQueueSettings?: () => void
+  repoName: string; workspace: string; currentUser: string; items: PrListItem[]; client?: HoustonClient | null; directory?: string | null; selectedNumber?: number | null; state?: PrListState; sort?: PrSort; loading?: boolean; workspaces?: readonly Workspace[]; onWorkspaceChange?: (workspace: string) => void; onStateChange?: (state: PrListState) => void; onSortChange?: (sort: PrSort) => void; onRefresh?: () => void; onOpenPullRequest?: (item: PrListItem) => void; onCheckoutInWorktree?: (item: PrListItem) => void; onOpenSurface?: (surface: SurfaceKind) => void; onOpenUrlInPane?: (url: string) => void; onHandOff?: MergeQueueHandOff; onOpenMergeQueueSettings?: () => void; onOpenReviewSettings?: () => void
 }
 
 function PrRow({ item, selected, onOpen, onContextMenu }: { item: PrListItem; selected: boolean; onOpen: () => void; onContextMenu: (event: React.MouseEvent, item: PrListItem) => void }): React.JSX.Element {
@@ -31,6 +33,12 @@ function PrRow({ item, selected, onOpen, onContextMenu }: { item: PrListItem; se
 function PrListGroup({ label, rows, selected, onOpen, onContextMenu }: { label: string; rows: PrListItem[]; selected: number | null; onOpen: (item: PrListItem) => void; onContextMenu: (event: React.MouseEvent, item: PrListItem) => void }): React.JSX.Element | null {
   if (rows.length === 0) return null
   return <section className="grid gap-[var(--space-0-5)]" aria-label={label}><PrPageGroupHeading label={label} count={rows.length} />{rows.map((item) => <PrRow key={item.number} item={item} selected={selected === item.number} onOpen={() => onOpen(item)} onContextMenu={onContextMenu} />)}</section>
+}
+
+const PRS_VIEWS: readonly PrsView[] = ['requests', 'queue', 'review-requests']
+
+function isPrsView(value: unknown): value is PrsView {
+  return PRS_VIEWS.includes(value as PrsView)
 }
 
 function pageState(state: PrListState): 'open' | 'merged' | 'closed' {
@@ -67,7 +75,45 @@ function PrScreenDetail({ item, client, directory, requestNonce, onOpenUrlInPane
   return <aside className={PRS_CLASSES.PRS_DETAIL_COLUMN} data-testid="pr-screen-detail" aria-label={`Pull request #${item.number}`}><div className={PRS_CLASSES.PRS_DETAIL_CONTENT}><PullRequestTab key={`${directory}:${item.number}`} client={client} dir={directory} compact onOpenUrlInPane={onOpenUrlInPane} requestedPr={{ number: item.number, nonce: requestNonce }} /></div></aside>
 }
 
-export function PullRequestsScreen({ repoName, workspace, currentUser, items, client = null, directory = null, selectedNumber = null, state = 'open', sort = 'updated', loading = false, workspaces = [], onWorkspaceChange, onStateChange, onOpenPullRequest, onCheckoutInWorktree, onOpenUrlInPane, onHandOff, onOpenMergeQueueSettings }: PullRequestsScreenProps): React.JSX.Element {
+interface PrsViewBodyProps {
+  view: PrsView
+  queue: ReturnType<typeof useMergeQueue>
+  startSettings: ReturnType<typeof useTaskStartSettings>['settings']
+  reviewRequests: ReturnType<typeof useReviewRequests>
+  onHandOff?: MergeQueueHandOff
+  onOpenMergeQueueSettings?: () => void
+  onOpenReviewSettings?: () => void
+  query: string
+  selectedState: 'open' | 'merged' | 'closed'
+  state: PrListState
+  items: PrListItem[]
+  visible: PrListItem[]
+  groups: ReturnType<typeof groupPullRequests>
+  selected: number | null
+  loading: boolean
+  openItem: (item: PrListItem) => void
+  menu: (event: React.MouseEvent, item: PrListItem) => void
+  setQuery: (query: string) => void
+  setSelectedState: (state: 'open' | 'merged' | 'closed') => void
+  onStateChange?: (state: PrListState) => void
+}
+
+/** The three views of the Pull requests page: requests, merge queue and the
+ *  review-request queue. */
+function PrsViewBody(props: PrsViewBodyProps): React.JSX.Element {
+  if (props.view === 'queue') {
+    return <MergeQueueView queue={props.queue} onHandOff={props.onHandOff} onOpenSettings={props.onOpenMergeQueueSettings} defaultAgent={props.startSettings?.agent} />
+  }
+  if (props.view === 'review-requests') {
+    return <ReviewRequestsList state={props.reviewRequests.state} onDismiss={props.reviewRequests.dismiss} onReopen={props.reviewRequests.reopen} onOpenSettings={props.onOpenReviewSettings} />
+  }
+  return <>
+    <PrPageFilters query={props.query} onQueryChange={props.setQuery} state={props.selectedState} openCount={props.state === 'merged' || props.state === 'closed' ? null : props.items.filter((item) => item.state === 'open').length} onStateChange={(value) => { props.setSelectedState(value); props.onStateChange?.(value) }} />
+    <PrRequestsList loading={props.loading} visible={props.visible} searching={props.query !== ''} groups={props.groups} selected={props.selected} onOpen={props.openItem} onContextMenu={props.menu} />
+  </>
+}
+
+export function PullRequestsScreen({ repoName, workspace, currentUser, items, client = null, directory = null, selectedNumber = null, state = 'open', sort = 'updated', loading = false, workspaces = [], onWorkspaceChange, onStateChange, onOpenPullRequest, onCheckoutInWorktree, onOpenUrlInPane, onHandOff, onOpenMergeQueueSettings, onOpenReviewSettings }: PullRequestsScreenProps): React.JSX.Element {
   const storageKey = `tr-pr-list:${workspace}`
   const [query, setQuery] = useState('')
   const [selectedState, setSelectedState] = useState(pageState(state))
@@ -76,6 +122,8 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
   const [requestNonce, setRequestNonce] = useState(0)
   const [context, setContext] = useState<{ item: PrListItem; x: number; y: number } | null>(null)
   const [view, setView] = useState<PrsView>('requests')
+  const reviewRequests = useReviewRequests(client)
+  const reviewRequestCount = newReviewRequestCount(reviewRequests.state)
   const queue = useMergeQueue(client, directory)
   const { settings: startSettings } = useTaskStartSettings(client, view === 'queue' ? queue.workspace : null)
   const viewRequest = usePrsViewRequest()
@@ -98,7 +146,7 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as { query?: string; state?: PrListState; sort?: PullRequestSort; scrollTop?: number; view?: PrsView } | null
       if (!saved) return
-      if (saved.view === 'queue' || saved.view === 'requests') setView(saved.view)
+      if (saved.view && isPrsView(saved.view)) setView(saved.view)
       if (typeof saved.query === 'string') setQuery(saved.query)
       if (saved.state) {
         const restored = pageState(saved.state)
@@ -116,9 +164,29 @@ export function PullRequestsScreen({ repoName, workspace, currentUser, items, cl
   return <NavSurfaceFrame row data-testid="pull-requests-screen">
     <div ref={scrollRef} data-testid="pr-list-scroll" className={PRS_CLASSES.PRS_LIST_COLUMN} onScroll={persist}>
       <PrPageContent width={view === 'queue' ? 'wide' : 'default'}><PrPageHeader workspace={workspace} options={options} onWorkspaceChange={(value) => onWorkspaceChange?.(value)} />
-        <div className="flex"><Segmented aria-label="Pull request view" value={view} onChange={setView} options={[{ value: 'requests', label: 'Requests' }, { value: 'queue', label: 'Merge queue', count: queue.entries.filter((entry) => entry.position > 0).length }]} /></div>
-        {view === 'queue' ? <MergeQueueView queue={queue} onHandOff={onHandOff} onOpenSettings={onOpenMergeQueueSettings} defaultAgent={startSettings?.agent} /> : <><PrPageFilters query={query} onQueryChange={setQuery} state={selectedState} openCount={state === 'merged' || state === 'closed' ? null : items.filter((item) => item.state === 'open').length} onStateChange={(value) => { setSelectedState(value); onStateChange?.(value) }} />
-        <PrRequestsList loading={loading} visible={visible} searching={query !== ''} groups={groups} selected={selected} onOpen={openItem} onContextMenu={menu} /></>}
+        <div className="flex"><Segmented aria-label="Pull request view" value={view} onChange={setView} options={[{ value: 'requests', label: 'Requests' }, { value: 'queue', label: 'Merge queue', count: queue.entries.filter((entry) => entry.position > 0).length }, { value: 'review-requests', label: 'Review requests', count: reviewRequestCount || undefined }]} /></div>
+        <PrsViewBody
+          view={view}
+          queue={queue}
+          startSettings={startSettings}
+          reviewRequests={reviewRequests}
+          onHandOff={onHandOff}
+          onOpenMergeQueueSettings={onOpenMergeQueueSettings}
+          onOpenReviewSettings={onOpenReviewSettings}
+          query={query}
+          selectedState={selectedState}
+          state={state}
+          items={items}
+          visible={visible}
+          groups={groups}
+          selected={selected}
+          loading={loading}
+          openItem={openItem}
+          menu={menu}
+          setQuery={setQuery}
+          setSelectedState={setSelectedState}
+          onStateChange={onStateChange}
+        />
       </PrPageContent>
     </div>
     {context && <ContextMenu role="menu" style={{ left: context.x, top: context.y }}><ContextMenuItems><ContextMenuItem role="menuitem" onClick={() => { void navigator.clipboard?.writeText(context.item.url); setContext(null) }}>Copy link</ContextMenuItem><ContextMenuItem role="menuitem" onClick={() => { window.open(context.item.url, '_blank', 'noopener,noreferrer'); setContext(null) }}>Open on GitHub</ContextMenuItem>{onCheckoutInWorktree && <ContextMenuItem role="menuitem" onClick={() => { onCheckoutInWorktree(context.item); setContext(null) }}>Check out in new worktree</ContextMenuItem>}</ContextMenuItems></ContextMenu>}
