@@ -211,10 +211,11 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     let leaf_bytes = response_bytes(&tools);
     let parent_tools = r.tools_list(&parent_token).await;
     let orchestrator_bytes = response_bytes(&parent_tools);
-    // Two merge queue verbs (#124); measured 28,509 bytes after adding them.
+    // Two merge queue verbs (#124) and `pane_note` (657 bytes, #348); measured 29,393 bytes
+    // with all three, so 30,000 leaves 2% headroom.
     assert!(
-        orchestrator_bytes < 29_000,
-        "root tools/list catalog exceeds 29000 bytes: {orchestrator_bytes}"
+        orchestrator_bytes < 30_000,
+        "root tools/list catalog exceeds 30000 bytes: {orchestrator_bytes}"
     );
     assert!(tool_names(&parent_tools)
         .iter()
