@@ -544,8 +544,9 @@ so `/clear` and a thread without hooks resume the conversation the provider hold
 handle is marked while no hook has named its transcript, and the resume check skips only
 the transcript test for it; the folder binding and the profile checks still apply. A hook
 that names the same id supplies the transcript and clears the mark. A thread whose resume
-the provider refuses starts a new conversation once, with a notice naming the id; a
-terminal resume of a marked handle takes the fallback above. This does not apply to
+the provider refuses (an exit code other than 0 within `RESUME_EARLY_EXIT` of the spawn)
+drops the handle and starts a new conversation, with a notice naming the id; a later exit
+or a signal keeps the handle. A terminal resume of a marked handle takes the fallback above. This does not apply to
 terminal panes, whose handle comes from hooks only.
 
 Routine and harness-review runs always start fresh, and orchestrated children cannot be

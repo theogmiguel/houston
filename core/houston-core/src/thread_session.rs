@@ -68,6 +68,8 @@ pub trait ThreadHost: Send + Sync + 'static {
     /// The stream named the conversation the provider now holds, for the first time in this
     /// runtime or after it changed (`/clear`): the session's resume handle.
     fn conversation_reported(&self, _session: u32, _conversation: &str) {}
+    /// The provider exited at once when asked to resume `conversation`: it no longer has it.
+    fn resume_refused(&self, _session: u32, _conversation: &str) {}
     /// Appends `text` and its excerpts to the session's queue as `queued`. A host without a
     /// queue refuses.
     fn queue_push(&self, session: u32, _text: &str, _excerpts: &[ThreadExcerpt]) -> Result<()> {
@@ -609,7 +611,9 @@ struct HandleState {
     /// The conversation last handed to `ThreadHost::conversation_reported`.
     reported_conversation: Option<String>,
     /// The conversation the running process was started to resume, until the stream names it.
-    unconfirmed_resume: Option<String>,
+    unconfirmed_resume: Option<(String, Instant)>,
+    /// The conversation the provider last refused to resume.
+    refused_resume: Option<String>,
     reasoning: Option<LiveReasoning>,
 }
 
@@ -759,6 +763,7 @@ impl StructuredRuntime {
                 partial: None,
                 reported_conversation: None,
                 unconfirmed_resume: None,
+                refused_resume: None,
                 reasoning: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
@@ -786,6 +791,13 @@ impl StructuredRuntime {
     }
 
     /// The provider process pid, if a process is running.
+    /// The conversation the provider refused to resume, for a host that had no handle to
+    /// drop when `ThreadHost::resume_refused` came.
+    pub fn refused_resume(&self) -> Option<String> {
+        let state = self.state.lock().expect("thread state lock");
+        state.refused_resume.clone()
+    }
+
     pub fn pid(&self) -> Option<u32> {
         let state = self.state.lock().expect("thread state lock");
         state.process.as_ref().map(|process| process.pid)
@@ -1663,7 +1675,7 @@ impl StructuredRuntime {
         }
         state.generation += 1;
         state.unconfirmed_resume = match &state.conversation {
-            Some(Conversation::Resume(id)) => Some(id.clone()),
+            Some(Conversation::Resume(id)) => Some((id.clone(), Instant::now())),
             _ => None,
         };
         let (process, stdout, stderr) = ThreadProcess::spawn(
@@ -1824,7 +1836,12 @@ impl StructuredRuntime {
             true,
         );
         let code = process.end_tree(false);
-        let exited_with_error = code != Some(0);
+        // As the terminal fallback counts it: a real exit code soon after the spawn. A signal
+        // or a later exit says nothing about the conversation.
+        let refused_now = |spawned: &Instant| {
+            code.is_some_and(|code| code != 0)
+                && spawned.elapsed() < crate::daemon::RESUME_EARLY_EXIT
+        };
         self.host.process_gone(self.session);
         let stderr = process.stderr.lock().expect("thread stderr lock").text();
         let code = code.map_or_else(
@@ -1843,12 +1860,17 @@ impl StructuredRuntime {
             let rejected = state
                 .unconfirmed_resume
                 .take()
-                .filter(|_| exited_with_error);
+                .filter(|(_, spawned)| refused_now(spawned))
+                .map(|(id, _)| id);
             if rejected.is_some() {
                 state.conversation = None;
+                state.refused_resume = rejected.clone();
             }
             (events, rejected)
         };
+        if let Some(id) = &rejected {
+            self.host.resume_refused(self.session, id);
+        }
         let next = match &rejected {
             Some(id) => format!(
                 "{provider} could not resume conversation {id}; the next message starts a new \
@@ -2661,6 +2683,7 @@ mod tests {
             deferred_hook: None,
             reported_conversation: None,
             unconfirmed_resume: None,
+            refused_resume: None,
         }
     }
 

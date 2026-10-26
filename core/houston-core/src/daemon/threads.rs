@@ -174,6 +174,16 @@ impl ThreadHost for DaemonThreadHost {
         }
     }
 
+    fn resume_refused(&self, session: u32, conversation: &str) {
+        if let Some(daemon) = self.daemon.upgrade() {
+            if let Err(error) = daemon.drop_refused_resume(session, conversation) {
+                tracing::warn!(
+                    "clearing session {session}'s refused resume handle {conversation}: {error:#}"
+                );
+            }
+        }
+    }
+
     fn conversation_reported(&self, session: u32, conversation: &str) {
         if let Some(daemon) = self.daemon.upgrade() {
             if let Err(error) = daemon.adopt_thread_conversation(session, conversation) {
@@ -704,6 +714,20 @@ impl Daemon {
         Ok(())
     }
 
+    /// Claude no longer has the conversation the handle names, so Restart and a daemon
+    /// restart would fail the same way: the handle goes until the stream reports a new one.
+    fn drop_refused_resume(&self, id: u32, conversation: &str) -> Result<()> {
+        let held = self.db.session_resume_handle(id)?;
+        if held.is_some_and(|(current, _)| current == conversation) {
+            self.db.set_session_resume_handle(id, None)?;
+            self.broadcast_control(&proto::ServerMsg::SessionResumable {
+                session: id,
+                resumable: false,
+            });
+        }
+        Ok(())
+    }
+
     pub fn thread_queue_remove(&self, id: u32, message: &str) -> Result<()> {
         self.ensure_thread_session(id, "thread_queue_remove")?;
         let _publish = self.thread_queue_publish();
@@ -1100,6 +1124,12 @@ impl Daemon {
         // The first process started before its row existed.
         if let Some(pid) = handle.pid() {
             self.record_thread_group(id, pid);
+        }
+        // A resume refused that early found no row whose handle it could drop.
+        if let Some(conversation) = handle.refused_resume() {
+            if let Err(error) = self.drop_refused_resume(id, &conversation) {
+                tracing::warn!("clearing session {id}'s refused resume handle: {error:#}");
+            }
         }
         // A daemon that died mid-turn stored no turn end; close it before any new message.
         if replacement.is_some() {

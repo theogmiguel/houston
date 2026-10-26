@@ -30,6 +30,15 @@ fn main() {
         eprintln!("No conversation found with session ID: {conversation}");
         std::process::exit(1);
     }
+    // A resumed process that dies later for another reason, after the resume window.
+    if let Some(ms) = conversation
+        .strip_prefix("late-exit-")
+        .and_then(|ms| ms.parse::<u64>().ok())
+    {
+        std::thread::sleep(Duration::from_millis(ms));
+        eprintln!("fatal: unrelated failure");
+        std::process::exit(1);
+    }
     let fixtures = std::env::var_os("HOUSTON_FAKE_CLAUDE_FIXTURES").map(PathBuf::from);
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {

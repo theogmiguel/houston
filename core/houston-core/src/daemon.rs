@@ -30,7 +30,7 @@ const IDLE_POLL_MS: u64 = 50;
 const SPAWN_GRACE: Duration = Duration::from_secs(20);
 /// A resumed CLI that exits non-zero this soon rejected its conversation (an unknown
 /// id exits 1 at once); the pane is relaunched fresh rather than left exited.
-const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
+pub(crate) const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.

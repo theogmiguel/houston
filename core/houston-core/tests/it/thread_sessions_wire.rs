@@ -610,6 +610,11 @@ async fn a_rejected_stream_reported_resume_falls_back_fresh_once() {
             .count()
     };
     wait_until("the fallback notice", || rejected(&daemon) == 1).await;
+    let held = Db::open(&state.path().join("test.db"))
+        .unwrap()
+        .session_resume_handle(id)
+        .unwrap();
+    assert_eq!(held, None, "a restart must not try the refused id again");
     stored_turn(&daemon, id, "hello").await;
     let launches = rig.launches();
     let tried: Vec<_> = launches
@@ -619,6 +624,71 @@ async fn a_rejected_stream_reported_resume_falls_back_fresh_once() {
     assert_eq!(tried.len(), 1, "{launches:?}");
     assert_eq!(arg_after(&launches.last().unwrap().1, "--resume"), None);
     assert_eq!(rejected(&daemon), 1);
+    daemon.close(id).unwrap();
+}
+
+/// A resumed process that exits long after its spawn, or by a signal, says nothing about
+/// the conversation: the next message resumes it again and no refusal is claimed.
+#[tokio::test]
+async fn a_late_exit_of_a_resumed_thread_keeps_its_conversation() {
+    let window = 10_000 + 1_500;
+    let conversation = format!("late-exit-{window}");
+    let rig = Rig::new().await;
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("test.db");
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.insert_session(&thread_row(7, rig.project.path()))
+            .unwrap();
+        db.set_session_stream_resume_handle(7, &conversation, None)
+            .unwrap();
+    }
+    std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path,
+        rig.env.clone(),
+    ))
+    .unwrap();
+    let restored = || {
+        daemon
+            .list()
+            .into_iter()
+            .find(|s| s.session_origin == Some(7) && s.state == proto::SessionState::Running)
+    };
+    wait_until("the thread to be restored", || restored().is_some()).await;
+    let id = restored().unwrap().id;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let exited = loop {
+        let notices: Vec<String> = history_of(&daemon, id)
+            .into_iter()
+            .filter_map(|e| match e.kind {
+                ThreadEventKind::Notice { text } if text.contains("exited") => Some(text),
+                _ => None,
+            })
+            .collect();
+        if let Some(text) = notices.first() {
+            break text.clone();
+        }
+        assert!(Instant::now() < deadline, "the late exit never came");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(
+        exited.contains("the next message starts it again") && !exited.contains("could not resume"),
+        "{exited}"
+    );
+    let sender = Arc::clone(&daemon);
+    tokio::task::spawn_blocking(move || sender.thread_send(id, "hello", false, &[]))
+        .await
+        .unwrap()
+        .unwrap();
+    wait_until("the next process", || rig.launches().len() >= 2).await;
+    let launches = rig.launches();
+    assert_eq!(
+        arg_after(&launches.last().unwrap().1, "--resume").as_deref(),
+        Some(conversation.as_str()),
+        "{launches:?}"
+    );
     daemon.close(id).unwrap();
 }
 
