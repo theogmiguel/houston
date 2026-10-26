@@ -135,10 +135,9 @@ pub struct FailedCheck {
     pub lines: Vec<String>,
 }
 
-/// The flaky test to re-run and the run to re-run it in. Each check is matched
-/// against its own name and lines, so a real failure in another workflow never
-/// spends this pull request's one re-run. A hit with a run id wins over one
-/// without, and a later check can still be the one re-run.
+/// The flaky test to re-run and the run to re-run it in. Each check matches
+/// its own name and lines, so a real failure in another workflow never spends
+/// the pull request's one re-run; a hit with a run id wins.
 pub fn flaky_rerun<'a>(
     flaky: &'a [String],
     checks: &[FailedCheck],

@@ -3312,10 +3312,9 @@ impl Daemon {
             return Ok(None);
         }
         let flaky = self.db.night_flaky_tests(routine_id)?;
-        // The hit comes from the check whose own workflow was flaky, and the
-        // re-run targets that run. A real failure in another check waits for
-        // the re-run's result: the re-run plan wins over the fixer, so Houston
-        // counts that failure only after the run answers.
+        // Re-run the flaky check's own workflow. A real failure elsewhere
+        // waits for that result: the re-run plan wins, so Houston counts it
+        // only after the run answers.
         let hit = crate::night_shift::flaky_rerun(&flaky, failed)
             .map(|(test, run)| (test.to_string(), run));
         let gh_run = hit.as_ref().and_then(|(_, run)| *run);

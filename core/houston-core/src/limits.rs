@@ -42,11 +42,9 @@ pub fn reports_no_limit(provider: proto::AgentKind, windows: bool) -> bool {
     signal_for(provider, windows) == LimitSignal::NoSignal
 }
 
-/// Whether a root lifecycle event ends a pane's reported limit. Every provider
-/// that reports a limit through any channel starts a new episode on its next
-/// prompt, so a stale hold never blocks it; Claude also ends its hold when its
-/// own quota auto-resume notification fires. `notification_type` is the
-/// notification's typed kind, if the event is one.
+/// Whether a root event ends a pane's reported limit. Any provider with a
+/// limit signal starts a new episode on its next prompt; Claude also on its
+/// quota auto-resume notification. `notification_type` is typed when present.
 pub fn ends_limit(
     provider: proto::AgentKind,
     windows: bool,
