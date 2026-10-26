@@ -231,9 +231,15 @@
     "`transferOpen.ts` and the pane's transferred marker are boot-path code, and the",
     "client's `subscribeClose` is part of the boot-path client: it is a close",
     "subscription the transfer requests use to settle when the connection drops.",
-    "Both features' dialogs and views already load behind `lazy()` or `preloadable()`."
+    "Both features' dialogs and views already load behind `lazy()` or `preloadable()`.",
+
+    "Re-cut against 959,881 bytes (one boot chunk, Windows build): the suspected-defects,",
+    "Bitbucket account and review-request features add always-on boot wiring (rail counts,",
+    "client verbs, message routes) of about 1.4 KB. Their heavy parts stay behind `lazy()`",
+    "or `preloadable()`: Settings carries the Bitbucket form, the Harness surface the defect",
+    "drawer, and the Pull requests page the review-request list."
   ],
-  "maxBootBytes": 958437,
+  "maxBootBytes": 960000,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
