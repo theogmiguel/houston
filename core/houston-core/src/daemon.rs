@@ -22538,7 +22538,7 @@ impl Daemon {
                 return Ok(result);
             }
             let workspace = self.current_workspace(child)?;
-            let input = crate::db::DefectInput {
+            let mut input = crate::db::DefectInput {
                 workspace: workspace.clone(),
                 source: proto::DefectSource::Agent,
                 detector: None,
@@ -22548,6 +22548,7 @@ impl Daemon {
                 destination,
                 reporter_session: Some(child),
             };
+            self.redact_defect_input(&mut input);
             let (result, record) = self.db.record_agent_finding(
                 &input,
                 &receipt,

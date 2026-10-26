@@ -10,6 +10,20 @@ use crate::db::DefectRow;
 use crate::defect_redaction;
 
 impl Daemon {
+    /// Redacts a defect's title, description and evidence before it is stored, so
+    /// the database and the wire never hold a secret or the home directory. The
+    /// draft redacts again, which leaves already-redacted text unchanged.
+    pub(super) fn redact_defect_input(&self, input: &mut crate::db::DefectInput) {
+        let env = self.env();
+        let workspace = input.workspace.clone();
+        let redact = |text: &str| defect_redaction::redact_here(&env, text, &workspace);
+        input.title = redact(&input.title);
+        input.description = redact(&input.description);
+        for item in &mut input.evidence {
+            *item = redact(item);
+        }
+    }
+
     /// A workspace's defects with the operator's decision applied. A decision
     /// older than the newest occurrence reopens the defect as `recurred`.
     pub fn suspected_defect_rows(&self, workspace: &str) -> Result<Vec<proto::SuspectedDefect>> {
