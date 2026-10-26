@@ -1537,7 +1537,13 @@ mod tests {
         let dead_pid = {
             let mut stable_dead = None;
             for _ in 0..64 {
+                #[cfg(unix)]
                 let mut child = std::process::Command::new("true").spawn().unwrap();
+                #[cfg(windows)]
+                let mut child = std::process::Command::new("cmd")
+                    .args(["/C", "exit", "0"])
+                    .spawn()
+                    .unwrap();
                 let pid = child.id();
                 child.wait().unwrap();
                 drop(child);
