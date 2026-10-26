@@ -118,6 +118,7 @@ mod resume_process_wire;
 mod resume_profile_wire;
 mod resume_wire;
 mod retired_providers_wire;
+mod review_requests_wire;
 mod routine_run_wire;
 mod routines_wire;
 mod run_state_wire;

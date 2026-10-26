@@ -874,6 +874,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::VoiceSettingsGet
             | proto::ClientMsg::ForgeSettingsGet
             | proto::ClientMsg::DefectsGet { .. }
+            | proto::ClientMsg::ReviewRequestsGet
             | proto::ClientMsg::VoiceDevicesGet
             | proto::ClientMsg::SessionCwd { .. }
             | proto::ClientMsg::SessionCwds { .. }
@@ -2830,6 +2831,30 @@ async fn dispatch(
                 Ok(())
             }
         },
+        proto::ClientMsg::ReviewRequestsGet => {
+            let _ = send_msg(sink, &daemon.review_requests_state()).await;
+            Ok(())
+        }
+        proto::ClientMsg::ReviewRequestsSet { mode } => {
+            let _ = send_msg(sink, &daemon.review_requests_set(mode)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::ReviewRequestDismiss { id } => {
+            let _ = send_msg(
+                sink,
+                &daemon.review_request_decide(id, proto::ReviewRequestState::Dismissed)?,
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::ReviewRequestReopen { id } => {
+            let _ = send_msg(
+                sink,
+                &daemon.review_request_decide(id, proto::ReviewRequestState::New)?,
+            )
+            .await;
+            Ok(())
+        }
         proto::ClientMsg::TaskStart {
             id,
             agent,

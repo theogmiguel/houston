@@ -13,6 +13,7 @@ mod instructions;
 mod intake;
 mod merge_queue;
 mod night_shift;
+mod review_requests;
 pub use defects::{defect_key, DefectInput, DefectRecord, DefectRow};
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
@@ -28,6 +29,7 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 pub use night_shift::{NightEntryWrite, NightMember, NightRunRow};
+pub use review_requests::{ReviewRequestRow, ReviewRequestWrite};
 mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
@@ -2083,6 +2085,7 @@ impl Db {
         )?;
         harness::migrate(&conn)?;
         defects::migrate(&conn)?;
+        review_requests::migrate(&conn)?;
         night_shift::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;

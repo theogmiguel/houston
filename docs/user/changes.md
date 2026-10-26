@@ -135,6 +135,12 @@ decision and **Reopen** withdraws it. The rail's **Pull requests** item counts n
 GitHub rate-limit pauses and credential problems appear as a notice in the view and in
 Settings without dropping the rows.
 
+While the queue is on, Houston runs `gh search prs --review-requested=@me` against GitHub
+about every two minutes and, for each new request, one `gh pr view` for its files, base
+branch and check state. Both use your `gh` login; no repository content is sent for
+detection or triage. The queue keeps each request's repository, number, head commit, tier,
+triage reasons and your Dismiss or Reopen decision in the local Houston database.
+
 ## Merge queue
 
 The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull

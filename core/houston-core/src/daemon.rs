@@ -1562,6 +1562,7 @@ mod pane_notes;
 mod provider_deny;
 mod remote;
 mod remote_phone;
+mod review_requests;
 mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;

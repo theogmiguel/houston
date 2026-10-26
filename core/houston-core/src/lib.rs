@@ -80,6 +80,7 @@ pub mod recovery_process;
 pub mod remote;
 pub mod retired_providers;
 pub mod review_findings;
+pub mod review_triage;
 pub mod routines;
 pub mod sanitize;
 pub mod scope;

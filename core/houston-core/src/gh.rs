@@ -1066,6 +1066,184 @@ pub fn search_open_issues(
         .collect())
 }
 
+/// One pull request GitHub says the operator was asked to review.
+pub struct ReviewRequestedPr {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+    pub repo: String,
+    pub author: String,
+    pub head_sha: String,
+    pub is_draft: bool,
+}
+
+/// The review requests of the signed-in account, one `gh search prs` page.
+/// Newest first is gh's own order; the caller dedupes by head.
+pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewRequestedPr>> {
+    let limit = limit.clamp(1, 100).to_string();
+    let out = run(
+        dir,
+        &[
+            "search",
+            "prs",
+            "--review-requested=@me",
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,url,repository,author,headRefOid,isDraft",
+        ],
+    )
+    .context("running gh search prs")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr)
+                .unwrap_or_else(|| format!("gh search prs failed (exit {:?})", out.code))
+        );
+    }
+    let value: serde_json::Value = serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh search prs returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })?;
+    let rows = value.as_array().ok_or_else(|| {
+        anyhow::anyhow!(
+            "gh search prs answered {}; expected a JSON array of pull requests",
+            json_kind(&value)
+        )
+    })?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let number = u32::try_from(row.get("number")?.as_u64()?).ok()?;
+            let url = row.get("url")?.as_str()?.to_string();
+            let repo = row
+                .get("repository")
+                .and_then(|repository| repository.get("nameWithOwner"))
+                .and_then(|name| name.as_str())
+                .map(str::to_string)
+                .or_else(|| repository_from_pr_url(&url))?;
+            Some(ReviewRequestedPr {
+                number,
+                title: row.get("title")?.as_str()?.to_string(),
+                url,
+                repo,
+                author: row
+                    .get("author")
+                    .and_then(|author| author.get("login"))
+                    .and_then(|login| login.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                head_sha: row
+                    .get("headRefOid")
+                    .and_then(|sha| sha.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                is_draft: row
+                    .get("isDraft")
+                    .and_then(|draft| draft.as_bool())
+                    .unwrap_or(false),
+            })
+        })
+        .filter(|pr| !pr.head_sha.trim().is_empty())
+        .collect())
+}
+
+fn repository_from_pr_url(url: &str) -> Option<String> {
+    let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
+    let pull = parts
+        .iter()
+        .position(|part| *part == "pull" || *part == "pulls")?;
+    (pull >= 2).then(|| format!("{}/{}", parts[pull - 2], parts[pull - 1]))
+}
+
+/// The facts triage needs from one `gh pr view`: changed files, base branch and
+/// whether every check passed. No body or comment is read.
+pub struct ReviewRequestFacts {
+    pub files: Vec<(String, u32, u32)>,
+    pub base: String,
+    pub ci_green: bool,
+}
+
+pub fn review_request_facts(dir: &Path, number: u32) -> Result<ReviewRequestFacts> {
+    let number = number.to_string();
+    let out = run(
+        dir,
+        &[
+            "pr",
+            "view",
+            &number,
+            "--json",
+            "files,baseRefName,statusCheckRollup",
+        ],
+    )
+    .context("running gh pr view for review triage")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh pr view {number} for review triage failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let value: serde_json::Value = serde_json::from_str(&out.stdout).with_context(|| {
+        let head: String = out.stdout.chars().take(400).collect();
+        format!(
+            "gh pr view {number} returned unreadable JSON for review triage; {} bytes, first \
+             400 chars: {head:?}",
+            out.stdout.len()
+        )
+    })?;
+    let files = value
+        .get("files")
+        .and_then(|files| files.as_array())
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|file| {
+                    Some((
+                        file.get("path")?.as_str()?.to_string(),
+                        u32::try_from(file.get("additions")?.as_u64()?).ok()?,
+                        u32::try_from(file.get("deletions")?.as_u64()?).ok()?,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let base = value
+        .get("baseRefName")
+        .and_then(|base| base.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let checks = value
+        .get("statusCheckRollup")
+        .and_then(|checks| checks.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let ci_green = !checks.is_empty()
+        && checks.iter().all(|check| {
+            let state = check
+                .get("conclusion")
+                .or_else(|| check.get("state"))
+                .and_then(|state| state.as_str())
+                .unwrap_or_default();
+            matches!(
+                state.to_ascii_uppercase().as_str(),
+                "SUCCESS" | "SKIPPED" | "NEUTRAL" | "PASSED" | "COMPLETED"
+            )
+        });
+    Ok(ReviewRequestFacts {
+        files,
+        base,
+        ci_green,
+    })
+}
+
 fn json_kind(value: &serde_json::Value) -> &'static str {
     match value {
         serde_json::Value::Null => "null",

@@ -199,9 +199,8 @@ fn graphql() {
 }
 
 /// The base branch's effective rules: `rules-checks` lists the checks its
-/// `required_status_checks` rule requires, comma-separated; `rules-unreadable`
-/// fails the read with its text, as a host without permission does. Every read
-/// is appended to `rules.log`, so tests count them.
+/// `required_status_checks` rule requires; `rules-unreadable` fails the read.
+/// Every read is appended to `rules.log`, so tests count them.
 fn rules(path: &str) {
     if let Ok(mut log) = std::fs::OpenOptions::new()
         .create(true)
@@ -267,6 +266,16 @@ fn search_issues() {
         fail(&error);
     }
     let answer = read("issues-search.json").unwrap_or_else(|| "[]".into());
+    print!("{answer}");
+}
+
+/// `review-requested-prs.json` is the one `gh search prs` answer, and
+/// `review-requested-prs-error` fails the call for the pause and credential paths.
+fn search_prs() {
+    if let Some(error) = read("review-requested-prs-error") {
+        fail(&error);
+    }
+    let answer = read("review-requested-prs.json").unwrap_or_else(|| "[]".into());
     print!("{answer}");
 }
 
@@ -464,6 +473,7 @@ fn main() {
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
         ("search", "issues") => search_issues(),
+        ("search", "prs") => search_prs(),
         ("issue", "create") => issue_create(&args),
         ("issue", "comment") => issue_comment(&args),
         ("api", "user") => viewer_login(),
