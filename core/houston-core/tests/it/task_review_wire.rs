@@ -607,6 +607,7 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
 
 fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_by: Option<u32>) {
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -646,6 +647,8 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
 }

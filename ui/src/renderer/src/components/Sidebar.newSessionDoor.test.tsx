@@ -70,7 +70,7 @@ describe('Sidebar — the workspace row’s doors match the reference', () => {
     expect(container.querySelector('[aria-label="New tab"]')).toBeNull()
   })
 
-  it('the row’s context menu is New grid · Rename · Reveal · Open workspace in · Remove', () => {
+  it('the row’s context menu is New grid · Rename · Reveal · Open workspace in · Export and Import transfer · Remove', () => {
     act(() => {
       root.render(<Sidebar {...props({ onNewWorkspaceSession: noop, onAddGrid: noop })} />)
     })
@@ -89,6 +89,8 @@ describe('Sidebar — the workspace row’s doors match the reference', () => {
       'Pin workspace',
       'Reveal in Files',
       'Open workspace in',
+      'Export transfer…',
+      'Import transfer…',
       'Remove workspace'
     ])
     expect(container.querySelector('[data-testid="swatch"]')).toBeNull()

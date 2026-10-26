@@ -63,6 +63,7 @@ fn burst_title_writer(dir: &Path, name: &str) -> PathBuf {
 
 fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -102,6 +103,8 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 

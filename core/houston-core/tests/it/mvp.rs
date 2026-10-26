@@ -386,6 +386,7 @@ async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
     {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&houston_protocol::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -425,6 +426,8 @@ async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
     }

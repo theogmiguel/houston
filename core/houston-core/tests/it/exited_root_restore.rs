@@ -9,6 +9,7 @@ use std::path::Path;
 
 fn info(id: u32, project: &Path, agent: proto::AgentKind) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -48,6 +49,8 @@ fn info(id: u32, project: &Path, agent: proto::AgentKind) -> proto::SessionInfo 
         last_agent_message: Some("Finished output".into()),
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 

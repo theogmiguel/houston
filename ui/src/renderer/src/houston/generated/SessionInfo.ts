@@ -2,6 +2,7 @@
 import type { AgentKind } from "./AgentKind";
 import type { AgentStatus } from "./AgentStatus";
 import type { DelegationInfo } from "./DelegationInfo";
+import type { PaneNote } from "./PaneNote";
 import type { RestoreReason } from "./RestoreReason";
 import type { SessionActivity } from "./SessionActivity";
 import type { SessionCheckout } from "./SessionCheckout";
@@ -36,4 +37,16 @@ compactions?: number | null,
  * pane launched or claimed by a task carries it so the header can show a
  * chip without the Tasks tab being open.
  */
-task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, limit?: SessionLimit | null, };
+task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, limit?: SessionLimit | null,
+/**
+ * When this pane's conversation left in a workspace transfer; its process stopped then.
+ */
+transferred_at_ms?: number | null,
+/**
+ * The pane resumed a conversation after it left in a transfer: it continues a fork.
+ */
+transfer_fork?: boolean,
+/**
+ * The status line the pane's agent last wrote with `pane_note`.
+ */
+note?: PaneNote | null, };

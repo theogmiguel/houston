@@ -15,7 +15,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn instruction_context(&self, target: u32) -> Result<String> {
+    pub(super) fn instruction_context(&self, target: u32) -> Result<String> {
         let session = self.get(target)?;
         let mut ancestry = Vec::new();
         let mut cursor = target;
@@ -32,7 +32,7 @@ impl Daemon {
         }
         let cwd = self
             .live_cwd(target)
-            .unwrap_or_else(|| PathBuf::from(&session.info.cwd));
+            .unwrap_or_else(|| PathBuf::from(session.cwd()));
         Ok(serde_json::json!({
             "target": target,
             "origin": self.db.session_origin(target)?,

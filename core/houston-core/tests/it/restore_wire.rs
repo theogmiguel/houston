@@ -12,6 +12,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     for (i, dir) in dirs.iter().enumerate() {
         db.insert_session(&proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -51,6 +52,8 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
     }
@@ -69,6 +72,7 @@ fn seed_one(
 ) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -108,6 +112,8 @@ fn seed_one(
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
 }
@@ -314,6 +320,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
     drop(gone);
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -353,6 +360,8 @@ fn invalid_cwd_is_deferred_not_respawned() {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
     drop(db);
@@ -605,6 +614,7 @@ fn no_flags_set_runs_normal_restore_policy() {
 
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -644,6 +654,8 @@ fn no_flags_set_runs_normal_restore_policy() {
         last_agent_message: None,
         slept_at_ms: None,
         limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     })
     .unwrap();
     drop(db);
