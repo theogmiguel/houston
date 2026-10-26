@@ -346,7 +346,9 @@ Sleep is refused while the agent is working or waiting for input, while terminal
 is still being delivered, while orchestration or external child work is active, and for
 child, routine, harness, shell and unsupported provider sessions. Non-Linux platforms
 report Sleep as unavailable until graceful
-process-tree shutdown is supported there.
+process-tree shutdown is supported there. A pane whose agent last ran commands in a
+subfolder of the folder where its conversation started still sleeps; only a conversation
+bound to a folder outside it is refused.
 
 Choose **Measure process memory** from an agent pane's actions to read its current process-tree
 PSS on Linux. An unavailable reading is shown as unknown rather than a partial total.
@@ -389,6 +391,8 @@ with an error within 10 seconds, a top-level pane starts fresh and says why. An 
 child whose conversation fails to resume remains ended and reports the failure to its parent;
 it never substitutes an empty conversation for its mission. Changing the folder
 or changing its profile's configuration directory discards the old conversation handle.
+A pane whose agent last ran commands in a subfolder reopens in the folder where its
+conversation started; only a folder outside it, such as another checkout, is a change.
 Losing the profile also discards it. A shell pane with a validated Claude, Codex or ZCode
 conversation can relaunch that conversation inside its shell; orchestration children stay
 deferred when the parent's conversation cannot resume. The relaunch needs a POSIX shell

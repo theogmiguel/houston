@@ -10480,6 +10480,152 @@ async fn k3_deferred_parent_manual_respawn_restores_children() {
 }
 
 #[tokio::test]
+async fn issue350_a_child_that_reported_a_subfolder_resumes_in_its_launch_folder_after_restart() {
+    let _guard = serial().await;
+    let r = rig("restart-subfolder").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: r.ws_dir.clone(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: true,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"claude","prompt":"work","role":"mover","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"claude","prompt":"work","role":"elsewhere","reusable":true}),
+        )
+        .await;
+    let elsewhere = spawned["session_id"].as_u64().unwrap() as u32;
+    let launch = r.ws_dir.display().to_string();
+    let subfolder = r.ws_dir.join("core");
+    std::fs::create_dir(&subfolder).unwrap();
+    let other_checkout = r._state.path().join("other-checkout");
+    std::fs::create_dir(&other_checkout).unwrap();
+    for (id, conversation) in [
+        (parent.id, "00000000-0000-4000-8000-000000000350"),
+        (child, "00000000-0000-4000-8000-000000000351"),
+        (elsewhere, "00000000-0000-4000-8000-000000000352"),
+    ] {
+        let transcript = r.ws_dir.join(format!("{conversation}.jsonl"));
+        std::fs::write(&transcript, "conversation metadata\n").unwrap();
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: id,
+                agent: Some("claude".into()),
+                event: "UserPromptSubmit".into(),
+                session_id: Some(conversation.into()),
+                cwd: Some(launch.clone()),
+                transcript_path: Some(transcript.display().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    for (id, conversation, cwd) in [
+        (child, "00000000-0000-4000-8000-000000000351", &subfolder),
+        (
+            elsewhere,
+            "00000000-0000-4000-8000-000000000352",
+            &other_checkout,
+        ),
+    ] {
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: id,
+                agent: Some("claude".into()),
+                event: "PostToolUse".into(),
+                session_id: Some(conversation.into()),
+                cwd: Some(cwd.display().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    let stored: String = rusqlite::Connection::open(r._state.path().join("test.db"))
+        .unwrap()
+        .query_row("SELECT cwd FROM sessions WHERE id = ?1", [child], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(stored, subfolder.display().to_string());
+    let path = r._state.path().join("restart.db");
+    r.daemon.manage_shutdown().unwrap();
+    let source = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    source
+        .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    drop(source);
+    let restarted = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig::new(TOKEN.into(), path, shim_env()),
+        houston_core::daemon::SafeModeFlags::default(),
+    )
+    .unwrap();
+    let _restart_cleanup = SessionCleanup(Arc::clone(&restarted));
+    let sessions = restarted.list();
+    let restored_parent = sessions
+        .iter()
+        .find(|s| s.session_origin == Some(parent.id) && s.id != parent.id)
+        .unwrap();
+    let notices: Vec<_> = restarted
+        .inbox_rows_for_test(restored_parent.id)
+        .into_iter()
+        .filter(|row| row.kind == "restored")
+        .collect();
+    assert_eq!(notices.len(), 1);
+    let entries: serde_json::Value = serde_json::from_str(&notices[0].body).unwrap();
+    let entry = |role: &str| {
+        entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["role"] == role)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(entry("mover")["resumed"], true, "{entries}");
+    let refused = entry("elsewhere");
+    assert_eq!(refused["resumed"], false, "{entries}");
+    let reason = refused["reason"].as_str().unwrap();
+    assert!(
+        reason.contains(&format!("belongs to folder {launch}"))
+            && reason.contains(&other_checkout.display().to_string()),
+        "{reason}"
+    );
+    let restored_child = sessions
+        .iter()
+        .find(|s| s.session_origin == Some(child) && s.id != child)
+        .unwrap();
+    assert_eq!(restored_child.spawned_by, Some(restored_parent.id));
+    assert_eq!(restored_child.cwd, launch);
+    assert!(restored_child.resumable);
+    assert_eq!(restored_child.resume_notice, None);
+    restarted.close(restored_parent.id).unwrap();
+}
+
+#[tokio::test]
 async fn k3_state_doc_refuses_fifo_without_waiting_for_writer() {
     use std::os::unix::fs::OpenOptionsExt;
     let _guard = serial().await;
