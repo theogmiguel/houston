@@ -997,6 +997,11 @@ async fn a_claude_orchestrator_gets_its_direction_once_as_a_goal() {
     .await;
     let first = std::fs::read_to_string(&typed).unwrap();
     assert_eq!(first.matches("/goal").count(), 1, "{first:?}");
+    let goal_at = first.find("/goal ").expect("a /goal input");
+    assert!(
+        first[goal_at..].starts_with("/goal Night shift run"),
+        "Claude sets a goal only for a `/goal` command: {first:?}"
+    );
     assert!(first.contains("CI stays green"), "{first:?}");
     assert!(first.contains("night_report"), "{first:?}");
 

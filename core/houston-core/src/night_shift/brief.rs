@@ -160,6 +160,7 @@ fn one_line(s: &str) -> String {
 /// A Claude orchestrator's `/goal` keeps at most this many characters: the
 /// CLI documents no limit, so the condition stays well inside a single paste.
 pub const GOAL_MAX_CHARS: usize = 600;
+const GOAL_PREFIX: &str = "/goal ";
 const GOAL_TRUNCATED: &str = "… [truncated]";
 
 /// The direction on one line, without control characters.
@@ -178,9 +179,9 @@ pub fn goal_applies(provider: AgentKind, direction: &str) -> bool {
     provider == AgentKind::Claude && !goal_direction(direction).is_empty()
 }
 
-/// The single follow-up input that sets a Claude orchestrator's goal after it
-/// accepts the brief. `None` for a provider with no `/goal` or an empty
-/// direction.
+/// The single follow-up that sets a Claude orchestrator's goal after the
+/// brief: Claude sets a goal only for input starting with `/goal`. `None` for
+/// another provider or an empty direction.
 pub fn goal_for(
     provider: AgentKind,
     direction: &str,
@@ -197,13 +198,16 @@ pub fn goal_for(
          (night_report) or the hard stop at {hard_stop} has passed."
     );
     let room = GOAL_MAX_CHARS.saturating_sub(
-        head.chars().count() + tail.chars().count() + GOAL_TRUNCATED.chars().count(),
+        GOAL_PREFIX.chars().count()
+            + head.chars().count()
+            + tail.chars().count()
+            + GOAL_TRUNCATED.chars().count(),
     );
     let mut body: String = direction.chars().take(room).collect();
     if body.chars().count() < direction.chars().count() {
         body.push_str(GOAL_TRUNCATED);
     }
-    Some(format!("{head}{body}{tail}"))
+    Some(format!("{GOAL_PREFIX}{head}{body}{tail}"))
 }
 
 /// `digest` is newest first; entries that do not fit are counted, not cut.
@@ -669,7 +673,7 @@ mod tests {
             "07:30",
         )
         .expect("Claude with a direction gets a goal");
-        assert!(goal.starts_with("Night shift run 12: make progress on "));
+        assert!(goal.starts_with("/goal Night shift run 12: make progress on "));
         assert!(
             goal.contains("\"make it feel faster and \"safer\"\""),
             "{goal}"
@@ -684,6 +688,8 @@ mod tests {
     fn a_long_direction_is_truncated_inside_the_goal_limit() {
         let direction = "go ".repeat(GOAL_MAX_CHARS);
         let goal = goal_for(AgentKind::Claude, &direction, 1, "07:30").unwrap();
+        assert!(goal.starts_with("/goal "), "{goal}");
+        assert_eq!(goal.lines().count(), 1, "{goal:?}");
         assert!(goal.chars().count() <= GOAL_MAX_CHARS, "{}", goal.len());
         assert!(goal.contains(GOAL_TRUNCATED), "{goal}");
         assert!(goal.contains("hard stop at 07:30"));
