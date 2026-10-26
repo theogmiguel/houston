@@ -116,11 +116,10 @@ pub fn command_refusal(
         return None;
     }
     let known = |list: &[String]| list.iter().any(|known| known == name);
+    // The static tables always apply: a stored list is bounded and names no aliases.
     let terminal = never_sent(name)
-        || match listed {
-            Some(list) => known(&list.terminal_only),
-            None => TERMINAL_BUILTINS.contains(&name),
-        };
+        || TERMINAL_BUILTINS.contains(&name)
+        || listed.is_some_and(|list| known(&list.terminal_only));
     if terminal {
         return Some(format!(
             "/{name} runs only in a terminal pane; open this conversation there with /terminal to \
@@ -1035,6 +1034,12 @@ mod tests {
             );
         }
         assert!(refused("/advisor", false, None).contains("/advisor runs only"));
+        for name in ["/heapdump", "/import", "/login"] {
+            assert!(
+                refused(name, false, Some(&listed)).contains("runs only in a terminal pane"),
+                "{name}: the static tables apply when the stored list leaves it out"
+            );
+        }
         assert!(refused("/ultrareview", false, None).contains("/ultrareview"));
         for text in [
             "/compact",
