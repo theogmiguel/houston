@@ -7672,6 +7672,62 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn bound_resume_handle_covers_the_bound_folder_and_its_subfolders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO sessions (id, agent, detected_agent, project_dir, cwd, state,
+                     created_at, resume_session_id, resume_agent, resume_cwd) VALUES
+                     (1, 'claude', NULL, '/a/proj', '/a/proj/core', 'running', 0,
+                         'c1', 'claude', '/a/proj'),
+                     (2, 'claude', NULL, '/a/proj', '/a/project', 'running', 0,
+                         'c2', 'claude', '/a/proj'),
+                     (3, 'claude', NULL, '/a/proj', '/a/other', 'running', 0,
+                         'c3', 'claude', '/a/proj'),
+                     (4, 'shell', 'claude', '/a/proj', '/a/proj/core/x', 'running', 0,
+                         'c4', 'claude', '/a/proj'),
+                     (5, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
+                         'c5', 'codex', '/a/proj'),
+                     (6, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
+                         NULL, NULL, NULL),
+                     (7, 'shell', 'claude', '/a/proj', '/a/proj', 'running', 0,
+                         'c7', 'claude', '/a/proj');",
+            )
+            .unwrap();
+        assert!(
+            db.session_has_bound_resume_handle(1).unwrap(),
+            "a subfolder still holds the bound conversation"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(2).unwrap(),
+            "a sibling prefix is another folder"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(3).unwrap(),
+            "a folder outside the binding moved"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(4).unwrap(),
+            "a shell that changed folder no longer holds the bound conversation"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(5).unwrap(),
+            "another provider does not own the handle"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(6).unwrap(),
+            "no handle is not resumable"
+        );
+        assert!(
+            db.session_has_bound_resume_handle(7).unwrap(),
+            "a shell in the bound folder holds its detected agent's conversation"
+        );
+    }
+
+    #[test]
     fn relocation_merges_rows_a_removed_workspace_left_at_the_destination() {
         let tmp = tempfile::tempdir().unwrap();
         let db = Db::open(&tmp.path().join("t.db")).unwrap();

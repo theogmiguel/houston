@@ -891,7 +891,8 @@ export class GhosttyTerminalSurface {
     if (
       metrics.width === this.metrics.width &&
       metrics.height === this.metrics.height &&
-      metrics.baseline === this.metrics.baseline
+      metrics.baseline === this.metrics.baseline &&
+      metrics.advance === this.metrics.advance
     ) {
       return
     }

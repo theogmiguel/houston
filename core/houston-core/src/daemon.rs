@@ -10641,13 +10641,23 @@ impl Daemon {
         let profile_changed = recorded_profile_dir.as_deref() != profile_dir
             || (had_profile && recorded_profile_dir.is_none());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let recorded_cwd = cwd;
-        let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let resume_provider = if agent == proto::AgentKind::Shell {
             resume_agent.unwrap_or(agent)
         } else {
             agent
         };
+        // A handle bound to another provider cannot be resumed by this one, so only the
+        // folder of the provider that will actually resume is substituted.
+        let recorded_cwd = if handle.is_some()
+            && agent != proto::AgentKind::Shell
+            && cwd_override.is_none()
+            && conversation != RespawnConversation::Fresh
+        {
+            self.bound_resume_folder(old_id, resume_provider, &cwd)
+        } else {
+            cwd.to_string()
+        };
+        let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let binding_check = if handle.is_some() {
             self.db
                 .check_session_resume_binding(old_id, resume_provider, &cwd)
@@ -10917,6 +10927,31 @@ impl Daemon {
                 );
                 (Vec::new(), None, Some(label))
             }
+        }
+    }
+
+    /// The folder a resume handle is bound to when `cwd` is that folder or lies inside it
+    /// and the handle belongs to `provider`; otherwise `cwd` unchanged. Hooks report the
+    /// folder a tool last ran in, while the handle stays bound to the launch folder.
+    fn bound_resume_folder(&self, id: u32, provider: proto::AgentKind, cwd: &str) -> String {
+        let binding = self.db.session_resume_binding(id).ok().flatten();
+        Self::select_bound_resume_folder(binding, provider, cwd)
+    }
+
+    fn select_bound_resume_folder(
+        binding: Option<(String, String)>,
+        provider: proto::AgentKind,
+        cwd: &str,
+    ) -> String {
+        let expected = crate::agent_hooks::provider_slug(provider);
+        match binding {
+            Some((agent, bound))
+                if agent == expected
+                    && crate::paths::contains(Path::new(&bound), Path::new(cwd)) =>
+            {
+                bound
+            }
+            _ => cwd.to_string(),
         }
     }
 
@@ -14267,12 +14302,13 @@ impl Daemon {
                 .expect("hook cwd lock")
                 .clone()
                 .unwrap_or_else(|| session.cwd());
+            let bound = self.bound_resume_folder(id, resume_agent, &resume_cwd);
             self.resume_check(
                 id,
                 resume_agent,
                 &handle,
-                &resume_cwd,
-                Path::new(&resume_cwd),
+                &bound,
+                Path::new(&bound),
                 current_profile_dir,
                 None,
             )
@@ -29166,6 +29202,52 @@ mod force_respawn_guard_tests {
         assert!(
             daemon.list().iter().any(|info| info.id == child.info.id),
             "the live child must keep running"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bound_resume_folder_tests {
+    use super::*;
+
+    fn binding(agent: &str, cwd: &str) -> Option<(String, String)> {
+        Some((agent.to_string(), cwd.to_string()))
+    }
+
+    #[test]
+    fn bound_resume_folder_accepts_the_bound_folder_and_its_subfolders() {
+        let bound = binding("claude", "/a/proj");
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound.clone(), proto::AgentKind::Claude, "/a/proj"),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(
+                bound.clone(),
+                proto::AgentKind::Claude,
+                "/a/proj/core/x"
+            ),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound, proto::AgentKind::Claude, "/a/project"),
+            "/a/project",
+            "a sibling prefix is another folder"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(None, proto::AgentKind::Claude, "/a/proj/core"),
+            "/a/proj/core",
+            "no binding leaves the reported folder selected"
+        );
+    }
+
+    #[test]
+    fn bound_resume_folder_ignores_another_providers_binding() {
+        let bound = binding("codex", "/a/proj");
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound, proto::AgentKind::Claude, "/a/proj/core"),
+            "/a/proj/core",
+            "a handle that belongs to Codex must not be substituted for a Claude resume"
         );
     }
 }
