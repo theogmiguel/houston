@@ -2478,6 +2478,13 @@ async fn an_unusable_start_probe_warns_without_limiting() {
     );
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
+    wait_until("the Claude quota item", || {
+        r.run(run.run_id)
+            .preflight
+            .iter()
+            .any(|item| item.id == "quota:claude")
+    })
+    .await;
     wait_until("every start probe", || {
         !r.daemon.night_shift_probing(run.run_id)
     })
