@@ -9,6 +9,11 @@ use crate::db::DefectInput;
 /// A noisy detector should not fill a day's evidence with one broken checkout.
 pub const DEFECT_DETECTOR_DAILY_CAP: u32 = 5;
 
+/// The cap is a read-modify-write on one settings row, and a report, a reply and
+/// a conflict tick can reach a detector on different threads. One lock covers
+/// the check and the recorded occurrence so the cap cannot be exceeded.
+static CAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const DETECTOR_REPLY_REASKED: &str = "reply_reasked";
 const DETECTOR_REPLY_REFUSED_RESOLVED: &str = "reply_refused_resolved";
 const DETECTOR_CONFLICT_NOTE_MERGED_BRANCH: &str = "conflict_note_merged_branch";
@@ -77,7 +82,9 @@ impl Daemon {
         // Keep one UTC day in the setting; yesterday's counters cannot matter.
         counts.retain(|k, _| k.ends_with(&format!("|{day}")));
         if let Ok(raw) = serde_json::to_string(&counts) {
-            let _ = self.db.set_setting(&key, &raw);
+            if let Err(e) = self.db.set_setting(&key, &raw) {
+                tracing::warn!("suspected defects: pruning detector counters: {e:#}");
+            }
         }
         counts
             .get(&format!("{detector}|{day}"))
@@ -115,6 +122,7 @@ impl Daemon {
         description: &str,
         evidence: Vec<String>,
     ) -> bool {
+        let _cap = CAP_LOCK.lock().expect("defect detector cap lock");
         let now_ms = now_unix_ms();
         if !self.detector_cap_allows(workspace, detector, now_ms) {
             return false;
@@ -218,6 +226,38 @@ mod tests {
         );
         assert!(reasked_reply(&replies, "a different question").is_none());
         assert!(reasked_reply(&replies, "   ").is_none());
+    }
+
+    #[test]
+    fn concurrent_occurrences_never_exceed_the_daily_cap() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(crate::daemon::DaemonConfig::new(
+            "defect-cap".into(),
+            state.path().join("test.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        let workspace = "/ws";
+        let title = "A worker re-asked a question after its reply was delivered";
+        let mut threads = Vec::new();
+        for _ in 0..8 {
+            let daemon = std::sync::Arc::clone(&daemon);
+            threads.push(std::thread::spawn(move || {
+                daemon.record_detector(workspace, "reply_reasked", title, "d", Vec::new());
+            }));
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let rows = daemon.suspected_defect_rows(workspace).unwrap();
+        let row = rows
+            .iter()
+            .find(|row| row.detector.as_deref() == Some("reply_reasked"))
+            .expect("a detector row");
+        assert_eq!(
+            row.count, DEFECT_DETECTOR_DAILY_CAP,
+            "eight concurrent occurrences stop at the cap"
+        );
     }
 
     #[test]
