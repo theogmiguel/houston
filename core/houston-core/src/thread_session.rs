@@ -1020,7 +1020,7 @@ impl StructuredRuntime {
                 }
                 ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
             };
-            self.deliver_answer(
+            self.settle_answer(
                 request_id,
                 pending,
                 answer,
@@ -1069,7 +1069,7 @@ impl StructuredRuntime {
             let pending = approvals.remove(request_id).expect("held question");
             let empty = approvals.is_empty();
             drop(approvals);
-            self.deliver_answer(
+            self.settle_answer(
                 request_id,
                 pending,
                 resolution.answer,
@@ -1104,7 +1104,7 @@ impl StructuredRuntime {
 
     /// Sends `answer` and records `resolved`, or records the call as withdrawn when the
     /// provider already stopped waiting. Called under `state`, so Stop's turn end follows it.
-    fn deliver_answer(
+    fn settle_answer(
         &self,
         request_id: &str,
         pending: PendingApproval,

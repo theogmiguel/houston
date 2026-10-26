@@ -96,9 +96,12 @@ pub async fn start_with_listener(
         )
         .route("/orchestrate/pr-watch", post(orch_pr_watch))
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
+        .route("/orchestrate/note", post(orch_note))
         .route("/orchestrate/pr-enqueue", post(orch_pr_enqueue))
         .route("/orchestrate/pr-dequeue", post(orch_pr_dequeue))
+        .route("/orchestrate/build-slot", post(orch_build_slot))
         .route("/harness/publish", post(harness_publish))
+        .route("/night/{verb}", post(night_post))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
         .route("/task/get", get(task_get))
@@ -894,6 +897,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
             | proto::ClientMsg::WorktreeCleanupStatus { .. }
+            | proto::ClientMsg::WorktreeCheck { .. }
             | proto::ClientMsg::WorktreeIdleRemovalDaysGet
             | proto::ClientMsg::GitCheckpoints { .. }
             | proto::ClientMsg::GitCheckpointDiff { .. }
@@ -1580,6 +1584,7 @@ async fn handle_control(
         Ok(m) => m,
         Err(e) => {
             let credential_message = text.contains("credential")
+                || text.contains("passphrase")
                 || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| {
                     value
                         .as_object()
@@ -1601,6 +1606,13 @@ async fn handle_control(
         }
     };
 
+    // A mutex write: on the connection task, reports apply in socket order and never
+    // wait for, or lose to, a full set of control slots.
+    if let proto::ClientMsg::DesktopPresence { active } = msg {
+        daemon.remote_desktop_presence(conn_id, active);
+        return;
+    }
+
     if daemon.refusing_mutations() && !is_read_only_during_shutdown(&msg) {
         let (message, context) = if daemon.is_handing_off() {
             (
@@ -1617,7 +1629,7 @@ async fn handle_control(
         return;
     }
 
-    let context = session_error_context(&msg);
+    let context = request_error_context(&msg);
     if runs_on_connection_task(&msg) {
         let Some(msg) = on_loop.start(daemon, msg, context.clone(), frames_wanted) else {
             return;
@@ -1702,9 +1714,9 @@ fn control_admission_refusal(text: &str) -> (String, String) {
     }
 }
 
-/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), so a
-/// client can attribute the failure to its pane.
-fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
+/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), and
+/// Night shift requests carry `night_shift`, so a client can attribute the failure.
+fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
     match msg {
         proto::ClientMsg::SessionClose { session, .. }
         | proto::ClientMsg::SessionRespawn { session, .. }
@@ -1725,6 +1737,15 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::ThreadSteer { session, .. }
         | proto::ClientMsg::ThreadCommandsList { session }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
+        proto::ClientMsg::NightShiftCreate { .. }
+        | proto::ClientMsg::NightShiftState { .. }
+        | proto::ClientMsg::NightShiftUpdate { .. }
+        | proto::ClientMsg::NightShiftRunNow { .. }
+        | proto::ClientMsg::NightShiftWrapUp { .. }
+        | proto::ClientMsg::NightShiftStop { .. }
+        | proto::ClientMsg::NightShiftDecide { .. }
+        | proto::ClientMsg::NightShiftQaPassed { .. }
+        | proto::ClientMsg::RoutineDelete { .. } => Some("night_shift".into()),
         _ => None,
     }
 }
@@ -2101,6 +2122,18 @@ async fn dispatch(
         }
         proto::ClientMsg::HostInfoGet => {
             let _ = send_msg(sink, &daemon.host_info()).await;
+            Ok(())
+        }
+        proto::ClientMsg::DiagnosticsCollect { app_version } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.collect_diagnostics(&app_version))
+                .await
+                .unwrap_or_else(|e| proto::ServerMsg::DiagnosticsCollected {
+                    path: None,
+                    bytes: 0,
+                    error: Some(format!("diagnostics collection panicked: {e}")),
+                });
+            let _ = send_msg(sink, &reply).await;
             Ok(())
         }
         proto::ClientMsg::StorageReclaim => {
@@ -2490,6 +2523,69 @@ async fn dispatch(
                     let message = format!("{error:#}");
                     tracing::warn!("control request failed: {message}");
                     send_error(sink, message, Some(format!("harness_report:{review_id}"))).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftCreate { workspace } => {
+            let msg = daemon.night_shift_create(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftState {
+            workspace,
+            preflight_until_ms,
+        } => {
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || {
+                reader.night_shift_state(&workspace, preflight_until_ms)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the Night shift state failed: {e}")));
+            match read {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some("night_shift".into())).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftUpdate {
+            routine_id,
+            settings,
+            expected_revision,
+        } => {
+            let msg = daemon.night_shift_update(routine_id, settings, &expected_revision)?;
+            daemon.broadcast_control(&msg);
+            Ok(())
+        }
+        proto::ClientMsg::NightShiftRunNow {
+            routine_id,
+            until_ms,
+        } => daemon.night_shift_run_now(routine_id, until_ms).map(|_| ()),
+        proto::ClientMsg::NightShiftWrapUp { run_id } => daemon.night_shift_wrap_up_now(run_id),
+        proto::ClientMsg::NightShiftStop { run_id } => daemon.night_shift_stop_now(run_id),
+        proto::ClientMsg::NightShiftDecide { entry_id, choice } => {
+            daemon.night_shift_decide(entry_id, &choice)
+        }
+        proto::ClientMsg::NightShiftQaPassed { entry_id } => daemon.night_shift_qa_passed(entry_id),
+        proto::ClientMsg::NightShiftReport { run_id } => {
+            let reader = Arc::clone(daemon);
+            let read = tokio::task::spawn_blocking(move || reader.night_shift_report(run_id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("reading the report failed: {e}")));
+            match read {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some(format!("night_shift_report:{run_id}"))).await;
                 }
             }
             Ok(())
@@ -3005,6 +3101,12 @@ async fn dispatch(
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("title reset task panicked: {e}")))
         }
+        proto::ClientMsg::SessionNoteClear { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.pane_note_clear(session).map(|_| ()))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note clear panicked: {e}")))
+        }
         proto::ClientMsg::SessionRename { session, title } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.rename(session, &title))
@@ -3070,6 +3172,23 @@ async fn dispatch(
                     });
             match result {
                 Ok(workspaces) => {
+                    daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        proto::ClientMsg::WorkspaceRelocate { from, to } => {
+            let daemon_bg = Arc::clone(daemon);
+            let result =
+                tokio::task::spawn_blocking(move || daemon_bg.workspace_relocate(&from, &to))
+                    .await
+                    .unwrap_or_else(|e| {
+                        Err(anyhow::anyhow!("workspace relocate task panicked: {e}"))
+                    });
+            match result {
+                Ok(_) => {
+                    let workspaces = daemon.workspace_list().unwrap_or_default();
                     daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
                     Ok(())
                 }
@@ -3382,68 +3501,10 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
-        proto::ClientMsg::PrStatus { dir } => {
-            let d = PathBuf::from(&dir);
-            let st = tokio::task::spawn_blocking(move || crate::gh::pr_status_cached(&d))
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::error!("pr_status: spawn_blocking join failed for {dir:?}: {e}");
-                    crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    }
-                });
-            let _ = send_msg(
-                sink,
-                &proto::ServerMsg::PrStatus {
-                    dir,
-                    gh: st.gh,
-                    has_upstream: st.has_upstream,
-                    pr: st.pr,
-                    hint: st.hint,
-                },
-            )
-            .await;
-            Ok(())
-        }
+        proto::ClientMsg::PrStatus { dir } => send_pr_statuses(daemon, sink, vec![dir]).await,
         proto::ClientMsg::PrStatusBatch { dirs } => {
             check_pr_status_batch_size(dirs.len())?;
-            let requested = dirs.len();
-            let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
-            let statuses = tokio::task::spawn_blocking(move || {
-                paths
-                    .iter()
-                    .map(|path| crate::gh::pr_status_cached(path))
-                    .collect::<Vec<_>>()
-            })
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("pr_status batch: spawn_blocking join failed: {e}");
-                (0..requested)
-                    .map(|_| crate::gh::PrStatus {
-                        gh: proto::GhState::Missing,
-                        has_upstream: false,
-                        pr: None,
-                        hint: Some(crate::gh::MISSING_HINT.to_string()),
-                    })
-                    .collect()
-            });
-            for (dir, st) in dirs.into_iter().zip(statuses) {
-                let _ = send_msg(
-                    sink,
-                    &proto::ServerMsg::PrStatus {
-                        dir,
-                        gh: st.gh,
-                        has_upstream: st.has_upstream,
-                        pr: st.pr,
-                        hint: st.hint,
-                    },
-                )
-                .await;
-            }
-            Ok(())
+            send_pr_statuses(daemon, sink, dirs).await
         }
         proto::ClientMsg::PrCheckLog { dir, run_id } => {
             let d = PathBuf::from(&dir);
@@ -4199,6 +4260,16 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
+        proto::ClientMsg::WorktreeCheck { dir, path } => {
+            let d = PathBuf::from(&dir);
+            let wt = PathBuf::from(&path);
+            let daemon = Arc::clone(daemon);
+            let check = tokio::task::spawn_blocking(move || daemon.worktree_check(&d, &wt))
+                .await
+                .map_err(|e| anyhow::anyhow!("worktree check task panicked: {e}"))?;
+            let _ = send_msg(sink, &proto::ServerMsg::WorktreeCheck { dir, path, check }).await;
+            Ok(())
+        }
         proto::ClientMsg::GitWorktreePrune { dir } => {
             let d = PathBuf::from(&dir);
             let result = tokio::task::spawn_blocking(move || crate::worktrees::prune(&d))
@@ -4586,7 +4657,124 @@ async fn dispatch(
             }
             Ok(())
         }
+        proto::ClientMsg::DesktopPresence { active } => {
+            daemon.remote_desktop_presence(conn_id, active);
+            Ok(())
+        }
+        proto::ClientMsg::TransferExport {
+            request,
+            workspace,
+            destination,
+            overwrite,
+            passphrase,
+            grids,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_export(
+                        &workspace,
+                        &destination,
+                        overwrite,
+                        &passphrase,
+                        grids,
+                        progress,
+                    )
+                    .map(|summary| proto::ServerMsg::TransferExported { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferInspect {
+            request,
+            path,
+            passphrase,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, _| {
+                daemon
+                    .transfer_inspect(&path, &passphrase)
+                    .map(|summary| proto::ServerMsg::TransferInspected { request, summary })
+            })
+            .await
+        }
+        proto::ClientMsg::TransferImport {
+            request,
+            path,
+            passphrase,
+            workspace,
+            profiles,
+        } => {
+            transfer_reply(daemon, sink, request, move |daemon, progress| {
+                daemon
+                    .transfer_import(&path, &passphrase, &workspace, &profiles, progress)
+                    .map(|result| proto::ServerMsg::TransferImported { request, result })
+            })
+            .await
+        }
     }
+}
+
+/// Runs a workspace transfer off the runtime, forwarding its progress. A refusal answers
+/// `transfer_refused`; any other failure is an `error` with context `transfer:<request>`.
+async fn transfer_reply<F>(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    request: u32,
+    work: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce(
+            &Arc<Daemon>,
+            &(dyn Fn(proto::TransferStage) + Send + Sync),
+        ) -> anyhow::Result<proto::ServerMsg>
+        + Send
+        + 'static,
+{
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let daemon = Arc::clone(daemon);
+    let mut task = tokio::task::spawn_blocking(move || {
+        let progress = move |stage| {
+            let _ = tx.send(stage);
+        };
+        work(&daemon, &progress)
+    });
+    let result = loop {
+        tokio::select! {
+            Some(stage) = rx.recv() => {
+                let _ = send_msg(sink, &proto::ServerMsg::TransferProgress { request, stage }).await;
+            }
+            result = &mut task => break result,
+        }
+    };
+    let reply = match result {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(error)) => match crate::transfer::refusal(&error) {
+            Some(refusal) => proto::ServerMsg::TransferRefused {
+                request,
+                refusal: refusal.clone(),
+            },
+            None => {
+                tracing::warn!("transfer request {request} failed: {error:#}");
+                send_error(
+                    sink,
+                    format!("{error:#}"),
+                    Some(format!("transfer:{request}")),
+                )
+                .await;
+                return Ok(());
+            }
+        },
+        Err(error) => {
+            send_error(
+                sink,
+                format!("transfer request {request} stopped unexpectedly: {error}"),
+                Some(format!("transfer:{request}")),
+            )
+            .await;
+            return Ok(());
+        }
+    };
+    send_msg(sink, &reply)
+        .await
+        .map_err(|_| anyhow::anyhow!("sending the transfer reply failed"))
 }
 
 // Mirrored by the renderer in App.tsx.
@@ -4606,20 +4794,27 @@ async fn send_git_status(
         // A missing directory stays an error; one that exists without git is
         // a workspace the panel reports as such, not a failed request.
         if d.is_dir() && !crate::git::probe_repo(&d)? {
-            return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
+            return anyhow::Ok((
+                Vec::new(),
+                crate::git::SyncStatus::default(),
+                None,
+                true,
+                None,
+            ));
         }
         let (files, sync) = match b.as_deref() {
             Some(base) => (crate::git::status_vs_base(&d, base)?, crate::git::sync(&d)),
             None => crate::git::status_and_sync(&d)?,
         };
         let default_base = crate::git::default_base_cached(&d);
-        anyhow::Ok((files, sync, default_base, false))
+        let operation = crate::git::paused_operation(&d);
+        anyhow::Ok((files, sync, default_base, false, operation))
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")));
     // The rail and overview poll every workspace in the background, so the
     // context lets clients keep these failures out of global notices.
-    let (files, sync, default_base, not_a_repo) = match probed {
+    let (files, sync, default_base, not_a_repo, operation) = match probed {
         Ok(status) => status,
         Err(e) => {
             send_error(
@@ -4643,6 +4838,7 @@ async fn send_git_status(
             base,
             default_base,
             not_a_repo,
+            operation,
         },
     )
     .await;
@@ -5609,6 +5805,61 @@ async fn pr_stack_merge(
     .await;
 }
 
+/// One `PrStatus` per dir. A dir answered from the previous daemon's file is
+/// re-asked of gh at once and answered again, so the stored answer only fills
+/// the gap until the fresh one arrives.
+async fn send_pr_statuses(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    mut dirs: Vec<String>,
+) -> anyhow::Result<()> {
+    while !dirs.is_empty() {
+        let requested = dirs.len();
+        let d = Arc::clone(daemon);
+        let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        let statuses = tokio::task::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| d.pr_status(path))
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("pr_status: spawn_blocking join failed for {dirs:?}: {e}");
+            (0..requested)
+                .map(|_| {
+                    let st = crate::gh::PrStatus {
+                        gh: proto::GhState::Missing,
+                        has_upstream: false,
+                        pr: None,
+                        hint: Some(crate::gh::MISSING_HINT.to_string()),
+                    };
+                    (st, false)
+                })
+                .collect()
+        });
+        let mut seeded = Vec::new();
+        for (dir, (st, from_store)) in dirs.into_iter().zip(statuses) {
+            if from_store {
+                seeded.push(dir.clone());
+            }
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::PrStatus {
+                    dir,
+                    gh: st.gh,
+                    has_upstream: st.has_upstream,
+                    pr: st.pr,
+                    hint: st.hint,
+                },
+            )
+            .await;
+        }
+        dirs = seeded;
+    }
+    Ok(())
+}
+
 async fn send_msg(
     sink: &mut (impl SinkExt<Message> + Unpin),
     msg: &proto::ServerMsg,
@@ -6142,6 +6393,41 @@ async fn orch_pr_watch(
     }
 }
 
+#[derive(Deserialize)]
+struct NoteBody {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    phase: Option<proto::PanePhase>,
+    #[serde(default)]
+    clear: bool,
+}
+
+async fn orch_note(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<NoteBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.pane_note_request(
+            scope.session_id,
+            body.text.as_deref(),
+            body.phase,
+            body.clear,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pane note panicked: {e}")));
+    match result {
+        Ok(value) => (StatusCode::OK, axum::Json(value)).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
 async fn orch_pr_unwatch(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
     let scope = match orch_scope(&daemon, &headers) {
         Ok(scope) => scope,
@@ -6187,6 +6473,33 @@ async fn orch_pr_enqueue(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct BuildSlotBody {
+    action: String,
+    #[serde(default)]
+    lease: Option<String>,
+}
+
+async fn orch_build_slot(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<BuildSlotBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.build_slot_request(scope.session_id, &body.action, body.lease.as_deref())
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("build slot request panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
+        Err(e) => orch_error(StatusCode::CONFLICT, e),
+    }
+}
+
 async fn orch_pr_dequeue(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
@@ -6228,6 +6541,26 @@ struct SubmitBody {
 struct PublishBody {
     #[serde(default)]
     summary: Option<String>,
+}
+
+async fn night_post(
+    State(daemon): State<Arc<Daemon>>,
+    axum::extract::Path(verb): axum::extract::Path<String>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let result =
+        tokio::task::spawn_blocking(move || daemon.night_tool(scope.session_id, &verb, &payload))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("night tool panicked: {e}")));
+    match result {
+        Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
+        Err(e) => orch_err_response(e),
+    }
 }
 
 async fn harness_publish(

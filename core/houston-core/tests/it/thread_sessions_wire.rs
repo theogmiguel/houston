@@ -1637,6 +1637,7 @@ async fn the_group_record_is_cleared_whenever_the_daemon_ends_the_tree() {
 fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
     let dir: PathBuf = project.to_path_buf();
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -1678,6 +1679,8 @@ fn thread_row(id: u32, project: &Path) -> proto::SessionInfo {
         limit: None,
         view: proto::SessionView::Thread,
         permission_mode: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 
@@ -2793,9 +2796,17 @@ async fn the_permission_mode_follows_what_claude_reports() {
         Some("default")
     );
 
+    // Control requests run concurrently: a send racing the stop would reach the plan process.
+    let (plan, _) = rig.launches().last().unwrap().clone();
     rig.send(json!({"type":"thread_stop","session":id})).await;
+    wait_until("the stop to end the plan process", || {
+        !houston_core::pid::process_is_alive(plan)
+    })
+    .await;
     rig.turn(id, "replay:warm").await;
-    let restarted = rig.launches().last().unwrap().1.clone();
+    let launches = rig.launches();
+    assert_eq!(launches.len(), 3, "the turn after the stop relaunches");
+    let restarted = launches.last().unwrap().1.clone();
     assert!(
         !restarted.iter().any(|arg| arg == "--permission-mode"),
         "a restart after leaving plan mode does not return to it: {restarted:?}"
@@ -3034,6 +3045,8 @@ async fn messages_sent_during_a_turn_wait_and_go_once_each_in_order() {
     let id = rig.thread().await;
     let (gate, open) = rig.gated_turn(id, "a").await;
     rig.say(id, "second").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "third").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     assert_eq!(
@@ -3156,6 +3169,8 @@ async fn steering_a_queued_message_stops_the_turn_and_sends_it_first() {
     let id = rig.thread().await;
     let (gate, _open) = rig.gated_turn(id, "a").await;
     rig.say(id, "second").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "third").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     rig.send(json!({"type":"thread_steer","session":id,"id":queued[1].id}))
@@ -3669,6 +3684,8 @@ async fn queue_snapshots_arrive_in_the_order_the_queue_changed() {
     let id = rig.thread().await;
     let (_, open) = rig.gated_turn(id, "a").await;
     rig.say(id, "first").await;
+    // Control requests run concurrently: a second send may overtake the first.
+    rig.queue_until(id, |items| items.len() == 1).await;
     rig.say(id, "second").await;
     let queued = rig.queue_until(id, |items| items.len() == 2).await;
     let barrier = TestBarrier::arm("thread-queue-publish");

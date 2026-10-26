@@ -23,6 +23,24 @@ pub fn windows_command_path(path: &Path) -> PathBuf {
     }
 }
 
+/// `path` re-rooted from `from` to `to` when it is `from` or lies inside it,
+/// comparing by components so separators and a Windows verbatim prefix agree.
+pub fn relocated(from: &str, to: &str, path: &str) -> Option<String> {
+    #[cfg(windows)]
+    let (base, path) = (
+        windows_command_path(Path::new(from)),
+        windows_command_path(Path::new(path)),
+    );
+    #[cfg(not(windows))]
+    let (base, path) = (Path::new(from).to_path_buf(), Path::new(path).to_path_buf());
+    let rest = path.strip_prefix(&base).ok()?;
+    Some(if rest.as_os_str().is_empty() {
+        to.to_owned()
+    } else {
+        Path::new(to).join(rest).display().to_string()
+    })
+}
+
 pub const CHANNEL_ENV: &str = "HOUSTON_CHANNEL";
 pub const BASE_DIR: &str = ".houston";
 // Bounded so a channel name can never become a path bomb or an unreadable dir name.
@@ -226,6 +244,31 @@ pub fn migrate_legacy_project_dir(root: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relocated_re_roots_only_paths_inside_the_old_folder() {
+        assert_eq!(
+            relocated("/a/proj", "/b/proj2", "/a/proj").as_deref(),
+            Some("/b/proj2")
+        );
+        let inner = relocated("/a/proj", "/b/proj2", "/a/proj/.houston/worktrees/x").unwrap();
+        assert_eq!(
+            Path::new(&inner),
+            Path::new("/b/proj2/.houston/worktrees/x")
+        );
+        assert_eq!(relocated("/a/proj", "/b/p", "/a/project"), None);
+        assert_eq!(relocated("/a/proj", "/b/p", "/a"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn relocated_matches_across_separators_and_verbatim_prefixes() {
+        let to = r"D:\moved";
+        for path in [r"C:\dev\proj\wt", "C:/dev/proj/wt", r"\\?\C:\dev\proj\wt"] {
+            let out = relocated(r"C:\dev\proj", to, path).unwrap();
+            assert_eq!(Path::new(&out), Path::new(r"D:\moved\wt"), "{path}");
+        }
+    }
 
     #[test]
     fn migrate_moves_the_legacy_dir_with_everything_under_it() {

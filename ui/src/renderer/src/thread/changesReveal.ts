@@ -12,11 +12,18 @@ export interface ChangesReveal {
 export const CHANGES_REVEAL_TTL_MS = 10_000
 
 // Kept until the panel lists the request's repository: it may mount after the request.
-let pending: { reveal: ChangesReveal; expires: number } | null = null
+let pending: { reveal: ChangesReveal; expires: number; stamp: number } | null = null
+// Orders requests against the lists the panel receives.
+let clock = 0
 
 export function revealInChanges(reveal: ChangesReveal): void {
-  pending = { reveal, expires: Date.now() + CHANGES_REVEAL_TTL_MS }
+  pending = { reveal, expires: Date.now() + CHANGES_REVEAL_TTL_MS, stamp: ++clock }
   window.dispatchEvent(new CustomEvent<ChangesReveal>(CHANGES_REVEAL_EVENT, { detail: reveal }))
+}
+
+/** Stamps a list as it arrives, for `takeChangesReveal`. */
+export function changesListStamp(): number {
+  return ++clock
 }
 
 function normalise(path: string): string {
@@ -36,8 +43,8 @@ export function repoRelativePath(reveal: ChangesReveal, repoDir: string): string
   return matches ? full.slice(prefix.length) : null
 }
 
-/** The reveal's path when this repository's first list (`null` while loading) shows it; that list consumes the reveal either way. */
-export function takeChangesReveal(repoDir: string, paths: readonly string[] | null): string | null {
+/** The reveal's path when this repository's list (`null` while loading) shows it; a list without it drops the reveal only if `listedAt` (`changesListStamp`) is after the request. */
+export function takeChangesReveal(repoDir: string, paths: readonly string[] | null, listedAt: number): string | null {
   if (pending === null) return null
   if (Date.now() > pending.expires) {
     pending = null
@@ -45,6 +52,10 @@ export function takeChangesReveal(repoDir: string, paths: readonly string[] | nu
   }
   const path = repoRelativePath(pending.reveal, repoDir)
   if (path === null || paths === null) return null
-  pending = null
-  return paths.includes(path) ? path : null
+  if (paths.includes(path)) {
+    pending = null
+    return path
+  }
+  if (listedAt > pending.stamp) pending = null
+  return null
 }

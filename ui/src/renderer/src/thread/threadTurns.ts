@@ -4,7 +4,7 @@ import type { ToolKind, ToolSummary, TurnOutcome } from './threadTypes'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
 
-// The daemon sends `summary` from v153; this mirrors its tool-name table for events stored earlier.
+// The daemon sends `summary` from v155; this mirrors its tool-name table for events stored earlier.
 const KIND_BY_NAME: Record<string, ToolKind> = {
   Read: 'read',
   NotebookRead: 'read',

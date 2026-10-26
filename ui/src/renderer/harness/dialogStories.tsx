@@ -11,6 +11,7 @@ import { QuestionCard } from '../src/components/QuestionCard'
 import { GitDialogShell } from '../src/components/git/GitDialogShell'
 import { BranchesDialog } from '../src/components/git/BranchesDialog'
 import { CheckpointsDialog } from '../src/components/git/CheckpointsDialog'
+import { WorktreeRemoveConfirm } from '../src/components/git/WorktreeRemoveConfirm'
 import { HeaderDelegationBadge } from '../src/components/DelegationCard'
 import DelegationPanel from '../src/components/DelegationPanel'
 import { UpdateInstallModal } from '../src/components/UpdateInstallModal'
@@ -23,6 +24,22 @@ import type { RemoteInfo } from '../src/houston/generated/RemoteInfo'
 import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 
 const noop = (): void => {}
+
+const STORY_NOW = 1_800_000_000_000
+
+export function WorktreeRemoveCheckStory(): React.JSX.Element {
+  const worktree = { path: '/home/dev/acme/.houston/worktrees/fix-login', branch: 'houston/fix-login', head: 'abcdef1234567890', is_main: false, is_detached: false, is_bare: false, dirty: true }
+  const check = {
+    dirty_files: 3,
+    newest_change_ms: STORY_NOW - 4 * 60_000,
+    base: 'main',
+    ahead: 5,
+    unpushed: 2,
+    panes: [{ session: 12, title: 'Max' }],
+    gaps: []
+  }
+  return <WorktreeRemoveConfirm worktree={worktree} force check={{ path: worktree.path, status: 'ready', check }} nowMs={STORY_NOW} onConfirm={noop} onCancel={noop} />
+}
 
 export function LegacyConfirmStory(): React.JSX.Element {
   return <ConfirmModal title="DELETE WORKSPACE" message="Remove acme-core and its sessions from Houston?" confirmLabel="Delete" onConfirm={noop} onCancel={noop} />

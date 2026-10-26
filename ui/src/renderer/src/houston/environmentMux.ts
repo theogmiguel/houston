@@ -113,6 +113,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   workspace_add: { path: 'path' },
   workspace_remove: { path: 'path' },
   workspace_rename: { path: 'path' },
+  workspace_relocate: { path: 'from' },
   workspace_list: 'list',
   workspace_local_servers: WORKSPACE,
   session_close: SESSION,
@@ -186,7 +187,9 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   git_branch_delete: DIR,
   git_worktree_create: DIR,
   git_worktree_remove: DIR,
+  session_note_clear: SESSION,
   git_worktree_prune: DIR,
+  worktree_check: DIR,
   worktree_cleanup_set: 'local',
   worktree_cleanup_status: DIR,
   worktree_cleanup_run: DIR,
@@ -225,6 +228,10 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   remote_device_revoke: 'local',
   remote_device_set_tier: 'local',
   remote_grids_publish: 'local',
+  desktop_presence: 'local',
+  transfer_export: 'local',
+  transfer_inspect: 'local',
+  transfer_import: 'local',
   slack_get: 'local',
   slack_connect: 'local',
   slack_disconnect: 'local',
@@ -255,6 +262,15 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   harness_fix_task: 'local',
   harness_overview_get: 'local',
   harness_seen: 'local',
+  night_shift_create: 'local',
+  night_shift_state: 'local',
+  night_shift_update: 'local',
+  night_shift_run_now: 'local',
+  night_shift_wrap_up: 'local',
+  night_shift_stop: 'local',
+  night_shift_decide: 'local',
+  night_shift_qa_passed: 'local',
+  night_shift_report: 'local',
   task_snapshot: 'local',
   task_tracker_settings_get: 'local',
   task_tracker_settings_set: 'local',
@@ -306,6 +322,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   voice_level_monitor: 'local',
   host_info_get: 'local',
   storage_reclaim: 'local',
+  diagnostics_collect: 'local',
   restore_budget_set: 'local',
   restore_resume_set: 'local',
   mailbox_retention_set: 'local',
@@ -367,10 +384,12 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   attach_snapshot: SESSION_FIELD,
   workspace_list: 'list',
   workspace_focus: 'forward',
+  workspace_relocated: 'forward',
   workspace_local_servers: 'forward',
   session_resized: SESSION_FIELD,
   session_renamed: SESSION_FIELD,
   session_tags_set: 'drop',
+  session_note: SESSION_FIELD,
   session_resumable: SESSION_FIELD,
   pr_watch_changed: SESSION_FIELD,
   tag_list: 'drop',
@@ -433,6 +452,10 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   git_branches: 'forward',
   git_worktrees: 'forward',
   worktree_cleanup: 'forward',
+  worktree_check: (msg, tag) => {
+    const check = msg.check as { panes: Array<Record<string, number>> }
+    for (const pane of check.panes) pane.session = tag(pane.session)
+  },
   worktree_idle_removal_days: 'drop',
   git_checkpoints: 'forward',
   git_checkpoint_diff: 'forward',
@@ -468,6 +491,11 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   slack: 'drop',
   remote_state: 'drop',
   remote_pairing: 'drop',
+  transfer_progress: 'drop',
+  transfer_exported: 'drop',
+  transfer_inspected: 'drop',
+  transfer_imported: 'drop',
+  transfer_refused: 'drop',
   task_tracker_settings: 'drop',
   task_tracker_links: 'drop',
   task_tracker_sync_state: 'drop',
@@ -487,6 +515,10 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   harness_overview: 'drop',
   harness_report: 'drop',
   harness_changed: 'drop',
+  night_shift_state: 'drop',
+  night_shift_run_event: 'drop',
+  night_shift_notice: 'drop',
+  night_shift_report: 'drop',
   task_snapshot: 'drop',
   task_detail: 'drop',
   task_project_state: 'drop',
@@ -511,6 +543,7 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   voice_level: 'drop',
   host_info: 'drop',
   storage_reclaimed: 'drop',
+  diagnostics_collected: 'drop',
   command_history_ignore_globs: 'drop',
   usage_summary: 'drop',
   usage_activity_summary: 'drop',
@@ -858,6 +891,14 @@ export class EnvironmentMux {
       }
     }
     const out: Json = { ...msg, [field]: owner.path }
+    if (msg.type === 'workspace_relocate' && typeof msg.to === 'string') {
+      const dest = this.ownerOfPath(msg.to)
+      if ('refusal' in dest) return this.dispatchError(dest.refusal)
+      if (dest.env !== owner.env) {
+        return this.dispatchError(`${msg.to} is in another environment than ${value}; a workspace can only be relocated within its own`)
+      }
+      out.to = dest.path
+    }
     if (isTagged(out.cwd_from)) {
       const from = out.cwd_from
       out.cwd_from = owner.env !== null && slotOf(from) === owner.env.entry.slot ? from % SLOT_SPAN : null

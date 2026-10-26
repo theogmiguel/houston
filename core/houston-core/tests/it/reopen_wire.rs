@@ -253,6 +253,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
     let agent_id = {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&proto::SessionInfo {
+            note: None,
             title_source: Default::default(),
             checkout: None,
             activity: None,
@@ -294,6 +295,8 @@ async fn respawn_refuses_a_swarm_tied_session() {
             limit: None,
             view: Default::default(),
             permission_mode: None,
+            transferred_at_ms: None,
+            transfer_fork: false,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

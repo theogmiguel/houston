@@ -40,6 +40,18 @@ body {
 }
 
 @layer base {
+  /* A wrapped line never ends on a lone word: text wraps evenly, headings balance. */
+  body {
+    text-wrap: pretty;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  [role='heading'] {
+    text-wrap: balance;
+  }
+
   button {
     font: inherit;
     cursor: pointer;
