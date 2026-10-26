@@ -154,7 +154,7 @@ impl Daemon {
         let repository = self.issue_destination(workspace, row.destination)?;
         let title = self.issue_title(&row, workspace);
         let body = self.issue_body(&row, workspace);
-        let account = crate::gh::viewer_login(Path::new(workspace)).ok().flatten();
+        let account = crate::gh::configured_login(Path::new(workspace));
         let now = now_unix_ms();
         // The duplicate search leaves the machine, so it sees the same redacted
         // words the draft does, never a value the title happens to carry.

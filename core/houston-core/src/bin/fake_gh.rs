@@ -249,6 +249,16 @@ fn viewer_login() {
     );
 }
 
+/// `configured-login` names the account gh's local config answers for a host.
+/// No file means no configured user, which is a failed lookup, not a network call.
+fn configured_login(args: &[String]) {
+    let host = flag(args, "--host").unwrap_or_else(|| "github.com".into());
+    match read("configured-login") {
+        Some(login) => print!("{login}"),
+        None => fail(&format!("no user configured for {host}")),
+    }
+}
+
 /// `issues-search.json` is the one `gh search issues` answer; no file means no
 /// likely duplicates. `issues-search-error` fails the call instead, for the
 /// rate-limit and failure paths.
@@ -457,6 +467,7 @@ fn main() {
         ("issue", "create") => issue_create(&args),
         ("issue", "comment") => issue_comment(&args),
         ("api", "user") => viewer_login(),
+        ("config", "get") => configured_login(&args),
         ("api", "graphql") => graphql(),
         ("api", path) if path.starts_with("repos/") && path.contains("/rules/branches/") => {
             rules(path)

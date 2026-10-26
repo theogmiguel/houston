@@ -481,7 +481,7 @@ async fn a_draft_makes_one_search_call_and_redacts_the_issue_text() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    rig.flag("viewer-login", "octocat");
+    rig.flag("configured-login", "octocat");
     rig.flag(
         "issues-search.json",
         &json!([
@@ -541,6 +541,10 @@ async fn a_draft_makes_one_search_call_and_redacts_the_issue_text() {
         search_calls[0]
     );
     assert!(
+        rig.calls("api user").is_empty(),
+        "the account comes from local gh config, not a network call"
+    );
+    assert!(
         rig.calls("issue create").is_empty(),
         "a draft files nothing"
     );
@@ -552,7 +556,7 @@ async fn a_rate_limited_search_returns_no_duplicates_and_says_so() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    rig.flag("viewer-login", "octocat");
+    rig.flag("configured-login", "octocat");
     rig.flag(
         "issues-search-error",
         "HTTP 403: API rate limit exceeded for user",
@@ -582,6 +586,7 @@ async fn a_rate_limited_search_returns_no_duplicates_and_says_so() {
     let note = note.expect("the pause is visible");
     assert!(note.contains("paused"), "{note}");
     assert_eq!(rig.calls("search issues").len(), 1);
+    assert!(rig.calls("api user").is_empty());
     assert!(rig.calls("issue create").is_empty());
     let _ = rig.daemon.kill(pane);
 }
@@ -591,7 +596,7 @@ async fn filing_creates_the_issue_once_after_the_explicit_message_and_resolves_t
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let pane = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    rig.flag("viewer-login", "octocat");
+    rig.flag("configured-login", "octocat");
     rig.flag("issues-search.json", "[]");
     let key = key_of(
         &rig.daemon

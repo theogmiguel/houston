@@ -119,7 +119,8 @@ conventional style and the title and body are editable. Houston redacts environm
 tokens, long high-entropy strings, URL passwords and absolute workspace or home paths. The draft
 lists matching open issues, found by one `gh search issues` request, so you can choose **Comment
 on #N instead**. Before you confirm, the drawer states exactly what will be sent, to which
-repository and under which `gh` account. **Create issue** or **Add comment to #N** is the only
+repository and under which `gh` account. The account name is read from your local `gh`
+configuration; the only request before you confirm is the duplicate search. **Create issue** or **Add comment to #N** is the only
 action that sends it; closing the drawer sends nothing. A GitHub rate-limit pause leaves the
 draft usable, returns no duplicates and says so. A workspace on a forge other than GitHub is
 refused by name.

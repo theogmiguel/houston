@@ -39,6 +39,18 @@ pub fn viewer_login(dir: &Path) -> Result<Option<String>> {
     Ok((!out.stdout.trim().is_empty()).then(|| out.stdout.trim().to_string()))
 }
 
+/// The login gh's local configuration names for github.com. This reads the
+/// config only; a draft must not spend a network request before the operator
+/// confirms, so it never asks `gh api user`.
+pub fn configured_login(dir: &Path) -> Option<String> {
+    let out = run(dir, &["config", "get", "user", "--host", "github.com"]).ok()?;
+    if !out.ok {
+        return None;
+    }
+    let login = out.stdout.trim();
+    (!login.is_empty()).then(|| login.to_string())
+}
+
 // Coalesce page refreshes while letting a changed signed-in account appear within a minute.
 const VIEWER_LOGIN_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 // Bound memory when a daemon visits many repositories over its lifetime.
