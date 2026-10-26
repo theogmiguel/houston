@@ -940,6 +940,17 @@ impl Db {
         Ok(rows)
     }
 
+    /// Whether this exact comment already exists, so an automatic note is
+    /// recorded once rather than on every watch tick.
+    pub fn task_comment_exists(&self, task_id: i64, body: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM backlog_task_comments WHERE task_id = ?1 AND body = ?2)",
+            rusqlite::params![task_id, body],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Every scoped task, archived included: the cap counts them all.
     pub fn task_count(&self, workspace: &str) -> Result<u32> {
         let conn = self.conn.lock().expect("db lock");

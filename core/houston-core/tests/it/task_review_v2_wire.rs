@@ -53,6 +53,14 @@ fn latest_review(rig: &Rig, task_id: i64) -> Option<proto::TaskRun> {
         .find(|run| run.kind == proto::TaskRunKind::Review)
 }
 
+fn comments(rig: &Rig, task_id: i64) -> Vec<String> {
+    let proto::ServerMsg::TaskDetail { comments, .. } = rig.daemon.task_get(task_id).unwrap()
+    else {
+        panic!("not a task detail");
+    };
+    comments.into_iter().map(|comment| comment.body).collect()
+}
+
 fn start_implementation(rig: &Rig, task_id: i64, caller: u32) -> (u32, PathBuf, String) {
     install_fake_provider(rig);
     let msg = rig
@@ -322,6 +330,77 @@ async fn the_review_attempt_cap_names_the_limit_the_attempts_and_the_sha() {
         message.contains(&git(&worktree, &["rev-parse", "HEAD"])),
         "{message}"
     );
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
+async fn every_push_does_not_comment_while_its_review_is_open() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "One review per pushed head");
+    set_review(
+        &rig,
+        Some(proto::AgentKind::Claude),
+        proto::TaskReviewMode::EveryPush,
+        proto::TaskReviewFocus::Full,
+    );
+    let (impl_session, worktree, branch) = start_implementation(&rig, task, caller);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    git(&worktree, &["push", "-q", "origin", &branch]);
+    rig.pr(99, &branch);
+    rig.daemon.pr_watch_start(caller, "99").unwrap();
+    rig.daemon.task_pr_watch_tick();
+    assert!(
+        latest_review(&rig, task)
+            .and_then(|run| run.session_id)
+            .is_some(),
+        "the pushed head opens a review"
+    );
+    let notes = |rig: &Rig| {
+        comments(rig, task)
+            .into_iter()
+            .filter(|body| body.contains("every-push review not started"))
+            .count()
+    };
+    assert_eq!(notes(&rig), 0);
+    for _ in 0..3 {
+        rig.daemon.task_pr_watch_tick();
+    }
+    assert_eq!(notes(&rig), 0, "an open review is not refused every tick");
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
+async fn every_push_records_a_refusal_note_once_per_head_and_reason() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "A refused every-push review");
+    set_review(
+        &rig,
+        Some(proto::AgentKind::Claude),
+        proto::TaskReviewMode::EveryPush,
+        proto::TaskReviewFocus::Full,
+    );
+    let (impl_session, worktree, branch) = start_implementation(&rig, task, caller);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    git(&worktree, &["push", "-q", "origin", &branch]);
+    rig.pr(99, &branch);
+    rig.daemon.pr_watch_start(caller, "99").unwrap();
+    rig.daemon.orchestration_set(false).unwrap();
+    for _ in 0..3 {
+        rig.daemon.task_pr_watch_tick();
+    }
+    let notes = comments(&rig, task)
+        .into_iter()
+        .filter(|body| body.contains("every-push review not started"))
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1, "{notes:?}");
     let _ = rig.daemon.kill(impl_session);
     let _ = rig.daemon.kill(caller);
 }

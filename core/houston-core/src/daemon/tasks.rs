@@ -5451,6 +5451,27 @@ impl Daemon {
         }
     }
 
+    /// A refusal note for one head and reason, recorded once. The watch runs
+    /// repeatedly, so an unchanged refusal must not add a comment per tick.
+    fn note_auto_action_once(&self, row: &TaskRow, head_sha: &str, what: &str, why: &str) {
+        let body = format!("{what} at {head_sha}: {why}");
+        match self.db.task_comment_exists(row.id, &body) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(e) => tracing::warn!(
+                "tasks: checking the last {what:?} note on task {}: {e:#}",
+                row.id
+            ),
+        }
+        match self.task_comment_as(None, row.id, &body, CHILD_HANDBACK_ACTOR, "task_review") {
+            Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
+                tracing::warn!("tasks: noting {what:?} on task {}: {message}", row.id)
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("tasks: noting {what:?} on task {}: {e:#}", row.id),
+        }
+    }
+
     fn render_review_result(
         review: &ReviewerResult,
         findings: &[proto::TaskReviewFinding],
@@ -5957,6 +5978,14 @@ impl Daemon {
                     && run.review_head_sha.as_deref() == Some(head_sha)
             })
             .collect();
+        // A live review or a spent head needs no action. Calling the door here
+        // only produced the same refusal comment on every watch tick.
+        if runs
+            .iter()
+            .any(|run| run.kind == proto::TaskRunKind::Review && run_is_open(run.state))
+        {
+            return;
+        }
         if for_head.iter().any(|run| run.review_verdict.is_some())
             || u32::try_from(for_head.len()).unwrap_or(u32::MAX)
                 >= proto::TASK_REVIEW_ATTEMPTS_PER_SHA
@@ -5974,7 +6003,12 @@ impl Daemon {
         match self.task_review_internal(task, caller, reviewer, "task_pr_watch", true) {
             Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                 if !message.contains("only when it is idle") {
-                    self.note_auto_action(task, "every-push review not started", &message);
+                    self.note_auto_action_once(
+                        task,
+                        head_sha,
+                        "every-push review not started",
+                        &message,
+                    );
                 }
             }
             Ok(_) => {}
