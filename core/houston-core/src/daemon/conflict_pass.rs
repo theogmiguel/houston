@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{now_ms, Daemon};
+use super::{now_ms, now_unix_ms, Daemon};
 use crate::conflict_prediction::{self as cp, MergeVerdict};
 use crate::db::ManagedWorktreeRow;
 use crate::orchestrate;
@@ -358,6 +358,34 @@ impl Daemon {
                     true,
                 ) {
                     tracing::warn!("noting a predicted conflict to pane {session}: {e:#}");
+                }
+            }
+            // The note may name a branch whose pull request already landed. Only the
+            // shared reader's cached state is consulted; never a new network call.
+            if let Some((owner, name)) = crate::git::remote_url(Path::new(&workspace))
+                .and_then(|url| crate::gh::split_repository(&url))
+            {
+                let repository = format!("{owner}/{name}");
+                let now = now_unix_ms();
+                let mut merged: Vec<(String, u32)> = Vec::new();
+                for (pair, _) in &mine {
+                    for side in [&pair.ours, &pair.theirs] {
+                        if let Some((number, state)) =
+                            self.pr_reads.branch_state(&repository, &side.branch, now)
+                        {
+                            if super::defect_detectors::merged_or_closed_pr(Some((number, state)))
+                                .is_some()
+                                && !merged
+                                    .iter()
+                                    .any(|(branch, pr)| branch == &side.branch && *pr == number)
+                            {
+                                merged.push((side.branch.clone(), number));
+                            }
+                        }
+                    }
+                }
+                if !merged.is_empty() {
+                    self.detect_conflict_note_merged_branch(&workspace, &merged);
                 }
             }
         }

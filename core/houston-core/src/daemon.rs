@@ -1550,6 +1550,8 @@ impl DelegationSettleSample {
 
 mod child_inputs;
 mod conflict_pass;
+pub mod defect_detectors;
+mod defects;
 mod forge_settings;
 mod harness_review;
 mod merge_queue;
@@ -1745,6 +1747,9 @@ pub struct Daemon {
     db: Db,
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
+    // A launch records its parent in `Session::info`. Tests that need a child
+    // without starting a provider seed the relation here instead.
+    seeded_parents: Mutex<HashMap<u32, u32>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
     notes: Mutex<HashMap<u32, proto::PaneNote>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
@@ -3547,6 +3552,7 @@ impl Daemon {
             db,
             next_id: AtomicU32::new(next_id),
             sessions: Mutex::new(HashMap::new()),
+            seeded_parents: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
             notes: Mutex::new(notes),
             dead: Mutex::new(dead),
@@ -21764,8 +21770,26 @@ impl Daemon {
     }
 
     pub fn parent_of(&self, id: u32) -> Option<u32> {
+        if let Some(parent) = self
+            .seeded_parents
+            .lock()
+            .expect("seeded parents lock")
+            .get(&id)
+        {
+            return Some(*parent);
+        }
         let sessions = self.sessions.lock().expect("sessions lock");
         sessions.get(&id).and_then(|s| s.info.spawned_by)
+    }
+
+    /// Records the parent a provider launch would set, for a test that seeds the
+    /// dialogue state instead of starting a provider binary.
+    #[doc(hidden)]
+    pub fn seed_parent_for_test(&self, child: u32, parent: u32) {
+        self.seeded_parents
+            .lock()
+            .expect("seeded parents lock")
+            .insert(child, parent);
     }
 
     pub(crate) fn spawnable_by(&self, id: u32) -> bool {
@@ -22447,6 +22471,45 @@ impl Daemon {
         mut report: orchestrate::WorkerReport,
     ) -> Result<serde_json::Value> {
         report.body = orchestrate::report_text(&report.body)?;
+        if report.kind == orchestrate::ReportKind::Finding {
+            let (title, evidence, destination) = orchestrate::finding_fields(&report)?;
+            let key = report.client_request_id.take();
+            let receipt = crate::db::MessageReceipt::new(
+                child,
+                key,
+                "pane_report",
+                &serde_json::to_value(&report)?,
+            )?;
+            self.orchestrate_whoami(child)?;
+            let guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+                return Ok(result);
+            }
+            let workspace = self.current_workspace(child)?;
+            let input = crate::db::DefectInput {
+                workspace: workspace.clone(),
+                source: proto::DefectSource::Agent,
+                detector: None,
+                title,
+                description: report.body.clone(),
+                evidence,
+                destination,
+                reporter_session: Some(child),
+            };
+            let (result, record) = self.db.record_agent_finding(
+                &input,
+                &receipt,
+                u64::try_from(now_unix_ms()).unwrap_or(0),
+            )?;
+            drop(guard);
+            if record.count > 0 {
+                self.note_defect_recorded(&workspace, &record);
+            }
+            return Ok(result);
+        }
         let key = report.client_request_id.take();
         let receipt = crate::db::MessageReceipt::new(
             child,
@@ -22471,7 +22534,10 @@ impl Daemon {
             "report refused: request_id {} for pane {child} has already closed",
             report.request_id
         );
-        let kind = report.kind.inbox_kind();
+        let kind = report
+            .kind
+            .inbox_kind()
+            .expect("non-finding reports carry an inbox kind");
         let workspace = self.current_workspace(child)?;
         let row = orchestrate::inbox_row_new(
             parent,
@@ -22511,6 +22577,12 @@ impl Daemon {
         drop(guard);
         self.mcp_notify.tools_changed_for_session(recipient);
         self.inbox_notify(recipient, kind.urgent());
+        if matches!(
+            report.kind,
+            orchestrate::ReportKind::Question | orchestrate::ReportKind::Blocked
+        ) {
+            self.detect_reply_reasked(&workspace, child, &report.body);
+        }
         Ok(result)
     }
 
@@ -22581,9 +22653,18 @@ impl Daemon {
             None,
             true,
         )?;
-        let result =
-            self.db
-                .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms())?;
+        let result = self
+            .db
+            .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms());
+        let result = match result {
+            Ok(result) => result,
+            Err(e) => {
+                if question.resolved_at.is_some() {
+                    self.detect_reply_refused_resolved(&question.workspace, reply.message_id);
+                }
+                return Err(e);
+            }
+        };
         let id = result["message_id"].as_i64().expect("stored reply id");
         self.broadcast_delegation(child);
         self.tasks_on_input_ownership(child);
