@@ -156,9 +156,11 @@ the free count and the requested count. Nothing is queued silently.
 Review is off by default. Settings ▸ Tasks ▸ Review sets the workspace's **review mode**,
 **review focus**, default reviewer and automatic **rework rounds** (0, at most
 `TASKS_REWORK_ROUNDS_MAX`). The mode chooses when a review starts on its own: **Manual
-only**, **On handback**, or **On every push to an open PR**. The focus is **Bugs** (the
-default), **Security**, **Performance** or **Full**, and becomes part of the reviewer's
-brief. A review sends the branch diff to the reviewer's provider.
+only**, **On handback**, or **On every push to an open PR**. When no mode has been chosen,
+a workspace with a configured reviewer uses **On handback**, and one without a reviewer
+uses **Manual only**; choosing **Manual only** explicitly disables automatic reviews. The
+focus is **Bugs** (the default), **Security**, **Performance** or **Full**, and becomes part
+of the reviewer's brief. A review sends the branch diff to the reviewer's provider.
 
 A task an orchestrator starts with a reviewer gets an independent, read-only reviewer on the
 same branch when the mode and task state call for one; the reviewer's input is the task text,

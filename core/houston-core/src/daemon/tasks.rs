@@ -2877,23 +2877,37 @@ impl Daemon {
         rounds.min(proto::TASKS_REWORK_ROUNDS_MAX)
     }
 
-    /// When a review starts by itself. A missing or unreadable value is
-    /// `manual`, so no workspace starts spending reviewers on its own.
-    pub fn tasks_review_mode(&self, workspace: &str) -> proto::TaskReviewMode {
+    /// The mode the operator chose, or `None` when this workspace predates the
+    /// setting. A missing mode is not silently Manual: a configured reviewer
+    /// keeps the handback review it always had.
+    fn tasks_review_mode_setting(&self, workspace: &str) -> Option<proto::TaskReviewMode> {
         let key = format!("{TASKS_REVIEW_MODE_SETTING_PREFIX}{workspace}");
         match self.db.get_setting(&key) {
-            Ok(Some(raw)) => crate::db::from_wire::<proto::TaskReviewMode>(&raw).unwrap_or_else(|| {
+            Ok(Some(raw)) => crate::db::from_wire::<proto::TaskReviewMode>(&raw).or_else(|| {
                 tracing::warn!(
-                    "workspace {workspace:?} has review mode {raw:?} (expected manual, handback or every_push); using manual"
+                    "workspace {workspace:?} has review mode {raw:?} (expected manual, handback or every_push); treating it as unset"
                 );
-                proto::TaskReviewMode::Manual
+                None
             }),
-            Ok(None) => proto::TaskReviewMode::Manual,
+            Ok(None) => None,
             Err(e) => {
-                tracing::warn!("reading {key:?}: {e:#}; using manual");
-                proto::TaskReviewMode::Manual
+                tracing::warn!("reading {key:?}: {e:#}; treating it as unset");
+                None
             }
         }
+    }
+
+    /// When a review starts by itself. An unset mode with a configured reviewer
+    /// reads as handback, preserving workspaces created before the setting.
+    pub fn tasks_review_mode(&self, workspace: &str) -> proto::TaskReviewMode {
+        self.tasks_review_mode_setting(workspace)
+            .unwrap_or_else(|| {
+                if self.tasks_default_reviewer(workspace).is_some() {
+                    proto::TaskReviewMode::Handback
+                } else {
+                    proto::TaskReviewMode::Manual
+                }
+            })
     }
 
     /// What the reviewer is asked to look for; a missing or unreadable value is
@@ -2925,9 +2939,9 @@ impl Daemon {
         }
     }
 
-    /// Review is off by default: `reviewer` of `None` stores `none`, the
-    /// reviewed rounds never exceed `TASKS_REWORK_ROUNDS_MAX`, and the mode and
-    /// focus are visible values that can be set back.
+    /// The stored values are the visible current values: no reviewer means no
+    /// automatic start, an unset mode reads as handback once a reviewer exists,
+    /// and the rounds never exceed `TASKS_REWORK_ROUNDS_MAX`.
     pub fn tasks_review_settings_set(
         &self,
         workspace: &str,
@@ -5258,12 +5272,18 @@ impl Daemon {
             }
         }
         self.broadcast_task_run(run.id);
-        if self.tasks_review_mode(row.workspace.as_deref().unwrap_or(""))
-            == proto::TaskReviewMode::Handback
-        {
+        let workspace = row.workspace.as_deref().unwrap_or("");
+        let allow_handback = match self.tasks_review_mode_setting(workspace) {
+            Some(proto::TaskReviewMode::Manual) | Some(proto::TaskReviewMode::EveryPush) => false,
+            Some(proto::TaskReviewMode::Handback) => true,
+            // Unset: a reviewer chosen at execution time, or configured on the
+            // workspace, keeps the handback review that existed before modes.
+            None => run.reviewer.is_some() || self.tasks_default_reviewer(workspace).is_some(),
+        };
+        if allow_handback {
             if let Some(reviewer) = run
                 .reviewer
-                .or_else(|| self.tasks_default_reviewer(row.workspace.as_deref().unwrap_or("")))
+                .or_else(|| self.tasks_default_reviewer(workspace))
             {
                 match self.task_review_internal(row, parent, reviewer, "task_execute", true, None) {
                     Ok(proto::ServerMsg::TaskRefused { message, .. }) => {

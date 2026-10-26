@@ -62,6 +62,15 @@ fn comments(rig: &Rig, task_id: i64) -> Vec<String> {
 }
 
 fn start_implementation(rig: &Rig, task_id: i64, caller: u32) -> (u32, PathBuf, String) {
+    start_implementation_with(rig, task_id, caller, Some(proto::AgentKind::Claude))
+}
+
+fn start_implementation_with(
+    rig: &Rig,
+    task_id: i64,
+    caller: u32,
+    reviewer: Option<proto::AgentKind>,
+) -> (u32, PathBuf, String) {
     install_fake_provider(rig);
     let msg = rig
         .daemon
@@ -70,7 +79,7 @@ fn start_implementation(rig: &Rig, task_id: i64, caller: u32) -> (u32, PathBuf, 
             task_id,
             caller,
             proto::AgentKind::Claude,
-            Some(proto::AgentKind::Claude),
+            reviewer,
             "task_execute",
         )
         .unwrap();
@@ -462,6 +471,66 @@ async fn every_push_records_a_refusal_note_once_per_head_and_reason() {
         .filter(|body| body.contains("every-push review not started"))
         .collect::<Vec<_>>();
     assert_eq!(notes.len(), 1, "{notes:?}");
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
+async fn a_configured_reviewer_without_a_mode_keeps_the_handback_review() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "A workspace from before review modes");
+    rig.db()
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![
+                format!("tasks_default_reviewer:{}", rig.workspace),
+                "claude"
+            ],
+        )
+        .unwrap();
+    let proto::ServerMsg::TaskReviewSettings { reviewer, mode, .. } =
+        rig.daemon.tasks_review_settings_state(&rig.workspace)
+    else {
+        panic!("not a review settings state");
+    };
+    assert_eq!(reviewer, Some(proto::AgentKind::Claude));
+    assert_eq!(
+        mode,
+        proto::TaskReviewMode::Handback,
+        "a configured reviewer keeps the previous automatic review"
+    );
+
+    let (impl_session, worktree, _branch) = start_implementation_with(&rig, task, caller, None);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    assert!(
+        latest_review(&rig, task)
+            .and_then(|run| run.session_id)
+            .is_some(),
+        "the reviewer still runs on handback"
+    );
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
+async fn an_explicit_task_execute_reviewer_starts_the_handback_review() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "A reviewer chosen at execution");
+    let (impl_session, worktree, _branch) = start_implementation(&rig, task, caller);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    assert!(
+        latest_review(&rig, task)
+            .and_then(|run| run.session_id)
+            .is_some(),
+        "the per-run reviewer starts the review"
+    );
     let _ = rig.daemon.kill(impl_session);
     let _ = rig.daemon.kill(caller);
 }
