@@ -1,9 +1,12 @@
-import { memo, useState } from 'react'
-import { IconFileDiff, IconFileText, IconSearch, IconSquareTerminal, IconWrench, type IconComponent } from '../icons'
+import { memo, useState, type ReactNode } from 'react'
+import { IconFileDiff, IconFileText, IconGlobe, IconMessageSquare, IconPencil, IconPlug, IconSearch, IconSparkles, IconSquareTerminal, IconTaskStatusTodo, IconUsers, IconWrench, type IconComponent } from '../icons'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText } from '../ui/Diff'
 import { Button } from '../ui/Button'
-import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadToolCard as ToolCardFrame, ThreadToolSection, type ThreadToolState } from '../ui/Thread'
-import { parseToolInput, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
+import { Tooltip } from '../ui/Tooltip'
+import { ThreadApprovalCard, ThreadApprovalNote, ThreadCaption, ThreadCodeBlock, ThreadDiffFrame, ThreadLineCounts, ThreadPlanCard, ThreadToolSection, ThreadWorkRow, type ThreadToolState } from '../ui/Thread'
+import { parseToolInput, planText, replacementDiff, toolSummary, writeDiff, type DiffRow, type ThreadItem } from '../../thread/threadModel'
+import { displayTarget, summaryOf, toolVerb } from '../../thread/threadTurns'
+import type { ToolKind } from '../../thread/threadTypes'
 
 type ToolItem = Extract<ThreadItem, { kind: 'tool' }>
 type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
@@ -11,14 +14,19 @@ type ApprovalItem = Extract<ThreadItem, { kind: 'approval' }>
 const INPUT_CAP_NOTE = 'Input cut at 8 KiB by Houston.'
 const OUTPUT_CAP_NOTE = 'Output cut at 16 KiB by Houston.'
 
-const TOOL_GLYPH: Record<string, IconComponent> = {
-  Bash: IconSquareTerminal,
-  Edit: IconFileDiff,
-  MultiEdit: IconFileDiff,
-  Write: IconFileDiff,
-  Read: IconFileText,
-  Grep: IconSearch,
-  Glob: IconSearch
+const TOOL_GLYPH: Record<ToolKind, IconComponent> = {
+  read: IconFileText,
+  search: IconSearch,
+  web: IconGlobe,
+  command: IconSquareTerminal,
+  edit: IconFileDiff,
+  write: IconPencil,
+  todo: IconTaskStatusTodo,
+  question: IconMessageSquare,
+  plan: IconSparkles,
+  task: IconUsers,
+  mcp: IconPlug,
+  other: IconWrench
 }
 
 function stateOf(item: ToolItem): ThreadToolState {
@@ -101,6 +109,7 @@ function ToolBody({ item }: { item: ToolItem }): React.JSX.Element {
     </>
   }
   return <>
+    {input === null && item.summary?.target ? <ThreadCaption>{item.summary.target}</ThreadCaption> : null}
     {item.input !== '' && <ThreadToolSection label="Input"><ThreadCodeBlock>{prettyInput(item.input)}</ThreadCodeBlock></ThreadToolSection>}
     {capNote}
     <OutputSection item={item} />
@@ -124,7 +133,7 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
   connected: boolean
   onAnswer: (requestId: string, allow: boolean) => void
 }): React.JSX.Element {
-  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, result: null, settled: true }
+  const asTool: ToolItem = { kind: 'tool', key: item.key, name: item.name, input: item.input, inputTruncated: false, summary: null, result: null, settled: true }
   const hidden = hiddenInputBytes(item)
   const locked = answering || !connected
   return (
@@ -149,18 +158,52 @@ export const ThreadApprovalRow = memo(function ThreadApprovalRow({ item, answeri
   )
 })
 
-export const ThreadToolRow = memo(function ThreadToolRow({ item }: { item: ToolItem }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
+/** Claude's plan (`ExitPlanMode`): Implement allows it, Keep planning denies it with the composer's text. */
+export function ThreadPlanRow({ item, answering, connected, renderPlan, onAnswer, onKeepPlanning }: {
+  item: ApprovalItem
+  answering: boolean
+  connected: boolean
+  renderPlan: (markdown: string) => ReactNode
+  onAnswer: (requestId: string, allow: boolean) => void
+  onKeepPlanning: (requestId: string) => void
+}): React.JSX.Element {
+  const plan = planText(item.input)
+  const locked = answering || !connected
   return (
-    <ToolCardFrame
-      glyph={TOOL_GLYPH[item.name] ?? IconWrench}
-      name={item.name}
-      summary={toolSummary(item.input)}
+    <ThreadPlanCard
+      state={item.state}
+      reason={item.reason}
+      status={answering ? 'Sending your answer…' : connected ? undefined : 'Reconnecting to the daemon'}
+      actions={<>
+        <Tooltip label="Claude keeps planning and reads what you wrote in the message box" className="inline-flex">
+          <Button data-testid="thread-plan-keep" variant="secondary" size="sm" disabled={locked} onClick={() => onKeepPlanning(item.requestId)}>Keep planning</Button>
+        </Tooltip>
+        <Button data-testid="thread-plan-implement" variant="primary" size="sm" disabled={locked} onClick={() => onAnswer(item.requestId, true)}>Implement</Button>
+      </>}
+    >
+      {plan !== null ? renderPlan(plan) : <>
+        <ThreadCodeBlock>{item.input}</ThreadCodeBlock>
+        {item.inputTruncated && <ThreadApprovalNote>The plan was cut at 64 KiB by Houston; Implement approves all of it.</ThreadApprovalNote>}
+      </>}
+    </ThreadPlanCard>
+  )
+}
+
+export const ThreadToolRow = memo(function ThreadToolRow({ item, cwd }: { item: ToolItem; cwd?: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const summary = summaryOf(item)
+  const counted = summary.kind === 'edit' || summary.kind === 'write'
+  return (
+    <ThreadWorkRow
+      glyph={TOOL_GLYPH[summary.kind]}
+      verb={toolVerb(item.name, summary.kind)}
+      target={displayTarget(summary.target, cwd)}
+      result={counted ? <ThreadLineCounts added={summary.added ?? null} removed={summary.removed ?? null} /> : undefined}
       state={stateOf(item)}
       open={open}
       onToggle={() => setOpen((value) => !value)}
     >
       <ToolBody item={item} />
-    </ToolCardFrame>
+    </ThreadWorkRow>
   )
 })

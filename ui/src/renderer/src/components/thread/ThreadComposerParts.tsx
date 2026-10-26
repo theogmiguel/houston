@@ -168,7 +168,7 @@ function picksRow(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
   return e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229
 }
 
-export interface ComposerDraft {
+export interface ComposerFields {
   text: string
   setText: (text: string) => void
   excerpts: readonly ThreadExcerpt[]
@@ -177,8 +177,8 @@ export interface ComposerDraft {
 }
 
 /** The `/` and `@` menus and the Quote selection picker: rows, active row and caret. `onKey` says whether the menu used the key. */
-export function useComposerMenus({ draft, commands, root, terminal, input }: {
-  draft: ComposerDraft
+export function useComposerMenus({ fields, commands, root, terminal, input }: {
+  fields: ComposerFields
   commands: ThreadCommands | null
   root: string
   terminal?: { refusal: string | null; open: () => void }
@@ -192,7 +192,7 @@ export function useComposerMenus({ draft, commands, root, terminal, input }: {
   closePicker: () => void
   startQuote: () => void
 } {
-  const { text, setText, excerpts, setExcerpts, setRefusal } = draft
+  const { text, setText, excerpts, setExcerpts, setRefusal } = fields
   const [caret, setCaret] = useState(0)
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)

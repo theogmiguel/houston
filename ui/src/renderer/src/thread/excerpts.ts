@@ -1,7 +1,7 @@
 import { THREAD_EXCERPTS_MAX, THREAD_EXCERPT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES } from '../houston/generated/DEFAULTS'
 import type { ThreadExcerpt } from './threadTypes'
 
-function utf8Length(text: string): number {
+export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length
 }
 

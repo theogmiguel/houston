@@ -45,8 +45,8 @@
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {
-      "total": 51,
-      "worst": 28,
+      "total": 40,
+      "worst": 26,
       "over": 1
     },
     "src/renderer/src/components/ui/Chip.tsx": {

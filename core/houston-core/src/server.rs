@@ -1715,6 +1715,7 @@ fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::ThreadSend { session, .. }
         | proto::ClientMsg::ThreadStop { session }
         | proto::ClientMsg::ThreadApprove { session, .. }
+        | proto::ClientMsg::ThreadAnswer { session, .. }
         | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
         | proto::ClientMsg::ThreadHistory { session, .. }
         | proto::ClientMsg::ThreadQueueList { session }
@@ -1989,6 +1990,16 @@ async fn dispatch(
             })
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("thread approve panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadAnswer {
+            session,
+            request_id,
+            answers,
+        } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_answer(session, &request_id, answers))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread answer panicked: {e}")))
         }
         proto::ClientMsg::ThreadSetPermissionMode { session, mode } => {
             let d = Arc::clone(daemon);

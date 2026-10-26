@@ -65,7 +65,7 @@ output readers.
 ## Threads
 
 A **thread** shows a Claude session as a conversation instead of a terminal: your
-messages, Claude's answers rendered as Markdown, and one collapsed card per tool call.
+messages, Claude's answers rendered as Markdown, and a work log of what Claude did.
 Open one from the pane **+** menu under **Thread**, or choose **Claude thread** in an
 empty grid. Threads sit in the grid beside terminal panes, keep the same pane header and
 menu, and run at the same time. Only Claude supports the thread view; other agents open
@@ -118,11 +118,24 @@ most four selections of 16 KiB each, and the whole message, selections included,
 within 256 KiB; this also holds when you edit a queued message. A `/` command cannot carry
 quoted selections. Claude receives each selection as a quoted block before your text.
 
-Expand a tool card to see its input and output. Shell commands show the command and its
-output, and file edits and writes show a diff. Houston cuts tool input at 8 KiB and
-output at 16 KiB and says so on the card. Houston keeps each thread's history on this
-machine, up to 20,000 events or 8 MiB, removing the oldest first with a note in the
-thread; the history is deleted when you close the pane. A pane shows the latest
+The work log shows each tool call as one row: what Claude did and to what (for example
+**Read**, **Edited** or **Ran**), with line counts for an edit and **Failed** for a call
+that returned an error. Select a row to see its input and output: shell commands show the
+command and its output, and file edits and writes show a diff. Houston cuts tool input at
+8 KiB and output at 16 KiB and says so in the row's details. When Claude reasons before a
+step, a row reads **Thinking** and then, for example, "Thought for 12s · ~800 tokens", with
+Claude's own estimate of the reasoning's size. Claude does not send its reasoning text to a
+thread, so the row has nothing to open.
+
+When a turn ends, its work folds into one summary row, such as "Worked for 2m 14s · Read 6
+files · Changed 2 files", "Stopped after 41s" or "Failed after 3m 02s". Select it to open
+the turn again. The final answer, failed calls and notices stay visible in a folded turn.
+A turn that edited files ends with a list of those files and their line counts; **Open
+diff** opens the Changes panel at that file, which shows the file's current changes in the
+repository rather than only this turn's. A file outside the pane's folder, such as a
+plan Claude saved in your home directory, has no diff to open. Houston keeps each
+thread's history on this machine, up to 20,000 events or 8 MiB, removing the oldest
+first with a note in the thread; the history is deleted when you close the pane. A pane shows the latest
 messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.
 The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
 a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it
@@ -137,15 +150,25 @@ request nobody answered; if Houston itself restarts, the card shows it was not a
 Houston answers these requests only in threads; in a terminal pane Claude asks in its own
 prompt.
 
-A thread cannot show multiple-choice questions yet. When Claude wants to ask one, Houston
-tells it to ask in its reply instead, and you answer in the message box.
+When Claude asks a multiple-choice question, the question appears above the message box
+with one page per question. Choose an option with a click or its number key, or choose
+**Type it your own** to write an answer; some questions take several options. **Submit**
+sends every answer to Claude, and **Skip** tells Claude you skipped the question. The
+timeline keeps each question with your answer. Stopping or closing the thread before you
+answer leaves the question unanswered.
+
+When Claude finishes a plan in **Plan only**, the thread shows it as a plan card. Choose
+**Implement** to let Claude start, or **Keep planning** to send what you wrote in the
+message box as your feedback; Claude keeps planning with it. Feedback is limited to 4 KiB:
+a longer message is not sent, and Houston keeps it in the message box and says how long it
+is.
 
 The **Permissions** menu above the timeline shows how the thread asks: **Ask before
 tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
 **Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
 conversation with the new mode and keeps it across Restart. The menu is unavailable while
 a turn runs or Claude waits for an answer. When Claude changes its own mode, for example
-by leaving **Plan only** after you allow its plan, the menu shows the new mode.
+by leaving **Plan only** after you choose **Implement**, the menu shows the new mode.
 
 ### Moving a conversation between views
 

@@ -107,7 +107,8 @@ failure not given a typed refusal comes back as `error`.
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
 | `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank; the same limit applies to orchestration deliveries) | v150: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. v155: `steer` (default false). Without `steer`, sent at once (`delivery: direct`) while no turn is open and no message is `queued` (held messages do not count); otherwise it joins the queue as `queued` and `thread_queue` (bcast) follows. With `steer`, an open turn is stopped (`turn_end{interrupted}`) and this message is sent first, ahead of the queue (`delivery: steered`); with no turn open it is sent at once and the queue stays as it is. The daemon never writes a message to Claude while a turn is open, including a turn Claude started itself (`system/init` opens a turn). v156: `excerpts: ThreadExcerpt[]` (default empty; at most `THREAD_EXCERPTS_MAX` (4), each `text` non-blank and at most `THREAD_EXCERPT_MAX_BYTES` (16 KiB), `source` 1 to 256 bytes); with an excerpt `text` may be blank. Claude reads each excerpt as a fenced block headed `Terminal selection from pane "<source>":` before `text`, and the composed message must fit `THREAD_USER_MESSAGE_MAX_BYTES`; the stored `user_message` and a queued message keep `text` and `excerpts` apart. Refusals name the limit and the size. A message whose text starts with `/name` is a Claude command, which Claude runs in the thread. The daemon refuses, by name and on every path (`thread_send`, `thread_queue_edit`, the queue's delivery, `pane_prompt` and a first message), one whose name is in the stored `terminal_only` list or is a command that changes Claude's settings, bills, changes consent or reads its configuration; before Claude's first `system/init` it refuses the built-ins not verified headless. A command with excerpts is refused (`a command cannot carry quoted selections`). v156: the session id Claude's stream reports becomes the session's resume handle when it changes (after `/clear`, and without hooks) |
 | `thread_stop` | `session` | v150: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
-| `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v151: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones; the refusal starts `thread_approve refused for session <id>`. `message` is cut at 4 KiB |
+| `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v151: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones; the refusal starts `thread_approve refused for session <id>`. a `message` over `APPROVAL_MESSAGE_MAX_BYTES` (4 KiB, in `DEFAULTS.ts`) is refused by name, never cut, and the request stays held |
+| `thread_answer` | `session`, `request_id`, `answers?: QuestionAnswer[]` (absent or `null` skips the question) | v154: `thread_events` (bcast) with `question_resolved`; the held `AskUserQuestion` call returns to Claude as an allow whose `updatedInput` is Claude's input plus `answers` (question text to the chosen labels and the user's own text, joined with `, `), or, for a skip, as a deny reading "The user skipped the question.". Refused by name for a terminal session and for a `request_id` that is not a held question; refused when an answer names no question of the request, leaves a question unanswered, answers one twice, chooses a label that is not an option, chooses more than one answer for a single-choice question, or types more than `THREAD_QUESTION_OTHER_MAX_BYTES` (4 KiB). The refusal starts `thread_answer refused for session <id>` and the question stays held |
 | `thread_set_permission_mode` | `session`, `mode: ThreadPermissionMode` | v151: `session_updated` (bcast) with the new `permission_mode`; restarts a running process with the mode's flags and `--resume`, then records the mode for Restart and restore. Refused while the session is working or waiting for input (naming the status), while a turn is open or while a permission request waits (naming the cause); `auto` is refused for a model that cannot run it. Refused by name for a terminal session. `permission_mode` also changes, with `session_updated`, when Claude reports another mode in `system/init` or `system/status` (for example after ExitPlanMode) |
 | `thread_queue_list` | `session` | v155: `thread_queue` (direct). Refused by name for a terminal or unknown session |
 | `thread_commands_list` | `session` | v156: `thread_commands` (direct), from the database; empty lists before the thread's first turn. Refused by name for a terminal or unknown session |
@@ -668,7 +669,16 @@ ThreadEventKind    tag `type`: user_message{text, delivery: MessageDelivery (v15
                    `direct`), excerpts: ThreadExcerpt[] (v156; absent reads as empty)} | assistant_delta{message_id, text} (live only,
                    never stored) | assistant_message{message_id, text, truncated} (supersedes the
                    deltas with its `message_id`, which names one text block of one model message) |
-                   tool_call{tool_use_id, name, input (the input JSON as text), truncated} |
+                   reasoning_delta{message_id, text?, estimated_tokens?, redacted?} (v153: live
+                   only, never stored) | reasoning{message_id, text?, truncated?, duration_ms?,
+                   estimated_tokens?, redacted?} (v153: one reasoning block, superseding its
+                   deltas; `duration_ms` runs from the first delta to the block's end on the
+                   daemon's clock; `estimated_tokens` is the CLI's estimate of the block's size;
+                   `text` is empty because Claude's headless stream sends none; a block cut
+                   off by `thread_stop`, an exit or a turn's end is stored with `truncated`) |
+                   tool_call{tool_use_id, name, input (the input JSON as text), truncated,
+                   summary?: ToolSummary} (v153: `summary` is computed from the whole input, so it
+                   survives the input cap; events stored earlier have none) |
                    tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
                    `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
                    turn_end{outcome: TurnOutcome, error?} | notice{text} (v156 also when Claude
@@ -678,9 +688,26 @@ ThreadEventKind    tag `type`: user_message{text, delivery: MessageDelivery (v15
                    is cut at `THREAD_APPROVAL_INPUT_MAX_BYTES` (64 KiB) and `input_bytes` is the
                    whole input's size; names and ids are cut at 256 bytes) |
                    approval_resolved{request_id, decision: ApprovalDecision, reason?} (v151;
-                   `reason` is the denial message or why nobody answered).
+                   `reason` is the denial message or why nobody answered) |
+                   question_request{request_id, tool_use_id, questions: ThreadQuestion[],
+                   truncated} (v154: Claude's `AskUserQuestion`, held like an approval; a header
+                   or option description is cut at `THREAD_QUESTION_TEXT_MAX_BYTES` (2 KiB) and
+                   `truncated` says so; a longer question or label, more than
+                   `THREAD_QUESTIONS_MAX` (8) questions or `THREAD_QUESTION_OPTIONS_MAX` (16)
+                   options, a repeated question or label, or a missing field makes the input
+                   malformed, and Claude is told to ask in its reply instead) |
+                   question_resolved{request_id, outcome: QuestionOutcome, answers:
+                   QuestionAnswer[], reason?} (v154: `answers` are what the user chose, one per
+                   question, and are empty unless `answered`; `reason` says why nobody
+                   answered).
                    Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
-                   `truncated` says a cap applied
+                   `truncated` says a cap applied, except on `reasoning`, where it means the
+                   block was cut off before its end
+ToolSummary        kind: ToolKind, target (path, command, pattern, URL or `server · tool`, cut at
+                   `THREAD_TOOL_TARGET_MAX_BYTES`, 512 bytes), added?, removed? (line counts of an
+                   edit or a write)
+ToolKind           read | search | web | command | edit | write | todo | question | plan | task |
+                   mcp | other
 TurnOutcome        completed | interrupted | error
 MessageDelivery    direct (no turn open, nothing queued) | queued (waited in the thread's queue) |
                    steered (stopped the open turn and went first)
@@ -696,6 +723,12 @@ QueuedState        queued (sent when the open turn completes) | held (sent only 
                    `hold_reason` says why)
 ApprovalDecision   allowed | denied | withdrawn (Claude ended the call, or Houston restarted,
                    before an answer; the tool did not run)
+ThreadQuestion     question, header, options: ThreadQuestionOption[], multi_select
+ThreadQuestionOption label, description
+QuestionAnswer     question (the question's text), selected (option labels), other? (the user's
+                   own text)
+QuestionOutcome    answered | skipped | denied (Stop, Kill, Close or the process's exit came
+                   first) | withdrawn (Claude ended the call, or Houston restarted, first)
 ThreadPermissionMode default | accept_edits | plan | auto | bypass (Claude's `--permission-mode`
                    default, acceptEdits, plan, auto, and `--dangerously-skip-permissions`)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
@@ -1465,6 +1498,8 @@ Only the current window; older bumps live in git history.
 |---|---|
 | 156 | **A thread's composer offers Claude's `/` commands and quotes terminal selections.** `thread_send`, `user_message` and `ThreadQueuedMessage` gain `excerpts: ThreadExcerpt[]`. New `thread_commands_list`, answered by `thread_commands` (bcast on change). New caps `THREAD_EXCERPTS_MAX` and `THREAD_EXCERPT_MAX_BYTES` in `DEFAULTS.ts`. Claims v156 after v155 on the composer branches; renumber at merge. |
 | 155 | **A thread queues messages written during a turn.** `thread_send` gains `steer`; `user_message` gains `delivery: MessageDelivery`. New `thread_queue_list`, `thread_queue_edit`, `thread_queue_remove`, `thread_queue_send` and `thread_steer`, answered by `thread_queue` (`ThreadQueuedMessage`, `QueuedState`). `session_set_view` is refused while the thread's queue holds a message. New caps `THREAD_QUEUE_MAX_ITEMS` and `THREAD_QUEUE_MAX_BYTES` in `DEFAULTS.ts`. Claims v155 after v153 and v154 on the timeline branches; renumber at merge. |
+| 154 | **Threads ask questions with choices.** `ThreadEventKind` gains `question_request` (`ThreadQuestion`, `ThreadQuestionOption`) and `question_resolved` (`QuestionOutcome`, `QuestionAnswer`). New `thread_answer` answers or skips a held question. Claims v154 after v153; renumber at merge. |
+| 153 | **Threads show their work log.** `ThreadEventKind` gains `reasoning` (stored, with duration and token estimate; `truncated` when cut off before its end) and `reasoning_delta` (live only). `tool_call` gains `summary?: ToolSummary` (`ToolKind`, a target cut at `THREAD_TOOL_TARGET_MAX_BYTES`, edit line counts) computed before the input cap. `pane_read` of a thread adds no reasoning text. Claims v153 after v152; renumber at merge. |
 | 152 | **A conversation moves between thread and terminal views.** New `session_set_view {session, view}`, answered like a respawn and refused by name while the agent works. New `default_view_get {}` / `default_view_set {view}` and the `default_view {view}` broadcast. Claims v152 after PR 3's v151; renumber at merge. |
 | 151 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |
 | 150 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct, echoing `before_seq`), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |

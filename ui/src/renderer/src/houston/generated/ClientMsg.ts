@@ -22,6 +22,7 @@ import type { PrSort } from "./PrSort";
 import type { PrStackHead } from "./PrStackHead";
 import type { PrUpdateMethod } from "./PrUpdateMethod";
 import type { ProfileChoice } from "./ProfileChoice";
+import type { QuestionAnswer } from "./QuestionAnswer";
 import type { RemoteGrid } from "./RemoteGrid";
 import type { RemoteNotifyDetail } from "./RemoteNotifyDetail";
 import type { RemoteTier } from "./RemoteTier";
@@ -54,7 +55,7 @@ view?: SessionView | null, } | { "type": "session_kill", session: number, confir
 /**
  * At most `THREAD_EXCERPTS_MAX`; `text` may be blank when there is one.
  */
-excerpts: Array<ThreadExcerpt>, } | { "type": "thread_stop", session: number, } | { "type": "thread_approve", session: number, request_id: string, allow: boolean, message?: string | null, } | { "type": "thread_set_permission_mode", session: number, mode: ThreadPermissionMode, } | { "type": "session_set_view", session: number, view: SessionView, } | { "type": "default_view_get", } | { "type": "default_view_set", view: SessionView, } | { "type": "thread_history", session: number, before_seq?: number | null, limit: number, } | { "type": "thread_queue_list", session: number, } | { "type": "thread_queue_edit", session: number, id: string, text: string, } | { "type": "thread_queue_remove", session: number, id: string, } | { "type": "thread_queue_send", session: number, id: string, } | { "type": "thread_steer", session: number, id: string, } | { "type": "thread_commands_list", session: number, } | { "type": "session_list" } | { "type": "pr_watch_list" } | { "type": "session_attach", session: number, replay_bytes?: number | null, snapshot?: boolean | null,
+excerpts: Array<ThreadExcerpt>, } | { "type": "thread_stop", session: number, } | { "type": "thread_approve", session: number, request_id: string, allow: boolean, message?: string | null, } | { "type": "thread_answer", session: number, request_id: string, answers?: Array<QuestionAnswer> | null, } | { "type": "thread_set_permission_mode", session: number, mode: ThreadPermissionMode, } | { "type": "session_set_view", session: number, view: SessionView, } | { "type": "default_view_get", } | { "type": "default_view_set", view: SessionView, } | { "type": "thread_history", session: number, before_seq?: number | null, limit: number, } | { "type": "thread_queue_list", session: number, } | { "type": "thread_queue_edit", session: number, id: string, text: string, } | { "type": "thread_queue_remove", session: number, id: string, } | { "type": "thread_queue_send", session: number, id: string, } | { "type": "thread_steer", session: number, id: string, } | { "type": "thread_commands_list", session: number, } | { "type": "session_list" } | { "type": "pr_watch_list" } | { "type": "session_attach", session: number, replay_bytes?: number | null, snapshot?: boolean | null,
 /**
  * The output offset the client already holds. With a matching `generation`
  * and an offset still inside the ring, the reply carries only the bytes

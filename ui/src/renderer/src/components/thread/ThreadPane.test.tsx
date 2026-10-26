@@ -3,12 +3,13 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, ServerMsg, SessionInfo } from '../../houston/client'
+import { APPROVAL_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
 import { THREAD_HISTORY_PAGE } from '../../thread/threadStore'
 import { THREAD_WINDOW_MAX, THREAD_WINDOW_PAGE } from '../../thread/threadModel'
 import type { ThreadEvent, ThreadEventKind, ThreadQueuedMessage } from '../../thread/threadTypes'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { THREAD_STOPPED_COPY } from '../ui/Thread'
-import { ThreadPane, composerIntent, queueSummary } from './ThreadPane'
+import { KEEP_PLANNING_DEFAULT, ThreadPane, composerIntent, queueSummary } from './ThreadPane'
 import { registerTerminalSelection } from '../../pane/terminalSelection'
 
 const search = vi.hoisted(() => vi.fn())
@@ -81,7 +82,7 @@ describe('ThreadPane', () => {
 
   const mount = (over: Partial<SessionInfo> = {}, connected = true): void => {
     act(() => {
-      root.render(<ThreadPane client={fake.client} info={info(over)} connected={connected} />)
+      root.render(<ThreadPane client={fake.client} info={info(over)} connected={connected} active />)
     })
   }
   const history = (events: ThreadEvent[], hasMore = false, beforeSeq: number | null = null): void => {
@@ -124,6 +125,30 @@ describe('ThreadPane', () => {
     live([ev(6, delta('x', 'late'))])
     expect(rows('assistant')).toEqual(['Hello.'])
     expect(container.querySelector('[data-streaming]')).toBeNull()
+  })
+
+  it('folds a settled turn into its summary and opens it on click, while a live turn stays open', () => {
+    mount({ cwd: '/repo' })
+    const call = (id: string, name: string, input: object): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name, input: JSON.stringify(input), truncated: false })
+    const result = (id: string, isError = false): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: isError, output: 'out', truncated: false })
+    history([
+      { seq: 1, at_ms: 0, kind: user('fix it') },
+      { seq: 2, at_ms: 10, kind: call('e', 'Edit', { file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'b' }) },
+      { seq: 3, at_ms: 20, kind: result('e') },
+      { seq: 4, at_ms: 30, kind: call('b', 'Bash', { command: 'false' }) },
+      { seq: 5, at_ms: 40, kind: result('b', true) },
+      { seq: 6, at_ms: 14_000, kind: said('m', 'Fixed.') },
+      { seq: 7, at_ms: 14_000, kind: turnEnd() },
+      { seq: 8, at_ms: 15_000, kind: user('again') },
+      { seq: 9, at_ms: 15_100, kind: call('r', 'Read', { file_path: '/repo/src/a.ts' }) }
+    ])
+    expect(rows('turn')).toEqual(['Worked for 14s · Changed 1 file · Ran 1 command'])
+    expect(rows('tool')).toEqual(['RanfalseFailed', 'Readsrc/a.tsRunning'])
+    expect(rows('assistant')).toEqual(['Fixed.'])
+    expect(rows('changes')[0]).toContain('src/a.ts')
+    act(() => container.querySelector<HTMLButtonElement>('[data-thread-item="turn"] button')!.click())
+    expect(rows('tool')).toHaveLength(3)
+    expect(container.querySelector('[data-thread-item="turn"] button')!.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('ignores a history reply that answers no request of this pane', () => {
@@ -262,6 +287,150 @@ describe('ThreadPane', () => {
     expect(container.textContent).toContain('40 KiB more input is not shown')
     mount({ status: 'needs-input' }, false)
     expect(allow().disabled).toBe(true)
+  })
+
+  it('asks a held question above the composer, sends the chosen answers and records them', () => {
+    mount({ status: 'needs-input' })
+    const questions = [
+      { question: 'Which colour do you prefer?', header: 'Colour', multi_select: false, options: [{ label: 'Red', description: 'Warm' }, { label: 'Blue', description: 'Cool' }] },
+      { question: 'Which fruits?', header: 'Fruit', multi_select: true, options: [{ label: 'Plums', description: '' }, { label: 'Figs', description: '' }] }
+    ]
+    history([ev(1, user('Ask me')), ev(2, { type: 'question_request', request_id: 'q1', tool_use_id: 't1', questions, truncated: false })])
+    const options = (): HTMLButtonElement[] => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="question-card-option"]')]
+    const button = (testId: string): HTMLButtonElement => container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)!
+    expect(container.querySelector('[data-testid="question-card-pager"]')!.textContent).toContain('1 of 2 › · Colour')
+    expect(rows('question')[0]).toContain('Waiting for your answer below')
+    expect(button('question-card-next').disabled).toBe(true)
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: '2' })) })
+    expect(options()[1]!.getAttribute('aria-pressed')).toBe('true')
+    type('3')
+    act(() => { input().dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true })) })
+    expect(options()[0]!.getAttribute('aria-pressed')).toBe('false')
+    click('question-card-next')
+    expect(button('question-card-submit').disabled).toBe(true)
+    act(() => options()[0]!.click())
+    act(() => options()[1]!.click())
+    click('question-card-escape-hatch')
+    const freeText = container.querySelector<HTMLTextAreaElement>('[data-testid="question-card-freetext"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(freeText, '  pears ')
+      freeText.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    click('question-card-submit')
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_answer', session: 7, request_id: 'q1', answers: [
+      { question: 'Which colour do you prefer?', selected: ['Blue'], other: null },
+      { question: 'Which fruits?', selected: ['Plums', 'Figs'], other: 'pears' }
+    ] })
+    expect(button('question-card-skip').disabled).toBe(true)
+    act(() => fake.emit({ type: 'error', message: 'thread_answer refused for session 7: no held question "q1"', context: 'session:7' }))
+    expect(button('question-card-skip').disabled).toBe(false)
+    click('question-card-skip')
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_answer', session: 7, request_id: 'q1', answers: null })
+    live([ev(3, { type: 'question_resolved', request_id: 'q1', outcome: 'answered', answers: [
+      { question: 'Which colour do you prefer?', selected: ['Blue'], other: null },
+      { question: 'Which fruits?', selected: ['Plums', 'Figs'], other: 'pears' }
+    ], reason: null })])
+    expect(container.querySelector('[data-testid="thread-question-dock"]')).toBeNull()
+    expect(rows('question')[0]).toContain('Answered')
+    expect(rows('question')[0]).toContain('Plums, Figs, pears')
+    live([ev(4, turnEnd())])
+    expect(rows('question')).toHaveLength(1)
+  })
+
+  it('gives a number key only to the question of the focused pane', () => {
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    const other = createRoot(second)
+    const questions = [{ question: 'Which colour?', header: '', multi_select: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }]
+    act(() => {
+      root.render(<ThreadPane client={fake.client} info={info({ status: 'needs-input' })} connected active />)
+      other.render(<ThreadPane client={fake.client} info={info({ id: 8, status: 'needs-input' })} connected active={false} />)
+    })
+    for (const session of [7, 8]) {
+      act(() => fake.emit({ type: 'thread_history', session, before_seq: null, events: [ev(1, { type: 'question_request', request_id: `q${session}`, tool_use_id: 't', questions, truncated: false })], has_more: false }))
+    }
+    const pressed = (host: HTMLElement): (string | null)[] => [...host.querySelectorAll('[data-testid="question-card-option"]')].map((option) => option.getAttribute('aria-pressed'))
+    const key = (k: string): void => { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })) }) }
+    key('1')
+    expect(pressed(container)).toEqual(['true', 'false'])
+    expect(pressed(second)).toEqual(['false', 'false'])
+    act(() => second.querySelector<HTMLButtonElement>('[data-testid="question-card-skip"]')!.focus())
+    key('2')
+    expect(pressed(container)).toEqual(['true', 'false'])
+    expect(pressed(second)).toEqual(['false', 'true'])
+    act(() => other.unmount())
+    second.remove()
+  })
+
+  it('takes no number keys while the grid is hidden, a dialog holds focus or focus is outside the grid', () => {
+    const slot = document.createElement('div')
+    slot.className = 'grid-slot'
+    document.body.appendChild(slot)
+    const slotRoot = createRoot(slot)
+    const questions = [{ question: 'Which colour?', header: '', multi_select: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }]
+    act(() => slotRoot.render(<ThreadPane client={fake.client} info={info({ status: 'needs-input' })} connected active />))
+    history([ev(1, { type: 'question_request', request_id: 'q7', tool_use_id: 't', questions, truncated: false })])
+    const pressed = (): (string | null)[] => [...slot.querySelectorAll('[data-testid="question-card-option"]')].map((option) => option.getAttribute('aria-pressed'))
+    const key = (k: string): void => { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })) }) }
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inDialog = document.createElement('button')
+    dialog.appendChild(inDialog)
+    const outside = document.createElement('button')
+    document.body.append(dialog, outside)
+    act(() => inDialog.focus())
+    key('1')
+    act(() => outside.focus())
+    key('1')
+    act(() => outside.blur())
+    slot.setAttribute('inert', '')
+    key('1')
+    expect(pressed()).toEqual(['false', 'false'])
+    slot.removeAttribute('inert')
+    key('1')
+    expect(pressed()).toEqual(['true', 'false'])
+    act(() => slotRoot.unmount())
+    slot.remove()
+    dialog.remove()
+    outside.remove()
+  })
+
+  it('refuses Keep planning feedback over the limit by name and keeps the text', () => {
+    mount({ status: 'needs-input' })
+    const plan = JSON.stringify({ plan: 'Make the rail sort stable.' })
+    history([ev(1, user('Plan it')), ev(2, { type: 'approval_request', request_id: 'p1', tool_use_id: 't1', tool_name: 'ExitPlanMode', input: plan, truncated: false, input_bytes: plan.length })])
+    const long = 'x'.repeat(APPROVAL_MESSAGE_MAX_BYTES + 1)
+    type(long)
+    act(() => container.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.filter((msg) => msg.type === 'thread_approve')).toEqual([])
+    expect(input().value).toBe(long)
+    expect(container.textContent).toContain(`it is ${(APPROVAL_MESSAGE_MAX_BYTES + 1).toLocaleString()} bytes and Keep planning takes up to ${APPROVAL_MESSAGE_MAX_BYTES.toLocaleString()} bytes`)
+  })
+
+  it('implements a plan, or keeps planning with the message box text as the reason', () => {
+    mount({ status: 'needs-input' })
+    const plan = JSON.stringify({ plan: 'Make the rail sort stable.', planFilePath: '/home/dev/.claude/plans/p.md' })
+    history([
+      ev(1, user('Plan it')),
+      ev(2, { type: 'approval_request', request_id: 'p1', tool_use_id: 't1', tool_name: 'ExitPlanMode', input: plan, truncated: false, input_bytes: plan.length }),
+      ev(3, { type: 'approval_request', request_id: 'p2', tool_use_id: 't2', tool_name: 'ExitPlanMode', input: '{"plan":"Cut', truncated: true, input_bytes: 70_000 })
+    ])
+    const cards = (): HTMLElement[] => [...container.querySelectorAll<HTMLElement>('[data-thread-item="plan"]')]
+    expect(container.querySelector('[data-thread-item="approval"]')).toBeNull()
+    expect(cards()[0]!.textContent).toContain('Make the rail sort stable.')
+    expect(cards()[0]!.textContent).not.toContain('planFilePath')
+    expect(cards()[1]!.textContent).toContain('The plan was cut at 64 KiB by Houston')
+    type('Split the second step.')
+    act(() => cards()[0]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'p1', allow: false, message: 'Split the second step.' })
+    expect(input().value).toBe('')
+    act(() => cards()[1]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-keep"]')!.click())
+    expect(fake.sent.at(-1)).toMatchObject({ request_id: 'p2', allow: false, message: KEEP_PLANNING_DEFAULT })
+    act(() => fake.emit({ type: 'error', message: 'thread_approve refused for session 7: no pending permission request "p2" (pending: ["p1"])', context: 'session:7' }))
+    act(() => cards()[1]!.querySelector<HTMLButtonElement>('[data-testid="thread-plan-implement"]')!.click())
+    expect(fake.sent.at(-1)).toEqual({ type: 'thread_approve', session: 7, request_id: 'p2', allow: true })
+    live([ev(4, { type: 'approval_resolved', request_id: 'p1', decision: 'denied', reason: 'Split the second step.' }), ev(5, turnEnd())])
+    expect(cards()[0]!.textContent).toContain('Kept planning · Split the second step.')
   })
 
   it('locks the permission mode while a turn is open even before the status says so', () => {
@@ -606,5 +775,44 @@ describe('ThreadPane', () => {
       history([ev(1, { type: 'user_message', delivery: 'direct', text: 'Why?', excerpts: [{ source: 'build', session: 9, text: 'a\nb' }] })])
       expect(rows('user')).toEqual(['build · 2 linesWhy?'])
     })
+  })
+
+  it('offers Open diff only for files under the pane folder', () => {
+    mount({ cwd: '/repo' })
+    const call = (id: string, name: string, input: object): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name, input: JSON.stringify(input), truncated: false })
+    const done = (id: string): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: false, output: 'ok', truncated: false })
+    history([
+      { seq: 1, at_ms: 0, kind: user('plan it') },
+      { seq: 2, at_ms: 10, kind: call('w', 'Write', { file_path: '/home/dev/.claude/plans/p.md', content: 'plan\n' }) },
+      { seq: 3, at_ms: 20, kind: done('w') },
+      { seq: 4, at_ms: 30, kind: call('e', 'Edit', { file_path: '/repo/src/a.ts', old_string: 'a', new_string: 'b' }) },
+      { seq: 5, at_ms: 40, kind: done('e') },
+      { seq: 6, at_ms: 50, kind: turnEnd() }
+    ])
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('[data-thread-item="changes"] li button')]
+    expect(buttons.map((button) => [button.closest('li')!.textContent, button.disabled])).toEqual([
+      [expect.stringContaining('/home/dev/.claude/plans/p.md'), true],
+      [expect.stringContaining('src/a.ts'), false]
+    ])
+  })
+
+  it('keeps the reading position when the row it ends at folds away', () => {
+    mount()
+    const read = (id: string): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name: 'Read', input: JSON.stringify({ file_path: `/r/${id}` }), truncated: false })
+    const done = (id: string): ThreadEventKind => ({ type: 'tool_result', tool_use_id: id, is_error: false, output: 'ok', truncated: false })
+    const before = Array.from({ length: 600 }, (_, i) => ev(i + 1, user(`u${i + 1}`)))
+    const work = Array.from({ length: 10 }, (_, i) => [ev(602 + 2 * i, read(`t${i}`)), ev(603 + 2 * i, done(`t${i}`))]).flat()
+    const after = Array.from({ length: 143 }, (_, i) => ev(i + 700, user(`v${i}`)))
+    history([...before, ev(601, user('work')), ...work, ev(650, said('m', 'Done.')), ev(651, turnEnd()), ...after])
+    const toggle = (): void => act(() => container.querySelector<HTMLButtonElement>('[data-thread-item="turn"] button')!.click())
+    toggle()
+    // The first click grows the window; the second passes its cap and slides it to end at a Read row.
+    for (let i = 0; i < 2; i++) click('thread-show-earlier')
+    expect(rows('tool').length).toBeGreaterThan(0)
+    expect(rows('user')).not.toContain('v142')
+    toggle()
+    expect(rows('user')).not.toContain('v142')
+    const items = [...container.querySelectorAll('[data-thread-item]')]
+    expect(items.at(-1)!.getAttribute('data-thread-item')).toBe('turn')
   })
 })
