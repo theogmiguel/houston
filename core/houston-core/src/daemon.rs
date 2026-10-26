@@ -1649,6 +1649,7 @@ mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
+mod thread_questions;
 mod threads;
 pub(crate) use threads::PermissionPrompt;
 mod title_generation;

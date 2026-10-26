@@ -226,9 +226,21 @@
     "Re-cut against 954,076 bytes (one boot chunk, Windows build) with the same small headroom:",
     "the pane menu refuses Open in terminal while a thread's queue holds messages, so",
     "the queue-length signal (`thread/queueLength.ts`) and the WSL routes for the six",
-    "queue messages are boot-path code; the queue rows, strip and store stay lazy."
+    "queue messages are boot-path code; the queue rows, strip and store stay lazy.",
+    "",
+    "Re-cut against 954,726 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the Changes panel and the app shell listen for a thread's Open diff request and",
+    "select that file; the work log itself loads with the thread pane.",
+    "",
+    "Re-cut against 954,798 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the WSL route and refusal pattern of thread_answer join the boot path; the question and",
+    "plan cards load with the thread pane.",
+    "",
+    "Re-cut against 955,494 bytes (one boot chunk, Windows build) with the same small headroom:",
+    "the lane join carries both lanes' boot-path pieces, the queue-length signal and",
+    "queue routes beside the work-log Open diff listener and the thread_answer route."
   ],
-  "maxBootBytes": 954280,
+  "maxBootBytes": 955700,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

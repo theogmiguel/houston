@@ -241,10 +241,9 @@ pub(crate) enum PermissionPrompt {
     ),
 }
 
-/// Claude's question tool needs answers the card cannot collect yet, so it is refused
-/// with a message that sends the question into Claude's reply.
-const ASK_USER_QUESTION: &str = "AskUserQuestion";
-const ASK_IN_REPLY: &str = "Ask the question in your reply; this thread cannot show choices yet.";
+/// A question Houston cannot show as choices is refused with this message, which sends it
+/// into Claude's reply.
+const ASK_IN_REPLY: &str = "Ask the question in your reply; Houston cannot show it as choices";
 
 /// The status source of a permission request Houston itself holds for a thread.
 const THREAD_APPROVAL_SOURCE: &str = "thread_approval";
@@ -254,8 +253,8 @@ const DENIED_IN_HOUSTON: &str = "The user denied this tool call in Houston.";
 
 /// Withdraws a held request when the MCP call ends without an answer.
 pub(crate) struct ApprovalGuard {
-    handle: Arc<StructuredRuntime>,
-    request_id: String,
+    pub(super) handle: Arc<StructuredRuntime>,
+    pub(super) request_id: String,
 }
 
 impl Drop for ApprovalGuard {
@@ -284,7 +283,7 @@ pub(super) struct ThreadSpawn<'a> {
 
 impl Daemon {
     /// The refusal every thread-only request gives a terminal session, naming its view.
-    fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
+    pub(super) fn thread_handle(&self, id: u32, verb: &str) -> Result<Arc<StructuredRuntime>> {
         let session = self.get(id)?;
         match session.thread() {
             Some(handle) => Ok(Arc::clone(handle)),
@@ -484,11 +483,18 @@ impl Daemon {
             .get("tool_use_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        if tool_name == ASK_USER_QUESTION {
-            return Ok((
-                PermissionPrompt::Answered(ApprovalAnswer::Deny(ASK_IN_REPLY.into())),
-                input,
-            ));
+        if tool_name == super::thread_questions::ASK_USER_QUESTION {
+            return match super::thread_questions::parse_questions(&input) {
+                Ok((questions, truncated)) => {
+                    self.hold_question(&handle, tool_use_id, questions, truncated, input)
+                }
+                Err(error) => Ok((
+                    PermissionPrompt::Answered(ApprovalAnswer::Deny(format!(
+                        "{ASK_IN_REPLY}: {error}."
+                    ))),
+                    input,
+                )),
+            };
         }
         let (request_id, receiver) = handle.request_approval(tool_name, tool_use_id, &input)?;
         Ok((
@@ -649,8 +655,32 @@ impl Daemon {
                     Some(reason) => format!("[permission {decision:?}] {}", one_line(&reason, 200)),
                     None => format!("[permission {decision:?}]"),
                 },
+                proto::ThreadEventKind::QuestionRequest { questions, .. } => {
+                    let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();
+                    format!("[question] {}", one_line(&asked.join(" | "), 200))
+                }
+                proto::ThreadEventKind::QuestionResolved {
+                    outcome,
+                    answers,
+                    reason,
+                    ..
+                } => {
+                    let detail = answers
+                        .iter()
+                        .map(|a| {
+                            let mut parts = a.selected.clone();
+                            parts.extend(a.other.clone());
+                            format!("{}={}", a.question, parts.join(", "))
+                        })
+                        .chain(reason)
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    format!("[question {outcome:?}] {}", one_line(&detail, 200))
+                }
                 proto::ThreadEventKind::UserMessage { .. }
-                | proto::ThreadEventKind::AssistantDelta { .. } => continue,
+                | proto::ThreadEventKind::AssistantDelta { .. }
+                | proto::ThreadEventKind::ReasoningDelta { .. }
+                | proto::ThreadEventKind::Reasoning { .. } => continue,
             };
             out.extend(text.lines().map(str::to_string));
         }
@@ -1000,7 +1030,7 @@ fn status_name(status: proto::AgentStatus) -> &'static str {
     }
 }
 
-fn one_line(text: &str, max_chars: usize) -> String {
+pub(super) fn one_line(text: &str, max_chars: usize) -> String {
     let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     match flat.char_indices().nth(max_chars) {
         Some((at, _)) => format!("{}…", &flat[..at]),

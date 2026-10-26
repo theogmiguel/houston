@@ -1594,9 +1594,22 @@ pub const THREAD_QUEUE_MAX_ITEMS: usize = 16;
 pub const THREAD_QUEUE_MAX_BYTES: usize = 1_048_576;
 pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
 pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
+/// A tool summary's target; a full command or URL stays in the tool's input.
+pub const THREAD_TOOL_TARGET_MAX_BYTES: usize = 512;
 pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
 /// Larger than a tool card's cap: the user approves this input, so it should be readable.
 pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
+/// Claude's question tool asks 1-4 questions of 2-4 options; more is refused as malformed.
+pub const THREAD_QUESTIONS_MAX: usize = 8;
+pub const THREAD_QUESTION_OPTIONS_MAX: usize = 16;
+/// A question or label above this is malformed (answers name them exactly); a header or
+/// description above it is cut and the request marked `truncated`.
+pub const THREAD_QUESTION_TEXT_MAX_BYTES: usize = 2_048;
+/// The user's own answer to one question ("Type your own").
+pub const THREAD_QUESTION_OTHER_MAX_BYTES: usize = 4_096;
+/// The longest message a denial tells Claude, such as Keep planning's feedback; a longer
+/// one is refused, never cut.
+pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4_096;
 
 /// One entry of a thread's timeline. `seq` increases per session and is not reused
 /// within one daemon run; a client merges history and live events by it and reloads
@@ -1632,11 +1645,47 @@ pub enum ThreadEventKind {
         #[serde(default)]
         truncated: bool,
     },
+    /// Live only, never stored, like `AssistantDelta`.
+    ReasoningDelta {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        /// The CLI's running estimate of the block's size.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+        /// Kept so a block cut off before its end is stored with it.
+        #[serde(default)]
+        redacted: bool,
+    },
+    /// One reasoning block. Claude's headless stream sends no reasoning text, so `text` is
+    /// empty unless a documented source provides it; `redacted` blocks never carry text.
+    Reasoning {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        /// Cut off before its end by `thread_stop`, an exit or the turn's end; never a size cap.
+        #[serde(default)]
+        truncated: bool,
+        /// From the block's first delta to its end, on the daemon's clock.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        duration_ms: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+        #[serde(default)]
+        redacted: bool,
+    },
     ToolCall {
         tool_use_id: String,
         name: String,
         input: String,
         truncated: bool,
+        /// Computed from the whole input, so it survives the input cap.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        summary: Option<ToolSummary>,
     },
     ToolResult {
         tool_use_id: String,
@@ -1673,6 +1722,106 @@ pub enum ThreadEventKind {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         reason: Option<String>,
     },
+    /// Claude asks the user to choose (its `AskUserQuestion` tool). Held like an approval
+    /// until `thread_answer` answers or skips it, or the process stops.
+    QuestionRequest {
+        request_id: String,
+        tool_use_id: String,
+        questions: Vec<ThreadQuestion>,
+        /// A header or option description was cut at `THREAD_QUESTION_TEXT_MAX_BYTES`.
+        #[serde(default)]
+        truncated: bool,
+    },
+    QuestionResolved {
+        request_id: String,
+        outcome: QuestionOutcome,
+        /// What the user chose, one entry per question; empty unless `answered`.
+        #[serde(default)]
+        answers: Vec<QuestionAnswer>,
+        /// Why nobody answered, for `denied` and `withdrawn`.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reason: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQuestion {
+    pub question: String,
+    /// A short label for the question, such as "Colour".
+    #[serde(default)]
+    pub header: String,
+    pub options: Vec<ThreadQuestionOption>,
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+/// The answer to one question: option labels, the user's own text, or both for a
+/// multi-select question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct QuestionAnswer {
+    pub question: String,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub other: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionOutcome {
+    Answered,
+    Skipped,
+    /// Stop, Kill, Close or the process's exit ended the call first.
+    Denied,
+    /// Claude ended the call, or Houston restarted, before an answer.
+    Withdrawn,
+}
+
+/// What a tool call acts on, for its one-line row and the turn's counts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ToolSummary {
+    pub kind: ToolKind,
+    /// A path, command, pattern, URL or `server · tool`, cut at `THREAD_TOOL_TARGET_MAX_BYTES`.
+    pub target: String,
+    /// Line counts of an edit or a write.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub added: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Read,
+    Search,
+    Web,
+    Command,
+    Edit,
+    Write,
+    Todo,
+    Question,
+    Plan,
+    Task,
+    Mcp,
+    Other,
 }
 
 /// How a user message reached Claude.
@@ -4192,6 +4341,14 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         message: Option<String>,
+    },
+    /// Answers a held `question_request`; `answers: null` skips it.
+    ThreadAnswer {
+        session: u32,
+        request_id: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        answers: Option<Vec<QuestionAnswer>>,
     },
     /// Refused while a turn runs; restarts an idle thread's process with `--resume`.
     ThreadSetPermissionMode {
@@ -7831,6 +7988,60 @@ mod tests {
     }
 
     #[test]
+    fn work_log_events_keep_their_wire_shape() {
+        let reasoning = serde_json::to_string(&ThreadEventKind::Reasoning {
+            message_id: "m1".into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms: Some(14_000),
+            estimated_tokens: Some(812),
+            redacted: false,
+        })
+        .unwrap();
+        assert_eq!(
+            reasoning,
+            r#"{"type":"reasoning","message_id":"m1","text":"","truncated":false,"duration_ms":14000,"estimated_tokens":812,"redacted":false}"#
+        );
+        let call = serde_json::to_string(&ThreadEventKind::ToolCall {
+            tool_use_id: "t1".into(),
+            name: "Edit".into(),
+            input: "{".into(),
+            truncated: true,
+            summary: Some(ToolSummary {
+                kind: ToolKind::Edit,
+                target: "src/a.rs".into(),
+                added: Some(3),
+                removed: Some(1),
+            }),
+        })
+        .unwrap();
+        assert_eq!(
+            call,
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Edit","input":"{","truncated":true,"summary":{"kind":"edit","target":"src/a.rs","added":3,"removed":1}}"#
+        );
+        let stored: ThreadEventKind = serde_json::from_str(
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Read","input":"{}","truncated":false}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(stored, ThreadEventKind::ToolCall { summary: None, .. }),
+            "events stored before v153 have no summary"
+        );
+        let block: ThreadEventKind =
+            serde_json::from_str(r#"{"type":"reasoning","message_id":"m2"}"#).unwrap();
+        assert!(matches!(
+            block,
+            ThreadEventKind::Reasoning {
+                duration_ms: None,
+                estimated_tokens: None,
+                redacted: false,
+                truncated: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn approval_messages_keep_their_wire_shape() {
         let approve: ClientMsg = serde_json::from_str(
             r#"{"type":"thread_approve","session":3,"request_id":"r1","allow":false,"message":"no"}"#,
@@ -7868,5 +8079,78 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(info.permission_mode, None, "older daemons omit the field");
+    }
+
+    #[test]
+    fn question_messages_keep_their_wire_shape() {
+        let answer: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_answer","session":3,"request_id":"q1","answers":[{"question":"Which colour?","selected":["Red","Blue"],"other":"teal"}]}"#,
+        )
+        .unwrap();
+        let ClientMsg::ThreadAnswer {
+            session: 3,
+            request_id,
+            answers: Some(answers),
+        } = answer
+        else {
+            panic!("not a thread_answer with answers: {answer:?}");
+        };
+        assert_eq!(request_id, "q1");
+        assert_eq!(answers[0].selected, ["Red", "Blue"]);
+        assert_eq!(answers[0].other.as_deref(), Some("teal"));
+        let skip: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_answer","session":3,"request_id":"q1"}"#)
+                .unwrap();
+        assert!(
+            matches!(skip, ClientMsg::ThreadAnswer { answers: None, .. }),
+            "no answers skips the question"
+        );
+        let request = serde_json::to_string(&ThreadEventKind::QuestionRequest {
+            request_id: "q1".into(),
+            tool_use_id: "t1".into(),
+            questions: vec![ThreadQuestion {
+                question: "Which colour?".into(),
+                header: "Colour".into(),
+                options: vec![ThreadQuestionOption {
+                    label: "Red".into(),
+                    description: "Warm".into(),
+                }],
+                multi_select: true,
+            }],
+            truncated: false,
+        })
+        .unwrap();
+        assert_eq!(
+            request,
+            r#"{"type":"question_request","request_id":"q1","tool_use_id":"t1","questions":[{"question":"Which colour?","header":"Colour","options":[{"label":"Red","description":"Warm"}],"multi_select":true}],"truncated":false}"#
+        );
+        let resolved = serde_json::to_string(&ThreadEventKind::QuestionResolved {
+            request_id: "q1".into(),
+            outcome: QuestionOutcome::Answered,
+            answers: vec![QuestionAnswer {
+                question: "Which colour?".into(),
+                selected: vec!["Red".into()],
+                other: None,
+            }],
+            reason: None,
+        })
+        .unwrap();
+        assert_eq!(
+            resolved,
+            r#"{"type":"question_resolved","request_id":"q1","outcome":"answered","answers":[{"question":"Which colour?","selected":["Red"],"other":null}],"reason":null}"#
+        );
+        let denied: ThreadEventKind = serde_json::from_str(
+            r#"{"type":"question_resolved","request_id":"q1","outcome":"denied"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            denied,
+            ThreadEventKind::QuestionResolved {
+                outcome: QuestionOutcome::Denied,
+                ref answers,
+                reason: None,
+                ..
+            } if answers.is_empty()
+        ));
     }
 }

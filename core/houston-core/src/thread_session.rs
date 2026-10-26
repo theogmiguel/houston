@@ -4,9 +4,10 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol::{
-    AgentKind, ApprovalDecision, MessageDelivery, ThreadEvent, ThreadEventKind,
-    ThreadPermissionMode, ThreadQueuedMessage, TurnOutcome, THREAD_APPROVAL_INPUT_MAX_BYTES,
-    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
+    AgentKind, ApprovalDecision, MessageDelivery, QuestionAnswer, QuestionOutcome, ThreadEvent,
+    ThreadEventKind, ThreadPermissionMode, ThreadQuestion, ThreadQueuedMessage, TurnOutcome,
+    APPROVAL_MESSAGE_MAX_BYTES, THREAD_APPROVAL_INPUT_MAX_BYTES, THREAD_ASSISTANT_TEXT_MAX_BYTES,
+    THREAD_USER_MESSAGE_MAX_BYTES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -15,9 +16,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
-use std::time::Duration;
-#[cfg(any(target_os = "linux", windows))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Houston's MCP tool that answers a thread's permission prompts (`--permission-prompt-tool`).
 pub const PERMISSION_TOOL: &str = "thread_permission";
@@ -25,8 +24,6 @@ pub const PERMISSION_TOOL: &str = "thread_permission";
 pub const APPROVALS_PENDING_MAX: usize = 16;
 /// A tool name or tool use id above this is cut; real ones are a few dozen bytes.
 const APPROVAL_NAME_MAX_BYTES: usize = 256;
-/// The longest deny message the provider is told.
-pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4 * 1024;
 
 /// 30 `thread_events` messages a second per session at most.
 pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
@@ -45,7 +42,7 @@ const RESUME_TIMEOUT: Duration = Duration::from_secs(5);
 /// What the daemon does with a thread's events. A trait so the backend runs in unit tests
 /// without a daemon.
 pub trait ThreadHost: Send + Sync + 'static {
-    /// Called in `seq` order for every event except `AssistantDelta`.
+    /// Called in `seq` order for every event except the live-only deltas.
     fn store(&self, session: u32, event: &ThreadEvent);
     fn broadcast(&self, session: u32, events: Vec<ThreadEvent>);
     /// The stream's `result` event ended a turn; `deferred` is a Stop hook that arrived while
@@ -126,15 +123,59 @@ struct PendingWrite {
     row: Option<ThreadQueuedMessage>,
 }
 
-/// What `thread_approve` tells a held permission request.
+/// What `thread_approve` or `thread_answer` tells a held permission request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApprovalAnswer {
     Allow,
+    /// Allow with this input instead of Claude's own, such as a question's answers.
+    AllowWith(Value),
     Deny(String),
 }
 
 struct PendingApproval {
     answer: tokio::sync::oneshot::Sender<ApprovalAnswer>,
+    /// Set for `AskUserQuestion`: answers are checked against these, and its events are
+    /// `question_request` / `question_resolved`.
+    question: Option<HeldQuestion>,
+}
+
+struct HeldQuestion {
+    questions: Vec<ThreadQuestion>,
+    input: Value,
+}
+
+/// How a held question ends: recorded with `answers`, and told to Claude as `answer`.
+pub struct QuestionResolution {
+    pub outcome: QuestionOutcome,
+    pub answers: Vec<QuestionAnswer>,
+    pub answer: ApprovalAnswer,
+}
+
+/// The event that settles a held request without an answer from the user.
+fn unanswered(
+    request_id: String,
+    question: bool,
+    decision: ApprovalDecision,
+    reason: &str,
+) -> ThreadEventKind {
+    if question {
+        let outcome = match decision {
+            ApprovalDecision::Withdrawn => QuestionOutcome::Withdrawn,
+            _ => QuestionOutcome::Denied,
+        };
+        ThreadEventKind::QuestionResolved {
+            request_id,
+            outcome,
+            answers: Vec::new(),
+            reason: Some(reason.to_string()),
+        }
+    } else {
+        ThreadEventKind::ApprovalResolved {
+            request_id,
+            decision,
+            reason: Some(reason.to_string()),
+        }
+    }
 }
 
 /// The provider-specific half of a structured session.
@@ -226,28 +267,54 @@ pub fn cap_text(mut text: String, max: usize) -> (String, bool) {
 pub fn coalesce(events: Vec<ThreadEvent>) -> Vec<ThreadEvent> {
     let mut out: Vec<ThreadEvent> = Vec::with_capacity(events.len());
     for event in events {
-        if let (
-            Some(ThreadEvent {
-                seq,
-                kind:
+        if let Some(last) = out.last_mut() {
+            let merged = match (&mut last.kind, &event.kind) {
+                (
                     ThreadEventKind::AssistantDelta {
                         message_id: last_id,
                         text: last_text,
                     },
-                ..
-            }),
-            ThreadEventKind::AssistantDelta { message_id, text },
-        ) = (out.last_mut(), &event.kind)
-        {
-            if last_id == message_id {
-                last_text.push_str(text);
-                *seq = event.seq;
+                    ThreadEventKind::AssistantDelta { message_id, text },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    true
+                }
+                (
+                    ThreadEventKind::ReasoningDelta {
+                        message_id: last_id,
+                        text: last_text,
+                        estimated_tokens: last_tokens,
+                        ..
+                    },
+                    ThreadEventKind::ReasoningDelta {
+                        message_id,
+                        text,
+                        estimated_tokens,
+                        ..
+                    },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    *last_tokens = estimated_tokens.or(*last_tokens);
+                    true
+                }
+                _ => false,
+            };
+            if merged {
+                last.seq = event.seq;
                 continue;
             }
         }
         out.push(event);
     }
     out
+}
+
+/// Live-only events: superseded by the stored message or block of the same id.
+fn is_delta(kind: &ThreadEventKind) -> bool {
+    matches!(
+        kind,
+        ThreadEventKind::AssistantDelta { .. } | ThreadEventKind::ReasoningDelta { .. }
+    )
 }
 
 #[derive(Default)]
@@ -479,12 +546,52 @@ struct HandleState {
     close_cause: Option<String>,
     /// Text streamed for the open block whose final message has not arrived yet.
     partial: Option<(String, String)>,
+    reasoning: Option<LiveReasoning>,
+}
+
+/// The reasoning block streaming now.
+struct LiveReasoning {
+    message_id: String,
+    first_delta: Instant,
+    estimated_tokens: Option<u32>,
+    redacted: bool,
 }
 
 impl HandleState {
-    fn track_partial(&mut self, events: &[ThreadEventKind]) {
+    /// Follows the open blocks and gives each stored reasoning block its duration.
+    fn track_partial(&mut self, events: &mut [ThreadEventKind]) {
         for event in events {
             match event {
+                ThreadEventKind::ReasoningDelta {
+                    message_id,
+                    estimated_tokens,
+                    redacted,
+                    ..
+                } => match &mut self.reasoning {
+                    Some(open) if open.message_id == *message_id => {
+                        open.estimated_tokens = estimated_tokens.or(open.estimated_tokens);
+                    }
+                    _ => {
+                        self.reasoning = Some(LiveReasoning {
+                            message_id: message_id.clone(),
+                            first_delta: Instant::now(),
+                            estimated_tokens: *estimated_tokens,
+                            redacted: *redacted,
+                        });
+                    }
+                },
+                ThreadEventKind::Reasoning {
+                    message_id,
+                    duration_ms,
+                    ..
+                } => {
+                    if let Some(open) = self
+                        .reasoning
+                        .take_if(|open| open.message_id == *message_id)
+                    {
+                        duration_ms.get_or_insert_with(|| elapsed_ms(open.first_delta));
+                    }
+                }
                 ThreadEventKind::AssistantDelta { message_id, text } => match &mut self.partial {
                     Some((open, so_far)) if open == message_id => so_far.push_str(text),
                     _ => self.partial = Some((message_id.clone(), text.clone())),
@@ -497,14 +604,17 @@ impl HandleState {
                 {
                     self.partial = None
                 }
-                ThreadEventKind::TurnEnd { .. } => self.partial = None,
+                ThreadEventKind::TurnEnd { .. } => {
+                    self.partial = None;
+                    self.reasoning = None;
+                }
                 _ => {}
             }
         }
     }
 
     /// What an ended process leaves of an open turn: the streamed text of a cut-off answer
-    /// as a truncated message, then the turn end.
+    /// as a truncated message, a cut-off reasoning block, then the turn end.
     fn end_open_turn(
         &mut self,
         outcome: TurnOutcome,
@@ -520,11 +630,25 @@ impl HandleState {
                 truncated: true,
             });
         }
+        if let Some(open) = self.reasoning.take() {
+            events.push(ThreadEventKind::Reasoning {
+                message_id: open.message_id,
+                text: String::new(),
+                truncated: true,
+                duration_ms: Some(elapsed_ms(open.first_delta)),
+                estimated_tokens: open.estimated_tokens,
+                redacted: open.redacted,
+            });
+        }
         if std::mem::take(&mut self.turn_open) {
             events.push(ThreadEventKind::TurnEnd { outcome, error });
         }
         events
     }
+}
+
+fn elapsed_ms(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// The structured runtime of one thread session: its provider process, turns and events.
@@ -569,6 +693,7 @@ impl StructuredRuntime {
                 closed: false,
                 close_cause: None,
                 partial: None,
+                reasoning: None,
             }),
             next_seq: Mutex::new(next_seq.max(1)),
             outbox: Arc::clone(&outbox),
@@ -683,11 +808,46 @@ impl StructuredRuntime {
         tool_use_id: &str,
         input: &Value,
     ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
-        let request_id = uuid::Uuid::new_v4().to_string();
-        let (answer, receiver) = tokio::sync::oneshot::channel();
         let input = input.to_string();
         let input_bytes = input.len() as u64;
         let (input, truncated) = cap_text(input, THREAD_APPROVAL_INPUT_MAX_BYTES);
+        self.hold(None, |request_id| ThreadEventKind::ApprovalRequest {
+            request_id,
+            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            input,
+            truncated,
+            input_bytes,
+        })
+    }
+
+    /// Holds Claude's checked `AskUserQuestion` like a permission prompt (same cap, same
+    /// NeedsInput status); `input` is what its answers extend.
+    pub fn request_question(
+        &self,
+        tool_use_id: &str,
+        questions: Vec<ThreadQuestion>,
+        truncated: bool,
+        input: Value,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let shown = questions.clone();
+        self.hold(Some(HeldQuestion { questions, input }), |request_id| {
+            ThreadEventKind::QuestionRequest {
+                request_id,
+                tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+                questions: shown,
+                truncated,
+            }
+        })
+    }
+
+    fn hold(
+        &self,
+        question: Option<HeldQuestion>,
+        event: impl FnOnce(String) -> ThreadEventKind,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (answer, receiver) = tokio::sync::oneshot::channel();
         let first = {
             // Under `state`, where Stop and Close take the process before they drain the
             // requests: a request either lands before that drain or is refused here.
@@ -709,94 +869,203 @@ impl StructuredRuntime {
                     approvals.len()
                 );
             }
-            approvals.insert(request_id.clone(), PendingApproval { answer });
+            approvals.insert(request_id.clone(), PendingApproval { answer, question });
             approvals.len() == 1
         };
         if first {
             self.host.approvals_pending(self.session, true);
         }
-        self.emit(vec![ThreadEventKind::ApprovalRequest {
-            request_id: request_id.clone(),
-            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
-            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
-            input,
-            truncated,
-            input_bytes,
-        }]);
+        self.emit(vec![event(request_id.clone())]);
         Ok((request_id, receiver))
     }
 
-    /// Answers a held request. Errors name the request and the ones still pending.
+    /// Answers a held request. Errors name the request and the ones still pending; a deny
+    /// message over `APPROVAL_MESSAGE_MAX_BYTES` is refused and the request stays held.
     pub fn answer_approval(&self, request_id: &str, answer: ApprovalAnswer) -> Result<()> {
-        let (pending, left) = {
-            let mut approvals = self.approvals.lock().expect("thread approvals lock");
-            let pending = approvals.remove(request_id);
-            let left: Vec<String> = approvals.keys().cloned().collect();
-            (pending, left)
-        };
-        let Some(pending) = pending else {
-            bail!(
-                "thread_approve refused for session {}: no pending permission request \
-                 {request_id:?} (pending: {left:?})",
-                self.session
-            );
-        };
-        let answer = match answer {
-            ApprovalAnswer::Deny(message) => {
-                ApprovalAnswer::Deny(cap_text(message, APPROVAL_MESSAGE_MAX_BYTES).0)
+        if let ApprovalAnswer::Deny(message) = &answer {
+            if message.len() > APPROVAL_MESSAGE_MAX_BYTES {
+                bail!(
+                    "thread_approve refused for session {}: the message is {} bytes, over the \
+                     limit of {APPROVAL_MESSAGE_MAX_BYTES} bytes (APPROVAL_MESSAGE_MAX_BYTES); \
+                     request {request_id:?} stays held",
+                    self.session,
+                    message.len()
+                );
             }
-            allow => allow,
+        }
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            match approvals.get(request_id) {
+                Some(pending) if pending.question.is_some() => bail!(
+                    "thread_approve refused for session {}: {request_id:?} is a question; \
+                     answer or skip it with thread_answer",
+                    self.session
+                ),
+                Some(_) => {}
+                None => {
+                    let left: Vec<&String> = approvals.keys().collect();
+                    bail!(
+                        "thread_approve refused for session {}: no pending permission request \
+                         {request_id:?} (pending: {left:?})",
+                        self.session
+                    );
+                }
+            }
+            self.refuse_after_exit(&state, "thread_approve", request_id)?;
+            let pending = approvals.remove(request_id).expect("pending request");
+            let empty = approvals.is_empty();
+            drop(approvals);
+            let (decision, reason) = match &answer {
+                ApprovalAnswer::Allow | ApprovalAnswer::AllowWith(_) => {
+                    (ApprovalDecision::Allowed, None)
+                }
+                ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
+            };
+            self.deliver_answer(
+                request_id,
+                pending,
+                answer,
+                ThreadEventKind::ApprovalResolved {
+                    request_id: request_id.to_string(),
+                    decision,
+                    reason,
+                },
+            );
+            empty
         };
-        let (decision, reason) = match &answer {
-            ApprovalAnswer::Allow => (ApprovalDecision::Allowed, None),
-            ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
-        };
-        // A dropped receiver means Claude ended the call first; the tool does not run either way.
-        let _ = pending.answer.send(answer);
-        self.emit(vec![ThreadEventKind::ApprovalResolved {
-            request_id: request_id.to_string(),
-            decision,
-            reason,
-        }]);
-        if left.is_empty() {
+        if empty {
             self.host.approvals_pending(self.session, false);
         }
         Ok(())
+    }
+
+    /// Resolves the held question `request_id` with what `resolve` makes of its questions
+    /// and Claude's input. Checked and removed under one lock: a refused answer leaves the
+    /// question held, and a question is answered once.
+    pub fn answer_question(
+        &self,
+        request_id: &str,
+        resolve: impl FnOnce(&[ThreadQuestion], &Value) -> Result<QuestionResolution>,
+    ) -> Result<()> {
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            let Some(held) = approvals
+                .get(request_id)
+                .and_then(|pending| pending.question.as_ref())
+            else {
+                let questions: Vec<&String> = approvals
+                    .iter()
+                    .filter(|(_, pending)| pending.question.is_some())
+                    .map(|(id, _)| id)
+                    .collect();
+                bail!(
+                    "thread_answer refused for session {}: no held question {request_id:?} \
+                     (held questions: {questions:?})",
+                    self.session
+                );
+            };
+            let resolution = resolve(&held.questions, &held.input)?;
+            self.refuse_after_exit(&state, "thread_answer", request_id)?;
+            let pending = approvals.remove(request_id).expect("held question");
+            let empty = approvals.is_empty();
+            drop(approvals);
+            self.deliver_answer(
+                request_id,
+                pending,
+                resolution.answer,
+                ThreadEventKind::QuestionResolved {
+                    request_id: request_id.to_string(),
+                    outcome: resolution.outcome,
+                    answers: resolution.answers,
+                    reason: None,
+                },
+            );
+            empty
+        };
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+        Ok(())
+    }
+
+    /// Answers arrive under `state`, taken before `approvals` as `hold` does: Stop and an exit
+    /// take the process before they drain, so an answer lands before that drain or is refused.
+    fn refuse_after_exit(&self, state: &HandleState, verb: &str, request_id: &str) -> Result<()> {
+        if state.closed || state.process.is_none() {
+            bail!(
+                "{verb} refused for session {}: the {} process ended before the answer; \
+                 request {request_id:?} is settled without it",
+                self.session,
+                self.adapter.display_name()
+            );
+        }
+        Ok(())
+    }
+
+    /// Sends `answer` and records `resolved`, or records the call as withdrawn when the
+    /// provider already stopped waiting. Called under `state`, so Stop's turn end follows it.
+    fn deliver_answer(
+        &self,
+        request_id: &str,
+        pending: PendingApproval,
+        answer: ApprovalAnswer,
+        resolved: ThreadEventKind,
+    ) {
+        let question = pending.question.is_some();
+        let event = match pending.answer.send(answer) {
+            Ok(()) => resolved,
+            Err(_) => unanswered(
+                request_id.to_string(),
+                question,
+                ApprovalDecision::Withdrawn,
+                &self.stopped_waiting(),
+            ),
+        };
+        self.emit(vec![event]);
+    }
+
+    fn stopped_waiting(&self) -> String {
+        format!(
+            "{} stopped waiting for an answer; the tool did not run.",
+            self.adapter.display_name()
+        )
     }
 
     /// Claude ended a call nobody answered (it timed out or its process went away).
     pub fn withdraw_approval(&self, request_id: &str) {
         let (removed, empty) = {
             let mut approvals = self.approvals.lock().expect("thread approvals lock");
-            (approvals.remove(request_id).is_some(), approvals.is_empty())
+            (approvals.remove(request_id), approvals.is_empty())
         };
-        if !removed {
+        let Some(removed) = removed else {
             return;
-        }
-        self.emit(vec![ThreadEventKind::ApprovalResolved {
-            request_id: request_id.to_string(),
-            decision: ApprovalDecision::Withdrawn,
-            reason: Some(format!(
-                "{} stopped waiting for an answer; the tool did not run.",
-                self.adapter.display_name()
-            )),
-        }]);
+        };
+        self.emit(vec![unanswered(
+            request_id.to_string(),
+            removed.question.is_some(),
+            ApprovalDecision::Withdrawn,
+            &self.stopped_waiting(),
+        )]);
         if empty {
             self.host.approvals_pending(self.session, false);
         }
     }
 
     /// Records requests a previous daemon held and never resolved; nothing can answer them.
-    pub fn settle_orphaned_approvals(&self, request_ids: Vec<String>) {
+    /// Each id comes with whether it was a question.
+    pub fn settle_orphaned_approvals(&self, requests: Vec<(String, bool)>) {
         self.emit(
-            request_ids
+            requests
                 .into_iter()
-                .map(|request_id| ThreadEventKind::ApprovalResolved {
-                    request_id,
-                    decision: ApprovalDecision::Withdrawn,
-                    reason: Some(
-                        "Houston restarted before anyone answered; the tool did not run.".into(),
-                    ),
+                .map(|(request_id, question)| {
+                    unanswered(
+                        request_id,
+                        question,
+                        ApprovalDecision::Withdrawn,
+                        "Houston restarted before anyone answered; the tool did not run.",
+                    )
                 })
                 .collect(),
         );
@@ -833,11 +1102,12 @@ impl StructuredRuntime {
             let _ = approval
                 .answer
                 .send(ApprovalAnswer::Deny(reason.to_string()));
-            events.push(ThreadEventKind::ApprovalResolved {
+            events.push(unanswered(
                 request_id,
+                approval.question.is_some(),
                 decision,
-                reason: Some(reason.to_string()),
-            });
+                reason,
+            ));
         }
         self.emit(events);
         if report {
@@ -1326,7 +1596,7 @@ impl StructuredRuntime {
                     kind,
                 };
                 *next += 1;
-                if !matches!(event.kind, ThreadEventKind::AssistantDelta { .. }) {
+                if !is_delta(&event.kind) {
                     self.host.store(self.session, &event);
                 }
                 event
@@ -1344,7 +1614,7 @@ impl StructuredRuntime {
         self.on_decoded(process.generation, decoded);
     }
 
-    fn on_decoded(self: &Arc<Self>, generation: u64, mapped: Decoded) {
+    fn on_decoded(self: &Arc<Self>, generation: u64, mut mapped: Decoded) {
         let mut reported_mode = None;
         let mut ended = None;
         {
@@ -1379,7 +1649,7 @@ impl StructuredRuntime {
                     reported_mode = Some(mode);
                 }
             }
-            state.track_partial(&mapped.events);
+            state.track_partial(&mut mapped.events);
             self.emit(mapped.events);
         }
         if let Some(mode) = reported_mode {
@@ -2073,5 +2343,232 @@ mod tests {
         );
         drop(spawned);
         handle.close();
+    }
+
+    fn echo_runtime() -> (Arc<StructuredRuntime>, Arc<StoredEvents>) {
+        let host = Arc::new(StoredEvents::default());
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            host.clone(),
+        )
+        .unwrap();
+        (handle, host)
+    }
+
+    fn last_event(host: &StoredEvents) -> ThreadEventKind {
+        host.events
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("an event")
+    }
+
+    #[test]
+    fn an_answer_claude_stopped_waiting_for_is_recorded_as_withdrawn() {
+        let (handle, host) = echo_runtime();
+        let (approval, receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::ApprovalResolved {
+                    decision: ApprovalDecision::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        let question = ThreadQuestion {
+            question: "Which?".into(),
+            header: String::new(),
+            options: Vec::new(),
+            multi_select: false,
+        };
+        let (asked, receiver) = handle
+            .request_question("tu2", vec![question], false, serde_json::json!({}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_question(&asked, |_, _| {
+                Ok(QuestionResolution {
+                    outcome: QuestionOutcome::Answered,
+                    answers: Vec::new(),
+                    answer: ApprovalAnswer::Allow,
+                })
+            })
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::QuestionResolved {
+                    outcome: QuestionOutcome::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        handle.close();
+    }
+
+    #[test]
+    fn an_answer_after_the_process_ended_or_over_the_message_cap_is_refused_by_name() {
+        let (handle, host) = echo_runtime();
+        let (approval, _receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        let long = "x".repeat(APPROVAL_MESSAGE_MAX_BYTES + 1);
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Deny(long))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("4097 bytes") && error.contains("APPROVAL_MESSAGE_MAX_BYTES"),
+            "{error}"
+        );
+        // Stop takes the process before it drains the held requests; an answer in between
+        // must not be recorded after the turn's end.
+        let process = handle.state.lock().unwrap().process.take().unwrap();
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("process ended"), "{error}");
+        assert!(handle.approvals.lock().unwrap().contains_key(&approval));
+        assert!(
+            matches!(last_event(&host), ThreadEventKind::ApprovalRequest { .. }),
+            "{:?}",
+            last_event(&host)
+        );
+        process.end_tree(true);
+        handle.close();
+    }
+
+    #[test]
+    fn coalescing_merges_reasoning_deltas_and_keeps_the_latest_estimate() {
+        let delta = |seq, tokens| ThreadEvent {
+            seq,
+            at_ms: 0,
+            kind: ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: tokens,
+                redacted: false,
+            },
+        };
+        assert_eq!(
+            coalesce(vec![
+                delta(1, Some(50)),
+                delta(2, Some(196)),
+                delta(3, None)
+            ]),
+            vec![delta(3, Some(196))]
+        );
+    }
+
+    fn idle_state() -> HandleState {
+        HandleState {
+            process: None,
+            conversation: None,
+            permission_mode: ThreadPermissionMode::Default,
+            generation: 0,
+            turn_open: true,
+            closed: false,
+            close_cause: None,
+            partial: None,
+            reasoning: None,
+            turn: 0,
+            deferred_hook: None,
+        }
+    }
+
+    fn reasoning(id: &str, duration_ms: Option<u64>) -> ThreadEventKind {
+        ThreadEventKind::Reasoning {
+            message_id: id.into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms,
+            estimated_tokens: Some(50),
+            redacted: false,
+        }
+    }
+
+    #[test]
+    fn a_stored_reasoning_block_gets_its_duration_from_the_first_delta() {
+        let mut state = idle_state();
+        let started = Instant::now();
+        state.track_partial(&mut [ThreadEventKind::ReasoningDelta {
+            message_id: "r".into(),
+            text: String::new(),
+            estimated_tokens: Some(50),
+            redacted: false,
+        }]);
+        std::thread::sleep(Duration::from_millis(30));
+        let mut events = [reasoning("r", None), reasoning("other", None)];
+        state.track_partial(&mut events);
+        let ThreadEventKind::Reasoning { duration_ms, .. } = &events[0] else {
+            unreachable!()
+        };
+        let duration = duration_ms.expect("a duration on the daemon clock");
+        assert!(
+            (30..=elapsed_ms(started)).contains(&duration),
+            "{duration} ms"
+        );
+        assert_eq!(events[1], reasoning("other", None), "no delta, no duration");
+        assert!(state.reasoning.is_none());
+    }
+
+    #[test]
+    fn a_reasoning_block_cut_off_by_stop_is_stored_as_truncated_and_stays_redacted() {
+        let mut state = idle_state();
+        state.track_partial(&mut [
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: Some(50),
+                redacted: true,
+            },
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: None,
+                redacted: true,
+            },
+        ]);
+        let events = state.end_open_turn(TurnOutcome::Interrupted, None);
+        assert!(
+            matches!(
+                &events[..],
+                [
+                    ThreadEventKind::Reasoning {
+                        message_id,
+                        truncated: true,
+                        duration_ms: Some(_),
+                        estimated_tokens: Some(50),
+                        redacted: true,
+                        ..
+                    },
+                    ThreadEventKind::TurnEnd {
+                        outcome: TurnOutcome::Interrupted,
+                        ..
+                    },
+                ] if message_id == "r"
+            ),
+            "{events:?}"
+        );
+        assert!(state
+            .end_open_turn(TurnOutcome::Interrupted, None)
+            .is_empty());
     }
 }

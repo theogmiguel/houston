@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { HoustonClient } from '../houston/client'
 import { publishQueueLength } from './queueLength'
-import { buildThreadItems, type ThreadItem } from './threadModel'
-import { THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type ThreadClientMsg, type ThreadEvent, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueueMsg, type ThreadQueuedMessage } from './threadTypes'
+import { buildThreadTimeline, type ThreadTimeline } from './threadModel'
+import { THREAD_ANSWER_REFUSAL, THREAD_APPROVE_REFUSAL, THREAD_HISTORY_REFUSAL, THREAD_QUEUE_REFUSAL, type QuestionAnswer, type ThreadClientMsg, type ThreadEvent, type ThreadEventKind, type ThreadEventsMsg, type ThreadHistoryMsg, type ThreadPermissionMode, type ThreadQueuedMessage, type ThreadQueueMsg } from './threadTypes'
 
 /** Events requested per history page, within the daemon's `THREAD_HISTORY_PAGE_MAX`. */
 export const THREAD_HISTORY_PAGE = 200
@@ -20,7 +20,7 @@ export interface ThreadSnapshot {
   loadingEarlier: boolean
   /** Why the last history request failed, until a retry. */
   failure: string | null
-  /** Permission requests answered here whose resolution has not arrived yet. */
+  /** Permission requests and questions answered here whose resolution has not arrived yet. */
   answering: ReadonlySet<string>
   /** Messages waiting in the daemon until they can be sent, oldest first. */
   queue: readonly ThreadQueuedMessage[]
@@ -29,6 +29,18 @@ export interface ThreadSnapshot {
 }
 
 const EMPTY: ThreadSnapshot = { events: [], loaded: false, hasMore: false, loadingEarlier: false, failure: null, answering: new Set(), queue: [], refusal: null }
+
+type LiveDelta = Extract<ThreadEventKind, { type: 'assistant_delta' | 'reasoning_delta' }>
+
+/** Deltas are never stored: their `seq` is not a history position. */
+function isLiveDelta(kind: ThreadEventKind): kind is LiveDelta {
+  return kind.type === 'assistant_delta' || kind.type === 'reasoning_delta'
+}
+
+/** The block a stored event supersedes the deltas of. */
+function storedBlockId(kind: ThreadEventKind): string | null {
+  return kind.type === 'assistant_message' || kind.type === 'reasoning' ? kind.message_id : null
+}
 
 /** `beforeSeq: null` is the latest page. */
 interface HistoryRequest { beforeSeq: number | null }
@@ -79,7 +91,7 @@ export class ThreadSessionStore {
   }
 
   loadEarlier(): void {
-    const first = this.snapshot.events.find((event) => event.kind.type !== 'assistant_delta')
+    const first = this.snapshot.events.find((event) => !isLiveDelta(event.kind))
     if (!this.snapshot.loaded || !this.snapshot.hasMore || this.snapshot.loadingEarlier || first === undefined) return
     this.set({ ...this.snapshot, loadingEarlier: true })
     this.request(first.seq)
@@ -157,16 +169,17 @@ export class ThreadSessionStore {
     let events: ThreadEvent[] | null = null
     for (const event of fresh) {
       const kind = event.kind
-      if (kind.type === 'assistant_delta') {
+      if (isLiveDelta(kind)) {
         if (this.superseded.includes(kind.message_id)) continue
       } else {
         if (event.seq <= this.lastStoredSeq) continue
         this.lastStoredSeq = event.seq
       }
       events ??= [...base]
-      if (kind.type === 'assistant_message') {
-        this.supersede(kind.message_id)
-        events = events.filter((prior) => prior.kind.type !== 'assistant_delta' || prior.kind.message_id !== kind.message_id)
+      const block = storedBlockId(kind)
+      if (block !== null) {
+        this.supersede(block)
+        events = events.filter((prior) => !isLiveDelta(prior.kind) || prior.kind.message_id !== block)
       }
       events.push(event)
     }
@@ -180,9 +193,10 @@ export class ThreadSessionStore {
 
   private noteStored(events: readonly ThreadEvent[]): void {
     for (const event of events) {
-      if (event.kind.type === 'assistant_delta') continue
+      if (isLiveDelta(event.kind)) continue
       this.lastStoredSeq = Math.max(this.lastStoredSeq, event.seq)
-      if (event.kind.type === 'assistant_message') this.supersede(event.kind.message_id)
+      const block = storedBlockId(event.kind)
+      if (block !== null) this.supersede(block)
     }
   }
 
@@ -198,7 +212,7 @@ export class ThreadSessionStore {
   private set(next: ThreadSnapshot): void {
     if (next.answering.size > 0) {
       const waiting = new Set(next.answering)
-      for (const event of next.events) if (event.kind.type === 'approval_resolved') waiting.delete(event.kind.request_id)
+      for (const event of next.events) if (event.kind.type === 'approval_resolved' || event.kind.type === 'question_resolved') waiting.delete(event.kind.request_id)
       if (waiting.size !== next.answering.size) next = { ...next, answering: waiting }
     }
     this.snapshot = next
@@ -227,7 +241,7 @@ function registryFor(client: HoustonClient): Registry {
   const offError = client.subscribe('error', (msg) => {
     const refused = THREAD_HISTORY_REFUSAL.exec(msg.message)
     if (refused) stores.get(Number(refused[1]))?.store.refusedOldest(msg.message)
-    const answer = THREAD_APPROVE_REFUSAL.exec(msg.message)
+    const answer = THREAD_APPROVE_REFUSAL.exec(msg.message) ?? THREAD_ANSWER_REFUSAL.exec(msg.message)
     if (answer) stores.get(Number(answer[1]))?.store.answerRefused()
     const queue = THREAD_QUEUE_REFUSAL.exec(msg.message)
     if (queue) stores.get(Number(queue[1]))?.store.refused(msg.message)
@@ -287,8 +301,13 @@ export function stopThread(client: HoustonClient, session: number): void {
 }
 
 /** Whether the answer was written to the socket; a closed socket drops it. */
-export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean): boolean {
-  return client.trySend({ type: 'thread_approve', session, request_id: requestId, allow })
+export function answerApproval(client: HoustonClient, session: number, requestId: string, allow: boolean, message?: string): boolean {
+  return client.trySend({ type: 'thread_approve', session, request_id: requestId, allow, ...(message === undefined ? {} : { message }) })
+}
+
+/** `answers: null` skips the question. Whether the answer was written to the socket. */
+export function answerQuestion(client: HoustonClient, session: number, requestId: string, answers: QuestionAnswer[] | null): boolean {
+  return client.trySend({ type: 'thread_answer', session, request_id: requestId, answers })
 }
 
 export function setThreadPermissionMode(client: HoustonClient, session: number, mode: ThreadPermissionMode): void {
@@ -296,10 +315,12 @@ export function setThreadPermissionMode(client: HoustonClient, session: number, 
 }
 
 export interface ThreadView extends ThreadSnapshot {
-  items: ThreadItem[]
+  timeline: ThreadTimeline
   loadEarlier: () => void
   retry: () => void
-  answer: (requestId: string, allow: boolean) => void
+  /** Whether the answer was written; a deny `message` is what Claude reads. */
+  answer: (requestId: string, allow: boolean, message?: string) => boolean
+  answerQuestion: (requestId: string, answers: QuestionAnswer[] | null) => void
   followLatest: () => void
   dismissRefusal: () => void
 }
@@ -315,9 +336,14 @@ export function useThread(client: HoustonClient, session: number, connected: boo
   useEffect(() => {
     if (connected) store.attach()
   }, [store, connected])
-  const items = useMemo(() => buildThreadItems(snapshot.events), [snapshot.events])
-  const answer = useCallback((requestId: string, allow: boolean) => {
-    if (answerApproval(client, session, requestId, allow)) store.markAnswering(requestId)
+  const timeline = useMemo(() => buildThreadTimeline(snapshot.events), [snapshot.events])
+  const answer = useCallback((requestId: string, allow: boolean, message?: string) => {
+    const sent = answerApproval(client, session, requestId, allow, message)
+    if (sent) store.markAnswering(requestId)
+    return sent
   }, [client, session, store])
-  return { ...snapshot, items, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, followLatest: () => store.followLatest(), dismissRefusal: () => store.dismissRefusal() }
+  const answerQuestionNow = useCallback((requestId: string, answers: QuestionAnswer[] | null) => {
+    if (answerQuestion(client, session, requestId, answers)) store.markAnswering(requestId)
+  }, [client, session, store])
+  return { ...snapshot, timeline, loadEarlier: () => store.loadEarlier(), retry: () => store.retry(), answer, answerQuestion: answerQuestionNow, followLatest: () => store.followLatest(), dismissRefusal: () => store.dismissRefusal() }
 }

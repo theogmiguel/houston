@@ -1,4 +1,4 @@
-import type { ThreadEvent } from './threadTypes'
+import type { QuestionAnswer, QuestionOutcome, ThreadEvent, ThreadQuestion, ToolSummary, TurnOutcome } from './threadTypes'
 
 export interface ToolResultView {
   isError: boolean
@@ -9,24 +9,76 @@ export interface ToolResultView {
 /** A permission request's state: `withdrawn` when Claude stopped waiting or Houston restarted. */
 export type ApprovalState = 'pending' | 'allowed' | 'denied' | 'withdrawn'
 
+export type QuestionState = 'pending' | QuestionOutcome
+
+/** The tool whose permission request carries a plan; its card shows the plan, not the raw input. */
+export const PLAN_TOOL = 'ExitPlanMode'
+
+export interface ChangedFile {
+  path: string
+  added: number
+  removed: number
+}
+
 export type ThreadItem =
   | { kind: 'user'; key: string; text: string; steered: boolean }
   | { kind: 'assistant'; key: string; text: string; streaming: boolean; truncated: boolean }
-  | { kind: 'tool'; key: string; name: string; input: string; inputTruncated: boolean; result: ToolResultView | null; settled: boolean }
+  // Claude's headless stream sends no reasoning text: a row shows how long and how much.
+  | { kind: 'reasoning'; key: string; streaming: boolean; redacted: boolean; durationMs: number | null; tokens: number | null }
+  | { kind: 'tool'; key: string; name: string; input: string; inputTruncated: boolean; summary: ToolSummary | null; result: ToolResultView | null; settled: boolean }
   | { kind: 'notice'; key: string; text: string }
   | { kind: 'stopped'; key: string }
   | { kind: 'error'; key: string; text: string }
   | { kind: 'approval'; key: string; requestId: string; name: string; input: string; inputTruncated: boolean; inputBytes: number; state: ApprovalState; reason: string | null }
+  | { kind: 'question'; key: string; requestId: string; questions: readonly ThreadQuestion[]; truncated: boolean; state: QuestionState; answers: readonly QuestionAnswer[]; reason: string | null }
+  // Rows `foldThreadRows` adds for a settled turn.
+  | { kind: 'turn'; key: string; turn: string; label: string; outcome: TurnOutcome; expanded: boolean }
+  | { kind: 'changes'; key: string; files: readonly ChangedFile[] }
 
-// Folds the event log into rows. Deltas stream into one row per message until its stored
-// `assistant_message` replaces them; deltas arriving after that are stale and skipped.
+/** A turn runs from a user message to its `turn_end`; `key` is the user message's seq. */
+export interface TurnSpan {
+  key: string
+  startMs: number
+  endMs: number | null
+  outcome: TurnOutcome | null
+}
+
+export interface ThreadTimeline {
+  items: ThreadItem[]
+  /** Each item's turn, by index; `null` before the first loaded user message and between turns. */
+  turnOf: (string | null)[]
+  turns: ReadonlyMap<string, TurnSpan>
+}
+
 export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
+  return buildThreadTimeline(events).items
+}
+
+// Folds the event log into rows. Deltas stream into one row per block until its stored
+// message or reasoning replaces them; deltas arriving after that are stale and skipped.
+export function buildThreadTimeline(events: readonly ThreadEvent[]): ThreadTimeline {
   const items: ThreadItem[] = []
+  const turnOf: (string | null)[] = []
+  const turns = new Map<string, TurnSpan>()
+  let turn: TurnSpan | null = null
+  const push = (item: ThreadItem): void => {
+    items.push(item)
+    turnOf.push(turn?.key ?? null)
+  }
   const tools = new Map<string, number>()
   const approvals = new Map<string, number>()
+  const questions = new Map<string, number>()
   const stored = new Set<string>()
+  const thinking = new Map<string, number>()
   let turnStart = 0
   let open: { messageId: string; index: number } | null = null
+  const stopThinking = (): void => {
+    for (const at of thinking.values()) {
+      const item = items[at]
+      if (item?.kind === 'reasoning') items[at] = { ...item, streaming: false }
+    }
+    thinking.clear()
+  }
   const settle = (): void => {
     for (const at of tools.values()) {
       const item = items[at]
@@ -46,8 +98,11 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
     switch (kind.type) {
       case 'user_message':
         freeze()
+        stopThinking()
         turnStart = items.length
-        items.push({ kind: 'user', key, text: kind.text, steered: kind.delivery === 'steered' })
+        turn = { key, startMs: event.at_ms, endMs: null, outcome: null }
+        turns.set(key, turn)
+        push({ kind: 'user', key, text: kind.text, steered: kind.delivery === 'steered' })
         break
       case 'assistant_delta': {
         if (stored.has(kind.message_id)) break
@@ -57,7 +112,7 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
         } else {
           freeze()
           open = { messageId: kind.message_id, index: items.length }
-          items.push({ kind: 'assistant', key: `delta-${key}`, text: kind.text, streaming: true, truncated: false })
+          push({ kind: 'assistant', key: `delta-${key}`, text: kind.text, streaming: true, truncated: false })
         }
         break
       }
@@ -68,13 +123,39 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
           open = null
         } else {
           freeze()
-          items.push({ kind: 'assistant', key, text: kind.text, streaming: false, truncated: kind.truncated })
+          push({ kind: 'assistant', key, text: kind.text, streaming: false, truncated: kind.truncated })
         }
         break
+      // Reasoning streams beside the answer: neither freezes the other.
+      case 'reasoning_delta': {
+        if (stored.has(kind.message_id)) break
+        const at = thinking.get(kind.message_id)
+        const current = at === undefined ? undefined : items[at]
+        const tokens = kind.estimated_tokens ?? null
+        if (current?.kind === 'reasoning' && at !== undefined) {
+          if (tokens !== null) items[at] = { ...current, tokens }
+        } else {
+          thinking.set(kind.message_id, items.length)
+          push({ kind: 'reasoning', key: `delta-${key}`, streaming: true, redacted: kind.redacted, durationMs: null, tokens })
+        }
+        break
+      }
+      case 'reasoning': {
+        stored.add(kind.message_id)
+        const row: ThreadItem = { kind: 'reasoning', key, streaming: false, redacted: kind.redacted, durationMs: kind.duration_ms ?? null, tokens: kind.estimated_tokens ?? null }
+        const at = thinking.get(kind.message_id)
+        if (at !== undefined && items[at]?.kind === 'reasoning') {
+          items[at] = row
+          thinking.delete(kind.message_id)
+        } else {
+          push(row)
+        }
+        break
+      }
       case 'tool_call':
         freeze()
         tools.set(kind.tool_use_id, items.length)
-        items.push({ kind: 'tool', key, name: kind.name, input: kind.input, inputTruncated: kind.truncated, result: null, settled: false })
+        push({ kind: 'tool', key, name: kind.name, input: kind.input, inputTruncated: kind.truncated, summary: kind.summary ?? null, result: null, settled: false })
         break
       case 'tool_result': {
         const result = { isError: kind.is_error, output: kind.output, truncated: kind.truncated }
@@ -84,25 +165,31 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
           items[at] = { ...call, result }
           tools.delete(kind.tool_use_id)
         } else {
-          items.push({ kind: 'tool', key, name: 'Tool result', input: '', inputTruncated: false, result, settled: true })
+          push({ kind: 'tool', key, name: 'Tool result', input: '', inputTruncated: false, summary: null, result, settled: true })
         }
         break
       }
       case 'turn_end':
         freeze()
+        stopThinking()
         settle()
         if (kind.outcome !== 'completed') untruncateStopped(items, turnStart)
-        if (kind.outcome === 'interrupted') items.push({ kind: 'stopped', key })
-        else if (kind.outcome === 'error') items.push({ kind: 'error', key, text: kind.error ?? 'The turn ended with an error the CLI did not describe.' })
+        if (kind.outcome === 'interrupted') push({ kind: 'stopped', key })
+        else if (kind.outcome === 'error') push({ kind: 'error', key, text: kind.error ?? 'The turn ended with an error the CLI did not describe.' })
+        if (turn !== null) {
+          turn.endMs = event.at_ms
+          turn.outcome = kind.outcome
+        }
+        turn = null
         break
       case 'notice':
         freeze()
-        items.push({ kind: 'notice', key, text: kind.text })
+        push({ kind: 'notice', key, text: kind.text })
         break
       // Requests come from the MCP path, deltas from stdout: an open answer keeps streaming.
       case 'approval_request':
         approvals.set(kind.request_id, items.length)
-        items.push({ kind: 'approval', key, requestId: kind.request_id, name: kind.tool_name, input: kind.input, inputTruncated: kind.truncated, inputBytes: kind.input_bytes, state: 'pending', reason: null })
+        push({ kind: 'approval', key, requestId: kind.request_id, name: kind.tool_name, input: kind.input, inputTruncated: kind.truncated, inputBytes: kind.input_bytes, state: 'pending', reason: null })
         break
       case 'approval_resolved': {
         const at = approvals.get(kind.request_id)
@@ -110,9 +197,19 @@ export function buildThreadItems(events: readonly ThreadEvent[]): ThreadItem[] {
         if (item?.kind === 'approval' && at !== undefined) items[at] = { ...item, state: kind.decision, reason: kind.reason ?? null }
         break
       }
+      case 'question_request':
+        questions.set(kind.request_id, items.length)
+        push({ kind: 'question', key, requestId: kind.request_id, questions: kind.questions, truncated: kind.truncated, state: 'pending', answers: [], reason: null })
+        break
+      case 'question_resolved': {
+        const at = questions.get(kind.request_id)
+        const item = at === undefined ? undefined : items[at]
+        if (item?.kind === 'question' && at !== undefined) items[at] = { ...item, state: kind.outcome, answers: kind.answers, reason: kind.reason ?? null }
+        break
+      }
     }
   }
-  return items
+  return { items, turnOf, turns }
 }
 
 // A stopped or failed turn's partial answer is stored as truncated; the row after it already says why.
@@ -123,6 +220,21 @@ function untruncateStopped(items: ThreadItem[], turnStart: number): void {
     if (item.truncated) items[at] = { ...item, truncated: false }
     return
   }
+}
+
+/** The newest question still waiting for the user; its card takes the composer's place. */
+export function pendingQuestion(items: readonly ThreadItem[]): Extract<ThreadItem, { kind: 'question' }> | null {
+  for (let at = items.length - 1; at >= 0; at--) {
+    const item = items[at]!
+    if (item.kind === 'question' && item.state === 'pending') return item
+  }
+  return null
+}
+
+/** The plan of an `ExitPlanMode` request, or `null` when its input is not whole JSON (cut at the cap). */
+export function planText(input: string): string | null {
+  const plan = parseToolInput(input)?.plan
+  return typeof plan === 'string' ? plan : null
 }
 
 /** A turn is open when the newest user message has no turn end after it. */
@@ -147,12 +259,27 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
       return a.text === (b as typeof a).text
     case 'assistant':
       return a.text === (b as typeof a).text && a.streaming === (b as typeof a).streaming && a.truncated === (b as typeof a).truncated
+    case 'reasoning': {
+      const other = b as typeof a
+      return a.streaming === other.streaming && a.redacted === other.redacted && a.durationMs === other.durationMs && a.tokens === other.tokens
+    }
     case 'tool': {
       const other = b as typeof a
       const ra = a.result
       const rb = other.result
-      return a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.settled === other.settled &&
+      return a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.settled === other.settled && sameSummary(a.summary, other.summary) &&
         (ra === rb || (ra !== null && rb !== null && ra.isError === rb.isError && ra.output === rb.output && ra.truncated === rb.truncated))
+    }
+    case 'turn': {
+      const other = b as typeof a
+      return a.label === other.label && a.outcome === other.outcome && a.expanded === other.expanded
+    }
+    case 'changes': {
+      const other = b as typeof a
+      return a.files.length === other.files.length && a.files.every((file, i) => {
+        const peer = other.files[i]!
+        return file.path === peer.path && file.added === peer.added && file.removed === peer.removed
+      })
     }
     case 'stopped':
       return true
@@ -160,7 +287,16 @@ export function sameThreadItem(a: ThreadItem, b: ThreadItem): boolean {
       const other = b as typeof a
       return a.requestId === other.requestId && a.name === other.name && a.input === other.input && a.inputTruncated === other.inputTruncated && a.inputBytes === other.inputBytes && a.state === other.state && a.reason === other.reason
     }
+    // Questions and answers come from stored events, so a rebuilt row keeps the same arrays.
+    case 'question': {
+      const other = b as typeof a
+      return a.requestId === other.requestId && a.questions === other.questions && a.truncated === other.truncated && a.state === other.state && a.answers === other.answers && a.reason === other.reason
+    }
   }
+}
+
+function sameSummary(a: ToolSummary | null, b: ToolSummary | null): boolean {
+  return a === b || (a !== null && b !== null && a.kind === b.kind && a.target === b.target && a.added === b.added && a.removed === b.removed)
 }
 
 export interface ThreadWindow {

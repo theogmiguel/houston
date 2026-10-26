@@ -89,19 +89,24 @@ function threadInfo(over: Partial<SessionInfo>): SessionInfo {
   } as unknown as SessionInfo
 }
 
-function ThreadFrame({ events, info, hasMore, expandTools = 0, menu = false, queue, draft }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number; menu?: boolean; queue?: ThreadQueuedMessage[]; draft?: string }): React.JSX.Element {
+function ThreadFrame({ events, info, hasMore, expandTools = 0, openTurns = false, menu = false, queue, draft }: { events: ThreadEventKind[]; info: SessionInfo; hasMore?: boolean; expandTools?: number; openTurns?: boolean; menu?: boolean; queue?: ThreadQueuedMessage[]; draft?: string }): React.JSX.Element {
   const client = React.useMemo(() => fixtureClient(timeline(events), hasMore, queue), [events, hasMore, queue])
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
-    if (expandTools === 0) return
+    if (expandTools === 0 && !openTurns) return
     const timer = window.setInterval(() => {
+      const folded = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('[data-thread-item="turn"] > button[aria-expanded="false"]') ?? [])
+      if (openTurns && folded.length > 0) {
+        folded.forEach((button) => button.click())
+        return
+      }
       const headers = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('[data-thread-item="tool"] > button') ?? [])
       if (headers.length === 0) return
-      headers.slice(-expandTools).forEach((button) => button.click())
+      if (expandTools > 0) headers.slice(-expandTools).forEach((button) => button.click())
       window.clearInterval(timer)
     }, 20)
     return () => window.clearInterval(timer)
-  }, [expandTools])
+  }, [expandTools, openTurns])
   React.useEffect(() => {
     if (draft === undefined) return
     const timer = window.setInterval(() => {
@@ -179,7 +184,46 @@ const TOOL_HEAVY: ThreadEventKind[] = [
 ]
 
 export function ThreadToolsStory(): React.JSX.Element {
-  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={TOOL_HEAVY} info={threadInfo({ title: 'Notes file' })} expandTools={3} /></div>
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={TOOL_HEAVY} info={threadInfo({ title: 'Notes file' })} expandTools={3} openTurns /></div>
+}
+
+const thought = (id: string, ms: number, tokens: number): ThreadEventKind => ({ type: 'reasoning', message_id: id, text: '', truncated: false, duration_ms: ms, estimated_tokens: tokens, redacted: false })
+const edit = (id: string, path: string, added: number, removed: number): ThreadEventKind => ({ type: 'tool_call', tool_use_id: id, name: 'Edit', input: JSON.stringify({ file_path: path }), truncated: true, summary: { kind: 'edit', target: path, added, removed } })
+
+const WORK_LOG: ThreadEventKind[] = [
+  user('The rail and the stack tabs both jump when a pane finishes. Make both sorts stable.'),
+  thought('k1', 6000, 812),
+  call('g1', 'Grep', { pattern: 'byStatus', path: '/home/dev/code/houston/ui/src/renderer/src' }),
+  result('g1', 'railView.ts\nStackTabs.tsx'),
+  call('r1', 'Read', { file_path: '/home/dev/code/houston/ui/src/renderer/src/railView.ts' }),
+  result('r1', 'export const order = …'),
+  call('r2', 'Read', { file_path: '/home/dev/code/houston/ui/src/renderer/src/components/StackTabs.tsx' }),
+  result('r2', 'export function StackTabs(…) { … }'),
+  edit('e1', '/home/dev/code/houston/ui/src/renderer/src/railView.ts', 4, 2),
+  result('e1', 'The file has been updated successfully.'),
+  edit('e2', '/home/dev/code/houston/ui/src/renderer/src/components/StackTabs.tsx', 3, 3),
+  result('e2', 'The file has been updated successfully.'),
+  call('b1', 'Bash', { command: 'bun run typecheck', description: 'Typecheck the renderer' }),
+  result('b1', 'src/components/StackTabs.tsx(41,7): error TS2304: Cannot find name byId.', true),
+  edit('e3', '/home/dev/code/houston/ui/src/renderer/src/components/StackTabs.tsx', 1, 0),
+  result('e3', 'The file has been updated successfully.'),
+  call('b2', 'Bash', { command: 'bun run test railView StackTabs', description: 'Run the affected tests' }),
+  result('b2', ' Test Files  2 passed (2)\n      Tests  19 passed (19)'),
+  said('w1', 'Both sorts now use the pane id, so a finishing pane stays in place. The typecheck caught a missing import, which I added; the 19 affected tests pass.'),
+  done,
+  user('Does the overview grid sort the same way?'),
+  { type: 'reasoning_delta', message_id: 'k2', text: '', estimated_tokens: 50, redacted: false },
+  call('r3', 'Read', { file_path: '/home/dev/code/houston/ui/src/renderer/src/components/Overview.tsx' })
+]
+
+/** A settled tool-heavy turn folded into its summary, then a live turn still thinking. */
+export function ThreadWorkLogStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={WORK_LOG} info={threadInfo({ status: 'working', title: 'Stable sort' })} /></div>
+}
+
+/** The same thread with the settled turn opened. */
+export function ThreadWorkLogOpenStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={WORK_LOG} info={threadInfo({ status: 'working', title: 'Stable sort' })} openTurns /></div>
 }
 
 const APPROVALS: ThreadEventKind[] = [
@@ -220,6 +264,38 @@ const HELD: ThreadQueuedMessage[] = QUEUED.map((message) => ({ ...message, state
 /** After a daemon restart the queue waits for the user: nothing is sent until they send it. */
 export function ThreadHeldQueueStory(): React.JSX.Element {
   return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={HISTORY} info={threadInfo({ title: 'Rail flicker' })} queue={HELD} /></div>
+}
+
+const COLOUR = { question: 'Which colour should the unseen mark use?', header: 'Colour', multi_select: false, options: [{ label: 'Accent', description: 'The theme accent, as the rail selection uses' }, { label: 'Warn', description: 'The warning colour, as pending approvals use' }, { label: 'Muted', description: 'A faint dot that never competes with status' }] }
+const SCOPE = { question: 'Where should the mark appear?', header: 'Scope', multi_select: true, options: [{ label: 'Rail', description: 'The session rail' }, { label: 'Pane header', description: 'The pane title bar' }, { label: 'Tray', description: 'The tray menu' }] }
+
+const QUESTIONS: ThreadEventKind[] = [
+  user('Add an unseen mark for finished panes. Ask me what you need.'),
+  { type: 'question_request', request_id: 'q0', tool_use_id: 'u0', questions: [{ ...COLOUR, question: 'Should the mark clear when the pane is focused?', header: 'Clear', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }], truncated: false },
+  { type: 'question_resolved', request_id: 'q0', outcome: 'answered', answers: [{ question: 'Should the mark clear when the pane is focused?', selected: ['Yes'], other: null }], reason: null },
+  said('q-m1', 'It clears on focus. Two more choices before I edit the rail.'),
+  { type: 'question_request', request_id: 'q1', tool_use_id: 'u1', questions: [COLOUR, SCOPE], truncated: false }
+]
+
+/** Claude's questions: an answered one in the timeline and a held one above the composer. */
+export function ThreadQuestionStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={QUESTIONS} info={threadInfo({ status: 'needs-input', title: 'Unseen mark' })} /></div>
+}
+
+const PLAN = '## Stable rail order\n\n1. Sort the rail by session id instead of status in `railView.ts`.\n2. Keep the unseen mark on its own key so a finished pane does not move.\n3. Run `bun run test railView` and the rail story.\n\nNo protocol change.'
+
+const PLANNING: ThreadEventKind[] = [
+  user('Plan a fix for the rail flicker; do not edit yet.'),
+  call('p1', 'Read', { file_path: 'ui/src/renderer/src/railView.ts' }),
+  result('p1', 'export function railView(…) { … }'),
+  // The stream's ExitPlanMode input is empty; the plan arrives only with the permission request.
+  { type: 'tool_call', tool_use_id: 'p2', name: 'ExitPlanMode', input: '{}', truncated: false, summary: { kind: 'plan', target: '', added: null, removed: null } },
+  { type: 'approval_request', request_id: 'r-plan', tool_use_id: 'p2', tool_name: 'ExitPlanMode', input: JSON.stringify({ plan: PLAN, planFilePath: '/home/dev/.claude/plans/stable-rail.md' }), truncated: false, input_bytes: 420 }
+]
+
+/** A plan waiting for Implement or Keep planning, in plan mode. */
+export function ThreadPlanStory(): React.JSX.Element {
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><ThreadFrame events={PLANNING} info={threadInfo({ status: 'needs-input', title: 'Rail flicker plan', permission_mode: 'plan' })} /></div>
 }
 
 /** One long thread, for measuring the rendered DOM against the row window. */

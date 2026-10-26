@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
 import { loadMarkdownPipeline } from '../MarkdownPreview'
 import { IconArrowUp, IconClock, IconStopCircle, IconZap } from '../icons'
@@ -24,12 +24,16 @@ import {
   ThreadScroll,
   ThreadStoppedMarker,
   ThreadSurface,
+  ThreadTurnFold,
   ThreadUserMessage
 } from '../ui/Thread'
-import { ThreadApprovalRow, ThreadToolRow } from './ThreadToolCard'
-import { THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
-import { LATEST_WINDOW, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
+import { ThreadApprovalRow, ThreadPlanRow, ThreadToolRow } from './ThreadToolCard'
+import { ThreadQuestionPrompt, ThreadQuestionRow } from './ThreadQuestion'
+import { ThreadChangesCard, ThreadReasoningItem } from './ThreadWorkLog'
+import { APPROVAL_MESSAGE_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES } from '../../houston/generated/DEFAULTS'
+import { LATEST_WINDOW, PLAN_TOOL, pendingQuestion, sameThreadItem, showEarlier, showLater, turnOpen, windowBounds, type ThreadItem, type ThreadWindow } from '../../thread/threadModel'
 import { actOnQueue, sendThreadMessage, setThreadPermissionMode, stopThread, useThread, type QueueAction } from '../../thread/threadStore'
+import { foldThreadRows, keepWindowAnchor } from '../../thread/threadTurns'
 import type { ThreadPermissionMode, ThreadQueuedMessage } from '../../thread/threadTypes'
 
 type PipelineModule = Awaited<ReturnType<typeof loadMarkdownPipeline>>
@@ -49,12 +53,18 @@ function useMarkdownPipeline(): PipelineModule | null {
 
 type AnswerApproval = (requestId: string, allow: boolean) => void
 
-const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, onAnswer }: {
+/** Sent when Keep planning is pressed with an empty message box. */
+export const KEEP_PLANNING_DEFAULT = 'The user wants to keep planning before you implement.'
+
+const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected, cwd, onAnswer, onKeepPlanning, onToggleTurn }: {
   item: ThreadItem
   markdown: PipelineModule | null
   answering: boolean
   connected: boolean
+  cwd: string | undefined
   onAnswer: AnswerApproval
+  onKeepPlanning: (requestId: string) => void
+  onToggleTurn: (turn: string) => void
 }): React.JSX.Element {
   switch (item.kind) {
     case 'user':
@@ -66,8 +76,14 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
           {item.truncated && <ThreadCaption>Answer cut at 256 KiB by Houston.</ThreadCaption>}
         </ThreadAssistantBlock>
       )
+    case 'reasoning':
+      return <ThreadReasoningItem item={item} />
     case 'tool':
-      return <ThreadToolRow item={item} />
+      return <ThreadToolRow item={item} cwd={cwd} />
+    case 'turn':
+      return <ThreadTurnFold label={item.label} outcome={item.outcome} open={item.expanded} onToggle={() => onToggleTurn(item.turn)} />
+    case 'changes':
+      return <ThreadChangesCard item={item} cwd={cwd} />
     case 'notice':
       return <ThreadNotice>{item.text}</ThreadNotice>
     case 'error':
@@ -75,9 +91,15 @@ const ThreadRow = memo(function ThreadRow({ item, markdown, answering, connected
     case 'stopped':
       return <ThreadStoppedMarker />
     case 'approval':
+      if (item.name === PLAN_TOOL) {
+        const renderPlan = (source: string): React.JSX.Element => markdown ? <markdown.MarkdownDocument source={source} variant="thread" /> : <ThreadPlainText>{source}</ThreadPlainText>
+        return <ThreadPlanRow item={item} answering={answering} connected={connected} renderPlan={renderPlan} onAnswer={onAnswer} onKeepPlanning={onKeepPlanning} />
+      }
       return <ThreadApprovalRow item={item} answering={answering} connected={connected} onAnswer={onAnswer} />
+    case 'question':
+      return <ThreadQuestionRow item={item} />
   }
-}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.answering === b.answering && a.connected === b.connected && sameThreadItem(a.item, b.item))
+}, (a, b) => a.markdown === b.markdown && a.onAnswer === b.onAnswer && a.onKeepPlanning === b.onKeepPlanning && a.onToggleTurn === b.onToggleTurn && a.answering === b.answering && a.connected === b.connected && a.cwd === b.cwd && sameThreadItem(a.item, b.item))
 
 const PERMISSION_MODES: readonly { value: ThreadPermissionMode; label: string }[] = [
   { value: 'default', label: 'Ask before tools' },
@@ -142,7 +164,15 @@ function submitsOnEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
   return e.key === 'Enter' && !e.shiftKey && !isImeEnter({ key: e.key, keyCode: e.nativeEvent.keyCode, isComposing: e.nativeEvent.isComposing })
 }
 
-export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDismissDaemonRefusal, strip, onSend, onStop }: {
+/** The composer's text for a caller outside it, such as Keep planning, without re-rendering on each key. */
+export interface ComposerDraft {
+  text: () => string
+  clear: () => void
+  /** Shows why the text was not sent, above the field, and keeps the text. */
+  refuse: (reason: string) => void
+}
+
+export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDismissDaemonRefusal, strip, draft, onSend, onStop }: {
   stoppable: boolean
   disabledReason: string | null
   /** The daemon's last refusal of a message or queue request. */
@@ -150,12 +180,20 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
   onDismissDaemonRefusal?: () => void
   /** The queue's summary, shown above the field. */
   strip?: React.ReactNode
+  draft?: React.RefObject<ComposerDraft | null>
   /** Whether the message was written; the text stays in the field when it was not. `steer` stops the open turn. */
   onSend: (text: string, steer: boolean) => boolean
   onStop: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
+  const current = useRef(text)
+  current.current = text
   const [refusal, setRefusal] = useState<string | null>(null)
+  useEffect(() => {
+    if (!draft) return
+    draft.current = { text: () => current.current, clear: () => { setText(''); setRefusal(null) }, refuse: setRefusal }
+    return () => { draft.current = null }
+  }, [draft])
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
   const send = (steer: boolean): void => {
     if (disabledReason !== null || text.trim() === '') return
@@ -334,26 +372,48 @@ function useStickToBottom(scroll: React.RefObject<HTMLDivElement | null>, deps: 
   }
 }
 
-export function ThreadPane({ client, info, connected }: { client: HoustonClient; info: SessionInfo; connected: boolean }): React.JSX.Element {
+/** `active`: this pane is the grid's focused pane, so number keys answer its question. */
+export function ThreadPane({ client, info, connected, active = false }: { client: HoustonClient; info: SessionInfo; connected: boolean; active?: boolean }): React.JSX.Element {
   const thread = useThread(client, info.id, connected)
   const markdown = useMarkdownPipeline()
   const [win, setWin] = useState<ThreadWindow>(LATEST_WINDOW)
+  // Turns the reader opened, by the seq of their first message; settled turns start folded.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleTurn = useCallback((turn: string) => setExpanded((current) => {
+    const next = new Set(current)
+    if (!next.delete(turn)) next.add(turn)
+    return next
+  }), [])
+  const rows = useMemo(() => foldThreadRows(thread.timeline, expanded), [thread.timeline, expanded])
+  const anchored = useCallback((current: ThreadWindow) => keepWindowAnchor(rows, thread.timeline, current), [rows, thread.timeline])
   const scroll = useRef<HTMLDivElement>(null)
-  const { start, end } = windowBounds(thread.items, win)
-  const shown = thread.items.slice(start, end)
-  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [thread.items, thread.queue, start, end, markdown], win.end === null)
+  const { start, end } = windowBounds(rows, anchored(win))
+  const shown = rows.slice(start, end)
+  const asking = pendingQuestion(thread.timeline.items)
+  const { onScroll, holdFromBottom } = useStickToBottom(scroll, [rows, thread.queue, start, end, markdown], win.end === null)
   const [editing, setEditing] = useState<string | null>(null)
   const queueDisabled = composerDisabledReason(info, connected) !== null
   const act = (action: QueueAction): void => {
     if (!actOnQueue(client, info.id, action)) console.warn('houston: thread queue request dropped: the connection to the daemon is closed')
   }
+  const draft = useRef<ComposerDraft | null>(null)
+  const { answer } = thread
+  const keepPlanning = useCallback((requestId: string) => {
+    const message = draft.current?.text().trim() ?? ''
+    const size = utf8Length(message)
+    if (size > APPROVAL_MESSAGE_MAX_BYTES) {
+      draft.current?.refuse(`Feedback not sent: it is ${size.toLocaleString()} bytes and Keep planning takes up to ${APPROVAL_MESSAGE_MAX_BYTES.toLocaleString()} bytes.`)
+      return
+    }
+    if (answer(requestId, false, message || KEEP_PLANNING_DEFAULT)) draft.current?.clear()
+  }, [answer])
   const growOnArrival = useRef(false)
   useEffect(() => {
     if (thread.loadingEarlier || !growOnArrival.current) return
     growOnArrival.current = false
     holdFromBottom()
-    setWin((current) => showEarlier(thread.items, current))
-  }, [thread.loadingEarlier, thread.items, holdFromBottom])
+    setWin((current) => showEarlier(rows, anchored(current)))
+  }, [thread.loadingEarlier, rows, anchored, holdFromBottom])
   const earlier = (): void => {
     if (start === 0) {
       growOnArrival.current = true
@@ -361,7 +421,7 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
       return
     }
     holdFromBottom()
-    setWin((current) => showEarlier(thread.items, current))
+    setWin((current) => showEarlier(rows, anchored(current)))
   }
   return (
     <ThreadSurface>
@@ -375,11 +435,11 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
             </Button>
           </ThreadHistoryControl>
         )}
-        {thread.loaded && thread.items.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
-        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} onAnswer={thread.answer} />)}
+        {thread.loaded && rows.length === 0 && <ThreadEmpty>No messages yet.</ThreadEmpty>}
+        {shown.map((item) => <ThreadRow key={item.key} item={item} markdown={markdown} answering={item.kind === 'approval' && thread.answering.has(item.requestId)} connected={connected} cwd={info.cwd} onAnswer={thread.answer} onKeepPlanning={keepPlanning} onToggleTurn={toggleTurn} />)}
         {win.end !== null && (
           <ThreadHistoryControl>
-            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(thread.items, current))}>Show later</Button>
+            <Button data-testid="thread-show-later" variant="ghost" size="sm" onClick={() => setWin((current) => showLater(rows, anchored(current)))}>Show later</Button>
             <Button data-testid="thread-jump-latest" variant="ghost" size="sm" onClick={() => { setWin(LATEST_WINDOW); thread.followLatest() }}>Jump to latest</Button>
           </ThreadHistoryControl>
         )}
@@ -387,12 +447,14 @@ export function ThreadPane({ client, info, connected }: { client: HoustonClient;
           <QueuedRow key={message.id} message={message} disabled={queueDisabled} editing={editing === message.id} onEdit={(on) => setEditing(on ? message.id : null)} onAct={act} />
         ))}
       </ThreadScroll>
+      {asking && <ThreadQuestionPrompt key={asking.requestId} item={asking} answering={thread.answering.has(asking.requestId)} connected={connected} active={active} onAnswer={thread.answerQuestion} />}
       <ThreadComposer
         stoppable={threadStoppable(info, thread.events)}
         disabledReason={composerDisabledReason(info, connected)}
         daemonRefusal={thread.refusal}
         onDismissDaemonRefusal={thread.dismissRefusal}
         strip={<QueueStrip queue={thread.queue} disabled={queueDisabled} onAct={act} />}
+        draft={draft}
         onSend={(text, steer) => {
           setWin(LATEST_WINDOW)
           thread.followLatest()
