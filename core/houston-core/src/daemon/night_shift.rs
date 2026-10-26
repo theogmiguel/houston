@@ -100,6 +100,8 @@ pub(crate) struct NightShiftCtx {
     checks_running: Mutex<HashSet<(u32, u32, String)>>,
     /// PRs whose CI action (re-run or fixer spawn) is in a detached thread.
     ci_actions: Mutex<HashSet<(u32, u32)>>,
+    /// Overrides the run-completion poll and deadline in tests.
+    ci_wait_for_test: Mutex<Option<(std::time::Duration, std::time::Duration)>>,
     /// Runs whose run-end token scan has already been started.
     token_scans: Mutex<HashSet<u32>>,
 }
@@ -127,6 +129,23 @@ struct NightCiAction {
     key: (u32, u32),
 }
 
+/// What one read of an Actions run's status answered.
+enum CiPoll {
+    Completed,
+    /// Its status, or why the read failed.
+    Pending(String),
+}
+
+/// What waiting for an Actions run to finish before a re-run answered.
+enum CiRunWait {
+    Completed,
+    TimedOut {
+        status: String,
+        waited: std::time::Duration,
+    },
+    Stopped,
+}
+
 impl Drop for NightCiAction {
     fn drop(&mut self) {
         self.daemon
@@ -152,6 +171,12 @@ const NIGHT_CHECK_LIMIT: std::time::Duration = std::time::Duration::from_secs(30
 const NIGHT_SLOT_POLL: std::time::Duration = std::time::Duration::from_secs(5);
 /// What a failure note to the orchestrator quotes of each failed check.
 const NIGHT_CHECK_NOTE_CHARS: usize = 1_500;
+/// GitHub refuses `gh run rerun --failed` while any job of the run is still in
+/// progress; 30 s keeps the wait responsive without polling the API hard.
+const NIGHT_CI_RUN_POLL: std::time::Duration = std::time::Duration::from_secs(30);
+/// A queued CI run can take most of an hour behind a busy runner pool; 45 min
+/// bounds the wait, after which Houston leaves the failure to the orchestrator.
+const NIGHT_CI_RUN_WAIT: std::time::Duration = std::time::Duration::from_secs(45 * 60);
 /// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
@@ -1103,6 +1128,16 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_night_shift_pr_fates_for_test(&self, fates: Option<HashMap<u32, String>>) {
         *self.night.pr_fates_for_test.lock().expect("pr fates") = fates;
+    }
+
+    /// The poll and deadline a re-run waits with; tests shrink them.
+    #[doc(hidden)]
+    pub fn set_night_shift_ci_wait_for_test(
+        &self,
+        poll: std::time::Duration,
+        wait: std::time::Duration,
+    ) {
+        *self.night.ci_wait_for_test.lock().expect("night ci wait") = Some((poll, wait));
     }
 
     /// The dev channel may stand a script in for the orchestrator's CLI: a
@@ -3466,8 +3501,10 @@ impl Daemon {
             })
     }
 
-    /// Requests one re-run of the failed jobs, then records it. A failed
-    /// request is a real failure: Houston says so and starts the fixer.
+    /// Requests one re-run of the failed jobs, then records it. GitHub refuses
+    /// a re-run while sibling jobs still run, so the detached caller first
+    /// waits for the run to complete; a failed request after that is a real
+    /// failure and Houston says so and starts the fixer.
     #[allow(clippy::too_many_arguments)]
     fn night_ci_rerun(
         self: &Arc<Self>,
@@ -3483,6 +3520,24 @@ impl Daemon {
         head: Option<&str>,
         excerpt: &str,
     ) {
+        match self.night_ci_wait_for_run(run_id, gh_run, workspace) {
+            CiRunWait::Completed => {}
+            CiRunWait::Stopped => return,
+            CiRunWait::TimedOut { status, waited } => {
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} re-run waited"),
+                    &format!(
+                        "Houston waited {} min for Actions run {gh_run} to complete before \
+                         re-running PR #{number}'s failed jobs; it is still {status}. Houston \
+                         re-ran nothing and started no fixer, and counted neither.",
+                        waited.as_secs() / 60
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+                return;
+            }
+        }
         match crate::gh::rerun_failed_jobs(Path::new(workspace), gh_run) {
             Ok(()) => {
                 self.night_ci_set_gates(entry_id, |gates| proto::NightGates {
@@ -3527,6 +3582,65 @@ impl Daemon {
                 );
             }
         }
+    }
+
+    /// Polls until the Actions run is completed, the run's tree stops, or the
+    /// deadline passes. Never called on the control loop.
+    fn night_ci_wait_for_run(&self, run_id: u32, gh_run: u64, workspace: &str) -> CiRunWait {
+        let (poll, wait) = self
+            .night
+            .ci_wait_for_test
+            .lock()
+            .expect("night ci wait")
+            .unwrap_or((NIGHT_CI_RUN_POLL, NIGHT_CI_RUN_WAIT));
+        let deadline = std::time::Instant::now() + wait;
+        if self.night_ci_run_stopped(run_id) {
+            return CiRunWait::Stopped;
+        }
+        let mut last = match self.night_ci_poll(workspace, gh_run) {
+            CiPoll::Completed => return CiRunWait::Completed,
+            CiPoll::Pending(status) => status,
+        };
+        while std::time::Instant::now() < deadline {
+            let until = std::time::Instant::now() + poll;
+            while std::time::Instant::now() < until {
+                std::thread::sleep(
+                    std::time::Duration::from_secs(1).min(until - std::time::Instant::now()),
+                );
+                if self.night_ci_run_stopped(run_id) {
+                    return CiRunWait::Stopped;
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            match self.night_ci_poll(workspace, gh_run) {
+                CiPoll::Completed => return CiRunWait::Completed,
+                CiPoll::Pending(status) => last = status,
+            }
+        }
+        CiRunWait::TimedOut {
+            status: last,
+            waited: wait,
+        }
+    }
+
+    fn night_ci_poll(&self, workspace: &str, gh_run: u64) -> CiPoll {
+        match crate::gh::run_status(Path::new(workspace), gh_run) {
+            Ok(status) if status.completed() => CiPoll::Completed,
+            Ok(status) => CiPoll::Pending(status.label()),
+            Err(e) => CiPoll::Pending(format!("unreadable ({e:#})")),
+        }
+    }
+
+    /// A run whose tree is stopping or already swept closes no more work.
+    fn night_ci_run_stopped(&self, run_id: u32) -> bool {
+        self.night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .is_none_or(|tree| tree.stopping)
     }
 
     /// Starts a fixer pane under the run's orchestrator in its own worktree, so the

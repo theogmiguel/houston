@@ -2708,6 +2708,137 @@ async fn flaky_failure_rerun_once_then_a_fixer() {
 }
 
 #[tokio::test]
+async fn a_rerun_waits_while_the_run_has_jobs_in_progress() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
+    std::fs::write(
+        gh_bin.join("run-status-778.json"),
+        r#"{"status":"in_progress","conclusion":null}"#,
+    )
+    .unwrap();
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    r.daemon
+        .set_night_shift_ci_wait_for_test(Duration::from_millis(10), Duration::from_millis(150));
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (verb, body) in [
+        (
+            "lesson",
+            json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+        ),
+        (
+            "pr",
+            json!({ "number": 24, "title": "Tray fix", "head": "HEAD" }),
+        ),
+    ] {
+        assert_eq!(r.night(o, verb, body).await.0, 200);
+    }
+    let checks = vec!["core-checks".to_string()];
+    let log = vec![
+        "core-checks".to_string(),
+        "test pty::resize_race ... FAILED".to_string(),
+    ];
+    let action = r
+        .daemon
+        .night_shift_ci_failed(o, 24, &checks, &log, Some(778))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
+    );
+    wait_until("the orchestrator to hear the wait timed out", || {
+        r.notes(o, "Night shift: PR #24 re-run waited") == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 24);
+    assert_eq!(pr.gates.reruns, 0, "no re-run was counted");
+    assert_eq!(pr.gates.fixes, 0, "no fixer was counted");
+    assert!(fixer_pane(&r, run.run_id, 24).is_none());
+    let calls = std::fs::read_to_string(gh_bin.join("gh.log")).unwrap_or_default();
+    assert!(
+        calls.contains("run view 778 --json status,conclusion"),
+        "{calls}"
+    );
+    assert!(
+        !calls.contains("run rerun 778"),
+        "GitHub would refuse a run with jobs in progress: {calls}"
+    );
+}
+
+#[tokio::test]
+async fn a_rerun_refused_after_the_run_completed_starts_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
+    std::fs::write(
+        gh_bin.join("run-status-779.json"),
+        r#"{"status":"completed","conclusion":"failure"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        gh_bin.join("rerun-refused"),
+        "Cannot rerun a workflow run that is not completed",
+    )
+    .unwrap();
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    r.daemon
+        .set_night_shift_ci_wait_for_test(Duration::from_millis(10), Duration::from_millis(150));
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (verb, body) in [
+        (
+            "lesson",
+            json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+        ),
+        (
+            "pr",
+            json!({ "number": 25, "title": "Tray fix", "head": "HEAD" }),
+        ),
+    ] {
+        assert_eq!(r.night(o, verb, body).await.0, 200);
+    }
+    let checks = vec!["core-checks".to_string()];
+    let log = vec![
+        "core-checks".to_string(),
+        "test pty::resize_race ... FAILED".to_string(),
+    ];
+    let action = r
+        .daemon
+        .night_shift_ci_failed(o, 25, &checks, &log, Some(779))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
+    );
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 25).is_some()
+    })
+    .await;
+    wait_until("the fixer to be counted", || {
+        pr_entry(&r, run.run_id, 25).gates.fixes == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 25);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(
+        pr.gates.reruns, 0,
+        "a refused re-run is not a re-run Houston counted"
+    );
+    assert_eq!(r.notes(o, "Night shift: PR #25 re-run failed"), 1);
+}
+
+#[tokio::test]
 async fn a_real_ci_failure_starts_a_fixer() {
     use houston_core::night_shift::CiAction;
     let r = rig().await;
