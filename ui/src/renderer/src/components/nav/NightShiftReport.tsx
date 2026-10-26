@@ -6,7 +6,7 @@ import { MarkdownPreview } from '../MarkdownPreview'
 import { Button, Card, GateChip, Inline, Notice, Readout, SectionHead, Text } from '../ui'
 import { ReadoutGrid } from '../ui/Readout'
 import { engineLabel } from '../engineLabel'
-import { STOP_REASON, countLabel, decisionOptions, decisionText, headline, limitNote, prShelves, timeOfDay } from './nightShiftFormat'
+import { STOP_REASON, countLabel, decisionOptions, decisionText, headline, limitNote, prShelves, providerCostSub, providerCostValue, timeOfDay } from './nightShiftFormat'
 
 function Gates({ entry }: { entry: NightEntry }): React.JSX.Element {
   const g = entry.gates
@@ -14,6 +14,8 @@ function Gates({ entry }: { entry: NightEntry }): React.JSX.Element {
     <Inline wrap gap="small">
       <GateChip label="Checks" state={g.checks} kind="fact" />
       <GateChip label="CI" state={g.ci} kind="fact" />
+      {g.reruns > 0 && <Text size="small" tone="muted">{countLabel(g.reruns, 're-run', 're-runs')}</Text>}
+      {g.fixes > 0 && <Text size="small" tone="muted">{countLabel(g.fixes, 'fix', 'fixes')}</Text>}
       <GateChip label="Verify" state={g.verify} kind="fact" />
       <GateChip label="Review" state={g.review} kind="verdict" />
       {entry.visible && <GateChip label="QA" state={g.qa} kind="verdict" />}
@@ -102,7 +104,7 @@ export function NightShiftReport({ run, report, workers, holdForQa, onDecide, on
             <Card>
               {shelf.prs.map((pr) => (
                 <Card.Row key={pr.id} heading={`#${pr.pr_number} ${pr.title}`}
-                  meta={<div className="grid gap-[var(--space-1)]"><Gates entry={pr} /><Proofs pr={pr} plans={plans} />{pr.gates.reruns > 0 && <Text size="small" tone="muted">CI re-run {pr.gates.reruns}× for a known flaky test</Text>}</div>}
+                  meta={<div className="grid gap-[var(--space-1)]"><Gates entry={pr} /><Proofs pr={pr} plans={plans} /></div>}
                   action={holdForQa && pr.visible ? (pr.qa_passed ? <Text size="small" tone="muted">QA passed</Text>
                     : <Button variant="secondary" size="sm" onClick={() => onQaPassed(pr.id)}>Mark QA passed</Button>) : null} />
               ))}
@@ -134,7 +136,7 @@ export function NightShiftReport({ run, report, workers, holdForQa, onDecide, on
         <ReadoutGrid>
           <Readout label="Pane-hours" value={run.cost.pane_hours.toFixed(1)} tabular />
           <Readout label="Panes" value={run.cost.panes} tabular />
-          {run.cost.per_provider.map((l) => <Readout key={l.provider} label={engineLabel(l.provider)} value={`${l.pane_hours.toFixed(1)} h`} sub={countLabel(l.panes, 'pane', 'panes')} tabular />)}
+          {run.cost.per_provider.map((l) => <Readout key={l.provider} label={`${engineLabel(l.provider)} · ${l.pane_hours.toFixed(1)} h`} value={providerCostValue(l)} sub={providerCostSub(l)} tabular />)}
         </ReadoutGrid>
       </section>
 

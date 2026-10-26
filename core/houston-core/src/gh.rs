@@ -1400,6 +1400,108 @@ pub fn pr_check_log(dir: &Path, run_id: u64) -> Result<PrCheckLog> {
     })
 }
 
+/// `gh run rerun <id> --failed`: GitHub re-runs exactly the jobs that failed.
+pub fn rerun_failed_jobs(dir: &Path, run_id: u64) -> Result<()> {
+    ready(dir, "re-run failed jobs")?;
+    let argv = rerun_failed_argv(run_id);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let out = run(dir, &args)?;
+    if !out.ok {
+        let output = first_meaningful_line(&out.stderr)
+            .or_else(|| first_meaningful_line(&out.stdout))
+            .unwrap_or_else(|| "no output".into());
+        bail!(
+            "gh run rerun {run_id} --failed failed (exit {:?}): {output}",
+            out.code
+        );
+    }
+    Ok(())
+}
+
+fn rerun_failed_argv(run_id: u64) -> Vec<String> {
+    vec![
+        "run".into(),
+        "rerun".into(),
+        run_id.to_string(),
+        "--failed".into(),
+    ]
+}
+
+/// An Actions run's lifecycle, as `gh run view --json status,conclusion` reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunStatus {
+    pub status: String,
+    pub conclusion: Option<String>,
+}
+
+impl RunStatus {
+    pub fn completed(&self) -> bool {
+        self.status.eq_ignore_ascii_case("completed")
+    }
+
+    /// The status and, when GitHub reported one, its conclusion.
+    pub fn label(&self) -> String {
+        match self.conclusion.as_deref() {
+            Some(conclusion) => format!("{} ({conclusion})", self.status),
+            None => self.status.clone(),
+        }
+    }
+}
+
+/// `gh run view <id> --json status,conclusion`: whether the run still has jobs
+/// in progress, which GitHub refuses to re-run.
+pub fn run_status(dir: &Path, run_id: u64) -> Result<RunStatus> {
+    ready(dir, "read an Actions run's status")?;
+    let argv = run_status_argv(run_id);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let out = run(dir, &args)?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| {
+                format!(
+                    "gh run view {run_id} --json status,conclusion failed (exit {:?})",
+                    out.code
+                )
+            })
+        );
+    }
+    parse_run_status(&out.stdout).with_context(|| {
+        format!("gh run view {run_id} answered a status document Houston cannot read")
+    })
+}
+
+fn run_status_argv(run_id: u64) -> Vec<String> {
+    vec![
+        "run".into(),
+        "view".into(),
+        run_id.to_string(),
+        "--json".into(),
+        "status,conclusion".into(),
+    ]
+}
+
+fn parse_run_status(stdout: &str) -> Result<RunStatus> {
+    let value: serde_json::Value =
+        serde_json::from_str(stdout).context("the answer is not a JSON object")?;
+    let status = value
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|status| !status.is_empty())
+        .ok_or_else(|| anyhow!("status must be a non-empty string in the answer {stdout:?}"))?;
+    let conclusion = value
+        .get("conclusion")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|conclusion| !conclusion.is_empty())
+        .map(str::to_string);
+    Ok(RunStatus {
+        status: status.to_ascii_lowercase(),
+        conclusion: conclusion.map(|c| c.to_ascii_lowercase()),
+    })
+}
+
 /// `gh pr diff --color never`, cut to [`PR_DIFF_MAX_BYTES`] on a character
 /// boundary when GitHub serves more; the flag says which it was.
 pub fn pr_diff(dir: &Path, number: u32) -> Result<(String, bool)> {
@@ -1854,6 +1956,45 @@ mod tests {
                 "{field} missing from {PR_DETAIL_FIELDS}"
             );
         }
+    }
+
+    #[test]
+    fn a_rerun_asks_gh_for_only_the_failed_jobs_of_that_run() {
+        assert_eq!(
+            rerun_failed_argv(42),
+            ["run", "rerun", "42", "--failed"]
+                .map(str::to_string)
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn a_run_read_asks_gh_for_its_status_and_conclusion() {
+        assert_eq!(
+            run_status_argv(42),
+            ["run", "view", "42", "--json", "status,conclusion"]
+                .map(str::to_string)
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn a_run_status_parses_completed_and_in_progress_answers() {
+        let completed = parse_run_status(r#"{"status":"completed","conclusion":"failure"}"#)
+            .expect("a completed run parses");
+        assert!(completed.completed());
+        assert_eq!(completed.label(), "completed (failure)");
+        let running = parse_run_status(r#"{"status":"in_progress","conclusion":null}"#)
+            .expect("a running run parses");
+        assert!(!running.completed());
+        assert_eq!(running.label(), "in_progress");
+        let refused = parse_run_status(r#"{"conclusion":"failure"}"#).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("status must be a non-empty string"),
+            "the refusal names the expected shape: {refused}"
+        );
     }
 
     #[test]

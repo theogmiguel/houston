@@ -2,7 +2,7 @@
 //! window, keeps a run ledger and leaves a morning report.
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentKind, AgentStatus, RoutineTrigger};
+use crate::{AgentKind, AgentStatus, RoutineTrigger, UsageTokenTotals};
 
 /// The `v` of a stored settings document.
 pub const NIGHT_SHIFT_SETTINGS_VERSION: u32 = 2;
@@ -19,8 +19,8 @@ pub const NIGHT_SHIFT_WRAP_UP_LEAD_MINUTES: u32 = 45;
 pub const NIGHT_SHIFT_MEMORY_FLOOR_MIB: u32 = 6 * 1024;
 /// Free disk below this blocks a start: each worker worktree builds its own target.
 pub const NIGHT_SHIFT_DISK_FLOOR_MIB: u32 = 20 * 1024;
-/// A ZCode pane that ends no turn for this long, with a failed quota probe, is limited.
-pub const NIGHT_SHIFT_ZCODE_STALL_MINUTES: u32 = 20;
+/// A Working pane that ends no turn for this long gets a quota probe.
+pub const NIGHT_SHIFT_STALL_MINUTES: u32 = 20;
 /// The ledger digest in a brief keeps at most this many entries.
 pub const NIGHT_SHIFT_DIGEST_ENTRIES_MAX: u32 = 200;
 /// One ledger entry's title; longer titles are refused.
@@ -315,6 +315,11 @@ pub struct NightCostLine {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub panes: u32,
     pub pane_hours: f64,
+    /// The provider's own token counts for the run's window; `None` when its
+    /// CLI exposes none to Houston. Never a zero standing in for "unknown".
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub tokens: Option<UsageTokenTotals>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -374,6 +379,10 @@ pub struct NightGates {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reruns: u32,
+    /// Fixer panes Houston started for this PR's CI failures.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub fixes: u32,
 }
 
 /// What a planned change must make true, with a concrete value, and the

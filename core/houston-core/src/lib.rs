@@ -44,6 +44,7 @@ pub mod host_env;
 pub mod keychain;
 pub mod launch;
 pub mod legacy_hook_sweep;
+pub mod limits;
 pub mod lock;
 pub mod logging;
 pub mod login_path;

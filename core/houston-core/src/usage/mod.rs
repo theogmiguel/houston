@@ -1,6 +1,6 @@
 //! Token-usage reporting is the third, narrowly granted carve-out from "Houston
-//! reads no transcripts": a usage screen IS transcript reading. The bounds any
-//! edit must preserve: read-only and on demand, counts only, fail-soft.
+//! reads no transcripts". Bounds: read-only and on demand (Settings ▸ Usage, and
+//! once per Night shift run end), counts only, fail-soft; carve-out 8 in invariants.
 pub mod aggregate;
 pub mod cache;
 pub mod pricing;
@@ -55,7 +55,9 @@ pub struct ScanRequest {
     pub state_dir: PathBuf,
     pub sources: Vec<SourceSpec>,
     pub workspaces: Vec<String>,
-    pub workspace_filter: Option<String>,
+    /// An attributed workspace is counted only when it is one of these; an
+    /// empty list counts every attributed workspace.
+    pub workspace_filters: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -188,6 +190,10 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
     let mut aggregator = aggregate::Aggregator::new(request.since_ms, request.until_ms, rates);
     let mut sources = Vec::with_capacity(request.sources.len());
     let mut session_counts = SessionCounter::default();
+    let in_scope = |workspace: Option<&String>| {
+        request.workspace_filters.is_empty()
+            || workspace.is_some_and(|w| request.workspace_filters.iter().any(|f| f == w))
+    };
 
     for spec in dedupe_sources(request.sources.clone()) {
         let listing = scan::list_transcripts(&spec.root, request.since_ms);
@@ -216,18 +222,11 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
 
             for record in &records {
                 if aggregator.add(record)
-                    && request
-                        .workspace_filter
-                        .as_ref()
-                        .is_none_or(|workspace| record.workspace_path.as_ref() == Some(workspace))
+                    && in_scope(record.workspace_path.as_ref())
                     && !record.session_id.is_empty()
                 {
                     session_ids.insert(record.session_id.clone());
-                    if request
-                        .workspace_filter
-                        .as_ref()
-                        .is_none_or(|workspace| record.workspace_path.as_ref() == Some(workspace))
-                    {
+                    if in_scope(record.workspace_path.as_ref()) {
                         session_counts.add(record);
                     }
                 }
@@ -281,12 +280,7 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
     let buckets = result
         .buckets
         .into_iter()
-        .filter(|bucket| {
-            request
-                .workspace_filter
-                .as_ref()
-                .is_none_or(|workspace| bucket.workspace_path.as_ref() == Some(workspace))
-        })
+        .filter(|bucket| in_scope(bucket.workspace_path.as_ref()))
         .collect();
     ScanOutcome {
         buckets,
@@ -385,7 +379,7 @@ mod tests {
             state_dir: dir.to_path_buf(),
             sources,
             workspaces: Vec::new(),
-            workspace_filter: None,
+            workspace_filters: Vec::new(),
         }
     }
 

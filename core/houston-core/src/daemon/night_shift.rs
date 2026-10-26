@@ -12,7 +12,8 @@ use serde_json::{json, Value};
 
 use super::{now_unix_ms, Daemon, RoutineRun};
 use crate::db::{NightEntryWrite, NightMember, NightRunRow};
-use crate::night_shift::{awake, brief, preflight, settings, window, zcode_probe};
+use crate::limits::LimitSignal;
+use crate::night_shift::{awake, brief, cost, preflight, provider_probe, settings, window};
 
 type AwakeHook = Arc<dyn Fn(u32, bool) + Send + Sync>;
 
@@ -87,16 +88,26 @@ pub(crate) struct NightShiftCtx {
     last_tick: Mutex<HashMap<u32, i64>>,
     trees: Mutex<HashMap<u32, RunTree>>,
     stop_order: Mutex<HashMap<u32, Vec<u32>>>,
-    /// Per ZCode pane of a run: when it last ended a turn (or was first seen).
-    zcode_turns: Mutex<HashMap<u32, i64>>,
+    /// Per pane of a run: when it last ended a turn (or was first seen).
+    probe_turns: Mutex<HashMap<u32, i64>>,
     facts_for_test: Mutex<Option<preflight::Facts>>,
     awake_for_test: Mutex<Option<AwakeHook>>,
-    /// Runs whose ZCode quota probe is in flight; one at a time per run.
-    zcode_probing: Mutex<HashSet<u32>>,
-    zcode_probe_program_for_test: Mutex<Option<std::path::PathBuf>>,
+    /// `(run, provider slug)` whose quota probe is in flight.
+    probing: Mutex<HashSet<(u32, &'static str)>>,
+    probe_program_for_test: Mutex<HashMap<&'static str, std::path::PathBuf>>,
     pr_fates_for_test: Mutex<Option<HashMap<u32, String>>>,
     /// PR heads whose checks are in a detached thread: `(run, entry, sha)`.
     checks_running: Mutex<HashSet<(u32, u32, String)>>,
+    /// PRs whose CI action (re-run or fixer spawn) is in a detached thread.
+    ci_actions: Mutex<HashSet<(u32, u32)>>,
+    /// Overrides the run-completion poll and deadline in tests.
+    ci_wait_for_test: Mutex<Option<(std::time::Duration, std::time::Duration)>>,
+    /// Run ids whose /goal acceptance is in flight.
+    goal_in_flight: Mutex<HashSet<u32>>,
+    /// Refused /goal attempts per run this daemon has seen.
+    goal_refusals: Mutex<HashMap<u32, u32>>,
+    /// Runs whose run-end token scan has already been started.
+    token_scans: Mutex<HashSet<u32>>,
 }
 
 /// Removes a PR head from `checks_running` however its checking thread ends.
@@ -116,6 +127,57 @@ impl Drop for NightChecksRun {
     }
 }
 
+/// Removes a PR from `ci_actions` however the detached action ends.
+struct NightCiAction {
+    daemon: Arc<Daemon>,
+    key: (u32, u32),
+}
+
+/// Removes a run from the /goal in-flight set however its attempt ends.
+struct NightGoalAttempt {
+    daemon: Arc<Daemon>,
+    run_id: u32,
+}
+
+impl Drop for NightGoalAttempt {
+    fn drop(&mut self) {
+        self.daemon
+            .night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .remove(&self.run_id);
+    }
+}
+
+/// What one read of an Actions run's status answered.
+enum CiPoll {
+    Completed,
+    /// Its status, or why the read failed.
+    Pending(String),
+}
+
+/// What waiting for an Actions run to finish before a re-run answered.
+enum CiRunWait {
+    Completed,
+    TimedOut {
+        status: String,
+        waited: std::time::Duration,
+    },
+    Stopped,
+}
+
+impl Drop for NightCiAction {
+    fn drop(&mut self) {
+        self.daemon
+            .night
+            .ci_actions
+            .lock()
+            .expect("night ci actions")
+            .remove(&self.key);
+    }
+}
+
 const MINUTE_MS: i64 = 60_000;
 /// Sweeps of a settling run's tree: one closes what is live, a second
 /// catches a pane spawned while the first ran.
@@ -130,9 +192,20 @@ const NIGHT_CHECK_LIMIT: std::time::Duration = std::time::Duration::from_secs(30
 const NIGHT_SLOT_POLL: std::time::Duration = std::time::Duration::from_secs(5);
 /// What a failure note to the orchestrator quotes of each failed check.
 const NIGHT_CHECK_NOTE_CHARS: usize = 1_500;
+/// GitHub refuses `gh run rerun --failed` while any job of the run is still in
+/// progress; 30 s keeps the wait responsive without polling the API hard.
+const NIGHT_CI_RUN_POLL: std::time::Duration = std::time::Duration::from_secs(30);
+/// A queued CI run can take most of an hour behind a busy runner pool; 45 min
+/// bounds the wait, after which Houston leaves the failure to the orchestrator.
+const NIGHT_CI_RUN_WAIT: std::time::Duration = std::time::Duration::from_secs(45 * 60);
 /// Ticks come every `ROUTINE_TICK_MS` while a run is in flight; a longer gap
 /// is a suspended machine or a stalled daemon, and is charged as four ticks.
 const NIGHT_ACCOUNT_STEP_MAX_MS: i64 = 4 * proto::ROUTINE_TICK_MS as i64;
+/// Settled runs an after-restart pass retries the token scan for; a run whose
+/// scan never finished before the daemon stopped is recent.
+const NIGHT_TOKEN_RECOVERY_SCANS: u32 = 4;
+/// How far back that pass looks for a settled run without tokens.
+const NIGHT_TOKEN_RECOVERY_WINDOW_MS: i64 = 24 * 60 * MINUTE_MS;
 
 /// A run's worktree, detached at the workspace's HEAD under its
 /// `.houston/worktrees/` like a `pane_spawn` worktree: the run's panes then keep
@@ -166,6 +239,7 @@ fn count_crew(row: &mut NightRunRow) {
                 provider: m.provider,
                 panes: 0,
                 pane_hours: 0.0,
+                tokens: None,
             });
         }
     }
@@ -215,6 +289,18 @@ fn required<'a>(args: &'a Value, key: &str, max: usize) -> Result<&'a str> {
     text_arg(args, key, max)?
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| anyhow!("{key} is required"))
+}
+
+fn names_or_unknown(names: &[String]) -> String {
+    if names.is_empty() {
+        "the failing checks (names not recorded)".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+fn fixer_role(number: u32) -> String {
+    format!("fixer-{number}")
 }
 
 fn bool_arg(args: &Value, key: &str) -> Result<Option<bool>> {
@@ -693,13 +779,33 @@ impl Daemon {
     }
 
     #[doc(hidden)]
-    /// The program the ZCode quota probe runs instead of `zcode` on PATH.
-    pub fn set_night_shift_zcode_probe_for_test(&self, program: Option<std::path::PathBuf>) {
-        *self
+    pub fn set_session_status_since_for_test(&self, session: u32, ms: u64) {
+        if let Ok(s) = self.get(session) {
+            *s.status_since_ms.lock().expect("status since lock") = Some(ms);
+        }
+    }
+
+    #[doc(hidden)]
+    /// The program a provider's quota probe runs instead of the one on PATH.
+    pub fn set_night_shift_probe_for_test(
+        &self,
+        provider: proto::AgentKind,
+        program: Option<std::path::PathBuf>,
+    ) {
+        let slug = crate::agent_hooks::provider_slug(provider);
+        let mut programs = self
             .night
-            .zcode_probe_program_for_test
+            .probe_program_for_test
             .lock()
-            .expect("zcode probe") = program;
+            .expect("probe programs");
+        match program {
+            Some(program) => {
+                programs.insert(slug, program);
+            }
+            None => {
+                programs.remove(slug);
+            }
+        }
     }
 
     /// Free memory as preflight and the build slot's floor see it.
@@ -738,16 +844,48 @@ impl Daemon {
                     .any(|s| s.name.eq_ignore_ascii_case("rea"))
             })
         };
+        // Sign-in reads are bounded file reads; the identities carry no token.
+        let login = home.as_ref().map(|home| {
+            let mut profiles = Vec::new();
+            for (agent, slug) in [
+                (proto::AgentKind::Claude, "claude"),
+                (proto::AgentKind::Codex, "codex"),
+            ] {
+                match self.db.list_agent_profiles(slug) {
+                    Ok(rows) => {
+                        profiles.extend(rows.into_iter().map(|r| crate::cli_accounts::ProfileDir {
+                            id: r.id,
+                            agent,
+                            config_dir: crate::agent_accounts::expand_tilde(
+                                &r.config_dir,
+                                &home.home,
+                            ),
+                        }))
+                    }
+                    Err(e) => tracing::warn!("listing {slug} agent profiles: {e:#}"),
+                }
+            }
+            crate::cli_accounts::read_all(&self.env(), home, &profiles)
+        });
+        let env = self.env();
         let providers = preflight::providers_of(s)
             .into_iter()
-            .map(|provider| preflight::ProviderFacts {
-                provider,
-                hooks_on: hooks
-                    .iter()
-                    .any(|h| h.provider == provider && h.enabled && h.installed),
-                cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
-                    || self.cli_presence(provider).present,
-                rea: rea(provider),
+            .map(|provider| {
+                let sign_in = login
+                    .as_ref()
+                    .map(|rows| preflight::login_fact(rows, provider))
+                    .unwrap_or(preflight::SignIn::Unknown);
+                preflight::ProviderFacts {
+                    provider,
+                    hooks_on: hooks
+                        .iter()
+                        .any(|h| h.provider == provider && h.enabled && h.installed),
+                    cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
+                        || self.cli_presence(provider).present,
+                    rea: rea(provider),
+                    sign_in,
+                    env_credential: preflight::env_credential(provider, |name| env.var(name)),
+                }
             })
             .collect();
         let path = self.env().var("PATH");
@@ -865,6 +1003,7 @@ impl Daemon {
             report_published: false,
             summary: None,
             wrap_up_sent: false,
+            goal_sent: false,
             stop_reason: None,
             stop_detail: None,
             interruptions: Vec::new(),
@@ -874,6 +1013,7 @@ impl Daemon {
             keep_awake: proto::NightKeepAwake::Off,
             merge_order: Vec::new(),
             crew: Vec::new(),
+            tokens_scanned: false,
         };
         if let Some(why) = refusal {
             night.phase = proto::NightRunPhase::Refused;
@@ -898,7 +1038,7 @@ impl Daemon {
             .create_night_run(&night)
             .and_then(|()| self.night_launch(row, &s, &night, &win, &dir, now, next));
         match launched {
-            Ok(true) => self.night_zcode_start_probe(run_id, &s),
+            Ok(true) => self.night_start_probe(run_id, &s),
             Ok(false) => {}
             Err(e) => self.settle_run(
                 run_id,
@@ -1010,6 +1150,16 @@ impl Daemon {
     #[doc(hidden)]
     pub fn set_night_shift_pr_fates_for_test(&self, fates: Option<HashMap<u32, String>>) {
         *self.night.pr_fates_for_test.lock().expect("pr fates") = fates;
+    }
+
+    /// The poll and deadline a re-run waits with; tests shrink them.
+    #[doc(hidden)]
+    pub fn set_night_shift_ci_wait_for_test(
+        &self,
+        poll: std::time::Duration,
+        wait: std::time::Duration,
+    ) {
+        *self.night.ci_wait_for_test.lock().expect("night ci wait") = Some((poll, wait));
     }
 
     /// The dev channel may stand a script in for the orchestrator's CLI: a
@@ -1158,14 +1308,16 @@ impl Daemon {
     }
 
     fn night_member(&self, session: u32, now_ms: i64) -> NightMember {
+        let info = self.get(session).map(|s| s.snapshot_info()).ok();
         NightMember {
             session,
             origin: self.night_origin_of(session),
-            provider: self
-                .get(session)
-                .map(|s| s.info.agent)
+            provider: info
+                .as_ref()
+                .map(|i| i.agent)
                 .unwrap_or(proto::AgentKind::Custom),
             first_seen_ms: now_ms,
+            cwd: info.map(|i| i.cwd),
         }
     }
 
@@ -1371,7 +1523,7 @@ impl Daemon {
     /// False keeps the run in flight: an orchestrator's turn end settles its
     /// run only after `night_report`.
     pub(super) fn night_shift_turn_ended(&self, session: u32) -> bool {
-        self.night_zcode_turn_ended(session);
+        self.night_probe_turn_ended(session);
         let Some((_, run)) = self
             .night_runs_live()
             .into_iter()
@@ -1406,7 +1558,7 @@ impl Daemon {
                 if now_ms >= row.wrap_up_at_ms && !row.wrap_up_sent {
                     self.night_send_wrap_up(run.run_id);
                 }
-                self.night_zcode_stall_pass(run.run_id, now_ms);
+                self.night_stall_pass(run.run_id, now_ms);
             }
         }
     }
@@ -1447,6 +1599,7 @@ impl Daemon {
                     provider,
                     panes: 0,
                     pane_hours: hours,
+                    tokens: None,
                 }),
             }
         }
@@ -1487,6 +1640,151 @@ impl Daemon {
         ) {
             tracing::warn!("telling night run {run_id}'s orchestrator {title:?}: {e:#}");
         }
+    }
+
+    /// A Claude orchestrator's first hook after accepting the brief sets its
+    /// `/goal` once; no other provider has one.
+    pub(super) fn night_shift_goal_prompt(self: &Arc<Self>, session: u32) {
+        let Some((_, run)) = self
+            .night_runs_live()
+            .into_iter()
+            .find(|(_, run)| run.session_id == Some(session))
+        else {
+            return;
+        };
+        let goal = {
+            let _guard = self.night.lock.lock().expect("night lock");
+            let Ok(Some(row)) = self.db.night_run(run.run_id) else {
+                return;
+            };
+            if row.goal_sent || row.ended_at_ms.is_some() {
+                return;
+            }
+            let refusals = self
+                .night
+                .goal_refusals
+                .lock()
+                .expect("night goal refusals")
+                .get(&run.run_id)
+                .copied()
+                .unwrap_or(0);
+            if !crate::night_shift::goal_retry_after(refusals) {
+                return;
+            }
+            let settings = match self.night_settings(row.routine_id) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    tracing::warn!(
+                        "reading Night shift run {}'s settings for /goal: {e:#}",
+                        row.run_id
+                    );
+                    return;
+                }
+            };
+            let (_, stop) = brief::window_labels(
+                row.wrap_up_at_ms,
+                row.hard_stop_at_ms,
+                window::local_offset_ms,
+            );
+            let Some(goal) = brief::goal_for(
+                settings.orchestrator.provider,
+                &settings.direction,
+                row.run_id,
+                &stop,
+            ) else {
+                return;
+            };
+            goal
+        };
+        if !self
+            .night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .insert(run.run_id)
+        {
+            return;
+        }
+        let attempt = NightGoalAttempt {
+            daemon: Arc::clone(self),
+            run_id: run.run_id,
+        };
+        let daemon = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-goal-{}", run.run_id))
+            .spawn(move || {
+                let _attempt = attempt;
+                match daemon.instruction_accept_daemon(session, &goal) {
+                    Ok(_) => daemon.night_goal_accepted(run.run_id),
+                    Err(e) => daemon.night_goal_refused(run.run_id, &format!("{e:#}")),
+                }
+            });
+        if let Err(e) = spawned {
+            self.night_goal_refused(run.run_id, &format!("starting the follow-up: {e}"));
+        }
+    }
+
+    /// The goal is in the pane's queue now, so the run records it as sent. A
+    /// refusal leaves it unsent for the next lifecycle hook to retry.
+    fn night_goal_accepted(&self, run_id: u32) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        if row.goal_sent {
+            return;
+        }
+        row.goal_sent = true;
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s /goal: {e:#}");
+        }
+    }
+
+    /// Counts a refusal; a later hook retries until the attempts run out.
+    fn night_goal_refused(&self, run_id: u32, why: &str) {
+        let attempts = {
+            let mut refusals = self
+                .night
+                .goal_refusals
+                .lock()
+                .expect("night goal refusals");
+            let attempts = refusals.entry(run_id).or_insert(0);
+            *attempts = attempts.saturating_add(1);
+            *attempts
+        };
+        if crate::night_shift::goal_retry_after(attempts) {
+            tracing::info!(
+                "Night shift run {run_id}: /goal follow-up refused on attempt {attempts} of {} \
+                 ({why}); the next hook retries",
+                crate::night_shift::GOAL_ATTEMPTS
+            );
+            return;
+        }
+        self.night_goal_gave_up(run_id, attempts, why);
+    }
+
+    /// One interruption records the run continuing without its goal.
+    fn night_goal_gave_up(&self, run_id: u32, attempts: u32, why: &str) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let now = now_unix_ms();
+        row.interruptions.push(proto::NightInterruption {
+            at_ms: now,
+            resumed_at_ms: now,
+            detail: format!(
+                "Houston could not send this run's /goal to the Claude orchestrator after \
+                 {attempts} refused attempts: {why}. The run continues without its goal."
+            ),
+            resumed: true,
+        });
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s /goal failure: {e:#}");
+            return;
+        }
+        drop(_guard);
+        self.broadcast_night_run(run_id);
     }
 
     fn night_send_wrap_up(self: &Arc<Self>, run_id: u32) {
@@ -1704,10 +2002,20 @@ impl Daemon {
             .expect("night ticks")
             .remove(&run_id);
         self.night
-            .zcode_turns
+            .probe_turns
             .lock()
-            .expect("zcode turns")
+            .expect("probe turns")
             .retain(|session, _| !row.crew.iter().any(|m| m.session == *session));
+        self.night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .remove(&run_id);
+        self.night
+            .goal_refusals
+            .lock()
+            .expect("night goal refusals")
+            .remove(&run_id);
         self.broadcast_night_run(run_id);
         let entries = self.db.night_entries(run_id).unwrap_or_default();
         let prs = entries
@@ -1728,6 +2036,110 @@ impl Daemon {
                     .then(|| row.stop_detail.as_deref().unwrap_or("it was refused")),
             ),
         });
+        self.night_start_token_scan(run_id);
+    }
+
+    /// One token scan when a run ends, on a detached thread: the same parsers
+    /// Settings ▸ Usage uses, over the run's window and workspace.
+    fn night_start_token_scan(&self, run_id: u32) {
+        if !self
+            .night
+            .token_scans
+            .lock()
+            .expect("night token scans")
+            .insert(run_id)
+        {
+            return;
+        }
+        let Some(me) = self.self_weak.lock().expect("self_weak lock").upgrade() else {
+            return;
+        };
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-tokens-{run_id}"))
+            .spawn(move || me.night_scan_tokens(run_id));
+        if let Err(e) = spawned {
+            tracing::warn!("scanning Night shift run {run_id}'s token usage: {e}");
+        }
+    }
+
+    fn night_scan_tokens(self: &Arc<Self>, run_id: u32) {
+        let Ok(Some(row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let Some(ended_at_ms) = row.ended_at_ms else {
+            return;
+        };
+        if row.cost.per_provider.iter().any(|l| l.tokens.is_some()) {
+            self.night_tokens_scanned(run_id);
+            return;
+        }
+        let covered = row.crew.iter().any(|member| {
+            proto::UsageProvider::ALL
+                .iter()
+                .any(|provider| provider.agent_kind() == member.provider)
+        });
+        if !covered {
+            self.night_tokens_scanned(run_id);
+            return;
+        }
+        let mut cwds: Vec<String> = row.crew.iter().filter_map(|m| m.cwd.clone()).collect();
+        cwds.sort();
+        cwds.dedup();
+        let outcome = crate::usage::scan(&crate::usage::ScanRequest {
+            since_ms: row.started_at_ms,
+            until_ms: ended_at_ms.max(row.started_at_ms + 1),
+            catalog: self.model_catalog.load(false, false),
+            state_dir: self.state_dir.clone(),
+            sources: self.usage_sources(),
+            workspaces: cwds.clone(),
+            workspace_filters: cwds,
+        });
+        for source in &outcome.sources {
+            if source.status == proto::UsageSourceStatus::Failed {
+                tracing::warn!(
+                    "Night shift run {run_id}: reading {} for token counts failed: {}",
+                    source.path,
+                    source.message.as_deref().unwrap_or("no detail reported")
+                );
+            }
+        }
+        let totals = cost::totals_by_provider(&outcome.buckets);
+        {
+            let _guard = self.night.lock.lock().expect("night lock");
+            let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+                return;
+            };
+            if row.tokens_scanned {
+                return;
+            }
+            if !totals.is_empty() {
+                cost::add_tokens(&mut row.cost, &totals);
+            }
+            row.tokens_scanned = true;
+            if let Err(e) = self.db.save_night_run(&row) {
+                tracing::warn!("recording Night shift run {run_id}'s tokens: {e:#}");
+                return;
+            }
+        }
+        if !totals.is_empty() {
+            self.broadcast_night_run(run_id);
+        }
+    }
+
+    /// A scan that found nothing still counts as done: recovery retries only a
+    /// scan the daemon stopped before it finished.
+    fn night_tokens_scanned(&self, run_id: u32) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        if row.tokens_scanned {
+            return;
+        }
+        row.tokens_scanned = true;
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s token scan: {e:#}");
+        }
     }
 
     // ---- restart recovery ----
@@ -1838,6 +2250,20 @@ impl Daemon {
                 .insert(row.run_id, now_ms);
             self.broadcast_night_run(row.run_id);
             self.broadcast_control(&self.routine_list());
+        }
+        // A run that settled just before the daemon stopped may have lost its
+        // scan; retry only an unfinished scan.
+        let rows = self.db.night_runs_unscanned(
+            now_ms - NIGHT_TOKEN_RECOVERY_WINDOW_MS,
+            NIGHT_TOKEN_RECOVERY_SCANS,
+        );
+        match rows {
+            Ok(rows) => {
+                for row in rows {
+                    self.night_start_token_scan(row.run_id);
+                }
+            }
+            Err(e) => tracing::warn!("reading Night shift runs to scan for tokens: {e:#}"),
         }
     }
 
@@ -2910,37 +3336,38 @@ impl Daemon {
             };
             self.night_set_pr_status(session, number, fate);
         }
-        let failed: Vec<String> = changes
-            .iter()
-            .filter_map(|c| match c {
-                Change::FailedCheck { name, .. } => Some(name.clone()),
-                _ => None,
-            })
-            .collect();
         if changes
             .iter()
             .any(|c| matches!(c, Change::ChecksPassed { .. }))
         {
             self.night_set_ci(session, number, proto::NightGate::Passed);
         }
-        if failed.is_empty() {
-            return;
-        }
-        let mut texts = Vec::new();
-        for name in &failed {
-            texts.push(name.clone());
+        let mut failed = Vec::new();
+        for change in changes {
+            let Change::FailedCheck { name, .. } = change else {
+                continue;
+            };
             let run = check_runs
                 .iter()
                 .find(|(n, _)| n == name)
                 .and_then(|(_, id)| *id);
+            let mut lines = Vec::new();
             if let Some(run_id) = run {
                 match crate::gh::pr_check_log(repo, run_id) {
-                    Ok(log) => texts.extend(log.lines),
+                    Ok(log) => lines.extend(log.lines),
                     Err(e) => tracing::info!("reading CI log {run_id} of PR #{number}: {e:#}"),
                 }
             }
+            failed.push(crate::night_shift::FailedCheck {
+                name: name.clone(),
+                run,
+                lines,
+            });
         }
-        if let Err(e) = self.night_shift_ci_failed(session, number, &texts) {
+        if failed.is_empty() {
+            return;
+        }
+        if let Err(e) = self.night_shift_ci_failed_checks(session, number, &failed) {
             tracing::warn!("Night shift CI pass for PR #{number}: {e:#}");
         }
     }
@@ -2985,16 +3412,17 @@ impl Daemon {
         }
     }
 
-    /// `texts` are the failed checks' names and log lines. Answers whether a
-    /// re-run was asked for; a test re-runs once per PR.
-    pub fn night_shift_ci_failed(
+    /// Houston re-runs a known flaky failure once, then starts a fixer pane.
+    /// Both run off the caller's thread; answers what it dispatched.
+    pub fn night_shift_ci_failed_checks(
         self: &Arc<Self>,
         session: u32,
         number: u32,
-        texts: &[String],
-    ) -> Result<bool> {
+        failed: &[crate::night_shift::FailedCheck],
+    ) -> Result<Option<crate::night_shift::CiAction>> {
+        use crate::night_shift::{CiAction, CI_FIXES_PER_PR, CI_FIX_EXCERPT_CHARS};
         let Some((routine_id, run_id, orchestrator)) = self.night_run_of_pane(session) else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(entry) = self
             .db
@@ -3002,84 +3430,478 @@ impl Daemon {
             .into_iter()
             .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
         else {
-            return Ok(false);
+            return Ok(None);
         };
-        let flaky = self.db.night_flaky_tests(routine_id)?;
-        let hit = crate::night_shift::flaky_match(&flaky, texts).map(str::to_string);
-        let mut gates = entry.gates;
-        let rerun = hit.is_some() && gates.reruns == 0;
-        if rerun {
-            gates.reruns += 1;
-            gates.ci = proto::NightGate::Pending;
-        } else {
-            gates.ci = proto::NightGate::Failed;
+        if self.night_live_fixer(run_id, number).is_some() {
+            // The live fixer is working on this failure; the gate stays failed
+            // so a later report never shows it as pending or green.
+            self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                ci: proto::NightGate::Failed,
+                ..*gates
+            });
+            return Ok(None);
         }
-        self.db.set_night_entry_gates(entry.id, &gates)?;
-        let (title, body) = match (hit, rerun) {
-            (Some(test), true) => (
-                format!("Night shift: re-run CI on PR #{number}"),
-                format!(
-                    "CI on PR #{number} failed on {test}, a known flaky test in the ledger. \
-                     Re-run the failed jobs once (gh run rerun RUN_ID --failed); Houston \
-                     recorded the re-run. If it fails again, treat it as a real failure."
-                ),
-            ),
-            (Some(test), false) => (
-                format!("Night shift: PR #{number} failed again"),
-                format!(
-                    "CI on PR #{number} failed on {test} again after its one re-run: hand it \
-                     to a fixer pane as a real failure."
-                ),
-            ),
-            (None, _) => (
-                format!("Night shift: PR #{number} CI failed"),
-                format!(
-                    "CI on PR #{number} failed on no known flaky test: hand the failure to a \
-                     fixer pane."
-                ),
-            ),
+        let flaky = self.db.night_flaky_tests(routine_id)?;
+        // Re-run the flaky check's own workflow. A real failure elsewhere
+        // waits for that result: the re-run plan wins, so Houston counts it
+        // only after the run answers.
+        let hit = crate::night_shift::flaky_rerun(&flaky, failed)
+            .map(|(test, run)| (test.to_string(), run));
+        let gh_run = hit.as_ref().and_then(|(_, run)| *run);
+        let mut plan = crate::night_shift::ci_failure_plan(
+            hit.as_ref().map(|(test, _)| test.as_str()),
+            entry.gates.reruns,
+            entry.gates.fixes,
+        );
+        let mut rerun_missing = None;
+        if matches!(plan, CiAction::Rerun { .. }) && gh_run.is_none() {
+            rerun_missing = Some(
+                "its failed check has no Actions run id, so Houston could not re-run it"
+                    .to_string(),
+            );
+            plan = if entry.gates.fixes >= CI_FIXES_PER_PR {
+                CiAction::GiveUp {
+                    why: format!(
+                        "the pull request has {} fixer panes already used of its \
+                         {CI_FIXES_PER_PR}; Houston leaves the failure to the orchestrator",
+                        entry.gates.fixes
+                    ),
+                }
+            } else {
+                CiAction::Fix
+            };
+        }
+        let Some(guard) = self.night_ci_claim(run_id, number) else {
+            return Ok(None);
         };
         let workspace = self
             .db
             .night_run(run_id)?
             .map(|r| r.workspace)
             .unwrap_or_default();
-        if let Err(e) = self.inbox_write(
-            orchestrator,
-            &workspace,
-            None,
-            None,
-            crate::orchestrate::InboxKind::OperatorNote,
-            &title,
-            &body,
-            Vec::new(),
-            None,
-            None,
-            false,
-            true,
-        ) {
-            tracing::warn!("telling night run {run_id} about PR #{number}: {e:#}");
+        let configured: Vec<String> = self
+            .night_settings(routine_id)
+            .map(|s| s.checks.into_iter().map(|c| c.command).collect())
+            .unwrap_or_default();
+        let head = entry.detail.head_sha.clone();
+        let checks: Vec<String> = failed.iter().map(|c| c.name.clone()).collect();
+        let texts: Vec<String> = failed
+            .iter()
+            .flat_map(|c| std::iter::once(c.name.clone()).chain(c.lines.iter().cloned()))
+            .collect();
+        let excerpt = crate::night_shift::redacted_excerpt(&texts, CI_FIX_EXCERPT_CHARS);
+        match plan.clone() {
+            CiAction::Rerun { test } => {
+                let gh_run = gh_run.expect("a rerun plan has an Actions run id");
+                let me = Arc::clone(self);
+                let spawned = std::thread::Builder::new()
+                    .name(format!("night-rerun-{run_id}-{number}"))
+                    .spawn(move || {
+                        let _guard = guard;
+                        me.night_ci_rerun(
+                            run_id,
+                            entry.id,
+                            number,
+                            orchestrator,
+                            &test,
+                            gh_run,
+                            &workspace,
+                            &checks,
+                            &configured,
+                            head.as_deref(),
+                            &excerpt,
+                        );
+                    });
+                if let Err(e) = spawned {
+                    tracing::warn!("starting the re-run of PR #{number}: {e}");
+                }
+            }
+            CiAction::Fix => {
+                let me = Arc::clone(self);
+                let spawned = std::thread::Builder::new()
+                    .name(format!("night-fixer-{run_id}-{number}"))
+                    .spawn(move || {
+                        let _guard = guard;
+                        me.night_ci_spawn_fixer(
+                            run_id,
+                            number,
+                            orchestrator,
+                            &checks,
+                            &configured,
+                            head.as_deref(),
+                            &excerpt,
+                            rerun_missing.as_deref(),
+                        );
+                    });
+                if let Err(e) = spawned {
+                    tracing::warn!("starting the fixer of PR #{number}: {e}");
+                }
+            }
+            CiAction::GiveUp { why } => {
+                if crate::night_shift::ci_gate_failed(&plan) {
+                    self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                        ci: proto::NightGate::Failed,
+                        ..*gates
+                    });
+                }
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} CI needs you"),
+                    &format!(
+                        "CI on PR #{number} failed on {}. Houston stopped after the cap: {why}.",
+                        names_or_unknown(&checks)
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+                drop(guard);
+            }
         }
-        self.broadcast_night_run(run_id);
-        Ok(rerun)
+        Ok(Some(plan))
     }
 
-    fn night_zcode_turn_ended(&self, session: u32) {
-        let mut turns = self.night.zcode_turns.lock().expect("zcode turns");
+    /// The PR's live fixer pane, from the delegation role Houston gives it.
+    fn night_live_fixer(&self, run_id: u32, number: u32) -> Option<u32> {
+        let tree = self
+            .night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .cloned()?;
+        let role = fixer_role(number);
+        self.night_live_panes(&tree)
+            .into_iter()
+            .filter(|id| *id != tree.orchestrator)
+            .find(|id| {
+                self.db
+                    .delegation_for_child(*id)
+                    .ok()
+                    .flatten()
+                    .and_then(|d| d.role)
+                    .is_some_and(|r| r == role)
+            })
+    }
+
+    /// Takes the PR's one CI action slot; `None` while another action runs.
+    fn night_ci_claim(self: &Arc<Self>, run_id: u32, number: u32) -> Option<NightCiAction> {
+        let key = (run_id, number);
+        self.night
+            .ci_actions
+            .lock()
+            .expect("night ci actions")
+            .insert(key)
+            .then(|| NightCiAction {
+                daemon: Arc::clone(self),
+                key,
+            })
+    }
+
+    /// Requests one re-run of the failed jobs, then records it. GitHub refuses
+    /// a re-run while sibling jobs still run, so the detached caller waits for
+    /// the run to complete; a refusal after that starts the fixer.
+    #[allow(clippy::too_many_arguments)]
+    fn night_ci_rerun(
+        self: &Arc<Self>,
+        run_id: u32,
+        entry_id: u32,
+        number: u32,
+        orchestrator: u32,
+        test: &str,
+        gh_run: u64,
+        workspace: &str,
+        checks: &[String],
+        configured: &[String],
+        head: Option<&str>,
+        excerpt: &str,
+    ) {
+        match self.night_ci_wait_for_run(run_id, gh_run, workspace) {
+            CiRunWait::Completed => {}
+            CiRunWait::Stopped => return,
+            CiRunWait::TimedOut { status, waited } => {
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} re-run waited"),
+                    &format!(
+                        "Houston waited {} min for Actions run {gh_run} to complete before \
+                         re-running PR #{number}'s failed jobs; it is still {status}. Houston \
+                         re-ran nothing and started no fixer, and counted neither.",
+                        waited.as_secs() / 60
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+                return;
+            }
+        }
+        match crate::gh::rerun_failed_jobs(Path::new(workspace), gh_run) {
+            Ok(()) => {
+                self.night_ci_set_gates(entry_id, |gates| proto::NightGates {
+                    reruns: gates.reruns + 1,
+                    ci: proto::NightGate::Pending,
+                    ..*gates
+                });
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: re-run requested for PR #{number}"),
+                    &format!(
+                        "CI on PR #{number} failed on {test}, a known flaky test in the ledger. \
+                         Houston re-ran the failed jobs once (gh run rerun {gh_run} --failed). If \
+                         it fails again Houston starts a fixer pane."
+                    ),
+                );
+                self.broadcast_night_run(run_id);
+            }
+            Err(e) => {
+                tracing::warn!("re-running the failed jobs of PR #{number}: {e:#}");
+                self.night_ci_set_gates(entry_id, |gates| proto::NightGates {
+                    ci: proto::NightGate::Failed,
+                    ..*gates
+                });
+                self.night_tell_orchestrator(
+                    run_id,
+                    &format!("Night shift: PR #{number} re-run failed"),
+                    &format!(
+                        "Houston could not re-run the failed jobs of PR #{number}: {e:#}. It \
+                         treats the failure as real and starts a fixer pane."
+                    ),
+                );
+                self.night_ci_spawn_fixer(
+                    run_id,
+                    number,
+                    orchestrator,
+                    checks,
+                    configured,
+                    head,
+                    excerpt,
+                    Some("Houston could not re-run the failed jobs"),
+                );
+            }
+        }
+    }
+
+    /// Polls until the Actions run is completed, the run's tree stops, or the
+    /// deadline passes. Never called on the control loop.
+    fn night_ci_wait_for_run(&self, run_id: u32, gh_run: u64, workspace: &str) -> CiRunWait {
+        let (poll, wait) = self
+            .night
+            .ci_wait_for_test
+            .lock()
+            .expect("night ci wait")
+            .unwrap_or((NIGHT_CI_RUN_POLL, NIGHT_CI_RUN_WAIT));
+        let deadline = std::time::Instant::now() + wait;
+        if self.night_ci_run_stopped(run_id) {
+            return CiRunWait::Stopped;
+        }
+        let mut last = match self.night_ci_poll(workspace, gh_run) {
+            CiPoll::Completed => return CiRunWait::Completed,
+            CiPoll::Pending(status) => status,
+        };
+        while std::time::Instant::now() < deadline {
+            let until = std::time::Instant::now() + poll;
+            while std::time::Instant::now() < until {
+                std::thread::sleep(
+                    std::time::Duration::from_secs(1).min(until - std::time::Instant::now()),
+                );
+                if self.night_ci_run_stopped(run_id) {
+                    return CiRunWait::Stopped;
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            match self.night_ci_poll(workspace, gh_run) {
+                CiPoll::Completed => return CiRunWait::Completed,
+                CiPoll::Pending(status) => last = status,
+            }
+        }
+        CiRunWait::TimedOut {
+            status: last,
+            waited: wait,
+        }
+    }
+
+    fn night_ci_poll(&self, workspace: &str, gh_run: u64) -> CiPoll {
+        match crate::gh::run_status(Path::new(workspace), gh_run) {
+            Ok(status) if status.completed() => CiPoll::Completed,
+            Ok(status) => CiPoll::Pending(status.label()),
+            Err(e) => CiPoll::Pending(format!("unreadable ({e:#})")),
+        }
+    }
+
+    /// A run whose tree is stopping or already swept closes no more work.
+    fn night_ci_run_stopped(&self, run_id: u32) -> bool {
+        self.night
+            .trees
+            .lock()
+            .expect("night trees")
+            .get(&run_id)
+            .is_none_or(|tree| tree.stopping)
+    }
+
+    /// Starts a fixer pane under the run's orchestrator in its own worktree, so the
+    /// run's worktree keeps its branch. Every attempt counts towards
+    /// `CI_FIXES_PER_PR`, a refused spawn included, so a broken chain cannot loop.
+    #[allow(clippy::too_many_arguments)]
+    fn night_ci_spawn_fixer(
+        self: &Arc<Self>,
+        run_id: u32,
+        number: u32,
+        orchestrator: u32,
+        checks: &[String],
+        configured: &[String],
+        head: Option<&str>,
+        excerpt: &str,
+        why: Option<&str>,
+    ) {
+        use crate::night_shift::CI_FIXES_PER_PR;
+        let Some(row) = self.db.night_run(run_id).ok().flatten() else {
+            return;
+        };
+        let Some(entry) = self.db.night_entries(run_id).ok().and_then(|rows| {
+            rows.into_iter()
+                .find(|e| e.kind == proto::NightEntryKind::Pr && e.pr_number == Some(number))
+        }) else {
+            return;
+        };
+        let fixes = entry.gates.fixes;
+        if fixes >= CI_FIXES_PER_PR {
+            self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+                ci: proto::NightGate::Failed,
+                ..*gates
+            });
+            self.night_tell_orchestrator(
+                run_id,
+                &format!("Night shift: PR #{number} CI needs you"),
+                &format!(
+                    "CI on PR #{number} failed on {}. Houston started no fixer: the pull \
+                     request has {fixes} fixer panes already used of its {CI_FIXES_PER_PR}.",
+                    names_or_unknown(checks)
+                ),
+            );
+            self.broadcast_night_run(run_id);
+            return;
+        }
+        self.night_ci_set_gates(entry.id, |gates| proto::NightGates {
+            fixes: gates.fixes + 1,
+            ci: proto::NightGate::Failed,
+            ..*gates
+        });
+        let settings = match self.night_settings(row.routine_id) {
+            Ok(s) => s,
+            Err(e) => {
+                self.night_fixer_refused(
+                    run_id,
+                    number,
+                    &format!("reading the run's settings: {e:#}"),
+                );
+                return;
+            }
+        };
+        let Some(worker) = settings.workers.first() else {
+            self.night_fixer_refused(
+                run_id,
+                number,
+                "no worker provider is configured for this routine",
+            );
+            return;
+        };
+        let (provider, substituted) =
+            match self.night_shift_spawn_provider(orchestrator, worker.provider, false) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+                    return;
+                }
+            };
+        let prompt = crate::night_shift::fixer_prompt(number, checks, head, excerpt, configured);
+        let spawned = self.orchestrate_spawn_with_options(
+            orchestrator,
+            provider,
+            None,
+            None,
+            crate::orchestrate::Brief::from(prompt),
+            None,
+            None,
+            Some(fixer_role(number)),
+            None,
+            false,
+            None,
+            Some(crate::worktrees::SpawnWorktree {
+                slug: format!("fix-pr-{number}-{}", fixes + 1),
+                branch: None,
+            }),
+        );
+        let session = match spawned {
+            Ok(s) => s,
+            Err(e) => {
+                self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+                return;
+            }
+        };
+        if let Err(e) = self.night_shift_spawned(orchestrator, session.id) {
+            self.night_fixer_refused(run_id, number, &format!("{e:#}"));
+            return;
+        }
+        let slug = crate::agent_hooks::provider_slug(provider);
+        let substitute = substituted
+            .map(|w| format!(" {}", w.message))
+            .unwrap_or_default();
+        let cause = why.map(|w| format!(" {w}.")).unwrap_or_default();
+        self.night_tell_orchestrator(
+            run_id,
+            &format!("Night shift: fixer started on PR #{number}"),
+            &format!(
+                "CI on PR #{number} failed on {}. Houston started pane {} ({slug}) as its \
+                 fixer; it works in its own worktree off the workspace HEAD, fetches the \
+                 pull request's head and pushes a fix commit to its head branch.{cause}{substitute}",
+                names_or_unknown(checks),
+                session.id
+            ),
+        );
+        self.broadcast_night_run(run_id);
+    }
+
+    fn night_fixer_refused(self: &Arc<Self>, run_id: u32, number: u32, why: &str) {
+        self.night_tell_orchestrator(
+            run_id,
+            &format!("Night shift: PR #{number} fixer did not start"),
+            &format!(
+                "Houston could not start a fixer pane for PR #{number}: {why}. The failure \
+                 stays with the orchestrator; no further fixer is started for this attempt."
+            ),
+        );
+        self.broadcast_night_run(run_id);
+    }
+
+    fn night_ci_set_gates(
+        &self,
+        entry_id: u32,
+        change: impl FnOnce(&proto::NightGates) -> proto::NightGates,
+    ) {
+        let Ok(Some(entry)) = self.db.night_entry(entry_id) else {
+            return;
+        };
+        if let Err(e) = self
+            .db
+            .set_night_entry_gates(entry_id, &change(&entry.gates))
+        {
+            tracing::warn!("recording CI gates of entry {entry_id}: {e:#}");
+        }
+    }
+
+    fn night_probe_turn_ended(&self, session: u32) {
+        let mut turns = self.night.probe_turns.lock().expect("probe turns");
         if let Some(at) = turns.get_mut(&session) {
             *at = now_unix_ms();
         }
     }
 
-    /// ZCode reports no limit: a pane of the run that ended no turn for the
-    /// stall time while working, and whose quota probe fails, is limited.
-    fn night_zcode_stall_pass(self: &Arc<Self>, run_id: u32, now_ms: i64) {
+    /// A pane of the run that has been Working with no turn end for the stall
+    /// time, for a provider whose limit arrives only through a probe: ZCode
+    /// everywhere, Codex on Windows.
+    fn night_stall_pass(self: &Arc<Self>, run_id: u32, now_ms: i64) {
         let Ok(Some(row)) = self.db.night_run(run_id) else {
             return;
         };
-        if row.limited.contains(&proto::AgentKind::Zcode) {
-            return;
-        }
         let Some(tree) = self
             .night
             .trees
@@ -3091,13 +3913,17 @@ impl Daemon {
             return;
         };
         let panes = self.night_live_panes(&tree);
-        let stall = i64::from(proto::NIGHT_SHIFT_ZCODE_STALL_MINUTES) * MINUTE_MS;
+        let stall = i64::from(proto::NIGHT_SHIFT_STALL_MINUTES) * MINUTE_MS;
         let mut stalled = None;
         {
-            let mut turns = self.night.zcode_turns.lock().expect("zcode turns");
+            let mut turns = self.night.probe_turns.lock().expect("probe turns");
             for id in panes {
                 let Ok(s) = self.get(id) else { continue };
-                if s.info.agent != proto::AgentKind::Zcode {
+                let provider = s.info.agent;
+                if crate::limits::signal_for(provider, cfg!(windows)) != LimitSignal::StallProbe {
+                    continue;
+                }
+                if row.limited.contains(&provider) {
                     continue;
                 }
                 let since = *turns.entry(id).or_insert(now_ms);
@@ -3105,132 +3931,283 @@ impl Daemon {
                     *s.status.lock().expect("status lock") == Some(proto::AgentStatus::Working);
                 if !working {
                     turns.insert(id, now_ms);
-                } else if now_ms - since >= stall {
-                    stalled = Some((id, (now_ms - since) / MINUTE_MS));
+                } else if let Some(minutes) =
+                    provider_probe::stalled_minutes(working, since, now_ms, stall)
+                {
+                    stalled = Some((id, provider, minutes));
                     break;
                 }
             }
         }
-        let Some((pane, minutes)) = stalled else {
+        let Some((pane, provider, minutes)) = stalled else {
             return;
         };
         let me = Arc::clone(self);
-        self.night_zcode_probe(run_id, move |outcome| match outcome {
-            zcode_probe::Outcome::Answered => {
+        self.night_probe_async(run_id, provider, move |outcome| match outcome {
+            provider_probe::Outcome::Answered => {
                 me.night
-                    .zcode_turns
+                    .probe_turns
                     .lock()
-                    .expect("zcode turns")
+                    .expect("probe turns")
                     .insert(pane, now_unix_ms());
             }
-            zcode_probe::Outcome::Failed(why) => me.night_shift_provider_limited(
-                pane,
-                proto::AgentKind::Zcode,
-                &format!("no turn ended for {minutes} min and its quota probe failed: {why}"),
+            // A pane already stalled treats no answer as a failure too.
+            provider_probe::Outcome::Failed(why) | provider_probe::Outcome::TimedOut(why) => {
+                let slug = crate::agent_hooks::provider_slug(provider);
+                me.night_shift_provider_limited(
+                    pane,
+                    provider,
+                    &format!(
+                        "no turn ended for {minutes} min and its {slug} quota probe failed: {why}"
+                    ),
+                )
+            }
+            provider_probe::Outcome::Unavailable(why) => tracing::info!(
+                "Night shift run {run_id}: the {} stall probe could not run ({why}); the pane is \
+                 left alone",
+                crate::agent_hooks::provider_slug(provider)
             ),
         });
     }
 
-    /// At a start whose workers include ZCode: a failed probe marks ZCode
-    /// limited before any pane asks for it, and warns on the run.
-    fn night_zcode_start_probe(self: &Arc<Self>, run_id: u32, s: &proto::NightShiftSettings) {
-        if !s
+    /// At a start, one one-word probe per distinct worker or reviewer provider
+    /// that has a typed limit signal, after launch: a failure warns on the run
+    /// and marks the provider limited before a pane asks for it.
+    fn night_start_probe(self: &Arc<Self>, run_id: u32, s: &proto::NightShiftSettings) {
+        let mut providers: Vec<proto::AgentKind> = Vec::new();
+        for provider in s
             .workers
             .iter()
-            .any(|w| w.provider == proto::AgentKind::Zcode)
+            .map(|w| w.provider)
+            .chain(s.reviewer.iter().map(|r| r.provider))
         {
-            return;
-        }
-        let me = Arc::clone(self);
-        self.night_zcode_probe(run_id, move |outcome| {
-            let zcode_probe::Outcome::Failed(why) = outcome else {
-                return;
-            };
+            if crate::limits::signal_for(provider, cfg!(windows)) == LimitSignal::NoSignal
+                || providers.contains(&provider)
             {
-                let _guard = me.night.lock.lock().expect("night lock");
-                if let Ok(Some(mut row)) = me.db.night_run(run_id) {
-                    row.preflight.push(proto::PreflightItem {
-                        id: "quota:zcode".into(),
-                        status: proto::PreflightStatus::Warn,
-                        label: "ZCode quota".into(),
-                        detail: format!(
-                            "the ZCode quota probe failed ({why}); this run uses the next \
-                             worker provider instead"
-                        ),
-                        limit: None,
-                        actual: None,
-                    });
-                    if let Err(e) = me.db.save_night_run(&row) {
-                        tracing::warn!("recording night run {run_id}'s ZCode probe: {e:#}");
-                    }
-                }
+                continue;
             }
-            me.night_mark_limited(run_id, proto::AgentKind::Zcode, &why, None);
-        });
-    }
-
-    /// Runs the ZCode quota probe off the caller's thread, at most one per
-    /// run at a time; `done` gets its outcome.
-    fn night_zcode_probe(
-        self: &Arc<Self>,
-        run_id: u32,
-        done: impl FnOnce(zcode_probe::Outcome) + Send + 'static,
-    ) {
-        if !self
-            .night
-            .zcode_probing
-            .lock()
-            .expect("zcode probing")
-            .insert(run_id)
-        {
+            providers.push(provider);
+        }
+        if providers.is_empty() {
             return;
         }
-        let program = self
-            .night
-            .zcode_probe_program_for_test
-            .lock()
-            .expect("zcode probe")
-            .clone()
-            .or_else(|| crate::exe_path::resolve_in(&self.env(), "zcode"));
-        let cwd = self.state_dir.join("night-shift").join("probe");
         let me = Arc::clone(self);
         let spawned = std::thread::Builder::new()
-            .name(format!("night-zcode-probe-{run_id}"))
+            .name(format!("night-probes-{run_id}"))
             .spawn(move || {
-                let outcome = match program {
-                    None => zcode_probe::Outcome::Failed("zcode is not on PATH".into()),
-                    Some(program) => match std::fs::create_dir_all(&cwd) {
-                        Ok(()) => zcode_probe::run(&program, &cwd),
-                        Err(e) => {
-                            zcode_probe::Outcome::Failed(format!("creating {}: {e}", cwd.display()))
-                        }
-                    },
-                };
-                tracing::info!("Night shift run {run_id}: ZCode quota probe {outcome:?}");
-                done(outcome);
-                me.night
-                    .zcode_probing
-                    .lock()
-                    .expect("zcode probing")
-                    .remove(&run_id);
+                for provider in providers {
+                    me.night_start_probe_one(run_id, provider);
+                }
             });
         if let Err(e) = spawned {
-            tracing::warn!("starting night run {run_id}'s ZCode probe: {e}");
-            self.night
-                .zcode_probing
-                .lock()
-                .expect("zcode probing")
-                .remove(&run_id);
+            tracing::warn!("starting night run {run_id}'s quota probes: {e}");
         }
     }
 
-    /// Whether a ZCode quota probe of the run is still running.
-    #[doc(hidden)]
-    pub fn night_shift_zcode_probing(&self, run_id: u32) -> bool {
-        self.night
-            .zcode_probing
+    /// One provider's start probe, with its preflight item. A provider whose
+    /// sign-in check already blocked is skipped and the item says so.
+    fn night_start_probe_one(self: &Arc<Self>, run_id: u32, provider: proto::AgentKind) {
+        let slug = crate::agent_hooks::provider_slug(provider);
+        if self.night_signin_blocked(run_id, slug) {
+            self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Ok,
+                format!("skipped: the sign-in check already blocked {slug}"),
+            );
+            return;
+        }
+        if !self.night_probe_begin(run_id, provider) {
+            return;
+        }
+        let outcome = self.night_probe_run(run_id, provider);
+        match outcome {
+            provider_probe::Outcome::Answered => self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Ok,
+                "answered a one-word probe".into(),
+            ),
+            // A start probe that never answered is inconclusive: only a probe
+            // that finished and failed proves this provider cannot run.
+            provider_probe::Outcome::TimedOut(why) => self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Warn,
+                format!("{why}; Houston did not mark {slug} limited"),
+            ),
+            provider_probe::Outcome::Failed(why) => {
+                self.night_record_quota_item(
+                    run_id,
+                    provider,
+                    proto::PreflightStatus::Warn,
+                    format!(
+                        "the {slug} quota probe failed ({why}); this run uses the next worker \
+                         provider instead"
+                    ),
+                );
+                self.night_mark_limited(run_id, provider, &why, None);
+            }
+            provider_probe::Outcome::Unavailable(why) => self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Warn,
+                format!(
+                    "the {slug} quota probe could not run ({why}); Houston did not mark {slug} \
+                     limited"
+                ),
+            ),
+        }
+        self.night_probe_end(run_id, provider);
+    }
+
+    fn night_signin_blocked(&self, run_id: u32, slug: &str) -> bool {
+        self.db.night_run(run_id).ok().flatten().is_some_and(|row| {
+            row.preflight.iter().any(|item| {
+                item.id == format!("signin:{slug}") && item.status == proto::PreflightStatus::Block
+            })
+        })
+    }
+
+    fn night_record_quota_item(
+        &self,
+        run_id: u32,
+        provider: proto::AgentKind,
+        status: proto::PreflightStatus,
+        detail: String,
+    ) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        let id = format!("quota:{}", crate::agent_hooks::provider_slug(provider));
+        let item = proto::PreflightItem {
+            id: id.clone(),
+            status,
+            label: format!("{} quota", provider_probe::display_name(provider)),
+            detail,
+            limit: None,
+            actual: None,
+        };
+        match row.preflight.iter_mut().find(|item| item.id == id) {
+            Some(existing) => *existing = item,
+            None => row.preflight.push(item),
+        }
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording night run {run_id}'s {id}: {e:#}");
+        }
+    }
+
+    fn night_probe_begin(&self, run_id: u32, provider: proto::AgentKind) -> bool {
+        let mut quota = self.zcode_quota.lock().expect("zcode quota");
+        if provider == proto::AgentKind::Zcode && quota.probe_busy {
+            return false;
+        }
+        let inserted = self
+            .night
+            .probing
             .lock()
-            .expect("zcode probing")
-            .contains(&run_id)
+            .expect("probe set")
+            .insert((run_id, crate::agent_hooks::provider_slug(provider)));
+        if inserted && provider == proto::AgentKind::Zcode {
+            quota.probe_busy = true;
+        }
+        inserted
+    }
+
+    fn night_probe_end(&self, run_id: u32, provider: proto::AgentKind) {
+        self.night
+            .probing
+            .lock()
+            .expect("probe set")
+            .remove(&(run_id, crate::agent_hooks::provider_slug(provider)));
+        if provider == proto::AgentKind::Zcode {
+            self.zcode_quota.lock().expect("zcode quota").probe_busy = false;
+        }
+    }
+
+    fn night_probe_run(&self, run_id: u32, provider: proto::AgentKind) -> provider_probe::Outcome {
+        let outcome = self.quota_probe_run(provider);
+        tracing::info!(
+            "Night shift run {run_id}: {} quota probe {outcome:?}",
+            crate::agent_hooks::provider_slug(provider)
+        );
+        outcome
+    }
+
+    /// The probe itself: its own program, its own scratch directory.
+    pub(super) fn quota_probe_run(&self, provider: proto::AgentKind) -> provider_probe::Outcome {
+        let slug = crate::agent_hooks::provider_slug(provider);
+        let program = self
+            .night
+            .probe_program_for_test
+            .lock()
+            .expect("probe programs")
+            .get(slug)
+            .cloned()
+            .or_else(|| crate::exe_path::resolve_in(&self.env(), slug));
+        let cwd = self.state_dir.join("night-shift").join("probe");
+        let profile = self.active_agent_profile_env(provider);
+        let env = provider_probe::profile_env(
+            provider,
+            profile.as_ref().map(|(_, config_dir)| config_dir.as_str()),
+        );
+        match program {
+            None => provider_probe::Outcome::Unavailable(format!("{slug} is not on PATH")),
+            Some(program) => match std::fs::create_dir_all(&cwd) {
+                Ok(()) => provider_probe::run(&program, provider, &cwd, &env),
+                Err(e) => {
+                    provider_probe::Outcome::Unavailable(format!("creating {}: {e}", cwd.display()))
+                }
+            },
+        }
+    }
+
+    /// Runs a stall probe off the caller's thread; `done` gets its outcome.
+    fn night_probe_async(
+        self: &Arc<Self>,
+        run_id: u32,
+        provider: proto::AgentKind,
+        done: impl FnOnce(provider_probe::Outcome) + Send + 'static,
+    ) {
+        if !self.night_probe_begin(run_id, provider) {
+            return;
+        }
+        let me = Arc::clone(self);
+        let slug = crate::agent_hooks::provider_slug(provider);
+        let spawned = std::thread::Builder::new()
+            .name(format!("night-probe-{slug}-{run_id}"))
+            .spawn(move || {
+                let outcome = me.night_probe_run(run_id, provider);
+                done(outcome);
+                me.night_probe_end(run_id, provider);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("starting night run {run_id}'s {slug} quota probe: {e}");
+            self.night_probe_end(run_id, provider);
+        }
+    }
+
+    /// Whether any quota probe of the run is still running.
+    #[doc(hidden)]
+    pub fn night_shift_probing(&self, run_id: u32) -> bool {
+        self.night
+            .probing
+            .lock()
+            .expect("probe set")
+            .iter()
+            .any(|(run, _)| *run == run_id)
+    }
+
+    /// Refused `/goal` attempts since this daemon started.
+    #[doc(hidden)]
+    pub fn night_shift_goal_refusals_for_test(&self, run_id: u32) -> u32 {
+        self.night
+            .goal_refusals
+            .lock()
+            .expect("night goal refusals")
+            .get(&run_id)
+            .copied()
+            .unwrap_or(0)
     }
 }

@@ -36,11 +36,11 @@ describe('NightShiftReport', () => {
       merge_order: [13, 12], limited: ['claude'],
       entries: [
         nightEntry({ id: 1, kind: 'pr', title: 'Tray fix', theme: 'reliability', pr_number: 12,
-          gates: { checks: 'failed', review: 'passed', qa: 'none', ci: 'failed', verify: 'failed', reruns: 1 },
+          gates: { checks: 'failed', review: 'passed', qa: 'none', ci: 'failed', verify: 'failed', reruns: 1, fixes: 2 },
           detail: { ...nightEntry({}).detail, plans: [6], checks_run: [{ command: 'cargo fmt --check', passed: false, code: 1, tail: 'Diff' }],
             verdicts: [{ plan: 6, claim: 0, passed: false, evidence: 'core/tests/tray.rs:9 asserts nothing', fault: null, verifier: 44 }] } }),
         nightEntry({ id: 2, kind: 'pr', title: 'Faster diff', theme: 'performance', pr_number: 13, visible: true,
-          gates: { checks: 'passed', review: 'pending', qa: 'passed', ci: 'passed', verify: 'pending', reruns: 0 } }),
+          gates: { checks: 'passed', review: 'pending', qa: 'passed', ci: 'passed', verify: 'pending', reruns: 0, fixes: 0 } }),
         nightEntry({ id: 6, kind: 'plan', title: 'Tray fix',
           detail: { ...nightEntry({}).detail, claims: [{ claim: 'the tray opens in 1 click', proof: 'tray::one_click' }, { claim: 'no flicker', proof: 'tray::flicker' }] } }),
         nightEntry({ id: 3, kind: 'decision', title: 'Drop the old API?', body: 'It has no callers.\n\nOptions: keep | remove' }),
@@ -75,7 +75,8 @@ describe('NightShiftReport', () => {
     expect(chip('CI', 'reliability').dataset.gateState).toBe('failed')
     expect(chip('Review', 'performance').dataset.gateKind).toBe('verdict')
     expect(chip('QA', 'performance').dataset.gateKind).toBe('verdict')
-    expect(host.textContent).toContain('CI re-run 1× for a known flaky test')
+    expect(host.textContent).toContain('1 re-run')
+    expect(host.textContent).toContain('2 fixes')
 
     act(() => Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Mark QA passed')!.click())
     expect(onQaPassed).toHaveBeenCalledWith(2)
@@ -91,6 +92,9 @@ describe('NightShiftReport', () => {
     expect(cost).toContain('7.5')
     expect(cost).toContain('1 pane')
     expect(cost).not.toContain('1 panes')
+    expect(cost).toContain('102K tokens')
+    expect(cost).toContain('12K input · 6K output · 80K cache read · 4K cache write')
+    expect(cost).toContain('tokens not tracked')
   })
 
   it('counts open decisions in the headline while an answered one stays listed', () => {

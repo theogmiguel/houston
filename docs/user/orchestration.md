@@ -340,7 +340,10 @@ so a ZCode parent also asks before each `pane_spawn` and `pane_wait`.
 
 A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
 failure — or is interrupted reports no turn end: its parent's wait times out instead of
-returning, and the child shows Working until it is prompted again. A ZCode child's brief
+returning, and the child shows Working until it is prompted again. With Settings ▸ Agents ▸
+**Check ZCode plan quota when a pane stalls** on, Houston probes a ZCode pane after 20 minutes
+of Working, marks it Limited when the probe fails and writes one `limited` row to its parent.
+A ZCode child's brief
 is pasted into its interface; if ZCode does not report it as submitted, the parent gets a
 `prompt_failed` note and can resend it with `pane_prompt`.
 Inspect it with `pane_read` when a wait on a ZCode child keeps timing out.

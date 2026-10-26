@@ -27,5 +27,9 @@ describe('settings row search', () => {
       section: expect.objectContaining({ id: 'agents-clis' }),
       title: 'ZCode'
     })
+    expect(searchSettingsRows('plan quota')).toContainEqual({
+      section: expect.objectContaining({ id: 'agents-clis' }),
+      title: 'Check ZCode plan quota when a pane stalls'
+    })
   })
 })
