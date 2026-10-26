@@ -177,6 +177,7 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("suspected_defects", "workspace"),
     ("harness_finding_tasks", "workspace"),
     ("intake_events", "workspace"),
+    ("review_requests", "workspace"),
     ("task_tracker_settings", "workspace"),
     ("task_tracker_poll_state", "workspace"),
     ("task_tracker_refresh_cursor", "workspace"),
@@ -7532,7 +7533,16 @@ pub(crate) mod tests {
              INSERT INTO workspace_transfer_checkouts
                  (transfer_id, direction, key, path, tree_state, untracked)
                  VALUES ('t1', 'export', 'main', '{from}/.houston/worktrees/x', NULL, '[]'),
-                        ('t2', 'export', 'main', '/a/project', NULL, '[]');"
+                        ('t2', 'export', 'main', '/a/project', NULL, '[]');
+             INSERT INTO review_requests
+                 (host, repo, number, head_sha, title, author, url, tier, reasons, state,
+                  workspace, first_seen_ms, last_seen_ms)
+                 VALUES ('github.com', 'o/r', 1, 'sha1', 'One', 'them',
+                         'https://github.com/o/r/pull/1', 'a', '[]', 'new', '{from}', 0, 0),
+                        ('github.com', 'o/r', 2, 'sha2', 'Two', 'them',
+                         'https://github.com/o/r/pull/2', 'b', '[]', 'new', '/a/project', 0, 0),
+                        ('github.com', 'o/r', 3, 'sha3', 'Three', 'them',
+                         'https://github.com/o/r/pull/3', 'c', '[]', 'new', NULL, 0, 0);"
         ))
         .unwrap();
     }
@@ -7646,6 +7656,22 @@ pub(crate) mod tests {
             checkouts[1],
             ("t2".to_owned(), "/a/project".to_owned()),
             "a sibling folder must not move"
+        );
+        let requests: Vec<(u32, Option<String>)> = conn
+            .prepare("SELECT number, workspace FROM review_requests ORDER BY number")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            requests,
+            vec![
+                (1, Some("/b/proj".to_owned())),
+                (2, Some("/a/project".to_owned())),
+                (3, None),
+            ],
+            "a review request follows its workspace; a sibling or unassigned row stays"
         );
     }
 
