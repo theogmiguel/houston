@@ -58,6 +58,9 @@ pub fn display_name(provider: AgentKind) -> &'static str {
 pub enum Outcome {
     Answered,
     Failed(String),
+    /// The probe did not finish within `TIMEOUT`: at a run's start that is
+    /// inconclusive, while a pane already stalled treats it as failed.
+    TimedOut(String),
 }
 
 /// `exited_ok` is `None` when the probe did not finish within `TIMEOUT`.
@@ -69,7 +72,7 @@ pub fn classify(
 ) -> Outcome {
     match exited_ok {
         Some(true) => Outcome::Answered,
-        None => Outcome::Failed(format!(
+        None => Outcome::TimedOut(format!(
             "{} probe did not answer within {} s",
             crate::agent_hooks::provider_slug(provider),
             TIMEOUT.as_secs()
@@ -197,7 +200,8 @@ mod tests {
             Outcome::Answered
         );
         assert!(
-            matches!(classify(AgentKind::Codex, None, "", ""), Outcome::Failed(w) if w.contains("codex probe did not answer within 90 s"))
+            matches!(classify(AgentKind::Codex, None, "", ""), Outcome::TimedOut(w) if w.contains("codex probe did not answer within 90 s")),
+            "a probe that did not answer timed out"
         );
         assert_eq!(
             classify(AgentKind::Opencode, Some(false), "", "\nnot logged in\n"),

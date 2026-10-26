@@ -90,7 +90,9 @@ impl Daemon {
                 let outcome = me.quota_probe_run(proto::AgentKind::Zcode);
                 match outcome {
                     provider_probe::Outcome::Answered => {}
-                    provider_probe::Outcome::Failed(why) => me.zcode_quota_failed(id, &why),
+                    // The pane is already stalled: no answer counts as failed.
+                    provider_probe::Outcome::Failed(why)
+                    | provider_probe::Outcome::TimedOut(why) => me.zcode_quota_failed(id, &why),
                 }
                 me.zcode_quota.lock().expect("zcode quota").probe_busy = false;
             });

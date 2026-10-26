@@ -224,10 +224,12 @@ little of that provider's plan quota:
 | OpenCode | `opencode run "Reply with the single word OK." --agent plan --pure` | run start |
 | ZCode | `zcode -p "Reply with the single word OK." --mode build --disallowed-tools "Bash Edit Write"` | run start; after a 20-minute Working stall |
 
-A failed probe (a spent quota, a signed-out CLI, or no answer within 90 seconds) marks that
-provider limited for the run, so later spawns use the next worker provider; at the start it is
-also recorded as a warning on the run. A probe answered at the start is recorded as an
-answered check, and a provider whose sign-in check already blocked is not probed.
+A failed probe (a spent quota or a signed-out CLI) marks that provider limited for the run, so
+later spawns use the next worker provider; at the start it is also recorded as a warning on
+the run. A start probe that does not answer within 90 seconds is inconclusive: it warns the
+run without marking the provider limited, while a pane already stalled treats the same timeout
+as a failure. A probe answered at the start is recorded as an answered check, and a provider
+whose sign-in check already blocked is not probed.
 
 Outside a Night shift run, Settings ▸ Agents ▸ **Check ZCode plan quota when a pane stalls**
 applies the same ZCode probe to a pane that has shown Working for 20 minutes: at most one

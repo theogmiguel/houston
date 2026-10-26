@@ -3744,7 +3744,8 @@ impl Daemon {
                     .expect("probe turns")
                     .insert(pane, now_unix_ms());
             }
-            provider_probe::Outcome::Failed(why) => {
+            // A pane already stalled treats no answer as a failure too.
+            provider_probe::Outcome::Failed(why) | provider_probe::Outcome::TimedOut(why) => {
                 let slug = crate::agent_hooks::provider_slug(provider);
                 me.night_shift_provider_limited(
                     pane,
@@ -3814,6 +3815,14 @@ impl Daemon {
                 provider,
                 proto::PreflightStatus::Ok,
                 "answered a one-word probe".into(),
+            ),
+            // A start probe that never answered is inconclusive: only a probe
+            // that finished and failed proves this provider cannot run.
+            provider_probe::Outcome::TimedOut(why) => self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Warn,
+                format!("{why}; Houston did not mark {slug} limited"),
             ),
             provider_probe::Outcome::Failed(why) => {
                 self.night_record_quota_item(
