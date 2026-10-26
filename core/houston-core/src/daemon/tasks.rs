@@ -4489,7 +4489,7 @@ impl Daemon {
         if row.workspace.is_none() {
             return Ok(Self::task_invalid(Some(id), operation, format!("task {} has no workspace (expected the orchestrator's workspace before review)", Self::task_key(row.number))));
         }
-        self.task_review_internal(&row, caller, agent, operation)
+        self.task_review_internal(&row, caller, agent, operation, false)
     }
 
     fn task_review_internal(
@@ -4498,6 +4498,7 @@ impl Daemon {
         caller: u32,
         agent: proto::AgentKind,
         operation: &str,
+        skip_small: bool,
     ) -> Result<proto::ServerMsg> {
         if row.workspace.is_none() {
             return Ok(Self::task_invalid(
@@ -4681,42 +4682,49 @@ impl Daemon {
         })?;
         self.db
             .task_run_set_review_start(run.id, &head_sha, focus)?;
-        if let Some(skip_reason) =
-            self.review_skip_reason(&impl_run, &review_dir, &project_dir, &head_sha)
-        {
-            self.db.task_run_set_review_result(
-                run.id,
-                proto::TaskReviewOutcome::Skipped,
-                &[],
-                Some(&skip_reason),
-            )?;
-            self.db
-                .task_run_set_summary(run.id, &format!("Review skipped: {skip_reason}"))?;
-            self.db
-                .task_run_set_state(run.id, proto::TaskRunState::HandedBack, None, true, now)?;
-            match self.task_comment_as(
-                None,
-                row.id,
-                &format!("Review skipped: {skip_reason}"),
-                AUTO_REVIEW_ACTOR,
-                "task_review",
-            ) {
-                Ok(proto::ServerMsg::TaskRefused { message, .. }) => tracing::warn!(
-                    "tasks: recording the skipped review of run {} as a comment: {message}",
-                    run.id
-                ),
-                Ok(_) => {}
-                Err(e) => tracing::warn!(
-                    "tasks: recording the skipped review of run {} as a comment: {e:#}",
-                    run.id
-                ),
+        if skip_small {
+            if let Some(skip_reason) =
+                self.review_skip_reason(&impl_run, &review_dir, &project_dir, &head_sha)
+            {
+                self.db.task_run_set_review_result(
+                    run.id,
+                    proto::TaskReviewOutcome::Skipped,
+                    &[],
+                    Some(&skip_reason),
+                )?;
+                self.db
+                    .task_run_set_summary(run.id, &format!("Review skipped: {skip_reason}"))?;
+                self.db.task_run_set_state(
+                    run.id,
+                    proto::TaskRunState::HandedBack,
+                    None,
+                    true,
+                    now,
+                )?;
+                match self.task_comment_as(
+                    None,
+                    row.id,
+                    &format!("Review skipped: {skip_reason}"),
+                    AUTO_REVIEW_ACTOR,
+                    "task_review",
+                ) {
+                    Ok(proto::ServerMsg::TaskRefused { message, .. }) => tracing::warn!(
+                        "tasks: recording the skipped review of run {} as a comment: {message}",
+                        run.id
+                    ),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(
+                        "tasks: recording the skipped review of run {} as a comment: {e:#}",
+                        run.id
+                    ),
+                }
+                self.broadcast_task_run(run.id);
+                return Ok(proto::ServerMsg::TaskChanged {
+                    workspace: row.workspace.clone(),
+                    id: row.id,
+                    revision: row.revision,
+                });
             }
-            self.broadcast_task_run(run.id);
-            return Ok(proto::ServerMsg::TaskChanged {
-                workspace: row.workspace.clone(),
-                id: row.id,
-                revision: row.revision,
-            });
         }
         let worktree =
             match self.review_worktree(row, &impl_run, &project_dir, &branch, run.attempt) {
@@ -5220,7 +5228,7 @@ impl Daemon {
                 .reviewer
                 .or_else(|| self.tasks_default_reviewer(row.workspace.as_deref().unwrap_or("")))
             {
-                match self.task_review_internal(row, parent, reviewer, "task_execute") {
+                match self.task_review_internal(row, parent, reviewer, "task_execute", true) {
                     Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                         self.note_auto_action(row, "automatic review not started", &message);
                     }
@@ -5958,7 +5966,7 @@ impl Daemon {
         let Some(caller) = caller else {
             return;
         };
-        match self.task_review_internal(task, caller, reviewer, "task_pr_watch") {
+        match self.task_review_internal(task, caller, reviewer, "task_pr_watch", true) {
             Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                 if !message.contains("only when it is idle") {
                     self.note_auto_action(task, "every-push review not started", &message);

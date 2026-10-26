@@ -170,9 +170,9 @@ retries automatically, at most that many rounds, and records each round in the t
 history. The reviewer never closes a task.
 
 The execution card shows the reviewed head, the focus and the verdict. Structured findings
-name their file and line, severity, category and message. A diff too small for a reviewer is
-**Skipped** with the reason. A later push leaves the verdict pinned to the head it read and
-marks it **Review outdated**.
+name their file and line, severity, category and message. An automatic review of a diff too
+small for a reviewer is **Skipped** with the reason. A later push leaves the verdict pinned
+to the head it read and marks it **Review outdated**.
 
 The implementing child reports through a short structured line in its final handoff; that is
 how acceptance items are ticked by name, the summary is kept as a comment and the task moves

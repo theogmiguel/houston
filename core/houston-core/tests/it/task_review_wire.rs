@@ -262,6 +262,14 @@ struct Run {
     summary: Option<String>,
 }
 
+/// A change above `REVIEW_SKIP_MAX_LINES`, so a review is not skipped.
+fn large_change(run: &Run) {
+    let tree = Path::new(run.worktree_path.as_deref().expect("a worktree"));
+    std::fs::write(tree.join("review.txt"), "line\n".repeat(40)).unwrap();
+    git(tree, &["add", "review.txt"]);
+    git(tree, &["commit", "-q", "-m", "implementation"]);
+}
+
 #[tokio::test]
 async fn a_failed_review_leaves_the_findings_as_a_comment_and_the_run_needing_review() {
     let _guard = SERIAL.lock().await;
@@ -280,6 +288,7 @@ async fn a_failed_review_leaves_the_findings_as_a_comment_and_the_run_needing_re
     let id = r.create_task();
 
     let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
+    large_change(&impl_run);
     r.submit_complete(impl_run.session_id.unwrap());
     assert_eq!(r.task_status(id), "inreview");
 
@@ -325,6 +334,7 @@ async fn retry_with_findings_opens_attempt_n_plus_one_in_the_same_worktree() {
 
     let impl_run = r.start_execute(id, parent, Some(proto::AgentKind::Codex));
     let first_tree = impl_run.worktree_path.clone().unwrap();
+    large_change(&impl_run);
     r.submit_complete(impl_run.session_id.unwrap());
     let review_run = r.open_run_of("review");
     r.submit_fail(review_run.session_id.unwrap());
@@ -393,6 +403,7 @@ async fn automatic_rework_stops_at_the_configured_cap() {
     let id = r.create_task();
 
     let impl_one = r.start_execute(id, parent, None);
+    large_change(&impl_one);
     r.submit_complete(impl_one.session_id.unwrap());
     let review_one = r.open_run_of("review");
     r.submit_fail(review_one.session_id.unwrap());
