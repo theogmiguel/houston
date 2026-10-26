@@ -1078,9 +1078,8 @@ pub struct ReviewRequestedPr {
 }
 
 /// The review requests of the signed-in account, one `gh search prs` page.
-/// Newest first is gh's own order. `gh search prs` has no head commit field, so
-/// the caller resolves that with one `gh pr view` for a request it has not seen
-/// before.
+/// `gh search prs` has no head field, so the caller resolves it with one
+/// `gh pr view` for a request it has not seen.
 pub fn search_review_requested_prs(dir: &Path, limit: u32) -> Result<Vec<ReviewRequestedPr>> {
     let limit = limit.clamp(1, 100).to_string();
     let out = run(

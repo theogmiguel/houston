@@ -5590,8 +5590,7 @@ impl Daemon {
 
     /// One inbox row to the pane that implemented the task: the findings and
     /// the head they were found at, for the operator to decide. An automatic
-    /// rework already carries the same findings, so the caller skips this row
-    /// when a rework started.
+    /// rework already carries them, so the caller skips this row.
     fn deliver_review_findings(
         self: &Arc<Self>,
         row: &TaskRow,
