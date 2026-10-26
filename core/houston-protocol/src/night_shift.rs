@@ -318,10 +318,7 @@ pub struct NightCostLine {
     /// The provider's own token counts for the run's window; `None` when its
     /// CLI exposes none to Houston. Never a zero standing in for "unknown".
     #[serde(default)]
-    #[cfg_attr(
-        feature = "ts-gen",
-        ts(optional = nullable, type = "UsageTokenTotals | null")
-    )]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub tokens: Option<UsageTokenTotals>,
 }
 
