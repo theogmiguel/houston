@@ -7,7 +7,7 @@ use futures_util::SinkExt;
 use houston_core::daemon::Daemon;
 use houston_core::hook_drop::HookDrop;
 use houston_core::mcp_creds::McpScope;
-use houston_core::night_shift::preflight::{Facts, MachineFacts, ProviderFacts};
+use houston_core::night_shift::preflight::{Facts, MachineFacts, ProviderFacts, SignIn};
 use houston_protocol as proto;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -93,11 +93,11 @@ fn healthy_facts() -> Facts {
             hooks_on: true,
             cli_present: true,
             rea: Some(true),
-            logged_in: Some(true),
-            identity: Some(format!(
+            sign_in: SignIn::In(Some(format!(
                 "{}@example.com",
                 houston_core::agent_hooks::provider_slug(provider)
-            )),
+            ))),
+            env_credential: None,
         })
         .collect(),
         machine: MachineFacts {
@@ -1738,23 +1738,23 @@ async fn blocking_preflight_refuses_run() {
     assert_eq!(runs[0].status, proto::RoutineRunStatus::EngineRefused);
 }
 
-/// A provider whose local files show a signed-out CLI blocks a Run now and
-/// names the command that fixes it.
+/// A provider whose own credential store explicitly records no sign-in blocks
+/// a Run now and names the command that fixes it.
 #[tokio::test]
 async fn a_signed_out_provider_blocks_run_now() {
     let r = rig().await;
     let routine = r.ready(|_| {});
     let mut facts = healthy_facts();
     for provider in &mut facts.providers {
-        provider.logged_in = Some(true);
-        provider.identity = Some("dev@example.com".into());
+        provider.sign_in = SignIn::In(Some("dev@example.com".into()));
+        provider.env_credential = None;
     }
     facts
         .providers
         .iter_mut()
-        .find(|p| p.provider == proto::AgentKind::Claude)
-        .expect("the fixture lists Claude")
-        .logged_in = Some(false);
+        .find(|p| p.provider == proto::AgentKind::Codex)
+        .expect("the fixture lists Codex")
+        .sign_in = SignIn::Out;
     r.daemon.set_night_shift_facts_for_test(Some(facts));
     let before = r.daemon.list().len();
     let run = r.run_now(routine.id, 120);
@@ -1764,18 +1764,18 @@ async fn a_signed_out_provider_blocks_run_now() {
     let item = run
         .preflight
         .iter()
-        .find(|i| i.id == "signin:claude")
-        .expect("Claude's sign-in item");
+        .find(|i| i.id == "signin:codex")
+        .expect("Codex's sign-in item");
     assert_eq!(item.status, proto::PreflightStatus::Block, "{item:?}");
     assert!(
-        item.detail.contains("run `claude` and sign in"),
+        item.detail.contains("run `codex` and sign in"),
         "{}",
         item.detail
     );
     assert!(
         run.stop_detail
             .as_deref()
-            .is_some_and(|d| d.contains("signin:claude")),
+            .is_some_and(|d| d.contains("signin:codex")),
         "the refusal names the blocking item: {:?}",
         run.stop_detail
     );

@@ -120,11 +120,15 @@ pub fn codex_identity(codex_home: &Path, profile_id: Option<u32>) -> AgentAccoun
     let mut out = row(AgentKind::Codex, profile_id, true);
     let root = match read_bounded(&file, AUTH_FILE_LIMIT).and_then(|t| parse_json(&file, &t)) {
         Ok(root) => root,
+        // An unreadable store is not a sign-out: OPENAI_API_KEY may still
+        // authenticate the CLI from its environment.
         Err(ReadFailure::Missing(path)) => {
+            out.sign_in = AgentSignIn::Unknown;
             out.reason = Some(format!("{} does not exist", path.display()));
             return out;
         }
         Err(ReadFailure::Failed(reason)) => {
+            out.sign_in = AgentSignIn::Unknown;
             out.reason = Some(reason);
             return out;
         }
@@ -165,6 +169,8 @@ pub fn codex_identity(codex_home: &Path, profile_id: Option<u32>) -> AgentAccoun
             out.identity = email;
         }
         None => {
+            // A corrupt credential is not proof the store holds none.
+            out.sign_in = AgentSignIn::Unknown;
             out.reason = Some(format!(
                 "{}: tokens.id_token is not a decodable JWT (expected three dot-separated base64url parts)",
                 file.display()
@@ -422,10 +428,10 @@ mod tests {
     }
 
     #[test]
-    fn codex_missing_and_malformed_inputs_are_signed_out() {
+    fn codex_missing_and_malformed_inputs_are_unknown() {
         let dir = tempfile::tempdir().unwrap();
         let missing = codex_identity(dir.path(), None);
-        assert_eq!(missing.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(missing.sign_in, AgentSignIn::Unknown);
         assert!(missing.reason.unwrap().contains("does not exist"));
         write(
             dir.path(),
@@ -433,13 +439,21 @@ mod tests {
             r#"{"tokens":{"id_token":"not-a-jwt"}}"#,
         );
         let bad = codex_identity(dir.path(), None);
-        assert_eq!(bad.sign_in, AgentSignIn::SignedOut);
+        assert_eq!(bad.sign_in, AgentSignIn::Unknown);
         assert!(bad.reason.unwrap().contains("not a decodable JWT"));
         write(dir.path(), "auth.json", "[1,2");
-        assert!(codex_identity(dir.path(), None)
-            .reason
-            .unwrap()
-            .contains("not valid JSON"));
+        let malformed = codex_identity(dir.path(), None);
+        assert_eq!(malformed.sign_in, AgentSignIn::Unknown);
+        assert!(malformed.reason.unwrap().contains("not valid JSON"));
+    }
+
+    #[test]
+    fn codex_a_readable_store_without_credentials_is_signed_out() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "auth.json", r#"{"auth_mode":"chatgpt"}"#);
+        let id = codex_identity(dir.path(), None);
+        assert_eq!(id.sign_in, AgentSignIn::SignedOut);
+        assert!(id.reason.unwrap().contains("neither tokens.id_token"));
     }
 
     #[test]

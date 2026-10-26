@@ -821,13 +821,14 @@ impl Daemon {
             }
             crate::cli_accounts::read_all(&self.env(), home, &profiles)
         });
+        let env = self.env();
         let providers = preflight::providers_of(s)
             .into_iter()
             .map(|provider| {
-                let (logged_in, identity) = login
+                let sign_in = login
                     .as_ref()
                     .map(|rows| preflight::login_fact(rows, provider))
-                    .unwrap_or((None, None));
+                    .unwrap_or(preflight::SignIn::Unknown);
                 preflight::ProviderFacts {
                     provider,
                     hooks_on: hooks
@@ -836,8 +837,8 @@ impl Daemon {
                     cli_present: hooks.iter().any(|h| h.provider == provider && h.present)
                         || self.cli_presence(provider).present,
                     rea: rea(provider),
-                    logged_in,
-                    identity,
+                    sign_in,
+                    env_credential: preflight::env_credential(provider, |name| env.var(name)),
                 }
             })
             .collect();

@@ -156,14 +156,20 @@ item blocks:
 
 - agent spawning is off (Settings ▸ Agents ▸ Orchestration);
 - a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks), or its
-  local sign-in files show it is signed out; the item names the CLI to run and sign in;
+  own credential store explicitly records no sign-in; the item names the CLI to run and sign
+  in;
 - the machine is on battery;
 - less than 6 GiB of memory or 20 GiB of disk is free;
 - no check is configured.
 
 Preflight reads each chosen provider's local sign-in files and reports the identifier they
-carry, never a token. When those files cannot prove either way it warns instead of blocking;
-ZCode keeps no local sign-in marker, so its item says the quota probe decides.
+carry, never a token. A provider whose files show no account but which documents an API key,
+a cloud provider or another credential store is warned about, not blocked; the warning says to
+sign in only if you do not authenticate another way. A credential set in the environment for
+Claude (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`,
+`CLAUDE_CODE_USE_VERTEX`) or Codex (`OPENAI_API_KEY`) is accepted, and the item names the
+variable, never its value. ZCode keeps no local sign-in marker, so its item says the quota
+probe decides.
 
 On Windows, preflight warns when a restart is pending or when the run's own window (Run
 now's duration, or the nightly window) reaches outside Windows Update active hours. On Linux
