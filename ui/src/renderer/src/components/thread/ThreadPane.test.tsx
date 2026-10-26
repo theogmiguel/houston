@@ -663,6 +663,30 @@ describe('ThreadPane', () => {
       expect(input().value).toBe('/model claude-opus-5-5')
     })
 
+    it('puts the message back when the daemon refuses a command the composer did not know', () => {
+      mount()
+      history([])
+      type('/login')
+      press({})
+      expect(sends()).toHaveLength(1)
+      expect(input().value).toBe('')
+      act(() => fake.emit({ type: 'error', message: 'thread_send refused for session 7: /login runs only in a terminal pane; open this conversation there with /terminal to run it', context: 'session:7' }))
+      expect(input().value).toBe('/login')
+      act(() => ([...container.querySelectorAll('button')].find((b) => b.textContent === 'Open in terminal') as HTMLButtonElement).click())
+      expect(fake.sent).toContainEqual({ type: 'session_set_view', session: 7, view: 'terminal' })
+    })
+
+    it('puts the message back when the daemon refuses it for any reason', () => {
+      mount({ status: 'working' })
+      history([])
+      type('later')
+      press({})
+      expect(input().value).toBe('')
+      act(() => fake.emit({ type: 'error', message: 'thread_send refused for session 7: the queue holds 16 messages, the limit (THREAD_QUEUE_MAX_ITEMS) is 16; send or remove one to queue a message', context: 'session:7' }))
+      expect(input().value).toBe('later')
+      expect(container.textContent).toContain('THREAD_QUEUE_MAX_ITEMS')
+    })
+
     it('refuses a command that carries a quoted selection', () => {
       const off = registerTerminalSelection(9, () => 'x', { name: () => 'build', hidden: () => false })
       try {

@@ -226,6 +226,19 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
     draft.current = { text: () => current.current, clear: () => { setText(''); setRefusal(null) }, refuse: setRefusal }
     return () => { draft.current = null }
   }, [draft])
+  // The daemon refuses a send after the field was cleared, so the message comes back to it.
+  const sent = useRef<{ text: string; excerpts: readonly ThreadExcerpt[] } | null>(null)
+  useEffect(() => {
+    const message = sent.current
+    if (message === null || !daemonRefusal?.startsWith('thread_send refused')) return
+    sent.current = null
+    if (current.current !== '') return
+    setText(message.text)
+    setExcerpts((kept) => (kept.length === 0 ? message.excerpts : kept))
+    if (!daemonRefusal.includes('runs only in a terminal pane')) return
+    setCommand(daemonRefusal)
+    onDismissDaemonRefusal?.()
+  }, [daemonRefusal, onDismissDaemonRefusal])
   const input = useRef<HTMLTextAreaElement>(null)
   const menus = useComposerMenus({ fields: { text, setText, excerpts, setExcerpts, setRefusal }, commands, root, terminal, input })
   const rows = Math.min(COMPOSER_MAX_ROWS, Math.max(1, text.split('\n').length))
@@ -237,6 +250,7 @@ export function ThreadComposer({ stoppable, disabledReason, daemonRefusal, onDis
     const blocked = commandRefusal(text, excerpts.length > 0, commands)
     if (blocked !== null) return setCommand(blocked)
     if (!onSend(text, steer, excerpts)) return setRefusal('Message not sent: the connection to the daemon is closed. Your text is kept.')
+    sent.current = { text, excerpts }
     setRefusal(null)
     setText('')
     setExcerpts([])
