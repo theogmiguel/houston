@@ -16038,19 +16038,17 @@ impl Daemon {
         matches!(kind, "permission_prompt" | "agent_needs_input") || kind.starts_with("elicitation")
     }
 
-    /// A provider's typed limit hook, or the notification that ends Claude's
-    /// hold: quota resets are never spent automatically.
+    /// A root event that ends a reported limit. Every provider with a typed
+    /// limit signal gets one; quota resets are never spent automatically.
     fn ends_limit(provider: proto::AgentKind, d: &crate::hook_drop::HookDrop) -> bool {
-        matches!(
-            provider,
-            proto::AgentKind::Claude | proto::AgentKind::Opencode | proto::AgentKind::Zcode
-        ) && d.agent_id.is_none()
+        d.agent_id.is_none()
             && d.subagent_type.is_none()
-            && (crate::agent_events::AgentEvent::from_provider(provider, &d.event)
-                == Some(crate::agent_events::AgentEvent::PromptSubmitted)
-                || (provider == proto::AgentKind::Claude
-                    && d.event == "Notification"
-                    && d.notification_type.as_deref() == Some("quota_auto_resume_fired")))
+            && crate::limits::ends_limit(
+                provider,
+                cfg!(windows),
+                &d.event,
+                d.notification_type.as_deref(),
+            )
     }
 
     /// Records a reported limit; true only when it starts a new limit episode.

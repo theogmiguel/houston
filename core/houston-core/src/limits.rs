@@ -42,6 +42,27 @@ pub fn reports_no_limit(provider: proto::AgentKind, windows: bool) -> bool {
     signal_for(provider, windows) == LimitSignal::NoSignal
 }
 
+/// Whether a root lifecycle event ends a pane's reported limit. Every provider
+/// that reports a limit through any channel starts a new episode on its next
+/// prompt, so a stale hold never blocks it; Claude also ends its hold when its
+/// own quota auto-resume notification fires. `notification_type` is the
+/// notification's typed kind, if the event is one.
+pub fn ends_limit(
+    provider: proto::AgentKind,
+    windows: bool,
+    event: &str,
+    notification_type: Option<&str>,
+) -> bool {
+    if reports_no_limit(provider, windows) {
+        return false;
+    }
+    crate::agent_events::AgentEvent::from_provider(provider, event)
+        == Some(crate::agent_events::AgentEvent::PromptSubmitted)
+        || (provider == proto::AgentKind::Claude
+            && event == "Notification"
+            && notification_type == Some("quota_auto_resume_fired"))
+}
+
 /// The limit a root hook drop reports; the provider's own error class decides.
 pub fn hook_limit(provider: proto::AgentKind, d: &HookDrop) -> Option<proto::SessionLimit> {
     let event = match provider {
@@ -67,7 +88,7 @@ pub fn hook_limit(provider: proto::AgentKind, d: &HookDrop) -> Option<proto::Ses
 mod tests {
     use super::*;
 
-    const EVERY_KIND: [proto::AgentKind; 12] = [
+    const EVERY_KIND: [proto::AgentKind; 13] = [
         proto::AgentKind::Claude,
         proto::AgentKind::Codex,
         proto::AgentKind::Antigravity,
@@ -76,6 +97,7 @@ mod tests {
         proto::AgentKind::Opencode,
         proto::AgentKind::Cursor,
         proto::AgentKind::Grok,
+        proto::AgentKind::Zcode,
         proto::AgentKind::Droid,
         proto::AgentKind::Copilot,
         proto::AgentKind::Aider,
@@ -109,6 +131,48 @@ mod tests {
                 assert_eq!(
                     reports_no_limit(kind, windows),
                     expected == LimitSignal::NoSignal,
+                    "{kind:?} windows={windows}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_limit_reporting_provider_ends_its_limit_on_its_next_prompt() {
+        use crate::agent_events::AgentEvent;
+        for windows in [false, true] {
+            for kind in EVERY_KIND {
+                let reports = !reports_no_limit(kind, windows);
+                let prompt = crate::agent_events::events_for(kind)
+                    .iter()
+                    .find(|(_, e)| *e == AgentEvent::PromptSubmitted)
+                    .map(|(name, _)| *name);
+                if reports {
+                    let name = prompt.unwrap_or_else(|| {
+                        panic!("{kind:?} windows={windows} has a limit signal but no prompt event")
+                    });
+                    assert!(
+                        ends_limit(kind, windows, name, None),
+                        "{kind:?} windows={windows} ends its limit on {name}"
+                    );
+                } else if let Some(name) = prompt {
+                    assert!(
+                        !ends_limit(kind, windows, name, None),
+                        "{kind:?} windows={windows} reports no limit, so {name} clears none"
+                    );
+                }
+                assert!(
+                    !ends_limit(kind, windows, "Stop", None),
+                    "{kind:?} windows={windows}: a turn end is not a new prompt"
+                );
+                assert_eq!(
+                    ends_limit(
+                        kind,
+                        windows,
+                        "Notification",
+                        Some("quota_auto_resume_fired")
+                    ),
+                    kind == proto::AgentKind::Claude,
                     "{kind:?} windows={windows}"
                 );
             }
