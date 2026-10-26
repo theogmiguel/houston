@@ -17,6 +17,166 @@ pub fn requires_shared_server(args: &[OsString]) -> bool {
     })
 }
 
+/// Longest usage-limit detail kept from an app-server notification.
+const LIMIT_DETAIL_MAX: usize = 200;
+
+/// The typed usage-limit signal in an app-server notification. Only the two
+/// methods the schema declares carry one: `error` with a usage-limit
+/// `codexErrorInfo`, and `account/rateLimits/updated` with an exhausted window.
+pub fn usage_limit(value: &serde_json::Value) -> Option<String> {
+    let bounded = |text: &str| -> String {
+        crate::sanitize::redact_secrets(text)
+            .0
+            .trim()
+            .chars()
+            .take(LIMIT_DETAIL_MAX)
+            .collect()
+    };
+    match value.get("method").and_then(serde_json::Value::as_str)? {
+        "error" => {
+            let params = value.get("params")?;
+            let kind = params
+                .pointer("/error/codexErrorInfo")
+                .and_then(serde_json::Value::as_str)?;
+            if !matches!(kind, "usageLimitExceeded" | "rateLimitExceeded") {
+                return None;
+            }
+            let message = params
+                .pointer("/error/message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Codex reported its usage limit");
+            Some(bounded(message))
+        }
+        "account/rateLimits/updated" => {
+            let limits = value.pointer("/params/rateLimits")?;
+            if let Some(kind) = limits
+                .get("rateLimitReachedType")
+                .and_then(serde_json::Value::as_str)
+            {
+                return Some(bounded(&format!("Codex reported {kind}")));
+            }
+            if limits
+                .get("spendControlReached")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+            {
+                return Some("Codex reported its spend control reached".into());
+            }
+            for window in ["primary", "secondary"] {
+                let Some(used) = limits
+                    .pointer(&format!("/{window}/usedPercent"))
+                    .and_then(serde_json::Value::as_i64)
+                else {
+                    continue;
+                };
+                if used < 100 {
+                    continue;
+                }
+                let resets = limits
+                    .pointer(&format!("/{window}/resetsAt"))
+                    .and_then(serde_json::Value::as_i64);
+                return Some(match resets {
+                    Some(at) => bounded(&format!(
+                        "Codex reported its {window} rate-limit window at 100% used, reset at {at}"
+                    )),
+                    None => format!("Codex reported its {window} rate-limit window at 100% used"),
+                });
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod limit_notification_tests {
+    use super::usage_limit;
+    use serde_json::json;
+
+    // Shapes copied from `codex app-server generate-json-schema`.
+    fn error(kind: serde_json::Value, message: &str) -> serde_json::Value {
+        json!({"method": "error", "params": {
+            "threadId": "0199a0f0-0000-7000-8000-000000000001",
+            "turnId": "0199a0f0-0000-7000-8000-000000000002",
+            "willRetry": false,
+            "error": {"message": message, "codexErrorInfo": kind}}})
+    }
+
+    #[test]
+    fn usage_limit_error_kinds_are_a_limit() {
+        for kind in ["usageLimitExceeded", "rateLimitExceeded"] {
+            let value = error(json!(kind), "You have hit your usage limit.");
+            let details = usage_limit(&value).expect("a typed usage limit");
+            assert_eq!(details, "You have hit your usage limit.");
+        }
+        assert_eq!(
+            usage_limit(&error(json!("serverOverloaded"), "try later")),
+            None
+        );
+        assert_eq!(
+            usage_limit(&error(
+                json!({"httpConnectionFailed": {"httpStatusCode": 429}}),
+                "connection failed"
+            )),
+            None,
+            "a connection failure is not a usage-limit kind"
+        );
+        assert_eq!(
+            usage_limit(&error(serde_json::Value::Null, "usage limit")),
+            None,
+            "free text alone is never a signal"
+        );
+    }
+
+    #[test]
+    fn an_exhausted_rate_limit_window_is_a_limit() {
+        let value = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {
+                "limitId": "codex",
+                "planType": "plus",
+                "primary": {"usedPercent": 100, "resetsAt": 1780000000, "windowDurationMins": 300},
+                "secondary": {"usedPercent": 12, "windowDurationMins": 10080}}}});
+        let details = usage_limit(&value).expect("an exhausted window");
+        assert!(
+            details.contains("primary rate-limit window at 100% used"),
+            "{details}"
+        );
+        assert!(details.contains("reset at 1780000000"), "{details}");
+
+        let secondary = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {"primary": {"usedPercent": 99},
+                           "secondary": {"usedPercent": 100}}}});
+        assert!(usage_limit(&secondary)
+            .expect("the secondary window")
+            .contains("secondary"));
+
+        let almost = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {"primary": {"usedPercent": 99}}}});
+        assert_eq!(usage_limit(&almost), None);
+    }
+
+    #[test]
+    fn a_spend_control_or_reached_type_is_a_limit() {
+        let reached = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {"rateLimitReachedType": "workspace_owner_usage_limit_reached"}}});
+        assert_eq!(
+            usage_limit(&reached).as_deref(),
+            Some("Codex reported workspace_owner_usage_limit_reached")
+        );
+        let spend = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {"spendControlReached": true}}});
+        assert!(usage_limit(&spend).is_some());
+        assert_eq!(usage_limit(&json!({"method": "turn/started"})), None);
+    }
+
+    #[test]
+    fn the_detail_is_bounded() {
+        let value = error(json!("usageLimitExceeded"), &"x".repeat(1000));
+        let details = usage_limit(&value).expect("a typed usage limit");
+        assert!(details.chars().count() <= 200, "{}", details.len());
+    }
+}
+
 #[cfg(windows)]
 pub fn wrap_direct(command: &mut portable_pty::CommandBuilder, launcher: &Path) {
     let original = command.get_argv().to_vec();
@@ -792,6 +952,18 @@ mod linux {
             Ok(())
         }
 
+        /// The next text frame, bounded by the socket's `FRAME_CAP`. `None` is a
+        /// closed connection; ping/pong frames are skipped.
+        async fn next_notification(&mut self) -> Option<String> {
+            loop {
+                match self.socket.next().await? {
+                    Ok(Message::Text(text)) => return Some(text.to_string()),
+                    Ok(Message::Close(_)) | Err(_) => return None,
+                    _ => {}
+                }
+            }
+        }
+
         async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
             let id = self.next_id;
             self.next_id += 1;
@@ -922,7 +1094,7 @@ mod linux {
                             ..Default::default()
                         };
                         crate::hook_drop::write_drop(drop_dir, &drop, crate::hook_drop::now_ms())?;
-                        return Ok(());
+                        return watch_limits(connection, drop_dir, session).await;
                     }
                     Ok(Some(_)) => {
                         delay = POLL_INTERVAL;
@@ -940,6 +1112,38 @@ mod linux {
             }
             tokio::time::sleep(delay).await;
         }
+    }
+
+    /// Keeps the observer's connection and writes one `StopFailure` drop per
+    /// turn that reports a typed usage limit. Bounded frames, two methods
+    /// parsed, nothing retained: a long transcript stream costs no memory.
+    async fn watch_limits(rpc: &mut Rpc, drop_dir: &Path, session: u32) -> Result<()> {
+        let mut written = false;
+        while let Some(text) = rpc.next_notification().await {
+            let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
+            if value.get("method").and_then(Value::as_str) == Some("turn/started") {
+                written = false;
+            }
+            if written {
+                continue;
+            }
+            let Some(details) = super::usage_limit(&value) else {
+                continue;
+            };
+            let drop = crate::hook_drop::HookDrop {
+                event: "StopFailure".into(),
+                session,
+                agent: Some("codex".into()),
+                error: Some(crate::limits::LIMIT_ERROR.into()),
+                error_details: Some(details),
+                ..Default::default()
+            };
+            crate::hook_drop::write_drop(drop_dir, &drop, crate::hook_drop::now_ms())?;
+            written = true;
+        }
+        Ok(())
     }
 
     async fn owner_exited(owner: u32, creation: u64) {

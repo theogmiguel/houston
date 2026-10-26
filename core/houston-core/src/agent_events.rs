@@ -84,10 +84,12 @@ pub const CLAUDE_CORRELATION_EVENTS: [&str; 5] = [
     "PostToolUseFailure",
 ];
 
-const CODEX_EVENTS: [(&str, AgentEvent); 5] = [
+const CODEX_EVENTS: [(&str, AgentEvent); 6] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
+    // The pane-owned app-server writes this on a typed usage-limit event.
+    ("StopFailure", AgentEvent::TurnFailed),
     ("Interrupt", AgentEvent::TurnInterrupted),
     ("PermissionRequest", AgentEvent::NeedsInput),
 ];
@@ -260,6 +262,7 @@ mod tests {
                     ("SessionStart", AgentEvent::SessionStarted),
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
+                    ("StopFailure", AgentEvent::TurnFailed),
                     ("Interrupt", AgentEvent::TurnInterrupted),
                     ("PermissionRequest", AgentEvent::NeedsInput),
                 ],

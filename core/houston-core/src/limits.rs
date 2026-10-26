@@ -45,7 +45,8 @@ pub fn reports_no_limit(provider: proto::AgentKind, windows: bool) -> bool {
 /// The limit a root hook drop reports; the provider's own error class decides.
 pub fn hook_limit(provider: proto::AgentKind, d: &HookDrop) -> Option<proto::SessionLimit> {
     let event = match provider {
-        proto::AgentKind::Claude => "StopFailure",
+        // Codex's app-server observer writes Claude's spelling on Linux.
+        proto::AgentKind::Claude | proto::AgentKind::Codex => "StopFailure",
         proto::AgentKind::Opencode => "session.error",
         _ => return None,
     };
@@ -141,6 +142,24 @@ mod tests {
         assert_eq!(
             hook_limit(proto::AgentKind::Claude, &limit_drop("StopFailure", None)),
             None
+        );
+    }
+
+    #[test]
+    fn codexs_observers_stop_failure_is_a_limit() {
+        let limit = hook_limit(
+            proto::AgentKind::Codex,
+            &limit_drop("StopFailure", Some(LIMIT_ERROR)),
+        )
+        .expect("the app-server observer's drop");
+        assert_eq!(limit.error, LIMIT_ERROR);
+        assert_eq!(
+            hook_limit(
+                proto::AgentKind::Codex,
+                &limit_drop("Stop", Some(LIMIT_ERROR))
+            ),
+            None,
+            "a hook Stop is not the observer's report"
         );
     }
 
