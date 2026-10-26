@@ -41,19 +41,42 @@ fn key_of(result: &serde_json::Value) -> String {
     result["key"].as_str().expect("a recorded key").to_string()
 }
 
-/// A worker with the parent relation and open request a launch would record,
-/// without starting a second provider binary.
-fn seed_child(rig: &Rig, child: u32, parent: u32) {
-    rig.daemon.seed_parent_for_test(child, parent);
-    rig.db()
-        .execute(
-            "INSERT INTO delegations
-                (parent_session, child_session, role, state, stalled, brief,
-                 created_at, updated_at, round, reusable)
-             VALUES (?1, ?2, NULL, 'working', 0, '', 0, 0, 1, 1)",
-            rusqlite::params![parent, child],
+/// A real orchestrated child: the launch records the parent and the delegation,
+/// while the fake provider keeps the pane alive without a CLI on this machine.
+fn spawn_worker(rig: &Rig, parent: u32) -> u32 {
+    let script = rig.state.path().join("worker-agent.json");
+    std::fs::write(
+        &script,
+        json!({
+            "provider": "claude",
+            "seed": 11,
+            "home": rig.state.path(),
+            "helper": env!("CARGO_BIN_EXE_tr-helper"),
+            "fixtures": Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks"),
+            "log": rig.state.path().join("worker-agent.jsonl"),
+            "steps": [{"op": "think", "ms": 600_000}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let provider = rig
+        .bin
+        .join(format!("claude{}", std::env::consts::EXE_SUFFIX));
+    std::fs::copy(env!("CARGO_BIN_EXE_fake_agent"), &provider).unwrap();
+    rig.daemon.orchestration_set(true).unwrap();
+    rig.daemon
+        .orchestrate_spawn(
+            parent,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            format!("@fake:{}", script.display()).into(),
+            None,
+            None,
+            Some("worker".into()),
         )
-        .unwrap();
+        .unwrap()
+        .id
 }
 
 fn detector_row<'a>(
@@ -205,8 +228,7 @@ async fn a_delivered_reply_followed_by_the_same_question_records_the_reasked_det
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let parent = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    let worker = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    seed_child(&rig, worker, parent);
+    let worker = spawn_worker(&rig, parent);
     let question = "Where is the deployment key?";
 
     let asked = rig
@@ -238,13 +260,25 @@ async fn a_delivered_reply_followed_by_the_same_question_records_the_reasked_det
             [reply_id],
         )
         .unwrap();
+    let delivered: i64 = rig
+        .db()
+        .query_row(
+            "SELECT COUNT(*) FROM pane_inbox r JOIN pane_inbox q ON q.id = r.reply_to
+             WHERE r.to_session = ?1 AND r.kind = 'reply' AND r.delivered_at IS NOT NULL
+             AND q.from_session = ?1 AND q.kind IN ('question', 'blocked')",
+            [worker],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(delivered, 1, "the response query sees the delivered reply");
+    let workspace = rig.daemon.orchestrate_whoami(worker).unwrap().project_dir;
 
     for _ in 0..10 {
         rig.daemon
             .orchestrate_report(worker, report(ReportKind::Question, question))
             .unwrap();
     }
-    let rows = rig.daemon.suspected_defect_rows(&rig.workspace).unwrap();
+    let rows = rig.daemon.suspected_defect_rows(&workspace).unwrap();
     let reasked = detector_row(&rows, "reply_reasked");
     assert_eq!(reasked.source, proto::DefectSource::Detector);
     assert_eq!(reasked.destination, proto::DefectDestination::Houston);
@@ -270,8 +304,7 @@ async fn a_reply_to_an_answered_question_records_the_refused_detector() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let parent = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    let worker = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    seed_child(&rig, worker, parent);
+    let worker = spawn_worker(&rig, parent);
 
     let asked = rig
         .daemon
@@ -303,7 +336,8 @@ async fn a_reply_to_an_answered_question_records_the_refused_detector() {
             .to_string();
         assert!(refused.contains("not an unresolved question"), "{refused}");
     }
-    let rows = rig.daemon.suspected_defect_rows(&rig.workspace).unwrap();
+    let workspace = rig.daemon.orchestrate_whoami(worker).unwrap().project_dir;
+    let rows = rig.daemon.suspected_defect_rows(&workspace).unwrap();
     let refused = detector_row(&rows, "reply_refused_resolved");
     assert_eq!(
         refused.count,
@@ -406,8 +440,8 @@ async fn an_agent_finding_counts_toward_the_worker_report_cap() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;
     let parent = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    let worker = agent_pane(&rig.daemon, Path::new(&rig.workspace));
-    seed_child(&rig, worker, parent);
+    let worker = spawn_worker(&rig, parent);
+    let workspace = rig.daemon.orchestrate_whoami(worker).unwrap().project_dir;
     for n in 0..houston_core::orchestrate::WORKER_REPORT_PENDING_MAX {
         rig.daemon
             .orchestrate_report(
@@ -433,7 +467,7 @@ async fn an_agent_finding_counts_toward_the_worker_report_cap() {
     assert!(err.contains("pane_report finding"), "{err}");
     assert!(
         rig.daemon
-            .suspected_defect_rows(&rig.workspace)
+            .suspected_defect_rows(&workspace)
             .unwrap()
             .is_empty(),
         "the refused finding records nothing"

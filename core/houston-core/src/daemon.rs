@@ -1747,9 +1747,6 @@ pub struct Daemon {
     db: Db,
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
-    // A launch records its parent in `Session::info`. Tests that need a child
-    // without starting a provider seed the relation here instead.
-    seeded_parents: Mutex<HashMap<u32, u32>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
     notes: Mutex<HashMap<u32, proto::PaneNote>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
@@ -3552,7 +3549,6 @@ impl Daemon {
             db,
             next_id: AtomicU32::new(next_id),
             sessions: Mutex::new(HashMap::new()),
-            seeded_parents: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
             notes: Mutex::new(notes),
             dead: Mutex::new(dead),
@@ -21770,26 +21766,8 @@ impl Daemon {
     }
 
     pub fn parent_of(&self, id: u32) -> Option<u32> {
-        if let Some(parent) = self
-            .seeded_parents
-            .lock()
-            .expect("seeded parents lock")
-            .get(&id)
-        {
-            return Some(*parent);
-        }
         let sessions = self.sessions.lock().expect("sessions lock");
         sessions.get(&id).and_then(|s| s.info.spawned_by)
-    }
-
-    /// Records the parent a provider launch would set, for a test that seeds the
-    /// dialogue state instead of starting a provider binary.
-    #[doc(hidden)]
-    pub fn seed_parent_for_test(&self, child: u32, parent: u32) {
-        self.seeded_parents
-            .lock()
-            .expect("seeded parents lock")
-            .insert(child, parent);
     }
 
     pub(crate) fn spawnable_by(&self, id: u32) -> bool {
