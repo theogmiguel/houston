@@ -992,6 +992,7 @@ impl Daemon {
             keep_awake: proto::NightKeepAwake::Off,
             merge_order: Vec::new(),
             crew: Vec::new(),
+            tokens_scanned: false,
         };
         if let Some(why) = refusal {
             night.phase = proto::NightRunPhase::Refused;
@@ -1975,6 +1976,7 @@ impl Daemon {
             return;
         };
         if row.cost.per_provider.iter().any(|l| l.tokens.is_some()) {
+            self.night_tokens_scanned(run_id);
             return;
         }
         let covered = row.crew.iter().any(|member| {
@@ -1983,6 +1985,7 @@ impl Daemon {
                 .any(|provider| provider.agent_kind() == member.provider)
         });
         if !covered {
+            self.night_tokens_scanned(run_id);
             return;
         }
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
@@ -2004,24 +2007,42 @@ impl Daemon {
             }
         }
         let totals = cost::totals_by_provider(&outcome.buckets);
-        if totals.is_empty() {
-            return;
-        }
         {
             let _guard = self.night.lock.lock().expect("night lock");
             let Ok(Some(mut row)) = self.db.night_run(run_id) else {
                 return;
             };
-            if row.cost.per_provider.iter().any(|l| l.tokens.is_some()) {
+            if row.tokens_scanned {
                 return;
             }
-            cost::add_tokens(&mut row.cost, &totals);
+            if !totals.is_empty() {
+                cost::add_tokens(&mut row.cost, &totals);
+            }
+            row.tokens_scanned = true;
             if let Err(e) = self.db.save_night_run(&row) {
                 tracing::warn!("recording Night shift run {run_id}'s tokens: {e:#}");
                 return;
             }
         }
-        self.broadcast_night_run(run_id);
+        if !totals.is_empty() {
+            self.broadcast_night_run(run_id);
+        }
+    }
+
+    /// A scan that found nothing still counts as done: recovery retries only a
+    /// scan the daemon stopped before it finished.
+    fn night_tokens_scanned(&self, run_id: u32) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        if row.tokens_scanned {
+            return;
+        }
+        row.tokens_scanned = true;
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s token scan: {e:#}");
+        }
     }
 
     // ---- restart recovery ----
@@ -2134,8 +2155,8 @@ impl Daemon {
             self.broadcast_control(&self.routine_list());
         }
         // A run that settled just before the daemon stopped may have lost its
-        // scan; retry only while it has no tokens yet.
-        let rows = self.db.night_runs_without_tokens(
+        // scan; retry only an unfinished scan.
+        let rows = self.db.night_runs_unscanned(
             now_ms - NIGHT_TOKEN_RECOVERY_WINDOW_MS,
             NIGHT_TOKEN_RECOVERY_SCANS,
         );

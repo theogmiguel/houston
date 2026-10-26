@@ -78,6 +78,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "goal_sent",
         "goal_sent INTEGER NOT NULL DEFAULT 0",
     )?;
+    super::add_column_if_missing(
+        conn,
+        "night_runs",
+        "tokens_scanned",
+        "tokens_scanned INTEGER NOT NULL DEFAULT 0",
+    )?;
     widen_entry_kinds(conn)
 }
 
@@ -152,6 +158,8 @@ pub struct NightRunRow {
     pub wrap_up_sent: bool,
     /// The Claude orchestrator was sent this run's `/goal` once.
     pub goal_sent: bool,
+    /// The run-end token scan finished, whether or not it found buckets.
+    pub tokens_scanned: bool,
     pub stop_reason: Option<proto::NightStopReason>,
     pub stop_detail: Option<String>,
     pub interruptions: Vec<proto::NightInterruption>,
@@ -167,8 +175,8 @@ pub struct NightRunRow {
 const RUN_SELECT: &str = "SELECT run_id, routine_id, workspace, trigger, phase, session_id, \
     started_at_ms, wrap_up_at_ms, hard_stop_at_ms, ended_at_ms, report_path, report_published, \
     summary, wrap_up_sent, stop_reason, stop_detail, interruptions_json, cost_json, \
-    limited_json, preflight_json, keep_awake, merge_order_json, crew_json, goal_sent \
-    FROM night_runs";
+    limited_json, preflight_json, keep_awake, merge_order_json, crew_json, goal_sent, \
+    tokens_scanned FROM night_runs";
 
 fn bad(col: usize, what: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, what.into())
@@ -230,6 +238,7 @@ fn map_run(r: &rusqlite::Row) -> rusqlite::Result<NightRunRow> {
         merge_order: json_col(r, 21, run_id)?,
         crew: json_col(r, 22, run_id)?,
         goal_sent: r.get::<_, i64>(23)? != 0,
+        tokens_scanned: r.get::<_, i64>(24)? != 0,
     })
 }
 
@@ -366,7 +375,8 @@ impl Db {
              hard_stop_at_ms = ?5, ended_at_ms = ?6, report_published = ?7, summary = ?8, \
              wrap_up_sent = ?9, stop_reason = ?10, stop_detail = ?11, interruptions_json = ?12, \
              cost_json = ?13, limited_json = ?14, preflight_json = ?15, keep_awake = ?16, \
-             merge_order_json = ?17, crew_json = ?18, goal_sent = ?19 WHERE run_id = ?1",
+             merge_order_json = ?17, crew_json = ?18, goal_sent = ?19, \
+             tokens_scanned = ?20 WHERE run_id = ?1",
             rusqlite::params![
                 row.run_id,
                 wire_name(&row.phase)?,
@@ -387,6 +397,7 @@ impl Db {
                 serde_json::to_string(&row.merge_order)?,
                 serde_json::to_string(&row.crew)?,
                 row.goal_sent as i64,
+                row.tokens_scanned as i64,
             ],
         )
         .with_context(|| format!("saving night run {}", row.run_id))?;
@@ -428,13 +439,13 @@ impl Db {
         Ok(rows)
     }
 
-    /// Settled runs since `since_ms` with no provider tokens stored, newest
-    /// first: the ones an interrupted run-end scan may have missed.
-    pub fn night_runs_without_tokens(&self, since_ms: i64, limit: u32) -> Result<Vec<NightRunRow>> {
+    /// Settled runs since `since_ms` whose token scan never finished, newest
+    /// first: at most one retry of a scan interrupted by a daemon stop.
+    pub fn night_runs_unscanned(&self, since_ms: i64, limit: u32) -> Result<Vec<NightRunRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
             "{RUN_SELECT} WHERE ended_at_ms IS NOT NULL AND ended_at_ms >= ?1 \
-             AND cost_json NOT LIKE '%\"tokens\":{{%' ORDER BY run_id DESC LIMIT ?2"
+             AND tokens_scanned = 0 ORDER BY run_id DESC LIMIT ?2"
         ))?;
         let rows = stmt
             .query_map(rusqlite::params![since_ms, limit], map_run)?
