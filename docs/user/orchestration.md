@@ -118,9 +118,14 @@ If a child submits a body before asking for input, Houston delivers it as a prov
 result while keeping the input request open. Receiving that body does not mean the
 child's work is finished.
 
-During work, a child can call `pane_report` with `kind: progress`, `question` or
-`blocked`, a `body` and its current `request_id`. The CLI equivalent is
-`hs-pane report question "Use the existing fixture?" --request-id 1`. Reports do not
+During work, a child can call `pane_report` with `kind: progress`, `question`,
+`blocked` or `finding`, a `body` and its current `request_id`. A `finding` records a
+suspected defect with `title`, `evidence` and `destination` (`houston` or `workspace`); it
+does not open an inbox row for the parent or block the worker, and it counts toward the
+worker report limit. The CLI form is
+`hs-pane report finding --title T --destination houston|workspace [--evidence E]... "description" --request-id N`.
+Suspected defects are reviewed in Settings ▸ Agents ▸ Review. The CLI equivalent for other
+kinds is `hs-pane report question "Use the existing fixture?" --request-id 1`. Reports do not
 complete the task. Questions and blockers remain open after the parent reads them,
 until the parent replies, you dismiss them, or the worker sends a later `progress`
 report on the same request, which means it carried on without an answer. A new

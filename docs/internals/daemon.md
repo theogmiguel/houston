@@ -803,6 +803,21 @@ sibling conflicts reach each recipient as one note per branch, listing its partn
 Merge-tree needs Git 2.38: an older or missing Git is
 refused by name, once per creating session. Only committed heads are compared, so
 uncommitted work is invisible to it.
+
+`suspected_defects` records agent findings and three named detectors in
+`daemon/defect_detectors.rs`: `reply_reasked` compares a new question or blocker with
+the question behind a delivered reply, `reply_refused_resolved` watches the reply
+refusal, and `conflict_note_merged_branch` consults only `SharedReads::branch_state`
+(the cached PR read, never a new request). Each detector is bounded to
+`DEFECT_DETECTOR_DAILY_CAP` (5) occurrences per workspace per UTC day; the store keeps
+200 rows per workspace and prunes the oldest decided one. Decisions reuse
+`harness_decisions`, so a later occurrence after a decision reopens the defect as
+`recurred`. None of this reads terminal pixels or text: the reported-status invariant
+holds. The issue draft redacts `defect_redaction` values and makes one
+`gh search issues` request; `defect_issue_file` is the only message that runs
+`gh issue create` or `gh issue comment`, and it redacts the client's title and body
+again before sending.
+
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy

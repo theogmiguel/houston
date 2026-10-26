@@ -92,21 +92,37 @@ and your decisions are kept per workspace and remain after Houston restarts.
 
 ## Suspected defects
 
-Agents can report defects they find in Houston itself, and Houston's own detectors add
-suspicious state they observe, such as a reply that was delivered but asked again. These join
-the review's **Suspected defects** section with their evidence, source, destination, occurrence
-count and last-seen date. Nothing is sent anywhere while they are collected.
+Agents and a few deterministic daemon signals can report a suspected defect in Houston or in
+the workspace's repository. These join the review's **Suspected defects** section with their
+evidence, source, destination, occurrence count and last-seen date. Nothing is sent anywhere
+while they are collected.
 
-Use **Dismiss** or **Not a bug** to record a decision; **Reopen** withdraws it. A dismissed
-defect that occurs again reopens as **recurred**.
+Sources:
+
+- **Agents.** A worker calls `pane_report` with `kind: finding`, a title, optional evidence and
+  a destination. The CLI form is
+  `hs-pane report finding --title "..." --destination houston|workspace [--evidence ...] "description" --request-id N`.
+  It does not open an inbox row for the parent or block the worker, and it counts toward that
+  worker's report limit.
+- **Daemon detectors.** These read state Houston already holds, never terminal text:
+  `reply_reasked` (a worker re-asks the same question after a reply was delivered),
+  `reply_refused_resolved` (a reply is refused because the question was already resolved) and
+  `conflict_note_merged_branch` (a conflict note names a branch whose pull request is merged or
+  closed). Each records at most five occurrences per workspace per UTC day.
+
+Use **Dismiss** or **Not a bug** to record a decision; **Reopen** withdraws it. A dismissed or
+not-a-bug defect that occurs again reopens as **recurred**.
 
 **Open issue** prepares a draft for the destination repository: Houston's own repository for a
-Houston defect, or this workspace's GitHub remote. The draft has an editable title and body with
-workspace-relative paths and secrets already redacted. It lists matching open issues so you can
-choose **Comment on #N instead**. Before you confirm, the drawer states exactly what will be sent,
-to which repository and under which `gh` account. **Create issue** or **Add comment to #N** is
-the only action that sends it; closing the drawer sends nothing. A GitHub rate-limit pause leaves
-the draft usable and says so.
+Houston defect, or this workspace's GitHub remote. The title follows the repository's
+conventional style and the title and body are editable. Houston redacts environment values,
+tokens, long high-entropy strings, URL passwords and absolute workspace or home paths. The draft
+lists matching open issues, found by one `gh search issues` request, so you can choose **Comment
+on #N instead**. Before you confirm, the drawer states exactly what will be sent, to which
+repository and under which `gh` account. **Create issue** or **Add comment to #N** is the only
+action that sends it; closing the drawer sends nothing. A GitHub rate-limit pause leaves the
+draft usable, returns no duplicates and says so. A workspace on a forge other than GitHub is
+refused by name.
 
 Settings ▸ Agents ▸ Review counts undecided suspected defects with the review's attention. At
 most once a day, a workspace-top notice names a new suspected defect; **Review** opens it.
