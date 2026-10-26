@@ -3893,6 +3893,11 @@ impl Daemon {
                     ),
                 )
             }
+            provider_probe::Outcome::Unavailable(why) => tracing::info!(
+                "Night shift run {run_id}: the {} stall probe could not run ({why}); the pane is \
+                 left alone",
+                crate::agent_hooks::provider_slug(provider)
+            ),
         });
     }
 
@@ -3974,6 +3979,15 @@ impl Daemon {
                 );
                 self.night_mark_limited(run_id, provider, &why, None);
             }
+            provider_probe::Outcome::Unavailable(why) => self.night_record_quota_item(
+                run_id,
+                provider,
+                proto::PreflightStatus::Warn,
+                format!(
+                    "the {slug} quota probe could not run ({why}); Houston did not mark {slug} \
+                     limited"
+                ),
+            ),
         }
         self.night_probe_end(run_id, provider);
     }
@@ -4070,11 +4084,11 @@ impl Daemon {
             profile.as_ref().map(|(_, config_dir)| config_dir.as_str()),
         );
         match program {
-            None => provider_probe::Outcome::Failed(format!("{slug} is not on PATH")),
+            None => provider_probe::Outcome::Unavailable(format!("{slug} is not on PATH")),
             Some(program) => match std::fs::create_dir_all(&cwd) {
                 Ok(()) => provider_probe::run(&program, provider, &cwd, &env),
                 Err(e) => {
-                    provider_probe::Outcome::Failed(format!("creating {}: {e}", cwd.display()))
+                    provider_probe::Outcome::Unavailable(format!("creating {}: {e}", cwd.display()))
                 }
             },
         }

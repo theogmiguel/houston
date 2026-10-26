@@ -57,7 +57,11 @@ pub fn display_name(provider: AgentKind) -> &'static str {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Answered,
+    /// The CLI ran and refused: a spent quota, a signed-out account.
     Failed(String),
+    /// Houston could not run the probe at all: no program, no spawn, no
+    /// scratch directory. Never evidence about the provider's quota.
+    Unavailable(String),
     /// The probe did not finish within `TIMEOUT`: at a run's start that is
     /// inconclusive, while a pane already stalled treats it as failed.
     TimedOut(String),
@@ -111,7 +115,7 @@ pub fn profile_env(provider: AgentKind, config_dir: Option<&str>) -> Vec<(String
 /// Runs the probe with `program` and `env` from `cwd`; blocks for up to `TIMEOUT`.
 pub fn run(program: &Path, provider: AgentKind, cwd: &Path, env: &[(String, String)]) -> Outcome {
     let Some(args) = argv(provider) else {
-        return Outcome::Failed(format!(
+        return Outcome::Unavailable(format!(
             "{} has no headless probe",
             crate::agent_hooks::provider_slug(provider)
         ));
@@ -129,7 +133,7 @@ pub fn run(program: &Path, provider: AgentKind, cwd: &Path, env: &[(String, Stri
             &String::from_utf8_lossy(&out.stderr),
         ),
         Ok(None) => classify(provider, None, "", ""),
-        Err(e) => Outcome::Failed(format!("starting {}: {e}", program.display())),
+        Err(e) => Outcome::Unavailable(format!("starting {}: {e}", program.display())),
     }
 }
 
@@ -262,6 +266,33 @@ mod tests {
         assert!(!why.contains(token), "{why}");
         assert!(why.contains("[redacted:"), "{why}");
         assert!(why.chars().count() <= REASON_MAX);
+    }
+
+    #[test]
+    fn a_probe_houston_cannot_start_is_unavailable_not_a_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("houston-no-such-cli");
+        assert!(
+            matches!(
+                run(&missing, AgentKind::Claude, dir.path(), &[]),
+                Outcome::Unavailable(why) if why.contains("starting")
+            ),
+            "a program that cannot start says nothing about the account"
+        );
+        assert!(
+            matches!(
+                run(&missing, AgentKind::Antigravity, dir.path(), &[]),
+                Outcome::Unavailable(why) if why.contains("no headless probe")
+            ),
+            "a provider without a probe is a Houston limitation"
+        );
+        assert!(
+            matches!(
+                classify(AgentKind::Claude, Some(false), "", "not logged in"),
+                Outcome::Failed(_)
+            ),
+            "a CLI that ran and refused is a failure"
+        );
     }
 
     #[test]

@@ -228,7 +228,9 @@ A failed probe (a spent quota or a signed-out CLI) marks that provider limited f
 later spawns use the next worker provider; at the start it is also recorded as a warning on
 the run. A start probe that does not answer within 90 seconds is inconclusive: it warns the
 run without marking the provider limited, while a pane already stalled treats the same timeout
-as a failure. A probe answered at the start is recorded as an answered check, and a provider
+as a failure. A probe Houston cannot run at all (the CLI is not installed, cannot start, or
+its scratch directory cannot be made) is recorded as a warning and never marks the provider
+limited. A probe answered at the start is recorded as an answered check, and a provider
 whose sign-in check already blocked is not probed.
 
 Outside a Night shift run, Settings ▸ Agents ▸ **Check ZCode plan quota when a pane stalls**

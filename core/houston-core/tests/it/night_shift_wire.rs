@@ -2355,6 +2355,42 @@ async fn start_probe_covers_every_worker_provider() {
     assert_eq!(spent.lines().count(), 1, "{spent}");
 }
 
+/// A probe Houston cannot even start says nothing about the account: it warns
+/// on the run and never limits the provider.
+#[tokio::test]
+async fn an_unusable_start_probe_warns_without_limiting() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    probe_scripts(&r, scripts.path(), None);
+    r.daemon.set_night_shift_probe_for_test(
+        proto::AgentKind::Claude,
+        Some(scripts.path().join("not-an-executable")),
+    );
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    wait_until("every start probe", || {
+        !r.daemon.night_shift_probing(run.run_id)
+    })
+    .await;
+    let run_state = r.run(run.run_id);
+    assert!(
+        run_state.limited.is_empty(),
+        "a probe that could not run is no limit: {:?}",
+        run_state.limited
+    );
+    let item = run_state
+        .preflight
+        .iter()
+        .find(|i| i.id == "quota:claude")
+        .unwrap_or_else(|| panic!("quota:claude missing: {:?}", run_state.preflight));
+    assert_eq!(item.status, proto::PreflightStatus::Warn);
+    assert!(item.detail.contains("could not run"), "{item:?}");
+    assert!(
+        item.detail.contains("did not mark claude limited"),
+        "{item:?}"
+    );
+}
+
 /// Outside Night shift, a stalled delegated ZCode pane becomes Limited and its
 /// parent gets one `limited` row, but only when the opt-in check is on.
 #[tokio::test]

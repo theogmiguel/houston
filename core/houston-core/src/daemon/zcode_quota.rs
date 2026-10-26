@@ -93,6 +93,10 @@ impl Daemon {
                     // The pane is already stalled: no answer counts as failed.
                     provider_probe::Outcome::Failed(why)
                     | provider_probe::Outcome::TimedOut(why) => me.zcode_quota_failed(id, &why),
+                    provider_probe::Outcome::Unavailable(why) => tracing::info!(
+                        "ZCode quota probe for pane {id} could not run ({why}); the pane is left \
+                         alone"
+                    ),
                 }
                 me.zcode_quota.lock().expect("zcode quota").probe_busy = false;
             });
