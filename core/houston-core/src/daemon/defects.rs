@@ -341,11 +341,11 @@ impl Daemon {
             }
         }
         body.push_str(&format!(
-            "\n{provenance} Seen {} time{}; first on this workspace at {} ms and last at {} ms.\n\n---\nFiled from Houston's suspected-defect review with a redacted draft.\n",
+            "\n{provenance} Seen {} time{}; first seen {} and last seen {}.\n\n---\nFiled from Houston's suspected-defect review with a redacted draft.\n",
             row.count,
             if row.count == 1 { "" } else { "s" },
-            row.first_seen_ms,
-            row.last_seen_ms
+            utc_minute(row.first_seen_ms),
+            utc_minute(row.last_seen_ms)
         ));
         let redacted = defect_redaction::redact_here(&body, workspace);
         clip_chars(
@@ -363,6 +363,13 @@ fn search_pause_note(until_ms: i64) -> String {
          are listed, and the draft can still be filed.",
         crate::usage::time::local_clock_from_ms(until_ms)
     )
+}
+
+/// A stored timestamp as the issue body reads it: UTC minutes, no raw epoch.
+fn utc_minute(ms: i64) -> String {
+    let rfc = crate::usage::time::format_rfc3339_utc(u64::try_from(ms.max(0)).unwrap_or(0));
+    let stamp = rfc.get(..16).unwrap_or(&rfc).replace('T', " ");
+    format!("{stamp} UTC")
 }
 
 fn is_conventional(title: &str) -> bool {
@@ -446,6 +453,12 @@ mod tests {
             "worker re-asked same question"
         );
         assert_eq!(search_words("A thing broke"), "thing broke");
+    }
+
+    #[test]
+    fn timestamps_read_as_utc_minutes() {
+        assert_eq!(utc_minute(0), "1970-01-01 00:00 UTC");
+        assert_eq!(utc_minute(1_792_936_078_000), "2026-10-25 13:47 UTC");
     }
 
     #[test]
