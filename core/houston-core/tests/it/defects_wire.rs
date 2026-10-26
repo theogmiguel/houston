@@ -499,7 +499,13 @@ async fn a_draft_makes_one_search_call_and_redacts_the_issue_text() {
     assert_eq!(duplicates.len(), 1);
     assert_eq!(duplicates[0].number, 31);
     assert!(note.is_none(), "{note:?}");
-    assert_eq!(rig.calls("search issues").len(), 1);
+    let search_calls = rig.calls("search issues");
+    assert_eq!(search_calls.len(), 1);
+    assert!(
+        !search_calls[0].contains("secret-value"),
+        "the query carries the redacted title: {}",
+        search_calls[0]
+    );
     assert!(
         rig.calls("issue create").is_empty(),
         "a draft files nothing"
