@@ -1451,7 +1451,8 @@ target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 entries contain `code` and `message`. Codes include `shared_checkout`, `worktree_trust`,
 `worktree_include` (ignored files `.worktreeinclude` listed that were not copied, and why),
 `worktree_slug_history` (the asked-for slug was suffixed because Claude history survives at
-its path) and provider-specific guidance. Codex setup failures use `hooks_off`,
+its path), `worktree_branch_ambiguous` (an explicit `branch` matched several remote
+branches, so the worktree started a fresh untracked branch) and provider-specific guidance. Codex setup failures use `hooks_off`,
 `hooks_not_installed` or `hooks_trust_unconfirmed`; the message names the cause and
 Settings → Agent status → Codex repair path. The same cause is recorded in an
 `operator_note` inbox row's `reason` and `body`, with `from_session` identifying the pane.

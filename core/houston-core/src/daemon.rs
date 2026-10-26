@@ -21455,6 +21455,15 @@ impl Daemon {
                     message: message.clone(),
                 })
                 .collect::<Vec<_>>();
+            notes.extend(
+                created
+                    .branch_note
+                    .clone()
+                    .map(|message| proto::PaneSpawnWarning {
+                        code: "worktree_branch_ambiguous".into(),
+                        message,
+                    }),
+            );
             notes.extend(slug_history_note.map(|message| proto::PaneSpawnWarning {
                 code: "worktree_slug_history".into(),
                 message,
@@ -21642,7 +21651,7 @@ impl Daemon {
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
-        if ask.branch.is_some() {
+        let branch_note = if ask.branch.is_some() {
             crate::worktrees::create_on_named_branch(
                 project_dir,
                 &branch,
@@ -21650,8 +21659,9 @@ impl Daemon {
                 &dest,
                 &self.merge_tree_scratch(),
             )
+            .map(|(_, note)| note)
         } else {
-            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
+            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest).map(|_| None)
         }
         .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
@@ -21660,6 +21670,7 @@ impl Daemon {
             path,
             branch,
             include_warnings: Vec::new(),
+            branch_note,
         };
         let row = crate::db::ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -25711,6 +25722,8 @@ pub(crate) struct CreatedWorktree {
     pub(crate) branch: String,
     /// What `.worktreeinclude` could not carry over when this call created the tree.
     pub(crate) include_warnings: Vec<String>,
+    /// Set when an explicit branch matched several remote refs and so started untracked.
+    pub(crate) branch_note: Option<String>,
 }
 
 fn slug_history_note_message(asked: &str, resolved: &str) -> String {

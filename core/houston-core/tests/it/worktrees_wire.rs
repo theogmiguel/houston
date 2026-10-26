@@ -205,6 +205,61 @@ async fn a_daemon_managed_worktree_initialises_submodules_and_reports_a_failure(
     );
 }
 
+/// One failing submodule must not stop a healthy sibling from being populated, and
+/// the warning names only the one that failed, with git's reason.
+#[tokio::test]
+async fn one_unfetchable_submodule_does_not_block_the_others() {
+    let (_addr, _state, daemon) = common::start_daemon_with_handle().await;
+    common::allow_git_file_transport();
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    init_repo(&repo);
+    let mut sources = Vec::new();
+    for name in ["ok", "bad"] {
+        let source = root.path().join(format!("src-{name}"));
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
+        run_git(
+            &repo,
+            &[
+                "submodule",
+                "add",
+                source.to_str().unwrap(),
+                &format!("libs/{name}"),
+            ],
+        );
+        sources.push(source);
+    }
+    run_git(&repo, &["commit", "-m", "add submodules"]);
+    std::fs::remove_dir_all(&sources[1]).unwrap();
+
+    let (tree, warnings) = tokio::task::spawn_blocking({
+        let daemon = daemon.clone();
+        let repo = repo.clone();
+        move || daemon.git_worktree_create(&repo, "two-subs", None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(
+        tree.path.join("libs/ok/README.md").is_file(),
+        "the fetchable submodule must be checked out although its sibling failed"
+    );
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].contains("libs/bad") && !warnings[0].contains("libs/ok"),
+        "the warning must name only the failing submodule: {:?}",
+        warnings[0]
+    );
+    assert!(
+        warnings[0].contains("does not exist") || warnings[0].contains("fatal"),
+        "the warning must carry git's reason: {:?}",
+        warnings[0]
+    );
+}
+
 /// A daemon against a throwaway home, so the Claude history probe reads a bucket the
 /// test planted instead of the account's real `~/.claude/projects`.
 fn history_daemon(

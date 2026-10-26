@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const BRANCH_PREFIX: &str = "houston/task/";
 
@@ -210,23 +210,44 @@ pub fn create_on_branch(
 
 /// A named branch only one remote has continues that branch and tracks it, as `git
 /// switch` does, unless `base` already holds its changes (a merged PR's stale remote
-/// ref); otherwise it is a fresh branch off `base`, never guessing between remotes.
+/// ref); otherwise it is a fresh branch off `base`. The second value is a warning when
+/// the branch matched several remote refs: those are never guessed between, so the
+/// caller must say the fresh branch tracks nothing.
 pub fn create_on_named_branch(
     repo: &Path,
     branch: &str,
     base: Option<&str>,
     dest: &Path,
     scratch_root: &Path,
-) -> Result<Worktree> {
+) -> Result<(Worktree, Option<String>)> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
-    let remote = if branch_exists(repo, branch) {
-        None
+    let lookup = if branch_exists(repo, branch) {
+        RemoteBranch::Absent
     } else {
-        sole_remote_branch(repo, branch)
+        remote_branch(repo, branch)
+    };
+    let remote = match lookup {
+        RemoteBranch::Sole(remote) => Some(remote),
+        RemoteBranch::Absent => None,
+        RemoteBranch::Ambiguous(refs) => {
+            let tree = create_on_branch(repo, branch, base, dest)?;
+            let note = format!(
+                "branch {branch:?} has no local branch and matches {} (not guessed between), \
+                 so it started fresh off {} and tracks nothing; to continue one, remove this \
+                 worktree and branch, run `git branch {branch} <remote-branch>`, then spawn \
+                 on {branch:?}",
+                refs.join(", "),
+                base.map_or_else(
+                    || crate::git::default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
+                    str::to_string
+                )
+            );
+            return Ok((tree, Some(note)));
+        }
     };
     let Some(remote) = remote.filter(|r| !integrated_into_base(repo, r, base, scratch_root)) else {
-        return create_on_branch(repo, branch, base, dest);
+        return Ok((create_on_branch(repo, branch, base, dest)?, None));
     };
     let tree = create_on_branch(repo, branch, Some(&remote), dest)?;
     // Tracking is a convenience: the tree already holds the remote's commits.
@@ -234,31 +255,54 @@ pub fn create_on_named_branch(
     if let Err(e) = run_git(repo, &["branch", &upstream, branch]) {
         tracing::warn!("worktree branch {branch:?} continues {remote} but tracks nothing: {e:#}");
     }
-    Ok(tree)
+    Ok((tree, None))
 }
 
-/// `refs/remotes/<remote>/<branch>` when exactly one remote has `branch` and no other
-/// remote's name could claim that ref (remotes `a` and `a/b` both read `a/b/c`).
-fn sole_remote_branch(repo: &Path, branch: &str) -> Option<String> {
-    let remotes = run_git(repo, &["remote"]).ok()?;
+/// What the remote-tracking refs say about a branch name.
+enum RemoteBranch {
+    Absent,
+    /// The full ref of the one remote branch.
+    Sole(String),
+    /// The `remote/branch` names that could all be the branch (two remotes hold it, or
+    /// remote names overlap: remotes `a` and `a/b` both read `a/b/c`).
+    Ambiguous(Vec<String>),
+}
+
+fn remote_branch(repo: &Path, branch: &str) -> RemoteBranch {
+    let Ok(remotes) = run_git(repo, &["remote"]) else {
+        return RemoteBranch::Absent;
+    };
     let remotes: Vec<&str> = remotes
         .lines()
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .collect();
-    let mut found = remotes
+    let found: Vec<String> = remotes
         .iter()
         .map(|name| format!("{name}/{branch}"))
-        .filter(|short| ref_exists(repo, &format!("refs/remotes/{short}")));
-    let short = found.next()?;
-    if found.next().is_some() {
-        return None;
+        .filter(|short| ref_exists(repo, &format!("refs/remotes/{short}")))
+        .collect();
+    match found.as_slice() {
+        [] => RemoteBranch::Absent,
+        [short] => {
+            let claimants: Vec<&str> = remotes
+                .iter()
+                .copied()
+                .filter(|name| short.starts_with(&format!("{name}/")))
+                .collect();
+            if claimants.len() == 1 {
+                RemoteBranch::Sole(format!("refs/remotes/{short}"))
+            } else {
+                RemoteBranch::Ambiguous(
+                    claimants
+                        .iter()
+                        .map(|name| format!("remote {name:?} ({short})"))
+                        .collect(),
+                )
+            }
+        }
+        _ => RemoteBranch::Ambiguous(found),
     }
-    let claimants = remotes
-        .iter()
-        .filter(|name| short.starts_with(&format!("{name}/")))
-        .count();
-    (claimants == 1).then(|| format!("refs/remotes/{short}"))
 }
 
 /// Whether `base` (or the default base) already has `remote`'s changes. An answer Git
@@ -330,14 +374,15 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
 
 /// A task worktree: a fresh branch off `base`, or — on a re-Start — the same branch
 /// checked out again (or continued from the one remote still holding it) when its
-/// earlier tree is gone. The caller handles a tree already there and on the branch.
+/// earlier tree is gone. The caller handles a tree already there and on the branch. The
+/// second value is `create_on_named_branch`'s ambiguity warning.
 pub fn create_task(
     repo: &Path,
     branch: &str,
     base: Option<&str>,
     dest: &Path,
     scratch_root: &Path,
-) -> Result<Worktree> {
+) -> Result<(Worktree, Option<String>)> {
     ensure_git_repo(repo)?;
     crate::git::validate_branch_name(branch)?;
     if dest.exists() {
@@ -356,14 +401,17 @@ pub fn create_task(
             .with_context(|| format!("creating {}", parent.display()))?;
     }
     run_git(repo, &["worktree", "add", &dest_str, branch])?;
-    Ok(Worktree {
-        path: dest.to_path_buf(),
-        branch: Some(branch.to_string()),
-        head: crate::git::head_sha(dest).ok(),
-        is_main: false,
-        is_bare: false,
-        is_detached: false,
-    })
+    Ok((
+        Worktree {
+            path: dest.to_path_buf(),
+            branch: Some(branch.to_string()),
+            head: crate::git::head_sha(dest).ok(),
+            is_main: false,
+            is_bare: false,
+            is_detached: false,
+        },
+        None,
+    ))
 }
 
 /// A detached tree at `commitish` (a branch tip or commit). A reviewer reads
@@ -458,39 +506,72 @@ pub fn has_submodules(worktree: &Path) -> bool {
 }
 
 /// `git worktree add` leaves submodules empty. A clone can need the network and a
-/// credential prompt can never be answered, so the update is bounded; failing must
-/// not undo a worktree that exists.
-pub fn init_submodules(worktree: &Path) -> Result<()> {
-    let mut command = git_command(worktree);
-    command.args(["submodule", "update", "--init", "--recursive"]);
-    command.env("GIT_TERMINAL_PROMPT", "0");
-    let out = crate::spawn::output_within(command, SUBMODULE_TIMEOUT).with_context(|| {
-        format!(
-            "spawning git submodule update --init --recursive in {}",
-            worktree.display()
-        )
-    })?;
-    let Some(out) = out else {
-        bail!(
-            "git submodule update --init --recursive in {} did not finish within {} s; \
-             the submodules may be partly initialised",
-            worktree.display(),
-            SUBMODULE_TIMEOUT.as_secs()
-        );
-    };
-    if !out.status.success() {
-        bail!(
-            "git submodule update --init --recursive in {} failed (exit {:?}): {}",
-            worktree.display(),
-            out.status.code(),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+/// credential prompt can never be answered, so the work is bounded by one shared
+/// deadline; failing must not undo a worktree that exists.
+///
+/// Each declared submodule is initialised on its own, because one `git submodule
+/// update` aborts at the first failure and leaves the later ones unpopulated. Returns
+/// one `path: reason` entry per submodule that did not come up.
+pub fn init_submodules(worktree: &Path) -> Vec<String> {
+    let paths = declared_submodule_paths(worktree);
+    if paths.is_empty() {
+        return init_submodule_set(worktree, None, SUBMODULE_TIMEOUT)
+            .err()
+            .map(|reason| vec![format!("the declared submodules: {reason}")])
+            .unwrap_or_default();
     }
-    Ok(())
+    let deadline = Instant::now() + SUBMODULE_TIMEOUT;
+    let mut failures = Vec::new();
+    for path in &paths {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            failures.push(format!(
+                "{path}: not attempted, the {} s submodule budget was spent",
+                SUBMODULE_TIMEOUT.as_secs()
+            ));
+            continue;
+        }
+        if let Err(reason) = init_submodule_set(worktree, Some(path), remaining) {
+            failures.push(format!("{path}: {reason}"));
+        }
+    }
+    failures
 }
 
-/// The submodule paths a worktree's `.gitmodules` declares, so a failed init
-/// names them; an unreadable file leaves the list empty rather than guessing.
+/// `git submodule update --init --recursive`, limited to `path` when given.
+fn init_submodule_set(
+    worktree: &Path,
+    path: Option<&str>,
+    timeout: Duration,
+) -> std::result::Result<(), String> {
+    let mut command = git_command(worktree);
+    command.args(["submodule", "update", "--init", "--recursive"]);
+    if let Some(path) = path {
+        command.args(["--", path]);
+    }
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let out = match crate::spawn::output_within(command, timeout) {
+        Ok(Some(out)) => out,
+        Ok(None) => {
+            return Err(format!(
+                "did not finish within the {} s submodule budget; it may be partly initialised",
+                SUBMODULE_TIMEOUT.as_secs()
+            ))
+        }
+        Err(e) => return Err(format!("spawning git submodule update failed: {e}")),
+    };
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "git submodule update failed (exit {:?}): {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).trim()
+    ))
+}
+
+/// The submodule paths a worktree's `.gitmodules` declares; an unreadable file leaves
+/// the list empty rather than guessing.
 fn declared_submodule_paths(worktree: &Path) -> Vec<String> {
     run_git(
         worktree,
@@ -513,25 +594,20 @@ fn declared_submodule_paths(worktree: &Path) -> Vec<String> {
 }
 
 /// Managed creations initialise declared submodules best effort: the worktree stands
-/// either way, and a failure becomes one warning naming the submodule and the error,
-/// also logged for callers that drop it.
+/// either way, and the submodules that failed become one warning naming each with
+/// git's reason, also logged for callers that drop it.
 pub fn init_submodules_best_effort(worktree: &Path) -> Vec<String> {
     if !has_submodules(worktree) {
         return Vec::new();
     }
-    let error = match init_submodules(worktree) {
-        Ok(()) => return Vec::new(),
-        Err(error) => error,
-    };
-    let paths = declared_submodule_paths(worktree);
-    let named = if paths.is_empty() {
-        "the declared submodules".to_string()
-    } else {
-        paths.join(", ")
-    };
+    let failures = init_submodules(worktree);
+    if failures.is_empty() {
+        return Vec::new();
+    }
     let warning = format!(
-        "submodules: initialising {named} in {} failed: {error:#}",
-        worktree.display()
+        "submodules: initialising failed in {}: {}",
+        worktree.display(),
+        failures.join("; ")
     );
     tracing::warn!("{warning}");
     vec![warning]
@@ -1528,7 +1604,8 @@ mod submodule_tests {
         // do not. `GIT_ALLOW_PROTOCOL=file` widens this test process only.
         std::env::set_var("GIT_ALLOW_PROTOCOL", "file");
 
-        init_submodules(&dest).unwrap();
+        let failures = init_submodules(&dest);
+        assert!(failures.is_empty(), "{failures:?}");
         assert!(
             dest.join("vendor/sub/README.md").is_file(),
             "init_submodules must populate the submodule's own files"
