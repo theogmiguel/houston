@@ -138,6 +138,9 @@ pub struct NightMember {
     pub origin: u32,
     pub provider: proto::AgentKind,
     pub first_seen_ms: i64,
+    /// The pane's working directory when it joined the crew.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

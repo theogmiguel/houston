@@ -1287,14 +1287,16 @@ impl Daemon {
     }
 
     fn night_member(&self, session: u32, now_ms: i64) -> NightMember {
+        let info = self.get(session).map(|s| s.snapshot_info()).ok();
         NightMember {
             session,
             origin: self.night_origin_of(session),
-            provider: self
-                .get(session)
-                .map(|s| s.info.agent)
+            provider: info
+                .as_ref()
+                .map(|i| i.agent)
                 .unwrap_or(proto::AgentKind::Custom),
             first_seen_ms: now_ms,
+            cwd: info.map(|i| i.cwd),
         }
     }
 
@@ -1988,14 +1990,17 @@ impl Daemon {
             self.night_tokens_scanned(run_id);
             return;
         }
+        let mut cwds: Vec<String> = row.crew.iter().filter_map(|m| m.cwd.clone()).collect();
+        cwds.sort();
+        cwds.dedup();
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
             since_ms: row.started_at_ms,
             until_ms: ended_at_ms.max(row.started_at_ms + 1),
             catalog: self.model_catalog.load(false, false),
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
-            workspaces: vec![row.workspace.clone()],
-            workspace_filter: Some(row.workspace.clone()),
+            workspaces: cwds.clone(),
+            workspace_filters: cwds,
         });
         for source in &outcome.sources {
             if source.status == proto::UsageSourceStatus::Failed {

@@ -867,10 +867,11 @@ async fn cost_counts_the_orchestrator_and_its_crew() {
     }
 }
 
-/// A settled run totals its providers' tokens from the local session logs of
-/// its own workspace and below; another workspace's sessions stay out.
+/// A settled run totals its providers' tokens from the working directories of
+/// its own panes only: a sibling workspace session and the workspace's own
+/// non-crew sessions stay out.
 #[tokio::test]
-async fn a_settled_run_records_its_workspace_tokens_only() {
+async fn a_settled_run_records_its_crew_working_directories_tokens_only() {
     let r = rig().await;
     let routine = r.ready(|s| {
         s.orchestrator = proto::NightAgent {
@@ -879,6 +880,13 @@ async fn a_settled_run_records_its_workspace_tokens_only() {
         }
     });
     let run = r.run_now(routine.id, 120);
+    let run_cwd = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|pane| Some(pane.id) == run.session_id)
+        .expect("the orchestrator pane")
+        .cwd;
     let other = std::fs::canonicalize(r.state.path())
         .unwrap()
         .join("elsewhere");
@@ -898,9 +906,10 @@ async fn a_settled_run_records_its_workspace_tokens_only() {
     std::fs::write(
         root.join("run.jsonl"),
         format!(
-            "{}\n{}\n",
-            record("inside", &r.ws, 120),
-            record("outside", &other, 900)
+            "{}\n{}\n{}\n",
+            record("inside", Path::new(&run_cwd), 120),
+            record("outside", &other, 900),
+            record("user-pane", &r.ws, 700)
         ),
     )
     .unwrap();
@@ -924,7 +933,7 @@ async fn a_settled_run_records_its_workspace_tokens_only() {
     let tokens = claude.tokens.as_ref().expect("Claude's token totals");
     assert_eq!(
         tokens.output_tokens, 120,
-        "only the run's workspace counts: {cost:?}"
+        "only the run's own panes count: {cost:?}"
     );
     assert!(
         cost.per_provider

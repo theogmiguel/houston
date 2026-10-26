@@ -18398,7 +18398,7 @@ impl Daemon {
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
             workspaces,
-            workspace_filter: workspace,
+            workspace_filters: workspace.into_iter().collect(),
         });
         if let Err(e) = self.db.usage_daily_rollup_upsert(&outcome.rollups) {
             tracing::warn!("persisting usage daily rollups failed: {e:#}");

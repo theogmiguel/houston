@@ -249,10 +249,10 @@ the **Morning report**. It lists the parked decisions with answer buttons (an an
 final), pull requests grouped by theme with their gates, the suggested merge order, events
 such as interruptions and limits, and the cost in pane-hours and tokens per provider. After
 a run ends, Houston reads the local session logs of the providers that expose token counts
-to it (Claude and Codex), for the run's window and for sessions whose working directory is
-the run's workspace or below it, and only to total those counts; nothing about the logs
-affects the run's status or outcome. A provider with no such source shows **not tracked**
-rather than a zero. Checks, CI and Verify are facts: Houston runs the checks itself on each
+to it (Claude and Codex), for the run's window, and counts the sessions of the run's panes
+by their working directories; your own panes elsewhere in the workspace are not counted.
+It reads the logs only to total those counts; nothing about the logs affects the run's
+status or outcome. A provider with no such source shows **not tracked** rather than a zero. Checks, CI and Verify are facts: Houston runs the checks itself on each
 pull request's head in a scratch worktree (inside the build slot the merge queue and
 `hs-pane heavy` share), CI comes from the pull request watch, and Verify follows the
 verifier's verdicts. Review and QA are agents'
