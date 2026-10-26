@@ -1,5 +1,6 @@
 import type { PrDetail } from '../../houston/client'
 import { Button } from '../ui/Button'
+import { Inline } from '../ui/Inline'
 import { PullRequestRole } from '../ui/PullRequestRoles'
 import { Text } from '../ui/Text'
 import { ScmNotice } from './ScmNotice'
@@ -28,7 +29,7 @@ export function PrReadOnlyNotice({
 }): React.JSX.Element {
   return (
     <ScmNotice tone="info" testId="pr-read-only">
-      <span className="flex flex-wrap items-center gap-[var(--space-2)]">
+      <Inline as="span" gap="small" wrap>
         <span>{reason}</span>
         <Button
           variant="secondary"
@@ -48,7 +49,7 @@ export function PrReadOnlyNotice({
         >
           Open on Bitbucket
         </Button>
-      </span>
+      </Inline>
     </ScmNotice>
   )
 }

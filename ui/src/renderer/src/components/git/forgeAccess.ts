@@ -31,7 +31,7 @@ export function forgeBlocked(access: ForgeAccess, hint: string | null): ForgeBlo
           return {
             kind: 'off',
             headline: 'Bitbucket Cloud pull requests are off',
-            body: 'Houston sends nothing to Bitbucket until you turn on Read Bitbucket Cloud pull requests in Settings ▸ Agents ▸ CLIs.'
+            body: 'Houston sends nothing to Bitbucket until you turn on Read pull requests on Bitbucket in Settings ▸ Agents ▸ CLIs.'
           }
         case 'no_token':
           return {

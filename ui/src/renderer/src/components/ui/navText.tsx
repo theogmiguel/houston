@@ -19,10 +19,16 @@ export function ReportFrame({ children, 'data-testid': testId }: { children: Rea
   )
 }
 
-/** A wrapping row of related controls. */
-export function InlineCluster({ gap = 'md', children }: { gap?: 'sm' | 'md'; children: ReactNode }): React.JSX.Element {
+/** A wrapping row of related controls; `insetBlock` gives list rows their vertical rhythm. */
+export function InlineCluster({ gap = 'md', insetBlock = false, className = '', children }: {
+  gap?: 'sm' | 'md'
+  insetBlock?: boolean
+  /** Layout classes only. */
+  className?: string
+  children: ReactNode
+}): React.JSX.Element {
   return (
-    <div className={`flex flex-wrap items-center ${gap === 'sm' ? 'gap-[var(--space-1-5)]' : 'gap-[var(--space-2)]'}`}>{children}</div>
+    <div className={`flex flex-wrap items-center ${gap === 'sm' ? 'gap-[var(--space-1-5)]' : 'gap-[var(--space-2)]'} ${insetBlock ? 'py-[var(--space-1-5)]' : ''} ${className}`}>{children}</div>
   )
 }
 

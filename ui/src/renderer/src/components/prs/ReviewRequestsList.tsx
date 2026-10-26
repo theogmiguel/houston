@@ -3,7 +3,8 @@ import type { ReviewRequestState } from '../../houston/generated/ReviewRequestSt
 import type { ReviewTier } from '../../houston/generated/ReviewTier'
 import type { ReviewRequestsState } from '../../houston/useReviewRequests'
 import { IconGitPullRequest } from '../icons'
-import { BulletList } from '../ui/navText'
+import { Inline } from '../ui/Inline'
+import { BulletList, InlineCluster } from '../ui/navText'
 import { Button, Card, Chip, EmptyState, InlineLink, Notice, Text, type ChipTone } from '../ui'
 
 const TIER_TONE: Readonly<Record<ReviewTier, ChipTone>> = {
@@ -86,21 +87,21 @@ export function ReviewRequestsList({
 function ReviewRequestRow({ item, onDismiss, onReopen }: { item: ReviewRequest; onDismiss: (id: number) => void; onReopen: (id: number) => void }): React.JSX.Element {
   return (
     <Card role="listitem" data-testid={`review-request-${item.id}`} padding="md" className="grid min-w-0 gap-[var(--space-2)]">
-      <div className="flex min-w-0 flex-wrap items-start gap-[var(--space-2)]">
+      <Inline gap="small" wrap align="start" className="min-w-0">
         <div className="grid min-w-0 flex-1 gap-[var(--space-0-5)]">
           <Text weight="semibold" className="min-w-0 truncate">{reviewRequestTitle(item)} · {item.title}</Text>
           <Text size="caption" tone="muted">{item.author} · {item.host}</Text>
         </div>
-        <div className="flex flex-none flex-wrap items-center gap-[var(--space-1-5)]">
+        <InlineCluster gap="sm" className="flex-none">
           <Chip variant="state" tone={TIER_TONE[item.tier]} label={tierLabel(item.tier)} />
           <Chip variant="state" tone={STATE_TONE[item.state]} label={STATE_LABEL[item.state]} />
-        </div>
-      </div>
+        </InlineCluster>
+      </Inline>
       <BulletList items={item.reasons.length > 0 ? item.reasons : ['No reasons were recorded.']} />
       {!item.workspace && (
         <Text size="caption" tone="muted">No checkout for this repository, so Houston cannot start a review pane.</Text>
       )}
-      <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+      <InlineCluster>
         <InlineLink href={item.url}>Open on GitHub</InlineLink>
         <span className="flex-1" />
         {item.state === 'dismissed' ? (
@@ -108,7 +109,7 @@ function ReviewRequestRow({ item, onDismiss, onReopen }: { item: ReviewRequest; 
         ) : (
           <Button variant="ghost" size="sm" onClick={() => onDismiss(item.id)}>Dismiss</Button>
         )}
-      </div>
+      </InlineCluster>
     </Card>
   )
 }

@@ -5,6 +5,7 @@ import type { DefectIssueMatch } from '../../houston/generated/DefectIssueMatch'
 import type { SuspectedDefect } from '../../houston/generated/SuspectedDefect'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import { Button, Caption, Card, Drawer, Field, InlineLink, Notice, Text, TextArea, TextInput } from '../ui'
+import { InlineCluster } from '../ui/navText'
 
 type DraftReply = Extract<ServerMsg, { type: 'defect_issue_draft' }>
 type FiledReply = Extract<ServerMsg, { type: 'defect_issue_filed' }>
@@ -108,7 +109,7 @@ export function DefectIssueDrawer({
           filed={filed}
           error={error}
           pending={pending}
-          title={title}
+          issueTitle={title}
           body={body}
           commentOn={commentOn}
           onTitle={setTitle}
@@ -126,7 +127,7 @@ interface DrawerBodyProps {
   filed: FiledReply | null
   error: string | null
   pending: boolean
-  title: string
+  issueTitle: string
   body: string
   commentOn: number | null
   onTitle: (value: string) => void
@@ -135,7 +136,7 @@ interface DrawerBodyProps {
   onConfirm: () => void
 }
 
-function DrawerBody({ draft, filed, error, pending, title, body, commentOn, onTitle, onBody, onComment, onConfirm }: DrawerBodyProps): React.JSX.Element {
+function DrawerBody({ draft, filed, error, pending, issueTitle, body, commentOn, onTitle, onBody, onComment, onConfirm }: DrawerBodyProps): React.JSX.Element {
   if (filed) return <FiledBody filed={filed} comment={commentOn !== null} />
   if (!draft) {
     if (error) return <Notice tone="danger" variant="callout" data-testid="defect-draft-refusal">{error}</Notice>
@@ -150,7 +151,7 @@ function DrawerBody({ draft, filed, error, pending, title, body, commentOn, onTi
       {draft.note && <Notice tone="warn">{draft.note}</Notice>}
       {error && <Notice tone="danger" variant="callout" data-testid="defect-file-refusal">{error}</Notice>}
       <Field label="Title">
-        <TextInput surface="card" width="full" value={title} maxLength={256} onChange={(event) => onTitle(event.target.value)} />
+        <TextInput surface="card" width="full" value={issueTitle} maxLength={256} onChange={(event) => onTitle(event.target.value)} />
       </Field>
       <Field label="Body" hint="Edit anything before it is sent. Paths are workspace-relative and secrets are already redacted.">
         <TextArea recipe="field" rows={14} value={body} onChange={(event) => onBody(event.target.value)} />
@@ -162,7 +163,7 @@ function DrawerBody({ draft, filed, error, pending, title, body, commentOn, onTi
         {draft.account && <Caption>Signed in to gh as {draft.account}.</Caption>}
       </Card>
       <div className="flex justify-end gap-[var(--space-2)]">
-        <Button variant="secondary" disabled={pending || title.trim() === '' || body.trim() === ''} data-testid="defect-file" onClick={onConfirm}>
+        <Button variant="secondary" disabled={pending || issueTitle.trim() === '' || body.trim() === ''} data-testid="defect-file" onClick={onConfirm}>
           {confirmLabel(pending, commentOn)}
         </Button>
       </div>
@@ -210,11 +211,11 @@ function DuplicateChoices({
 
 function DuplicateChoice({ match, chosen, onChoose }: { match: DefectIssueMatch; chosen: boolean; onChoose: () => void }): React.JSX.Element {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-[var(--space-2)] py-[var(--space-1-5)]">
+    <InlineCluster insetBlock className="min-w-0">
       <Text size="small" className="min-w-0 flex-1">{`#${match.number} ${match.title}`}</Text>
       <Button variant="ghost" size="sm" disabled={chosen} onClick={onChoose}>
         {chosen ? `Commenting on #${match.number}` : `Comment on #${match.number} instead`}
       </Button>
-    </div>
+    </InlineCluster>
   )
 }

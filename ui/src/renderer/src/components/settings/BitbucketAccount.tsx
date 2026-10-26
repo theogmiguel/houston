@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import { BITBUCKET_EMAIL_LEN_MAX, BITBUCKET_TOKEN_LEN_MAX } from '../../houston/generated/DEFAULTS'
-import { Button, Text, TextInput, Toggle } from '../ui'
+import { Button, Inline, Stack, Text, TextInput, Toggle } from '../ui'
 import { Row, SubHead } from './shared'
 
 interface ForgeSettingsView {
@@ -10,11 +10,9 @@ interface ForgeSettingsView {
   keyringError: string | null
 }
 
-/** Reads and changes the daemon's Bitbucket Cloud setting and token; the token
- * is sent once and never comes back, so its field always starts empty. A
- * refused change keeps the field and shows the daemon's reason. The messages
- * are sent here rather than through client methods so the boot chunk, which
- * carries `client.ts`, does not pay for a surface only Settings opens. */
+/** Bitbucket Cloud's daemon setting and token. The token is sent once and never
+ *  returns; a refused change keeps the field and shows the daemon's reason.
+ *  These messages skip `client.ts` so the boot chunk does not carry them. */
 export function BitbucketAccount({ client }: { client: HoustonClient | null }): React.JSX.Element {
   const [settings, setSettings] = useState<ForgeSettingsView | null>(null)
   const [email, setEmail] = useState('')
@@ -50,7 +48,7 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
     <>
       <SubHead>Bitbucket Cloud</SubHead>
       <Row
-        title="Read Bitbucket Cloud pull requests"
+        title="Read pull requests on Bitbucket"
         desc="Off by default. When on, the Pull request tab of a bitbucket.org workspace asks api.bitbucket.org for its pull request while the tab is open, on Refresh and on Link — never in the background. It sends your e-mail and API token, the workspace, repository, pull request number and the branch name. Read-only: Houston does not comment, review or merge there."
       >
         <Toggle
@@ -71,57 +69,59 @@ export function BitbucketAccount({ client }: { client: HoustonClient | null }): 
         }
         indent
       >
-        <div className="flex flex-wrap items-center gap-[var(--space-2)]" data-testid="bitbucket-token-row">
-          <TextInput
-            type="email"
-            width="medium"
-            density="compact"
-            spellCheck={false}
-            autoComplete="off"
-            aria-label="Atlassian account e-mail"
-            placeholder="you@example.com"
-            maxLength={BITBUCKET_EMAIL_LEN_MAX}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextInput
-            type="password"
-            width="medium"
-            density="compact"
-            font="mono"
-            spellCheck={false}
-            autoComplete="off"
-            aria-label="Bitbucket API token"
-            placeholder={account ? '••••••••••••••••' : 'API token'}
-            maxLength={BITBUCKET_TOKEN_LEN_MAX}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={email.trim() === '' || token === '' || client === null}
-            onClick={() => {
-              setRefusal(null)
-              client?.send({ type: 'bitbucket_token_set', email: email.trim(), token })
-            }}
-          >
-            Save token
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={account === null}
-            onClick={() => client?.send({ type: 'bitbucket_token_clear' })}
-          >
-            Disconnect
-          </Button>
-        </div>
-        {refusal !== null && (
-          <Text as="div" role="alert" data-testid="bitbucket-refusal" size="small" tone="danger" className="pt-[var(--space-1-5)]">
-            {refusal}
-          </Text>
-        )}
+        <Stack gap={1}>
+          <Inline gap="small" wrap data-testid="bitbucket-token-row">
+            <TextInput
+              type="email"
+              width="medium"
+              density="compact"
+              spellCheck={false}
+              autoComplete="off"
+              aria-label="Atlassian account e-mail"
+              placeholder="you@example.com"
+              maxLength={BITBUCKET_EMAIL_LEN_MAX}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <TextInput
+              type="password"
+              width="medium"
+              density="compact"
+              font="mono"
+              spellCheck={false}
+              autoComplete="off"
+              aria-label="Bitbucket API token"
+              placeholder={account ? '••••••••••••••••' : 'API token'}
+              maxLength={BITBUCKET_TOKEN_LEN_MAX}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={email.trim() === '' || token === '' || client === null}
+              onClick={() => {
+                setRefusal(null)
+                client?.send({ type: 'bitbucket_token_set', email: email.trim(), token })
+              }}
+            >
+              Save token
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={account === null}
+              onClick={() => client?.send({ type: 'bitbucket_token_clear' })}
+            >
+              Disconnect
+            </Button>
+          </Inline>
+          {refusal !== null && (
+            <Text as="div" role="alert" data-testid="bitbucket-refusal" size="small" tone="danger">
+              {refusal}
+            </Text>
+          )}
+        </Stack>
       </Row>
     </>
   )

@@ -1,6 +1,6 @@
 import type { DefectDecision } from '../../houston/generated/DefectDecision'
 import type { SuspectedDefect } from '../../houston/generated/SuspectedDefect'
-import { Button, Caption, Card, InlineLink, StatusLabel, type StatusLabelValue } from '../ui'
+import { Button, Caption, Card, InlineLink, StatusLabel, Stack, type StatusLabelValue } from '../ui'
 import { SettingsToolbar } from '../ui/SettingsToolbar'
 import { SectionTitle } from '../ui/navText'
 import { ReviewFinding, ReviewFindingFacts, ReviewFindingList, ReviewFindingMeta, ReviewFindingQuote, type ReviewFindingFact } from '../ui/ReviewFinding'
@@ -90,10 +90,10 @@ function DefectRow({ defect, onDecide, onOpenIssue }: Pick<HarnessDefectsProps, 
       secondaryAction={decided
         ? <Button variant="ghost" onClick={() => onDecide(defect.key, 'reopen')}>Reopen</Button>
         : <Button variant="ghost" onClick={() => onDecide(defect.key, 'dismiss')}>Dismiss</Button>}
-      detail={<>
+      detail={<Stack gap={2} align="start">
         <ReviewFindingFacts facts={defectFacts(defect)} />
-        {!decided && <Button variant="ghost" className="mt-[var(--space-2)] justify-self-start" onClick={() => onDecide(defect.key, 'not_a_bug')}>Not a bug</Button>}
-      </>}
+        {!decided && <Button variant="ghost" onClick={() => onDecide(defect.key, 'not_a_bug')}>Not a bug</Button>}
+      </Stack>}
     />
   )
 }
