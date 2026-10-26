@@ -17,6 +17,10 @@ macro_rules! releases_url {
         "https://github.com/theogmiguel/houston/releases"
     };
 }
+
+/// Houston's own GitHub repository, where a Houston suspected defect is filed.
+/// Kept beside the release URL; the unit test below keeps the two in step.
+pub const HOUSTON_REPOSITORY: &str = "theogmiguel/houston";
 // The Tauri updater manifest the desktop app also reads. Unlike the REST API it has no
 // 60-requests-per-hour anonymous quota shared by everyone behind one public IP.
 const UPDATE_MANIFEST_URL: &str = concat!(releases_url!(), "/latest/download/latest.json");
@@ -497,6 +501,15 @@ mod tests {
         assert!(
             parse_latest_release(pre).unwrap().is_none(),
             "a release candidate must never be offered to a stable install"
+        );
+    }
+
+    #[test]
+    fn the_issue_repository_is_the_release_repository() {
+        assert!(
+            releases_url!().contains(HOUSTON_REPOSITORY),
+            "{} does not name {HOUSTON_REPOSITORY}",
+            releases_url!()
         );
     }
 

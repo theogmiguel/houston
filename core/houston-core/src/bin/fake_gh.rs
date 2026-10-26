@@ -241,6 +241,66 @@ fn rules(path: &str) {
     print!("{answer}");
 }
 
+/// `viewer-login` names the account `gh api user` answers; `tester` otherwise.
+fn viewer_login() {
+    print!(
+        "{}",
+        read("viewer-login").unwrap_or_else(|| "tester".into())
+    );
+}
+
+/// `issues-search.json` is the one `gh search issues` answer; no file means no
+/// likely duplicates. `issues-search-error` fails the call instead, for the
+/// rate-limit and failure paths.
+fn search_issues() {
+    if let Some(error) = read("issues-search-error") {
+        fail(&error);
+    }
+    let answer = read("issues-search.json").unwrap_or_else(|| "[]".into());
+    print!("{answer}");
+}
+
+/// `issue create` records what it would have filed (title, body, repository and
+/// number) in `created-issue.json` and prints the issue URL gh prints.
+fn issue_create(args: &[String]) {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let repo = flag(args, "--repo").unwrap_or_else(|| "owner/repo".into());
+    let title = flag(args, "--title").unwrap_or_default();
+    let number = read("issue-number")
+        .and_then(|n| n.trim().parse::<u32>().ok())
+        .unwrap_or(42);
+    let url = format!("https://github.com/{repo}/issues/{number}");
+    write(
+        "created-issue.json",
+        &serde_json::json!({
+            "repo": repo, "number": number, "title": title, "body": input, "url": url
+        })
+        .to_string(),
+    );
+    print!("{url}");
+}
+
+/// `issue comment` records the comment body and target in `commented-issue.json`.
+fn issue_comment(args: &[String]) {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let repo = flag(args, "--repo").unwrap_or_else(|| "owner/repo".into());
+    let number = args.get(2).cloned().unwrap_or_default();
+    write(
+        "commented-issue.json",
+        &serde_json::json!({ "repo": repo, "number": number, "body": input }).to_string(),
+    );
+    print!("https://github.com/{repo}/issues/{number}");
+}
+
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
 /// `pr edit N --base B` moves the pull request's base.
 fn edit(args: &[String]) {
     let number = &args[2];
@@ -393,6 +453,10 @@ fn main() {
         }
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
+        ("search", "issues") => search_issues(),
+        ("issue", "create") => issue_create(&args),
+        ("issue", "comment") => issue_comment(&args),
+        ("api", "user") => viewer_login(),
         ("api", "graphql") => graphql(),
         ("api", path) if path.starts_with("repos/") && path.contains("/rules/branches/") => {
             rules(path)

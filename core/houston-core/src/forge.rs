@@ -315,6 +315,46 @@ pub fn require_github(dir: &Path, op: &str) -> Result<()> {
     }
 }
 
+/// The `owner/name` issue destination for a workspace. `gh` addresses GitHub
+/// alone, so a forge known not to be GitHub and an unrecognised host are both
+/// refused by name rather than mapped onto a same-named GitHub repository.
+pub fn issue_repository(dir: &Path) -> Result<String> {
+    let Some(url) = crate::git::remote_url(dir) else {
+        bail!(
+            "{} has no git remote, so it has no issue destination",
+            dir.display()
+        );
+    };
+    match resolve_url(&url) {
+        ForgeResolution::Ready(Forge::GitHub) => github_repository(&url),
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => {
+            bail!("Bitbucket Cloud is not supported here; refusing to file an issue")
+        }
+        ForgeResolution::Unsupported { host } => {
+            bail!("{host} is not supported here; refusing to file an issue")
+        }
+        ForgeResolution::Unknown { host } => {
+            bail!("{host} is not GitHub; refusing to file an issue")
+        }
+        ForgeResolution::NoRemote => {
+            bail!(
+                "{} has no git remote, so it has no issue destination",
+                dir.display()
+            )
+        }
+    }
+}
+
+fn github_repository(url: &str) -> Result<String> {
+    crate::gh::split_repository(url)
+        .map(|(owner, name)| format!("{owner}/{name}"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "a GitHub remote must name an `owner/name` repository; refusing to file an issue"
+            )
+        })
+}
+
 /// The name of a forge known not to be GitHub, for a caller that only asks
 /// `gh`; `None` for GitHub, an unknown host or no remote, which `gh` answers.
 pub fn non_github_forge(dir: &Path) -> Option<String> {

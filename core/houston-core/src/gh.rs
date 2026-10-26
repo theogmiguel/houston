@@ -982,6 +982,174 @@ pub fn api_get(dir: &Path, path: &str) -> Result<serde_json::Value> {
     })
 }
 
+/// One open issue matching a suspected defect's title words, as `gh search`
+/// reports it.
+pub struct IssueMatch {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+}
+
+/// One `gh search issues` page through the operator's own account. The caller
+/// makes this call once per draft; it is the only network read before filing.
+pub fn search_open_issues(
+    dir: &Path,
+    repository: &str,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<IssueMatch>> {
+    let limit = limit.clamp(1, 10).to_string();
+    let out = run(
+        dir,
+        &[
+            "search",
+            "issues",
+            "--repo",
+            repository,
+            "--match",
+            "title",
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,url",
+            "--",
+            query,
+        ],
+    )
+    .context("running gh search issues")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh search issues in {repository} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&out.stdout).with_context(|| {
+            let head: String = out.stdout.chars().take(400).collect();
+            format!(
+                "gh search issues in {repository} returned unreadable JSON; {} bytes, first 400 chars: {head:?}",
+                out.stdout.len()
+            )
+        })?;
+    let rows = value.as_array().ok_or_else(|| {
+        anyhow::anyhow!(
+            "gh search issues in {repository} answered {}; expected a JSON array of issues",
+            json_kind(&value)
+        )
+    })?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            Some(IssueMatch {
+                number: u32::try_from(row.get("number")?.as_u64()?).ok()?,
+                title: row.get("title")?.as_str()?.to_string(),
+                url: row.get("url")?.as_str()?.to_string(),
+            })
+        })
+        .collect())
+}
+
+fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "a boolean",
+        serde_json::Value::Number(_) => "a number",
+        serde_json::Value::String(_) => "a string",
+        serde_json::Value::Array(_) => "an array",
+        serde_json::Value::Object(_) => "an object",
+    }
+}
+
+/// `gh issue create` with the body on stdin, so no issue text reaches argv. The
+/// URL gh prints names the new issue and its number.
+pub fn issue_create(
+    dir: &Path,
+    repository: &str,
+    title: &str,
+    body: &str,
+) -> Result<(u32, String)> {
+    let out = run_stdin(
+        dir,
+        &[
+            "issue",
+            "create",
+            "--repo",
+            repository,
+            "--title",
+            title,
+            "--body-file",
+            "-",
+        ],
+        body,
+    )
+    .context("running gh issue create")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh issue create in {repository} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    let url = out
+        .stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.starts_with("https://"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh issue create in {repository} printed no issue URL; expected one https:// line, got {:?}",
+                out.stdout.trim()
+            )
+        })?;
+    let number = url
+        .rsplit('/')
+        .next()
+        .and_then(|n| n.parse::<u32>().ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh issue create in {repository} printed {url:?}; expected a URL ending in the issue number"
+            )
+        })?;
+    Ok((number, url.to_string()))
+}
+
+/// `gh issue comment` with the body on stdin; answers the issue URL.
+pub fn issue_comment(dir: &Path, repository: &str, number: u32, body: &str) -> Result<String> {
+    let number_arg = number.to_string();
+    let out = run_stdin(
+        dir,
+        &[
+            "issue",
+            "comment",
+            &number_arg,
+            "--repo",
+            repository,
+            "--body-file",
+            "-",
+        ],
+        body,
+    )
+    .context("running gh issue comment")?;
+    if !out.ok {
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!(
+                "gh issue comment on {repository}#{number} failed (exit {:?})",
+                out.code
+            ))
+        );
+    }
+    Ok(format!("https://github.com/{repository}/issues/{number}"))
+}
+
 /// A reply on an inline review discussion.
 pub fn pr_thread_reply(dir: &Path, thread_id: &str, body: &str) -> Outcome {
     if let Some(refusal) = body_refusal(body) {

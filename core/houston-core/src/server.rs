@@ -873,6 +873,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::AgentHooks
             | proto::ClientMsg::VoiceSettingsGet
             | proto::ClientMsg::ForgeSettingsGet
+            | proto::ClientMsg::DefectsGet { .. }
             | proto::ClientMsg::VoiceDevicesGet
             | proto::ClientMsg::SessionCwd { .. }
             | proto::ClientMsg::SessionCwds { .. }
@@ -1710,6 +1711,10 @@ fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
         | proto::ClientMsg::NightShiftDecide { .. }
         | proto::ClientMsg::NightShiftQaPassed { .. }
         | proto::ClientMsg::RoutineDelete { .. } => Some("night_shift".into()),
+        proto::ClientMsg::DefectIssueDraft { request, .. }
+        | proto::ClientMsg::DefectIssueFile { request, .. } => {
+            Some(format!("defect_issue:{request}"))
+        }
         _ => None,
     }
 }
@@ -2472,6 +2477,55 @@ async fn dispatch(
         },
         proto::ClientMsg::HarnessOverviewGet => {
             let _ = send_msg(sink, &daemon.harness_overview()?).await;
+            Ok(())
+        }
+        proto::ClientMsg::DefectsGet { workspace } => {
+            let _ = send_msg(sink, &daemon.suspected_defects_reply(&workspace)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::DefectDecide {
+            workspace,
+            key,
+            decision,
+        } => daemon.defect_decide(&workspace, &key, decision),
+        proto::ClientMsg::DefectIssueDraft {
+            workspace,
+            key,
+            request,
+        } => {
+            let daemon = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                daemon.defect_issue_draft(&workspace, &key, request)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("defect issue draft task panicked: {e}"))??;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::DefectIssueFile {
+            workspace,
+            key,
+            request,
+            title,
+            body,
+            destination_repo,
+            comment_on,
+        } => {
+            let daemon = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                daemon.defect_issue_file(
+                    &workspace,
+                    &key,
+                    request,
+                    &title,
+                    &body,
+                    &destination_repo,
+                    comment_on,
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("defect issue file task panicked: {e}"))??;
+            let _ = send_msg(sink, &msg).await;
             Ok(())
         }
         proto::ClientMsg::HarnessSeen {

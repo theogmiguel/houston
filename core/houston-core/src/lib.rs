@@ -23,6 +23,7 @@ pub mod conflict_prediction;
 pub mod context_window;
 pub mod daemon;
 pub mod db;
+pub mod defect_redaction;
 pub mod diagnostics;
 pub mod env_hygiene;
 pub mod exe_path;

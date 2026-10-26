@@ -205,10 +205,20 @@ impl Daemon {
     }
 
     pub fn harness_overview(&self) -> Result<proto::ServerMsg> {
+        let mut workspaces = self.db.harness_workspaces()?;
+        workspaces.extend(self.db.defect_workspaces()?);
+        workspaces.sort();
+        workspaces.dedup();
         let mut rows = Vec::new();
-        for workspace in self.db.harness_workspaces()? {
+        for workspace in workspaces {
             let findings = self.harness_findings(&workspace)?;
             let seen_review_id = self.db.harness_seen_review_id(&workspace)?;
+            let suspected = self
+                .suspected_defect_rows(&workspace)?
+                .into_iter()
+                .filter(|d| d.state == proto::HarnessFindingState::Open)
+                .count();
+            let suspected_defects = u32::try_from(suspected).unwrap_or(u32::MAX);
             let mut row = proto::HarnessAttention {
                 workspace: workspace.clone(),
                 open: 0,
@@ -217,9 +227,10 @@ impl Daemon {
                 not_seen: 0,
                 resolved: 0,
                 dismissed: 0,
+                suspected_defects,
                 latest_published_review_id: self.db.latest_published_harness_review(&workspace)?,
                 seen_review_id,
-                attention: 0,
+                attention: suspected_defects,
             };
             for finding in findings {
                 match finding.phase {
