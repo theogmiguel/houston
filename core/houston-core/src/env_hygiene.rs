@@ -1,6 +1,7 @@
-//! Drop inherited agent-session and multiplexer identities and private supervisor
-//! startup state before the daemon spawns children. Agent settings such as `CLAUDE_CONFIG_DIR` and
-//! `ANTHROPIC_*` remain available.
+//! Drop inherited agent-session and multiplexer identities, the variables Houston
+//! injects into a pane, and private supervisor startup state before the daemon spawns
+//! children. Agent settings such as `CLAUDE_CONFIG_DIR` and `ANTHROPIC_*` remain
+//! available.
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_CODE_CHILD_SESSION",
@@ -17,6 +18,22 @@ const SESSION_MARKERS: &[&str] = &[
     crate::daemon::WORKSPACE_ENV,
     crate::daemon::WORKTREE_SLUG_ENV,
     crate::supervisor::SUPERVISOR_FD_ENV,
+    // Injected into a pane only when its provider or launch path needs them, so a daemon
+    // started from a pane would hand the hosting channel's endpoint and credential to
+    // panes that get no value of their own. `HOUSTON_SESSION` and `TR_SESSION` are not
+    // listed: every pane sets them, and the app reads `HOUSTON_SESSION` for `--fresh`.
+    "HOUSTON_MCP_URL",
+    "HOUSTON_MCP_TOKEN",
+    "HOUSTON_MCP_CONFIG",
+    "HOUSTON_TOOL_BOUNDARY_CONTEXT",
+    "HOUSTON_CODEX_LAUNCHER",
+    "HOUSTON_CODEX_CLI",
+    "HOUSTON_CODEX_HOOK_DROP_DIR",
+    "HOUSTON_USER_ZDOTDIR",
+    "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
+    "HOUSTON_TASK",
+    "HOUSTON_ROUTINE_RUN",
+    "HOUSTON_NIGHT_RUN_DIR",
     // A pane is not inside the launcher's multiplexer: tmux commands would target its server.
     "TMUX",
     "TMUX_PANE",
@@ -28,10 +45,15 @@ const SESSION_MARKERS: &[&str] = &[
     "ELECTRON_RUN_AS_NODE",
 ];
 
+/// Whether `name` is one of the launcher variables the daemon drops. ZCode's MCP URL
+/// carries the channel in its name (`ZCODE_HOUSTON_MCP_URL[_<CHANNEL>]`), so it matches
+/// by prefix.
+pub fn is_marker(name: &str) -> bool {
+    SESSION_MARKERS.contains(&name) || name.starts_with(crate::zcode_config::URL_ENV_PREFIX)
+}
+
 pub fn markers_in(keys: impl Iterator<Item = String>) -> Vec<String> {
-    let mut hits: Vec<String> = keys
-        .filter(|k| SESSION_MARKERS.contains(&k.as_str()))
-        .collect();
+    let mut hits: Vec<String> = keys.filter(|k| is_marker(k)).collect();
     hits.sort();
     hits.dedup();
     hits
@@ -110,6 +132,41 @@ mod tests {
                 "ZELLIJ_SESSION_NAME"
             ]
         );
+    }
+
+    #[test]
+    fn variables_houston_injects_into_a_pane_are_picked_even_when_the_pane_inherits_them() {
+        let env = [
+            "HOUSTON_MCP_URL",
+            "HOUSTON_MCP_TOKEN",
+            "HOUSTON_MCP_CONFIG",
+            "HOUSTON_TOOL_BOUNDARY_CONTEXT",
+            "HOUSTON_CODEX_LAUNCHER",
+            "HOUSTON_CODEX_CLI",
+            "HOUSTON_CODEX_HOOK_DROP_DIR",
+            "HOUSTON_USER_ZDOTDIR",
+            "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
+            "HOUSTON_TASK",
+            "HOUSTON_ROUTINE_RUN",
+            "HOUSTON_NIGHT_RUN_DIR",
+            "ZCODE_HOUSTON_MCP_URL",
+            "ZCODE_HOUSTON_MCP_URL_DEV",
+            "HOUSTON_CHANNEL",
+            "HOUSTON_SESSION",
+            "ZCODE_DISABLE_UPDATE_CHECK",
+        ];
+        let hits = markers_in(env.iter().map(|s| s.to_string()));
+        assert_eq!(hits.len(), 14, "{hits:?}");
+        for kept in [
+            "HOUSTON_CHANNEL",
+            "HOUSTON_SESSION",
+            "ZCODE_DISABLE_UPDATE_CHECK",
+        ] {
+            assert!(
+                !hits.iter().any(|h| h == kept),
+                "{kept} must stay: {hits:?}"
+            );
+        }
     }
 
     #[test]
