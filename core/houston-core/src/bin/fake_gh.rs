@@ -320,9 +320,8 @@ fn squash(origin: &str, base: &str, head: &str) -> Option<String> {
 }
 
 /// `run view N --log-failed` answers `run-N.log` (or `run.log`); `run view N
-/// --json status,conclusion` answers `run-status-N.json` (a completed failure by
-/// default); `run rerun N --failed` records `rerun-N`, or fails with the text of
-/// `rerun-refused`, so a test can see either call.
+/// --json status,conclusion` answers `run-status-N.json`, a completed failure by
+/// default; `run rerun N --failed` records `rerun-N` or fails with `rerun-refused`.
 fn run_command(args: &[String]) {
     let id = args.get(2).map(String::as_str).unwrap_or_default();
     match args.get(1).map(String::as_str) {

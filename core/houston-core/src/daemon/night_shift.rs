@@ -3502,9 +3502,8 @@ impl Daemon {
     }
 
     /// Requests one re-run of the failed jobs, then records it. GitHub refuses
-    /// a re-run while sibling jobs still run, so the detached caller first
-    /// waits for the run to complete; a failed request after that is a real
-    /// failure and Houston says so and starts the fixer.
+    /// a re-run while sibling jobs still run, so the detached caller waits for
+    /// the run to complete; a refusal after that starts the fixer.
     #[allow(clippy::too_many_arguments)]
     fn night_ci_rerun(
         self: &Arc<Self>,
