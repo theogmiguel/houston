@@ -44,6 +44,7 @@ fn provider() {
 
 fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
     proto::SessionInfo {
+        note: None,
         title_source: Default::default(),
         checkout: None,
         activity: None,
@@ -85,6 +86,8 @@ fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
         limit: None,
         view: Default::default(),
         permission_mode: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
     }
 }
 

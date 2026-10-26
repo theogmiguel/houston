@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type { HoustonClient } from '../../houston/client'
-import { isBackgroundAdmissionRefusal } from '../../houston/controlAdmission'
+import { isBackgroundAdmissionRefusal, parseControlAdmission } from '../../houston/controlAdmission'
 import { resolveGitError } from './gitErrors'
 import type { ReviewRequest } from './useReviewSubscription'
 
@@ -54,6 +54,8 @@ export function useGitErrorRouter({
       // A refused background fan-out request (branch chip, PR badge) is not a failure of
       // the operation this pane has in flight.
       if (isBackgroundAdmissionRefusal(msg.context)) return
+      // A refused worktree check is claimed by the check itself, never by a tools operation.
+      if (parseControlAdmission(msg.context)?.kind === 'worktree_check') return
       if (pendingTools.current !== null) {
         pendingTools.current = null
         setToolsBusy(false)
