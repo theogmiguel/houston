@@ -126,6 +126,38 @@ pub fn run_dir(state_dir: &Path, run_id: u32) -> PathBuf {
     state_dir.join("night-shift").join(run_id.to_string())
 }
 
+/// One failed check as the CI pass sees it: its name, the Actions run that
+/// owns it (when GitHub reported one) and its own log lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedCheck {
+    pub name: String,
+    pub run: Option<u64>,
+    pub lines: Vec<String>,
+}
+
+/// The flaky test to re-run and the run to re-run it in. Each check is matched
+/// against its own name and lines, so a real failure in another workflow never
+/// spends this pull request's one re-run. A hit with a run id wins over one
+/// without, and a later check can still be the one re-run.
+pub fn flaky_rerun<'a>(
+    flaky: &'a [String],
+    checks: &[FailedCheck],
+) -> Option<(&'a str, Option<u64>)> {
+    let hits: Vec<(&str, Option<u64>)> = checks
+        .iter()
+        .filter_map(|check| {
+            let mut texts = Vec::with_capacity(check.lines.len() + 1);
+            texts.push(check.name.clone());
+            texts.extend(check.lines.iter().cloned());
+            flaky_match(flaky, &texts).map(|test| (test, check.run))
+        })
+        .collect();
+    hits.iter()
+        .find(|(_, run)| run.is_some())
+        .or_else(|| hits.first())
+        .copied()
+}
+
 /// The first flaky test name that appears in a failed check's name or log.
 pub fn flaky_match<'a>(flaky: &'a [String], texts: &[String]) -> Option<&'a str> {
     flaky
@@ -196,6 +228,57 @@ mod tests {
                      {CI_FIXES_PER_PR}; Houston leaves the failure to the orchestrator"
                 )
             }
+        );
+    }
+
+    #[test]
+    fn a_flaky_hit_is_chosen_from_its_own_check_and_its_own_run() {
+        let flaky = vec!["pty::resize_race".to_string()];
+        let checks = vec![
+            FailedCheck {
+                name: "real-checks".into(),
+                run: Some(20),
+                lines: vec!["assert_eq! failed".into()],
+            },
+            FailedCheck {
+                name: "core-checks".into(),
+                run: Some(10),
+                lines: vec!["test pty::resize_race ... FAILED".into()],
+            },
+        ];
+        assert_eq!(
+            flaky_rerun(&flaky, &checks),
+            Some(("pty::resize_race", Some(10))),
+            "the flaky failure's own workflow is re-run, not the first failed one"
+        );
+        let no_run = vec![
+            FailedCheck {
+                name: "core-checks".into(),
+                run: None,
+                lines: vec!["test pty::resize_race ... FAILED".into()],
+            },
+            checks[1].clone(),
+        ];
+        assert_eq!(
+            flaky_rerun(&flaky, &no_run),
+            Some(("pty::resize_race", Some(10))),
+            "a hit with a run id wins"
+        );
+        assert_eq!(
+            flaky_rerun(
+                &flaky,
+                &[FailedCheck {
+                    name: "core-checks".into(),
+                    run: None,
+                    lines: vec!["test pty::resize_race ... FAILED".into()]
+                }]
+            ),
+            Some(("pty::resize_race", None))
+        );
+        assert_eq!(
+            flaky_rerun(&flaky, &checks[..1]),
+            None,
+            "another workflow's log does not match"
         );
     }
 

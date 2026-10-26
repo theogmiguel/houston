@@ -3183,43 +3183,38 @@ impl Daemon {
             };
             self.night_set_pr_status(session, number, fate);
         }
-        let failed: Vec<String> = changes
-            .iter()
-            .filter_map(|c| match c {
-                Change::FailedCheck { name, .. } => Some(name.clone()),
-                _ => None,
-            })
-            .collect();
         if changes
             .iter()
             .any(|c| matches!(c, Change::ChecksPassed { .. }))
         {
             self.night_set_ci(session, number, proto::NightGate::Passed);
         }
-        if failed.is_empty() {
-            return;
-        }
-        let gh_run = failed.iter().find_map(|name| {
-            check_runs
-                .iter()
-                .find(|(n, _)| n == name)
-                .and_then(|(_, id)| *id)
-        });
-        let mut texts = Vec::new();
-        for name in &failed {
-            texts.push(name.clone());
+        let mut failed = Vec::new();
+        for change in changes {
+            let Change::FailedCheck { name, .. } = change else {
+                continue;
+            };
             let run = check_runs
                 .iter()
                 .find(|(n, _)| n == name)
                 .and_then(|(_, id)| *id);
+            let mut lines = Vec::new();
             if let Some(run_id) = run {
                 match crate::gh::pr_check_log(repo, run_id) {
-                    Ok(log) => texts.extend(log.lines),
+                    Ok(log) => lines.extend(log.lines),
                     Err(e) => tracing::info!("reading CI log {run_id} of PR #{number}: {e:#}"),
                 }
             }
+            failed.push(crate::night_shift::FailedCheck {
+                name: name.clone(),
+                run,
+                lines,
+            });
         }
-        if let Err(e) = self.night_shift_ci_failed(session, number, &failed, &texts, gh_run) {
+        if failed.is_empty() {
+            return;
+        }
+        if let Err(e) = self.night_shift_ci_failed_checks(session, number, &failed) {
             tracing::warn!("Night shift CI pass for PR #{number}: {e:#}");
         }
     }
@@ -3264,9 +3259,9 @@ impl Daemon {
         }
     }
 
-    /// `checks` are the failed checks' names, `texts` their names and log
-    /// lines. Houston re-runs a known flaky failure once, then starts a fixer
-    /// pane. Both run off the caller's thread; answers what it dispatched.
+    /// Flat form for one failure whose checks share an Actions run: `checks`
+    /// are their names, `texts` their names and log lines. Real callers carry
+    /// each check's own run and lines through `night_shift_ci_failed_checks`.
     pub fn night_shift_ci_failed(
         self: &Arc<Self>,
         session: u32,
@@ -3274,6 +3269,26 @@ impl Daemon {
         checks: &[String],
         texts: &[String],
         gh_run: Option<u64>,
+    ) -> Result<Option<crate::night_shift::CiAction>> {
+        let failed = if checks.is_empty() {
+            Vec::new()
+        } else {
+            vec![crate::night_shift::FailedCheck {
+                name: checks.join(", "),
+                run: gh_run,
+                lines: texts.to_vec(),
+            }]
+        };
+        self.night_shift_ci_failed_checks(session, number, &failed)
+    }
+
+    /// Houston re-runs a known flaky failure once, then starts a fixer pane.
+    /// Both run off the caller's thread; answers what it dispatched.
+    fn night_shift_ci_failed_checks(
+        self: &Arc<Self>,
+        session: u32,
+        number: u32,
+        failed: &[crate::night_shift::FailedCheck],
     ) -> Result<Option<crate::night_shift::CiAction>> {
         use crate::night_shift::{CiAction, CI_FIXES_PER_PR, CI_FIX_EXCERPT_CHARS};
         let Some((routine_id, run_id, orchestrator)) = self.night_run_of_pane(session) else {
@@ -3297,9 +3312,15 @@ impl Daemon {
             return Ok(None);
         }
         let flaky = self.db.night_flaky_tests(routine_id)?;
-        let hit = crate::night_shift::flaky_match(&flaky, texts).map(str::to_string);
+        // The hit comes from the check whose own workflow was flaky, and the
+        // re-run targets that run. A real failure in another check waits for
+        // the re-run's result: the re-run plan wins over the fixer, so Houston
+        // counts that failure only after the run answers.
+        let hit = crate::night_shift::flaky_rerun(&flaky, failed)
+            .map(|(test, run)| (test.to_string(), run));
+        let gh_run = hit.as_ref().and_then(|(_, run)| *run);
         let mut plan = crate::night_shift::ci_failure_plan(
-            hit.as_deref(),
+            hit.as_ref().map(|(test, _)| test.as_str()),
             entry.gates.reruns,
             entry.gates.fixes,
         );
@@ -3334,8 +3355,12 @@ impl Daemon {
             .map(|s| s.checks.into_iter().map(|c| c.command).collect())
             .unwrap_or_default();
         let head = entry.detail.head_sha.clone();
-        let excerpt = crate::night_shift::bounded_excerpt(texts, CI_FIX_EXCERPT_CHARS);
-        let checks = checks.to_vec();
+        let checks: Vec<String> = failed.iter().map(|c| c.name.clone()).collect();
+        let texts: Vec<String> = failed
+            .iter()
+            .flat_map(|c| std::iter::once(c.name.clone()).chain(c.lines.iter().cloned()))
+            .collect();
+        let excerpt = crate::night_shift::bounded_excerpt(&texts, CI_FIX_EXCERPT_CHARS);
         match plan.clone() {
             CiAction::Rerun { test } => {
                 let gh_run = gh_run.expect("a rerun plan has an Actions run id");
