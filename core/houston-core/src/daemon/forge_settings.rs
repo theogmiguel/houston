@@ -24,7 +24,7 @@ impl Daemon {
     }
 
     fn forge_keychain_service(&self) -> String {
-        forge_credentials::service(&self.state_dir, self.channel())
+        forge_credentials::service(&self.env(), &self.state_dir, self.channel())
     }
 
     fn bitbucket_enabled(&self) -> bool {

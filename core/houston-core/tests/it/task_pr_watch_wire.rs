@@ -9,10 +9,6 @@ use std::path::{Path, PathBuf};
 
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// The PATH before any test replaced it, so a test that needs `git` beside its
-/// `gh` stub can still find it.
-static ORIGINAL_PATH: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
-
 struct Rig {
     daemon: std::sync::Arc<houston_core::daemon::Daemon>,
     state: tempfile::TempDir,
@@ -20,7 +16,6 @@ struct Rig {
 }
 
 async fn rig(name: &str) -> Rig {
-    ORIGINAL_PATH.get_or_init(|| std::env::var_os("PATH").unwrap_or_default());
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let ws_dir = state.path().join(name);
     std::fs::create_dir_all(&ws_dir).unwrap();
@@ -216,8 +211,8 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 /// A `gh` stub that reports a merged PR and logs each call, on a PATH that
-/// still has `git`.
-fn merged_gh_logging_calls(bin: &Path) -> PathBuf {
+/// still has `git`. The guard keeps the stub first until the test ends.
+fn merged_gh_logging_calls(bin: &Path) -> (common::PathPrepend, PathBuf) {
     write_stub_gh(bin, true);
     let real = bin.join("gh");
     let logged = bin.join("gh-real");
@@ -234,11 +229,7 @@ fn merged_gh_logging_calls(bin: &Path) -> PathBuf {
     .unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut path = std::ffi::OsString::from(bin);
-    path.push(":");
-    path.push(ORIGINAL_PATH.get().expect("rig captured PATH"));
-    std::env::set_var("PATH", path);
-    log
+    (common::prepend_path(bin), log)
 }
 
 #[tokio::test]
@@ -247,7 +238,7 @@ async fn a_bitbucket_worktree_is_not_asked_of_gh() {
     let r = rig("pr-bitbucket").await;
     let (id, run_id, worktree) = r.in_review_task("On Bitbucket");
     let bin = tempfile::tempdir().unwrap();
-    let log = merged_gh_logging_calls(bin.path());
+    let (_path, log) = merged_gh_logging_calls(bin.path());
     git(&worktree, &["init", "-q"]);
     git(
         &worktree,
@@ -268,7 +259,7 @@ async fn a_github_ssh_alias_worktree_is_still_watched_through_gh() {
     let r = rig("pr-alias").await;
     let (id, _run_id, worktree) = r.in_review_task("Through an alias");
     let bin = tempfile::tempdir().unwrap();
-    let log = merged_gh_logging_calls(bin.path());
+    let (_path, log) = merged_gh_logging_calls(bin.path());
     git(&worktree, &["init", "-q"]);
     git(
         &worktree,

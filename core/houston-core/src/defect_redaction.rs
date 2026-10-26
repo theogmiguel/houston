@@ -85,9 +85,9 @@ pub fn redact(text: &str, workspace: Option<&str>, home: Option<&str>) -> String
         .into_owned()
 }
 
-/// Redact with this machine's home directory, for a draft the daemon builds.
-pub fn redact_here(text: &str, workspace: &str) -> String {
-    let home = crate::home_dir::home_dir();
+/// Redact with the daemon's home directory, for a draft the daemon builds.
+pub fn redact_here(env: &crate::host_env::HostEnv, text: &str, workspace: &str) -> String {
+    let home = env.home_dir();
     let home = home
         .as_deref()
         .map(|path| path.to_string_lossy().into_owned());

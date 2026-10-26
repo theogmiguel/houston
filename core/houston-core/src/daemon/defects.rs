@@ -158,7 +158,11 @@ impl Daemon {
         let now = now_unix_ms();
         // The duplicate search leaves the machine, so it sees the same redacted
         // words the draft does, never a value the title happens to carry.
-        let query = search_words(&defect_redaction::redact_here(&row.title, workspace));
+        let query = search_words(&defect_redaction::redact_here(
+            &self.env(),
+            &row.title,
+            workspace,
+        ));
         let mut duplicates = Vec::new();
         let mut note = None;
         if let Some(until) = self.pr_reads.paused_until(now) {
@@ -176,7 +180,11 @@ impl Daemon {
                         .take(usize::try_from(proto::DEFECT_ISSUE_DUPLICATES_MAX).unwrap_or(10))
                         .map(|item| proto::DefectIssueMatch {
                             number: item.number,
-                            title: defect_redaction::redact_here(&item.title, workspace),
+                            title: defect_redaction::redact_here(
+                                &self.env(),
+                                &item.title,
+                                workspace,
+                            ),
                             url: item.url,
                         })
                         .collect();
@@ -245,8 +253,8 @@ impl Daemon {
                 "destination_repo {repository:?} is not this defect's repository {expected:?}; refusing to file the issue"
             );
         }
-        let title = defect_redaction::redact_here(title.trim(), workspace);
-        let body = defect_redaction::redact_here(body.trim(), workspace);
+        let title = defect_redaction::redact_here(&self.env(), title.trim(), workspace);
+        let body = defect_redaction::redact_here(&self.env(), body.trim(), workspace);
         let title_max = usize::try_from(proto::DEFECT_ISSUE_TITLE_MAX).unwrap_or(256);
         let body_max = usize::try_from(proto::DEFECT_ISSUE_BODY_MAX).unwrap_or(60_000);
         let title_len = title.chars().count();
@@ -308,7 +316,7 @@ impl Daemon {
 
     fn issue_title(&self, row: &DefectRow, workspace: &str) -> String {
         let scope = row.detector.as_deref().unwrap_or("harness");
-        let raw = defect_redaction::redact_here(row.title.trim(), workspace);
+        let raw = defect_redaction::redact_here(&self.env(), row.title.trim(), workspace);
         let title = if is_conventional(&raw) {
             raw
         } else {
@@ -347,7 +355,7 @@ impl Daemon {
             utc_minute(row.first_seen_ms),
             utc_minute(row.last_seen_ms)
         ));
-        let redacted = defect_redaction::redact_here(&body, workspace);
+        let redacted = defect_redaction::redact_here(&self.env(), &body, workspace);
         clip_chars(
             &redacted,
             usize::try_from(proto::DEFECT_ISSUE_BODY_MAX).unwrap_or(60_000),

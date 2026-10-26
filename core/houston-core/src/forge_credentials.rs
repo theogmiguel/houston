@@ -16,8 +16,8 @@ const USER: &str = "bitbucket-cloud";
 /// `houston-forge` for the installed state directory, `houston-forge-<channel>`
 /// for a channel's, and `houston-forge-dir-<digest>` for any other (a test's or
 /// a custom one): only the installed daemon reaches the installed token.
-pub fn service(state_dir: &Path, channel: Option<&str>) -> String {
-    service_in(crate::home_dir::home_dir().as_deref(), state_dir, channel)
+pub fn service(env: &crate::host_env::HostEnv, state_dir: &Path, channel: Option<&str>) -> String {
+    service_in(env.home_dir().as_deref(), state_dir, channel)
 }
 
 fn service_in(home: Option<&Path>, state_dir: &Path, channel: Option<&str>) -> String {
