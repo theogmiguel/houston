@@ -197,9 +197,10 @@ never terminal text or the free-text details of a hook. Claude's `StopFailure` a
 OpenCode's `session.error` carry the typed error class, Codex reports a usage-limit
 notification on its app-server connection, and the process exit of a one-word headless
 probe is the declared substitute where a provider has no typed signal (ZCode everywhere,
-Codex on Windows). A stalled ZCode pane is Limited only when that probe's process exits
-with an error; the check never reads the pane's screen, and the opt-in setting only decides
-when the probe runs.
+Codex on Windows). A stalled pane is Limited only when that probe's process exits with an
+error or does not answer within its timeout; a probe Houston cannot start leaves the pane
+alone. The check never reads the pane's screen, and the opt-in setting only decides when the
+probe runs.
 
 The documented [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
 (revision 0.3, OSC 7501) is a fallback for programs that explicitly report state. Native
