@@ -2558,6 +2558,7 @@ workaround for the other.
 | stop pull request watches | `pane_pr_unwatch` | `hs-pane pr-unwatch` |
 | add a pull request to the merge queue | `pane_pr_enqueue` | `hs-pane pr-enqueue` |
 | remove a pull request from the merge queue | `pane_pr_dequeue` | `hs-pane pr-dequeue` |
+| post a one-line status on this pane's rail card | `pane_note` | `hs-pane note` |
 
 Everything below is written with the CLI's spelling; read the table across
 for the tool call.
@@ -2570,7 +2571,7 @@ changes, so the binary is the authority.
 
 The verbs: `whoami`, `spawn`, `list`, `get`, `prompt`, `keys`, `wait`,
 `read`, `kill`, `submit`, `report`, `reply`, `deny`, `escalate`, `instruction-list`,
-`instruction-get`, `instruction-cancel`, `instruction-resume`, `pr-watch`, `pr-unwatch`, `pr-enqueue`, `pr-dequeue`. Output is JSON (`read` prints plain lines).
+`instruction-get`, `instruction-cancel`, `instruction-resume`, `pr-watch`, `pr-unwatch`, `pr-enqueue`, `pr-dequeue`, `note`. Output is JSON (`read` prints plain lines).
 
 ## Reading a pane
 
@@ -3032,6 +3033,9 @@ hs-pane — a Houston pane controlling sibling agent panes
                 [--output-format \"…\"] [--boundaries \"…\"]
                                        (the brief: shape of the answer, and
                                         what the child must not do)
+  hs-pane heavy -- <command…>            (runs it only while holding the build
+                                          slot the merge queue verifies in;
+                                          prints how long it waited)
   hs-pane list
   hs-pane prompt <id> <text…> [--mode queue|steer|restart] [--client-request-id KEY] [--wait] [--timeout MS]
   hs-pane wait [--session ID] [--kind KIND] [--timeout-ms MS] [--stall-guard]
@@ -3067,13 +3071,24 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane pr-enqueue <PR URL|number> [--depends-on N]
                                          (add it to this workspace's merge queue;
                                           the user merges the entry that goes next)
-  hs-pane pr-dequeue <PR URL|number>    (remove it from the merge queue)";
+  hs-pane pr-dequeue <PR URL|number>    (remove it from the merge queue)
+  hs-pane note <TEXT> [--phase todo|in_progress|in_review|done]  (one line on this pane's rail card)
+  hs-pane note --clear                  (remove this pane's note)";
 
 pub fn run_pane_cli(args: &[String]) -> i32 {
     run_pane_cli_in(&crate::host_env::HostEnv::capture(), args)
 }
 
 pub fn run_pane_cli_in(env: &crate::host_env::HostEnv, args: &[String]) -> i32 {
+    if args.first().map(String::as_str) == Some("heavy") {
+        return match heavy_cli(env, &args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("{e:#}");
+                1
+            }
+        };
+    }
     match pane_cli_inner(env, args) {
         Ok(()) => 0,
         Err(e) => {
@@ -3081,6 +3096,25 @@ pub fn run_pane_cli_in(env: &crate::host_env::HostEnv, args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// `hs-pane heavy -- <cmd>`: the command's own exit code, after the slot.
+fn heavy_cli(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Result<i32> {
+    let base = cli_base_url(env.var("HOUSTON_MCP_URL").as_deref())?;
+    let token = env.var("HOUSTON_MCP_TOKEN").ok_or_else(|| {
+        anyhow::anyhow!("HOUSTON_MCP_TOKEN is not set — hs-pane only works inside a Houston pane")
+    })?;
+    let call = |body: serde_json::Value| {
+        cli_call(
+            &base,
+            &token,
+            "POST",
+            "/orchestrate/build-slot",
+            Some(body),
+            CLI_HTTP_TIMEOUT,
+        )
+    };
+    crate::build_slot::run(args, &call)
 }
 
 pub(crate) fn parse_flags(
@@ -3221,6 +3255,18 @@ fn pane_cli_inner(env: &crate::host_env::HostEnv, args: &[String]) -> anyhow::Re
         "pr-watch" => {
             let target = join_rest(&positional, "PR URL or number")?;
             let v = call("POST", "/orchestrate/pr-watch", Some(json!({"pr": target})))?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        "note" => {
+            let mut body = if flags.contains_key("clear") {
+                json!({"clear": true})
+            } else {
+                json!({"text": join_rest(&positional, "note text")?})
+            };
+            if let Some(phase) = flags.get("phase") {
+                body["phase"] = json!(phase);
+            }
+            let v = call("POST", "/orchestrate/note", Some(body))?;
             println!("{}", serde_json::to_string_pretty(&v)?);
         }
         "pr-unwatch" => {

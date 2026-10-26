@@ -431,6 +431,7 @@ interface Props {
   onAddWorkspace: () => void;
   onRemoveWorkspace: (path: string) => void;
   onRenameStart: (path: string) => void;
+  onLocateStart?: (path: string) => void;
   onOpenExternalError?: (message: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
@@ -888,6 +889,11 @@ function GridRenameRow({ cardMode, selected, initial, onSubmit, onCancel }: {
   );
 }
 
+// The rail card's Clear on a pane note; absent while no daemon is connected.
+function noteClearer(client: HoustonClient | null | undefined): ((session: number) => void) | undefined {
+  return client ? (session) => client.sessionNoteClear(session) : undefined;
+}
+
 function RailTree({
   treeLabel,
   activeFilterCount,
@@ -923,6 +929,7 @@ function RailTree({
   onRenameSubmit,
   onRenameCancel,
   onOpenInspector,
+  onClearNote,
   checkoutBranches,
   railDiffByDir,
   railPrByDir,
@@ -1004,6 +1011,7 @@ function RailTree({
   onToggleGridUnread: (gridId: string, signature: string, unread: boolean) => void;
   isGridUnread: (gridId: string, agents: ReturnType<typeof buildRailCard>['agents']) => { unread: boolean; signature: string };
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
+  onClearNote?: (session: number) => void;
 }): React.JSX.Element {
   const [expandedGrids, setExpandedGrids] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
@@ -1100,6 +1108,7 @@ function RailTree({
           onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
           menuOpen={gridMenuOpen?.path === workspace.path && gridMenuOpen.gridId === grid.id}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+          onClearNote={onClearNote}
         />
       </Suspense>
     )
@@ -1216,6 +1225,11 @@ const NO_BRANCHES: ReadonlyMap<number, string> = new Map();
 const NO_GRIDS: Record<string, GridItem[]> = {};
 const NO_PATHS: ReadonlySet<string> = new Set();
 
+// The open menu offers Locate only while the daemon reports its folder missing.
+function withMissing(menu: CtxMenu, workspaces: readonly Workspace[]): CtxMenu {
+  return { ...menu, missing: workspaces.find((w) => w.path === menu.path)?.missing };
+}
+
 export function Sidebar({
   mascotFirstRun = false,
   mascotWorkspacesEmpty,
@@ -1230,6 +1244,7 @@ export function Sidebar({
   onAddWorkspace,
   onRemoveWorkspace,
   onRenameStart,
+  onLocateStart,
   onOpenExternalError,
   onRenameSubmit,
   onRenameCancel,
@@ -1684,6 +1699,8 @@ export function Sidebar({
     e.preventDefault();
     setGridMenu(null);
     setNavMenu(null);
+    // A folder moved while the app ran shows as missing once the daemon restats it.
+    if (onLocateStart) railClient?.send({ type: "workspace_list" });
     setMenu({
       x: e.clientX,
       y: e.clientY,
@@ -1798,11 +1815,12 @@ export function Sidebar({
 
   const menuEl = menu && (
     <WorkspaceContextMenu
-      menu={menu}
+      menu={withMissing(menu, workspaces)}
       onClose={() => setMenu(null)}
       onAddGrid={onAddGrid}
       onRenameStart={onRenameStart}
       onRemoveWorkspace={onRemoveWorkspace}
+      onLocateStart={onLocateStart}
       onOpenExternalError={onOpenExternalError}
       onTogglePin={undoable.togglePinWorkspace}
     />
@@ -1912,6 +1930,7 @@ export function Sidebar({
             activeFilterCount={activeFilterCount}
             onSshConnect={onSshConnect}
             onOpenInspector={onOpenInspector}
+            onClearNote={noteClearer(railClient)}
             checkoutBranches={checkoutBranches}
             railDiffByDir={railDiffByDir}
             railPrByDir={railPrByDir}

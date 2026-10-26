@@ -20,6 +20,7 @@ const ENGINE_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
   codex: 'Codex',
   antigravity: 'Antigravity',
+  opencode: 'OpenCode',
   zcode: 'ZCode'
 }
 

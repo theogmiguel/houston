@@ -5,6 +5,8 @@ import type { GitCheckpointInfo } from '../../houston/generated/GitCheckpointInf
 import type { GitWorktreeInfo } from '../../houston/generated/GitWorktreeInfo'
 import { defaultCheckpointLabel } from './checkpoints'
 import type { WorktreeCleanupView } from './worktreeCleanup'
+import { parseControlAdmission } from '../../houston/controlAdmission'
+import { unansweredWorktreeCheck, WORKTREE_CHECK_TIMEOUT_MS, type WorktreeCheckView } from './worktrees'
 import type { CheckpointInspect } from './CheckpointsDialog'
 
 export type GitToolKind = 'branches' | 'worktrees' | 'checkpoints'
@@ -27,6 +29,7 @@ export interface GitTools {
   defaultBranch: string | null
   worktrees: GitWorktreeInfo[]
   cleanup: WorktreeCleanupView
+  removeCheck: WorktreeCheckView | null
   checkpoints: GitCheckpointInfo[]
   inspecting: CheckpointInspect | null
   ensure: (kind: GitToolKind) => void
@@ -40,6 +43,7 @@ export interface GitTools {
   renameBranch: (from: string, to: string) => void
   deleteBranch: (name: string, force: boolean) => void
   createWorktree: (name: string, base: string | null) => void
+  checkWorktree: (path: string) => void
   removeWorktree: (path: string, force: boolean) => void
   pruneWorktrees: () => void
   checkCleanup: () => void
@@ -49,6 +53,11 @@ export interface GitTools {
   inspectCheckpoint: (ref: string) => void
   restoreCheckpoint: (ref: string) => void
   deleteCheckpoint: (ref: string) => void
+}
+
+function stopTimer(timer: RefObject<ReturnType<typeof setTimeout> | null>): void {
+  if (timer.current !== null) clearTimeout(timer.current)
+  timer.current = null
 }
 
 // Owns every Git tool's data and every call that mutates it. The pane keeps
@@ -69,10 +78,12 @@ export function useGitToolsSubscription({
   const [defaultBranch, setDefaultBranch] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([])
   const [cleanup, setCleanup] = useState<WorktreeCleanupView>({ status: 'pending' })
+  const [removeCheck, setRemoveCheck] = useState<WorktreeCheckView | null>(null)
   const [checkpoints, setCheckpoints] = useState<GitCheckpointInfo[]>([])
   const [inspecting, setInspecting] = useState<CheckpointInspect | null>(null)
 
   const asked = useRef<Set<GitToolKind>>(new Set())
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const begin = useCallback(
     (dir: string): void => {
@@ -114,6 +125,25 @@ export function useGitToolsSubscription({
       }
       setCleanup({ status: 'ready', entries: msg.entries })
     })
+    // The check keeps its own pending state, apart from the tools' busy flag, so a lost
+    // reply cannot disable Remove, Refresh and Prune.
+    const unsubCheck = client.subscribe('worktree_check', (msg) => {
+      if (msg.dir !== repoDir) return
+      setRemoveCheck((c) => {
+        if (c?.path !== msg.path) return c
+        stopTimer(checkTimer)
+        return { path: msg.path, status: 'ready', check: msg.check }
+      })
+    })
+    const unsubCheckRefused = client.subscribe('error', (msg) => {
+      const refusal = parseControlAdmission(msg.context)
+      if (refusal?.kind !== 'worktree_check' || refusal.target !== repoDir) return
+      setRemoveCheck((c) => {
+        if (c?.status !== 'pending') return c
+        stopTimer(checkTimer)
+        return unansweredWorktreeCheck(c.path, msg.message)
+      })
+    })
     const unsubCheckpoints = client.subscribe('git_checkpoints', (msg) => {
       if (msg.dir !== repoDir) return
       pendingTools.current = null
@@ -152,6 +182,8 @@ export function useGitToolsSubscription({
       unsubBranches()
       unsubWorktrees()
       unsubCleanup()
+      unsubCheck()
+      unsubCheckRefused()
       unsubCheckpoints()
       unsubDiff()
       unsubPull()
@@ -173,12 +205,16 @@ export function useGitToolsSubscription({
     }
   }, [toolsError])
 
+  useEffect(() => () => stopTimer(checkTimer), [])
+
   useEffect(() => {
     asked.current.clear()
     setBranches([])
     setRemotes([])
     setWorktrees([])
     setCleanup({ status: 'pending' })
+    stopTimer(checkTimer)
+    setRemoveCheck(null)
     setCheckpoints([])
     setInspecting(null)
   }, [repoDir])
@@ -236,6 +272,7 @@ export function useGitToolsSubscription({
     defaultBranch,
     worktrees,
     cleanup,
+    removeCheck,
     checkpoints,
     inspecting,
     ensure,
@@ -250,6 +287,17 @@ export function useGitToolsSubscription({
     renameBranch: (from, to) => withDir((dir) => client?.gitBranchRename(dir, from, to)),
     deleteBranch: (name, force) => withDir((dir) => client?.gitBranchDelete(dir, name, force)),
     createWorktree: (name, base) => withDir((dir) => client?.gitWorktreeCreate(dir, name, base)),
+    checkWorktree: (path) => {
+      if (!client || !repoDir) return
+      stopTimer(checkTimer)
+      setRemoveCheck({ path, status: 'pending' })
+      client.worktreeCheck(repoDir, path)
+      checkTimer.current = setTimeout(() => {
+        checkTimer.current = null
+        const reason = `no answer from the daemon within ${WORKTREE_CHECK_TIMEOUT_MS / 1000} s`
+        setRemoveCheck((c) => (c?.path === path && c.status === 'pending' ? unansweredWorktreeCheck(path, reason) : c))
+      }, WORKTREE_CHECK_TIMEOUT_MS)
+    },
     removeWorktree: (path, force) => withDir((dir) => client?.gitWorktreeRemove(dir, path, force)),
     pruneWorktrees: () => withDir((dir) => client?.gitWorktreePrune(dir)),
     checkCleanup: () =>
