@@ -121,8 +121,18 @@ fn set_review(
     mode: proto::TaskReviewMode,
     focus: proto::TaskReviewFocus,
 ) {
+    set_review_rounds(rig, reviewer, 0, mode, focus);
+}
+
+fn set_review_rounds(
+    rig: &Rig,
+    reviewer: Option<proto::AgentKind>,
+    rounds: u32,
+    mode: proto::TaskReviewMode,
+    focus: proto::TaskReviewFocus,
+) {
     rig.daemon
-        .tasks_review_settings_set(&rig.workspace, reviewer, 0, mode, focus)
+        .tasks_review_settings_set(&rig.workspace, reviewer, rounds, mode, focus)
         .unwrap();
 }
 
@@ -189,12 +199,17 @@ async fn a_handback_review_pins_the_head_delivers_findings_and_marks_a_new_push_
     );
     assert!(delivered.body.contains(&head), "{}", delivered.body);
     assert!(
-        delivered.body.contains("one commit each"),
+        delivered.body.contains("operator to decide"),
         "{}",
         delivered.body
     );
     assert!(
-        delivered.body.contains("push stays a user action"),
+        delivered.body.contains("Do not change the branch"),
+        "{}",
+        delivered.body
+    );
+    assert!(
+        !delivered.body.contains("one commit each"),
         "{}",
         delivered.body
     );
@@ -447,6 +462,51 @@ async fn every_push_records_a_refusal_note_once_per_head_and_reason() {
         .filter(|body| body.contains("every-push review not started"))
         .collect::<Vec<_>>();
     assert_eq!(notes.len(), 1, "{notes:?}");
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
+async fn an_auto_rework_is_the_only_delivery_of_its_findings() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "Rework carries the findings");
+    set_review_rounds(
+        &rig,
+        Some(proto::AgentKind::Claude),
+        1,
+        proto::TaskReviewMode::Handback,
+        proto::TaskReviewFocus::Bugs,
+    );
+    let (impl_session, worktree, _branch) = start_implementation(&rig, task, caller);
+    let original = latest_implementation(&rig, task);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    let _ = rig.daemon.kill(impl_session);
+    let review = latest_review(&rig, task).expect("the handback review");
+    let review_session = review.session_id.expect("the review pane");
+    rig.daemon
+        .orchestrate_submit(review_session, review_body("fail").into())
+        .unwrap();
+
+    let reworked = latest_implementation(&rig, task);
+    assert_ne!(reworked.id, original.id, "auto-rework starts a new run");
+    let rework_session = reworked.session_id.unwrap_or_else(|| {
+        panic!(
+            "the rework pane: runs {:?}, comments {:?}",
+            runs(&rig, task),
+            comments(&rig, task)
+        )
+    });
+    let rows = rig.daemon.inbox_rows_for_test(impl_session);
+    assert!(
+        rows.iter()
+            .all(|row| row.reason.as_deref() != Some("task_review_findings")),
+        "the rework brief is the only delivery: {rows:?}"
+    );
+    let _ = rig.daemon.kill(rework_session);
+    let _ = rig.daemon.kill(review_session);
     let _ = rig.daemon.kill(impl_session);
     let _ = rig.daemon.kill(caller);
 }

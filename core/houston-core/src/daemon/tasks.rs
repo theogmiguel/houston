@@ -5361,14 +5361,7 @@ impl Daemon {
         self.db
             .task_run_set_review_result(run.id, outcome, &findings, None)?;
         self.db.task_run_set_summary(run.id, &rendered)?;
-        if !findings.is_empty() {
-            if let Err(e) = self.deliver_review_findings(row, run, outcome, &findings) {
-                tracing::warn!(
-                    "tasks: delivering review run {}'s findings to the implementing pane: {e:#}",
-                    run.id
-                );
-            }
-        }
+        let mut rework_started = false;
         match review.verdict {
             ReviewVerdict::Pass => {
                 self.db.task_run_set_state(
@@ -5404,7 +5397,7 @@ impl Daemon {
                 }
                 self.broadcast_task_run(run.id);
                 match self.maybe_auto_rework(row, parent, &rendered) {
-                    Ok(()) => {}
+                    Ok(started) => rework_started = started,
                     Err(e) => tracing::warn!(
                         "tasks: auto-reworking task {} after a failed review: {e:#}",
                         row.id
@@ -5412,20 +5405,32 @@ impl Daemon {
                 }
             }
         }
+        // A started rework already carries these findings in its brief. With no
+        // rework, the operator decides; the implementing pane gets information,
+        // never an instruction to change the branch on its own.
+        if !findings.is_empty() && !rework_started {
+            if let Err(e) = self.deliver_review_findings(row, run, outcome, &findings) {
+                tracing::warn!(
+                    "tasks: delivering review run {}'s findings to the implementing pane: {e:#}",
+                    run.id
+                );
+            }
+        }
         Ok(())
     }
 
     /// One automatic rework round when the workspace allows it and the cap has
-    /// not been reached; a refusal is left as a comment, never swallowed.
+    /// not been reached; a refusal is left as a comment, never swallowed. The
+    /// result says whether a new implementation child actually started.
     fn maybe_auto_rework(
         self: &Arc<Self>,
         row: &TaskRow,
         parent: u32,
         findings: &str,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let rounds = self.tasks_rework_rounds(row.workspace.as_deref().unwrap_or(""));
         if rounds == 0 {
-            return Ok(());
+            return Ok(false);
         }
         let done = self
             .db
@@ -5443,13 +5448,13 @@ impl Daemon {
                     proto::TASKS_REWORK_ROUNDS_MAX
                 ),
             );
-            return Ok(());
+            return Ok(false);
         }
         if self.db.open_task_run_for_task(row.id)?.is_some() {
-            return Ok(());
+            return Ok(false);
         }
         let Some(impl_run) = self.db.latest_implementation_run(row.id)? else {
-            return Ok(());
+            return Ok(false);
         };
         match self.task_execute_internal(
             row.workspace.as_deref().unwrap_or(""),
@@ -5464,13 +5469,14 @@ impl Daemon {
         ) {
             Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                 self.note_auto_action(row, "automatic rework not started", &message);
+                Ok(false)
             }
-            Ok(_) => {}
+            Ok(_) => Ok(true),
             Err(e) => {
                 tracing::warn!("tasks: auto-reworking task {}: {e:#}", row.id);
+                Ok(false)
             }
         }
-        Ok(())
     }
 
     /// A visible note for an automatic action that did not happen, so a task in
@@ -5562,9 +5568,10 @@ impl Daemon {
         )
     }
 
-    /// One inbox row to the pane that implemented the task: the findings, the
-    /// head they were found at and the default apply table. The push stays a
-    /// user action, and no directory is pasted anywhere.
+    /// One inbox row to the pane that implemented the task: the findings and
+    /// the head they were found at, for the operator to decide. An automatic
+    /// rework already carries the same findings, so the caller skips this row
+    /// when a rework started.
     fn deliver_review_findings(
         self: &Arc<Self>,
         row: &TaskRow,
@@ -5605,10 +5612,8 @@ impl Daemon {
             body.push('\n');
         }
         body.push_str(
-            "\nApply:\n\
-             - Confirmed high and medium findings are fixed one commit each.\n\
-             - Low and nit findings are offered for selection; pick the ones you want.\n\
-             - The push stays a user action; Houston does not push for you.\n",
+            "\nThese findings are for the operator to decide. Do not change the branch or push \
+             unless the operator asks; the task comment carries the full verdict.\n",
         );
         self.inbox_write(
             target,

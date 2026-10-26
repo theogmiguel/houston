@@ -167,7 +167,8 @@ pass writes a verdict comment and leaves the task **In review** for you. A fail 
 findings as a comment and marks the run as needing review; **Retry** opens the next attempt
 in the same worktree with those findings attached. With rework rounds above zero Houston
 retries automatically, at most that many rounds, and records each round in the task's
-history. The reviewer never closes a task.
+history. At zero, the implementing pane receives the findings as information only and
+nothing changes the branch until you decide. The reviewer never closes a task.
 
 The execution card shows the reviewed head, the focus and the verdict. Structured findings
 name their file and line, severity, category and message. An automatic review of a diff too
