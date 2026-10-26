@@ -561,6 +561,21 @@ pub fn branch_tip(dir: &Path, branch: &str) -> Result<String> {
     Ok(sha)
 }
 
+/// Whether a commit is present in this repository, so a pushed head read from
+/// the forge can be reviewed only once it exists locally.
+pub fn commit_exists(dir: &Path, commitish: &str) -> bool {
+    run_git(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{commitish}^{{commit}}"),
+        ],
+    )
+    .is_ok()
+}
+
 /// The branch shown in a pane and the checkout identity used by its tooltip.
 /// Fields are absent when git cannot answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

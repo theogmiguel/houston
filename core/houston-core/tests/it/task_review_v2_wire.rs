@@ -335,6 +335,52 @@ async fn the_review_attempt_cap_names_the_limit_the_attempts_and_the_sha() {
 }
 
 #[tokio::test]
+async fn every_push_reviews_the_pushed_head_not_unpushed_local_commits() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let caller = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let task = create_task(&rig, "Review only what was pushed");
+    set_review(
+        &rig,
+        Some(proto::AgentKind::Claude),
+        proto::TaskReviewMode::EveryPush,
+        proto::TaskReviewFocus::Full,
+    );
+    let (impl_session, worktree, branch) = start_implementation(&rig, task, caller);
+    large_change(&worktree);
+    hand_back(&rig, impl_session);
+    git(&worktree, &["push", "-q", "origin", &branch]);
+    rig.pr(99, &branch);
+    rig.daemon.pr_watch_start(caller, "99").unwrap();
+    let pushed = git(&worktree, &["rev-parse", "HEAD"]);
+    let content = (1..=81)
+        .map(|line| format!("line {line}\n"))
+        .collect::<String>();
+    commit(&worktree, "review.txt", &content, "unpushed");
+    let local = git(&worktree, &["rev-parse", "HEAD"]);
+    assert_ne!(local, pushed);
+
+    rig.daemon.task_pr_watch_tick();
+    let review = latest_review(&rig, task).expect("the pushed head is reviewed");
+    let session = review.session_id.expect("the review pane");
+    let tree = PathBuf::from(review.worktree_path.expect("the review worktree"));
+    assert_eq!(
+        git(&tree, &["rev-parse", "HEAD"]),
+        pushed,
+        "the reviewer sees the pushed head, not the local unpushed commit"
+    );
+    rig.daemon
+        .orchestrate_submit(session, review_body("pass").into())
+        .unwrap();
+    let reviewed = latest_review(&rig, task).expect("the review run");
+    let verdict = reviewed.review.expect("the stored verdict");
+    assert_eq!(verdict.head_sha, pushed);
+    assert_ne!(verdict.head_sha, local);
+    let _ = rig.daemon.kill(impl_session);
+    let _ = rig.daemon.kill(caller);
+}
+
+#[tokio::test]
 async fn every_push_does_not_comment_while_its_review_is_open() {
     let _serial = SERIAL.lock().await;
     let rig = Rig::new().await;

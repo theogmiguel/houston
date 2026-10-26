@@ -4489,9 +4489,10 @@ impl Daemon {
         if row.workspace.is_none() {
             return Ok(Self::task_invalid(Some(id), operation, format!("task {} has no workspace (expected the orchestrator's workspace before review)", Self::task_key(row.number))));
         }
-        self.task_review_internal(&row, caller, agent, operation, false)
+        self.task_review_internal(&row, caller, agent, operation, false, None)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn task_review_internal(
         self: &Arc<Self>,
         row: &TaskRow,
@@ -4499,6 +4500,7 @@ impl Daemon {
         agent: proto::AgentKind,
         operation: &str,
         skip_small: bool,
+        pinned_head: Option<&str>,
     ) -> Result<proto::ServerMsg> {
         if row.workspace.is_none() {
             return Ok(Self::task_invalid(
@@ -4634,18 +4636,35 @@ impl Daemon {
             .map(PathBuf::from)
             .filter(|dir| dir.is_dir())
             .unwrap_or_else(|| project_dir.clone());
-        let head_sha = match crate::git::branch_tip(&review_dir, &branch) {
-            Ok(sha) => sha,
-            Err(e) => {
-                return Ok(Self::task_invalid(
-                    Some(row.id),
-                    operation,
-                    format!(
-                        "task_review refused: reading the tip of branch {branch:?} in {}: {e:#}",
-                        review_dir.display()
-                    ),
-                ))
+        let head_sha = match pinned_head {
+            Some(sha) => {
+                if !crate::git::commit_exists(&review_dir, sha) {
+                    return Ok(Self::task_invalid(
+                        Some(row.id),
+                        operation,
+                        format!(
+                            "task_review refused: the pushed head {sha} is not in the local \
+                             repository at {}; fetch it before the review can start",
+                            review_dir.display()
+                        ),
+                    ));
+                }
+                sha.to_string()
             }
+            None => match crate::git::branch_tip(&review_dir, &branch) {
+                Ok(sha) => sha,
+                Err(e) => {
+                    return Ok(Self::task_invalid(
+                        Some(row.id),
+                        operation,
+                        format!(
+                            "task_review refused: reading the tip of branch {branch:?} in {}: \
+                             {e:#}",
+                            review_dir.display()
+                        ),
+                    ))
+                }
+            },
         };
         let prior = self.db.task_runs(row.id, proto::RUNS_PER_TASK)?;
         let attempts = prior
@@ -4728,22 +4747,28 @@ impl Daemon {
                 });
             }
         }
-        let worktree =
-            match self.review_worktree(row, &impl_run, &project_dir, &branch, run.attempt) {
-                Ok(worktree) => worktree,
-                Err(e) => {
-                    let reason = format!("{e:#}");
-                    self.db.task_run_set_state(
-                        run.id,
-                        proto::TaskRunState::Failed,
-                        Some(&reason),
-                        true,
-                        now,
-                    )?;
-                    self.broadcast_task_run(run.id);
-                    return Ok(Self::task_invalid(Some(row.id), operation, reason));
-                }
-            };
+        let worktree = match self.review_worktree(
+            row,
+            &impl_run,
+            &project_dir,
+            &branch,
+            run.attempt,
+            pinned_head,
+        ) {
+            Ok(worktree) => worktree,
+            Err(e) => {
+                let reason = format!("{e:#}");
+                self.db.task_run_set_state(
+                    run.id,
+                    proto::TaskRunState::Failed,
+                    Some(&reason),
+                    true,
+                    now,
+                )?;
+                self.broadcast_task_run(run.id);
+                return Ok(Self::task_invalid(Some(row.id), operation, reason));
+            }
+        };
         if let Err(e) = self
             .db
             .task_run_set_worktree(run.id, &worktree.path.display().to_string())
@@ -4875,9 +4900,10 @@ impl Daemon {
         })
     }
 
-    /// Where a review runs: the implementer's worktree once it settled, else a
-    /// detached tree at the branch tip, since a branch has one checkout and a
-    /// second writer in the implementer's tree would break both.
+    /// Where a review runs: the implementer's worktree when its HEAD is the
+    /// reviewed commit, else a detached tree at the reviewed commit, since a
+    /// branch has one checkout and a moved local branch must not be reviewed.
+    #[allow(clippy::too_many_arguments)]
     fn review_worktree(
         &self,
         row: &TaskRow,
@@ -4885,19 +4911,27 @@ impl Daemon {
         project_dir: &Path,
         branch: &str,
         review_attempt: u32,
+        pinned_head: Option<&str>,
     ) -> Result<CreatedWorktree> {
-        if !run_is_open(impl_run.state) {
-            if let Some(path) = impl_run.worktree_path.as_deref() {
-                let dir = PathBuf::from(path);
-                if dir.is_dir() {
-                    let path = dir.canonicalize().unwrap_or(dir);
-                    return Ok(CreatedWorktree {
-                        repo: project_dir.to_path_buf(),
-                        path,
-                        branch: branch.to_string(),
-                        include_warnings: Vec::new(),
-                    });
-                }
+        let impl_tree = impl_run
+            .worktree_path
+            .as_deref()
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_dir());
+        let impl_matches = impl_tree.as_ref().is_some_and(|dir| {
+            pinned_head
+                .map(|head| crate::git::head_sha(dir).ok().as_deref() == Some(head))
+                .unwrap_or(!run_is_open(impl_run.state))
+        });
+        if impl_matches {
+            if let Some(dir) = impl_tree {
+                let path = dir.canonicalize().unwrap_or(dir);
+                return Ok(CreatedWorktree {
+                    repo: project_dir.to_path_buf(),
+                    path,
+                    branch: branch.to_string(),
+                    include_warnings: Vec::new(),
+                });
             }
         }
         let slug = format!(
@@ -4913,7 +4947,8 @@ impl Daemon {
             crate::worktrees::ensure_ignored(parent).context("task_review refused")?;
         }
         let _ = crate::worktrees::prune(project_dir);
-        crate::worktrees::create_detached(project_dir, branch, &dest)
+        let commitish = pinned_head.unwrap_or(branch);
+        crate::worktrees::create_detached(project_dir, commitish, &dest)
             .context("task_review refused")?;
         let path = dest.canonicalize().unwrap_or_else(|_| dest.clone());
         let common_dir = crate::git::checkout_facts(project_dir)
@@ -5230,7 +5265,7 @@ impl Daemon {
                 .reviewer
                 .or_else(|| self.tasks_default_reviewer(row.workspace.as_deref().unwrap_or("")))
             {
-                match self.task_review_internal(row, parent, reviewer, "task_execute", true) {
+                match self.task_review_internal(row, parent, reviewer, "task_execute", true, None) {
                     Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                         self.note_auto_action(row, "automatic review not started", &message);
                     }
@@ -6000,7 +6035,14 @@ impl Daemon {
         let Some(caller) = caller else {
             return;
         };
-        match self.task_review_internal(task, caller, reviewer, "task_pr_watch", true) {
+        match self.task_review_internal(
+            task,
+            caller,
+            reviewer,
+            "task_pr_watch",
+            true,
+            Some(head_sha),
+        ) {
             Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
                 if !message.contains("only when it is idle") {
                     self.note_auto_action_once(
