@@ -61,6 +61,9 @@ import type { PullRequestLink } from "./PullRequestLink";
 import type { RecoverySummary } from "./RecoverySummary";
 import type { RemoteInfo } from "./RemoteInfo";
 import type { RemovedWorktree } from "./RemovedWorktree";
+import type { ReviewRequest } from "./ReviewRequest";
+import type { ReviewRequestMode } from "./ReviewRequestMode";
+import type { ReviewTier } from "./ReviewTier";
 import type { RoleRoute } from "./RoleRoute";
 import type { Routine } from "./Routine";
 import type { RoutineEngineRefusal } from "./RoutineEngineRefusal";
@@ -98,6 +101,8 @@ import type { TaskHistoryEntry } from "./TaskHistoryEntry";
 import type { TaskProject } from "./TaskProject";
 import type { TaskPromptDelivery } from "./TaskPromptDelivery";
 import type { TaskQueueRefusal } from "./TaskQueueRefusal";
+import type { TaskReviewFocus } from "./TaskReviewFocus";
+import type { TaskReviewMode } from "./TaskReviewMode";
 import type { TaskRun } from "./TaskRun";
 import type { TaskSummary } from "./TaskSummary";
 import type { TaskTrackerProvider } from "./TaskTrackerProvider";
@@ -231,7 +236,7 @@ transmits: string, duplicates: Array<DefectIssueMatch>,
 /**
  * Why the duplicate search did not run or returned nothing; still fileable.
  */
-note?: string | null, } | { "type": "defect_issue_filed", workspace: string, key: string, request: number, number: number, issue_url: string, note?: string | null, } | { "type": "defect_notice", workspace: string, count: number, title: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, } | { "type": "task_queue_result", workspace: string,
+note?: string | null, } | { "type": "defect_issue_filed", workspace: string, key: string, request: number, number: number, issue_url: string, note?: string | null, } | { "type": "defect_notice", workspace: string, count: number, title: string, } | { "type": "task_snapshot", scope: string, tasks: Array<TaskSummary>, counts: TaskCounts, } | { "type": "task_detail", task: Task, acceptance: Array<TaskAcceptanceItem>, comments: Array<TaskComment>, history: Array<TaskHistoryEntry>, runs: Array<TaskRun>, } | { "type": "task_project_state", project?: TaskProject | null, } | { "type": "task_projects_state", workspace: string, projects: Array<TaskProject>, } | { "type": "task_project_changed", workspace: string, id: number, revision: number, } | { "type": "task_domain_state", domain: TaskDomain, planning_refusals: Array<PlanningRefusal>, } | { "type": "task_plan_changed", id: number, revision: number, } | { "type": "task_plan_started", id: number, session_id: number, revision: number, } | { "type": "task_changed", workspace?: string | null, id: number, revision: number, } | { "type": "task_refused", id?: number | null, kind: TaskErrorKind, limit?: number | null, requested?: number | null, expected?: number | null, actual?: number | null, message: string, } | { "type": "task_run_changed", run: TaskRun, } | { "type": "task_start_settings", workspace: string, agent: AgentKind, delivery: TaskPromptDelivery, } | { "type": "task_review_settings", workspace: string, reviewer?: AgentKind | null, rework_rounds: number, mode: TaskReviewMode, focus: TaskReviewFocus, } | { "type": "review_requests", mode: ReviewRequestMode, items: Array<ReviewRequest>, paused_until_ms?: number | null, note?: string | null, } | { "type": "review_request_notice", id: number, repo: string, number: number, title: string, tier: ReviewTier, } | { "type": "task_queue_result", workspace: string,
 /**
  * The started tasks' keys, in the order they were picked.
  */

@@ -1127,6 +1127,160 @@ pub struct TaskRun {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub pr_url: Option<String>,
+    /// A review run's verdict, pinned to the head it read. `outdated` is true
+    /// once the branch tip has moved past `head_sha`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub review: Option<TaskReviewVerdict>,
+}
+
+/// When a review starts on its own: only when asked, when the implementer hands
+/// back, or on every push to the task's open pull request.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskReviewMode {
+    #[default]
+    Manual,
+    Handback,
+    EveryPush,
+}
+
+/// What the reviewer is asked to look for. The focus becomes part of its brief.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskReviewFocus {
+    #[default]
+    Bugs,
+    Security,
+    Performance,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskReviewSeverity {
+    High,
+    Medium,
+    Low,
+    Nit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskReviewCategory {
+    Bug,
+    Security,
+    Performance,
+    Other,
+}
+
+/// A review's outcome. `Skipped` records a diff too small for a reviewer; it
+/// carries `skipped_reason` and no findings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskReviewOutcome {
+    Pass,
+    Fail,
+    Skipped,
+}
+
+/// One structured finding a reviewer reported: where it is, how serious, what
+/// kind of problem and the finding's own words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskReviewFinding {
+    /// Repository-relative; never absolute, a drive path or containing `..`.
+    pub path: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub line: u32,
+    pub severity: TaskReviewSeverity,
+    pub category: TaskReviewCategory,
+    pub message: String,
+}
+
+/// A review verdict as the task view shows it: the reviewed head, the focus the
+/// reviewer used, the findings and whether the branch has moved since.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskReviewVerdict {
+    pub head_sha: String,
+    pub verdict: TaskReviewOutcome,
+    pub focus: TaskReviewFocus,
+    #[serde(default)]
+    pub findings: Vec<TaskReviewFinding>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub skipped_reason: Option<String>,
+    pub outdated: bool,
+}
+
+/// How much of the review-request queue the operator asked for. `off` keeps the
+/// daemon fully idle; `notify` detects and triages only; `review` also opens a
+/// read-only review pane for tiers B and C.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewRequestMode {
+    #[default]
+    Off,
+    Notify,
+    Review,
+}
+
+/// How much attention a pull request is likely to need. A is not offered until
+/// triage is calibrated, so a qualifying pull request is reported as B.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewTier {
+    A,
+    B,
+    C,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewRequestState {
+    New,
+    Reviewing,
+    Reviewed,
+    Dismissed,
+}
+
+/// One pull request the operator was asked to review, with the deterministic
+/// reasons triage gave it. `workspace` is the registered checkout whose GitHub
+/// remote matches; absent means no workspace can review it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ReviewRequest {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub host: String,
+    pub repo: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub title: String,
+    pub author: String,
+    pub url: String,
+    pub head_sha: String,
+    pub tier: ReviewTier,
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    pub state: ReviewRequestState,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub workspace: Option<String>,
+    /// The workspace's default task agent: the provider a `review` mode pane
+    /// would use.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub provider: Option<AgentKind>,
 }
 
 /// The task a session is bound to, as a pane chip shows it: the newest run
@@ -5510,6 +5664,26 @@ pub enum ClientMsg {
         reviewer: Option<AgentKind>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         rework_rounds: u32,
+        /// Absent in an older client request means `manual`.
+        #[serde(default)]
+        mode: TaskReviewMode,
+        /// Absent in an older client request means `bugs`.
+        #[serde(default)]
+        focus: TaskReviewFocus,
+    },
+    /// The review-request queue's setting and items; one read for both.
+    ReviewRequestsGet,
+    /// The global review-request mode. Changing it is visible and reversible.
+    ReviewRequestsSet {
+        mode: ReviewRequestMode,
+    },
+    ReviewRequestDismiss {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
+    ReviewRequestReopen {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
     },
     /// The roster's "Run next N": starts the top `count` ready tasks as children
     /// of `orchestrator_session`, all or nothing. No agent names the workspace's
@@ -6658,6 +6832,35 @@ pub enum ServerMsg {
         reviewer: Option<AgentKind>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         rework_rounds: u32,
+        #[serde(default)]
+        mode: TaskReviewMode,
+        #[serde(default)]
+        focus: TaskReviewFocus,
+    },
+    /// The review-request queue after a read, a mode change, a dismissal or a
+    /// reopen. `paused_until_ms` and `note` make a rate-limit pause or a
+    /// credential problem visible without failing the queue.
+    ReviewRequests {
+        mode: ReviewRequestMode,
+        #[serde(default)]
+        items: Vec<ReviewRequest>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        paused_until_ms: Option<i64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        note: Option<String>,
+    },
+    /// One new review request worth a desktop notification. The first run after
+    /// enabling absorbs existing requests and sends none.
+    ReviewRequestNotice {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        repo: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        number: u32,
+        title: String,
+        tier: ReviewTier,
     },
     /// One `task_queue_run`'s outcome: the keys it started, the tasks it could
     /// not start and why, and what the roster shows next to the button.
@@ -7102,6 +7305,30 @@ pub const TASK_PR_WATCH_INTERVAL_MS: u64 = 300_000;
 /// Automatic rework rounds a failed review may take, per workspace; a runaway
 /// reviewer-and-implementer pair must cost a bounded number of agent runs.
 pub const TASKS_REWORK_ROUNDS_MAX: u32 = 5;
+/// A review answers with at most this many findings; a reviewer that returns
+/// more is refused rather than truncating the evidence.
+pub const TASK_REVIEW_FINDINGS_MAX: u32 = 100;
+/// A finding's path; repository-relative, so 512 leaves room for deep trees.
+pub const TASK_REVIEW_PATH_MAX: usize = 512;
+/// A finding's message, long enough for a quote and a fix, short enough that
+/// 100 of them fit one inbox row.
+pub const TASK_REVIEW_MESSAGE_MAX: usize = 2_000;
+/// Review starts allowed per (task, head_sha); a reviewer that keeps failing
+/// cannot spend unbounded agent runs on one commit.
+pub const TASK_REVIEW_ATTEMPTS_PER_SHA: u32 = 2;
+/// A diff at or under this many changed lines and files is too small to spend a
+/// reviewer on; the skip still records the numbers.
+pub const REVIEW_SKIP_MAX_LINES: u32 = 30;
+pub const REVIEW_SKIP_MAX_FILES: u32 = 3;
+/// Review-request polling interval while enabled, plus the wake-gap factor that
+/// asks for one catch-up tick.
+pub const REVIEW_REQUEST_POLL_MS: u64 = 120_000;
+pub const REVIEW_REQUEST_CATCH_UP_FACTOR: u64 = 3;
+/// Effective changed lines and files that push a pull request to tier C.
+pub const REVIEW_REQUEST_TIER_C_LINES: u32 = 400;
+pub const REVIEW_REQUEST_TIER_C_FILES: u32 = 15;
+/// Rows the review-request snapshot answers with, newest first.
+pub const REVIEW_REQUESTS_MAX: u32 = 200;
 
 pub const RESTORE_BUDGET_DEFAULT: u32 = 24;
 
