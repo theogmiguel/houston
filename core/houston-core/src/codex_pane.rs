@@ -22,7 +22,8 @@ const LIMIT_DETAIL_MAX: usize = 200;
 
 /// The typed usage-limit signal in an app-server notification. Only the two
 /// methods the schema declares carry one: `error` with a usage-limit
-/// `codexErrorInfo`, and `account/rateLimits/updated` with an exhausted window.
+/// `codexErrorInfo`, and `account/rateLimits/updated` with an explicit reached
+/// marker. A window's used percentage alone does not refuse the next request.
 pub fn usage_limit(value: &serde_json::Value) -> Option<String> {
     let bounded = |text: &str| -> String {
         crate::sanitize::redact_secrets(text)
@@ -61,26 +62,6 @@ pub fn usage_limit(value: &serde_json::Value) -> Option<String> {
                 == Some(true)
             {
                 return Some("Codex reported its spend control reached".into());
-            }
-            for window in ["primary", "secondary"] {
-                let Some(used) = limits
-                    .pointer(&format!("/{window}/usedPercent"))
-                    .and_then(serde_json::Value::as_i64)
-                else {
-                    continue;
-                };
-                if used < 100 {
-                    continue;
-                }
-                let resets = limits
-                    .pointer(&format!("/{window}/resetsAt"))
-                    .and_then(serde_json::Value::as_i64);
-                return Some(match resets {
-                    Some(at) => bounded(&format!(
-                        "Codex reported its {window} rate-limit window at 100% used, reset at {at}"
-                    )),
-                    None => format!("Codex reported its {window} rate-limit window at 100% used"),
-                });
             }
             None
         }
@@ -129,30 +110,32 @@ mod limit_notification_tests {
     }
 
     #[test]
-    fn an_exhausted_rate_limit_window_is_a_limit() {
-        let value = json!({"method": "account/rateLimits/updated", "params": {
+    fn a_used_percentage_alone_is_not_a_limit() {
+        let exhausted = json!({"method": "account/rateLimits/updated", "params": {
             "rateLimits": {
                 "limitId": "codex",
                 "planType": "plus",
                 "primary": {"usedPercent": 100, "resetsAt": 1780000000, "windowDurationMins": 300},
                 "secondary": {"usedPercent": 12, "windowDurationMins": 10080}}}});
-        let details = usage_limit(&value).expect("an exhausted window");
-        assert!(
-            details.contains("primary rate-limit window at 100% used"),
-            "{details}"
+        assert_eq!(
+            usage_limit(&exhausted),
+            None,
+            "credits or a spend allowance can still continue the turn"
         );
-        assert!(details.contains("reset at 1780000000"), "{details}");
-
         let secondary = json!({"method": "account/rateLimits/updated", "params": {
             "rateLimits": {"primary": {"usedPercent": 99},
                            "secondary": {"usedPercent": 100}}}});
-        assert!(usage_limit(&secondary)
-            .expect("the secondary window")
-            .contains("secondary"));
+        assert_eq!(usage_limit(&secondary), None);
 
-        let almost = json!({"method": "account/rateLimits/updated", "params": {
-            "rateLimits": {"primary": {"usedPercent": 99}}}});
-        assert_eq!(usage_limit(&almost), None);
+        let refused = json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {
+                "rateLimitReachedType": "workspace_owner_usage_limit_reached",
+                "primary": {"usedPercent": 100, "resetsAt": 1780000000}}}});
+        let details = usage_limit(&refused).expect("the reached marker is the signal");
+        assert!(
+            details.contains("Codex reported workspace_owner_usage_limit_reached"),
+            "{details}"
+        );
     }
 
     #[test]
