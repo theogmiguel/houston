@@ -102,6 +102,10 @@ pub(crate) struct NightShiftCtx {
     ci_actions: Mutex<HashSet<(u32, u32)>>,
     /// Overrides the run-completion poll and deadline in tests.
     ci_wait_for_test: Mutex<Option<(std::time::Duration, std::time::Duration)>>,
+    /// Run ids whose /goal acceptance is in flight.
+    goal_in_flight: Mutex<HashSet<u32>>,
+    /// Refused /goal attempts per run this daemon has seen.
+    goal_refusals: Mutex<HashMap<u32, u32>>,
     /// Runs whose run-end token scan has already been started.
     token_scans: Mutex<HashSet<u32>>,
 }
@@ -127,6 +131,23 @@ impl Drop for NightChecksRun {
 struct NightCiAction {
     daemon: Arc<Daemon>,
     key: (u32, u32),
+}
+
+/// Removes a run from the /goal in-flight set however its attempt ends.
+struct NightGoalAttempt {
+    daemon: Arc<Daemon>,
+    run_id: u32,
+}
+
+impl Drop for NightGoalAttempt {
+    fn drop(&mut self) {
+        self.daemon
+            .night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .remove(&self.run_id);
+    }
 }
 
 /// What one read of an Actions run's status answered.
@@ -1633,10 +1654,21 @@ impl Daemon {
         };
         let goal = {
             let _guard = self.night.lock.lock().expect("night lock");
-            let Ok(Some(mut row)) = self.db.night_run(run.run_id) else {
+            let Ok(Some(row)) = self.db.night_run(run.run_id) else {
                 return;
             };
             if row.goal_sent || row.ended_at_ms.is_some() {
+                return;
+            }
+            let refusals = self
+                .night
+                .goal_refusals
+                .lock()
+                .expect("night goal refusals")
+                .get(&run.run_id)
+                .copied()
+                .unwrap_or(0);
+            if !crate::night_shift::goal_retry_after(refusals) {
                 return;
             }
             let settings = match self.night_settings(row.routine_id) {
@@ -1662,28 +1694,77 @@ impl Daemon {
             ) else {
                 return;
             };
-            row.goal_sent = true;
-            if let Err(e) = self.db.save_night_run(&row) {
-                tracing::warn!("recording Night shift run {}'s /goal: {e:#}", row.run_id);
-                return;
-            }
             goal
+        };
+        if !self
+            .night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .insert(run.run_id)
+        {
+            return;
+        }
+        let attempt = NightGoalAttempt {
+            daemon: Arc::clone(self),
+            run_id: run.run_id,
         };
         let daemon = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name(format!("night-goal-{}", run.run_id))
             .spawn(move || {
-                if let Err(e) = daemon.instruction_accept_daemon(session, &goal) {
-                    daemon.night_goal_failed(run.run_id, &format!("{e:#}"));
+                let _attempt = attempt;
+                match daemon.instruction_accept_daemon(session, &goal) {
+                    Ok(_) => daemon.night_goal_accepted(run.run_id),
+                    Err(e) => daemon.night_goal_refused(run.run_id, &format!("{e:#}")),
                 }
             });
         if let Err(e) = spawned {
-            self.night_goal_failed(run.run_id, &format!("starting the follow-up: {e}"));
+            self.night_goal_refused(run.run_id, &format!("starting the follow-up: {e}"));
         }
     }
 
-    /// The run continues; a refused `/goal` is an event in its report.
-    fn night_goal_failed(&self, run_id: u32, why: &str) {
+    /// The goal is in the pane's queue now, so the run records it as sent. A
+    /// refusal leaves it unsent for the next lifecycle hook to retry.
+    fn night_goal_accepted(&self, run_id: u32) {
+        let _guard = self.night.lock.lock().expect("night lock");
+        let Ok(Some(mut row)) = self.db.night_run(run_id) else {
+            return;
+        };
+        if row.goal_sent {
+            return;
+        }
+        row.goal_sent = true;
+        if let Err(e) = self.db.save_night_run(&row) {
+            tracing::warn!("recording Night shift run {run_id}'s /goal: {e:#}");
+        }
+    }
+
+    /// Counts a refusal; a later hook retries until the attempts run out.
+    fn night_goal_refused(&self, run_id: u32, why: &str) {
+        let attempts = {
+            let mut refusals = self
+                .night
+                .goal_refusals
+                .lock()
+                .expect("night goal refusals");
+            let attempts = refusals.entry(run_id).or_insert(0);
+            *attempts = attempts.saturating_add(1);
+            *attempts
+        };
+        if crate::night_shift::goal_retry_after(attempts) {
+            tracing::info!(
+                "Night shift run {run_id}: /goal follow-up refused on attempt {attempts} of {} \
+                 ({why}); the next hook retries",
+                crate::night_shift::GOAL_ATTEMPTS
+            );
+            return;
+        }
+        self.night_goal_gave_up(run_id, attempts, why);
+    }
+
+    /// One interruption records the run continuing without its goal.
+    fn night_goal_gave_up(&self, run_id: u32, attempts: u32, why: &str) {
         let _guard = self.night.lock.lock().expect("night lock");
         let Ok(Some(mut row)) = self.db.night_run(run_id) else {
             return;
@@ -1693,7 +1774,8 @@ impl Daemon {
             at_ms: now,
             resumed_at_ms: now,
             detail: format!(
-                "Houston could not send this run's /goal to the Claude orchestrator: {why}"
+                "Houston could not send this run's /goal to the Claude orchestrator after \
+                 {attempts} refused attempts: {why}. The run continues without its goal."
             ),
             resumed: true,
         });
@@ -1924,6 +2006,16 @@ impl Daemon {
             .lock()
             .expect("probe turns")
             .retain(|session, _| !row.crew.iter().any(|m| m.session == *session));
+        self.night
+            .goal_in_flight
+            .lock()
+            .expect("night goal in flight")
+            .remove(&run_id);
+        self.night
+            .goal_refusals
+            .lock()
+            .expect("night goal refusals")
+            .remove(&run_id);
         self.broadcast_night_run(run_id);
         let entries = self.db.night_entries(run_id).unwrap_or_default();
         let prs = entries

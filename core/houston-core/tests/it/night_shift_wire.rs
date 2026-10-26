@@ -1030,6 +1030,116 @@ async fn a_claude_orchestrator_gets_its_direction_once_as_a_goal() {
     );
 }
 
+/// A `/goal` refused while the pane needs input stays unsent, so the next
+/// lifecycle hook retries it; the refusal is not an interruption.
+#[tokio::test]
+async fn a_refused_goal_is_retried_by_the_next_hook() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-retry-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::NeedsInput);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "SessionStart".into(),
+        ..Default::default()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let refused = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!refused.contains("/goal"), "{refused:?}");
+    assert!(
+        r.run(run.run_id).interruptions.is_empty(),
+        "a retryable refusal writes no note: {:?}",
+        r.run(run.run_id).interruptions
+    );
+
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::Idle);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    wait_until("the retried /goal", || {
+        std::fs::read_to_string(&typed).is_ok_and(|text| text.contains("/goal"))
+    })
+    .await;
+    let text = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(text.matches("/goal").count(), 1, "{text:?}");
+    assert!(text.contains("CI stays green"), "{text:?}");
+    assert!(
+        r.run(run.run_id).interruptions.is_empty(),
+        "{:?}",
+        r.run(run.run_id).interruptions
+    );
+}
+
+/// Three refused attempts are final: one note says why, and a later hook does
+/// not send the goal.
+#[tokio::test]
+async fn three_refused_goals_write_one_note_and_stop() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-give-up-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::NeedsInput);
+    for event in ["SessionStart", "SessionStart", "SessionStart"] {
+        r.drop_hook(HookDrop {
+            session,
+            agent: Some("claude".into()),
+            event: event.into(),
+            ..Default::default()
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    wait_until("the give-up note", || {
+        r.run(run.run_id).interruptions.len() == 1
+    })
+    .await;
+    let note = &r.run(run.run_id).interruptions[0];
+    assert!(note.detail.contains("after 3 refused attempts"), "{note:?}");
+    assert!(note.detail.contains("needs input"), "{note:?}");
+
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::Idle);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(r.run(run.run_id).interruptions.len(), 1, "one note");
+    let text = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!text.contains("/goal"), "the goal is abandoned: {text:?}");
+}
+
 /// The other orchestrator providers have no `/goal`; the brief alone steers.
 #[tokio::test]
 async fn another_orchestrator_provider_gets_no_goal() {

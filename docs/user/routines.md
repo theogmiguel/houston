@@ -194,9 +194,10 @@ orchestrator has accepted the brief. Its condition names the run, makes progress
 direction the goal within the brief's focus areas, and stops only when the morning report is
 published or the hard stop has passed. A direction longer than the condition allows is
 shortened with a visible truncated marker. The clause arrives once per run and is not sent
-again after a daemon restart; a refused send is recorded as an interruption and the run
-continues. Codex and OpenCode orchestrators have no equivalent condition and use the brief's
-Direction only.
+again after a daemon restart. If the pane needs input (a trust or permission prompt) the
+send is refused; the next lifecycle hook retries, up to three attempts, and then one
+interruption records the reason and the run continues without its goal. Codex and OpenCode
+orchestrators have no equivalent condition and use the brief's Direction only.
 
 The **Live run** view shows the time left, the timeline with any interruptions, the crew
 and their status, the machine's free memory and disk and the plan board. When a worker's

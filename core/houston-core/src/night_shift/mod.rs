@@ -31,6 +31,15 @@ pub const CI_FIXES_PER_PR: u32 = 2;
 /// The failing log a fixer prompt quotes, from the already-fetched check lines.
 pub const CI_FIX_EXCERPT_CHARS: usize = 1_500;
 
+/// Refused `/goal` follow-ups before Houston stops trying for the run; a pane
+/// may spend its first hooks behind a trust prompt.
+pub const GOAL_ATTEMPTS: u32 = 3;
+
+/// Whether another refused `/goal` attempt is worth making.
+pub fn goal_retry_after(refusals: u32) -> bool {
+    refusals < GOAL_ATTEMPTS
+}
+
 /// What Houston does with a pull request's CI failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CiAction {
@@ -184,6 +193,14 @@ pub fn headline(prs: usize, open_decisions: usize, refused: Option<&str>) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_goal_stops_after_three_refusals() {
+        assert!(goal_retry_after(0), "the first attempt");
+        assert!(goal_retry_after(GOAL_ATTEMPTS - 1));
+        assert!(!goal_retry_after(GOAL_ATTEMPTS));
+        assert!(!goal_retry_after(GOAL_ATTEMPTS + 1));
+    }
 
     #[test]
     fn flaky_names_match_inside_log_lines() {
