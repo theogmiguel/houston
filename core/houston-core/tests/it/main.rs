@@ -155,6 +155,7 @@ mod task_execute_wire;
 mod task_plan_wire;
 mod task_pr_watch_wire;
 mod task_queue_wire;
+mod task_review_v2_wire;
 mod task_review_wire;
 mod task_runs_wire;
 mod task_start_wire;

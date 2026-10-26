@@ -2812,7 +2812,15 @@ async fn dispatch(
             workspace,
             reviewer,
             rework_rounds,
-        } => match daemon.tasks_review_settings_set(&workspace, reviewer, rework_rounds)? {
+            mode,
+            focus,
+        } => match daemon.tasks_review_settings_set(
+            &workspace,
+            reviewer,
+            rework_rounds,
+            mode,
+            focus,
+        )? {
             msg @ proto::ServerMsg::TaskRefused { .. } => {
                 let _ = send_msg(sink, &msg).await;
                 Ok(())

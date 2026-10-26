@@ -544,6 +544,23 @@ pub fn head_sha(dir: &Path) -> Result<String> {
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
+/// The commit a branch names right now. Unlike `head_sha`, this is correct from
+/// a detached review tree beside the branch it reviews.
+pub fn branch_tip(dir: &Path, branch: &str) -> Result<String> {
+    let out = run_git(
+        dir,
+        &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
+    )?;
+    let sha = out.trim().to_string();
+    if sha.is_empty() {
+        bail!(
+            "git rev-parse {branch:?} in {} is empty; expected a commit sha",
+            dir.display()
+        );
+    }
+    Ok(sha)
+}
+
 /// The branch shown in a pane and the checkout identity used by its tooltip.
 /// Fields are absent when git cannot answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1148,9 +1165,15 @@ pub struct DiffSize {
 }
 
 pub fn diff_size(dir: &Path, base: &str) -> Result<DiffSize> {
+    diff_size_against(dir, base, "HEAD")
+}
+
+/// The same measurement for a commit that need not be checked out: a review
+/// may run from a tree parked on another branch.
+pub fn diff_size_against(dir: &Path, base: &str, head: &str) -> Result<DiffSize> {
     ensure_repo(dir)?;
     let mb = merge_base(dir, base)?;
-    let raw = run_git(dir, &["diff", "--numstat", &format!("{mb}..HEAD")])?;
+    let raw = run_git(dir, &["diff", "--numstat", &format!("{mb}..{head}")])?;
     let mut size = DiffSize::default();
     for line in raw.lines().filter(|l| !l.trim().is_empty()) {
         let mut parts = line.split('\t');
@@ -1751,6 +1774,36 @@ pub fn fetch(dir: &Path) -> Result<String> {
         .find(|l| !l.is_empty())
         .unwrap_or("fetched");
     Ok(summary.to_string())
+}
+
+/// Fetches one refspec from the remote, for a ref the normal fetch does not
+/// carry (a pull request's `pull/<n>/head`). The caller names the refspec.
+pub fn fetch_ref(dir: &Path, refspec: &str) -> Result<()> {
+    ensure_repo(dir)?;
+    let Some(remote) = remote_name(dir) else {
+        bail!(
+            "{} has no git remote; add one (git remote add origin <url>) before fetching",
+            dir.display()
+        );
+    };
+    let mut command = command();
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(["fetch", "--prune", &remote, refspec])
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let out = git_output(command, GIT_COMMAND_TIMEOUT)
+        .with_context(|| format!("spawning git fetch {refspec} in {}", dir.display()))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        bail!(
+            "git fetch {remote} {refspec} in {} failed (exit {:?}): {}",
+            dir.display(),
+            out.status.code(),
+            stderr.trim()
+        );
+    }
+    Ok(())
 }
 
 fn rev_parse_commit(dir: &Path, name: &str) -> Result<String> {
