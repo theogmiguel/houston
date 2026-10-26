@@ -123,9 +123,12 @@ you to review. Turn the queue on in **Settings ▸ Workspaces ▸ Review request
 - **Off** (the default) requests nothing.
 - **Notify** asks GitHub every 2 minutes, through your `gh` login, which pull requests await
   your review, reads their size and files, and tells you.
-- **Review** also starts a read-only review pane for medium and large requests with the
-  workspace's default agent. That sends the diff to that agent's provider. Houston never
-  approves a pull request or posts anything to GitHub.
+- **Review** also checks out the pull request head in a worktree for medium and large requests
+  and starts the workspace's default agent in it: the diff goes to that agent's provider, and a
+  pull request from someone else can bring its own agent configuration (project settings,
+  hooks, MCP servers, instruction files) that the agent will load. Prefer **Notify** for
+  repositories whose authors you do not trust. Houston never approves a pull request or posts
+  anything to GitHub.
 
 Each row names its repository and number, title, author and one of three tiers. The tier is
 never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
