@@ -20,10 +20,9 @@ pub fn requires_shared_server(args: &[OsString]) -> bool {
 /// Longest usage-limit detail kept from an app-server notification.
 const LIMIT_DETAIL_MAX: usize = 200;
 
-/// The typed usage-limit signal in an app-server notification. Only the two
-/// methods the schema declares carry one: `error` with a usage-limit
-/// `codexErrorInfo`, and `account/rateLimits/updated` with an explicit reached
-/// marker. A window's used percentage alone does not refuse the next request.
+/// The typed usage-limit signal in an app-server notification: `error` with a
+/// usage-limit `codexErrorInfo`, or `account/rateLimits/updated` with an
+/// explicit reached marker. A used percentage alone refuses no request.
 pub fn usage_limit(value: &serde_json::Value) -> Option<String> {
     let bounded = |text: &str| -> String {
         crate::sanitize::redact_secrets(text)
