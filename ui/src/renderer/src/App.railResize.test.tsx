@@ -119,6 +119,24 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
     up(400)
   })
 
+  it('a drag writes the stored width once, when it ends', async () => {
+    harness = await renderReadyApp()
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    const railWrites = (): number => writes.mock.calls.filter(([key]) => key === 'tr-rail-width').length
+
+    down(264)
+    for (let x = 270; x <= 340; x += 5) {
+      move(x)
+      flush()
+    }
+    expect(railWidthVar(harness)).toBe('340px')
+    expect(railWrites(), 'writes during the drag').toBe(0)
+
+    up(340)
+    expect(railWrites(), 'writes after the drag').toBe(1)
+    expect(localStorage.getItem('tr-rail-width')).toBe('340')
+  })
+
   it('a drag under the collapse threshold hides the rail and remembers the last width', async () => {
     harness = await renderReadyApp()
 

@@ -239,7 +239,7 @@ import {
   IconRows,
   IconPanelLeft,
 } from "./components/icons";
-import { setRailWidth, useRailWidth } from "./railWidth";
+import { persistRailWidth, setRailWidth, useRailWidth } from "./railWidth";
 import {
   defaultScmWidth,
   focusedRepoDir,
@@ -3730,6 +3730,7 @@ export function App(): React.JSX.Element {
             width={railWidth}
             collapsed={sidebarRail}
             onChange={setRailWidth}
+            onCommit={persistRailWidth}
             onCollapse={() => setSidebarRail(true)}
           />
           {!sidebarRail && (

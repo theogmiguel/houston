@@ -42,12 +42,16 @@ function save(px: number): void {
 let width: number = typeof localStorage !== "undefined" ? load() : RAIL_DEFAULT;
 const listeners = new Set<() => void>();
 
+// A drag calls this per frame; the width reaches storage once, from persistRailWidth.
 export function setRailWidth(next: number): void {
   const clamped = clampRailWidth(next);
   if (clamped === width) return;
   width = clamped;
-  save(clamped);
   for (const l of listeners) l();
+}
+
+export function persistRailWidth(): void {
+  save(width);
 }
 
 export function resetRailWidthForTests(): void {
