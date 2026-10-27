@@ -91,4 +91,4 @@
 11 core/houston-core/tests/it/worktree_spawn_wire.rs
 2 core/houston-core/tests/it/ws_control_wire.rs
 2 core/houston-core/tests/it/zcode_hooks_wire.rs
-16 core/houston-core/tests/it/zcode_wire.rs
+14 core/houston-core/tests/it/zcode_wire.rs

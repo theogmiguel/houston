@@ -133,15 +133,7 @@ impl Rig {
         let gh = bin.join(format!("gh{}", std::env::consts::EXE_SUFFIX));
         std::fs::copy(env!("CARGO_BIN_EXE_fake_gh"), &gh).unwrap();
         std::fs::write(bin.join("origin"), origin.display().to_string()).unwrap();
-        let path = common::prepend_path(&bin);
-        // The daemon resolves agent binaries from its own captured environment, not the
-        // process's: without this, the fake provider installed into `bin` is never found.
-        let daemon_path = daemon.env().var_os("PATH");
-        let joined = std::env::join_paths(
-            std::iter::once(bin.clone()).chain(daemon_path.iter().flat_map(std::env::split_paths)),
-        )
-        .expect("PATH entries contain no separator");
-        daemon.set_env_var_for_test("PATH", joined.to_str());
+        let path = common::prepend_path_for(&daemon, &bin);
         Rig {
             daemon,
             state,

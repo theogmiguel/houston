@@ -51,6 +51,15 @@ pub fn prepend_path(dir: &std::path::Path) -> PathPrepend {
     PathPrepend(previous)
 }
 
+/// [`prepend_path`] for a daemon that is already running: it resolves programs from the
+/// `PATH` it captured at start, not the process's, so it gets `dir` first as well.
+pub fn prepend_path_for(daemon: &Daemon, dir: &std::path::Path) -> PathPrepend {
+    let guard = prepend_path(dir);
+    let joined = std::env::var_os("PATH").expect("prepend_path set PATH");
+    daemon.set_env_var_for_test("PATH", Some(&joined.to_string_lossy()));
+    guard
+}
+
 impl Drop for PathPrepend {
     fn drop(&mut self) {
         match self.0.take() {
@@ -72,10 +81,81 @@ pub fn git_processes_started(path: &std::path::Path) -> usize {
         .unwrap_or(0)
 }
 
+/// What a Houston pane exports to the agent inside it, and the agent CLIs' own session
+/// identity. A daemon or fixture that inherits these behaves differently under a pane.
+const PANE_IDENTITY: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "HOUSTON_SESSION",
+    "TR_SESSION",
+    "HOUSTON_WORKSPACE",
+    "HOUSTON_WORKTREE_SLUG",
+    "HOUSTON_MCP_URL",
+    "HOUSTON_MCP_TOKEN",
+    "HOUSTON_MCP_CONFIG",
+    "HOUSTON_TOOL_BOUNDARY_CONTEXT",
+    "HOUSTON_COMMITTED_SCOPE",
+    "HOUSTON_EXEC_GATE",
+    "HOUSTON_EXEC_NONCE",
+    "HOUSTON_CODEX_LAUNCHER",
+    "HOUSTON_CODEX_CLI",
+    "HOUSTON_CODEX_HOOK_DROP_DIR",
+    "HOUSTON_USER_ZDOTDIR",
+    "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
+    "HOUSTON_TASK",
+    "HOUSTON_ROUTINE_RUN",
+    "HOUSTON_NIGHT_RUN_DIR",
+    "TMUX",
+    "TMUX_PANE",
+    "STY",
+    "ZELLIJ",
+    "ZELLIJ_SESSION_NAME",
+    "ZELLIJ_PANE_ID",
+    "ELECTRON_RUN_AS_NODE",
+];
+
+/// Prefixes of the same family: `CLAUDE_CODE_*`, and ZCode's per-channel MCP endpoint.
+const PANE_IDENTITY_PREFIXES: &[&str] = &["CLAUDE_CODE_", "ZCODE_HOUSTON_MCP_URL"];
+
+/// Makes the test process's environment the same wherever it runs, once: no pane identity,
+/// untranslated tool output, no user or system git config. It edits the process, not only
+/// the `HostEnv`: a spawn applies their difference, which would strip what the daemon sets.
+fn isolate_process_env() {
+    static DONE: std::sync::Once = std::sync::Once::new();
+    DONE.call_once(|| {
+        let inherited: Vec<String> = std::env::vars_os()
+            .filter_map(|(name, _)| name.into_string().ok())
+            .filter(|name| {
+                PANE_IDENTITY.contains(&name.as_str())
+                    || PANE_IDENTITY_PREFIXES
+                        .iter()
+                        .any(|prefix| name.starts_with(prefix))
+            })
+            .collect();
+        for name in inherited {
+            std::env::remove_var(name);
+        }
+        // git and the shell tools parse each other's English output.
+        std::env::set_var("LC_ALL", "C.UTF-8");
+        std::env::remove_var("LANGUAGE");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        std::env::set_var("GIT_CONFIG_GLOBAL", null_device());
+    });
+}
+
+fn null_device() -> &'static str {
+    if cfg!(windows) {
+        "NUL"
+    } else {
+        "/dev/null"
+    }
+}
+
 /// The environment an in-process daemon starts from: the test process's, minus the
-/// variables that change daemon behaviour, so a runner that exports one cannot leak in,
-/// and with the user's real config homes swapped for a throwaway one (see `isolate_config`).
+/// variables that change daemon behaviour and the pane identity, with the user's real
+/// config homes swapped for a throwaway one (see `isolate_config`).
 pub fn base_env() -> houston_core::host_env::HostEnv {
+    isolate_process_env();
     let env = [
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
@@ -93,8 +173,10 @@ pub fn base_env() -> houston_core::host_env::HostEnv {
 }
 
 /// The test process's environment as it is, for fixtures that pass daemon-behaviour
-/// variables to a re-executed child, with the same config-home isolation as `base_env`.
+/// variables to a re-executed child, with the same pane-identity scrub and config-home
+/// isolation as `base_env`.
 pub fn capture_env() -> houston_core::host_env::HostEnv {
+    isolate_process_env();
     isolate_config(houston_core::host_env::HostEnv::capture())
 }
 
@@ -120,11 +202,16 @@ fn throwaway_home() -> &'static std::path::Path {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
         }
-        tempfile::Builder::new()
+        let home = tempfile::Builder::new()
             .prefix("home-")
             .tempdir_in(&root)
             .unwrap_or_else(|e| panic!("creating a throwaway home in {}: {e}", root.display()))
-            .keep()
+            .keep();
+        // A home with no zsh startup file makes the user's zsh open its first-run wizard,
+        // which a shell pane would then sit in.
+        std::fs::write(home.join(".zshrc"), "")
+            .unwrap_or_else(|e| panic!("writing {}: {e}", home.join(".zshrc").display()));
+        home
     })
 }
 

@@ -258,11 +258,11 @@ Ignored
         with self.assertRaisesRegex(helper.Refused, "Expected API array"):
             helper.baseline(self.client, SOURCE)
 
-    def test_main_ci_exact_sha_and_all_seven_jobs(self):
+    def test_main_ci_exact_sha_and_all_eight_jobs(self):
         self.fake.ci()
         result = helper.preflight(self.client, SOURCE)
         self.assertEqual(result["source_sha"], SOURCE)
-        self.assertEqual(len(result["required_jobs"]), 7)
+        self.assertEqual(len(result["required_jobs"]), 8)
 
     def test_wrong_sha_branch_or_event_ci_refuses(self):
         for fixture in (run(sha=OLD), run(branch="feature"), run(event="pull_request")):
