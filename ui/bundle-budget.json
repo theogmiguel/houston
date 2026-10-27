@@ -237,9 +237,14 @@
     "Bitbucket account and review-request features add always-on boot wiring (rail counts,",
     "client verbs, message routes) of about 1.4 KB. Their heavy parts stay behind `lazy()`",
     "or `preloadable()`: Settings carries the Bitbucket form, the Harness surface the defect",
-    "drawer, and the Pull requests page the review-request list."
+    "drawer, and the Pull requests page the review-request list.",
+
+    "Re-cut against 960,494 bytes (one boot chunk) with 256 bytes of headroom: every mounted",
+    "pane's PR watch hook, the rail's merge queue count and the morning notice share one",
+    "bounded request queue per connection (`houston/sharedListRequests.ts`), so a page load",
+    "stays inside the daemon's control handler limit; the queue runs at first paint."
   ],
-  "maxBootBytes": 960000,
+  "maxBootBytes": 960750,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

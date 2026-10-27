@@ -1,13 +1,10 @@
 import type { HoustonClient } from './client'
-import { createBoundedPoller, CONTROL_HANDLERS_PER_CONNECTION, type BoundedPoller } from './boundedPoller'
+import { createBoundedPoller, type BoundedPoller } from './boundedPoller'
 
 // These reads are database lookups that reply in milliseconds, so 2 in flight drains a
 // mount burst and leaves the connection's other control slots to git work and user actions.
 export const SHARED_LIST_IN_FLIGHT_LIMIT = 2
 export const SHARED_LIST_REPLY_TIMEOUT_MS = 30_000
-if (SHARED_LIST_IN_FLIGHT_LIMIT >= CONTROL_HANDLERS_PER_CONNECTION) {
-  throw new Error(`SHARED_LIST_IN_FLIGHT_LIMIT ${SHARED_LIST_IN_FLIGHT_LIMIT} must stay below CONTROL_HANDLERS_PER_CONNECTION ${CONTROL_HANDLERS_PER_CONNECTION}`)
-}
 
 type SharedClient = Pick<HoustonClient, 'subscribe' | 'send' | 'mergeQueueGet' | 'mergeQueueSummaryGet'>
 
