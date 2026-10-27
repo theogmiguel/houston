@@ -15,10 +15,14 @@ pub type RawWs = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 // A whole scrollback ring, replayed as one base64 message of about 5.3 MiB: far past a 4 KiB
 // client window plus the daemon's socket buffers, so the attach's own send blocks.
 pub const REPLAY_BYTES: u64 = 4 * 1024 * 1024;
-// Output then waiting on the connection's queue. A writer that kept up drains it on every
-// wake, so this much waiting means its send is blocked. It stays small because on Windows a
-// session watched by a client that does not read produces output at only KiB/s.
+// Output then waiting on the connection's queue before the writer counts as blocked. It stays
+// small because on Windows a session watched by a client that does not read produces output at
+// only KiB/s.
 pub const TAP_BACKLOG: usize = 32 * 1024;
+// A backlog alone is not a blocked send: on a loaded host a writer with megabytes of socket
+// buffer left falls behind the flood yet drains on every wake, at most 19 ms apart under 24 CPU
+// hogs on 12 cores (80 waits measured). A blocked writer never drains again.
+pub const WRITER_STALL: Duration = Duration::from_millis(250);
 pub const INPUT_BOUND: Duration = Duration::from_secs(10);
 
 pub struct Sessions(pub Arc<Daemon>, pub Vec<u32>);
@@ -199,25 +203,38 @@ pub async fn fill_scrollback(daemon: &Daemon, session: u32) {
 }
 
 /// Waits until the connection whose only watcher is the test's unread socket queues
-/// `TAP_BACKLOG` bytes for `session`. After the attach reply is drained this means the
-/// writer's send is blocked; while an attach is held frames queue without a blocked send.
+/// `TAP_BACKLOG` bytes for `session` and drains none of them for `WRITER_STALL`, which means
+/// its writer's send is blocked (or, while an attach is held, that it sends nothing yet).
 pub async fn wait_for_backlog(daemon: &Daemon, session: u32) {
     let attached = Instant::now();
+    let mut oldest: Option<(u64, Instant)> = None;
     loop {
-        let queued = daemon
+        let tap = daemon
             .frame_taps()
             .taps_for_test(session)
             .iter()
             .filter_map(std::sync::Weak::upgrade)
-            .map(|tap| tap.queued_bytes_for_test())
-            .max();
-        if queued.is_some_and(|bytes| bytes >= TAP_BACKLOG) {
-            return;
+            .max_by_key(|tap| tap.queued_bytes_for_test());
+        let queued = tap.as_ref().map(|tap| tap.queued_bytes_for_test());
+        let head = tap
+            .as_ref()
+            .and_then(|tap| tap.oldest_queued_offset_for_test());
+        match (head, oldest) {
+            (Some(head), Some((seen, since))) if head == seen => {
+                if queued.is_some_and(|bytes| bytes >= TAP_BACKLOG)
+                    && since.elapsed() >= WRITER_STALL
+                {
+                    return;
+                }
+            }
+            (Some(head), _) => oldest = Some((head, Instant::now())),
+            (None, _) => oldest = None,
         }
         assert!(
             attached.elapsed() < Duration::from_secs(120),
-            "session {session}: connection queue holds {queued:?} bytes 120 s after attach; \
-             expected {TAP_BACKLOG} once its writer blocks"
+            "session {session}: connection queue holds {queued:?} bytes with oldest offset \
+             {head:?} 120 s after attach; expected {TAP_BACKLOG} bytes and no drain for \
+             {WRITER_STALL:?} once its writer blocks"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
