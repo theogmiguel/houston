@@ -2808,6 +2808,9 @@ async fn sleep_accepts_a_pane_that_reported_a_subfolder_of_its_bound_folder() {
         },
     )
     .await;
+    // The tool result marked the pane Working, and a turn end in the subfolder
+    // would rebind the conversation there; the agent stops without one.
+    daemon.set_session_status_for_test(pane.id, proto::AgentStatus::Idle);
     let bound = Db::open(&env.db_path())
         .unwrap()
         .session_resume_binding(pane.id)
@@ -2822,7 +2825,12 @@ async fn sleep_accepts_a_pane_that_reported_a_subfolder_of_its_bound_folder() {
         .find(|info| info.id == pane.id)
         .unwrap();
     assert_eq!(asleep.state, proto::SessionState::Sleeping);
-    assert_eq!(asleep.cwd, subfolder.display().to_string());
+    let kept = Db::open(&env.db_path())
+        .unwrap()
+        .session_resume_binding(pane.id)
+        .unwrap()
+        .expect("Sleep keeps the conversation bound");
+    assert_eq!(Path::new(&kept.1), ws);
 }
 
 #[tokio::test]

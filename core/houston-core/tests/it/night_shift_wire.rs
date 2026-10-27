@@ -621,7 +621,13 @@ async fn delete_removes_the_ledger_when_no_run_is_in_flight() {
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
     let (status, body) = r
-        .night(o, "plan", json!({ "title": "Keep the ledger" }))
+        .night(
+            o,
+            "plan",
+            json!({ "title": "Keep the ledger", "claims": [
+                { "claim": "a deleted routine leaves no ledger rows", "proof": "night_shift_wire::delete_removes_the_ledger" }
+            ] }),
+        )
         .await;
     assert_eq!(status, 200, "{body}");
     r.daemon.night_shift_stop_now(run.run_id).unwrap();
@@ -893,7 +899,10 @@ async fn a_settled_run_records_its_crew_working_directories_tokens_only() {
     std::fs::create_dir_all(&other).unwrap();
     let root = shim_dir().join("home/.claude/projects/night-token-wire");
     std::fs::create_dir_all(&root).unwrap();
-    let stamp = houston_core::harness::window::format_ms(houston_core::daemon::now_unix_ms());
+    // Timestamps carry whole seconds, so the records sit on the first second
+    // boundary after the run started and the run ends past it.
+    let boundary = (run.started_at_ms / 1000 + 1) * 1000;
+    let stamp = houston_core::harness::window::format_ms(boundary);
     let record = |id: &str, cwd: &Path, output: u64| {
         json!({
             "type": "assistant", "timestamp": stamp, "sessionId": id,
@@ -913,7 +922,9 @@ async fn a_settled_run_records_its_crew_working_directories_tokens_only() {
         ),
     )
     .unwrap();
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    while houston_core::daemon::now_unix_ms() <= boundary {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     r.daemon.night_shift_stop_now(run.run_id).unwrap();
     wait_until("the run's token totals", || {
@@ -944,23 +955,24 @@ async fn a_settled_run_records_its_crew_working_directories_tokens_only() {
 }
 
 /// Direction steers the run from inside the brief; the brief itself never
-/// carries a `/goal`, which is sent separately for Claude.
+/// carries a `/goal`, which is sent separately for Claude. Claude takes the
+/// brief as its launch argument, so the stand-in records its argv.
 #[tokio::test]
 async fn direction_is_not_typed_as_a_goal() {
     let r = rig().await;
-    let typed = r.ws.join("orchestrator-input");
+    let typed = r.ws.join("orchestrator-argv");
     r.daemon.set_routine_pane_cmd_for_test(vec![
         "sh".into(),
         "-c".into(),
         format!(
-            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            "printf '%s\\n' \"$0\" \"$@\" > '{}'; exec cat",
             typed.display()
         ),
     ]);
     let routine = r.ready(|s| s.direction = "CI stays\ngreen".into());
     r.run_now(routine.id, 120);
     let brief_start = "Houston Night shift: you are the orchestrator";
-    wait_until("the brief to be typed", || {
+    wait_until("the brief to reach the orchestrator", || {
         std::fs::read_to_string(&typed).is_ok_and(|t| t.contains(brief_start))
     })
     .await;
@@ -1074,6 +1086,13 @@ async fn a_refused_goal_is_retried_by_the_next_hook() {
         session,
         agent: Some("claude".into()),
         event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "Stop".into(),
         ..Default::default()
     })
     .await;
@@ -1868,7 +1887,12 @@ async fn blocking_preflight_refuses_run() {
 #[tokio::test]
 async fn a_signed_out_provider_blocks_run_now() {
     let r = rig().await;
-    let routine = r.ready(|_| {});
+    let routine = r.ready(|s| {
+        s.workers = vec![proto::NightAgent {
+            provider: proto::AgentKind::Codex,
+            model: None,
+        }];
+    });
     let mut facts = healthy_facts();
     for provider in &mut facts.providers {
         provider.sign_in = SignIn::In(Some("dev@example.com".into()));
@@ -2422,8 +2446,14 @@ async fn start_probe_covers_every_worker_provider() {
         ];
     });
     let run = r.run_now(routine.id, 120);
+    // The probes run one after another, so the set is empty between two of
+    // them; the last provider's item marks the end.
     wait_until("every start probe", || {
         !r.daemon.night_shift_probing(run.run_id)
+            && r.run(run.run_id)
+                .preflight
+                .iter()
+                .any(|i| i.id == "quota:zcode")
     })
     .await;
     assert_eq!(

@@ -1173,7 +1173,8 @@ without which the hold would be a one-way door the operator cannot see.
 A pane's tool list is its role. A leaf child —
 spawned by another pane, unable to spawn, with no managed children of its own —
 keeps `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_wait` and `workspace_info`:
-its handback, intermediate dialogue and identity. The `task_*` tools are withheld from every child, not only a leaf:
+its handback, intermediate dialogue and identity. `night_verdict` is also kept, because a
+Night shift run's verifier is a leaf child; its provider lists it only to that run's panes. The `task_*` tools are withheld from every child, not only a leaf:
 a child's scope is the brief, so its provider checks parentage before access
 and its direct calls are refused the same way. An orchestrator — one that may spawn,
 has managed children or owes an answer to an inherited question — sees
