@@ -326,6 +326,182 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     });
 }
 
+fn ended_claude_session(id: u32, project: &std::path::Path, title: &str) -> proto::SessionInfo {
+    proto::SessionInfo {
+        note: None,
+        title_source: proto::TitleSource::User,
+        checkout: None,
+        activity: None,
+        id,
+        agent: proto::AgentKind::Claude,
+        project_dir: project.display().to_string(),
+        cwd: project.display().to_string(),
+        state: proto::SessionState::Running,
+        title: title.into(),
+        codename: title.into(),
+        detected_agent: None,
+        running_agent: None,
+        hidden: false,
+        ssh_host: None,
+        restore_deferred: None,
+        status: None,
+        status_since_ms: None,
+        context: None,
+        swarm_agent: None,
+        spawned_by: None,
+        acp: None,
+        live_children: 0,
+        profile_label: None,
+        children_waiting: 0,
+        inbox_unread: 0,
+        delegation: None,
+        tags: vec![],
+        session_origin: Some(id),
+        checkout_root: None,
+        worktree: None,
+        resumable: false,
+        resume_notice: None,
+        compactions: None,
+        task: None,
+        sleep_notice: None,
+        latest_prompt: Some(format!("{title} prompt")),
+        last_agent_message: Some(format!("{title} reply")),
+        slept_at_ms: None,
+        limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
+    }
+}
+
+fn resume_conversation(channel: &std::path::Path, session: u32) -> Option<String> {
+    rusqlite::Connection::open_with_flags(
+        channel.join("houston.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT resume_session_id FROM sessions WHERE id=?1",
+        [session],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+fn assert_ended_panes(sessions: &[proto::SessionInfo], when: &str) {
+    for (id, title, state) in [
+        (1, "Exited review", proto::SessionState::Exited),
+        (2, "Sleeping refactor", proto::SessionState::Sleeping),
+    ] {
+        let panes: Vec<_> = sessions.iter().filter(|s| s.id == id).collect();
+        let [pane] = panes.as_slice() else {
+            panic!("{when}: expected session {id} exactly once, got {panes:?}");
+        };
+        assert_eq!(pane.title, title, "{when}: session {id} title");
+        assert_eq!(pane.state, state, "{when}: session {id} state");
+        assert!(pane.resumable, "{when}: session {id} must stay resumable");
+    }
+    let asleep = sessions.iter().find(|s| s.id == 2).unwrap();
+    assert_eq!(asleep.slept_at_ms, Some(1234), "{when}: Sleep time");
+}
+
+async fn hello_sessions(port: u16, token: &str) -> Vec<proto::SessionInfo> {
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let mut ws = connect_when_ready(addr, token).await;
+    match common::next_control(&mut ws).await {
+        proto::ServerMsg::HelloOk { sessions, .. } => sessions,
+        other => panic!("expected HelloOk, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn handoff_keeps_exited_and_sleeping_panes() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    std::fs::create_dir_all(&channel_dir).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    {
+        let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+        db.insert_session(&ended_claude_session(1, project.path(), "Exited review"))
+            .unwrap();
+        db.update_session_state(1, proto::SessionState::Exited, Some(0))
+            .unwrap();
+        db.insert_session(&ended_claude_session(
+            2,
+            project.path(),
+            "Sleeping refactor",
+        ))
+        .unwrap();
+        db.mark_session_sleeping(2, 1234).unwrap();
+        db.set_session_resume_handle(1, Some(("conversation-exited", None)))
+            .unwrap();
+        db.set_session_resume_handle(2, Some(("conversation-sleeping", None)))
+            .unwrap();
+    }
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let mut guard = spawn_supervised_daemon(home.path(), &channel_dir);
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, live, ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    drop(ws);
+    assert_ended_panes(
+        &hello_sessions(before.port, &before.token).await,
+        "before the handoff",
+    );
+
+    let result = daemon_handoff(before.port, &before.token).await;
+    assert!(result.accepted, "handoff must be accepted: {result:?}");
+    assert_eq!(
+        result.sessions_transferred,
+        Some(1),
+        "only the live session transfers"
+    );
+    let generation = result
+        .generation
+        .expect("accepted handoff names a generation");
+    let after = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+    });
+    let sessions = hello_sessions(after.port, &after.token).await;
+    assert_ended_panes(&sessions, "after the handoff");
+    let transferred: Vec<_> = sessions.iter().filter(|s| s.id == live).collect();
+    assert!(
+        matches!(transferred.as_slice(), [pane] if pane.state == proto::SessionState::Running),
+        "the live session must transfer once and keep running: {transferred:?}"
+    );
+    assert_eq!(
+        resume_conversation(&channel_dir, 1).as_deref(),
+        Some("conversation-exited")
+    );
+    assert_eq!(
+        resume_conversation(&channel_dir, 2).as_deref(),
+        Some("conversation-sleeping")
+    );
+
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+    let mut cold = spawn_supervised_daemon(home.path(), &channel_dir);
+    let restarted = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != after.pid).then_some(f)
+    });
+    assert_ended_panes(
+        &hello_sessions(restarted.port, &restarted.token).await,
+        "after a later cold start",
+    );
+    manage_shutdown(restarted.port, &restarted.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        cold.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
 #[tokio::test]
 async fn handoff_is_refused_without_a_supervisor() {
     let home = tempfile::tempdir().unwrap();
