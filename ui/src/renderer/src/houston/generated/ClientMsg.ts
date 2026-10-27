@@ -24,12 +24,14 @@ import type { PrSort } from "./PrSort";
 import type { PrStackHead } from "./PrStackHead";
 import type { PrUpdateMethod } from "./PrUpdateMethod";
 import type { ProfileChoice } from "./ProfileChoice";
+import type { QuestionAnswer } from "./QuestionAnswer";
 import type { RemoteGrid } from "./RemoteGrid";
 import type { RemoteNotifyDetail } from "./RemoteNotifyDetail";
 import type { RemoteTier } from "./RemoteTier";
 import type { ReviewRequestMode } from "./ReviewRequestMode";
 import type { RoleRoute } from "./RoleRoute";
 import type { SessionPolicy } from "./SessionPolicy";
+import type { SessionView } from "./SessionView";
 import type { SlackChannelMap } from "./SlackChannelMap";
 import type { SlackLanguage } from "./SlackLanguage";
 import type { SshAuth } from "./SshAuth";
@@ -44,13 +46,23 @@ import type { TaskTrackerConflictResolution } from "./TaskTrackerConflictResolut
 import type { TaskTrackerProvider } from "./TaskTrackerProvider";
 import type { TaskTrackerWorkspaceSettings } from "./TaskTrackerWorkspaceSettings";
 import type { TasksAccess } from "./TasksAccess";
+import type { ThreadExcerpt } from "./ThreadExcerpt";
+import type { ThreadPermissionMode } from "./ThreadPermissionMode";
 import type { TransferPassphrase } from "./TransferPassphrase";
 import type { TransferProfileChoice } from "./TransferProfileChoice";
 import type { UpdatePolicy } from "./UpdatePolicy";
 import type { VoiceSettings } from "./VoiceSettings";
 import type { WorkspaceAction } from "./WorkspaceAction";
 
-export type ClientMsg = { "type": "hello", token: string, protocol: number, } | { "type": "session_create", request?: number | null, agent: AgentKind, project_dir: string, cmd?: Array<string> | null, cols?: number | null, rows?: number | null, cwd_from?: number | null, shell_integration?: boolean | null, auto_approve?: boolean | null, acp?: string | null, profile?: ProfileChoice | null, prompt?: string | null, model?: string | null, effort?: ChatEffort | null, } | { "type": "session_kill", session: number, confirm_children?: boolean | null, } | { "type": "orchestration_settings_get" } | { "type": "orchestration_set", enabled: boolean, } | { "type": "delegation_results_list", parent: number, before_message_id?: number | null, } | { "type": "delegation_result_get", parent: number, message_id: number, } | { "type": "instruction_queue_list", session: number, } | { "type": "instruction_get", session: number, instruction_id: string, } | { "type": "instruction_cancel", session: number, instruction_id: string, } | { "type": "instruction_resume", session: number, instruction_id: string, } | { "type": "inbox_list", workspace: string, } | { "type": "inbox_ack", id: bigint, } | { "type": "inbox_resolve", id: bigint, } | { "type": "child_input_resolve", child: number, id: string, } | { "type": "inbox_deliver_now", session: number, } | { "type": "session_resize", session: number, cols: number, rows: number, } | { "type": "session_list" } | { "type": "pr_watch_list" } | { "type": "session_attach", session: number, replay_bytes?: number | null, snapshot?: boolean | null,
+export type ClientMsg = { "type": "hello", token: string, protocol: number, } | { "type": "session_create", request?: number | null, agent: AgentKind, project_dir: string, cmd?: Array<string> | null, cols?: number | null, rows?: number | null, cwd_from?: number | null, shell_integration?: boolean | null, auto_approve?: boolean | null, acp?: string | null, profile?: ProfileChoice | null, prompt?: string | null, model?: string | null, effort?: ChatEffort | null,
+/**
+ * Absent is `terminal`; `thread` is refused for every agent but Claude.
+ */
+view?: SessionView | null, } | { "type": "session_kill", session: number, confirm_children?: boolean | null, } | { "type": "orchestration_settings_get" } | { "type": "orchestration_set", enabled: boolean, } | { "type": "delegation_results_list", parent: number, before_message_id?: number | null, } | { "type": "delegation_result_get", parent: number, message_id: number, } | { "type": "instruction_queue_list", session: number, } | { "type": "instruction_get", session: number, instruction_id: string, } | { "type": "instruction_cancel", session: number, instruction_id: string, } | { "type": "instruction_resume", session: number, instruction_id: string, } | { "type": "inbox_list", workspace: string, } | { "type": "inbox_ack", id: bigint, } | { "type": "inbox_resolve", id: bigint, } | { "type": "child_input_resolve", child: number, id: string, } | { "type": "inbox_deliver_now", session: number, } | { "type": "session_resize", session: number, cols: number, rows: number, } | { "type": "thread_send", session: number, text: string, steer: boolean,
+/**
+ * At most `THREAD_EXCERPTS_MAX`; `text` may be blank when there is one.
+ */
+excerpts: Array<ThreadExcerpt>, } | { "type": "thread_stop", session: number, } | { "type": "thread_approve", session: number, request_id: string, allow: boolean, message?: string | null, } | { "type": "thread_answer", session: number, request_id: string, answers?: Array<QuestionAnswer> | null, } | { "type": "thread_set_permission_mode", session: number, mode: ThreadPermissionMode, } | { "type": "session_set_view", session: number, view: SessionView, } | { "type": "default_view_get", } | { "type": "default_view_set", view: SessionView, } | { "type": "thread_history", session: number, before_seq?: number | null, limit: number, } | { "type": "thread_queue_list", session: number, } | { "type": "thread_queue_edit", session: number, id: string, text: string, } | { "type": "thread_queue_remove", session: number, id: string, } | { "type": "thread_queue_send", session: number, id: string, } | { "type": "thread_steer", session: number, id: string, } | { "type": "thread_commands_list", session: number, } | { "type": "session_list" } | { "type": "pr_watch_list" } | { "type": "session_attach", session: number, replay_bytes?: number | null, snapshot?: boolean | null,
 /**
  * The output offset the client already holds. With a matching `generation`
  * and an offset still inside the ring, the reply carries only the bytes

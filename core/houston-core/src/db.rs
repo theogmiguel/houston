@@ -40,6 +40,9 @@ pub use transfers::{
     TransferCheckoutRecord, TransferDirection, TransferRecord, TransferSessionRecord,
 };
 mod tasks;
+mod threads;
+pub use threads::{THREAD_QUEUE_INTERRUPTED_REASON, THREAD_QUEUE_RESTART_REASON};
+mod view_switch;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
@@ -2091,6 +2094,8 @@ impl Db {
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
+        threads::migrate(&conn)?;
+        view_switch::migrate(&conn)?;
         intake::migrate(&conn)?;
         migrate_routine_schema(&conn)?;
         conn.execute(
@@ -2496,7 +2501,8 @@ impl Db {
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
-                    latest_prompt, last_agent_message, slept_at_ms, state, context_json, transferred_at_ms, transfer_fork
+                    latest_prompt, last_agent_message, slept_at_ms, state, context_json, view,
+                    transferred_at_ms, transfer_fork
              FROM sessions
              WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
@@ -2528,23 +2534,24 @@ impl Db {
                     r.get::<_, Option<u64>>(17)?,
                     r.get::<_, String>(18)?,
                     r.get::<_, Option<String>>(19)?,
-                    r.get::<_, Option<u64>>(20)?,
-                    r.get::<_, bool>(21)?,
+                    r.get::<_, Option<String>>(20)?,
+                    r.get::<_, Option<u64>>(21)?,
+                    r.get::<_, bool>(22)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         drop(stmt);
         let mut used: std::collections::HashSet<String> = rows
             .iter()
-            .filter_map(
-                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
-                    if codename.is_empty() {
-                        (!title.is_empty()).then(|| title.clone())
-                    } else {
-                        Some(codename.clone())
-                    }
-                },
-            )
+            .map(|row| {
+                let (title, codename) = (&row.4, &row.5);
+                if codename.is_empty() {
+                    title.clone()
+                } else {
+                    codename.clone()
+                }
+            })
+            .filter(|name| !name.is_empty())
             .collect();
         let mut out = Vec::with_capacity(rows.len());
         for (
@@ -2568,6 +2575,7 @@ impl Db {
             slept_at_ms,
             persisted_state,
             context_json,
+            view,
             transferred_at_ms,
             transfer_fork,
         ) in rows
@@ -2640,6 +2648,8 @@ impl Db {
                     last_agent_message,
                     slept_at_ms,
                     limit: None,
+                    view: threads::parse_view(view),
+                    permission_mode: None,
                     transferred_at_ms,
                     transfer_fork,
                 }),
@@ -2717,8 +2727,8 @@ impl Db {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
-                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, unixepoch())",
+                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, view, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, unixepoch())",
             rusqlite::params![
                 info.id,
                 serde_json::to_string(&info.agent)?.trim_matches('"'),
@@ -2739,6 +2749,7 @@ impl Db {
                 info.slept_at_ms,
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
                 info.hidden,
+                info.view.as_str(),
             ],
         )?;
         // Hidden rows exist only for ownership receipts; their title candidates stay in memory.
@@ -2814,6 +2825,7 @@ impl Db {
                 [old, info.id],
             )?;
             Self::delegation_rebind_on(&tx, old, info.id, info.spawned_by, now)?;
+            threads::move_history(&tx, old, info.id)?;
             let retired = tx.execute(
                 "UPDATE sessions SET state = 'closed', resume_session_id = NULL,
                         resume_transcript_path = NULL, resume_agent = NULL, resume_cwd = NULL
@@ -2844,6 +2856,15 @@ impl Db {
             ],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn set_session_launch_selections(
+        &self,
+        id: u32,
+        launch: &crate::launch::SessionLaunchSelections,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        Self::set_session_launch_selections_on(&conn, id, Some(launch))
     }
 
     pub(crate) fn session_launch_selections(
@@ -3198,7 +3219,7 @@ impl Db {
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3, resume_from_stream = 0,
                 resume_agent = CASE WHEN ?2 IS NULL THEN NULL WHEN agent = 'shell' THEN detected_agent ELSE agent END,
                 resume_cwd = CASE WHEN ?2 IS NULL THEN NULL ELSE cwd END WHERE id = ?1",
             rusqlite::params![id, handle.map(|h| h.0), handle.and_then(|h| h.1)],
@@ -7190,6 +7211,8 @@ pub(crate) mod tests {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
+            permission_mode: None,
             transferred_at_ms: None,
             transfer_fork: false,
         }

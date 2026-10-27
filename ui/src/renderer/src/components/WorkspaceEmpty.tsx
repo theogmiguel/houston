@@ -10,7 +10,7 @@ import type { KeymapOverrides } from '../houston/client'
 
 export interface WorkspaceEmptyProps {
   installedAgents: AgentKind[]
-  onSpawnAgent: (agent: AgentKind) => void
+  onSpawnAgent: (agent: AgentKind, profile?: undefined, view?: 'thread') => void
   onTerminal: () => void
   onBrowser: () => void
   actions?: WorkspaceAction[]
@@ -79,6 +79,7 @@ export function WorkspaceEmpty({
         {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'zcode'].includes(agent)).map((agent) => (
           <div key={agent}><PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} /></div>
         ))}
+        {installedAgents.includes('claude') && <div><PaneMenuAgentRow agent="claude" label="Claude thread" data-testid="workspace-empty-claude-thread" onClick={() => onSpawnAgent('claude', undefined, 'thread')} /></div>}
       </Inline>
       <WorkspaceActions actions={actions} keymapOverrides={keymapOverrides} onRun={onRunAction} onSave={onSaveAction} onDelete={onDeleteAction} />
       </Card>

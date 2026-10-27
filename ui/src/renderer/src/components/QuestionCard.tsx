@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { Tooltip } from './ui/Tooltip'
 import {
   FreeTextOption,
@@ -13,12 +13,15 @@ import {
   PromptText,
   SkipButton
 } from './ui/QuestionOption'
+import { useQuestionKeys } from './questionKeys'
 
 export type QuestionCardBody = 'free-text' | 'multi-select' | 'single-select'
 
 export interface QuestionCardOption {
   id: string
   label: string
+  /** Shown as the option's tooltip. */
+  description?: string
 }
 
 export interface QuestionCardError {
@@ -30,6 +33,8 @@ export interface QuestionCardProps {
   questionIndex: number
   questionCount: number
   question: string
+  /** A short name for the question, shown beside the pager. */
+  header?: string
   body: QuestionCardBody
   options?: QuestionCardOption[]
   selectedIds?: string[]
@@ -44,13 +49,66 @@ export interface QuestionCardProps {
   error?: QuestionCardError
   disabled?: boolean
   disabledReason?: string
+  /** A row under the body, for example Back, Next and Submit. */
+  actions?: ReactNode
+  /** Whether this card takes a number key now; several cards can be mounted at once. */
+  ownsShortcuts?: () => boolean
   className?: string
+}
+
+interface ChoiceListProps {
+  options: QuestionCardOption[]
+  multi: boolean
+  selectedIds: string[]
+  selectedId?: string
+  disabled: boolean
+  disabledReason?: string
+  onToggleOption?: (id: string) => void
+  onSelectOption?: (id: string) => void
+  onTypeInstead?: () => void
+}
+
+function ChoiceList({
+  options,
+  multi,
+  selectedIds,
+  selectedId,
+  disabled,
+  disabledReason,
+  onToggleOption,
+  onSelectOption,
+  onTypeInstead
+}: ChoiceListProps): React.JSX.Element {
+  return (
+    <OptionList>
+      {options.map((opt, i) => (
+        <Tooltip
+          key={opt.id}
+          label={disabled ? disabledReason : opt.description || undefined}
+          className="flex w-full"
+        >
+          <OptionButton
+            n={i + 1}
+            checked={multi ? selectedIds.includes(opt.id) : selectedId === opt.id}
+            multi={multi}
+            disabled={disabled}
+            label={opt.label}
+            onClick={() => (multi ? onToggleOption?.(opt.id) : onSelectOption?.(opt.id))}
+          />
+        </Tooltip>
+      ))}
+      <Tooltip label={disabled ? disabledReason : undefined} className="flex w-full">
+        <FreeTextOption n={options.length + 1} disabled={disabled} onClick={() => onTypeInstead?.()} />
+      </Tooltip>
+    </OptionList>
+  )
 }
 
 export function QuestionCard({
   questionIndex,
   questionCount,
   question,
+  header,
   body,
   options,
   selectedIds = [],
@@ -65,31 +123,24 @@ export function QuestionCard({
   error,
   disabled = false,
   disabledReason,
+  actions,
+  ownsShortcuts,
   className = ''
 }: QuestionCardProps): React.JSX.Element {
   const isSelectBody = body === 'multi-select' || body === 'single-select'
   const isEmpty = isSelectBody && options === undefined
   const isEmptySet = isSelectBody && options !== undefined && options.length === 0
-  const escapeHatchNumber = (options?.length ?? 0) + 1
   const interactive = isSelectBody && !disabled && !loading && !error && !isEmpty && !isEmptySet
 
-  useEffect(() => {
-    if (!interactive) return
-    const handler = (e: KeyboardEvent): void => {
-      const n = Number(e.key)
-      if (!Number.isInteger(n) || n < 1) return
-      if (n === escapeHatchNumber) {
-        onTypeInstead?.()
-        return
-      }
-      const opt = options?.[n - 1]
-      if (!opt) return
-      if (body === 'multi-select') onToggleOption?.(opt.id)
-      else onSelectOption?.(opt.id)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [interactive, options, body, escapeHatchNumber, onToggleOption, onSelectOption, onTypeInstead])
+  useQuestionKeys({
+    active: interactive,
+    multi: body === 'multi-select',
+    options,
+    ownsShortcuts,
+    onToggleOption,
+    onSelectOption,
+    onTypeInstead
+  })
 
   return (
     <PromptCard
@@ -101,7 +152,7 @@ export function QuestionCard({
     >
       <PromptHeader>
         <QuestionPager>
-          ‹ {questionIndex} of {questionCount} ›
+          ‹ {questionIndex} of {questionCount} ›{header ? ` · ${header}` : ''}
         </QuestionPager>
         <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
           <SkipButton disabled={disabled} onClick={onSkip} />
@@ -132,33 +183,19 @@ export function QuestionCard({
       ) : options.length === 0 ? (
         <QuestionNote data-testid="question-card-empty-set">No options</QuestionNote>
       ) : (
-        <OptionList>
-          {options.map((opt, i) => {
-            const checked = body === 'multi-select' ? selectedIds.includes(opt.id) : selectedId === opt.id
-            return (
-              <Tooltip
-                key={opt.id}
-                label={disabled ? disabledReason : undefined}
-                className="flex w-full"
-              >
-                <OptionButton
-                  n={i + 1}
-                  checked={checked}
-                  multi={body === 'multi-select'}
-                  disabled={disabled}
-                  label={opt.label}
-                  onClick={() =>
-                    body === 'multi-select' ? onToggleOption?.(opt.id) : onSelectOption?.(opt.id)
-                  }
-                />
-              </Tooltip>
-            )
-          })}
-          <Tooltip label={disabled ? disabledReason : undefined} className="flex w-full">
-            <FreeTextOption n={escapeHatchNumber} disabled={disabled} onClick={() => onTypeInstead?.()} />
-          </Tooltip>
-        </OptionList>
+        <ChoiceList
+          options={options}
+          multi={body === 'multi-select'}
+          selectedIds={selectedIds}
+          selectedId={selectedId}
+          disabled={disabled}
+          disabledReason={disabledReason}
+          onToggleOption={onToggleOption}
+          onSelectOption={onSelectOption}
+          onTypeInstead={onTypeInstead}
+        />
       )}
+      {actions}
     </PromptCard>
   )
 }

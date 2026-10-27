@@ -450,6 +450,7 @@ async fn probe(supervised: bool) {
         prompt: None,
         model: None,
         effort: None,
+        view: None,
     };
     ws.send(Message::text(serde_json::to_string(&request).unwrap()))
         .await
@@ -569,6 +570,7 @@ async fn detached_probe(user_bus: bool) {
             prompt: None,
             model: None,
             effort: None,
+            view: None,
         })
         .unwrap(),
     ))
@@ -706,6 +708,7 @@ async fn contained_crash_restore_stops_escaped_descendants() {
             prompt: None,
             model: None,
             effort: None,
+            view: None,
         })
         .unwrap(),
     ))

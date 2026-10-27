@@ -1,0 +1,2793 @@
+//! A session in thread view: a provider CLI on pipes, decoded by a `ProviderAdapter`
+//! (Claude's: `claude_stream.rs`). Stop ends the process tree (process group / Job object);
+//! the next message resumes the conversation in a new process. See docs/internals/invariants.md.
+
+use anyhow::{anyhow, bail, Context, Result};
+use houston_protocol::{
+    AgentKind, ApprovalDecision, MessageDelivery, QuestionAnswer, QuestionOutcome, ThreadEvent,
+    ThreadEventKind, ThreadExcerpt, ThreadPermissionMode, ThreadQuestion, ThreadQueuedMessage,
+    TurnOutcome, APPROVAL_MESSAGE_MAX_BYTES, THREAD_APPROVAL_INPUT_MAX_BYTES,
+    THREAD_ASSISTANT_TEXT_MAX_BYTES, THREAD_USER_MESSAGE_MAX_BYTES,
+};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::time::{Duration, Instant};
+
+/// Houston's MCP tool that answers a thread's permission prompts (`--permission-prompt-tool`).
+pub const PERMISSION_TOOL: &str = "thread_permission";
+/// Held requests per session; each holds an MCP call open, so a loop cannot pile them up.
+pub const APPROVALS_PENDING_MAX: usize = 16;
+/// A tool name or tool use id above this is cut; real ones are a few dozen bytes.
+const APPROVAL_NAME_MAX_BYTES: usize = 256;
+
+/// 30 `thread_events` messages a second per session at most.
+pub const THREAD_EVENTS_MIN_INTERVAL: Duration = Duration::from_millis(34);
+/// One stdout line above this is skipped whole, with a notice: a single tool result can
+/// be megabytes, and at most 256 KiB of any event is kept anyway.
+const STDOUT_LINE_MAX_BYTES: usize = 4 * 1024 * 1024;
+const STDERR_TAIL_BYTES: usize = 4 * 1024;
+/// Time a stopped provider process gets to exit on SIGTERM before its group is killed.
+#[cfg(unix)]
+const STOP_GRACE: Duration = Duration::from_millis(1000);
+/// Bounds the system-wide thread snapshot walk that resumes a suspended process; it
+/// normally takes milliseconds.
+#[cfg(windows)]
+const RESUME_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// What the daemon does with a thread's events. A trait so the backend runs in unit tests
+/// without a daemon.
+pub trait ThreadHost: Send + Sync + 'static {
+    /// Called in `seq` order for every event except the live-only deltas.
+    fn store(&self, session: u32, event: &ThreadEvent);
+    fn broadcast(&self, session: u32, events: Vec<ThreadEvent>);
+    /// The stream's `result` event ended a turn; `deferred` is a Stop hook that arrived while
+    /// it was open, whose status change this turn end applies.
+    fn turn_ended(&self, session: u32, outcome: TurnOutcome, deferred: Option<DeferredHook>);
+    /// Stop or an exit ended the process, so no turn is running any more.
+    fn settle(&self, session: u32, outcome: TurnOutcome);
+    /// A new provider process leads the thread's process group.
+    fn process_started(&self, session: u32, pid: u32);
+    /// Stop, an exit or close ended the process tree, so nothing of it is left to reclaim.
+    fn process_gone(&self, session: u32);
+    /// Whether Houston now holds at least one unanswered permission request.
+    fn approvals_pending(&self, session: u32, pending: bool);
+    /// The stream reported a permission mode other than the recorded one.
+    fn permission_mode_reported(&self, session: u32, mode: ThreadPermissionMode);
+    /// The provider listed its commands; it does so at the start of every turn.
+    fn commands_reported(&self, session: u32, list: ThreadCommandList);
+    /// The commands last reported, kept across processes and restarts.
+    fn stored_commands(&self, _session: u32) -> Option<ThreadCommandList> {
+        None
+    }
+    fn title_reported(&self, session: u32, title: &str);
+    /// The stream named the conversation the provider now holds, for the first time in this
+    /// runtime or after it changed (`/clear`): the session's resume handle.
+    fn conversation_reported(&self, _session: u32, _conversation: &str) {}
+    /// The provider exited at once when asked to resume `conversation`: it no longer has it.
+    fn resume_refused(&self, _session: u32, _conversation: &str) {}
+    /// Appends `text` and its excerpts to the session's queue as `queued`. A host without a
+    /// queue refuses.
+    fn queue_push(&self, session: u32, _text: &str, _excerpts: &[ThreadExcerpt]) -> Result<()> {
+        bail!("thread session {session} keeps no message queue")
+    }
+    /// Takes `id` out of the queue, or with `None` the oldest `queued` message. It stays
+    /// stored, out of the queue's view, until `queue_sent` or `queue_restore`.
+    fn queue_take(&self, _session: u32, _id: Option<&str>) -> Result<Option<ThreadQueuedMessage>> {
+        Ok(None)
+    }
+    /// A taken message reached the provider.
+    fn queue_sent(&self, _session: u32, _id: &str) {}
+    /// Messages waiting as `queued`; held ones wait for the user and count for nothing here.
+    fn queue_waiting(&self, _session: u32) -> Result<usize> {
+        Ok(0)
+    }
+    /// Marks waiting message `id` `queued`, to go when the open turn completes.
+    fn queue_release(&self, session: u32, id: &str) -> Result<()> {
+        bail!("thread session {session} keeps no message queue; message {id:?} is not in it")
+    }
+    /// Puts a taken message back at the head as held, with `reason`.
+    fn queue_restore(&self, _session: u32, _message: &ThreadQueuedMessage, _reason: &str) {}
+    /// Holds every `queued` message with `reason`.
+    fn queue_hold(&self, _session: u32, _reason: &str) {}
+}
+
+/// A lifecycle Stop hook held until the open turn's `result`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeferredHook {
+    pub prompt_id: Option<String>,
+}
+
+/// `deliver_now` found the thread busy and wrote nothing; its caller retries later.
+#[derive(Debug)]
+pub struct ThreadBusy {
+    session: u32,
+    reason: String,
+}
+
+impl std::fmt::Display for ThreadBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "message refused for thread session {}: {}; it is delivered once the thread is idle",
+            self.session, self.reason
+        )
+    }
+}
+
+impl std::error::Error for ThreadBusy {}
+
+/// The adapter refused the message, for example a command that runs only in the provider's
+/// terminal interface. Retrying cannot help, so the drain holds it with the reason.
+#[derive(Debug)]
+struct CommandRefused {
+    session: u32,
+    reason: String,
+}
+
+impl std::fmt::Display for CommandRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "message refused for thread session {}: {}",
+            self.session, self.reason
+        )
+    }
+}
+
+impl std::error::Error for CommandRefused {}
+
+/// One user message on its way to the provider.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutgoingMessage {
+    pub text: String,
+    /// Terminal selections the adapter composes before `text` (`compose_message`).
+    pub excerpts: Vec<ThreadExcerpt>,
+    pub delivery: MessageDelivery,
+}
+
+/// A message line owed to the provider, written once every lock is released.
+struct PendingWrite {
+    process: Arc<ThreadProcess>,
+    line: String,
+    /// The queued message it came from, put back held if the write fails.
+    row: Option<ThreadQueuedMessage>,
+}
+
+/// What `thread_approve` or `thread_answer` tells a held permission request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApprovalAnswer {
+    Allow,
+    /// Allow with this input instead of Claude's own, such as a question's answers.
+    AllowWith(Value),
+    Deny(String),
+}
+
+struct PendingApproval {
+    answer: tokio::sync::oneshot::Sender<ApprovalAnswer>,
+    /// Set for `AskUserQuestion`: answers are checked against these, and its events are
+    /// `question_request` / `question_resolved`.
+    question: Option<HeldQuestion>,
+}
+
+struct HeldQuestion {
+    questions: Vec<ThreadQuestion>,
+    input: Value,
+}
+
+/// How a held question ends: recorded with `answers`, and told to Claude as `answer`.
+pub struct QuestionResolution {
+    pub outcome: QuestionOutcome,
+    pub answers: Vec<QuestionAnswer>,
+    pub answer: ApprovalAnswer,
+}
+
+/// The event that settles a held request without an answer from the user.
+fn unanswered(
+    request_id: String,
+    question: bool,
+    decision: ApprovalDecision,
+    reason: &str,
+) -> ThreadEventKind {
+    if question {
+        let outcome = match decision {
+            ApprovalDecision::Withdrawn => QuestionOutcome::Withdrawn,
+            _ => QuestionOutcome::Denied,
+        };
+        ThreadEventKind::QuestionResolved {
+            request_id,
+            outcome,
+            answers: Vec::new(),
+            reason: Some(reason.to_string()),
+        }
+    } else {
+        ThreadEventKind::ApprovalResolved {
+            request_id,
+            decision,
+            reason: Some(reason.to_string()),
+        }
+    }
+}
+
+/// The provider-specific half of a structured session.
+pub trait ProviderAdapter: Send + Sync + 'static {
+    fn provider(&self) -> AgentKind;
+    /// Names the provider in notices and refusals, such as "Claude".
+    fn display_name(&self) -> &'static str;
+    /// The process for `conversation`, with `mode`'s permission arguments.
+    fn command(
+        &self,
+        conversation: Option<&Conversation>,
+        mode: ThreadPermissionMode,
+    ) -> Result<ProcessSpec>;
+    /// One codec per process: decoders keep per-process state (block indices, request ids).
+    fn open(&self) -> Box<dyn ProviderStream>;
+    /// Why this message must not reach the provider from a thread, such as a command that
+    /// runs only in its terminal interface; `commands` is the list it last reported.
+    fn message_refusal(
+        &self,
+        _message: &OutgoingMessage,
+        _commands: Option<&ThreadCommandList>,
+    ) -> Option<String> {
+        None
+    }
+}
+
+pub trait ProviderStream: Send {
+    /// Lines written before any other: none for Claude; an `initialize` request for a
+    /// JSON-RPC provider.
+    fn handshake(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The stdin line that starts a turn.
+    fn user_message(&mut self, message: &OutgoingMessage) -> Result<String>;
+    /// One stdout line. Unknown types decode to nothing.
+    fn decode(&mut self, line: &str) -> Decoded;
+}
+
+/// What one stdout line produced besides events.
+#[derive(Debug, Default, PartialEq)]
+pub struct Decoded {
+    pub events: Vec<ThreadEventKind>,
+    /// The line opens a turn, including one the provider started without a message.
+    pub turn_start: bool,
+    pub turn_end: Option<TurnOutcome>,
+    pub conversation: Option<String>,
+    pub permission_mode: Option<ThreadPermissionMode>,
+    pub commands: Option<ThreadCommandList>,
+    /// The provider named its session, for example after `/rename`.
+    pub title: Option<String>,
+}
+
+/// The `/` commands a provider reports, sorted by how a thread may use them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThreadCommandList {
+    pub commands: Vec<String>,
+    pub skills: Vec<String>,
+    pub terminal_only: Vec<String>,
+}
+
+/// What the provider reads: each excerpt as a fenced block under its pane's name, then the
+/// user's text. The timeline keeps the parts; only the provider sees this composition.
+pub fn compose_message(text: &str, excerpts: &[ThreadExcerpt]) -> String {
+    let mut out = String::new();
+    for excerpt in excerpts {
+        let (mut longest, mut run) = (0, 0);
+        for c in excerpt.text.chars() {
+            run = if c == '`' { run + 1 } else { 0 };
+            longest = longest.max(run);
+        }
+        // Longer than any backtick run inside, so the selection cannot close the fence.
+        let fence = "`".repeat((longest + 1).max(3));
+        let source: String = excerpt
+            .source
+            .chars()
+            .map(|c| if c == '"' || c.is_control() { ' ' } else { c })
+            .collect();
+        out.push_str(&format!(
+            "Terminal selection from pane \"{}\":\n{fence}\n{}\n{fence}\n\n",
+            source.trim(),
+            excerpt.text.trim_end_matches(['\r', '\n'])
+        ));
+    }
+    out.push_str(text);
+    out
+}
+
+/// A provider process: started with exactly this environment and piped stdio.
+#[derive(Clone, Debug)]
+pub struct ProcessSpec {
+    pub program: OsString,
+    pub args: Vec<OsString>,
+    pub env: Vec<(String, String)>,
+    pub cwd: Option<PathBuf>,
+}
+
+impl ProcessSpec {
+    fn command(&self) -> std::process::Command {
+        let mut command = crate::spawn::command(&self.program);
+        command.args(&self.args);
+        command.env_clear();
+        command.envs(self.env.iter().map(|(k, v)| (k, v)));
+        if let Some(cwd) = &self.cwd {
+            command.current_dir(cwd);
+        }
+        command
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        command
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Conversation {
+    /// `--session-id`: nothing has been sent in it yet.
+    New(String),
+    /// `--resume`: the conversation has at least one turn.
+    Resume(String),
+}
+
+/// Cuts `text` to at most `max` bytes on a character boundary.
+pub fn cap_text(mut text: String, max: usize) -> (String, bool) {
+    if text.len() <= max {
+        return (text, false);
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    (text, true)
+}
+
+/// Merges adjacent deltas of one block so a burst becomes one entry with the later `seq`.
+pub fn coalesce(events: Vec<ThreadEvent>) -> Vec<ThreadEvent> {
+    let mut out: Vec<ThreadEvent> = Vec::with_capacity(events.len());
+    for event in events {
+        if let Some(last) = out.last_mut() {
+            let merged = match (&mut last.kind, &event.kind) {
+                (
+                    ThreadEventKind::AssistantDelta {
+                        message_id: last_id,
+                        text: last_text,
+                    },
+                    ThreadEventKind::AssistantDelta { message_id, text },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    true
+                }
+                (
+                    ThreadEventKind::ReasoningDelta {
+                        message_id: last_id,
+                        text: last_text,
+                        estimated_tokens: last_tokens,
+                        ..
+                    },
+                    ThreadEventKind::ReasoningDelta {
+                        message_id,
+                        text,
+                        estimated_tokens,
+                        ..
+                    },
+                ) if last_id == message_id => {
+                    last_text.push_str(text);
+                    *last_tokens = estimated_tokens.or(*last_tokens);
+                    true
+                }
+                _ => false,
+            };
+            if merged {
+                last.seq = event.seq;
+                continue;
+            }
+        }
+        out.push(event);
+    }
+    out
+}
+
+/// Live-only events: superseded by the stored message or block of the same id.
+fn is_delta(kind: &ThreadEventKind) -> bool {
+    matches!(
+        kind,
+        ThreadEventKind::AssistantDelta { .. } | ThreadEventKind::ReasoningDelta { .. }
+    )
+}
+
+#[derive(Default)]
+struct OutboxState {
+    pending: Vec<ThreadEvent>,
+    closed: bool,
+}
+
+/// Live events waiting for the next `thread_events` message.
+#[derive(Default)]
+struct Outbox {
+    state: Mutex<OutboxState>,
+    ready: Condvar,
+}
+
+impl Outbox {
+    fn push(&self, events: Vec<ThreadEvent>) {
+        let mut state = self.state.lock().expect("thread outbox lock");
+        state.pending.extend(events);
+        self.ready.notify_one();
+    }
+
+    fn close(&self) {
+        self.state.lock().expect("thread outbox lock").closed = true;
+        self.ready.notify_all();
+    }
+
+    /// Sends at most one message per interval until closed and drained.
+    fn run(&self, session: u32, host: &dyn ThreadHost) {
+        loop {
+            let batch = {
+                let mut state = self.state.lock().expect("thread outbox lock");
+                while state.pending.is_empty() && !state.closed {
+                    state = self.ready.wait(state).expect("thread outbox wait");
+                }
+                if state.pending.is_empty() {
+                    return;
+                }
+                std::mem::take(&mut state.pending)
+            };
+            host.broadcast(session, coalesce(batch));
+            std::thread::sleep(THREAD_EVENTS_MIN_INTERVAL);
+        }
+    }
+}
+
+struct Tail {
+    bytes: Vec<u8>,
+}
+
+impl Tail {
+    fn push(&mut self, chunk: &[u8]) {
+        self.bytes.extend_from_slice(chunk);
+        if self.bytes.len() > STDERR_TAIL_BYTES {
+            let cut = self.bytes.len() - STDERR_TAIL_BYTES;
+            self.bytes.drain(..cut);
+        }
+    }
+
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.bytes).trim().to_string()
+    }
+}
+
+/// Assigns a suspended child, then resumes it, so nothing it starts escapes the job.
+#[cfg(windows)]
+fn adopt_suspended(job: &crate::pid::OwnedJob, child: &std::process::Child) -> Result<()> {
+    job.assign(child)
+        .with_context(|| format!("assigning thread pid {} to its Job object", child.id()))?;
+    crate::pid::resume_owned_child(child, Instant::now(), RESUME_TIMEOUT)
+        .with_context(|| format!("resuming suspended thread pid {}", child.id()))
+}
+
+/// One run of the provider process. A Stop or a crash ends it; the handle starts the next.
+struct ThreadProcess {
+    generation: u64,
+    provider: &'static str,
+    pid: u32,
+    child: Mutex<Option<std::process::Child>>,
+    /// Held only by writers: ending the tree never waits for it, so a write blocked on a
+    /// process that stopped reading cannot hold up Stop, Kill or shutdown.
+    stdin: Mutex<ProcessStdin>,
+    /// Locked per line by the stdout reader and per message by `send`, never across a write.
+    stream: Mutex<Box<dyn ProviderStream>>,
+    stopping: AtomicBool,
+    stderr: Arc<Mutex<Tail>>,
+    #[cfg(windows)]
+    job: crate::pid::OwnedJob,
+}
+
+/// A process's stdin, with the handshake lines it is still owed before any other line.
+struct ProcessStdin {
+    pipe: Option<std::process::ChildStdin>,
+    handshake: Vec<String>,
+}
+
+impl ThreadProcess {
+    fn spawn(
+        adapter: &dyn ProviderAdapter,
+        conversation: Option<&Conversation>,
+        permission_mode: ThreadPermissionMode,
+        generation: u64,
+    ) -> Result<(
+        Arc<Self>,
+        std::process::ChildStdout,
+        std::process::ChildStderr,
+    )> {
+        let provider = adapter.display_name();
+        let spec = adapter.command(conversation, permission_mode)?;
+        let mut command = spec.command();
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        #[cfg(windows)]
+        let job = {
+            use std::os::windows::process::CommandExt;
+            use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
+            command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
+            crate::pid::OwnedJob::new().context("creating the thread's Job object")?
+        };
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "starting {} for a thread session (expected the {provider} CLI on PATH)",
+                spec.program.to_string_lossy()
+            )
+        })?;
+        #[cfg(windows)]
+        if let Err(error) = adopt_suspended(&job, &child) {
+            let _ = crate::pid::terminate_owned_child(&child);
+            let _ = child.wait();
+            return Err(error);
+        }
+        let pipe = child.stdin.take();
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let mut stream = adapter.open();
+        let handshake = stream.handshake();
+        let process = Arc::new(Self {
+            generation,
+            provider,
+            pid: child.id(),
+            child: Mutex::new(Some(child)),
+            stdin: Mutex::new(ProcessStdin { pipe, handshake }),
+            stream: Mutex::new(stream),
+            stopping: AtomicBool::new(false),
+            stderr: Arc::new(Mutex::new(Tail { bytes: Vec::new() })),
+            #[cfg(windows)]
+            job,
+        });
+        Ok((process, stdout, stderr))
+    }
+
+    /// Writes the owed handshake, then `line`, under one lock so no other line overtakes it.
+    fn write_line(&self, line: Option<&str>) -> Result<()> {
+        let mut stdin = self.stdin.lock().expect("thread stdin lock");
+        let ProcessStdin { pipe, handshake } = &mut *stdin;
+        if handshake.is_empty() && line.is_none() {
+            return Ok(());
+        }
+        let pipe = pipe
+            .as_mut()
+            .ok_or_else(|| anyhow!("{} pid {} has no open stdin", self.provider, self.pid))?;
+        for line in std::mem::take(handshake)
+            .iter()
+            .map(String::as_str)
+            .chain(line)
+        {
+            pipe.write_all(line.as_bytes())
+                .and_then(|()| pipe.write_all(b"\n"))
+                .and_then(|()| pipe.flush())
+                .with_context(|| format!("writing to {} pid {}", self.provider, self.pid))?;
+        }
+        Ok(())
+    }
+
+    /// Ends every process in the tree and reaps the root. Returns its exit code if known.
+    fn end_tree(&self, graceful: bool) -> Option<i32> {
+        let mut child = self.child.lock().expect("thread child lock").take()?;
+        #[cfg(target_os = "linux")]
+        {
+            if graceful {
+                let _ = crate::pid::signal_unreaped_child_group(&child, crate::pid::Signal::Term);
+                let deadline = Instant::now() + STOP_GRACE;
+                while Instant::now() < deadline
+                    && !crate::pid::unreaped_child_exited(&child).unwrap_or(true)
+                {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+            if let Err(error) =
+                crate::pid::signal_unreaped_child_group(&child, crate::pid::Signal::Kill)
+            {
+                tracing::warn!("ending thread process group {}: {error}", self.pid);
+            }
+        }
+        #[cfg(all(unix, not(target_os = "linux")))]
+        {
+            let _ = graceful;
+            let _ = crate::pid::signal_process_group(child.id(), crate::pid::Signal::Kill);
+        }
+        #[cfg(windows)]
+        {
+            let _ = graceful;
+            if let Err(error) = self.job.terminate() {
+                tracing::warn!(
+                    "terminating the Job object of thread pid {}: {error}",
+                    self.pid
+                );
+                let _ = crate::pid::terminate_owned_child(&child);
+            }
+        }
+        child.wait().ok().and_then(|status| status.code())
+    }
+}
+
+struct HandleState {
+    process: Option<Arc<ThreadProcess>>,
+    conversation: Option<Conversation>,
+    permission_mode: ThreadPermissionMode,
+    generation: u64,
+    /// A turn started and its `result` has not arrived.
+    turn_open: bool,
+    /// Counts opened turns, so a late drain can tell its turn from a later one.
+    turn: u64,
+    deferred_hook: Option<DeferredHook>,
+    closed: bool,
+    close_cause: Option<String>,
+    /// Text streamed for the open block whose final message has not arrived yet.
+    partial: Option<(String, String)>,
+    /// The conversation last handed to `ThreadHost::conversation_reported`.
+    reported_conversation: Option<String>,
+    /// The conversation the running process was started to resume, until the stream names it.
+    unconfirmed_resume: Option<(String, Instant)>,
+    /// The conversation the provider last refused to resume.
+    refused_resume: Option<String>,
+    reasoning: Option<LiveReasoning>,
+}
+
+/// The reasoning block streaming now.
+struct LiveReasoning {
+    message_id: String,
+    first_delta: Instant,
+    estimated_tokens: Option<u32>,
+    redacted: bool,
+}
+
+impl HandleState {
+    /// Follows the open blocks and gives each stored reasoning block its duration.
+    fn track_partial(&mut self, events: &mut [ThreadEventKind]) {
+        for event in events {
+            match event {
+                ThreadEventKind::ReasoningDelta {
+                    message_id,
+                    estimated_tokens,
+                    redacted,
+                    ..
+                } => match &mut self.reasoning {
+                    Some(open) if open.message_id == *message_id => {
+                        open.estimated_tokens = estimated_tokens.or(open.estimated_tokens);
+                    }
+                    _ => {
+                        self.reasoning = Some(LiveReasoning {
+                            message_id: message_id.clone(),
+                            first_delta: Instant::now(),
+                            estimated_tokens: *estimated_tokens,
+                            redacted: *redacted,
+                        });
+                    }
+                },
+                ThreadEventKind::Reasoning {
+                    message_id,
+                    duration_ms,
+                    ..
+                } => {
+                    if let Some(open) = self
+                        .reasoning
+                        .take_if(|open| open.message_id == *message_id)
+                    {
+                        duration_ms.get_or_insert_with(|| elapsed_ms(open.first_delta));
+                    }
+                }
+                ThreadEventKind::AssistantDelta { message_id, text } => match &mut self.partial {
+                    Some((open, so_far)) if open == message_id => so_far.push_str(text),
+                    _ => self.partial = Some((message_id.clone(), text.clone())),
+                },
+                ThreadEventKind::AssistantMessage { message_id, .. }
+                    if self
+                        .partial
+                        .as_ref()
+                        .is_some_and(|(open, _)| open == message_id) =>
+                {
+                    self.partial = None
+                }
+                ThreadEventKind::TurnEnd { .. } => {
+                    self.partial = None;
+                    self.reasoning = None;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// What an ended process leaves of an open turn: the streamed text of a cut-off answer
+    /// as a truncated message, a cut-off reasoning block, then the turn end.
+    fn end_open_turn(
+        &mut self,
+        outcome: TurnOutcome,
+        error: Option<String>,
+    ) -> Vec<ThreadEventKind> {
+        let mut events = Vec::new();
+        // The caller settles the status, so a deferred Stop hook is owed nothing.
+        self.deferred_hook = None;
+        if let Some((message_id, text)) = self.partial.take().filter(|(_, text)| !text.is_empty()) {
+            events.push(ThreadEventKind::AssistantMessage {
+                message_id,
+                text: cap_text(text, THREAD_ASSISTANT_TEXT_MAX_BYTES).0,
+                truncated: true,
+            });
+        }
+        if let Some(open) = self.reasoning.take() {
+            events.push(ThreadEventKind::Reasoning {
+                message_id: open.message_id,
+                text: String::new(),
+                truncated: true,
+                duration_ms: Some(elapsed_ms(open.first_delta)),
+                estimated_tokens: open.estimated_tokens,
+                redacted: open.redacted,
+            });
+        }
+        if std::mem::take(&mut self.turn_open) {
+            events.push(ThreadEventKind::TurnEnd { outcome, error });
+        }
+        events
+    }
+}
+
+fn elapsed_ms(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// The structured runtime of one thread session: its provider process, turns and events.
+pub struct StructuredRuntime {
+    session: u32,
+    adapter: Arc<dyn ProviderAdapter>,
+    host: Arc<dyn ThreadHost>,
+    /// Serialises process start, Stop, exit handling and close, with their events and the
+    /// daemon's status settle, so a message sent during a Stop waits for the old tree.
+    op: Mutex<()>,
+    state: Mutex<HandleState>,
+    next_seq: Mutex<u64>,
+    outbox: Arc<Outbox>,
+    closed: (Mutex<bool>, Condvar),
+    approvals: Mutex<HashMap<String, PendingApproval>>,
+}
+
+impl StructuredRuntime {
+    /// Starts the first process at once; it waits on stdin for the first message.
+    pub fn start(
+        session: u32,
+        adapter: Arc<dyn ProviderAdapter>,
+        conversation: Option<Conversation>,
+        permission_mode: ThreadPermissionMode,
+        next_seq: u64,
+        host: Arc<dyn ThreadHost>,
+    ) -> Result<Arc<Self>> {
+        let outbox = Arc::new(Outbox::default());
+        let handle = Arc::new(Self {
+            session,
+            adapter,
+            host: Arc::clone(&host),
+            op: Mutex::new(()),
+            state: Mutex::new(HandleState {
+                process: None,
+                conversation,
+                permission_mode,
+                generation: 0,
+                turn_open: false,
+                turn: 0,
+                deferred_hook: None,
+                closed: false,
+                close_cause: None,
+                partial: None,
+                reported_conversation: None,
+                unconfirmed_resume: None,
+                refused_resume: None,
+                reasoning: None,
+            }),
+            next_seq: Mutex::new(next_seq.max(1)),
+            outbox: Arc::clone(&outbox),
+            closed: (Mutex::new(false), Condvar::new()),
+            approvals: Mutex::new(HashMap::new()),
+        });
+        std::thread::Builder::new()
+            .name(format!("thread-events-{session}"))
+            .spawn(move || outbox.run(session, host.as_ref()))
+            .context("starting the thread event sender")?;
+        let mut state = handle.state.lock().expect("thread state lock");
+        let started = handle.ensure_process(&mut state);
+        drop(state);
+        // The handshake is written outside the locks the stdout reader takes, as `send` does.
+        if let Err(error) = started.and_then(|process| process.write_line(None)) {
+            handle.close();
+            return Err(error);
+        }
+        Ok(handle)
+    }
+
+    pub fn session(&self) -> u32 {
+        self.session
+    }
+
+    /// The provider process pid, if a process is running.
+    /// The conversation the provider refused to resume, for a host that had no handle to
+    /// drop when `ThreadHost::resume_refused` came.
+    pub fn refused_resume(&self) -> Option<String> {
+        let state = self.state.lock().expect("thread state lock");
+        state.refused_resume.clone()
+    }
+
+    pub fn pid(&self) -> Option<u32> {
+        let state = self.state.lock().expect("thread state lock");
+        state.process.as_ref().map(|process| process.pid)
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.state
+            .lock()
+            .expect("thread state lock")
+            .process
+            .is_some()
+    }
+
+    /// A message was sent and its turn has not ended.
+    pub fn turn_open(&self) -> bool {
+        self.state.lock().expect("thread state lock").turn_open
+    }
+
+    pub fn is_closed(&self) -> bool {
+        *self.closed.0.lock().expect("thread closed lock")
+    }
+
+    pub fn permission_mode(&self) -> ThreadPermissionMode {
+        self.state
+            .lock()
+            .expect("thread state lock")
+            .permission_mode
+    }
+
+    pub fn has_pending_approvals(&self) -> bool {
+        !self
+            .approvals
+            .lock()
+            .expect("thread approvals lock")
+            .is_empty()
+    }
+
+    /// Records the new mode and, when a process runs, restarts it with the mode's flags
+    /// and `--resume`. Refused while a turn is open or a request waits: the restart would
+    /// end them.
+    pub fn set_permission_mode(self: &Arc<Self>, mode: ThreadPermissionMode) -> Result<()> {
+        let _op = self.op.lock().expect("thread operation lock");
+        let previous = {
+            let mut state = self.state.lock().expect("thread state lock");
+            if state.closed {
+                bail!(
+                    "session {} is closed; its permission mode cannot change",
+                    self.session
+                );
+            }
+            if state.turn_open {
+                bail!(
+                    "thread_set_permission_mode refused for session {}: a turn is open (a \
+                     message has no turn end yet); change the mode once it ends or after Stop",
+                    self.session
+                );
+            }
+            let waiting = self.approvals.lock().expect("thread approvals lock").len();
+            if waiting > 0 {
+                bail!(
+                    "thread_set_permission_mode refused for session {}: {waiting} permission \
+                     request(s) wait for an answer; answer them first",
+                    self.session
+                );
+            }
+            state.permission_mode = mode;
+            state.process.take()
+        };
+        let Some(previous) = previous else {
+            return Ok(());
+        };
+        previous.stopping.store(true, Ordering::Release);
+        previous.end_tree(true);
+        let mut state = self.state.lock().expect("thread state lock");
+        if state.closed || state.process.is_some() {
+            return Ok(());
+        }
+        self.ensure_process(&mut state).map(|_| ())
+    }
+
+    /// Holds one permission prompt for the user: records it and returns its id and the
+    /// receiver its answer arrives on.
+    pub fn request_approval(
+        &self,
+        tool_name: &str,
+        tool_use_id: &str,
+        input: &Value,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let input = input.to_string();
+        let input_bytes = input.len() as u64;
+        let (input, truncated) = cap_text(input, THREAD_APPROVAL_INPUT_MAX_BYTES);
+        self.hold(None, |request_id| ThreadEventKind::ApprovalRequest {
+            request_id,
+            tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            tool_name: cap_text(tool_name.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+            input,
+            truncated,
+            input_bytes,
+        })
+    }
+
+    /// Holds Claude's checked `AskUserQuestion` like a permission prompt (same cap, same
+    /// NeedsInput status); `input` is what its answers extend.
+    pub fn request_question(
+        &self,
+        tool_use_id: &str,
+        questions: Vec<ThreadQuestion>,
+        truncated: bool,
+        input: Value,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let shown = questions.clone();
+        self.hold(Some(HeldQuestion { questions, input }), |request_id| {
+            ThreadEventKind::QuestionRequest {
+                request_id,
+                tool_use_id: cap_text(tool_use_id.to_string(), APPROVAL_NAME_MAX_BYTES).0,
+                questions: shown,
+                truncated,
+            }
+        })
+    }
+
+    fn hold(
+        &self,
+        question: Option<HeldQuestion>,
+        event: impl FnOnce(String) -> ThreadEventKind,
+    ) -> Result<(String, tokio::sync::oneshot::Receiver<ApprovalAnswer>)> {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (answer, receiver) = tokio::sync::oneshot::channel();
+        let first = {
+            // Under `state`, where Stop and Close take the process before they drain the
+            // requests: a request either lands before that drain or is refused here.
+            let state = self.state.lock().expect("thread state lock");
+            if state.closed || state.process.is_none() {
+                bail!(
+                    "session {} has no running {} process; nothing can be approved",
+                    self.session,
+                    self.adapter.display_name()
+                );
+            }
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            if approvals.len() >= APPROVALS_PENDING_MAX {
+                bail!(
+                    "{PERMISSION_TOOL} refused for session {}: {} permission requests already \
+                     wait for an answer, the limit is {APPROVALS_PENDING_MAX} \
+                     (APPROVALS_PENDING_MAX)",
+                    self.session,
+                    approvals.len()
+                );
+            }
+            approvals.insert(request_id.clone(), PendingApproval { answer, question });
+            approvals.len() == 1
+        };
+        if first {
+            self.host.approvals_pending(self.session, true);
+        }
+        self.emit(vec![event(request_id.clone())]);
+        Ok((request_id, receiver))
+    }
+
+    /// Answers a held request. Errors name the request and the ones still pending; a deny
+    /// message over `APPROVAL_MESSAGE_MAX_BYTES` is refused and the request stays held.
+    pub fn answer_approval(&self, request_id: &str, answer: ApprovalAnswer) -> Result<()> {
+        if let ApprovalAnswer::Deny(message) = &answer {
+            if message.len() > APPROVAL_MESSAGE_MAX_BYTES {
+                bail!(
+                    "thread_approve refused for session {}: the message is {} bytes, over the \
+                     limit of {APPROVAL_MESSAGE_MAX_BYTES} bytes (APPROVAL_MESSAGE_MAX_BYTES); \
+                     request {request_id:?} stays held",
+                    self.session,
+                    message.len()
+                );
+            }
+        }
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            match approvals.get(request_id) {
+                Some(pending) if pending.question.is_some() => bail!(
+                    "thread_approve refused for session {}: {request_id:?} is a question; \
+                     answer or skip it with thread_answer",
+                    self.session
+                ),
+                Some(_) => {}
+                None => {
+                    let left: Vec<&String> = approvals.keys().collect();
+                    bail!(
+                        "thread_approve refused for session {}: no pending permission request \
+                         {request_id:?} (pending: {left:?})",
+                        self.session
+                    );
+                }
+            }
+            self.refuse_after_exit(&state, "thread_approve", request_id)?;
+            let pending = approvals.remove(request_id).expect("pending request");
+            let empty = approvals.is_empty();
+            drop(approvals);
+            let (decision, reason) = match &answer {
+                ApprovalAnswer::Allow | ApprovalAnswer::AllowWith(_) => {
+                    (ApprovalDecision::Allowed, None)
+                }
+                ApprovalAnswer::Deny(message) => (ApprovalDecision::Denied, Some(message.clone())),
+            };
+            self.settle_answer(
+                request_id,
+                pending,
+                answer,
+                ThreadEventKind::ApprovalResolved {
+                    request_id: request_id.to_string(),
+                    decision,
+                    reason,
+                },
+            );
+            empty
+        };
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+        Ok(())
+    }
+
+    /// Resolves the held question `request_id` with what `resolve` makes of its questions
+    /// and Claude's input. Checked and removed under one lock: a refused answer leaves the
+    /// question held, and a question is answered once.
+    pub fn answer_question(
+        &self,
+        request_id: &str,
+        resolve: impl FnOnce(&[ThreadQuestion], &Value) -> Result<QuestionResolution>,
+    ) -> Result<()> {
+        let empty = {
+            let state = self.state.lock().expect("thread state lock");
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            let Some(held) = approvals
+                .get(request_id)
+                .and_then(|pending| pending.question.as_ref())
+            else {
+                let questions: Vec<&String> = approvals
+                    .iter()
+                    .filter(|(_, pending)| pending.question.is_some())
+                    .map(|(id, _)| id)
+                    .collect();
+                bail!(
+                    "thread_answer refused for session {}: no held question {request_id:?} \
+                     (held questions: {questions:?})",
+                    self.session
+                );
+            };
+            let resolution = resolve(&held.questions, &held.input)?;
+            self.refuse_after_exit(&state, "thread_answer", request_id)?;
+            let pending = approvals.remove(request_id).expect("held question");
+            let empty = approvals.is_empty();
+            drop(approvals);
+            self.settle_answer(
+                request_id,
+                pending,
+                resolution.answer,
+                ThreadEventKind::QuestionResolved {
+                    request_id: request_id.to_string(),
+                    outcome: resolution.outcome,
+                    answers: resolution.answers,
+                    reason: None,
+                },
+            );
+            empty
+        };
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+        Ok(())
+    }
+
+    /// Answers arrive under `state`, taken before `approvals` as `hold` does: Stop and an exit
+    /// take the process before they drain, so an answer lands before that drain or is refused.
+    fn refuse_after_exit(&self, state: &HandleState, verb: &str, request_id: &str) -> Result<()> {
+        if state.closed || state.process.is_none() {
+            bail!(
+                "{verb} refused for session {}: the {} process ended before the answer; \
+                 request {request_id:?} is settled without it",
+                self.session,
+                self.adapter.display_name()
+            );
+        }
+        Ok(())
+    }
+
+    /// Sends `answer` and records `resolved`, or records the call as withdrawn when the
+    /// provider already stopped waiting. Called under `state`, so Stop's turn end follows it.
+    fn settle_answer(
+        &self,
+        request_id: &str,
+        pending: PendingApproval,
+        answer: ApprovalAnswer,
+        resolved: ThreadEventKind,
+    ) {
+        let question = pending.question.is_some();
+        let event = match pending.answer.send(answer) {
+            Ok(()) => resolved,
+            Err(_) => unanswered(
+                request_id.to_string(),
+                question,
+                ApprovalDecision::Withdrawn,
+                &self.stopped_waiting(),
+            ),
+        };
+        self.emit(vec![event]);
+    }
+
+    fn stopped_waiting(&self) -> String {
+        format!(
+            "{} stopped waiting for an answer; the tool did not run.",
+            self.adapter.display_name()
+        )
+    }
+
+    /// Claude ended a call nobody answered (it timed out or its process went away).
+    pub fn withdraw_approval(&self, request_id: &str) {
+        let (removed, empty) = {
+            let mut approvals = self.approvals.lock().expect("thread approvals lock");
+            (approvals.remove(request_id), approvals.is_empty())
+        };
+        let Some(removed) = removed else {
+            return;
+        };
+        self.emit(vec![unanswered(
+            request_id.to_string(),
+            removed.question.is_some(),
+            ApprovalDecision::Withdrawn,
+            &self.stopped_waiting(),
+        )]);
+        if empty {
+            self.host.approvals_pending(self.session, false);
+        }
+    }
+
+    /// Records requests a previous daemon held and never resolved; nothing can answer them.
+    /// Each id comes with whether it was a question.
+    pub fn settle_orphaned_approvals(&self, requests: Vec<(String, bool)>) {
+        self.emit(
+            requests
+                .into_iter()
+                .map(|(request_id, question)| {
+                    unanswered(
+                        request_id,
+                        question,
+                        ApprovalDecision::Withdrawn,
+                        "Houston restarted before anyone answered; the tool did not run.",
+                    )
+                })
+                .collect(),
+        );
+    }
+
+    /// A recovery stop or daemon shutdown is about to close the thread: its held requests
+    /// were never answered, so they are withdrawn rather than denied by the user.
+    pub fn withdraw_for_restart(&self) {
+        self.resolve_pending(
+            ApprovalDecision::Withdrawn,
+            "Houston restarted before anyone answered; the tool did not run.",
+            false,
+        );
+    }
+
+    /// Denies every held request with `reason`, before the process they belong to ends.
+    /// `report` is false when the caller holds daemon locks the status path takes.
+    fn deny_pending(&self, reason: &str, report: bool) {
+        self.resolve_pending(ApprovalDecision::Denied, reason, report);
+    }
+
+    fn resolve_pending(&self, decision: ApprovalDecision, reason: &str, report: bool) {
+        let pending: Vec<(String, PendingApproval)> = self
+            .approvals
+            .lock()
+            .expect("thread approvals lock")
+            .drain()
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+        let mut events = Vec::with_capacity(pending.len());
+        for (request_id, approval) in pending {
+            let _ = approval
+                .answer
+                .send(ApprovalAnswer::Deny(reason.to_string()));
+            events.push(unanswered(
+                request_id,
+                approval.question.is_some(),
+                decision,
+                reason,
+            ));
+        }
+        self.emit(events);
+        if report {
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("thread-approvals-report", self.session);
+            self.host.approvals_pending(self.session, false);
+        }
+    }
+
+    /// Sends `text` at once while no turn is open and no message is queued; otherwise it
+    /// joins the queue. Held messages wait for the user, so they do not hold it back.
+    pub fn send(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.admit(text, excerpts)?;
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if state.turn_open || self.host.queue_waiting(self.session)? > 0 {
+                drop(state);
+                return self.host.queue_push(self.session, text, excerpts);
+            }
+            self.deliver(&mut state, text, excerpts, MessageDelivery::Direct, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Sends `text` ahead of the queue, stopping an open turn first.
+    pub fn send_steered(self: &Arc<Self>, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.admit(text, excerpts)?;
+        let pending = {
+            let op = self.op.lock().expect("thread operation lock");
+            drop(self.open_state()?);
+            let delivery = if self.stop_open_turn(&op) {
+                MessageDelivery::Steered
+            } else {
+                MessageDelivery::Direct
+            };
+            let mut state = self.open_state()?;
+            self.deliver(&mut state, text, excerpts, delivery, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Takes queued message `id` out of the queue and sends it first, stopping an open turn.
+    /// It leaves the queue under `op` before anything is written, so it is sent once.
+    pub fn steer(self: &Arc<Self>, id: &str) -> Result<()> {
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-steer", self.session);
+        let pending = {
+            let op = self.op.lock().expect("thread operation lock");
+            drop(self.open_state()?);
+            let row = self.take_row("thread_steer", id)?;
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("thread-steer-stop", self.session);
+            let delivery = if self.stop_open_turn(&op) {
+                MessageDelivery::Steered
+            } else {
+                MessageDelivery::Queued
+            };
+            let mut state = self.open_state()?;
+            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+            self.deliver(&mut state, &text, &excerpts, delivery, Some(row))?
+        };
+        self.write(pending)
+    }
+
+    /// Sends waiting message `id` now; while a turn is open it is queued to go after it.
+    pub fn send_queued(self: &Arc<Self>, id: &str) -> Result<()> {
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if state.turn_open {
+                drop(state);
+                return self.host.queue_release(self.session, id);
+            }
+            let row = self.take_row("thread_queue_send", id)?;
+            let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+            self.deliver(
+                &mut state,
+                &text,
+                &excerpts,
+                MessageDelivery::Queued,
+                Some(row),
+            )?
+        };
+        self.write(pending)
+    }
+
+    /// A message from outside the composer (an orchestration prompt or an inbox paste): sent
+    /// only while no turn is open and nothing is queued, so the user's queued messages go
+    /// first. A refusal leaves it to its caller, which retries once the thread is idle.
+    pub fn deliver_now(self: &Arc<Self>, text: &str) -> Result<()> {
+        self.admit(text, &[])?;
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.open_state()?;
+            if let Some(reason) = self.busy_reason(&state) {
+                return Err(ThreadBusy {
+                    session: self.session,
+                    reason,
+                }
+                .into());
+            }
+            self.deliver(&mut state, text, &[], MessageDelivery::Direct, None)?
+        };
+        self.write(pending)
+    }
+
+    /// Why a message from outside the composer must wait now, if it must.
+    pub fn hold_reason(&self) -> Option<String> {
+        let state = self.state.lock().expect("thread state lock");
+        self.busy_reason(&state)
+    }
+
+    fn busy_reason(&self, state: &HandleState) -> Option<String> {
+        if state.turn_open {
+            return Some("a turn is open".into());
+        }
+        match self.host.queue_waiting(self.session) {
+            Ok(0) => None,
+            Ok(waiting) => Some(format!("{waiting} queued message(s) of the user go first")),
+            Err(error) => Some(format!("its queue cannot be read: {error:#}")),
+        }
+    }
+
+    /// Whether the message may go to the provider: within the size limit, composed, and not
+    /// a command the adapter refuses. Every delivery checks it again before it writes.
+    fn admit(&self, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        self.check_size(text, excerpts)?;
+        let message = OutgoingMessage {
+            text: text.to_string(),
+            excerpts: excerpts.to_vec(),
+            delivery: MessageDelivery::Direct,
+        };
+        let commands = self.host.stored_commands(self.session);
+        if let Some(reason) = self.adapter.message_refusal(&message, commands.as_ref()) {
+            return Err(CommandRefused {
+                session: self.session,
+                reason,
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// The message as the provider reads it, excerpts included, fits `THREAD_USER_MESSAGE_MAX_BYTES`.
+    fn check_size(&self, text: &str, excerpts: &[ThreadExcerpt]) -> Result<()> {
+        let composed = compose_message(text, excerpts);
+        if composed.len() > THREAD_USER_MESSAGE_MAX_BYTES {
+            bail!(
+                "message refused for thread session {}: it is {} bytes, over the {} byte limit \
+                 (THREAD_USER_MESSAGE_MAX_BYTES)",
+                self.session,
+                composed.len(),
+                THREAD_USER_MESSAGE_MAX_BYTES
+            );
+        }
+        Ok(())
+    }
+
+    fn open_state(&self) -> Result<MutexGuard<'_, HandleState>> {
+        let state = self.state.lock().expect("thread state lock");
+        if state.closed {
+            bail!(
+                "session {} is closed; its thread takes no messages",
+                self.session
+            );
+        }
+        Ok(state)
+    }
+
+    fn take_row(&self, verb: &str, id: &str) -> Result<ThreadQueuedMessage> {
+        self.host
+            .queue_take(self.session, Some(id))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "{verb} refused for session {}: message {id:?} is not in its queue; it \
+                     was sent or removed",
+                    self.session
+                )
+            })
+    }
+
+    /// Under `op`: starts a process that resumes the conversation when none runs, records
+    /// the message and opens its turn. A queued message that fails here goes back held.
+    fn deliver(
+        self: &Arc<Self>,
+        state: &mut HandleState,
+        text: &str,
+        excerpts: &[ThreadExcerpt],
+        delivery: MessageDelivery,
+        row: Option<ThreadQueuedMessage>,
+    ) -> Result<PendingWrite> {
+        let message = OutgoingMessage {
+            text: text.to_string(),
+            excerpts: excerpts.to_vec(),
+            delivery,
+        };
+        let prepared = self
+            .admit(text, excerpts)
+            .and_then(|()| self.ensure_process(state))
+            .and_then(|process| {
+                let line = process
+                    .stream
+                    .lock()
+                    .expect("thread stream lock")
+                    .user_message(&message)?;
+                Ok((process, line))
+            });
+        let (process, line) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if let Some(row) = &row {
+                    self.host
+                        .queue_restore(self.session, row, &format!("Not sent: {error:#}"));
+                }
+                return Err(error);
+            }
+        };
+        state.turn_open = true;
+        state.turn += 1;
+        self.emit(vec![ThreadEventKind::UserMessage {
+            text: message.text,
+            delivery: message.delivery,
+            excerpts: message.excerpts,
+        }]);
+        Ok(PendingWrite { process, line, row })
+    }
+
+    /// Written outside every lock: the provider may be writing a long answer to stdout
+    /// while this blocks on a full stdin pipe, and the stdout reader must keep draining.
+    fn write(&self, pending: PendingWrite) -> Result<()> {
+        let PendingWrite { process, line, row } = pending;
+        let Err(error) = process.write_line(Some(&line)) else {
+            if let Some(row) = &row {
+                self.host.queue_sent(self.session, &row.id);
+            }
+            return Ok(());
+        };
+        let stopped = process.stopping.load(Ordering::Acquire);
+        let provider = process.provider;
+        let reason = if stopped {
+            format!("Stopped before this message reached {provider}")
+        } else {
+            format!("This message did not reach {provider}: {error:#}")
+        };
+        // History already shows the message, so it says the message went back held.
+        let notice = match &row {
+            Some(row) => {
+                self.host
+                    .queue_restore(self.session, row, &format!("{reason}."));
+                Some(format!("{reason}; it is back in the queue, held."))
+            }
+            // Stop's turn end already says the turn ended.
+            None if stopped => None,
+            None => Some(reason),
+        };
+        if let Some(text) = notice {
+            self.emit(vec![ThreadEventKind::Notice { text }]);
+        }
+        if stopped {
+            bail!(
+                "thread session {} stopped before this message reached {provider}",
+                self.session
+            );
+        }
+        Err(error)
+    }
+
+    /// After the `result` of turn `turn`, under `op`: a completed turn sends the oldest queued
+    /// message; any other outcome holds the queue for the user. A turn opened since decides
+    /// for itself, so messages queued during it are not held for an earlier failure.
+    fn after_turn(self: &Arc<Self>, outcome: TurnOutcome, turn: u64) {
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-queue-drain", self.session);
+        let pending = {
+            let _op = self.op.lock().expect("thread operation lock");
+            let mut state = self.state.lock().expect("thread state lock");
+            if state.closed || state.turn != turn {
+                return;
+            }
+            if outcome != TurnOutcome::Completed {
+                drop(state);
+                self.host.queue_hold(
+                    self.session,
+                    "The turn before this message did not complete.",
+                );
+                return;
+            }
+            if state.turn_open || state.process.is_none() {
+                return;
+            }
+            loop {
+                let row = match self.host.queue_take(self.session, None) {
+                    Ok(Some(row)) => row,
+                    Ok(None) => return,
+                    Err(error) => {
+                        tracing::warn!("session {}: reading its queue: {error:#}", self.session);
+                        return;
+                    }
+                };
+                let (text, excerpts) = (row.text.clone(), row.excerpts.clone());
+                match self.deliver(
+                    &mut state,
+                    &text,
+                    &excerpts,
+                    MessageDelivery::Queued,
+                    Some(row),
+                ) {
+                    Ok(pending) => break pending,
+                    // The refused row went back held with its reason; the next one may go.
+                    Err(error) if error.is::<CommandRefused>() => continue,
+                    Err(error) => {
+                        tracing::warn!(
+                            "session {}: sending its queued message: {error:#}",
+                            self.session
+                        );
+                        return;
+                    }
+                }
+            }
+        };
+        if let Err(error) = self.write(pending) {
+            tracing::warn!(
+                "session {}: writing its queued message: {error:#}",
+                self.session
+            );
+        }
+    }
+
+    /// Runs `after_turn` off the stdout reader, which must keep draining while it writes.
+    fn start_after_turn(self: &Arc<Self>, outcome: TurnOutcome, turn: u64) {
+        let runtime = Arc::clone(self);
+        let started = std::thread::Builder::new()
+            .name(format!("thread-queue-{}", self.session))
+            .spawn(move || runtime.after_turn(outcome, turn));
+        if let Err(error) = started {
+            tracing::warn!(
+                "session {}: starting its queue after a turn: {error}",
+                self.session
+            );
+        }
+    }
+
+    /// A Stop hook arrived while a turn is open: an earlier turn's, or this turn's ahead of
+    /// its `result`. Returns true when its status change is deferred to the stream's turn
+    /// end; Stop, an exit or close settle the status instead and drop it.
+    pub fn defer_turn_end_hook(&self, hook: DeferredHook) -> bool {
+        let mut state = self.state.lock().expect("thread state lock");
+        if state.turn_open {
+            state.deferred_hook = Some(hook);
+        }
+        state.turn_open
+    }
+
+    /// Ends the process tree and holds the queue. Returns whether a process was running.
+    pub fn stop(&self) -> bool {
+        let op = self.op.lock().expect("thread operation lock");
+        self.stop_held(&op, "Stopped before this message was sent.")
+    }
+
+    /// For a steer: stops the open turn and leaves the queue as it is. Stops nothing and
+    /// returns false when the turn has ended, even since the caller last looked.
+    fn stop_open_turn(&self, op: &MutexGuard<'_, ()>) -> bool {
+        self.stop_process(op, None, true)
+    }
+
+    /// `stop` for a caller holding `op`; `hold` names why queued messages wait.
+    fn stop_held(&self, op: &MutexGuard<'_, ()>, hold: &str) -> bool {
+        self.stop_process(op, Some(hold), false)
+    }
+
+    fn stop_process(&self, _op: &MutexGuard<'_, ()>, hold: Option<&str>, open_turn: bool) -> bool {
+        let process = {
+            let mut state = self.state.lock().expect("thread state lock");
+            if open_turn && !state.turn_open {
+                return false;
+            }
+            state.process.take()
+        };
+        let Some(process) = process else {
+            return false;
+        };
+        self.deny_pending("Stopped in Houston before anyone answered.", true);
+        process.stopping.store(true, Ordering::Release);
+        process.end_tree(true);
+        self.host.process_gone(self.session);
+        let events = self
+            .state
+            .lock()
+            .expect("thread state lock")
+            .end_open_turn(TurnOutcome::Interrupted, None);
+        self.emit(events);
+        if let Some(reason) = hold {
+            self.host.queue_hold(self.session, reason);
+        }
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("thread-stop-settle", self.session);
+        self.host.settle(self.session, TurnOutcome::Interrupted);
+        true
+    }
+
+    /// Records the end of a turn that stored history left open, with `notice` as its cause.
+    pub fn end_stored_turn(&self, notice: &str) {
+        let _op = self.op.lock().expect("thread operation lock");
+        self.emit(vec![
+            ThreadEventKind::TurnEnd {
+                outcome: TurnOutcome::Interrupted,
+                error: None,
+            },
+            ThreadEventKind::Notice {
+                text: notice.to_string(),
+            },
+        ]);
+    }
+
+    /// Names why the next `close` happens, for the notice it records mid-turn.
+    pub fn note_close_cause(&self, cause: &str) {
+        self.state.lock().expect("thread state lock").close_cause = Some(cause.to_string());
+    }
+
+    /// Ends the thread for good, recording an open turn as interrupted with its cause.
+    /// Waits for a Stop or exit in progress, whose status settle takes daemon locks:
+    /// callers must not hold `temporary_cleanup_lock`.
+    pub fn close(&self) {
+        let op = self.op.lock().expect("thread operation lock");
+        self.close_held(op, true);
+    }
+
+    /// `close` unless a send, Stop or exit holds the thread. Returns whether it closed.
+    /// Its caller holds `temporary_cleanup_lock`, so held requests are denied unreported.
+    pub fn try_close(&self) -> bool {
+        match self.op.try_lock() {
+            Ok(op) => {
+                self.close_held(op, false);
+                true
+            }
+            Err(std::sync::TryLockError::WouldBlock) => false,
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("thread operation lock poisoned"),
+        }
+    }
+
+    fn close_held(&self, _op: std::sync::MutexGuard<'_, ()>, report: bool) {
+        let process = {
+            let mut state = self.state.lock().expect("thread state lock");
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            state.process.take()
+        };
+        self.deny_pending("The session ended before anyone answered.", report);
+        if let Some(process) = &process {
+            process.stopping.store(true, Ordering::Release);
+            process.end_tree(false);
+            self.host.process_gone(self.session);
+        }
+        let mut state = self.state.lock().expect("thread state lock");
+        let was_open = state.turn_open;
+        let mut events = state.end_open_turn(TurnOutcome::Interrupted, None);
+        if was_open {
+            let cause = state
+                .close_cause
+                .take()
+                .unwrap_or_else(|| "its session ended".to_string());
+            events.push(ThreadEventKind::Notice {
+                text: format!("Houston stopped this thread: {cause}."),
+            });
+        }
+        drop(state);
+        self.emit(events);
+        self.host.queue_hold(
+            self.session,
+            "Houston stopped this thread before this message was sent.",
+        );
+        self.outbox.close();
+        let (closed, changed) = &self.closed;
+        *closed.lock().expect("thread closed lock") = true;
+        changed.notify_all();
+    }
+
+    pub fn wait_closed(&self) {
+        let (closed, changed) = &self.closed;
+        let mut closed = closed.lock().expect("thread closed lock");
+        while !*closed {
+            closed = changed.wait(closed).expect("thread closed wait");
+        }
+    }
+
+    fn ensure_process(self: &Arc<Self>, state: &mut HandleState) -> Result<Arc<ThreadProcess>> {
+        if let Some(process) = &state.process {
+            return Ok(Arc::clone(process));
+        }
+        state.generation += 1;
+        state.unconfirmed_resume = match &state.conversation {
+            Some(Conversation::Resume(id)) => Some((id.clone(), Instant::now())),
+            _ => None,
+        };
+        let (process, stdout, stderr) = ThreadProcess::spawn(
+            self.adapter.as_ref(),
+            state.conversation.as_ref(),
+            state.permission_mode,
+            state.generation,
+        )?;
+        let tail = Arc::clone(&process.stderr);
+        let stderr_reader = std::thread::Builder::new()
+            .name(format!("thread-stderr-{}", self.session))
+            .spawn(move || drain_stderr(stderr, &tail));
+        let weak = Arc::downgrade(self);
+        let owned = Arc::clone(&process);
+        let stdout_reader = std::thread::Builder::new()
+            .name(format!("thread-stdout-{}", self.session))
+            .spawn(move || read_stdout(weak, owned, stdout));
+        if let Err(error) = stderr_reader.and(stdout_reader) {
+            process.end_tree(false);
+            return Err(error).context("starting the thread's output readers");
+        }
+        self.host.process_started(self.session, process.pid);
+        state.process = Some(Arc::clone(&process));
+        Ok(process)
+    }
+
+    fn emit(&self, kinds: Vec<ThreadEventKind>) {
+        if kinds.is_empty() {
+            return;
+        }
+        let mut next = self.next_seq.lock().expect("thread seq lock");
+        let now = crate::daemon::now_ms();
+        let events: Vec<ThreadEvent> = kinds
+            .into_iter()
+            .map(|kind| {
+                let event = ThreadEvent {
+                    seq: *next,
+                    at_ms: now,
+                    kind,
+                };
+                *next += 1;
+                if !is_delta(&event.kind) {
+                    self.host.store(self.session, &event);
+                }
+                event
+            })
+            .collect();
+        self.outbox.push(events);
+    }
+
+    fn on_line(self: &Arc<Self>, process: &ThreadProcess, line: &str) {
+        let decoded = process
+            .stream
+            .lock()
+            .expect("thread stream lock")
+            .decode(line);
+        self.on_decoded(process.generation, decoded);
+    }
+
+    fn on_decoded(self: &Arc<Self>, generation: u64, mut mapped: Decoded) {
+        let mut reported_mode = None;
+        let mut reported_conversation = None;
+        let mut ended = None;
+        {
+            // Held while emitting, so a Stop either drops this line or sees its delta.
+            let mut state = self.state.lock().expect("thread state lock");
+            if state
+                .process
+                .as_ref()
+                .is_none_or(|current| current.generation != generation)
+            {
+                return;
+            }
+            // Resume only once the stream shows the provider holds the conversation.
+            if let Some(id) = mapped.conversation {
+                state.unconfirmed_resume = None;
+                if state.reported_conversation.as_deref() != Some(id.as_str()) {
+                    state.reported_conversation = Some(id.clone());
+                    reported_conversation = Some(id.clone());
+                }
+                state.conversation = Some(Conversation::Resume(id));
+            } else if mapped.turn_end.is_some() {
+                if let Some(Conversation::New(id)) = &state.conversation {
+                    state.conversation = Some(Conversation::Resume(id.clone()));
+                }
+            }
+            if mapped.turn_start && !state.turn_open {
+                state.turn_open = true;
+                state.turn += 1;
+            }
+            if mapped.turn_end.is_some() {
+                state.turn_open = false;
+                ended = Some((state.turn, state.deferred_hook.take()));
+            }
+            if let Some(mode) = mapped.permission_mode {
+                if mode != state.permission_mode {
+                    state.permission_mode = mode;
+                    reported_mode = Some(mode);
+                }
+            }
+            state.track_partial(&mut mapped.events);
+            self.emit(mapped.events);
+        }
+        if let Some(mode) = reported_mode {
+            self.host.permission_mode_reported(self.session, mode);
+        }
+        if let Some(id) = reported_conversation {
+            self.host.conversation_reported(self.session, &id);
+        }
+        if let Some(list) = mapped.commands {
+            self.host.commands_reported(self.session, list);
+        }
+        if let Some(title) = mapped.title {
+            self.host.title_reported(self.session, &title);
+        }
+        if let (Some(outcome), Some((turn, deferred))) = (mapped.turn_end, ended) {
+            self.host.turn_ended(self.session, outcome, deferred);
+            self.start_after_turn(outcome, turn);
+        }
+    }
+
+    fn line_skipped(self: &Arc<Self>, process: &ThreadProcess, bytes: usize) {
+        self.on_decoded(
+            process.generation,
+            Decoded {
+                events: vec![ThreadEventKind::Notice {
+                    text: format!(
+                        "Skipped one {bytes} byte line of {}'s output: over the {} MiB \
+                         limit for a thread line, so an event of this turn is missing.",
+                        process.provider,
+                        STDOUT_LINE_MAX_BYTES / (1024 * 1024)
+                    ),
+                }],
+                ..Decoded::default()
+            },
+        );
+    }
+
+    fn process_ended(&self, process: &ThreadProcess) {
+        if process.stopping.load(Ordering::Acquire) {
+            return;
+        }
+        let _op = self.op.lock().expect("thread operation lock");
+        {
+            let mut state = self.state.lock().expect("thread state lock");
+            if process.stopping.load(Ordering::Acquire)
+                || state
+                    .process
+                    .as_ref()
+                    .is_none_or(|current| current.generation != process.generation)
+            {
+                return;
+            }
+            state.process = None;
+        }
+        self.deny_pending(
+            &format!("{} exited before anyone answered.", process.provider),
+            true,
+        );
+        let code = process.end_tree(false);
+        // As the terminal fallback counts it: a real exit code soon after the spawn. A signal
+        // or a later exit says nothing about the conversation.
+        let refused_now = |spawned: &Instant| {
+            code.is_some_and(|code| code != 0)
+                && spawned.elapsed() < crate::daemon::RESUME_EARLY_EXIT
+        };
+        self.host.process_gone(self.session);
+        let stderr = process.stderr.lock().expect("thread stderr lock").text();
+        let code = code.map_or_else(
+            || "no exit code".to_string(),
+            |code| format!("exit code {code}"),
+        );
+        let provider = process.provider;
+        let (mut events, rejected) = {
+            let mut state = self.state.lock().expect("thread state lock");
+            let events = state.end_open_turn(
+                TurnOutcome::Error,
+                Some(format!("{provider} exited during the turn ({code})")),
+            );
+            // A resume the provider refused would fail again on every message: the next
+            // process starts a new conversation instead, once, and says so.
+            let rejected = state
+                .unconfirmed_resume
+                .take()
+                .filter(|(_, spawned)| refused_now(spawned))
+                .map(|(id, _)| id);
+            if rejected.is_some() {
+                state.conversation = None;
+                state.refused_resume = rejected.clone();
+            }
+            (events, rejected)
+        };
+        if let Some(id) = &rejected {
+            self.host.resume_refused(self.session, id);
+        }
+        let next = match &rejected {
+            Some(id) => format!(
+                "{provider} could not resume conversation {id}; the next message starts a new \
+                 conversation."
+            ),
+            None => "the next message starts it again.".to_string(),
+        };
+        let text = if stderr.is_empty() {
+            format!("{provider} exited ({code}); {next}")
+        } else {
+            format!("{provider} exited ({code}); {next} Its last output:\n{stderr}")
+        };
+        events.push(ThreadEventKind::Notice { text });
+        self.emit(events);
+        self.host.queue_hold(
+            self.session,
+            &format!("{provider} exited before this message was sent."),
+        );
+        self.host.settle(self.session, TurnOutcome::Error);
+    }
+}
+
+impl Drop for StructuredRuntime {
+    fn drop(&mut self) {
+        self.outbox.close();
+    }
+}
+
+fn drain_stderr(mut stderr: std::process::ChildStderr, tail: &Mutex<Tail>) {
+    let mut buf = [0u8; 4096];
+    loop {
+        match stderr.read(&mut buf) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => tail.lock().expect("thread stderr lock").push(&buf[..n]),
+        }
+    }
+}
+
+fn read_stdout(
+    handle: Weak<StructuredRuntime>,
+    process: Arc<ThreadProcess>,
+    stdout: std::process::ChildStdout,
+) {
+    let mut reader = BufReader::with_capacity(64 * 1024, stdout);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let Ok(Some(bytes)) = read_bounded_line(&mut reader, &mut line, STDOUT_LINE_MAX_BYTES)
+        else {
+            break;
+        };
+        let Some(handle) = handle.upgrade() else {
+            break;
+        };
+        if bytes > STDOUT_LINE_MAX_BYTES {
+            tracing::warn!(
+                "thread pid {}: skipped a {bytes} byte stdout line over {STDOUT_LINE_MAX_BYTES}",
+                process.pid
+            );
+            handle.line_skipped(&process, bytes);
+        } else {
+            handle.on_line(&process, &String::from_utf8_lossy(&line));
+        }
+    }
+    if let Some(handle) = handle.upgrade() {
+        handle.process_ended(&process);
+    }
+}
+
+/// Reads one `\n`-terminated line, keeping it in `out` only up to `max` bytes. Returns the
+/// line's length (`None` at EOF); a length over `max` means the line was skipped.
+fn read_bounded_line(
+    reader: &mut impl BufRead,
+    out: &mut Vec<u8>,
+    max: usize,
+) -> std::io::Result<Option<usize>> {
+    let mut length = 0;
+    let mut read_any = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(read_any.then_some(length));
+        }
+        read_any = true;
+        let (chunk, done) = match available.iter().position(|b| *b == b'\n') {
+            Some(at) => (&available[..at], at + 1),
+            None => (available, available.len()),
+        };
+        length += chunk.len();
+        if length <= max {
+            out.extend_from_slice(chunk);
+        } else {
+            out.clear();
+        }
+        let ended = done > chunk.len();
+        reader.consume(done);
+        if ended {
+            return Ok(Some(length));
+        }
+    }
+}
+
+/// A thread's process group as a later daemon can find it: the provider leads the group, inside
+/// the daemon's session, on one boot. Windows needs none: its Job object kills the tree
+/// when the daemon's handle closes, crash included.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThreadGroup {
+    pub pgid: u32,
+    pub sid: u32,
+    pub system: String,
+    /// `pid::process_creation_token` of the leader, so a reused pgid is told apart.
+    #[serde(default)]
+    pub leader_creation: Option<u64>,
+}
+
+impl ThreadGroup {
+    #[cfg(target_os = "linux")]
+    pub fn capture(leader: u32) -> Option<Self> {
+        // SAFETY: getsid(0) only reads this process's session id.
+        let sid = unsafe { libc::getsid(0) };
+        let system = crate::recovery_process::system_identity().ok().flatten()?;
+        (sid > 0).then_some(Self {
+            pgid: leader,
+            sid: sid as u32,
+            system,
+            leader_creation: crate::pid::process_creation_token(leader),
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn capture(_leader: u32) -> Option<Self> {
+        None
+    }
+
+    /// Kills what is left of the group after its daemon died: every process still in this
+    /// pgid and session id on this boot, unless a new process now holds the leader's pid.
+    /// Returns how many were signalled.
+    #[cfg(target_os = "linux")]
+    pub fn reclaim(&self) -> Result<usize> {
+        let current = crate::recovery_process::system_identity()?;
+        if current.as_deref() != Some(self.system.as_str())
+            || self.reused(crate::pid::process_creation_token(self.pgid))
+        {
+            return Ok(0);
+        }
+        let mut stats = Vec::new();
+        for entry in std::fs::read_dir("/proc")
+            .context("listing /proc")?
+            .flatten()
+        {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|n| n.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if let Some((pgrp, session)) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|stat| group_and_session(&stat))
+            {
+                stats.push((pid, pgrp, session));
+            }
+        }
+        let members = self.members(&stats, std::process::id());
+        for pid in &members {
+            let creation = crate::pid::process_creation_token(*pid);
+            if let Err(error) = crate::pid::signal_process_checked_identity(
+                *pid,
+                crate::pid::Signal::Kill,
+                creation,
+            ) {
+                tracing::warn!(
+                    "stopping process {pid} left in thread group {}: {error}",
+                    self.pgid
+                );
+            }
+        }
+        Ok(members.len())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn reclaim(&self) -> Result<usize> {
+        Ok(0)
+    }
+
+    /// A live process with the leader's pid but another creation token means every member
+    /// exited and the pgid number was issued again.
+    pub fn reused(&self, live_leader: Option<u64>) -> bool {
+        matches!((self.leader_creation, live_leader), (Some(was), Some(now)) if was != now)
+    }
+
+    /// The processes of `stats` (pid, pgrp, session) that belong to this group.
+    pub fn members(&self, stats: &[(u32, u32, u32)], me: u32) -> Vec<u32> {
+        if self.pgid <= 1 || self.sid <= 1 {
+            return Vec::new();
+        }
+        stats
+            .iter()
+            .filter(|(pid, pgrp, session)| *pid != me && *pgrp == self.pgid && *session == self.sid)
+            .map(|(pid, _, _)| *pid)
+            .collect()
+    }
+}
+
+/// The pgrp and session fields of a `/proc/<pid>/stat` line.
+pub fn group_and_session(stat: &str) -> Option<(u32, u32)> {
+    let mut fields = stat[stat.rfind(')')? + 1..].split_whitespace();
+    // After the command: state, ppid, pgrp, session.
+    let pgrp = fields.nth(2)?.parse().ok()?;
+    let session = fields.next()?.parse().ok()?;
+    Some((pgrp, session))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stale_group_is_matched_by_pgid_and_session_only() {
+        let group = ThreadGroup {
+            pgid: 400,
+            sid: 30,
+            system: "linux:x".into(),
+            leader_creation: Some(7),
+        };
+        let stats = [
+            (400, 400, 30),
+            (401, 400, 30),
+            (402, 400, 31),
+            (403, 402, 30),
+            (9, 400, 30),
+        ];
+        assert_eq!(group.members(&stats, 9), [400, 401]);
+        let broadcast = ThreadGroup { pgid: 1, ..group };
+        assert!(broadcast.members(&stats, 9).is_empty());
+        assert_eq!(
+            group_and_session("12 (a b) c) S 1 400 30 0 -1"),
+            Some((400, 30))
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reclaim_kills_a_left_over_group_member() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let mut sleeper = crate::spawn::command("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
+        assert!(group.reclaim().unwrap() >= 1);
+        assert_eq!(sleeper.wait().unwrap().signal(), Some(libc::SIGKILL));
+    }
+
+    #[test]
+    fn a_group_is_reused_only_when_a_different_leader_holds_its_pid() {
+        let group = ThreadGroup {
+            pgid: 400,
+            sid: 30,
+            system: "linux:x".into(),
+            leader_creation: Some(7),
+        };
+        assert!(group.reused(Some(8)));
+        assert!(!group.reused(Some(7)), "the original leader still runs");
+        assert!(
+            !group.reused(None),
+            "the leader exited; its members may remain"
+        );
+        let recorded_before_tokens = ThreadGroup {
+            leader_creation: None,
+            ..group
+        };
+        assert!(!recorded_before_tokens.reused(Some(8)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reclaim_leaves_a_group_whose_pgid_was_issued_again() {
+        use std::os::unix::process::CommandExt;
+        let mut sleeper = crate::spawn::command("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut group = ThreadGroup::capture(sleeper.id()).expect("a Linux group identity");
+        let token = group.leader_creation.expect("the leader's creation token");
+        group.leader_creation = Some(token + 1);
+        assert_eq!(group.reclaim().unwrap(), 0);
+        assert!(
+            sleeper.try_wait().unwrap().is_none(),
+            "the new group was killed"
+        );
+        sleeper.kill().unwrap();
+        sleeper.wait().unwrap();
+    }
+
+    #[test]
+    fn coalescing_merges_adjacent_deltas_of_one_block() {
+        let delta = |seq, id: &str, text: &str| ThreadEvent {
+            seq,
+            at_ms: 0,
+            kind: ThreadEventKind::AssistantDelta {
+                message_id: id.into(),
+                text: text.into(),
+            },
+        };
+        let merged = coalesce(vec![
+            delta(1, "a", "x"),
+            delta(2, "a", "y"),
+            delta(3, "b", "z"),
+            delta(4, "b", "w"),
+        ]);
+        assert_eq!(merged, vec![delta(2, "a", "xy"), delta(4, "b", "zw")]);
+    }
+
+    #[test]
+    fn bounded_lines_skip_an_overlong_line_and_keep_the_next() {
+        let data = format!("{}\nshort\nlast", "y".repeat(100));
+        let mut reader = BufReader::with_capacity(8, data.as_bytes());
+        let mut line = Vec::new();
+        assert_eq!(
+            read_bounded_line(&mut reader, &mut line, 10).unwrap(),
+            Some(100)
+        );
+        line.clear();
+        assert_eq!(
+            read_bounded_line(&mut reader, &mut line, 10).unwrap(),
+            Some(5)
+        );
+        assert_eq!(line, b"short");
+        line.clear();
+        assert_eq!(
+            read_bounded_line(&mut reader, &mut line, 10).unwrap(),
+            Some(4)
+        );
+        assert_eq!(line, b"last");
+        line.clear();
+        assert_eq!(read_bounded_line(&mut reader, &mut line, 10).unwrap(), None);
+    }
+
+    /// A provider that is not Claude: one plain line in, `reply:<line>` out, then it exits.
+    #[derive(Default)]
+    struct EchoAdapter {
+        spawned: Mutex<Vec<ProcessSpec>>,
+    }
+
+    /// `program args` with this test process's environment.
+    fn spec(program: &str, args: &[&str]) -> ProcessSpec {
+        let host = crate::host_env::HostEnv::capture();
+        ProcessSpec {
+            program: program.into(),
+            args: args.iter().map(OsString::from).collect(),
+            env: host
+                .names()
+                .filter_map(|name| name.to_str())
+                .filter_map(|name| Some((name.to_string(), host.var(name)?)))
+                .collect(),
+            cwd: None,
+        }
+    }
+
+    impl ProviderAdapter for EchoAdapter {
+        fn provider(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        fn display_name(&self) -> &'static str {
+            "Echo"
+        }
+
+        fn command(
+            &self,
+            conversation: Option<&Conversation>,
+            _mode: ThreadPermissionMode,
+        ) -> Result<ProcessSpec> {
+            assert_eq!(conversation, None);
+            #[cfg(unix)]
+            let spec = spec("sh", &["-c", "read line; echo \"reply:$line\""]);
+            #[cfg(windows)]
+            let spec = spec(
+                "cmd",
+                &["/v:on", "/d", "/c", "set /p line=&echo reply:!line!"],
+            );
+            self.spawned.lock().unwrap().push(spec.clone());
+            Ok(spec)
+        }
+
+        fn open(&self) -> Box<dyn ProviderStream> {
+            Box::new(EchoStream)
+        }
+    }
+
+    struct EchoStream;
+
+    impl ProviderStream for EchoStream {
+        fn user_message(&mut self, message: &OutgoingMessage) -> Result<String> {
+            Ok(message.text.clone())
+        }
+
+        fn decode(&mut self, line: &str) -> Decoded {
+            let Some(text) = line.trim_end().strip_prefix("reply:") else {
+                return Decoded::default();
+            };
+            Decoded {
+                events: vec![
+                    ThreadEventKind::AssistantMessage {
+                        message_id: "reply:0".into(),
+                        text: text.into(),
+                        truncated: false,
+                    },
+                    ThreadEventKind::TurnEnd {
+                        outcome: TurnOutcome::Completed,
+                        error: None,
+                    },
+                ],
+                turn_end: Some(TurnOutcome::Completed),
+                ..Decoded::default()
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct StoredEvents {
+        events: Mutex<Vec<ThreadEventKind>>,
+        changed: Condvar,
+    }
+
+    impl ThreadHost for StoredEvents {
+        fn store(&self, _session: u32, event: &ThreadEvent) {
+            self.events.lock().unwrap().push(event.kind.clone());
+            self.changed.notify_all();
+        }
+        fn broadcast(&self, _session: u32, _events: Vec<ThreadEvent>) {}
+        fn turn_ended(
+            &self,
+            _session: u32,
+            _outcome: TurnOutcome,
+            _deferred: Option<DeferredHook>,
+        ) {
+        }
+        fn settle(&self, _session: u32, _outcome: TurnOutcome) {}
+        fn process_started(&self, _session: u32, _pid: u32) {}
+        fn process_gone(&self, _session: u32) {}
+        fn approvals_pending(&self, _session: u32, _pending: bool) {}
+        fn permission_mode_reported(&self, _session: u32, _mode: ThreadPermissionMode) {}
+        fn commands_reported(&self, _session: u32, _list: ThreadCommandList) {}
+        fn title_reported(&self, _session: u32, _title: &str) {}
+    }
+
+    #[test]
+    fn excerpts_go_first_in_fences_they_cannot_close() {
+        let excerpts = [
+            ThreadExcerpt {
+                source: "build \"main\"".into(),
+                session: Some(4),
+                text: "error\n```\nnot the end\n".into(),
+            },
+            ThreadExcerpt {
+                source: "tests".into(),
+                session: None,
+                text: "ok".into(),
+            },
+        ];
+        assert_eq!(
+            compose_message("Why does it fail?", &excerpts),
+            "Terminal selection from pane \"build  main\":\n````\nerror\n```\nnot the end\n````\n\n\
+             Terminal selection from pane \"tests\":\n```\nok\n```\n\nWhy does it fail?"
+        );
+        assert_eq!(compose_message("plain", &[]), "plain");
+    }
+
+    fn wait_for(
+        host: &StoredEvents,
+        found: impl Fn(&ThreadEventKind) -> bool,
+    ) -> std::sync::MutexGuard<'_, Vec<ThreadEventKind>> {
+        let events = host.events.lock().unwrap();
+        let (events, wait) = host
+            .changed
+            .wait_timeout_while(events, Duration::from_secs(30), |events| {
+                !events.iter().any(&found)
+            })
+            .unwrap();
+        assert!(!wait.timed_out(), "not found in {events:?}");
+        events
+    }
+
+    #[test]
+    fn an_exit_notice_names_the_provider_by_its_display_name() {
+        let host = Arc::new(StoredEvents::default());
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            host.clone(),
+        )
+        .unwrap();
+        handle.send("hello", &[]).unwrap();
+        let events = wait_for(
+            &host,
+            |event| matches!(event, ThreadEventKind::Notice { text } if text.contains("exited")),
+        );
+        let notice = events.iter().find_map(|event| match event {
+            ThreadEventKind::Notice { text } => Some(text.clone()),
+            _ => None,
+        });
+        assert!(
+            notice
+                .as_deref()
+                .is_some_and(|text| text.starts_with("Echo exited (")),
+            "{notice:?}"
+        );
+        drop(events);
+        handle.close();
+    }
+
+    /// Writes a stdout preamble larger than a pipe before it reads stdin at all.
+    #[cfg(unix)]
+    struct PreambleAdapter;
+
+    #[cfg(unix)]
+    impl ProviderAdapter for PreambleAdapter {
+        fn provider(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        fn display_name(&self) -> &'static str {
+            "Preamble"
+        }
+
+        fn command(
+            &self,
+            _conversation: Option<&Conversation>,
+            _mode: ThreadPermissionMode,
+        ) -> Result<ProcessSpec> {
+            Ok(spec(
+                "sh",
+                &["-c", "yes preamble | head -n 300000; cat >/dev/null"],
+            ))
+        }
+
+        fn open(&self) -> Box<dyn ProviderStream> {
+            Box::new(LargeHandshake)
+        }
+    }
+
+    #[cfg(unix)]
+    struct LargeHandshake;
+
+    #[cfg(unix)]
+    impl ProviderStream for LargeHandshake {
+        fn handshake(&mut self) -> Vec<String> {
+            vec!["h".repeat(1024 * 1024)]
+        }
+
+        fn user_message(&mut self, message: &OutgoingMessage) -> Result<String> {
+            Ok(message.text.clone())
+        }
+
+        fn decode(&mut self, _line: &str) -> Decoded {
+            Decoded::default()
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_handshake_larger_than_a_pipe_leaves_the_stdout_reader_draining() {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let host = Arc::new(StoredEvents::default());
+            let started = StructuredRuntime::start(
+                7,
+                Arc::new(PreambleAdapter),
+                None,
+                ThreadPermissionMode::Default,
+                1,
+                host,
+            );
+            let _ = done.send(started.map(|handle| handle.close()));
+        });
+        finished
+            .recv_timeout(Duration::from_secs(60))
+            .expect("start wrote its handshake while the stdout reader waited on the state lock")
+            .unwrap();
+    }
+
+    #[test]
+    fn an_approval_refusal_names_the_provider_by_its_display_name() {
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            Arc::new(StoredEvents::default()),
+        )
+        .unwrap();
+        handle.close();
+        let error = handle
+            .request_approval("Bash", "toolu_1", &serde_json::json!({}))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "session 7 has no running Echo process; nothing can be approved"
+        );
+    }
+
+    #[test]
+    fn a_second_adapter_drives_a_turn_without_claude_flags() {
+        let adapter = Arc::new(EchoAdapter::default());
+        let host = Arc::new(StoredEvents::default());
+        let handle = StructuredRuntime::start(
+            7,
+            adapter.clone(),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            host.clone(),
+        )
+        .unwrap();
+        handle.send("hello", &[]).unwrap();
+        let events = host.events.lock().unwrap();
+        let (events, wait) = host
+            .changed
+            .wait_timeout_while(events, Duration::from_secs(30), |events| {
+                !events
+                    .iter()
+                    .any(|event| matches!(event, ThreadEventKind::TurnEnd { .. }))
+            })
+            .unwrap();
+        assert!(!wait.timed_out(), "no turn end: {events:?}");
+        assert!(
+            matches!(&events[0], ThreadEventKind::UserMessage { text, .. } if text == "hello"),
+            "{events:?}"
+        );
+        assert!(
+            matches!(&events[1], ThreadEventKind::AssistantMessage { text, .. } if text == "hello"),
+            "{events:?}"
+        );
+        assert!(
+            matches!(
+                &events[2],
+                ThreadEventKind::TurnEnd {
+                    outcome: TurnOutcome::Completed,
+                    ..
+                }
+            ),
+            "{events:?}"
+        );
+        drop(events);
+        assert!(!handle.turn_open());
+        let spawned = adapter.spawned.lock().unwrap();
+        assert_eq!(spawned.len(), 1);
+        assert!(
+            !spawned[0].args.iter().any(|arg| arg == "--input-format"),
+            "{:?}",
+            spawned[0].args
+        );
+        drop(spawned);
+        handle.close();
+    }
+
+    fn echo_runtime() -> (Arc<StructuredRuntime>, Arc<StoredEvents>) {
+        let host = Arc::new(StoredEvents::default());
+        let handle = StructuredRuntime::start(
+            7,
+            Arc::new(EchoAdapter::default()),
+            None,
+            ThreadPermissionMode::Default,
+            1,
+            host.clone(),
+        )
+        .unwrap();
+        (handle, host)
+    }
+
+    fn last_event(host: &StoredEvents) -> ThreadEventKind {
+        host.events
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("an event")
+    }
+
+    #[test]
+    fn an_answer_claude_stopped_waiting_for_is_recorded_as_withdrawn() {
+        let (handle, host) = echo_runtime();
+        let (approval, receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::ApprovalResolved {
+                    decision: ApprovalDecision::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        let question = ThreadQuestion {
+            question: "Which?".into(),
+            header: String::new(),
+            options: Vec::new(),
+            multi_select: false,
+        };
+        let (asked, receiver) = handle
+            .request_question("tu2", vec![question], false, serde_json::json!({}))
+            .unwrap();
+        drop(receiver);
+        handle
+            .answer_question(&asked, |_, _| {
+                Ok(QuestionResolution {
+                    outcome: QuestionOutcome::Answered,
+                    answers: Vec::new(),
+                    answer: ApprovalAnswer::Allow,
+                })
+            })
+            .unwrap();
+        assert!(
+            matches!(
+                last_event(&host),
+                ThreadEventKind::QuestionResolved {
+                    outcome: QuestionOutcome::Withdrawn,
+                    ..
+                }
+            ),
+            "{:?}",
+            last_event(&host)
+        );
+        handle.close();
+    }
+
+    #[test]
+    fn an_answer_after_the_process_ended_or_over_the_message_cap_is_refused_by_name() {
+        let (handle, host) = echo_runtime();
+        let (approval, _receiver) = handle
+            .request_approval("Bash", "tu1", &serde_json::json!({"command": "ls"}))
+            .unwrap();
+        let long = "x".repeat(APPROVAL_MESSAGE_MAX_BYTES + 1);
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Deny(long))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("4097 bytes") && error.contains("APPROVAL_MESSAGE_MAX_BYTES"),
+            "{error}"
+        );
+        // Stop takes the process before it drains the held requests; an answer in between
+        // must not be recorded after the turn's end.
+        let process = handle.state.lock().unwrap().process.take().unwrap();
+        let error = handle
+            .answer_approval(&approval, ApprovalAnswer::Allow)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("process ended"), "{error}");
+        assert!(handle.approvals.lock().unwrap().contains_key(&approval));
+        assert!(
+            matches!(last_event(&host), ThreadEventKind::ApprovalRequest { .. }),
+            "{:?}",
+            last_event(&host)
+        );
+        process.end_tree(true);
+        handle.close();
+    }
+
+    #[test]
+    fn coalescing_merges_reasoning_deltas_and_keeps_the_latest_estimate() {
+        let delta = |seq, tokens| ThreadEvent {
+            seq,
+            at_ms: 0,
+            kind: ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: tokens,
+                redacted: false,
+            },
+        };
+        assert_eq!(
+            coalesce(vec![
+                delta(1, Some(50)),
+                delta(2, Some(196)),
+                delta(3, None)
+            ]),
+            vec![delta(3, Some(196))]
+        );
+    }
+
+    fn idle_state() -> HandleState {
+        HandleState {
+            process: None,
+            conversation: None,
+            permission_mode: ThreadPermissionMode::Default,
+            generation: 0,
+            turn_open: true,
+            closed: false,
+            close_cause: None,
+            partial: None,
+            reasoning: None,
+            turn: 0,
+            deferred_hook: None,
+            reported_conversation: None,
+            unconfirmed_resume: None,
+            refused_resume: None,
+        }
+    }
+
+    fn reasoning(id: &str, duration_ms: Option<u64>) -> ThreadEventKind {
+        ThreadEventKind::Reasoning {
+            message_id: id.into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms,
+            estimated_tokens: Some(50),
+            redacted: false,
+        }
+    }
+
+    #[test]
+    fn a_stored_reasoning_block_gets_its_duration_from_the_first_delta() {
+        let mut state = idle_state();
+        let started = Instant::now();
+        state.track_partial(&mut [ThreadEventKind::ReasoningDelta {
+            message_id: "r".into(),
+            text: String::new(),
+            estimated_tokens: Some(50),
+            redacted: false,
+        }]);
+        std::thread::sleep(Duration::from_millis(30));
+        let mut events = [reasoning("r", None), reasoning("other", None)];
+        state.track_partial(&mut events);
+        let ThreadEventKind::Reasoning { duration_ms, .. } = &events[0] else {
+            unreachable!()
+        };
+        let duration = duration_ms.expect("a duration on the daemon clock");
+        assert!(
+            (30..=elapsed_ms(started)).contains(&duration),
+            "{duration} ms"
+        );
+        assert_eq!(events[1], reasoning("other", None), "no delta, no duration");
+        assert!(state.reasoning.is_none());
+    }
+
+    #[test]
+    fn a_reasoning_block_cut_off_by_stop_is_stored_as_truncated_and_stays_redacted() {
+        let mut state = idle_state();
+        state.track_partial(&mut [
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: Some(50),
+                redacted: true,
+            },
+            ThreadEventKind::ReasoningDelta {
+                message_id: "r".into(),
+                text: String::new(),
+                estimated_tokens: None,
+                redacted: true,
+            },
+        ]);
+        let events = state.end_open_turn(TurnOutcome::Interrupted, None);
+        assert!(
+            matches!(
+                &events[..],
+                [
+                    ThreadEventKind::Reasoning {
+                        message_id,
+                        truncated: true,
+                        duration_ms: Some(_),
+                        estimated_tokens: Some(50),
+                        redacted: true,
+                        ..
+                    },
+                    ThreadEventKind::TurnEnd {
+                        outcome: TurnOutcome::Interrupted,
+                        ..
+                    },
+                ] if message_id == "r"
+            ),
+            "{events:?}"
+        );
+        assert!(state
+            .end_open_turn(TurnOutcome::Interrupted, None)
+            .is_empty());
+    }
+}

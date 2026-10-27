@@ -75,6 +75,141 @@ open waits up to one second for EOF and refuses if it stays open. Restart follow
 rule. A daemon handoff asks you to close Exited panes that still retain
 output readers.
 
+## Threads
+
+A **thread** shows a Claude session as a conversation instead of a terminal: your
+messages, Claude's answers rendered as Markdown, and a work log of what Claude did.
+Open one from the pane **+** menu under **Thread**, or choose **Claude thread** in an
+empty grid. Threads sit in the grid beside terminal panes, keep the same pane header and
+menu, and run at the same time. Only Claude supports the thread view; other agents open
+as terminals.
+
+Type in the box at the bottom. **Enter** sends, **Shift+Enter** adds a line. One message
+is limited to 256 KiB. While Claude works, **Enter** queues the message instead: it waits
+under the timeline marked Queued and is sent when the running turn completes, oldest
+first. This includes a turn Claude starts by itself, for example to report a finished
+background task. **Ctrl+Enter** steers: Houston stops the running turn and sends your message
+before the queue, and the thread marks it Steered. A queued message can be edited,
+removed or steered from its row; the strip above the box counts the queue and offers
+**Steer** for the first message and **Clear** for all of them. A queue holds at most 16
+messages and 1 MiB.
+
+With an empty box the button reads **Stop** while Claude works; the pane menu offers the
+same action. Stop ends Claude and the tools it started. The answer it was writing stays
+in the thread, marked "Stopped · Claude will not remember this partial answer": the next
+message resumes the conversation without it. After Stop, a failed turn, Claude exiting or
+a Houston restart, queued messages are held instead of sent: the strip says why, and each
+waits until you choose **Send** on it. A queued message that Stop cuts off while it is
+being sent goes back to the queue as held, and the thread notes it. A new message you send while Claude is idle still
+goes at once; held messages stay where they are. The pane menu's text size and Handoff actions apply
+to terminal panes only.
+
+Type **/** at the start of a message to pick a command. Skills, and the Claude commands
+that work in a thread such as `/compact`, `/context`, `/clear` and `/init`, go into the box
+and run when you send the message. Every other Claude command runs only in a terminal,
+and so do skills that edit Claude's settings, permissions or plugins. This includes those
+that change Claude's settings or sign-in, such as `/model`, `/config` and `/login`.
+Choosing one, or `/terminal`, opens the conversation in a terminal pane (see below). A
+thread refuses such a command when you type it, edit it into a queued message or an agent
+sends it, and says why. Claude lists its commands when a thread's first message runs, so a
+new thread offers only `/terminal` until then. A command name Claude does not know reaches
+Claude as ordinary text.
+
+After `/clear` the thread notes that Claude no longer remembers the messages above it;
+they stay visible. Houston keeps the new conversation as the one to resume, so Open in
+terminal, Restart and a Houston restart continue it, not the cleared one.
+
+Type **@** to pick a file under the session's working directory. Houston inserts the path
+relative to that directory, and Claude reads the file when the message runs, without
+asking. The menu leaves out symbolic links, because their target can lie outside the
+directory.
+
+**Quote selection** adds the text you selected in a terminal pane of the same grid to the
+message, as a chip named after that pane. Select a chip to read the full text before you
+send it. Houston does not redact the text, so check it for secrets. A message quotes at
+most four selections of 16 KiB each, and the whole message, selections included, stays
+within 256 KiB; this also holds when you edit a queued message. A `/` command cannot carry
+quoted selections. Claude receives each selection as a quoted block before your text.
+
+The work log shows each tool call as one row: what Claude did and to what (for example
+**Read**, **Edited** or **Ran**), with line counts for an edit and **Failed** for a call
+that returned an error. Select a row to see its input and output: shell commands show the
+command and its output, and file edits and writes show a diff. Houston cuts tool input at
+8 KiB and output at 16 KiB and says so in the row's details. When Claude reasons before a
+step, a row reads **Thinking** and then, for example, "Thought for 12s · ~800 tokens", with
+Claude's own estimate of the reasoning's size. Claude does not send its reasoning text to a
+thread, so the row has nothing to open.
+
+When a turn ends, its work folds into one summary row, such as "Worked for 2m 14s · Read 6
+files · Changed 2 files", "Stopped after 41s" or "Failed after 3m 02s". Select it to open
+the turn again. The final answer, failed calls and notices stay visible in a folded turn.
+A turn that edited files ends with a list of those files and their line counts; **Open
+diff** opens the Changes panel at that file, which shows the file's current changes in the
+repository rather than only this turn's. A file outside the pane's folder, such as a
+plan Claude saved in your home directory, has no diff to open. Houston keeps each
+thread's history on this machine, up to 20,000 events or 8 MiB, removing the oldest
+first with a note in the thread; the history is deleted when you close the pane. A pane shows the latest
+messages; **Show earlier** loads older ones, and **Jump to latest** returns to the end.
+The conversation itself goes to Anthropic through the Claude CLI exactly as it does in
+a terminal pane. An image in Claude's answer is shown as its address; Houston fetches it
+from that address only when you choose **Load image**.
+
+When Claude needs permission to run a tool, the thread shows an approval card with the
+tool and its input. Choose **Allow** to run it or **Deny** to refuse it; Claude reads the
+answer and continues. The pane shows waiting for input until you answer. The card shows up
+to 64 KiB of the input; when more is hidden it says how much, and **Allow** names the
+hidden amount because it approves all of it. Stopping or closing the thread denies a
+request nobody answered; if Houston itself restarts, the card shows it was not answered.
+Houston answers these requests only in threads; in a terminal pane Claude asks in its own
+prompt.
+
+When Claude asks a multiple-choice question, the question appears above the message box
+with one page per question. Choose an option with a click or its number key, or choose
+**Type it your own** to write an answer; some questions take several options. **Submit**
+sends every answer to Claude, and **Skip** tells Claude you skipped the question. The
+timeline keeps each question with your answer. Stopping or closing the thread before you
+answer leaves the question unanswered.
+
+When Claude finishes a plan in **Plan only**, the thread shows it as a plan card. Choose
+**Implement** to let Claude start, or **Keep planning** to send what you wrote in the
+message box as your feedback; Claude keeps planning with it. Feedback is limited to 4 KiB:
+a longer message is not sent, and Houston keeps it in the message box and says how long it
+is.
+
+The **Permissions** menu above the timeline shows how the thread asks: **Ask before
+tools** (every request becomes a card), **Accept edits**, **Plan only**, **Auto** or
+**Bypass permissions**. Change it while Claude is idle; Houston restarts Claude in the same
+conversation with the new mode and keeps it across Restart. The menu is unavailable while
+a turn runs or Claude waits for an answer. When Claude changes its own mode, for example
+by leaving **Plan only** after you choose **Implement**, the menu shows the new mode.
+
+### Moving a conversation between views
+
+The pane menu of a Claude session offers **Open as thread** on a terminal and **Open in
+terminal** on a thread. Houston restarts the session in the other view and resumes the
+same conversation by its exact ID; the pane keeps its name and its resume handle, and a
+thread keeps its history. If the conversation cannot be resumed (for example, its working
+directory changed, or Houston never received its resume handle), the session starts
+fresh in the new view and the pane says why. Switching is refused while Claude's status
+is Working, Starting or Needs input, while a thread turn is still open or an approval card
+waits for an answer, while the session is sleeping or not running, while it has live
+child panes, and while messages wait in a thread's queue (send or clear them first). A
+child pane, one another agent started, cannot open as a thread: its parent could not see
+the thread's questions or permission requests, so it stays a terminal.
+Messages and keystrokes sent to the pane during the switch are refused rather than lost
+to the restart.
+
+Turns taken while a session is a terminal are not shown in its thread. Houston counts
+them from Claude's turn-end reports and, when the session opens as a thread, adds one
+note such as "3 turns happened in the terminal; this thread does not show them." It
+never reads Claude's transcript files to fill the thread.
+
+Claude sessions you open yourself, from the pane **+** menu, an empty grid, the command
+palette, a pane's **Handoff…** or a pull request's **Hand off**, open in the view chosen
+in **Settings ▸ Agents ▸ CLIs ▸ Default view** (Terminal unless you change it). The
+**Thread** entry always opens a thread. Review and check agents, routines, phone-started
+sessions and child panes started by an agent open as terminals.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a

@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import { SessionPane } from './SessionPane'
+import { viewSwitchRefusal } from '../thread/viewSwitch'
+import { publishQueueLength } from '../thread/queueLength'
 import type { HandoffSource } from './PaneHandoff'
 import { ghosttySurfaceMockModule } from '../test/ghosttySurfaceMock'
 
@@ -356,4 +358,57 @@ describe('pane ··· menu', () => {
       HTMLElement.prototype.getBoundingClientRect = orig
     }
   })
+  it('offers a thread Stop instead of terminal rows, and refuses Handoff by name', () => {
+    ;(fakeClient as unknown as { trySend: unknown }).trySend = vi.fn().mockReturnValue(true)
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'idle' }))
+    openPaneMenu()
+    const labels = rows().map((b) => b.textContent ?? '')
+    for (const gone of ['Bigger text', 'Smaller text', 'Clear screen', 'Interrupt']) expect(labels.some((l) => l.includes(gone))).toBe(false)
+    expect(row('Stop').disabled).toBe(true)
+    expect(row('Handoff…').disabled).toBe(true)
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'working' }))
+    openPaneMenu()
+    click(row('Stop'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'thread_stop', session: 1 })
+    expect(onHandoff).not.toHaveBeenCalled()
+  })
+  it('moves an idle Claude conversation to the other view, and refuses while Claude works', () => {
+    ;(fakeClient as unknown as { trySend: unknown }).trySend = vi.fn().mockReturnValue(true)
+    render(makeSession({ agent: 'claude', status: 'idle' }))
+    openPaneMenu()
+    click(row('Open as thread'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_set_view', session: 1, view: 'thread' })
+    render(makeSession({ agent: 'claude', status: 'working' }))
+    openPaneMenu()
+    expect(row('Open as thread').disabled).toBe(true)
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'idle' }))
+    openPaneMenu()
+    click(row('Open in terminal'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_set_view', session: 1, view: 'terminal' })
+    act(() => publishQueueLength(fakeClient, 1, 2))
+    render(makeSession({ agent: 'claude', view: 'thread', status: 'idle' }))
+    openPaneMenu()
+    expect(row('Open in terminal').disabled).toBe(true)
+    act(() => publishQueueLength(fakeClient, 1, 0))
+    render(makeSession({ agent: 'codex', status: 'idle' }))
+    openPaneMenu()
+    expect(rows().some((b) => b.textContent?.includes('Open as thread'))).toBe(false)
+  })
+
+  it('names why a stopped, sleeping or child Claude session cannot change view', () => {
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))).toBe('The session is exited; restart it first')
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', state: 'sleeping', status: 'idle' }))).toBe('The session is sleeping; wake it first')
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'needs-input' }))).toBe("Claude's status is Needs input; wait for the turn to end or stop it first")
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle' }))).toBeNull()
+    expect(viewSwitchRefusal(makeSession({ agent: 'claude', status: 'idle', view: 'thread' }), 2)).toBe('2 queued messages wait in this thread; send or clear them first')
+    const child = makeSession({ agent: 'claude', status: 'idle', spawned_by: 7, delegation: { parent: 7, started_at: 1000, state: 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } })
+    expect(viewSwitchRefusal(child)).toBe('It is a child of pane 7, which could not see its questions or permission requests; keep it a terminal')
+    render(makeSession({ agent: 'claude', state: 'exited', status: 'idle' }))
+    openPaneMenu()
+    expect(row('Open as thread').disabled).toBe(true)
+    render(child)
+    openPaneMenu()
+    expect(row('Open as thread').disabled).toBe(true)
+  })
+
 })

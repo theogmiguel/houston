@@ -38,6 +38,7 @@ import type { ReviewDiffsData } from '../git/review'
 import { useGitStatusSubscription, type DiffState } from './git/useGitStatusSubscription'
 import { usePrSubscription, type PrState } from './git/usePrSubscription'
 import { useReviewSubscription, type ReviewNotice } from './git/useReviewSubscription'
+import { CHANGES_REVEAL_EVENT, changesListStamp, takeChangesReveal } from '../thread/changesReveal'
 import { ReviewProviderModal } from './git/ReviewProviderModal'
 import { buildResolveBrief, pausedOperationBanner, pausedOperationLabel } from './git/pausedOperation'
 import type { GitOperation } from '../houston/generated/GitOperation'
@@ -762,6 +763,24 @@ export function ChangesPane({
       if (compact) setExpandedPaths((current) => new Set(current).add(initialPath))
     }
   }, [rows, files, selected, compact])
+
+  const [revealRequests, setRevealRequests] = useState(0)
+  useEffect(() => {
+    const onReveal = (): void => setRevealRequests((count) => count + 1)
+    window.addEventListener(CHANGES_REVEAL_EVENT, onReveal)
+    return () => window.removeEventListener(CHANGES_REVEAL_EVENT, onReveal)
+  }, [])
+  const filesStamp = useRef(0)
+  useEffect(() => {
+    filesStamp.current = changesListStamp()
+  }, [files])
+  useEffect(() => {
+    if (!repoDir) return
+    const path = takeChangesReveal(repoDir, files ? rows.map((row) => row.path) : null, filesStamp.current)
+    if (path === null) return
+    setSelected(path)
+    if (compact) setExpandedPaths((current) => new Set(current).add(path))
+  }, [repoDir, files, rows, compact, revealRequests])
   refreshRef.current = refresh
 
   useEffect(() => {

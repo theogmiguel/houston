@@ -80,6 +80,7 @@ import type { SessionPolicy } from "./SessionPolicy";
 import type { SessionPrWatches } from "./SessionPrWatches";
 import type { SessionProcsEntry } from "./SessionProcsEntry";
 import type { SessionState } from "./SessionState";
+import type { SessionView } from "./SessionView";
 import type { SessionWorktree } from "./SessionWorktree";
 import type { SkillPushRecord } from "./SkillPushRecord";
 import type { SkillToolState } from "./SkillToolState";
@@ -108,6 +109,8 @@ import type { TaskSummary } from "./TaskSummary";
 import type { TaskTrackerProvider } from "./TaskTrackerProvider";
 import type { TaskTrackerWorkspaceSettings } from "./TaskTrackerWorkspaceSettings";
 import type { TasksAccess } from "./TasksAccess";
+import type { ThreadEvent } from "./ThreadEvent";
+import type { ThreadQueuedMessage } from "./ThreadQueuedMessage";
 import type { TitleSource } from "./TitleSource";
 import type { TransferExportSummary } from "./TransferExportSummary";
 import type { TransferFileSummary } from "./TransferFileSummary";
@@ -131,7 +134,20 @@ import type { WorkspaceAction } from "./WorkspaceAction";
 import type { WorkspaceRelocateMoved } from "./WorkspaceRelocateMoved";
 import type { WorktreeCheckResult } from "./WorktreeCheckResult";
 
-export type ServerMsg = { "type": "generated_titles", enabled: boolean, } | { "type": "zcode_quota_check", enabled: boolean, } | { "type": "hello_ok", protocol: number, sessions: Array<SessionInfo>, workspaces: Array<Workspace>, tags: Array<TagInfo>, recovery?: RecoverySummary | null, safe_mode: SafeModeSummary, snapshot_attach: boolean, snapshot_format_version: number, } | { "type": "session_create_result", request: number, info: SessionInfo | null, error: string | null, } | { "type": "session_created", info: SessionInfo, } | { "type": "session_state", session: number, state: SessionState, exit_code: number | null, } | { "type": "session_updated", info: SessionInfo, } | { "type": "session_memory", session: number, bytes?: number | null, measured_at_ms?: number | null, unavailable_reason?: string | null, } | { "type": "session_list", sessions: Array<SessionInfo>, } | { "type": "pr_watch_list", watches: Array<SessionPrWatches>, } | { "type": "session_removed", session: number, } | { "type": "scrollback", session: number, data: string, generation: number, replayed_bytes: number, bytes_seen: number, attempt: number, } | { "type": "attach_snapshot", session: number, generation: number, attempt: number, output_offset: number, format_version: number, state: string, } | { "type": "workspace_list", workspaces: Array<Workspace>, } | { "type": "workspace_relocated", from: string, to: string, moved: WorkspaceRelocateMoved, } | { "type": "workspace_focus", path: string, } | { "type": "workspace_local_servers", workspace: string, servers: Array<LocalServer>, unsupported: string | null, truncated: boolean, } | { "type": "session_resized", session: number, cols: number, rows: number, } | { "type": "session_renamed", session: number, title: string, title_source: TitleSource, } | { "type": "session_tags_set", session: number, tags: Array<number>, } | { "type": "session_note", session: number, note: PaneNote | null, } | { "type": "session_resumable", session: number, resumable: boolean, } | { "type": "pr_watch_changed", session: number, watches: Array<PrWatchInfo>, } | { "type": "merge_queue", workspace: string, dir?: string | null, entries: Array<MergeQueueEntry>,
+export type ServerMsg = { "type": "generated_titles", enabled: boolean, } | { "type": "default_view", view: SessionView, } | { "type": "zcode_quota_check", enabled: boolean, } | { "type": "hello_ok", protocol: number, sessions: Array<SessionInfo>, workspaces: Array<Workspace>, tags: Array<TagInfo>, recovery?: RecoverySummary | null, safe_mode: SafeModeSummary, snapshot_attach: boolean, snapshot_format_version: number, } | { "type": "session_create_result", request: number, info: SessionInfo | null, error: string | null, } | { "type": "session_created", info: SessionInfo, } | { "type": "session_state", session: number, state: SessionState, exit_code: number | null, } | { "type": "session_updated", info: SessionInfo, } | { "type": "session_memory", session: number, bytes?: number | null, measured_at_ms?: number | null, unavailable_reason?: string | null, } | { "type": "session_list", sessions: Array<SessionInfo>, } | { "type": "pr_watch_list", watches: Array<SessionPrWatches>, } | { "type": "session_removed", session: number, } | { "type": "thread_events", session: number, events: Array<ThreadEvent>, } | { "type": "thread_history", session: number,
+/**
+ * The request's `before_seq`, so a client matches the reply to its request.
+ */
+before_seq?: number | null, events: Array<ThreadEvent>, has_more: boolean, } | { "type": "thread_queue", session: number, items: Array<ThreadQueuedMessage>, } | { "type": "thread_commands", session: number,
+/**
+ * Claude built-ins verified to run in a thread; sent as `/name` text.
+ */
+commands: Array<string>, skills: Array<string>,
+/**
+ * Every other command Claude lists, and skills that edit its settings, permissions or
+ * plugins: never sent from a thread; a message starting with one is refused by name.
+ */
+terminal_only: Array<string>, } | { "type": "scrollback", session: number, data: string, generation: number, replayed_bytes: number, bytes_seen: number, attempt: number, } | { "type": "attach_snapshot", session: number, generation: number, attempt: number, output_offset: number, format_version: number, state: string, } | { "type": "workspace_list", workspaces: Array<Workspace>, } | { "type": "workspace_relocated", from: string, to: string, moved: WorkspaceRelocateMoved, } | { "type": "workspace_focus", path: string, } | { "type": "workspace_local_servers", workspace: string, servers: Array<LocalServer>, unsupported: string | null, truncated: boolean, } | { "type": "session_resized", session: number, cols: number, rows: number, } | { "type": "session_renamed", session: number, title: string, title_source: TitleSource, } | { "type": "session_tags_set", session: number, tags: Array<number>, } | { "type": "session_note", session: number, note: PaneNote | null, } | { "type": "session_resumable", session: number, resumable: boolean, } | { "type": "pr_watch_changed", session: number, watches: Array<PrWatchInfo>, } | { "type": "merge_queue", workspace: string, dir?: string | null, entries: Array<MergeQueueEntry>,
 /**
  * The last day's merge log, newest first.
  */

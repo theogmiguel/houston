@@ -1,4 +1,5 @@
 5 core/houston-core/src/bin/fake_agent.rs
+2 core/houston-core/src/bin/fake_claude_stream.rs
 1 core/houston-core/src/bin/supervisor-test-daemon.rs
 1 core/houston-core/src/claude_hooks.rs
 2 core/houston-core/src/daemon.rs

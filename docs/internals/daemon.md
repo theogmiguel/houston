@@ -318,7 +318,11 @@ pins the byte cap near the measured 258 KiB/12-session number this forbids blowi
 reconstructs each session on `adoption::RawMasterPty` (`portable_pty::MasterPty` has no
 `from_raw_fd` counterpart to its own `as_raw_fd`) and acks **prepared**; a refusal or failure up
 to this point is fully reversible — O un-parks every session and keeps serving, C exits having
-touched nothing durable. Adopted PTYs keep separate descriptors and mutexes for writes
+touched nothing durable. A thread session has no descriptor to carry: before parking, O
+ends each live thread as shutdown does (row Interrupted, conversation kept, a running turn
+recorded as interrupted) and lists it in the manifest's `threads`. C restores those after
+commit, resuming each conversation as a cold restore does; a handoff that fails after they
+ended restores them on O instead. Adopted PTYs keep separate descriptors and mutexes for writes
 and terminal control. Termination can therefore signal the foreground process group while
 stdin is blocked, then interrupt the writer without losing the control descriptor.
 

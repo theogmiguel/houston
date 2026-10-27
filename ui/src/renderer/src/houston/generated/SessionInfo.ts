@@ -10,7 +10,9 @@ import type { SessionContext } from "./SessionContext";
 import type { SessionLimit } from "./SessionLimit";
 import type { SessionState } from "./SessionState";
 import type { SessionTask } from "./SessionTask";
+import type { SessionView } from "./SessionView";
 import type { SessionWorktree } from "./SessionWorktree";
+import type { ThreadPermissionMode } from "./ThreadPermissionMode";
 import type { TitleSource } from "./TitleSource";
 
 export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, checkout_root?: string | null, worktree?: SessionWorktree | null, checkout?: SessionCheckout | null, activity?: SessionActivity | null, state: SessionState, title: string, title_source: TitleSource, codename: string, detected_agent?: AgentKind | null,
@@ -38,6 +40,14 @@ compactions?: number | null,
  * chip without the Tasks tab being open.
  */
 task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, limit?: SessionLimit | null,
+/**
+ * Terminal for every session except a Claude session opened as a thread.
+ */
+view?: SessionView,
+/**
+ * Set for thread sessions only.
+ */
+permission_mode?: ThreadPermissionMode | null,
 /**
  * When this pane's conversation left in a workspace transfer; its process stopped then.
  */

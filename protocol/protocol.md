@@ -1,4 +1,4 @@
-# Wire protocol v153
+# Wire protocol v160
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -54,7 +54,9 @@ withdraws one. The PTY is always drained daemon-side, so an agent never blocks
 on a pane nobody is watching, and scrollback keeps recording either way. Stdin
 frames are accepted for any live session; a write failure comes back as an
 `error` with `context: "stdin"`, except for a session that is neither live nor retained,
-whose frames are dropped without one.
+whose frames are dropped without one. A thread session has no PTY: it emits no output
+frames, its stdin frames are refused with `context: "stdin"` naming its view, and
+`session_resize` echoes the request without reaching the child.
 
 **Frames are bounded per connection and per session, by payload bytes.** Each
 socket owns one queue per session it takes frames for, capped at 4 MiB of
@@ -96,13 +98,26 @@ failure not given a typed refusal comes back as `error`.
 | Message | Fields | Reply |
 |---|---|---|
 | `hello` | `token`, `protocol` | `hello_ok` (direct), or `error` + close |
-| `session_create` | `request?: u32` (connection-local correlation), `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported) | `session_created` (bcast); direct `session_create_result` when `request` is supplied, including refusal; this socket starts receiving that session's frames |
+| `session_create` | `request?: u32` (connection-local correlation), `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported), `view?: SessionView` (v154: default `terminal`; `thread` runs a Claude session headless as a thread and is refused by name for any other agent, an ACP slug, a custom `cmd` or SSH) | `session_created` (bcast); direct `session_create_result` when `request` is supplied, including refusal; this socket starts receiving that session's frames |
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal. An unknown or already removed session succeeds with no reply, and so does a session already closing; a parent's close leaves a child that is already closing to that close. Closing a retained pane first stops processes its previous workload left |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact. Before replacing a retained or ended pane the daemon stops processes its previous workload left (its scope on Linux, else its verified PTY root) |
 | `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
+| `thread_send` | `session`, `text` (≤ `THREAD_USER_MESSAGE_MAX_BYTES` (256 KiB), non-blank; the same limit applies to orchestration deliveries) | v154: `thread_events` (bcast) with the stored `user_message`; starts the thread's process first when it has none, resuming its conversation. Refused by name for a terminal session and over the limit, naming the limit and the size. v159: `steer` (default false). Without `steer`, sent at once (`delivery: direct`) while no turn is open and no message is `queued` (held messages do not count); otherwise it joins the queue as `queued` and `thread_queue` (bcast) follows. With `steer`, an open turn is stopped (`turn_end{interrupted}`) and this message is sent first, ahead of the queue (`delivery: steered`); with no turn open it is sent at once and the queue stays as it is. The daemon never writes a message to Claude while a turn is open, including a turn Claude started itself (`system/init` opens a turn). v160: `excerpts: ThreadExcerpt[]` (default empty; at most `THREAD_EXCERPTS_MAX` (4), each `text` non-blank and at most `THREAD_EXCERPT_MAX_BYTES` (16 KiB), `source` 1 to 256 bytes); with an excerpt `text` may be blank. Claude reads each excerpt as a fenced block headed `Terminal selection from pane "<source>":` before `text`, and the composed message must fit `THREAD_USER_MESSAGE_MAX_BYTES`; the stored `user_message` and a queued message keep `text` and `excerpts` apart. Refusals name the limit and the size. A message whose text starts with `/name` is a Claude command, which Claude runs in the thread. The daemon refuses, by name and on every path (`thread_send`, `thread_queue_edit`, the queue's delivery, `pane_prompt` and a first message), one whose name is in the stored `terminal_only` list or is a command that changes Claude's settings, bills, changes consent or reads its configuration; before Claude's first `system/init` it refuses the built-ins not verified headless. A command with excerpts is refused (`a command cannot carry quoted selections`). v160: the session id Claude's stream reports becomes the session's resume handle when it changes (after `/clear`, and without hooks). Requests that change one thread session (`thread_send`, `thread_stop`, `thread_approve`, `thread_answer`, `thread_set_permission_mode`, `thread_queue_edit`, `thread_queue_remove`, `thread_queue_send`, `thread_steer`) apply in the order the daemon reads them |
+| `thread_stop` | `session` | v154: ends the thread's whole process tree, stores the answer streamed so far as `assistant_message{truncated: true}` and records `turn_end{interrupted}`; the session stays `running` and idle with no process until the next `thread_send`. Without a process it succeeds with no event. Refused by name for a terminal session |
+| `thread_approve` | `session`, `request_id`, `allow`, `message?` (told to Claude on a denial; blank uses Houston's default) | v155: `thread_events` (bcast) with `approval_resolved`; the held permission call returns allow or deny to Claude. Refused by name for a terminal session and for a `request_id` that is not pending, listing the pending ones; the refusal starts `thread_approve refused for session <id>`. a `message` over `APPROVAL_MESSAGE_MAX_BYTES` (4 KiB, in `DEFAULTS.ts`) is refused by name, never cut, and the request stays held |
+| `thread_answer` | `session`, `request_id`, `answers?: QuestionAnswer[]` (absent or `null` skips the question) | v158: `thread_events` (bcast) with `question_resolved`; the held `AskUserQuestion` call returns to Claude as an allow whose `updatedInput` is Claude's input plus `answers` (question text to the chosen labels and the user's own text, joined with `, `), or, for a skip, as a deny reading "The user skipped the question.". Refused by name for a terminal session and for a `request_id` that is not a held question; refused when an answer names no question of the request, leaves a question unanswered, answers one twice, chooses a label that is not an option, chooses more than one answer for a single-choice question, or types more than `THREAD_QUESTION_OTHER_MAX_BYTES` (4 KiB). The refusal starts `thread_answer refused for session <id>` and the question stays held |
+| `thread_set_permission_mode` | `session`, `mode: ThreadPermissionMode` | v155: `session_updated` (bcast) with the new `permission_mode`; restarts a running process with the mode's flags and `--resume`, then records the mode for Restart and restore. Refused while the session is working or waiting for input (naming the status), while a turn is open or while a permission request waits (naming the cause); `auto` is refused for a model that cannot run it. Refused by name for a terminal session. `permission_mode` also changes, with `session_updated`, when Claude reports another mode in `system/init` or `system/status` (for example after ExitPlanMode) |
+| `thread_queue_list` | `session` | v159: `thread_queue` (direct). Refused by name for a terminal or unknown session |
+| `thread_commands_list` | `session` | v160: `thread_commands` (direct), from the database; empty lists before the thread's first turn. Refused by name for a terminal or unknown session |
+| `thread_queue_edit` | `session`, `id`, `text` (non-blank, ≤ `THREAD_USER_MESSAGE_MAX_BYTES`) | v159: `thread_queue` (bcast); the message keeps its place and state. Refused for an `id` that is no longer queued (sent or removed) and past `THREAD_QUEUE_MAX_BYTES`, naming the limit and the size |
+| `thread_queue_remove` | `session`, `id` | v159: `thread_queue` (bcast). Refused for an `id` that is no longer queued |
+| `thread_queue_send` | `session`, `id` | v159: sends a `queued` or `held` message now (`delivery: queued`): `thread_queue` (bcast) without it, then `thread_events`. While a turn is open the message becomes `queued` instead |
+| `thread_steer` | `session`, `id` | v159: takes the message out of the queue before anything is written, so it is sent once: with a turn open, stops it (`turn_end{interrupted}`) and sends the message first (`delivery: steered`); if the turn ended meanwhile, sends it as the next turn (`delivery: queued`) |
+| `thread_history` | `session`, `before_seq?` (absent: the newest page), `limit` (1 to `THREAD_HISTORY_PAGE_MAX` (500)) | v154: `thread_history` (direct), oldest first, echoing `before_seq`. A refusal is an `error` with `context: "session:<id>"` whose message starts `thread_history refused for session <id>` and names the cause: a terminal session, an unknown session or a limit outside the range |
+| `session_set_view` | `session`, `view: SessionView` | v156: moves a Claude session's conversation to the other view with an exact-ID respawn (the reply is the respawn's: `session_removed` for the old id and `session_created` for its replacement, which keeps its name, children and resume handle; a thread keeps its history). Going to `thread` stores one `notice` counting the `Stop` hooks the session reported in terminal view, when there were any. An `error` with `context: "session:<id>"` refuses, by name: another agent, an ACP slug or custom command, the view the session already has, a status of Working, Starting or Needs input, an open thread turn, or (v159) messages waiting in the thread's queue, naming their count |
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct); an unknown or removed session gets no reply and no `error` |
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. An unknown or removed session gets no reply and no `error`, and clears this socket's state for it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
@@ -112,6 +127,8 @@ failure not given a typed refusal comes back as `error`.
 | `generated_titles_set` | `enabled` | `generated_titles` (bcast) |
 | `zcode_quota_check_get` | — | `zcode_quota_check` with the current off-default setting |
 | `zcode_quota_check_set` | `enabled` | `zcode_quota_check` (bcast) |
+| `default_view_get` | — | v156: `default_view` with the current setting (default `terminal`) |
+| `default_view_set` | `view: SessionView` | v156: `default_view` (bcast). The renderer applies it to its new-session flows; `session_create` without `view` stays `terminal` |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
 | `session_note_clear` | `session` (an active or restored session) | `session_note` (bcast) with `note: null` |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
@@ -499,6 +516,10 @@ A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_cle
 | `session_state` | `session`, `state: SessionState`, `exit_code?` | bcast on every lifecycle transition |
 | `session_list` | `sessions: SessionInfo[]` | direct reply to `session_list` |
 | `session_removed` | `session` | bcast — the session is gone from the roster |
+| `thread_events` | `session`, `events: ThreadEvent[]` | v154: bcast. A thread session's live timeline, coalesced to at most 30 messages a second per session; deltas within a batch stay in order. Never on a binary frame. Kill, Restart or a daemon stop during a turn records the streamed partial answer, `turn_end{interrupted}` and a `notice` naming the cause; an exit records `turn_end{error}` and a `notice` with the exit code; a skipped oversized output line (over 4 MiB) records a `notice` naming its size |
+| `thread_queue` | `session`, `items: ThreadQueuedMessage[]` | v159: the whole queue, oldest first. Bcast after every change, in the order of the changes; direct reply to `thread_queue_list`, never ahead of a snapshot broadcast before it. After a completed turn the daemon sends the head when it is `queued`; after Stop, an error turn or an exit, the queued messages become `held` with the reason, and nothing is sent until the user sends one. A message whose write fails returns to the head as `held` with the error, and a `notice` says so; it is never retried silently, and it keeps counting against the queue limits while it is written. Refusals of the queue requests are an `error` with `context: "session:<id>"` whose message starts `<request> refused for session <id>` |
+| `thread_commands` | `session`, `commands`, `skills`, `terminal_only` (names without `/`, each list at most `THREAD_COMMANDS_MAX` (512)) | v160: the `/` commands Claude listed in its last `system/init`, sorted for a thread: `commands` are the Claude built-ins verified to run headless, `skills` are sent as `/name args`, and `terminal_only` holds every other name, including Claude's own `terminal_slash_commands`, commands that change persistent CLI state, bill, change consent or read its configuration (`model`, `config`, `login`, `logout`, `mcp`, `doctor`, `effort`, `fast`, `ultrareview`, `extra-usage`, `design-consent`, `design-revoke`, `schedule`, plugin and permission commands), and any skill or command whose name contains `config`, `permission` or `plugin`, even when listed as a skill. These are never sent from a thread. Bcast when the list changes (Claude reports it as every turn starts); kept per session across restarts; direct reply to `thread_commands_list` |
+| `thread_history` | `session`, `before_seq?` (the request's, echoed), `events: ThreadEvent[]`, `has_more` | v154: direct reply to `thread_history`, oldest first, never an `assistant_delta`; `has_more` means earlier events remain. A client that attaches asks for the newest page, then appends live events whose `seq` exceeds its last |
 | `scrollback` | `session`, `data` (base64), `generation`, `replayed_bytes`, `bytes_seen`, `attempt` (how many `session_attach` for this session this socket has sent, this one included) | direct reply to `session_attach`; honoured only when `attempt` matches the client's own count |
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
@@ -545,6 +566,7 @@ A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_cle
 | `session_checkout` | `id`, `checkout?: SessionCheckout`, `checkout_root?`, `worktree?: SessionWorktree` | bcast when a session's checkout identity changes or is first resolved; carries the same three fields as `SessionInfo`, which replace the client's copy. Primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
 | `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `zcode_quota_check` | `enabled: bool` | v152: current daemon setting for the opt-in ZCode plan-quota check of a stalled pane |
+| `default_view` | `view: SessionView` | v156: the view new Claude sessions open in from the renderer's new-session flows |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?`, `not_a_repo`, `operation?: GitOperation` | direct reply to `git_status` and to every mutating git message. `operation` (`merge`, `rebase`, `cherry_pick`) is a git operation paused in the checkout, read from the markers in its own git dir (`rebase-merge/`, `rebase-apply/` without `applying`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`); absent when none is paused |
@@ -662,7 +684,9 @@ data are internally tagged; the tag field is named in each entry below.
 
 ```
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | zcode | droid | copilot | aider | ssh
-SessionState       running | exited | killed | interrupted
+SessionState       running | exited | killed | interrupted. A thread session without a
+                   process (after `thread_stop`, after its process exited, or restored and
+                   waiting for its first message) is `running` with status idle
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
@@ -731,7 +755,78 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    with its id, at a claimed or Started task — so a header chip needs no Tasks tab),
                    transferred_at_ms? (v151: when the pane's conversation left in a workspace
                    transfer; its process stopped then), transfer_fork? (v151: the pane resumed a
-                   conversation after it left, so it continues a fork; absent means false)
+                   conversation after it left, so it continues a fork; absent means false),
+                   view: SessionView (v154: default `terminal`),
+                   permission_mode?: ThreadPermissionMode (v155: thread sessions only)
+SessionView        terminal | thread
+ThreadEvent        seq (per session, increasing; not reused within one daemon run, so a client
+                   reloads history after reconnecting), at_ms (epoch ms), kind: ThreadEventKind
+ThreadEventKind    tag `type`: user_message{text, delivery: MessageDelivery (v159; absent reads as
+                   `direct`), excerpts: ThreadExcerpt[] (v160; absent reads as empty)} | assistant_delta{message_id, text} (live only,
+                   never stored) | assistant_message{message_id, text, truncated} (supersedes the
+                   deltas with its `message_id`, which names one text block of one model message) |
+                   reasoning_delta{message_id, text?, estimated_tokens?, redacted?} (v157: live
+                   only, never stored) | reasoning{message_id, text?, truncated?, duration_ms?,
+                   estimated_tokens?, redacted?} (v157: one reasoning block, superseding its
+                   deltas; `duration_ms` runs from the first delta to the block's end on the
+                   daemon's clock; `estimated_tokens` is the CLI's estimate of the block's size;
+                   `text` is empty because Claude's headless stream sends none; a block cut
+                   off by `thread_stop`, an exit or a turn's end is stored with `truncated`) |
+                   tool_call{tool_use_id, name, input (the input JSON as text), truncated,
+                   summary?: ToolSummary} (v157: `summary` is computed from the whole input, so it
+                   survives the input cap; events stored earlier have none) |
+                   tool_result{tool_use_id, is_error, output, truncated} (an answer cut off by
+                   `thread_stop` or an exit is stored as `assistant_message` with `truncated`) |
+                   turn_end{outcome: TurnOutcome, error?} | notice{text} (v160 also when Claude
+                   clears or compacts its conversation) |
+                   approval_request{request_id, tool_use_id, tool_name, input, truncated,
+                   input_bytes} (v155: Claude asks to run a tool; Houston holds the call; `input`
+                   is cut at `THREAD_APPROVAL_INPUT_MAX_BYTES` (64 KiB) and `input_bytes` is the
+                   whole input's size; names and ids are cut at 256 bytes) |
+                   approval_resolved{request_id, decision: ApprovalDecision, reason?} (v155;
+                   `reason` is the denial message or why nobody answered) |
+                   question_request{request_id, tool_use_id, questions: ThreadQuestion[],
+                   truncated} (v158: Claude's `AskUserQuestion`, held like an approval; a header
+                   or option description is cut at `THREAD_QUESTION_TEXT_MAX_BYTES` (2 KiB) and
+                   `truncated` says so; a longer question or label, more than
+                   `THREAD_QUESTIONS_MAX` (8) questions or `THREAD_QUESTION_OPTIONS_MAX` (16)
+                   options, a repeated question or label, or a missing field makes the input
+                   malformed, and Claude is told to ask in its reply instead) |
+                   question_resolved{request_id, outcome: QuestionOutcome, answers:
+                   QuestionAnswer[], reason?} (v158: `answers` are what the user chose, one per
+                   question, and are empty unless `answered`; `reason` says why nobody
+                   answered).
+                   Caps: tool input 8 KiB, tool output 16 KiB, assistant text 256 KiB;
+                   `truncated` says a cap applied, except on `reasoning`, where it means the
+                   block was cut off before its end
+ToolSummary        kind: ToolKind, target (path, command, pattern, URL or `server · tool`, cut at
+                   `THREAD_TOOL_TARGET_MAX_BYTES`, 512 bytes), added?, removed? (line counts of an
+                   edit or a write)
+ToolKind           read | search | web | command | edit | write | todo | question | plan | task |
+                   mcp | other
+TurnOutcome        completed | interrupted | error
+MessageDelivery    direct (no turn open, nothing queued) | queued (waited in the thread's queue) |
+                   steered (stopped the open turn and went first)
+ThreadExcerpt      source (the pane's name), session?, text: a terminal selection quoted into a
+                   thread message (v160)
+ThreadQueuedMessage id, text, state: QueuedState, hold_reason?, created_at_ms (epoch ms),
+                   excerpts: ThreadExcerpt[] (v160; counted against the byte cap with `text`). A
+                   session's queue holds at most `THREAD_QUEUE_MAX_ITEMS` (16) messages and
+                   `THREAD_QUEUE_MAX_BYTES` (1 MiB) of text; it follows the session through
+                   respawn and restore and goes when the session closes. A daemon start turns
+                   every `queued` message `held` ("Houston restarted before this message was sent.")
+QueuedState        queued (sent when the open turn completes) | held (sent only by the user;
+                   `hold_reason` says why)
+ApprovalDecision   allowed | denied | withdrawn (Claude ended the call, or Houston restarted,
+                   before an answer; the tool did not run)
+ThreadQuestion     question, header, options: ThreadQuestionOption[], multi_select
+ThreadQuestionOption label, description
+QuestionAnswer     question (the question's text), selected (option labels), other? (the user's
+                   own text)
+QuestionOutcome    answered | skipped | denied (Stop, Kill, Close or the process's exit came
+                   first) | withdrawn (Claude ended the call, or Houston restarted, first)
+ThreadPermissionMode default | accept_edits | plan | auto | bypass (Claude's `--permission-mode`
+                   default, acceptEdits, plan, auto, and `--dangerously-skip-permissions`)
 DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
@@ -1603,6 +1698,13 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 160 | **A thread's composer offers Claude's `/` commands and quotes terminal selections.** `thread_send`, `user_message` and `ThreadQueuedMessage` gain `excerpts: ThreadExcerpt[]`. New `thread_commands_list`, answered by `thread_commands` (bcast on change). New caps `THREAD_EXCERPTS_MAX` and `THREAD_EXCERPT_MAX_BYTES` in `DEFAULTS.ts`. |
+| 159 | **A thread queues messages written during a turn.** `thread_send` gains `steer`; `user_message` gains `delivery: MessageDelivery`. New `thread_queue_list`, `thread_queue_edit`, `thread_queue_remove`, `thread_queue_send` and `thread_steer`, answered by `thread_queue` (`ThreadQueuedMessage`, `QueuedState`). `session_set_view` is refused while the thread's queue holds a message. New caps `THREAD_QUEUE_MAX_ITEMS` and `THREAD_QUEUE_MAX_BYTES` in `DEFAULTS.ts`. |
+| 158 | **Threads ask questions with choices.** `ThreadEventKind` gains `question_request` (`ThreadQuestion`, `ThreadQuestionOption`) and `question_resolved` (`QuestionOutcome`, `QuestionAnswer`). New `thread_answer` answers or skips a held question. |
+| 157 | **Threads show their work log.** `ThreadEventKind` gains `reasoning` (stored, with duration and token estimate; `truncated` when cut off before its end) and `reasoning_delta` (live only). `tool_call` gains `summary?: ToolSummary` (`ToolKind`, a target cut at `THREAD_TOOL_TARGET_MAX_BYTES`, edit line counts) computed before the input cap. `pane_read` of a thread adds no reasoning text. |
+| 156 | **A conversation moves between thread and terminal views.** New `session_set_view {session, view}`, answered like a respawn and refused by name while the agent works. New `default_view_get {}` / `default_view_set {view}` and the `default_view {view}` broadcast. |
+| 155 | **Threads ask for tool permission.** `ThreadEventKind` gains `approval_request` and `approval_resolved` (`ApprovalDecision`). New `thread_approve` answers a held request and `thread_set_permission_mode` changes `SessionInfo.permission_mode` (`ThreadPermissionMode`, thread sessions only) between turns. |
+| 154 | **Claude sessions can run as a thread.** `SessionView` (`terminal` \| `thread`) on `SessionInfo.view` and `session_create.view?`; thread view is Claude only and refused by name otherwise. New `thread_send`, `thread_stop` and `thread_history`, answered by `thread_events` (bcast, live, coalesced) and `thread_history` (direct, echoing `before_seq`), carrying `ThreadEvent` with `ThreadEventKind` and `TurnOutcome`. New caps `THREAD_HISTORY_PAGE_MAX` and `THREAD_USER_MESSAGE_MAX_BYTES` in `DEFAULTS.ts`. |
 | 153 | **The Pull request tab reads a Bitbucket Cloud pull request (opt-in, read-only).** `pr_detail`'s reply replaces `gh: GhState` with `access: ForgeAccess`; `PrDetail` gains `read_only?`. New `forge_settings_get`, `bitbucket_enabled_set`, `bitbucket_token_set` and `bitbucket_token_clear`, answered by `forge_settings`; a refused change is an `error` with `context = "forge_settings"`. Every pull-request write and GitHub-only read refuses a remote on a forge known not to be GitHub by forge and operation. **Suspected defects.** New `defects_get`, `defect_decide`, `defect_issue_draft` and `defect_issue_file`, answered by `suspected_defects`, `defect_issue_draft`, `defect_issue_filed` and the once-daily `defect_notice`; new `SuspectedDefect`, `DefectSource`, `DefectDestination`, `DefectDecision` and `DefectIssueMatch`; `HarnessAttention` gains `suspected_defects`; `pane_report` gains the `finding` kind with `title`, `evidence[]` and `destination`. **Review.** `task_review_settings` and its set request gain `mode: TaskReviewMode` and `focus: TaskReviewFocus`; `TaskRun` gains `review?: TaskReviewVerdict` with `TaskReviewOutcome`, `TaskReviewFinding`, `TaskReviewSeverity` and `TaskReviewCategory`. **Review requests.** New `review_requests_get`, `review_requests_set`, `review_request_dismiss` and `review_request_reopen`, answered by `review_requests` and the new-request `review_request_notice`; new `ReviewRequestMode`, `ReviewTier`, `ReviewRequestState` and `ReviewRequest` |
 | 152 | **Night shift fixes real CI failures and reports token cost; an opt-in ZCode quota check marks a stalled pane Limited.** `NightGates` gains `fixes` (fixer panes Houston started for the pull request, beside `reruns`). `NightCostLine` gains `tokens?: UsageTokenTotals`, the provider's own token counts for the run's window, absent when its CLI exposes none. New `zcode_quota_check_get` and `zcode_quota_check_set {enabled}`, answered by `zcode_quota_check {enabled}` (bcast); the setting is off by default. Existing messages are otherwise unchanged |
 | 151 | **Night shift runs an orchestrator for a window and leaves a morning report; a workspace moves to another computer in an encrypted file.** `RoutineKind` gains `night_shift`. New `night_shift_create`, `night_shift_state`, `night_shift_update`, `night_shift_run_now`, `night_shift_wrap_up`, `night_shift_stop`, `night_shift_decide`, `night_shift_qa_passed` and `night_shift_report`, answered by `night_shift_state` (with `revision`, `machine: NightMachine` and `merge_verify_command`), `night_shift_run_event`, `night_shift_notice` and `night_shift_report`. New types: `NightShiftSettings`, `NightWindow`, `NightClock`, `NightFocus`, `NightFocusLevel`, `NightAgent`, `NightAppCheck`, `NightOutput`, `NightQuestions`, `NightRun`, `NightRunPhase`, `NightStopReason`, `NightEntry`, `NightEntryKind`, `NightGates`, `NightGate`, `NightInterruption`, `NightCost`, `NightCostLine`, `NightCrewMember`, `NightKeepAwake`, `NightMachine`, `PreflightItem` and `PreflightStatus`. Refusals carry `context: "night_shift"`; `routine_update` and `routine_run_now` refuse a Night shift routine. Workspace transfer: New `transfer_export`, `transfer_inspect` and `transfer_import`, answered by `transfer_progress`, `transfer_exported`, `transfer_inspected`, `transfer_imported` and `transfer_refused`, with `TransferPassphrase`, `TransferStage`, `TransferRefusalCode`, `TransferRefusal`, `TransferPane`, `TransferSkipped`, `TransferCliVersion`, `TransferExportSummary`, `TransferProfileNeed`, `TransferFileSummary`, `TransferProfileChoice`, `TransferSessionMapping` and `TransferImportResult`. `SessionInfo` gains `transferred_at_ms?` and `transfer_fork?`. Existing messages are unchanged |

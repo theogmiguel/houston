@@ -34,6 +34,7 @@ fn create_shell_msg(dir: &std::path::Path) -> String {
         prompt: None,
         model: None,
         effort: None,
+        view: None,
     })
     .unwrap()
 }

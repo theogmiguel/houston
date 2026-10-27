@@ -2024,6 +2024,7 @@ impl Daemon {
             scrollback_seed: None,
             replacement: None,
             pastes_first_prompt: note.is_some(),
+            view: proto::SessionView::Terminal,
         })?;
         // Prefilled, not submitted: the note goes out with the user's first message.
         if let Some(note) = note {

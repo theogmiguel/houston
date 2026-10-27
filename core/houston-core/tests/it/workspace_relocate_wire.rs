@@ -326,6 +326,7 @@ async fn an_exited_pane_in_a_subfolder_respawns_there_after_relocation() {
             prompt: None,
             model: None,
             effort: None,
+            view: None,
         },
     )
     .await;

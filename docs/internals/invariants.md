@@ -320,6 +320,115 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
+### A thread's status stays hook-driven; the daemon ends only turns it ended
+
+A thread session (`thread_session.rs`, with Claude's adapter in `claude_stream.rs`) runs
+Claude with the documented `--print --input-format stream-json --output-format stream-json`
+flags on pipes. Claude's lifecycle hooks fire in this mode with the session's ids, so
+they own `AgentStatus` exactly as for a terminal pane. Five additions, and no other
+status source:
+
+- The stream's `result` event ends a turn only while the session has delivered no
+  lifecycle hook; once one arrives, its `Stop` hook owns turn ends.
+- A `Stop` hook that arrives while a turn is open (an earlier turn's, late, or this
+  turn's ahead of its `result`) defers only its status change, which the open turn's
+  `result` applies. Otherwise a late hook of one turn would report Idle while the queue's
+  next turn runs. Its other effects (title, sub-agent hold, episodes) apply at once, and
+  Stop, an exit or close drop the deferred change because they settle the status.
+- A thread with no turn running is idle by construction: headless Claude reports
+  `SessionStart` only with its first message, so a new or restored thread starts Idle and
+  has no spawn grace.
+- After `thread_stop`, or when the thread's process exits on its own, the daemon ended
+  the turn itself and sets Idle (`TurnInterrupted` / `TurnFailed`). The session stays
+  Running without a process; the next message starts a process that resumes the
+  conversation by exact id. Only Kill and Close end the session.
+- While Houston holds a permission request for the thread (next section) the session is
+  NeedsInput, and Working again once the last one is answered. Houston holds the request,
+  so this is its own fact, not an inference.
+
+The daemon's own thread sources (`thread_*`) never count as a lifecycle hook.
+
+Stop ends the whole process tree: the process group (through `pid.rs`) on Unix, the Job
+object with kill-on-close on Windows. Killing only `claude` leaves its tools running.
+Stop, start and exit handling are serialised per thread, so a message sent during a Stop
+starts its process only after the old tree is reaped, and a write blocked on a Claude that
+stopped reading never holds up Stop, Kill or shutdown. Stop and exit settle the status
+while the thread is held, so code that closes a thread must not hold
+`temporary_cleanup_lock` while it waits. A daemon crash on Windows ends the tree with the
+Job handle. On Linux the session row records the group (pgid, the daemon's session id, the
+boot id and the leader's creation token) until the daemon ends the tree itself, so only a
+crash leaves a record. Restore, Restart and Close then kill the processes still in that
+pgid and session id on the same boot, unless a new process holds the leader's pid. A
+restored thread whose history ends inside a turn records that turn as interrupted before
+it takes a message.
+The thread's history is Houston's own `thread_events` log, written from the stream as it
+arrives; Houston never reads Claude's transcript files to fill it and never writes the
+`control_request` protocol. A thread takes no terminal input: stdin frames,
+`pane_send_keys` and Sleep are refused by name.
+
+### A thread takes no message while a turn is open
+
+The daemon writes a user message to a thread's process only while no turn is open. A
+turn opens with Houston's write or with the stream's `system/init`, which also opens a
+turn Claude starts by itself (a background task's report). A message sent during a turn
+waits in the session's `thread_queue` table and goes when the turn completes, one per
+turn, oldest first; orchestration prompts, inbox pastes and a Stop hook's inbox text wait
+behind it. Steer stops the turn first, so a steered message also has a turn of its own.
+A queued message is taken under the thread's operation lock before it is written, so a
+steer racing the queue sends it once. A taken row stays stored as `sending`, out of the
+queue's view, until its write ends: it keeps counting against the queue limits, follows
+a respawn, and a daemon that dies mid-write leaves it held rather than lost.
+
+**Why.** Claude reads stdin during a turn and folds or batches what it reads: a message
+written during a tool call joins the running turn, and two written while text streams
+become one later turn, with `queued_turn_count` 0 throughout. Houston could then neither
+pair a turn with its message nor tell when the process is idle. **Enforced by**
+`thread_sessions_wire` (the queue, steer and test-barrier race tests).
+
+### Only the operator approves a permission request, in either view
+
+A thread session's Claude runs with `--permission-prompt-tool mcp__houston__thread_permission`.
+The tool is on the daemon's MCP server, listed only to a thread session's bearer token and
+refused by name for any other session. Claude calls it with `tool_name`, `input` and
+`tool_use_id` when a tool needs approval; the daemon records an `approval_request`, holds
+the call and answers with the documented result (`behavior: allow` with `updatedInput`, or
+`behavior: deny` with a message) only when the user answers the approval card. Houston
+never approves on its own. Stop, Kill, Close and an exit of the process deny every held
+request with a reason. A call Claude abandons, a request held when the daemon shuts down
+or stops a session for recovery, and one left by a daemon that crashed, are recorded as
+withdrawn. Claude ends a tool call after 60 s without progress, so the held call carries
+MCP progress notifications. At most `APPROVALS_PENDING_MAX` (16) requests are held per
+session, and the card shows up to 64 KiB of the input and says how much it hides.
+AskUserQuestion reaches the same tool and is held the same way, recorded as a
+`question_request`. Houston checks the input first; a malformed one is denied at once,
+asking Claude to ask in its reply. Answers are checked against the held question (labels
+among its options, one answer for a single-choice question, typed text capped) and returned
+as `updatedInput`: Claude's input plus `answers`, question text to the answer text. A skip
+is a deny. The answers are stored in `question_resolved`, never in daemon memory, and
+`thread_approve` refuses a question so that only `thread_answer` can supply them.
+
+Claude's own `PermissionRequest` hook (and a `Notification` of type `permission_prompt`)
+also fires in headless mode, after the prompt tool is called. For a thread it is
+acknowledged and ignored: it opens no permission episode and sets no status, and tool
+activity cannot override NeedsInput while a request is held.
+
+Houston carries an approval; it never grants one, and no timer, default or Houston policy
+approves on anyone's behalf. In a terminal pane the CLI's own dialog asks at the keyboard and
+Houston reports NeedsInput. A parent orchestrator may answer a child's question; for a
+permission it may only deny (`pane_deny`, the provider's verified deny sequence) or escalate
+(`pane_escalate`), and `pane_send_keys` is refused while a permission episode is pending, so
+only the operator approves. In a thread, Houston holds Claude's prompt-tool call and answers
+it once, keyed by request id, with the decision made on the approval card; the answer comes
+only from `thread_approve` on a client connection, and no MCP verb approves. A thread cannot
+be a child pane in this version (Open as thread is refused for a pane with a parent), so no
+parent ever sees a thread's request.
+
+The permission mode a thread runs with is a launch flag: changing it is refused
+while a turn is open or a request waits, and otherwise restarts the process with
+`--resume`. Claude reports its mode in `permissionMode` on the documented `system` events
+(`init` each turn, `status` on a change such as ExitPlanMode); Houston records that value,
+so leaving plan mode is shown and kept across later restarts.
+
 ### Generated titles never supply status or identity
 
 Generated pane titles consume only redacted first-prompt and first-reply hook text after
@@ -441,10 +550,53 @@ handles; it does not perform per-pane Kill.
 Wake is stricter: it must resume the exact stored conversation and never falls back to a
 fresh CLI. A failed Wake remains resumable with the stored handle.
 
+Carve-out for structured sessions (threads): the session id the provider's documented
+stream reports (Claude's `system/init` and `result`) is the handle whenever it changes,
+so `/clear` and a thread without hooks resume the conversation the provider holds. Such a
+handle is marked while no hook has named its transcript, and the resume check skips only
+the transcript test for it; the folder binding and the profile checks still apply. A hook
+that names the same id supplies the transcript and clears the mark. A thread whose resume
+the provider refuses (an exit code other than 0 within `RESUME_EARLY_EXIT` of the spawn)
+drops the handle and starts a new conversation, with a notice naming the id; a later exit
+or a signal keeps the handle. A terminal resume of a marked handle takes the fallback above. This does not apply to
+terminal panes, whose handle comes from hooks only.
+
 Routine and harness-review runs always start fresh, and orchestrated children cannot be
 respawned without their mission. Unsupported providers are refused by name in
 `launch::resume_args`. There is no transcript scan or history ledger; the handle lives
 on the session row and metadata validation never drives status.
+
+## Views
+
+### A terminal pane stays a PTY; a thread never wraps one
+
+A session's runtime is a PTY (`SessionRuntime::Pty`: local, SSH or adopted) or a structured
+process on pipes (`SessionRuntime::Structured`), and its view follows: a PTY is drawn as a
+terminal pane, a structured process as a thread. A thread renders typed events decoded by a
+provider adapter from the provider's documented stream; it never reads, parses or re-renders
+terminal output, and no terminal pane is replaced by a chat view. Moving a conversation to
+the other view restarts the session with an exact-id resume, so one conversation never runs
+in both views at once.
+
+**Why.** Terminal fidelity is what makes a pane trustworthy: every key reaches the CLI and
+every byte it writes is shown. A view built from terminal bytes would be faithful to neither.
+**Enforced by** `view_switch_wire` and review.
+
+### Thread traffic never shares the terminal byte path
+
+Thread events travel as typed control messages (`thread_events`), coalesced to at most one
+message per `THREAD_EVENTS_MIN_INTERVAL` per session. They never pass through `frame_queue`,
+`vt.rs` or a session's scrollback ring, and terminal frames never carry thread data. Live
+deltas are never stored; an event is written to `thread_events` when it is complete.
+
+**Why.** The frame queue and the ring are sized for terminal bytes (4 MiB each) and the
+frame queue drops under pressure; a terminal recovers by repainting, a thread cannot recover
+a lost event, and a talkative agent must not evict terminal history. Control messages are
+not dropped: a connection that falls `OUTBOUND_CAPACITY` messages behind is closed and
+resyncs, so the coalescing bound is what keeps threads from closing terminal connections.
+**Enforced by** `perf_smoke::thread_streams_leave_terminals_alone`: terminal throughput and
+echo latency with four threads streaming stay within the stated margin of the terminal-only
+run, with no control lag.
 
 ## Wire
 

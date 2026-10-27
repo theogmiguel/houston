@@ -218,3 +218,19 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     expect(onSpawnAgent).toHaveBeenCalledWith('codex')
   })
 })
+
+describe('AddPanePopover thread view', () => {
+  it('starts Claude in thread view from its own row', () => {
+    const onSpawnAgent = vi.fn()
+    const onClose = vi.fn()
+    const el = mount({ onSpawnAgent, onClose })
+    act(() => (el.querySelector('[data-testid="add-pane-claude-thread"]') as HTMLButtonElement).click())
+    expect(onSpawnAgent).toHaveBeenCalledWith('claude', undefined, 'thread')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('refuses the thread row without a workspace, like the agent rows', () => {
+    const el = mount({ hasWorkspace: false })
+    expect((el.querySelector('[data-testid="add-pane-claude-thread"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+})

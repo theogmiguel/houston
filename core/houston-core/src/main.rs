@@ -347,6 +347,7 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
     let _supervisor_pid = spawn_supervisor_reader(&daemon, supervisor);
 
     daemon.start_adopted_hooks();
+    daemon.restore_handed_over_threads(&manifest.threads);
     houston_core::boot::spawn_startup_refresh(&daemon);
     houston_core::boot::spawn_background_loops(&daemon);
 

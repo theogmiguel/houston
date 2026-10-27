@@ -78,6 +78,8 @@ import type { PaneRoster } from "./components/DelegationCard";
 import type { SkillToolState } from "./houston/generated/SkillToolState";
 import type { SkillPushRecord } from "./houston/generated/SkillPushRecord";
 import type { ProfileChoice } from "./houston/generated/ProfileChoice";
+import type { SessionView } from "./thread/threadTypes";
+import { newSessionViewFields, useDefaultView } from "./thread/useDefaultView";
 import {
   isLive,
   LIVE_CHILDREN_MARKER,
@@ -228,6 +230,7 @@ import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
 import { usePanelSurfaceNavigation } from "./usePanelSurfaceNavigation";
+import { CHANGES_REVEAL_EVENT } from "./thread/changesReveal";
 import { forgetGrid, touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
 import type { ReviewDiffsData } from "./git/review";
@@ -941,6 +944,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const mergeQueueParked = useMergeQueueParked(readyClient(conn));
+  const defaultView = useDefaultView(readyClient(conn));
   useSessionUpdates(readyClient(conn), setSessions);
   const openMergeQueue = useCallback((): void => {
     requestPrsView({ view: "queue" });
@@ -2777,6 +2781,11 @@ export function App(): React.JSX.Element {
     setActiveSurface,
   });
   useEffect(() => {
+    const onReveal = (): void => openPanelSurface("diff");
+    window.addEventListener(CHANGES_REVEAL_EVENT, onReveal);
+    return () => window.removeEventListener(CHANGES_REVEAL_EVENT, onReveal);
+  }, [openPanelSurface]);
+  useEffect(() => {
     setSideReview((current) => current?.id === activeId ? current : null);
   }, [activeId, sideReview, setSideReview]);
   // Editing or browsing from the panel must land where the user can see it:
@@ -3060,7 +3069,7 @@ export function App(): React.JSX.Element {
   }, [conn, selectedWs, shellIntegration]);
 
   const spawnAgentPane = useCallback(
-    (agent: AgentKind, profile?: ProfileChoice): void => {
+    (agent: AgentKind, profile?: ProfileChoice, view?: SessionView): void => {
       if (conn.kind !== "ready") return;
       if (selectedWs === "all") return;
       setExpandedId(null);
@@ -3070,9 +3079,10 @@ export function App(): React.JSX.Element {
         project_dir: selectedWs,
         shell_integration: shellIntegration,
         profile,
+        ...newSessionViewFields(agent, view, defaultView),
       });
     },
-    [conn, selectedWs, shellIntegration],
+    [conn, selectedWs, shellIntegration, defaultView],
   );
   const pasteToAgent = useCallback((session: number, text: string): void => {
     pasteToAgentMessage(readyClient(conn), sessionsRef, session, text, pushError);
@@ -3146,10 +3156,11 @@ export function App(): React.JSX.Element {
         project_dir: info.project_dir,
         cwd_from: source.session,
         prompt: packet,
+        ...newSessionViewFields(agent, undefined, defaultView),
       });
       setPaneHandoff(null);
     },
-    [paneHandoff, conn, selectedWs, pushError],
+    [paneHandoff, conn, selectedWs, pushError, defaultView],
   );
 
   const openSshConnect = useCallback(() => {
@@ -4248,6 +4259,7 @@ export function App(): React.JSX.Element {
                           agent,
                           project_dir: worktree,
                           prompt,
+                          ...newSessionViewFields(agent, undefined, defaultView),
                         });
                       }}
                     />

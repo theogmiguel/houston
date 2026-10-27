@@ -151,6 +151,8 @@ pub struct PathSearchItem {
     pub path: String,
     pub name: String,
     pub is_dir: bool,
+    /// The entry is a symbolic link, whose target may lie outside the searched folder.
+    pub symlink: bool,
     pub name_indices: Vec<usize>,
     pub path_indices: Vec<usize>,
 }
@@ -302,6 +304,7 @@ fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchR
                 path: entry.relative.clone(),
                 name,
                 is_dir: entry.is_dir,
+                symlink: false,
             }
         })
         .collect::<Vec<_>>();
@@ -484,7 +487,7 @@ pub async fn fs_search_paths(
             real_root.display()
         ));
     }
-    let index = load_path_index(real_root, |root| build_path_index(&root)).await?;
+    let index = load_path_index(real_root.clone(), |root| build_path_index(&root)).await?;
     let permit = search_permits().clone().try_acquire_owned().map_err(|_| {
         format!(
             "fs_search_paths: search limit {MAX_PATH_SEARCHES}; actual {}; refused query {query:?}",
@@ -493,10 +496,21 @@ pub async fn fs_search_paths(
     })?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        search_index(&index, &query, limit)
+        let mut result = search_index(&index, &query, limit);
+        mark_symlinks(&real_root, &mut result);
+        result
     })
     .await
     .map_err(|error| format!("fs_search_paths search task failed: {error}"))
+}
+
+/// One `lstat` per returned item, so a caller can leave out links: a thread's `@` mention
+/// hands Claude the target's content without a tool call.
+fn mark_symlinks(root: &Path, result: &mut PathSearchResult) {
+    for item in &mut result.items {
+        item.symlink = std::fs::symlink_metadata(root.join(&item.path))
+            .is_ok_and(|meta| meta.file_type().is_symlink());
+    }
 }
 
 type IndexSnapshot = Arc<Vec<IndexedPath>>;
@@ -2000,6 +2014,35 @@ mod tests {
             bytes.contains("retained path bytes limit 1; actual"),
             "{bytes}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_results_say_which_entries_are_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("plain.txt"), "a").unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "b").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            root.path().join("link.txt"),
+        )
+        .unwrap();
+        let index = ["plain.txt", "link.txt"]
+            .map(|relative| super::IndexedPath {
+                relative: relative.into(),
+                is_dir: false,
+            })
+            .to_vec();
+        let mut result = super::search_index(&index, "txt", 10);
+        super::mark_symlinks(root.path(), &mut result);
+        let marked: Vec<_> = result
+            .items
+            .iter()
+            .map(|item| (item.path.as_str(), item.symlink))
+            .collect();
+        assert!(marked.contains(&("link.txt", true)), "{marked:?}");
+        assert!(marked.contains(&("plain.txt", false)), "{marked:?}");
     }
 
     #[tokio::test]

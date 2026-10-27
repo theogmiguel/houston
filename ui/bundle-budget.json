@@ -232,14 +232,25 @@
     "client's `subscribeClose` is part of the boot-path client: it is a close",
     "subscription the transfer requests use to settle when the connection drops.",
     "Both features' dialogs and views already load behind `lazy()` or `preloadable()`.",
-
+    "",
     "Re-cut against 959,881 bytes (one boot chunk, Windows build): the suspected-defects,",
     "Bitbucket account and review-request features add always-on boot wiring (rail counts,",
     "client verbs, message routes) of about 1.4 KB. Their heavy parts stay behind `lazy()`",
     "or `preloadable()`: Settings carries the Bitbucket form, the Harness surface the defect",
-    "drawer, and the Pull requests page the review-request list."
+    "drawer, and the Pull requests page the review-request list.",
+    "",
+    "Re-cut against 965,248 bytes (one boot chunk, Windows build) with about 200 bytes of",
+    "headroom: threads add about 5.4 KB of boot wiring. The Claude thread rows in the new",
+    "pane menu and empty grid, the lazy thread pane slot, the pane menu's Stop, Handoff and",
+    "Open as thread / Open in terminal rows (refused while a queue holds messages), the",
+    "default-view hook, HoustonClient.trySend, the history and thread_answer refusal",
+    "patterns, the queue-length signal, the Changes panel's Open diff listener, the",
+    "terminal selection registry that Quote selection reads, and the WSL routes for the",
+    "thread messages run from first paint. The thread pane, its store, cards, menus, chips",
+    "and Markdown variant load with the pane; the Default view row is on the lazy",
+    "Settings chunk."
   ],
-  "maxBootBytes": 960000,
+  "maxBootBytes": 965450,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

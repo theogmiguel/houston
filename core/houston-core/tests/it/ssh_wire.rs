@@ -481,6 +481,8 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
+            permission_mode: None,
             transferred_at_ms: None,
             transfer_fork: false,
         })

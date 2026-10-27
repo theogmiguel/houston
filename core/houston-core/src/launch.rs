@@ -613,6 +613,8 @@ pub enum ApprovalMode {
     Auto,
     Bypass,
     Plan,
+    /// Claude only; set from a thread's permission mode control.
+    AcceptEdits,
 }
 
 impl ApprovalMode {
@@ -622,6 +624,8 @@ impl ApprovalMode {
             ApprovalMode::Auto => auto_mode_args(agent),
             ApprovalMode::Bypass => auto_approve_args(agent),
             ApprovalMode::Plan => flags_only(agent, false, true, None).ok(),
+            ApprovalMode::AcceptEdits => (agent == proto::AgentKind::Claude)
+                .then(|| vec!["--permission-mode".to_string(), "acceptEdits".to_string()]),
         }
     }
 
@@ -631,6 +635,17 @@ impl ApprovalMode {
             ApprovalMode::Auto => "auto",
             ApprovalMode::Bypass => "bypass",
             ApprovalMode::Plan => "plan",
+            ApprovalMode::AcceptEdits => "accept_edits",
+        }
+    }
+
+    pub fn from_thread(mode: proto::ThreadPermissionMode) -> Self {
+        match mode {
+            proto::ThreadPermissionMode::Default => ApprovalMode::Default,
+            proto::ThreadPermissionMode::AcceptEdits => ApprovalMode::AcceptEdits,
+            proto::ThreadPermissionMode::Plan => ApprovalMode::Plan,
+            proto::ThreadPermissionMode::Auto => ApprovalMode::Auto,
+            proto::ThreadPermissionMode::Bypass => ApprovalMode::Bypass,
         }
     }
 
@@ -640,6 +655,7 @@ impl ApprovalMode {
             "auto" => Some(ApprovalMode::Auto),
             "bypass" => Some(ApprovalMode::Bypass),
             "plan" => Some(ApprovalMode::Plan),
+            "accept_edits" => Some(ApprovalMode::AcceptEdits),
             _ => None,
         }
     }
@@ -1214,9 +1230,18 @@ mod tests {
             ApprovalMode::Auto,
             ApprovalMode::Bypass,
             ApprovalMode::Plan,
+            ApprovalMode::AcceptEdits,
         ] {
             assert_eq!(ApprovalMode::parse(mode.as_str()), Some(mode));
         }
+        assert_eq!(
+            ApprovalMode::AcceptEdits.args(proto::AgentKind::Claude),
+            Some(vec!["--permission-mode".into(), "acceptEdits".into()])
+        );
+        assert_eq!(
+            ApprovalMode::AcceptEdits.args(proto::AgentKind::Codex),
+            None
+        );
         assert_eq!(ApprovalMode::parse("bogus"), None);
     }
 

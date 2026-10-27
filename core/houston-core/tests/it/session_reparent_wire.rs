@@ -115,6 +115,8 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
+            permission_mode: None,
             transferred_at_ms: None,
             transfer_fork: false,
         })
@@ -204,6 +206,8 @@ fn reparent_refuses_a_swarm_tied_session() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
+            permission_mode: None,
             transferred_at_ms: None,
             transfer_fork: false,
         })

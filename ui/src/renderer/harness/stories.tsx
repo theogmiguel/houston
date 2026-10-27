@@ -115,6 +115,7 @@ import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrDiscussionFiltersCapture } from './prDiscussionFilterStories'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrFilesViewedMarksCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
+import { DefaultViewSettingStory, ThreadApprovalStory, ThreadComposerStory, ThreadHeldQueueStory, ThreadIdleStory, ThreadLongStory, ThreadPlanStory, ThreadQuestionStory, ThreadQueueStory, ThreadStatesStory, ThreadStoppedStory, ThreadStreamingStory, ThreadToolsStory, ThreadWorkLogOpenStory, ThreadWorkLogStory, ViewSwitchBusyStory, ViewSwitchMenuStory } from './threadStories'
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneLimitedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTransferredStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
@@ -583,6 +584,23 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'surface/pane-header-orchestrator': () => <PaneOrchestratorHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/sleeping': () => <PaneSleepingStory />,
+  'panes/thread': () => <ThreadStatesStory />,
+  'panes/thread-idle': () => <ThreadIdleStory />,
+  'panes/thread-streaming': () => <ThreadStreamingStory />,
+  'panes/thread-stopped': () => <ThreadStoppedStory />,
+  'panes/thread-tools': () => <ThreadToolsStory />,
+  'panes/thread-work-log': () => <ThreadWorkLogStory />,
+  'panes/thread-work-log-open': () => <ThreadWorkLogOpenStory />,
+  'panes/thread-long': () => <ThreadLongStory />,
+  'panes/thread-approval': () => <ThreadApprovalStory />,
+  'panes/thread-queue': () => <ThreadQueueStory />,
+  'panes/thread-queue-held': () => <ThreadHeldQueueStory />,
+  'panes/thread-composer': () => <ThreadComposerStory />,
+  'panes/thread-question': () => <ThreadQuestionStory />,
+  'panes/thread-plan': () => <ThreadPlanStory />,
+  'panes/view-switch-menu': () => <ViewSwitchMenuStory />,
+  'panes/view-switch-busy': () => <ViewSwitchBusyStory />,
+  'settings/default-view': () => <DefaultViewSettingStory />,
   'panes/limited': () => <PaneLimitedStory />,
   'panes/transferred': () => <PaneTransferredStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,

@@ -386,8 +386,13 @@ export function TerminalPane({
     return () => clearTimeout(t)
   }, [synced])
 
+  const quoteSourceRef = useRef({ title: info.title, gridHidden })
+  quoteSourceRef.current = { title: info.title, gridHidden }
   useEffect(() => {
-    return registerTerminalSelection(info.id, () => termRef.current?.getSelection() ?? '')
+    return registerTerminalSelection(info.id, () => termRef.current?.getSelection() ?? '', {
+      name: () => quoteSourceRef.current.title,
+      hidden: () => quoteSourceRef.current.gridHidden
+    })
   }, [info.id])
 
   useEffect(() => {

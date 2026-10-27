@@ -142,7 +142,38 @@ export const MARKDOWN_CHAT_COMPONENTS: Components = {
   img: MarkdownChatImage
 }
 
-export type MarkdownVariant = 'editor' | 'chat' | 'panel' | 'report'
+/** Agent output can name any URL, so a thread loads an image only when asked. */
+export function MarkdownThreadImage(props: React.JSX.IntrinsicElements['img'] & { node?: unknown }): React.JSX.Element {
+  const src = typeof props.src === 'string' ? props.src : ''
+  const [load, setLoad] = useState(false)
+  if (load) return <MarkdownChatImage {...props} />
+  return (
+    <MarkdownImageFigure data-testid="thread-image-deferred" chatSpacing>
+      <MarkdownImageCaption>
+        <MarkdownImageLabel>{props.alt ? `${props.alt}: ${src}` : src}</MarkdownImageLabel>
+        <MarkdownImageAction type="button" data-testid="thread-image-load" aria-label={`Load image from ${src}`} onClick={() => setLoad(true)}>
+          <Icon glyph={IconFileDown} role="label" />
+          Load image
+        </MarkdownImageAction>
+      </MarkdownImageCaption>
+    </MarkdownImageFigure>
+  )
+}
+
+export const MARKDOWN_THREAD_COMPONENTS: Components = {
+  a: MarkdownAnchor,
+  img: MarkdownThreadImage
+}
+
+export type MarkdownVariant = 'editor' | 'chat' | 'thread' | 'panel' | 'report'
+
+const DOCUMENT_COMPONENTS: Record<MarkdownVariant, Components> = {
+  editor: MARKDOWN_COMPONENTS,
+  panel: MARKDOWN_COMPONENTS,
+  chat: MARKDOWN_CHAT_COMPONENTS,
+  report: MARKDOWN_CHAT_COMPONENTS,
+  thread: MARKDOWN_THREAD_COMPONENTS
+}
 
 export const MarkdownDocument = memo(function MarkdownDocument({
   source,
@@ -154,13 +185,13 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   const chat = variant === 'chat' || variant === 'report'
   return (
     <Prose
-      variant={variant}
-      data-testid={variant === 'panel' || variant === 'report' ? `${variant}-markdown-body` : chat ? 'chat-markdown-body' : 'editor-markdown-body'}
+      variant={variant === 'thread' ? 'chat' : variant}
+      data-testid={variant === 'panel' || variant === 'report' || variant === 'thread' ? `${variant}-markdown-body` : chat ? 'chat-markdown-body' : 'editor-markdown-body'}
     >
       <Markdown
         remarkPlugins={MARKDOWN_REMARK_PLUGINS}
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-        components={chat ? MARKDOWN_CHAT_COMPONENTS : MARKDOWN_COMPONENTS}
+        components={DOCUMENT_COMPONENTS[variant]}
       >
         {source}
       </Markdown>

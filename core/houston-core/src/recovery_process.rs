@@ -248,7 +248,7 @@ fn root_running(pid: u32) -> bool {
     crate::pid::process_is_alive(pid)
 }
 
-fn system_identity() -> Result<Option<String>> {
+pub(crate) fn system_identity() -> Result<Option<String>> {
     #[cfg(target_os = "linux")]
     {
         let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")

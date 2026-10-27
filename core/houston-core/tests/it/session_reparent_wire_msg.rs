@@ -173,6 +173,8 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
             last_agent_message: None,
             slept_at_ms: None,
             limit: None,
+            view: Default::default(),
+            permission_mode: None,
             transferred_at_ms: None,
             transfer_fork: false,
         })

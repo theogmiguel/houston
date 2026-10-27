@@ -269,7 +269,11 @@ impl Db {
                 profile_config_dir = ?6,
                 profile_label = CASE WHEN profile_config_dir IS ?6 AND ?7 THEN profile_label ELSE NULL END,
                 resume_session_id = CASE WHEN ?8 THEN ?4 ELSE resume_session_id END,
-                resume_transcript_path = CASE WHEN ?8 THEN ?5 ELSE resume_transcript_path END,
+                resume_transcript_path = CASE WHEN ?8 THEN ?5
+                    WHEN resume_session_id = ?4 AND resume_transcript_path IS NULL THEN ?5
+                    ELSE resume_transcript_path END,
+                resume_from_stream = CASE WHEN ?8 OR (resume_session_id = ?4 AND ?5 IS NOT NULL)
+                    THEN 0 ELSE resume_from_stream END,
                 resume_agent = CASE WHEN ?8 THEN ?2 WHEN ?11 THEN NULL ELSE resume_agent END,
                 resume_cwd = CASE WHEN ?8 THEN ?3 WHEN ?11 THEN NULL ELSE resume_cwd END,
                 root_hook_ms = ?9, root_hook_seq = ?10 WHERE id = ?1",

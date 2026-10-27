@@ -104,7 +104,16 @@ fn spawn_supervised_daemon(
     home: &std::path::Path,
     channel_dir: &std::path::Path,
 ) -> SupervisorGuard {
+    spawn_supervised_daemon_with(home, channel_dir, |_| {})
+}
+
+fn spawn_supervised_daemon_with(
+    home: &std::path::Path,
+    channel_dir: &std::path::Path,
+    configure: impl FnOnce(&mut std::process::Command),
+) -> SupervisorGuard {
     let mut cmd = common::hermetic_command(supervisor_bin(), home);
+    configure(&mut cmd);
     cmd.env("HOUSTON_CHANNEL", "dev")
         .arg("--channel-dir")
         .arg(channel_dir)
@@ -317,6 +326,184 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     });
 }
 
+fn ended_claude_session(id: u32, project: &std::path::Path, title: &str) -> proto::SessionInfo {
+    proto::SessionInfo {
+        note: None,
+        title_source: proto::TitleSource::User,
+        checkout: None,
+        activity: None,
+        id,
+        agent: proto::AgentKind::Claude,
+        project_dir: project.display().to_string(),
+        cwd: project.display().to_string(),
+        state: proto::SessionState::Running,
+        title: title.into(),
+        codename: title.into(),
+        detected_agent: None,
+        running_agent: None,
+        hidden: false,
+        ssh_host: None,
+        restore_deferred: None,
+        status: None,
+        status_since_ms: None,
+        context: None,
+        swarm_agent: None,
+        spawned_by: None,
+        acp: None,
+        live_children: 0,
+        profile_label: None,
+        children_waiting: 0,
+        inbox_unread: 0,
+        delegation: None,
+        tags: vec![],
+        session_origin: Some(id),
+        checkout_root: None,
+        worktree: None,
+        resumable: false,
+        resume_notice: None,
+        compactions: None,
+        task: None,
+        sleep_notice: None,
+        latest_prompt: Some(format!("{title} prompt")),
+        last_agent_message: Some(format!("{title} reply")),
+        slept_at_ms: None,
+        limit: None,
+        view: Default::default(),
+        permission_mode: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
+    }
+}
+
+fn resume_conversation(channel: &std::path::Path, session: u32) -> Option<String> {
+    rusqlite::Connection::open_with_flags(
+        channel.join("houston.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT resume_session_id FROM sessions WHERE id=?1",
+        [session],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+fn assert_ended_panes(sessions: &[proto::SessionInfo], when: &str) {
+    for (id, title, state) in [
+        (1, "Exited review", proto::SessionState::Exited),
+        (2, "Sleeping refactor", proto::SessionState::Sleeping),
+    ] {
+        let panes: Vec<_> = sessions.iter().filter(|s| s.id == id).collect();
+        let [pane] = panes.as_slice() else {
+            panic!("{when}: expected session {id} exactly once, got {panes:?}");
+        };
+        assert_eq!(pane.title, title, "{when}: session {id} title");
+        assert_eq!(pane.state, state, "{when}: session {id} state");
+        assert!(pane.resumable, "{when}: session {id} must stay resumable");
+    }
+    let asleep = sessions.iter().find(|s| s.id == 2).unwrap();
+    assert_eq!(asleep.slept_at_ms, Some(1234), "{when}: Sleep time");
+}
+
+async fn hello_sessions(port: u16, token: &str) -> Vec<proto::SessionInfo> {
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let mut ws = connect_when_ready(addr, token).await;
+    match common::next_control(&mut ws).await {
+        proto::ServerMsg::HelloOk { sessions, .. } => sessions,
+        other => panic!("expected HelloOk, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn handoff_keeps_exited_and_sleeping_panes() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    std::fs::create_dir_all(&channel_dir).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    {
+        let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+        db.insert_session(&ended_claude_session(1, project.path(), "Exited review"))
+            .unwrap();
+        db.update_session_state(1, proto::SessionState::Exited, Some(0))
+            .unwrap();
+        db.insert_session(&ended_claude_session(
+            2,
+            project.path(),
+            "Sleeping refactor",
+        ))
+        .unwrap();
+        db.mark_session_sleeping(2, 1234).unwrap();
+        db.set_session_resume_handle(1, Some(("conversation-exited", None)))
+            .unwrap();
+        db.set_session_resume_handle(2, Some(("conversation-sleeping", None)))
+            .unwrap();
+    }
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let mut guard = spawn_supervised_daemon(home.path(), &channel_dir);
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, live, ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    drop(ws);
+    assert_ended_panes(
+        &hello_sessions(before.port, &before.token).await,
+        "before the handoff",
+    );
+
+    let result = daemon_handoff(before.port, &before.token).await;
+    assert!(result.accepted, "handoff must be accepted: {result:?}");
+    assert_eq!(
+        result.sessions_transferred,
+        Some(1),
+        "only the live session transfers"
+    );
+    let generation = result
+        .generation
+        .expect("accepted handoff names a generation");
+    let after = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+    });
+    let sessions = hello_sessions(after.port, &after.token).await;
+    assert_ended_panes(&sessions, "after the handoff");
+    let transferred: Vec<_> = sessions.iter().filter(|s| s.id == live).collect();
+    assert!(
+        matches!(transferred.as_slice(), [pane] if pane.state == proto::SessionState::Running),
+        "the live session must transfer once and keep running: {transferred:?}"
+    );
+    assert_eq!(
+        resume_conversation(&channel_dir, 1).as_deref(),
+        Some("conversation-exited")
+    );
+    assert_eq!(
+        resume_conversation(&channel_dir, 2).as_deref(),
+        Some("conversation-sleeping")
+    );
+
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+    let mut cold = spawn_supervised_daemon(home.path(), &channel_dir);
+    let restarted = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != after.pid).then_some(f)
+    });
+    assert_ended_panes(
+        &hello_sessions(restarted.port, &restarted.token).await,
+        "after a later cold start",
+    );
+    manage_shutdown(restarted.port, &restarted.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        cold.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
 #[tokio::test]
 async fn handoff_is_refused_without_a_supervisor() {
     let home = tempfile::tempdir().unwrap();
@@ -479,6 +666,7 @@ async fn a_lost_commit_ack_still_leaves_the_commit_record_on_disk() {
         generation: 7,
         token: "commit-record-token".to_string(),
         sessions: Vec::new(),
+        threads: Vec::new(),
     };
     adoption::write_frame(&mut sock, &FromOld::Manifest(manifest)).expect("sending the manifest");
 
@@ -707,6 +895,302 @@ async fn a_second_consecutive_handoff_carries_the_session_again() {
     }
 
     manage_shutdown(previous.port, &previous.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
+fn with_fake_claude(
+    cmd: &mut std::process::Command,
+    shim: &std::path::Path,
+    log: &std::path::Path,
+) {
+    let inherited = cmd
+        .get_envs()
+        .find(|(key, _)| *key == "PATH")
+        .and_then(|(_, value)| value)
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    let mut path = shim.as_os_str().to_os_string();
+    path.push(":");
+    path.push(inherited);
+    cmd.env("PATH", path)
+        .env("HOUSTON_FAKE_CLAUDE_LOG", log)
+        .env(
+            "HOUSTON_FAKE_CLAUDE_FIXTURES",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/threads"),
+        );
+}
+
+/// Thread launches the fake `claude` logged, oldest first (a `--version` probe is not one).
+fn thread_launches(log: &std::path::Path) -> Vec<Vec<String>> {
+    common::jsonl_records(log)
+        .into_iter()
+        .filter_map(|record| serde_json::from_value::<Vec<String>>(record["argv"].clone()).ok())
+        .filter(|argv| argv.iter().any(|arg| arg == "-p"))
+        .collect()
+}
+
+fn arg_after(argv: &[String], flag: &str) -> Option<String> {
+    argv.windows(2)
+        .find(|pair| pair[0] == flag)
+        .map(|pair| pair[1].clone())
+}
+
+async fn thread_turn(
+    ws: &mut common::WsStream,
+    session: u32,
+    text: &str,
+) -> Vec<proto::ThreadEvent> {
+    ws.send(Message::text(
+        serde_json::json!({"type":"thread_send","session":session,"text":text}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let mut events = Vec::new();
+    loop {
+        match common::next_control(ws).await {
+            proto::ServerMsg::ThreadEvents {
+                session: s,
+                events: batch,
+            } if s == session => {
+                let ended = batch
+                    .iter()
+                    .any(|event| matches!(event.kind, proto::ThreadEventKind::TurnEnd { .. }));
+                events.extend(batch);
+                if ended {
+                    return events;
+                }
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("thread_send refused: {message}"),
+            _ => {}
+        }
+    }
+}
+
+#[tokio::test]
+async fn handoff_restores_a_live_thread_and_resumes_its_conversation() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let shim = tempfile::tempdir().unwrap();
+    common::install_fake_claude(shim.path());
+    let launches = home.path().join("launches.jsonl");
+    let mut guard = spawn_supervised_daemon_with(home.path(), &channel_dir, |cmd| {
+        with_fake_claude(cmd, shim.path(), &launches)
+    });
+    let project = tempfile::tempdir().unwrap();
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, pane, mut ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    ws.send(Message::text(
+        serde_json::json!({"type":"session_create","agent":"claude",
+            "project_dir":project.path(),"view":"thread"})
+        .to_string(),
+    ))
+    .await
+    .unwrap();
+    let thread = expect_created(&mut ws).await;
+    assert_eq!(thread.view, proto::SessionView::Thread);
+    thread_turn(&mut ws, thread.id, "before").await;
+    let conversation = arg_after(&thread_launches(&launches)[0], "--session-id")
+        .expect("a new thread starts its conversation with --session-id");
+    // The turn's hooks, as headless Claude fires them, record the conversation to resume.
+    let transcript = project.path().join("conversation.jsonl");
+    std::fs::write(&transcript, "{}\n").unwrap();
+    let now = houston_core::hook_drop::now_ms();
+    for (at, event) in [(now, "UserPromptSubmit"), (now + 1, "Stop")] {
+        let hook = houston_core::hook_drop::write_drop(
+            &houston_core::hook_drop::drop_dir(&channel_dir),
+            &houston_core::hook_drop::HookDrop {
+                event: event.into(),
+                session: thread.id,
+                agent: Some("claude".into()),
+                session_id: Some(conversation.clone()),
+                transcript_path: Some(transcript.display().to_string()),
+                cwd: Some(project.path().display().to_string()),
+                ..Default::default()
+            },
+            at,
+        )
+        .unwrap();
+        poll_until(POLL_TIMEOUT, || (!hook.exists()).then_some(()));
+    }
+    drop(ws);
+
+    let result = daemon_handoff(before.port, &before.token).await;
+    assert!(
+        result.accepted,
+        "a live thread must not block the handoff: {result:?}"
+    );
+    assert_eq!(
+        result.sessions_transferred,
+        Some(1),
+        "only the PTY pane carries a descriptor"
+    );
+    let generation = result
+        .generation
+        .expect("an accepted handoff names a generation");
+    let after = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+    });
+
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &after.token).await;
+    let _ = common::next_control(&mut ws).await;
+    let deadline = Instant::now() + POLL_TIMEOUT;
+    let restored = loop {
+        ws.send(Message::text(
+            serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+        ))
+        .await
+        .unwrap();
+        let sessions = loop {
+            if let proto::ServerMsg::SessionList { sessions } = common::next_control(&mut ws).await
+            {
+                break sessions;
+            }
+        };
+        assert!(
+            sessions.iter().any(|s| s.id == pane),
+            "the PTY pane must be adopted: {sessions:?}"
+        );
+        if let Some(info) = sessions.iter().find(|s| {
+            s.session_origin == Some(thread.id) && s.state == proto::SessionState::Running
+        }) {
+            // The adopting generation also loads stopped panes; the thread it restored is not one.
+            let lineage: Vec<_> = sessions
+                .iter()
+                .filter(|s| s.id == thread.id || s.session_origin == Some(thread.id))
+                .collect();
+            assert_eq!(lineage.len(), 1, "one pane per thread: {lineage:?}");
+            break info.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the new generation did not restore thread {}",
+            thread.id
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(restored.view, proto::SessionView::Thread);
+    let resumed = thread_launches(&launches);
+    assert_eq!(
+        arg_after(resumed.last().unwrap(), "--resume").as_deref(),
+        Some(conversation.as_str()),
+        "the restored thread resumes the same conversation: {resumed:?}"
+    );
+    let events = thread_turn(&mut ws, restored.id, "after").await;
+    assert!(
+        events.iter().any(|event| matches!(&event.kind,
+            proto::ThreadEventKind::AssistantMessage { text, .. } if text == "echo: after")),
+        "{events:?}"
+    );
+    drop(ws);
+
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
+#[tokio::test]
+async fn a_refused_handoff_leaves_a_running_thread_turn_alone() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let shim = tempfile::tempdir().unwrap();
+    common::install_fake_claude(shim.path());
+    let launches = home.path().join("launches.jsonl");
+    let mut guard = spawn_supervised_daemon_with(home.path(), &channel_dir, |cmd| {
+        with_fake_claude(cmd, shim.path(), &launches)
+    });
+    let project = tempfile::tempdir().unwrap();
+    let (before, _pane, mut ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    ws.send(Message::text(
+        serde_json::json!({"type":"session_create","agent":"claude",
+            "project_dir":project.path(),"view":"thread"})
+        .to_string(),
+    ))
+    .await
+    .unwrap();
+    let thread = expect_created(&mut ws).await;
+    let pidfile = home.path().join("sleeper.pid");
+    ws.send(Message::text(
+        serde_json::json!({"type":"thread_send","session":thread.id,
+            "text":format!("hang:{}", pidfile.display())})
+        .to_string(),
+    ))
+    .await
+    .unwrap();
+    let sleeper: u32 = poll_until(POLL_TIMEOUT, || {
+        std::fs::read_to_string(&pidfile).ok()?.trim().parse().ok()
+    });
+
+    // The candidate cannot open the database, so it refuses to prepare.
+    let db = channel_dir.join("houston.db");
+    let restore = std::fs::metadata(&db).unwrap().permissions();
+    std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = daemon_handoff(before.port, &before.token).await;
+    std::fs::set_permissions(&db, restore).unwrap();
+    assert!(
+        !result.accepted
+            && result
+                .reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("prepare"),
+        "the candidate's refusal must refuse the handoff: {result:?}"
+    );
+
+    assert!(
+        houston_core::pid::process_is_alive(sleeper),
+        "a refused handoff must not end the thread's running turn"
+    );
+    assert_eq!(
+        thread_launches(&launches).len(),
+        1,
+        "a refused handoff must not relaunch the thread"
+    );
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ))
+    .await
+    .unwrap();
+    let sessions = loop {
+        if let proto::ServerMsg::SessionList { sessions } = common::next_control(&mut ws).await {
+            break sessions;
+        }
+    };
+    assert!(
+        sessions
+            .iter()
+            .any(|s| s.id == thread.id && s.state == proto::SessionState::Running),
+        "the thread keeps its session: {sessions:?}"
+    );
+    ws.send(Message::text(
+        serde_json::json!({"type":"thread_stop","session":thread.id}).to_string(),
+    ))
+    .await
+    .unwrap();
+    poll_until(POLL_TIMEOUT, || {
+        (!houston_core::pid::process_is_alive(sleeper)).then_some(())
+    });
+    drop(ws);
+
+    manage_shutdown(before.port, &before.token).await;
     poll_until(POLL_TIMEOUT, || {
         guard.0.try_wait().expect("poll supervisor exit")
     });
@@ -2374,6 +2858,7 @@ fn legacy_native_input_without_snapshot(status: proto::AgentStatus, pending_sour
         generation: 2,
         token: "legacy-adoption-token".into(),
         sessions: vec![session],
+        threads: Vec::new(),
     };
     let serialized = serde_json::to_string(&manifest).unwrap();
     assert!(

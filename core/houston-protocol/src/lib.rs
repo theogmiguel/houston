@@ -11,7 +11,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 153;
+pub const PROTOCOL_VERSION: u32 = 160;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1797,6 +1797,372 @@ pub struct SafeModeSummary {
     pub disable_swarm_autolaunch: bool,
 }
 
+/// How a session is presented: a terminal pane over its PTY, or a thread, the
+/// same Claude conversation run headless and drawn as chat.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SessionView {
+    #[default]
+    Terminal,
+    Thread,
+}
+
+impl SessionView {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionView::Terminal => "terminal",
+            SessionView::Thread => "thread",
+        }
+    }
+}
+
+/// Largest `thread_history` page.
+pub const THREAD_HISTORY_PAGE_MAX: u32 = 500;
+/// Largest `thread_send` text; a longer message is refused, never cut.
+pub const THREAD_USER_MESSAGE_MAX_BYTES: usize = 262_144;
+/// Messages waiting in one thread's queue; a queue holds a few follow-ups, not a backlog.
+pub const THREAD_QUEUE_MAX_ITEMS: usize = 16;
+/// Text bytes waiting in one thread's queue, which also bounds a `thread_queue` snapshot.
+pub const THREAD_QUEUE_MAX_BYTES: usize = 1_048_576;
+/// Terminal excerpts attached to one thread message.
+pub const THREAD_EXCERPTS_MAX: usize = 4;
+/// One excerpt's text; the composed message must still fit `THREAD_USER_MESSAGE_MAX_BYTES`.
+pub const THREAD_EXCERPT_MAX_BYTES: usize = 16_384;
+/// Names in each `thread_commands` list; the CLI reports a few dozen.
+pub const THREAD_COMMANDS_MAX: usize = 512;
+pub const THREAD_ASSISTANT_TEXT_MAX_BYTES: usize = 262_144;
+pub const THREAD_TOOL_INPUT_MAX_BYTES: usize = 8_192;
+/// A tool summary's target; a full command or URL stays in the tool's input.
+pub const THREAD_TOOL_TARGET_MAX_BYTES: usize = 512;
+pub const THREAD_TOOL_OUTPUT_MAX_BYTES: usize = 16_384;
+/// Larger than a tool card's cap: the user approves this input, so it should be readable.
+pub const THREAD_APPROVAL_INPUT_MAX_BYTES: usize = 65_536;
+/// Claude's question tool asks 1-4 questions of 2-4 options; more is refused as malformed.
+pub const THREAD_QUESTIONS_MAX: usize = 8;
+pub const THREAD_QUESTION_OPTIONS_MAX: usize = 16;
+/// A question or label above this is malformed (answers name them exactly); a header or
+/// description above it is cut and the request marked `truncated`.
+pub const THREAD_QUESTION_TEXT_MAX_BYTES: usize = 2_048;
+/// The user's own answer to one question ("Type your own").
+pub const THREAD_QUESTION_OTHER_MAX_BYTES: usize = 4_096;
+/// The longest message a denial tells Claude, such as Keep planning's feedback; a longer
+/// one is refused, never cut.
+pub const APPROVAL_MESSAGE_MAX_BYTES: usize = 4_096;
+
+/// One entry of a thread's timeline. `seq` increases per session and is not reused
+/// within one daemon run; a client merges history and live events by it and reloads
+/// history after reconnecting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadEvent {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub seq: u64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub at_ms: u64,
+    pub kind: ThreadEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ThreadEventKind {
+    UserMessage {
+        text: String,
+        #[serde(default)]
+        delivery: MessageDelivery,
+        /// Terminal selections sent with `text`; Claude reads them as fenced blocks before it.
+        #[serde(default)]
+        excerpts: Vec<ThreadExcerpt>,
+    },
+    /// Live only, never stored: the `AssistantMessage` with the same
+    /// `message_id` supersedes every delta before it.
+    AssistantDelta {
+        message_id: String,
+        text: String,
+    },
+    AssistantMessage {
+        message_id: String,
+        text: String,
+        #[serde(default)]
+        truncated: bool,
+    },
+    /// Live only, never stored, like `AssistantDelta`.
+    ReasoningDelta {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        /// The CLI's running estimate of the block's size.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+        /// Kept so a block cut off before its end is stored with it.
+        #[serde(default)]
+        redacted: bool,
+    },
+    /// One reasoning block. Claude's headless stream sends no reasoning text, so `text` is
+    /// empty unless a documented source provides it; `redacted` blocks never carry text.
+    Reasoning {
+        message_id: String,
+        #[serde(default)]
+        text: String,
+        /// Cut off before its end by `thread_stop`, an exit or the turn's end; never a size cap.
+        #[serde(default)]
+        truncated: bool,
+        /// From the block's first delta to its end, on the daemon's clock.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        duration_ms: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        estimated_tokens: Option<u32>,
+        #[serde(default)]
+        redacted: bool,
+    },
+    ToolCall {
+        tool_use_id: String,
+        name: String,
+        input: String,
+        truncated: bool,
+        /// Computed from the whole input, so it survives the input cap.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        summary: Option<ToolSummary>,
+    },
+    ToolResult {
+        tool_use_id: String,
+        is_error: bool,
+        output: String,
+        truncated: bool,
+    },
+    TurnEnd {
+        outcome: TurnOutcome,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        error: Option<String>,
+    },
+    Notice {
+        text: String,
+    },
+    /// Claude asks to run a tool. Houston holds the request until `thread_approve`
+    /// answers it, or denies it when the process stops.
+    ApprovalRequest {
+        request_id: String,
+        tool_use_id: String,
+        tool_name: String,
+        input: String,
+        truncated: bool,
+        /// The whole input's size, so a truncated card can say how much it hides.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        input_bytes: u64,
+    },
+    ApprovalResolved {
+        request_id: String,
+        decision: ApprovalDecision,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reason: Option<String>,
+    },
+    /// Claude asks the user to choose (its `AskUserQuestion` tool). Held like an approval
+    /// until `thread_answer` answers or skips it, or the process stops.
+    QuestionRequest {
+        request_id: String,
+        tool_use_id: String,
+        questions: Vec<ThreadQuestion>,
+        /// A header or option description was cut at `THREAD_QUESTION_TEXT_MAX_BYTES`.
+        #[serde(default)]
+        truncated: bool,
+    },
+    QuestionResolved {
+        request_id: String,
+        outcome: QuestionOutcome,
+        /// What the user chose, one entry per question; empty unless `answered`.
+        #[serde(default)]
+        answers: Vec<QuestionAnswer>,
+        /// Why nobody answered, for `denied` and `withdrawn`.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reason: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQuestion {
+    pub question: String,
+    /// A short label for the question, such as "Colour".
+    #[serde(default)]
+    pub header: String,
+    pub options: Vec<ThreadQuestionOption>,
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+/// The answer to one question: option labels, the user's own text, or both for a
+/// multi-select question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct QuestionAnswer {
+    pub question: String,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub other: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionOutcome {
+    Answered,
+    Skipped,
+    /// Stop, Kill, Close or the process's exit ended the call first.
+    Denied,
+    /// Claude ended the call, or Houston restarted, before an answer.
+    Withdrawn,
+}
+
+/// What a tool call acts on, for its one-line row and the turn's counts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ToolSummary {
+    pub kind: ToolKind,
+    /// A path, command, pattern, URL or `server · tool`, cut at `THREAD_TOOL_TARGET_MAX_BYTES`.
+    pub target: String,
+    /// Line counts of an edit or a write.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub added: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Read,
+    Search,
+    Web,
+    Command,
+    Edit,
+    Write,
+    Todo,
+    Question,
+    Plan,
+    Task,
+    Mcp,
+    Other,
+}
+
+/// A terminal selection quoted into a thread message, as the user saw it before sending.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadExcerpt {
+    /// The pane's name when the selection was taken.
+    pub source: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub session: Option<u32>,
+    pub text: String,
+}
+
+/// How a user message reached Claude.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum MessageDelivery {
+    /// Sent while no turn was open and nothing was queued.
+    #[default]
+    Direct,
+    /// Waited in the thread's queue and was sent when a turn completed, or by the user.
+    Queued,
+    /// Stopped the open turn and was sent before the queue.
+    Steered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum QueuedState {
+    /// Sent automatically after the open turn completes.
+    Queued,
+    /// Sent only when the user sends it; `hold_reason` says why it stopped.
+    Held,
+}
+
+/// A message written while a turn was open, waiting in the daemon until it can be sent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ThreadQueuedMessage {
+    pub id: String,
+    pub text: String,
+    pub state: QueuedState,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub hold_reason: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: u64,
+    #[serde(default)]
+    pub excerpts: Vec<ThreadExcerpt>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    Allowed,
+    Denied,
+    /// Claude ended the call before anyone answered; the tool did not run.
+    Withdrawn,
+}
+
+/// The Claude permission mode a thread session runs with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadPermissionMode {
+    /// Every prompt becomes an approval card.
+    #[default]
+    Default,
+    AcceptEdits,
+    Plan,
+    Auto,
+    Bypass,
+}
+
+impl ThreadPermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::AcceptEdits => "accept_edits",
+            Self::Plan => "plan",
+            Self::Auto => "auto",
+            Self::Bypass => "bypass",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TurnOutcome {
+    Completed,
+    Interrupted,
+    Error,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -2596,6 +2962,14 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
+    /// Terminal for every session except a Claude session opened as a thread.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(as = "Option<SessionView>", optional))]
+    pub view: SessionView,
+    /// Set for thread sessions only.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub permission_mode: Option<ThreadPermissionMode>,
     /// When this pane's conversation left in a workspace transfer; its process stopped then.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
@@ -4483,6 +4857,10 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         effort: Option<ChatEffort>,
+        /// Absent is `terminal`; `thread` is refused for every agent but Claude.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        view: Option<SessionView>,
     },
     SessionKill {
         session: u32,
@@ -4540,6 +4918,87 @@ pub enum ClientMsg {
         session: u32,
         cols: u16,
         rows: u16,
+    },
+    /// Sent at once while no turn is open and the queue is empty; queued otherwise.
+    /// `steer` stops an open turn and sends this message before the queue.
+    ThreadSend {
+        session: u32,
+        text: String,
+        #[serde(default)]
+        steer: bool,
+        /// At most `THREAD_EXCERPTS_MAX`; `text` may be blank when there is one.
+        #[serde(default)]
+        excerpts: Vec<ThreadExcerpt>,
+    },
+    ThreadStop {
+        session: u32,
+    },
+    /// Answers a held `approval_request`; `message` tells Claude why on a denial.
+    ThreadApprove {
+        session: u32,
+        request_id: String,
+        allow: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        message: Option<String>,
+    },
+    /// Answers a held `question_request`; `answers: null` skips it.
+    ThreadAnswer {
+        session: u32,
+        request_id: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        answers: Option<Vec<QuestionAnswer>>,
+    },
+    /// Refused while a turn runs; restarts an idle thread's process with `--resume`.
+    ThreadSetPermissionMode {
+        session: u32,
+        mode: ThreadPermissionMode,
+    },
+    /// Moves a Claude session's conversation to the other view through an exact-ID
+    /// respawn; refused while the agent works, naming its status.
+    SessionSetView {
+        session: u32,
+        view: SessionView,
+    },
+    /// The view new Claude sessions open in from the new-session flows.
+    DefaultViewGet {},
+    DefaultViewSet {
+        view: SessionView,
+    },
+    ThreadHistory {
+        session: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_seq: Option<u64>,
+        limit: u32,
+    },
+    /// Answered with a `thread_queue` snapshot to this connection.
+    ThreadQueueList {
+        session: u32,
+    },
+    ThreadQueueEdit {
+        session: u32,
+        id: String,
+        text: String,
+    },
+    ThreadQueueRemove {
+        session: u32,
+        id: String,
+    },
+    /// Sends a queued or held message now; while a turn is open it waits as `queued`.
+    ThreadQueueSend {
+        session: u32,
+        id: String,
+    },
+    /// Takes a queued message out of the queue and sends it first, stopping an open turn.
+    ThreadSteer {
+        session: u32,
+        id: String,
+    },
+    /// Answered with a `thread_commands` reply to this connection.
+    ThreadCommandsList {
+        session: u32,
     },
     SessionList,
     PrWatchList,
@@ -5939,6 +6398,9 @@ pub enum ServerMsg {
     GeneratedTitles {
         enabled: bool,
     },
+    DefaultView {
+        view: SessionView,
+    },
 
     ZcodeQuotaCheck {
         enabled: bool,
@@ -5995,6 +6457,34 @@ pub enum ServerMsg {
     },
     SessionRemoved {
         session: u32,
+    },
+    ThreadEvents {
+        session: u32,
+        events: Vec<ThreadEvent>,
+    },
+    ThreadHistory {
+        session: u32,
+        /// The request's `before_seq`, so a client matches the reply to its request.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_seq: Option<u64>,
+        events: Vec<ThreadEvent>,
+        has_more: bool,
+    },
+    /// The session's whole queue, oldest first; broadcast after every change.
+    ThreadQueue {
+        session: u32,
+        items: Vec<ThreadQueuedMessage>,
+    },
+    /// The `/` commands Claude last reported for this thread; broadcast when they change.
+    ThreadCommands {
+        session: u32,
+        /// Claude built-ins verified to run in a thread; sent as `/name` text.
+        commands: Vec<String>,
+        skills: Vec<String>,
+        /// Every other command Claude lists, and skills that edit its settings, permissions or
+        /// plugins: never sent from a thread; a message starting with one is refused by name.
+        terminal_only: Vec<String>,
     },
     Scrollback {
         session: u32,
@@ -8658,5 +9148,313 @@ mod tests {
         })
         .unwrap();
         assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
+    }
+
+    #[test]
+    fn view_switch_messages_keep_their_wire_shape() {
+        let switch: ClientMsg =
+            serde_json::from_str(r#"{"type":"session_set_view","session":4,"view":"terminal"}"#)
+                .unwrap();
+        assert!(matches!(
+            switch,
+            ClientMsg::SessionSetView {
+                session: 4,
+                view: SessionView::Terminal
+            }
+        ));
+        let set: ClientMsg =
+            serde_json::from_str(r#"{"type":"default_view_set","view":"thread"}"#).unwrap();
+        assert!(matches!(
+            set,
+            ClientMsg::DefaultViewSet {
+                view: SessionView::Thread
+            }
+        ));
+        assert_eq!(
+            serde_json::to_string(&ServerMsg::DefaultView {
+                view: SessionView::Terminal
+            })
+            .unwrap(),
+            r#"{"type":"default_view","view":"terminal"}"#
+        );
+    }
+
+    #[test]
+    fn thread_messages_keep_their_wire_shape() {
+        let create: ClientMsg = serde_json::from_str(
+            r#"{"type":"session_create","agent":"claude","project_dir":"/p","view":"thread"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            create,
+            ClientMsg::SessionCreate {
+                view: Some(SessionView::Thread),
+                ..
+            }
+        ));
+        let history: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_history","session":3,"limit":200}"#).unwrap();
+        assert!(matches!(
+            history,
+            ClientMsg::ThreadHistory {
+                session: 3,
+                before_seq: None,
+                limit: 200
+            }
+        ));
+        let events = serde_json::to_string(&ServerMsg::ThreadEvents {
+            session: 3,
+            events: vec![ThreadEvent {
+                seq: 7,
+                at_ms: 1,
+                kind: ThreadEventKind::TurnEnd {
+                    outcome: TurnOutcome::Interrupted,
+                    error: None,
+                },
+            }],
+        })
+        .unwrap();
+        assert_eq!(
+            events,
+            r#"{"type":"thread_events","session":3,"events":[{"seq":7,"at_ms":1,"kind":{"type":"turn_end","outcome":"interrupted","error":null}}]}"#
+        );
+    }
+
+    #[test]
+    fn queue_messages_keep_their_wire_shape() {
+        let send: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_send","session":3,"text":"hi"}"#).unwrap();
+        assert!(matches!(send, ClientMsg::ThreadSend { steer: false, .. }));
+        let steer: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_steer","session":3,"id":"q1"}"#).unwrap();
+        assert!(matches!(steer, ClientMsg::ThreadSteer { session: 3, ref id } if id == "q1"));
+        let message: ThreadEventKind =
+            serde_json::from_str(r#"{"type":"user_message","text":"hi"}"#).unwrap();
+        assert_eq!(
+            message,
+            ThreadEventKind::UserMessage {
+                text: "hi".into(),
+                delivery: MessageDelivery::Direct,
+                excerpts: Vec::new(),
+            },
+            "events stored before v159 read as direct"
+        );
+        let queue = serde_json::to_string(&ServerMsg::ThreadQueue {
+            session: 3,
+            items: vec![ThreadQueuedMessage {
+                id: "q1".into(),
+                text: "next".into(),
+                state: QueuedState::Held,
+                hold_reason: Some("stopped".into()),
+                created_at_ms: 5,
+                excerpts: Vec::new(),
+            }],
+        })
+        .unwrap();
+        assert_eq!(
+            queue,
+            r#"{"type":"thread_queue","session":3,"items":[{"id":"q1","text":"next","state":"held","hold_reason":"stopped","created_at_ms":5,"excerpts":[]}]}"#
+        );
+    }
+
+    #[test]
+    fn composer_messages_keep_their_wire_shape() {
+        let send: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_send","session":3,"text":"why?","excerpts":[{"source":"build","session":4,"text":"error[E0308]"}]}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            send,
+            ClientMsg::ThreadSend { ref excerpts, .. }
+                if excerpts == &[ThreadExcerpt { source: "build".into(), session: Some(4), text: "error[E0308]".into() }]
+        ));
+        let older: ThreadQueuedMessage =
+            serde_json::from_str(r#"{"id":"q1","text":"next","state":"queued","created_at_ms":5}"#)
+                .unwrap();
+        assert!(
+            older.excerpts.is_empty(),
+            "rows written before v160 have none"
+        );
+        let commands = serde_json::to_string(&ServerMsg::ThreadCommands {
+            session: 3,
+            commands: vec!["compact".into()],
+            skills: vec!["review".into()],
+            terminal_only: vec!["model".into()],
+        })
+        .unwrap();
+        assert_eq!(
+            commands,
+            r#"{"type":"thread_commands","session":3,"commands":["compact"],"skills":["review"],"terminal_only":["model"]}"#
+        );
+        let list: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_commands_list","session":3}"#).unwrap();
+        assert!(matches!(list, ClientMsg::ThreadCommandsList { session: 3 }));
+    }
+
+    #[test]
+    fn work_log_events_keep_their_wire_shape() {
+        let reasoning = serde_json::to_string(&ThreadEventKind::Reasoning {
+            message_id: "m1".into(),
+            text: String::new(),
+            truncated: false,
+            duration_ms: Some(14_000),
+            estimated_tokens: Some(812),
+            redacted: false,
+        })
+        .unwrap();
+        assert_eq!(
+            reasoning,
+            r#"{"type":"reasoning","message_id":"m1","text":"","truncated":false,"duration_ms":14000,"estimated_tokens":812,"redacted":false}"#
+        );
+        let call = serde_json::to_string(&ThreadEventKind::ToolCall {
+            tool_use_id: "t1".into(),
+            name: "Edit".into(),
+            input: "{".into(),
+            truncated: true,
+            summary: Some(ToolSummary {
+                kind: ToolKind::Edit,
+                target: "src/a.rs".into(),
+                added: Some(3),
+                removed: Some(1),
+            }),
+        })
+        .unwrap();
+        assert_eq!(
+            call,
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Edit","input":"{","truncated":true,"summary":{"kind":"edit","target":"src/a.rs","added":3,"removed":1}}"#
+        );
+        let stored: ThreadEventKind = serde_json::from_str(
+            r#"{"type":"tool_call","tool_use_id":"t1","name":"Read","input":"{}","truncated":false}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(stored, ThreadEventKind::ToolCall { summary: None, .. }),
+            "events stored before v157 have no summary"
+        );
+        let block: ThreadEventKind =
+            serde_json::from_str(r#"{"type":"reasoning","message_id":"m2"}"#).unwrap();
+        assert!(matches!(
+            block,
+            ThreadEventKind::Reasoning {
+                duration_ms: None,
+                estimated_tokens: None,
+                redacted: false,
+                truncated: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn approval_messages_keep_their_wire_shape() {
+        let approve: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_approve","session":3,"request_id":"r1","allow":false,"message":"no"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            approve,
+            ClientMsg::ThreadApprove { session: 3, ref request_id, allow: false, message: Some(ref m) }
+                if request_id == "r1" && m == "no"
+        ));
+        let mode: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_set_permission_mode","session":3,"mode":"accept_edits"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            mode,
+            ClientMsg::ThreadSetPermissionMode {
+                session: 3,
+                mode: ThreadPermissionMode::AcceptEdits
+            }
+        ));
+        let resolved = serde_json::to_string(&ThreadEventKind::ApprovalResolved {
+            request_id: "r1".into(),
+            decision: ApprovalDecision::Withdrawn,
+            reason: None,
+        })
+        .unwrap();
+        assert_eq!(
+            resolved,
+            r#"{"type":"approval_resolved","request_id":"r1","decision":"withdrawn","reason":null}"#
+        );
+        let info: SessionInfo = serde_json::from_value(serde_json::json!({
+            "id": 1, "agent": "claude", "project_dir": "/p", "cwd": "/p", "state": "running",
+            "title": "t", "codename": "c", "hidden": false
+        }))
+        .unwrap();
+        assert_eq!(info.permission_mode, None, "older daemons omit the field");
+    }
+
+    #[test]
+    fn question_messages_keep_their_wire_shape() {
+        let answer: ClientMsg = serde_json::from_str(
+            r#"{"type":"thread_answer","session":3,"request_id":"q1","answers":[{"question":"Which colour?","selected":["Red","Blue"],"other":"teal"}]}"#,
+        )
+        .unwrap();
+        let ClientMsg::ThreadAnswer {
+            session: 3,
+            request_id,
+            answers: Some(answers),
+        } = answer
+        else {
+            panic!("not a thread_answer with answers: {answer:?}");
+        };
+        assert_eq!(request_id, "q1");
+        assert_eq!(answers[0].selected, ["Red", "Blue"]);
+        assert_eq!(answers[0].other.as_deref(), Some("teal"));
+        let skip: ClientMsg =
+            serde_json::from_str(r#"{"type":"thread_answer","session":3,"request_id":"q1"}"#)
+                .unwrap();
+        assert!(
+            matches!(skip, ClientMsg::ThreadAnswer { answers: None, .. }),
+            "no answers skips the question"
+        );
+        let request = serde_json::to_string(&ThreadEventKind::QuestionRequest {
+            request_id: "q1".into(),
+            tool_use_id: "t1".into(),
+            questions: vec![ThreadQuestion {
+                question: "Which colour?".into(),
+                header: "Colour".into(),
+                options: vec![ThreadQuestionOption {
+                    label: "Red".into(),
+                    description: "Warm".into(),
+                }],
+                multi_select: true,
+            }],
+            truncated: false,
+        })
+        .unwrap();
+        assert_eq!(
+            request,
+            r#"{"type":"question_request","request_id":"q1","tool_use_id":"t1","questions":[{"question":"Which colour?","header":"Colour","options":[{"label":"Red","description":"Warm"}],"multi_select":true}],"truncated":false}"#
+        );
+        let resolved = serde_json::to_string(&ThreadEventKind::QuestionResolved {
+            request_id: "q1".into(),
+            outcome: QuestionOutcome::Answered,
+            answers: vec![QuestionAnswer {
+                question: "Which colour?".into(),
+                selected: vec!["Red".into()],
+                other: None,
+            }],
+            reason: None,
+        })
+        .unwrap();
+        assert_eq!(
+            resolved,
+            r#"{"type":"question_resolved","request_id":"q1","outcome":"answered","answers":[{"question":"Which colour?","selected":["Red"],"other":null}],"reason":null}"#
+        );
+        let denied: ThreadEventKind = serde_json::from_str(
+            r#"{"type":"question_resolved","request_id":"q1","outcome":"denied"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            denied,
+            ThreadEventKind::QuestionResolved {
+                outcome: QuestionOutcome::Denied,
+                ref answers,
+                reason: None,
+                ..
+            } if answers.is_empty()
+        ));
     }
 }

@@ -141,6 +141,12 @@ reads only an identifier and never changes the file:
   token may be in the OS keyring.
 - **ZCode** — "Sign-in unknown"; its sign-in storage is not documented.
 
+Below the accounts, **Default view** chooses whether a Claude session you open yourself
+(new pane menu, empty grid, command palette or a handoff) starts as a terminal or as a
+thread; the selected value is the current one, and Terminal is the default. Review and
+check agents and panes started by an agent stay terminals; see
+[threads](panes-and-grids.md#moving-a-conversation-between-views).
+
 Tokens and keys are never stored in Houston's database, written to logs or sent anywhere.
 The identifier is read on demand, shown in this screen and discarded; nothing leaves your
 machine. A file that is missing, unreadable, malformed or larger than the read limit shows

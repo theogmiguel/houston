@@ -861,6 +861,9 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
     matches!(
         msg,
         proto::ClientMsg::SessionList
+            | proto::ClientMsg::ThreadHistory { .. }
+            | proto::ClientMsg::ThreadQueueList { .. }
+            | proto::ClientMsg::ThreadCommandsList { .. }
             | proto::ClientMsg::SkillSync
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
@@ -1082,6 +1085,7 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
         msg,
         proto::ClientMsg::SessionCreate { .. }
             | proto::ClientMsg::SessionRespawn { .. }
+            | proto::ClientMsg::SessionSetView { .. }
             | proto::ClientMsg::SessionWake { .. }
             | proto::ClientMsg::SessionAttach { .. }
             | proto::ClientMsg::SessionVisibility { .. }
@@ -1254,6 +1258,7 @@ impl OnLoop {
                 prompt,
                 model,
                 effort,
+                view,
             } => {
                 let busy: Vec<u32> = cwd_from.iter().copied().collect();
                 let params = CreateParams {
@@ -1271,7 +1276,10 @@ impl OnLoop {
                     model,
                     effort,
                 };
-                let task = tokio::task::spawn_blocking(move || daemon.create_session(params));
+                let view = view.unwrap_or_default();
+                let task = tokio::task::spawn_blocking(move || {
+                    daemon.create_session_in_view(params, view)
+                });
                 let landed_busy = busy.clone();
                 let work = async move {
                     let result = task
@@ -1313,6 +1321,22 @@ impl OnLoop {
                     let result = task
                         .await
                         .unwrap_or_else(|e| Err(anyhow::anyhow!("respawn task panicked: {e}")));
+                    Landed::Spawned {
+                        session,
+                        result,
+                        context,
+                    }
+                };
+                (busy, work.boxed())
+            }
+            proto::ClientMsg::SessionSetView { session, view } => {
+                let task =
+                    tokio::task::spawn_blocking(move || daemon.set_session_view(session, view));
+                let busy = vec![session];
+                let work = async move {
+                    let result = task
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow::anyhow!("view switch task panicked: {e}")));
                     Landed::Spawned {
                         session,
                         result,
@@ -1640,8 +1664,13 @@ async fn handle_control(
     // mutations and subprocess cleanup; aborting their async wrapper is not cancellation.
     #[cfg(feature = "test-barriers")]
     let fixture = control_fixture(daemon.as_ref(), &msg);
+    let lane = thread_lane_session(&msg).map(|session| ThreadTurn::take(&daemon, session));
     tasks.spawn(async move {
         let _permits = (local, global);
+        let _turn = match lane {
+            Some(turn) => Some(turn.wait().await),
+            None => None,
+        };
         #[cfg(feature = "test-barriers")]
         if let Some(fixture) = fixture {
             fixture
@@ -1669,6 +1698,95 @@ async fn handle_control(
         };
         report(&mut tx, result, context).await;
     });
+}
+
+/// The session of a thread request that changes it. Control requests otherwise run
+/// concurrently, so two sends written back to back could reach the session in either order.
+fn thread_lane_session(msg: &proto::ClientMsg) -> Option<u32> {
+    match msg {
+        proto::ClientMsg::ThreadSend { session, .. }
+        | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadApprove { session, .. }
+        | proto::ClientMsg::ThreadAnswer { session, .. }
+        | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
+        | proto::ClientMsg::ThreadQueueEdit { session, .. }
+        | proto::ClientMsg::ThreadQueueRemove { session, .. }
+        | proto::ClientMsg::ThreadQueueSend { session, .. }
+        | proto::ClientMsg::ThreadSteer { session, .. } => Some(*session),
+        _ => None,
+    }
+}
+
+/// Per daemon and session: tickets handed out in socket order, and the next one to run.
+struct ThreadLane {
+    issued: u64,
+    served: tokio::sync::watch::Sender<u64>,
+}
+
+type ThreadLaneKey = (usize, u32);
+
+fn thread_lanes() -> &'static std::sync::Mutex<std::collections::HashMap<ThreadLaneKey, ThreadLane>>
+{
+    static LANES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<ThreadLaneKey, ThreadLane>>,
+    > = std::sync::OnceLock::new();
+    LANES.get_or_init(Default::default)
+}
+
+/// A thread request's place on its session's lane, taken on the connection task.
+struct ThreadTurn {
+    key: ThreadLaneKey,
+    ticket: u64,
+    served: tokio::sync::watch::Receiver<u64>,
+}
+
+impl ThreadTurn {
+    fn take(daemon: &Arc<Daemon>, session: u32) -> Self {
+        let key = (Arc::as_ptr(daemon) as usize, session);
+        let mut lanes = thread_lanes().lock().expect("thread lanes lock");
+        let lane = lanes.entry(key).or_insert_with(|| ThreadLane {
+            issued: 0,
+            served: tokio::sync::watch::channel(0).0,
+        });
+        let ticket = lane.issued;
+        lane.issued += 1;
+        Self {
+            key,
+            ticket,
+            served: lane.served.subscribe(),
+        }
+    }
+
+    /// Waits for the earlier requests on this session; the guard lets the next one run.
+    async fn wait(mut self) -> ThreadTurnDone {
+        let done = ThreadTurnDone {
+            key: self.key,
+            ticket: self.ticket,
+        };
+        let ticket = self.ticket;
+        let _ = self.served.wait_for(|served| *served >= ticket).await;
+        done
+    }
+}
+
+struct ThreadTurnDone {
+    key: ThreadLaneKey,
+    ticket: u64,
+}
+
+impl Drop for ThreadTurnDone {
+    fn drop(&mut self) {
+        let mut lanes = thread_lanes().lock().expect("thread lanes lock");
+        let Some(lane) = lanes.get_mut(&self.key) else {
+            return;
+        };
+        let next = self.ticket + 1;
+        lane.served
+            .send_modify(|served| *served = (*served).max(next));
+        if lane.issued <= next {
+            lanes.remove(&self.key);
+        }
+    }
 }
 
 /// Names the refused request for a client that must settle or retry it: its message type and
@@ -1699,9 +1817,22 @@ fn request_error_context(msg: &proto::ClientMsg) -> Option<String> {
     match msg {
         proto::ClientMsg::SessionClose { session, .. }
         | proto::ClientMsg::SessionRespawn { session, .. }
+        | proto::ClientMsg::SessionSetView { session, .. }
         | proto::ClientMsg::SessionWake { session }
         | proto::ClientMsg::SessionAttach { session, .. }
         | proto::ClientMsg::SessionResize { session, .. }
+        | proto::ClientMsg::ThreadSend { session, .. }
+        | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadApprove { session, .. }
+        | proto::ClientMsg::ThreadAnswer { session, .. }
+        | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
+        | proto::ClientMsg::ThreadHistory { session, .. }
+        | proto::ClientMsg::ThreadQueueList { session }
+        | proto::ClientMsg::ThreadQueueEdit { session, .. }
+        | proto::ClientMsg::ThreadQueueRemove { session, .. }
+        | proto::ClientMsg::ThreadQueueSend { session, .. }
+        | proto::ClientMsg::ThreadSteer { session, .. }
+        | proto::ClientMsg::ThreadCommandsList { session }
         | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
         proto::ClientMsg::NightShiftCreate { .. }
         | proto::ClientMsg::NightShiftState { .. }
@@ -1900,6 +2031,7 @@ async fn dispatch(
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate { .. }
         | proto::ClientMsg::SessionRespawn { .. }
+        | proto::ClientMsg::SessionSetView { .. }
         | proto::ClientMsg::SessionWake { .. }
         | proto::ClientMsg::SessionAttach { .. } => Err(anyhow::anyhow!(
             "spawn and attach requests land through the connection loop, not dispatch"
@@ -1950,6 +2082,110 @@ async fn dispatch(
             )
             .await;
             Ok(())
+        }
+        proto::ClientMsg::ThreadSend {
+            session,
+            text,
+            steer,
+            excerpts,
+        } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_send(session, &text, steer, &excerpts))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread send panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadStop { session } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_stop(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread stop panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadApprove {
+            session,
+            request_id,
+            allow,
+            message,
+        } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || {
+                d.thread_approve(session, &request_id, allow, message)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("thread approve panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadAnswer {
+            session,
+            request_id,
+            answers,
+        } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_answer(session, &request_id, answers))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread answer panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadSetPermissionMode { session, mode } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_set_permission_mode(session, mode))
+                .await
+                .unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!(
+                        "thread permission mode change panicked: {e}"
+                    ))
+                })
+        }
+        proto::ClientMsg::ThreadHistory {
+            session,
+            before_seq,
+            limit,
+        } => {
+            let d = Arc::clone(daemon);
+            let reply =
+                tokio::task::spawn_blocking(move || d.thread_history(session, before_seq, limit))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("thread history read panicked: {e}"))??;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending thread history failed"))
+        }
+        proto::ClientMsg::ThreadQueueList { session } => {
+            let d = Arc::clone(daemon);
+            // Answered on the broadcast channel, so it cannot overtake a newer snapshot.
+            tokio::task::spawn_blocking(move || d.thread_queue_reply(session, conn_id))
+                .await
+                .map_err(|e| anyhow::anyhow!("thread queue read panicked: {e}"))?
+        }
+        proto::ClientMsg::ThreadCommandsList { session } => {
+            let d = Arc::clone(daemon);
+            let reply = tokio::task::spawn_blocking(move || d.thread_commands_list(session))
+                .await
+                .map_err(|e| anyhow::anyhow!("thread commands read panicked: {e}"))??;
+            send_msg(sink, &reply)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending thread commands failed"))
+        }
+        proto::ClientMsg::ThreadQueueEdit { session, id, text } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_edit(session, &id, &text))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue edit panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadQueueRemove { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_remove(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue remove panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadQueueSend { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_queue_send(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread queue send panicked: {e}")))
+        }
+        proto::ClientMsg::ThreadSteer { session, id } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.thread_steer(session, &id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("thread steer panicked: {e}")))
         }
         proto::ClientMsg::WorkspaceLocalServers { workspace } => {
             let msg = daemon.workspace_local_servers(workspace);
@@ -3051,6 +3287,15 @@ async fn dispatch(
         .await
         .map_err(|_| anyhow::anyhow!("sending generated-title setting failed")),
         proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
+        proto::ClientMsg::DefaultViewGet {} => send_msg(
+            sink,
+            &proto::ServerMsg::DefaultView {
+                view: daemon.default_view(),
+            },
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("sending the default view failed")),
+        proto::ClientMsg::DefaultViewSet { view } => daemon.set_default_view(view),
         proto::ClientMsg::ZcodeQuotaCheckGet {} => send_msg(
             sink,
             &proto::ServerMsg::ZcodeQuotaCheck {

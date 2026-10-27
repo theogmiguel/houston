@@ -370,6 +370,7 @@ async fn restart_roundtrip(signal: Option<Signal>) {
                     prompt: None,
                     model: None,
                     effort: None,
+                    view: None,
                 },
             )
             .await;
