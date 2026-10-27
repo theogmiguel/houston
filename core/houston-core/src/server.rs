@@ -1664,8 +1664,13 @@ async fn handle_control(
     // mutations and subprocess cleanup; aborting their async wrapper is not cancellation.
     #[cfg(feature = "test-barriers")]
     let fixture = control_fixture(daemon.as_ref(), &msg);
+    let lane = thread_lane_session(&msg).map(|session| ThreadTurn::take(&daemon, session));
     tasks.spawn(async move {
         let _permits = (local, global);
+        let _turn = match lane {
+            Some(turn) => Some(turn.wait().await),
+            None => None,
+        };
         #[cfg(feature = "test-barriers")]
         if let Some(fixture) = fixture {
             fixture
@@ -1693,6 +1698,95 @@ async fn handle_control(
         };
         report(&mut tx, result, context).await;
     });
+}
+
+/// The session of a thread request that changes it. Control requests otherwise run
+/// concurrently, so two sends written back to back could reach the session in either order.
+fn thread_lane_session(msg: &proto::ClientMsg) -> Option<u32> {
+    match msg {
+        proto::ClientMsg::ThreadSend { session, .. }
+        | proto::ClientMsg::ThreadStop { session }
+        | proto::ClientMsg::ThreadApprove { session, .. }
+        | proto::ClientMsg::ThreadAnswer { session, .. }
+        | proto::ClientMsg::ThreadSetPermissionMode { session, .. }
+        | proto::ClientMsg::ThreadQueueEdit { session, .. }
+        | proto::ClientMsg::ThreadQueueRemove { session, .. }
+        | proto::ClientMsg::ThreadQueueSend { session, .. }
+        | proto::ClientMsg::ThreadSteer { session, .. } => Some(*session),
+        _ => None,
+    }
+}
+
+/// Per daemon and session: tickets handed out in socket order, and the next one to run.
+struct ThreadLane {
+    issued: u64,
+    served: tokio::sync::watch::Sender<u64>,
+}
+
+type ThreadLaneKey = (usize, u32);
+
+fn thread_lanes() -> &'static std::sync::Mutex<std::collections::HashMap<ThreadLaneKey, ThreadLane>>
+{
+    static LANES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<ThreadLaneKey, ThreadLane>>,
+    > = std::sync::OnceLock::new();
+    LANES.get_or_init(Default::default)
+}
+
+/// A thread request's place on its session's lane, taken on the connection task.
+struct ThreadTurn {
+    key: ThreadLaneKey,
+    ticket: u64,
+    served: tokio::sync::watch::Receiver<u64>,
+}
+
+impl ThreadTurn {
+    fn take(daemon: &Arc<Daemon>, session: u32) -> Self {
+        let key = (Arc::as_ptr(daemon) as usize, session);
+        let mut lanes = thread_lanes().lock().expect("thread lanes lock");
+        let lane = lanes.entry(key).or_insert_with(|| ThreadLane {
+            issued: 0,
+            served: tokio::sync::watch::channel(0).0,
+        });
+        let ticket = lane.issued;
+        lane.issued += 1;
+        Self {
+            key,
+            ticket,
+            served: lane.served.subscribe(),
+        }
+    }
+
+    /// Waits for the earlier requests on this session; the guard lets the next one run.
+    async fn wait(mut self) -> ThreadTurnDone {
+        let done = ThreadTurnDone {
+            key: self.key,
+            ticket: self.ticket,
+        };
+        let ticket = self.ticket;
+        let _ = self.served.wait_for(|served| *served >= ticket).await;
+        done
+    }
+}
+
+struct ThreadTurnDone {
+    key: ThreadLaneKey,
+    ticket: u64,
+}
+
+impl Drop for ThreadTurnDone {
+    fn drop(&mut self) {
+        let mut lanes = thread_lanes().lock().expect("thread lanes lock");
+        let Some(lane) = lanes.get_mut(&self.key) else {
+            return;
+        };
+        let next = self.ticket + 1;
+        lane.served
+            .send_modify(|served| *served = (*served).max(next));
+        if lane.issued <= next {
+            lanes.remove(&self.key);
+        }
+    }
 }
 
 /// Names the refused request for a client that must settle or retry it: its message type and

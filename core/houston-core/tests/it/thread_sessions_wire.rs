@@ -3164,6 +3164,30 @@ async fn a_queued_message_keeps_its_excerpts_and_arrives_composed() {
 }
 
 #[tokio::test]
+async fn messages_written_back_to_back_queue_in_the_order_they_were_sent() {
+    let mut rig = Rig::new().await;
+    let id = rig.thread().await;
+    let (_gate, _open) = rig.gated_turn(id, "a").await;
+    let texts: Vec<String> = (1..=proto::THREAD_QUEUE_MAX_ITEMS)
+        .map(|n| format!("m{n:02}"))
+        .collect();
+    for text in &texts {
+        rig.say(id, text).await;
+    }
+    let queued = rig
+        .queue_until(id, |items| items.len() == texts.len())
+        .await;
+    assert_eq!(
+        queued
+            .iter()
+            .map(|item| item.text.clone())
+            .collect::<Vec<_>>(),
+        texts,
+        "one connection's sends keep their order"
+    );
+}
+
+#[tokio::test]
 async fn steering_a_queued_message_stops_the_turn_and_sends_it_first() {
     let mut rig = Rig::new().await;
     let id = rig.thread().await;
