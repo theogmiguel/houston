@@ -142,7 +142,7 @@ pub fn ensure_launchable(agent: proto::AgentKind) -> Result<()> {
 pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
-        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
+        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate,mcp__houston__pane_note".into()],
         _ => Vec::new(),
     }
 }
@@ -819,7 +819,7 @@ mod tests {
         use houston_protocol::AgentKind::*;
         assert_eq!(
             super::dialogue_permission_args(Claude),
-            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
+            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate,mcp__houston__pane_note"]
         );
         for agent in [Codex, Antigravity, Opencode, Cursor, Grok] {
             assert!(super::dialogue_permission_args(agent).is_empty());
@@ -1048,6 +1048,7 @@ mod tests {
             "mcp__houston__pane_wait",
             "mcp__houston__pane_deny",
             "mcp__houston__pane_escalate",
+            "mcp__houston__pane_note",
         ] {
             assert!(rules.split(',').any(|r| r == tool), "{tool} lost: {flag}");
         }
