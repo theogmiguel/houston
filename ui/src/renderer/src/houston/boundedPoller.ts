@@ -1,8 +1,10 @@
 import type { HoustonClient } from './client'
 
-// The daemon admits 16 control handlers per connection and refuses the 17th. A surface
+// The daemon admits 16 control handlers per connection and refuses the 17th
+// (CONTROL_HANDLERS_PER_CONNECTION in core/houston-core/src/server.rs). A surface
 // that asks once per directory or workspace queues here: a bounded number in flight,
 // and a key already queued or awaiting its reply is skipped.
+export const CONTROL_HANDLERS_PER_CONNECTION = 16
 
 export interface BoundedPoller {
   /** Queues each key unless it awaits a reply, is queued, or is backing off. */
