@@ -3,8 +3,9 @@
 use std::fmt::Write as _;
 
 use houston_protocol::{
-    NightAgent, NightCompetitor, NightEntry, NightEntryKind, NightFocus, NightFocusLevel,
-    NightOutput, NightPrSize, NightShiftSettings, NightVerification, ROUTINE_PROMPT_MAX,
+    AgentKind, NightAgent, NightCompetitor, NightEntry, NightEntryKind, NightFocus,
+    NightFocusLevel, NightOutput, NightPrSize, NightShiftSettings, NightVerification,
+    ROUTINE_PROMPT_MAX,
 };
 
 use super::settings::{app_qa_on, clock_label};
@@ -154,6 +155,59 @@ fn pr_size(s: &NightShiftSettings) -> String {
 
 fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A Claude orchestrator's `/goal` keeps at most this many characters: the
+/// CLI documents no limit, so the condition stays well inside a single paste.
+pub const GOAL_MAX_CHARS: usize = 600;
+const GOAL_PREFIX: &str = "/goal ";
+const GOAL_TRUNCATED: &str = "… [truncated]";
+
+/// The direction on one line, without control characters.
+fn goal_direction(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Only Claude Code has a `/goal` condition; any other provider uses the
+/// brief's Direction alone.
+pub fn goal_applies(provider: AgentKind, direction: &str) -> bool {
+    provider == AgentKind::Claude && !goal_direction(direction).is_empty()
+}
+
+/// The single follow-up that sets a Claude orchestrator's goal after the
+/// brief: Claude sets a goal only for input starting with `/goal`. `None` for
+/// another provider or an empty direction.
+pub fn goal_for(
+    provider: AgentKind,
+    direction: &str,
+    run_id: u32,
+    hard_stop: &str,
+) -> Option<String> {
+    if !goal_applies(provider, direction) {
+        return None;
+    }
+    let direction = goal_direction(direction);
+    let head = format!("Night shift run {run_id}: make progress on \"");
+    let tail = format!(
+        "\" within the brief's focus areas, and stop only when the morning report is published \
+         (night_report) or the hard stop at {hard_stop} has passed."
+    );
+    let room = GOAL_MAX_CHARS.saturating_sub(
+        GOAL_PREFIX.chars().count()
+            + head.chars().count()
+            + tail.chars().count()
+            + GOAL_TRUNCATED.chars().count(),
+    );
+    let mut body: String = direction.chars().take(room).collect();
+    if body.chars().count() < direction.chars().count() {
+        body.push_str(GOAL_TRUNCATED);
+    }
+    Some(format!("{GOAL_PREFIX}{head}{body}{tail}"))
 }
 
 /// `digest` is newest first; entries that do not fit are counted, not cut.
@@ -598,5 +652,48 @@ mod tests {
         assert!(!brief.contains("completion condition"), "{brief}");
         s.direction.clear();
         assert!(compose(&s, &run(), &[]).contains("- Direction: none"));
+    }
+
+    #[test]
+    fn only_claude_and_a_direction_ask_for_a_goal() {
+        assert!(goal_applies(AgentKind::Claude, "ship it"));
+        assert!(!goal_applies(AgentKind::Claude, " \n\t "));
+        assert!(!goal_applies(AgentKind::Codex, "ship it"));
+        assert!(!goal_applies(AgentKind::Opencode, "ship it"));
+        assert!(goal_for(AgentKind::Codex, "ship it", 7, "07:30").is_none());
+        assert!(goal_for(AgentKind::Claude, "  ", 7, "07:30").is_none());
+    }
+
+    #[test]
+    fn the_goal_names_the_run_the_direction_and_the_hard_stop() {
+        let goal = goal_for(
+            AgentKind::Claude,
+            "make it feel\nfaster\tand \"safer\"",
+            12,
+            "07:30",
+        )
+        .expect("Claude with a direction gets a goal");
+        assert!(goal.starts_with("/goal Night shift run 12: make progress on "));
+        assert!(
+            goal.contains("\"make it feel faster and \"safer\"\""),
+            "{goal}"
+        );
+        assert!(goal.contains("night_report"), "{goal}");
+        assert!(goal.contains("hard stop at 07:30"), "{goal}");
+        assert!(!goal.chars().any(char::is_control), "{goal:?}");
+        assert_eq!(goal.lines().count(), 1, "{goal:?}");
+    }
+
+    #[test]
+    fn a_long_direction_is_truncated_inside_the_goal_limit() {
+        let direction = "go ".repeat(GOAL_MAX_CHARS);
+        let goal = goal_for(AgentKind::Claude, &direction, 1, "07:30").unwrap();
+        assert!(goal.starts_with("/goal "), "{goal}");
+        assert_eq!(goal.lines().count(), 1, "{goal:?}");
+        assert!(goal.chars().count() <= GOAL_MAX_CHARS, "{}", goal.len());
+        assert!(goal.contains(GOAL_TRUNCATED), "{goal}");
+        assert!(goal.contains("hard stop at 07:30"));
+        // A direction made only of control characters has nothing to say.
+        assert!(goal_for(AgentKind::Claude, "\u{7}\u{1b}", 1, "07:30").is_none());
     }
 }

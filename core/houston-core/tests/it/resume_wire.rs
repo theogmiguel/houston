@@ -2789,6 +2789,46 @@ async fn sleep_survives_boot_and_wake_resumes_the_exact_conversation() {
 
 #[tokio::test]
 #[cfg(target_os = "linux")]
+async fn sleep_accepts_a_pane_that_reported_a_subfolder_of_its_bound_folder() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-subfolder");
+    let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let subfolder = ws.join("core");
+    std::fs::create_dir(&subfolder).unwrap();
+    apply_drop(
+        &env,
+        &daemon,
+        HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "PostToolUse".into(),
+            session: pane.id,
+            agent: Some("claude".into()),
+            session_id: Some(conversation),
+            cwd: Some(subfolder.display().to_string()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let bound = Db::open(&env.db_path())
+        .unwrap()
+        .session_resume_binding(pane.id)
+        .unwrap()
+        .expect("the conversation stays bound to the launch folder");
+    assert_eq!(Path::new(&bound.1), ws);
+
+    daemon.sleep_session(pane.id).unwrap();
+    let asleep = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == pane.id)
+        .unwrap();
+    assert_eq!(asleep.state, proto::SessionState::Sleeping);
+    assert_eq!(asleep.cwd, subfolder.display().to_string());
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
 async fn sleep_refuses_a_shell_that_has_detected_claude() {
     let env = setup().await;
     let daemon = boot(&env);

@@ -432,11 +432,28 @@ export function SettingsRemoteUnconfigured(): React.JSX.Element {
 }
 
 export function SettingsAgentSetup({ detail = false, rename = false }: { detail?: boolean; rename?: boolean } = {}): React.JSX.Element {
+  const client = React.useMemo(() => {
+    let enabled = false
+    const listeners = new Set<(message: ServerMsg) => void>()
+    return new Proxy({
+      subscribeAll(handler: (message: ServerMsg) => void) {
+        listeners.add(handler)
+        return () => { listeners.delete(handler) }
+      },
+      send(message: { type: string; enabled?: boolean }) {
+        if (message.type === 'zcode_quota_check_set') enabled = message.enabled === true
+        if (message.type === 'zcode_quota_check_get' || message.type === 'zcode_quota_check_set') {
+          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'zcode_quota_check', enabled }) })
+        }
+      }
+    }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient
+  }, [])
   React.useEffect(() => {
     if (detail) document.querySelector<HTMLButtonElement>('[data-provider="claude"] button')?.click()
     if (rename) [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Rename')?.click()
   }, [detail, rename])
   return <SettingsScreen section="agents-clis" props={{
+    daemonClient: client,
     agentHooks: agentHookFixture,
     agentProfiles: {
       profiles: [
@@ -708,7 +725,7 @@ export function SettingsSearchStory(): React.JSX.Element {
   return <SettingsScreen section="workspaces" />
 }
 
-export const settingsAgentAttentionFixture = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
+export const settingsAgentAttentionFixture = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, seen_review_id: 0 }] })
 
 export function SettingsAgentsOverview({ healthy = false }: { healthy?: boolean } = {}): React.JSX.Element {
   const attention = healthy ? agentAttentionFor({ agentHooks: [], skills: [], checks: [], reviews: [] }) : settingsAgentAttentionFixture

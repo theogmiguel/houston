@@ -132,6 +132,14 @@ describe('the rail nav block', () => {
     expect(rows().find((row) => row.getAttribute('data-view') === 'prs')?.textContent).toBe('Pull requests')
   })
 
+  it('counts new review requests on Pull requests beside parked merge queue entries', () => {
+    render({ mergeQueueParked: 2, reviewRequestCount: 3 })
+    const counts = Array.from(rows().find((row) => row.getAttribute('data-view') === 'prs')?.querySelectorAll('.tabular-nums') ?? [])
+    expect(counts.map((node) => node.textContent?.trim())).toEqual(['3', '2'])
+    expect(counts[0]?.className).toContain('text-[var(--warn)]')
+    expect(counts[1]?.className).toContain('text-[var(--accent)]')
+  })
+
   it('puts setup attention on the Settings footer action as a neutral count rather than a retired Harness row', () => {
     render({ agentAttention: agentAttentionFor({ agentHooks: null, skills: null, reviews: [], checks: [['github', { state: 'failed', message: 'missing npx' }]] }) })
     expect(q('[data-testid="rail-settings"]')?.getAttribute('aria-label')).toBe('Settings, 1 agent setting needs you')

@@ -548,8 +548,6 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
 const SLEEP_CUE_MAX_CHARS: usize = 2000;
-/// Claude's `StopFailure` error class for a plan or rate limit.
-const CLAUDE_LIMIT_ERROR: &str = "rate_limit";
 
 pub(crate) fn bounded_hook_text(value: &str) -> String {
     crate::sanitize::redact_secrets(value)
@@ -1654,6 +1652,9 @@ impl DelegationSettleSample {
 
 mod child_inputs;
 mod conflict_pass;
+pub mod defect_detectors;
+mod defects;
+mod forge_settings;
 mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
@@ -1663,6 +1664,7 @@ mod pane_notes;
 mod provider_deny;
 mod remote;
 mod remote_phone;
+mod review_requests;
 mod scrollback_checkpoint;
 mod slack;
 mod task_trackers;
@@ -1674,6 +1676,7 @@ mod title_generation;
 mod transfer;
 mod view_switch;
 mod worktree_pass;
+mod zcode_quota;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 pub use remote_phone::RemoteSpawn;
 
@@ -1885,6 +1888,8 @@ pub struct Daemon {
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
     channel: Option<String>,
+    /// Where the Bitbucket reader sends its requests; only a test changes it.
+    bitbucket_api_base: Mutex<String>,
     started: Instant,
     swarm_mail: Mutex<HashMap<u64, SwarmMailScope>>,
     swarm_mail_wake: Arc<tokio::sync::Notify>,
@@ -1979,6 +1984,7 @@ pub struct Daemon {
     antigravity_roots: Mutex<HashMap<u32, String>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
     night: night_shift::NightShiftCtx,
+    zcode_quota: Mutex<zcode_quota::ZcodeQuotaState>,
     /// Last transcript path and native id written per session, so a drop
     /// repeating them costs no write.
     transcript_links: Mutex<HashMap<u32, TranscriptLink>>,
@@ -3689,6 +3695,7 @@ impl Daemon {
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
             channel: crate::paths::channel_of_state_dir(&state_dir),
+            bitbucket_api_base: Mutex::new(crate::pull_requests::bitbucket::API_BASE.to_string()),
             started: Instant::now(),
             swarm_mail: Mutex::new(HashMap::new()),
             swarm_mail_wake: Arc::clone(&swarm_mail_wake),
@@ -3837,6 +3844,7 @@ impl Daemon {
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
             routine_runs: Mutex::new(HashMap::new()),
             night: night_shift::NightShiftCtx::default(),
+            zcode_quota: Mutex::new(zcode_quota::ZcodeQuotaState::default()),
             transcript_links: Mutex::new(HashMap::new()),
             resume_launches: Mutex::new(HashMap::new()),
             pending_shell_children: Mutex::new(HashMap::new()),
@@ -4620,6 +4628,16 @@ impl Daemon {
     pub fn pr_status(&self, dir: &Path) -> (crate::gh::PrStatus, bool) {
         if let Some(seed) = self.pr_status_store.take_seed(dir, now_ms()) {
             return (seed, true);
+        }
+        // `gh` cannot answer for a forge known not to be GitHub; nothing is run.
+        if let Some(hint) = crate::forge::status_hint(dir) {
+            let status = crate::gh::PrStatus {
+                gh: proto::GhState::Missing,
+                has_upstream: crate::git::sync(dir).upstream.is_some(),
+                pr: None,
+                hint: Some(hint),
+            };
+            return (status, false);
         }
         let status = crate::gh::pr_status_cached(dir);
         self.pr_status_store.record(dir, &status, now_ms());
@@ -8010,6 +8028,7 @@ impl Daemon {
     #[doc(hidden)]
     pub fn routine_tick_at(self: &Arc<Self>, now_ms: i64) {
         self.night_shift_tick_at(now_ms);
+        self.zcode_quota_tick_at(now_ms.max(0) as u64);
         if self.refusing_mutations() {
             self.stop_routine_runs_past_the_cap(now_ms);
             return;
@@ -10937,13 +10956,23 @@ impl Daemon {
         let profile_changed = recorded_profile_dir.as_deref() != profile_dir
             || (had_profile && recorded_profile_dir.is_none());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let recorded_cwd = cwd;
-        let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let resume_provider = if agent == proto::AgentKind::Shell {
             resume_agent.unwrap_or(agent)
         } else {
             agent
         };
+        // A handle bound to another provider cannot be resumed by this one, so only the
+        // folder of the provider that will actually resume is substituted.
+        let recorded_cwd = if handle.is_some()
+            && agent != proto::AgentKind::Shell
+            && cwd_override.is_none()
+            && conversation != RespawnConversation::Fresh
+        {
+            self.bound_resume_folder(old_id, resume_provider, &cwd)
+        } else {
+            cwd.to_string()
+        };
+        let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let binding_check = if handle.is_some() {
             self.db
                 .check_session_resume_binding(old_id, resume_provider, &cwd)
@@ -11231,6 +11260,31 @@ impl Daemon {
                 );
                 (Vec::new(), None, Some(label))
             }
+        }
+    }
+
+    /// The folder a resume handle is bound to when `cwd` is that folder or lies inside it
+    /// and the handle belongs to `provider`; otherwise `cwd` unchanged. Hooks report the
+    /// folder a tool last ran in, while the handle stays bound to the launch folder.
+    fn bound_resume_folder(&self, id: u32, provider: proto::AgentKind, cwd: &str) -> String {
+        let binding = self.db.session_resume_binding(id).ok().flatten();
+        Self::select_bound_resume_folder(binding, provider, cwd)
+    }
+
+    fn select_bound_resume_folder(
+        binding: Option<(String, String)>,
+        provider: proto::AgentKind,
+        cwd: &str,
+    ) -> String {
+        let expected = crate::agent_hooks::provider_slug(provider);
+        match binding {
+            Some((agent, bound))
+                if agent == expected
+                    && crate::paths::contains(Path::new(&bound), Path::new(cwd)) =>
+            {
+                bound
+            }
+            _ => cwd.to_string(),
         }
     }
 
@@ -14728,12 +14782,13 @@ impl Daemon {
                 .expect("hook cwd lock")
                 .clone()
                 .unwrap_or_else(|| session.cwd());
+            let bound = self.bound_resume_folder(id, resume_agent, &resume_cwd);
             self.resume_check(
                 id,
                 resume_agent,
                 &handle,
-                &resume_cwd,
-                Path::new(&resume_cwd),
+                &bound,
+                Path::new(&bound),
                 current_profile_dir,
                 None,
             )
@@ -16505,35 +16560,17 @@ impl Daemon {
         matches!(kind, "permission_prompt" | "agent_needs_input") || kind.starts_with("elicitation")
     }
 
-    /// Claude's root `StopFailure` with `error: rate_limit` is the only limit a hook reports;
-    /// it carries no reset time.
-    fn reported_limit(
-        provider: proto::AgentKind,
-        d: &crate::hook_drop::HookDrop,
-    ) -> Option<proto::SessionLimit> {
-        (provider == proto::AgentKind::Claude
-            && d.event == "StopFailure"
-            && d.agent_id.is_none()
-            && d.error.as_deref() == Some(CLAUDE_LIMIT_ERROR))
-        .then(|| proto::SessionLimit {
-            error: CLAUDE_LIMIT_ERROR.to_string(),
-            details: d
-                .error_details
-                .as_deref()
-                .map(bounded_hook_text)
-                .filter(|details| !details.is_empty()),
-            since_ms: now_ms(),
-        })
-    }
-
+    /// A root event that ends a reported limit. Every provider with a typed
+    /// limit signal gets one; quota resets are never spent automatically.
     fn ends_limit(provider: proto::AgentKind, d: &crate::hook_drop::HookDrop) -> bool {
-        provider == proto::AgentKind::Claude
-            && d.agent_id.is_none()
+        d.agent_id.is_none()
             && d.subagent_type.is_none()
-            && (crate::agent_events::AgentEvent::from_provider(provider, &d.event)
-                == Some(crate::agent_events::AgentEvent::PromptSubmitted)
-                || (d.event == "Notification"
-                    && d.notification_type.as_deref() == Some("quota_auto_resume_fired")))
+            && crate::limits::ends_limit(
+                provider,
+                cfg!(windows),
+                &d.event,
+                d.notification_type.as_deref(),
+            )
     }
 
     /// Records a reported limit; true only when it starts a new limit episode.
@@ -16680,97 +16717,39 @@ impl Daemon {
             if !session.state.lock().expect("state lock").is_live() {
                 return crate::hook_drop::DropVerdict::Applied;
             }
-            let limit = Self::reported_limit(provider, d);
+            let limit = crate::limits::hook_limit(provider, d);
             let limit_started = limit
                 .clone()
                 .is_some_and(|limit| self.mark_limited(d.session, &session, limit));
             if limit_started {
-                self.night_shift_provider_limited(d.session, provider, "StopFailure rate_limit");
-            }
-            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
-                let name = crate::agent_hooks::provider_slug(provider);
-                let reason = format!(
-                    "{name} {}: {}{}",
-                    d.event,
-                    d.error
-                        .as_deref()
-                        .or(d.reason.as_deref())
-                        .unwrap_or("turn_failed"),
-                    d.error_details
-                        .as_ref()
-                        .map(|details| format!("; {details}"))
-                        .unwrap_or_default()
+                self.night_shift_provider_limited(
+                    d.session,
+                    provider,
+                    &format!("{} {}", d.event, crate::limits::LIMIT_ERROR),
                 );
-                let profile = self
-                    .db
-                    .session_profile_label(d.session)
-                    .ok()
-                    .flatten()
-                    .or_else(|| session.info.profile_label.clone());
-                let (title, body) = match limit.as_ref() {
-                    Some(_) => (
-                        format!("{name} limited"),
-                        orchestrate::limit_note_body(&reason, name, profile.as_deref()),
-                    ),
-                    None => (format!("{name} turn_failed"), reason.clone()),
-                };
-                if row.state != "failed" {
-                    let note = orchestrate::inbox_row_new(
-                        row.parent_session,
-                        &self.current_workspace(d.session).unwrap_or_default(),
-                        Some(d.session),
-                        Some(row.round),
-                        orchestrate::InboxKind::OperatorNote,
-                        &title,
-                        &body,
-                        Vec::new(),
-                        false,
-                        None,
-                        Some("turn_failed"),
-                        true,
-                    );
-                    let written = note.and_then(|mut note| {
-                        // A failed live turn must also wake a parent waiting only for results.
-                        note.urgent = true;
-                        self.db.delegation_close_round(
-                            d.session,
-                            "failed",
-                            Some(&reason),
-                            true,
-                            crate::db::RoundHandback::Write(&note),
-                            now_ms(),
-                        )
-                    });
-                    match written {
-                        Ok(Some(id)) => {
-                            self.broadcast_inbox_row(id);
-                            self.inbox_notify(row.parent_session, true);
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            tracing::warn!("recording failed turn for child {}: {e}", d.session);
-                            return crate::hook_drop::DropVerdict::Retry;
-                        }
-                    }
-                    self.broadcast_delegation(d.session);
-                } else if limit_started {
-                    if let Err(e) = self.inbox_write(
-                        row.parent_session,
-                        &self.current_workspace(d.session).unwrap_or_default(),
-                        Some(d.session),
-                        Some(row.round),
-                        orchestrate::InboxKind::OperatorNote,
-                        &title,
-                        &body,
-                        Vec::new(),
-                        Some("turn_failed"),
-                        None,
-                        false,
-                        true,
-                    ) {
-                        tracing::warn!("recording limit for child {}: {e}", d.session);
-                    }
-                }
+            }
+            let name = crate::agent_hooks::provider_slug(provider);
+            let reason = format!(
+                "{name} {}: {}{}",
+                d.event,
+                d.error
+                    .as_deref()
+                    .or(d.reason.as_deref())
+                    .unwrap_or("turn_failed"),
+                d.error_details
+                    .as_ref()
+                    .map(|details| format!("; {details}"))
+                    .unwrap_or_default()
+            );
+            if self.record_failed_turn(
+                d.session,
+                provider,
+                &reason,
+                limit.is_some(),
+                limit_started,
+                session.info.profile_label.clone(),
+            ) {
+                return crate::hook_drop::DropVerdict::Retry;
             }
         }
         let session = self
@@ -16903,6 +16882,14 @@ impl Daemon {
                     .expect("input answer lock") = d.prompt.as_deref().map(bounded_hook_text);
             }
         }
+        // The brief is in the CLI's hands at its first lifecycle hook after
+        // the pane opens; a Claude orchestrator's direction becomes a /goal.
+        if matches!(d.event.as_str(), "SessionStart" | "UserPromptSubmit")
+            && d.agent_id.is_none()
+            && d.subagent_type.is_none()
+        {
+            self.night_shift_goal_prompt(d.session);
+        }
         if Self::ends_limit(provider, d) {
             self.clear_limit(d.session);
         }
@@ -16986,6 +16973,95 @@ impl Daemon {
         self.note_context_from_hook(d.session, provider, d);
         drop(lifecycle.take());
         verdict
+    }
+
+    /// A failed live turn: close the child's delegation round with one `limited`
+    /// or `turn_failed` row. Returns true when recording it must be retried.
+    fn record_failed_turn(
+        self: &Arc<Self>,
+        session: u32,
+        provider: proto::AgentKind,
+        reason: &str,
+        limited: bool,
+        limit_started: bool,
+        profile_hint: Option<String>,
+    ) -> bool {
+        let Ok(Some(row)) = self.db.delegation_for_child(session) else {
+            return false;
+        };
+        let name = crate::agent_hooks::provider_slug(provider);
+        let profile = self
+            .db
+            .session_profile_label(session)
+            .ok()
+            .flatten()
+            .or(profile_hint);
+        let (title, body) = if limited {
+            (
+                format!("{name} limited"),
+                orchestrate::limit_note_body(reason, name, profile.as_deref()),
+            )
+        } else {
+            (format!("{name} turn_failed"), reason.to_string())
+        };
+        if row.state != "failed" {
+            let note = orchestrate::inbox_row_new(
+                row.parent_session,
+                &self.current_workspace(session).unwrap_or_default(),
+                Some(session),
+                Some(row.round),
+                orchestrate::InboxKind::OperatorNote,
+                &title,
+                &body,
+                Vec::new(),
+                false,
+                None,
+                Some("turn_failed"),
+                true,
+            );
+            let written = note.and_then(|mut note| {
+                // A failed live turn must also wake a parent waiting only for results.
+                note.urgent = true;
+                self.db.delegation_close_round(
+                    session,
+                    "failed",
+                    Some(reason),
+                    true,
+                    crate::db::RoundHandback::Write(&note),
+                    now_ms(),
+                )
+            });
+            match written {
+                Ok(Some(id)) => {
+                    self.broadcast_inbox_row(id);
+                    self.inbox_notify(row.parent_session, true);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("recording failed turn for child {session}: {e}");
+                    return true;
+                }
+            }
+            self.broadcast_delegation(session);
+        } else if limit_started {
+            if let Err(e) = self.inbox_write(
+                row.parent_session,
+                &self.current_workspace(session).unwrap_or_default(),
+                Some(session),
+                Some(row.round),
+                orchestrate::InboxKind::OperatorNote,
+                &title,
+                &body,
+                Vec::new(),
+                Some("turn_failed"),
+                None,
+                false,
+                true,
+            ) {
+                tracing::warn!("recording limit for child {session}: {e}");
+            }
+        }
+        false
     }
 
     fn note_transcript_link(
@@ -18908,7 +18984,7 @@ impl Daemon {
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
             workspaces,
-            workspace_filter: workspace,
+            workspace_filters: workspace.into_iter().collect(),
         });
         if let Err(e) = self.db.usage_daily_rollup_upsert(&outcome.rollups) {
             tracing::warn!("persisting usage daily rollups failed: {e:#}");
@@ -21033,7 +21109,7 @@ impl Daemon {
                     "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
                     "dialogue_tools_permission": !crate::launch::dialogue_permission_args(provider).is_empty(),
                     "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
-                    "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
+                    "turn_failure": crate::agent_events::reports_turn_failure(provider, cfg!(windows)),
                 },
                 "capability_note": orchestrate::capability_note(provider),
             })
@@ -22994,6 +23070,45 @@ impl Daemon {
         mut report: orchestrate::WorkerReport,
     ) -> Result<serde_json::Value> {
         report.body = orchestrate::report_text(&report.body)?;
+        if report.kind == orchestrate::ReportKind::Finding {
+            let (title, evidence, destination) = orchestrate::finding_fields(&report)?;
+            let key = report.client_request_id.take();
+            let receipt = crate::db::MessageReceipt::new(
+                child,
+                key,
+                "pane_report",
+                &serde_json::to_value(&report)?,
+            )?;
+            self.orchestrate_whoami(child)?;
+            let guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+                return Ok(result);
+            }
+            let workspace = self.current_workspace(child)?;
+            let input = crate::db::DefectInput {
+                workspace: workspace.clone(),
+                source: proto::DefectSource::Agent,
+                detector: None,
+                title,
+                description: report.body.clone(),
+                evidence,
+                destination,
+                reporter_session: Some(child),
+            };
+            let (result, record) = self.db.record_agent_finding(
+                &input,
+                &receipt,
+                u64::try_from(now_unix_ms()).unwrap_or(0),
+            )?;
+            drop(guard);
+            if record.count > 0 {
+                self.note_defect_recorded(&workspace, &record);
+            }
+            return Ok(result);
+        }
         let key = report.client_request_id.take();
         let receipt = crate::db::MessageReceipt::new(
             child,
@@ -23018,7 +23133,12 @@ impl Daemon {
             "report refused: request_id {} for pane {child} has already closed",
             report.request_id
         );
-        let kind = report.kind.inbox_kind();
+        let Some(kind) = report.kind.inbox_kind() else {
+            bail!(
+                "report refused: kind {:?} has no inbox row; use pane_report finding for a suspected defect",
+                report.kind
+            );
+        };
         let workspace = self.current_workspace(child)?;
         let row = orchestrate::inbox_row_new(
             parent,
@@ -23058,6 +23178,12 @@ impl Daemon {
         drop(guard);
         self.mcp_notify.tools_changed_for_session(recipient);
         self.inbox_notify(recipient, kind.urgent());
+        if matches!(
+            report.kind,
+            orchestrate::ReportKind::Question | orchestrate::ReportKind::Blocked
+        ) {
+            self.detect_reply_reasked(&workspace, child, &report.body);
+        }
         Ok(result)
     }
 
@@ -23128,9 +23254,18 @@ impl Daemon {
             None,
             true,
         )?;
-        let result =
-            self.db
-                .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms())?;
+        let result = self
+            .db
+            .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms());
+        let result = match result {
+            Ok(result) => result,
+            Err(e) => {
+                if question.resolved_at.is_some() {
+                    self.detect_reply_refused_resolved(&question.workspace, reply.message_id);
+                }
+                return Err(e);
+            }
+        };
         let id = result["message_id"].as_i64().expect("stored reply id");
         self.broadcast_delegation(child);
         self.tasks_on_input_ownership(child);
@@ -29757,6 +29892,52 @@ mod force_respawn_guard_tests {
         assert!(
             daemon.list().iter().any(|info| info.id == child.info.id),
             "the live child must keep running"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bound_resume_folder_tests {
+    use super::*;
+
+    fn binding(agent: &str, cwd: &str) -> Option<(String, String)> {
+        Some((agent.to_string(), cwd.to_string()))
+    }
+
+    #[test]
+    fn bound_resume_folder_accepts_the_bound_folder_and_its_subfolders() {
+        let bound = binding("claude", "/a/proj");
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound.clone(), proto::AgentKind::Claude, "/a/proj"),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(
+                bound.clone(),
+                proto::AgentKind::Claude,
+                "/a/proj/core/x"
+            ),
+            "/a/proj"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound, proto::AgentKind::Claude, "/a/project"),
+            "/a/project",
+            "a sibling prefix is another folder"
+        );
+        assert_eq!(
+            Daemon::select_bound_resume_folder(None, proto::AgentKind::Claude, "/a/proj/core"),
+            "/a/proj/core",
+            "no binding leaves the reported folder selected"
+        );
+    }
+
+    #[test]
+    fn bound_resume_folder_ignores_another_providers_binding() {
+        let bound = binding("codex", "/a/proj");
+        assert_eq!(
+            Daemon::select_bound_resume_folder(bound, proto::AgentKind::Claude, "/a/proj/core"),
+            "/a/proj/core",
+            "a handle that belongs to Codex must not be substituted for a Claude resume"
         );
     }
 }

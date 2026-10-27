@@ -6,6 +6,8 @@ import type { TaskAcceptanceItem } from '../src/houston/generated/TaskAcceptance
 import type { TaskHistoryEntry } from '../src/houston/generated/TaskHistoryEntry'
 import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TasksAccess } from '../src/houston/generated/TasksAccess'
+import type { TaskReviewFocus } from '../src/houston/generated/TaskReviewFocus'
+import type { TaskReviewMode } from '../src/houston/generated/TaskReviewMode'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
 import { OverviewTab } from '../src/components/OverviewTab'
@@ -289,7 +291,7 @@ export function TasksStartStory(): React.JSX.Element {
 
 function tasksAccessClient(initial: TasksAccess, refuseReview = false): HoustonClient {
   let access = initial
-  let review: { reviewer: AgentKind | null; reworkRounds: number } = { reviewer: null, reworkRounds: 0 }
+  let review: { reviewer: AgentKind | null; reworkRounds: number; mode: TaskReviewMode; focus: TaskReviewFocus } = { reviewer: null, reworkRounds: 0, mode: 'manual', focus: 'bugs' }
   const accessHandlers = new Set<(msg: ServerMsg) => void>()
   const reviewHandlers = new Set<(msg: ServerMsg) => void>()
   const refusalHandlers = new Set<(msg: ServerMsg) => void>()
@@ -313,20 +315,20 @@ function tasksAccessClient(initial: TasksAccess, refuseReview = false): HoustonC
     },
     taskReviewSettingsGet: (workspace: string) => {
       for (const handler of reviewHandlers) {
-        handler({ type: 'task_review_settings', workspace, reviewer: review.reviewer, rework_rounds: review.reworkRounds })
+        handler({ type: 'task_review_settings', workspace, reviewer: review.reviewer, rework_rounds: review.reworkRounds, mode: review.mode, focus: review.focus })
       }
       if (refuseReview) {
         for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
       }
     },
-    taskReviewSettingsSet: (workspace: string, reviewer: AgentKind | null, reworkRounds: number) => {
+    taskReviewSettingsSet: (workspace: string, reviewer: AgentKind | null, reworkRounds: number, mode: TaskReviewMode, focus: TaskReviewFocus) => {
       if (refuseReview) {
         for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
         return
       }
-      review = { reviewer, reworkRounds }
+      review = { reviewer, reworkRounds, mode, focus }
       for (const handler of reviewHandlers) {
-        handler({ type: 'task_review_settings', workspace, reviewer, rework_rounds: reworkRounds })
+        handler({ type: 'task_review_settings', workspace, reviewer, rework_rounds: reworkRounds, mode, focus })
       }
     }
   }

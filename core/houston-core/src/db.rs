@@ -7,11 +7,14 @@ use std::path::Path;
 use std::sync::Mutex;
 
 mod child_inputs;
+mod defects;
 mod harness;
 mod instructions;
 mod intake;
 mod merge_queue;
 mod night_shift;
+mod review_requests;
+pub use defects::{defect_key, DefectInput, DefectRecord, DefectRow};
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
@@ -26,6 +29,7 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 pub use night_shift::{NightEntryWrite, NightMember, NightRunRow};
+pub use review_requests::{ReviewRequestRow, ReviewRequestWrite};
 mod remote;
 pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
@@ -173,8 +177,10 @@ const WORKSPACE_KEY_COLUMNS: &[(&str, &str)] = &[
     ("harness_routines", "workspace"),
     ("harness_reviews", "workspace"),
     ("harness_decisions", "workspace"),
+    ("suspected_defects", "workspace"),
     ("harness_finding_tasks", "workspace"),
     ("intake_events", "workspace"),
+    ("review_requests", "workspace"),
     ("task_tracker_settings", "workspace"),
     ("task_tracker_poll_state", "workspace"),
     ("task_tracker_refresh_cursor", "workspace"),
@@ -197,7 +203,12 @@ const WORKSPACE_PREFIX_COLUMNS: &[(&str, &str)] = &[
 ];
 
 /// Settings stored per workspace as `<prefix><workspace path>`.
-const WORKSPACE_SETTING_PREFIXES: &[&str] = &["workspace_actions:", "workspace_routing:"];
+const WORKSPACE_SETTING_PREFIXES: &[&str] = &[
+    "workspace_actions:",
+    "workspace_routing:",
+    "defect_detector_day:",
+    "defect_notice_day:",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedWorktreeRow {
@@ -2077,6 +2088,8 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        defects::migrate(&conn)?;
+        review_requests::migrate(&conn)?;
         night_shift::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
@@ -7543,7 +7556,16 @@ pub(crate) mod tests {
              INSERT INTO workspace_transfer_checkouts
                  (transfer_id, direction, key, path, tree_state, untracked)
                  VALUES ('t1', 'export', 'main', '{from}/.houston/worktrees/x', NULL, '[]'),
-                        ('t2', 'export', 'main', '/a/project', NULL, '[]');"
+                        ('t2', 'export', 'main', '/a/project', NULL, '[]');
+             INSERT INTO review_requests
+                 (host, repo, number, head_sha, title, author, url, tier, reasons, state,
+                  workspace, first_seen_ms, last_seen_ms)
+                 VALUES ('github.com', 'o/r', 1, 'sha1', 'One', 'them',
+                         'https://github.com/o/r/pull/1', 'a', '[]', 'new', '{from}', 0, 0),
+                        ('github.com', 'o/r', 2, 'sha2', 'Two', 'them',
+                         'https://github.com/o/r/pull/2', 'b', '[]', 'new', '/a/project', 0, 0),
+                        ('github.com', 'o/r', 3, 'sha3', 'Three', 'them',
+                         'https://github.com/o/r/pull/3', 'c', '[]', 'new', NULL, 0, 0);"
         ))
         .unwrap();
     }
@@ -7658,6 +7680,22 @@ pub(crate) mod tests {
             ("t2".to_owned(), "/a/project".to_owned()),
             "a sibling folder must not move"
         );
+        let requests: Vec<(u32, Option<String>)> = conn
+            .prepare("SELECT number, workspace FROM review_requests ORDER BY number")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            requests,
+            vec![
+                (1, Some("/b/proj".to_owned())),
+                (2, Some("/a/project".to_owned())),
+                (3, None),
+            ],
+            "a review request follows its workspace; a sibling or unassigned row stays"
+        );
     }
 
     #[test]
@@ -7692,6 +7730,62 @@ pub(crate) mod tests {
             )
             .unwrap_err();
         assert!(refusal.contains("/a/proj"), "{refusal}");
+    }
+
+    #[test]
+    fn bound_resume_handle_covers_the_bound_folder_and_its_subfolders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO sessions (id, agent, detected_agent, project_dir, cwd, state,
+                     created_at, resume_session_id, resume_agent, resume_cwd) VALUES
+                     (1, 'claude', NULL, '/a/proj', '/a/proj/core', 'running', 0,
+                         'c1', 'claude', '/a/proj'),
+                     (2, 'claude', NULL, '/a/proj', '/a/project', 'running', 0,
+                         'c2', 'claude', '/a/proj'),
+                     (3, 'claude', NULL, '/a/proj', '/a/other', 'running', 0,
+                         'c3', 'claude', '/a/proj'),
+                     (4, 'shell', 'claude', '/a/proj', '/a/proj/core/x', 'running', 0,
+                         'c4', 'claude', '/a/proj'),
+                     (5, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
+                         'c5', 'codex', '/a/proj'),
+                     (6, 'claude', NULL, '/a/proj', '/a/proj', 'running', 0,
+                         NULL, NULL, NULL),
+                     (7, 'shell', 'claude', '/a/proj', '/a/proj', 'running', 0,
+                         'c7', 'claude', '/a/proj');",
+            )
+            .unwrap();
+        assert!(
+            db.session_has_bound_resume_handle(1).unwrap(),
+            "a subfolder still holds the bound conversation"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(2).unwrap(),
+            "a sibling prefix is another folder"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(3).unwrap(),
+            "a folder outside the binding moved"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(4).unwrap(),
+            "a shell that changed folder no longer holds the bound conversation"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(5).unwrap(),
+            "another provider does not own the handle"
+        );
+        assert!(
+            !db.session_has_bound_resume_handle(6).unwrap(),
+            "no handle is not resumable"
+        );
+        assert!(
+            db.session_has_bound_resume_handle(7).unwrap(),
+            "a shell in the bound folder holds its detected agent's conversation"
+        );
     }
 
     #[test]
@@ -10310,5 +10404,48 @@ pub(crate) mod tests {
         db.predicted_conflict_clear("pair").unwrap();
         assert!(db.predicted_conflicts().unwrap().is_empty());
         assert!(db.predicted_conflict_note("pair", 3).unwrap());
+    }
+
+    #[test]
+    fn night_token_recovery_selects_only_unscanned_settled_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let run = |run_id: u32, ended_at_ms: Option<i64>, tokens_scanned: bool| NightRunRow {
+            run_id,
+            routine_id: 1,
+            workspace: "/project".into(),
+            trigger: proto::RoutineTrigger::Manual,
+            phase: proto::NightRunPhase::Settled,
+            session_id: None,
+            started_at_ms: 100,
+            wrap_up_at_ms: 200,
+            hard_stop_at_ms: 300,
+            ended_at_ms,
+            report_path: format!("/state/night-shift/{run_id}/report.md"),
+            report_published: false,
+            summary: None,
+            wrap_up_sent: false,
+            goal_sent: false,
+            tokens_scanned,
+            stop_reason: None,
+            stop_detail: None,
+            interruptions: Vec::new(),
+            cost: proto::NightCost::default(),
+            limited: Vec::new(),
+            preflight: Vec::new(),
+            keep_awake: proto::NightKeepAwake::Off,
+            merge_order: Vec::new(),
+            crew: Vec::new(),
+        };
+        db.create_night_run(&run(1, Some(150), true)).unwrap();
+        db.create_night_run(&run(2, Some(150), false)).unwrap();
+        db.create_night_run(&run(3, None, false)).unwrap();
+        let rows = db.night_runs_unscanned(0, 10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.run_id).collect::<Vec<_>>(),
+            [2],
+            "a finished empty scan is not retried and an unfinished run is not scanned"
+        );
+        assert!(db.night_run(1).unwrap().unwrap().tokens_scanned);
     }
 }

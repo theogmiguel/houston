@@ -937,10 +937,10 @@ function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boole
   return <StatusDot status={status} live={live || info.children_waiting > 0} />
 }
 
-// Provider-reported only: no hook reports a reset time, so none is shown.
+// Provider-reported only. Details may carry the provider's own reset time.
 function PaneLimitDetail({ limit }: { limit: SessionInfo['limit'] }): React.JSX.Element | null {
   if (limit == null) return null
-  const label = `Limited: the provider reported ${limit.error}${limit.details ? ` (${limit.details})` : ''} with no reset time. It clears when the next turn starts.`
+  const label = `Limited: the provider reported ${limit.error}${limit.details ? ` (${limit.details})` : ''}. It clears when the next turn starts.`
   return <Tooltip label={label}><span data-testid="pane-limit" aria-label={label} className="flex-none"><StatusLabel variant="detail" status="Limited" /></span></Tooltip>
 }
 

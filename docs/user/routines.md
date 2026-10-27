@@ -91,7 +91,7 @@ and choose **Set up Night shift**. The routine is created paused with these defa
 | Window: start, wrap-up, hard stop | 23:30, 06:45, 07:30 (local time, at most 16 hours) |
 | Nights | None: it runs only with **Run now** until you choose nights and turn it on |
 | Focus levels | Reliability and performance Normal; UI and UX polish, competitor gaps, docs accuracy and test gaps Off |
-| Direction | Empty. Where the run should go, in plain words; the brief makes it a priority within the focus areas. Typing it in Setup suggests matching focus areas, and an area you changed yourself is left alone |
+| Direction | Empty. Where the run should go, in plain words; the brief makes it a priority within the focus areas. For a Claude orchestrator Houston also sends it once as the session's `/goal`, with the hard stop as the condition's end; other orchestrators use the brief only. Typing it in Setup suggests matching focus areas, and an area you changed yourself is left alone |
 | Orchestrator, reviewer | Claude (Opus); the reviewer is the same as the orchestrator. The orchestrator is Claude, Codex or OpenCode: a ZCode orchestrator is refused because a pull request watch cannot wake it to follow CI |
 | Workers, in fallback order | ZCode, then Claude; Cursor, Antigravity and Grok are refused because they report no usage limit |
 | Live workers | 4; a reviewer and a QA pane may run beside them, and Houston refuses a spawn past that |
@@ -155,10 +155,23 @@ its limit and actual value; **Start** stays disabled, naming how many items to f
 item blocks:
 
 - agent spawning is off (Settings ▸ Agents ▸ Orchestration);
-- a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks);
+- a chosen provider's CLI is missing or its hooks are off (Settings ▸ Agents ▸ Hooks), or
+  Codex has no credential store or its store holds no credential, and no `OPENAI_API_KEY` is
+  set in the daemon's environment; the item names the CLI to run and sign in;
 - the machine is on battery;
 - less than 6 GiB of memory or 20 GiB of disk is free;
 - no check is configured.
+
+Preflight reads each chosen provider's local sign-in files and reports the identifier they
+carry, never a token. A provider whose files show no account but which documents an API key,
+a cloud provider or another credential store is warned about, not blocked; the warning says to
+sign in only if you do not authenticate another way. Codex blocks only when it has no store or
+its readable store holds neither a token nor an API key; a store Houston cannot read or decode
+warns instead. A credential set in the environment for Claude (`ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) or Codex
+(`OPENAI_API_KEY`) is accepted; the item names the variable, never its value, and warns when
+Codex's store says it holds no credential. ZCode keeps no local sign-in marker, so its item
+says the quota probe decides.
 
 On Windows, preflight warns when a restart is pending or when the run's own window (Run
 now's duration, or the nightly window) reaches outside Windows Update active hours. On Linux
@@ -178,17 +191,56 @@ releases it when the run ends or the daemon exits. The window bounds the run; ag
 (pane-hours, summed over the run's panes while Houston runs) is reported in the morning
 report's cost and never ends a run.
 
+With a Claude orchestrator and a Direction, Houston sends one follow-up `/goal` after the
+orchestrator has accepted the brief. Its condition names the run, makes progress on your
+direction the goal within the brief's focus areas, and stops only when the morning report is
+published or the hard stop has passed. A direction longer than the condition allows is
+shortened with a visible truncated marker. The clause arrives once per run and is not sent
+again after a daemon restart. If the pane needs input (a trust or permission prompt) the
+send is refused; the next lifecycle hook retries, up to three attempts, and then one
+interruption records the reason and the run continues without its goal. Codex and OpenCode
+orchestrators have no equivalent condition and use the brief's Direction only.
+
 The **Live run** view shows the time left, the timeline with any interruptions, the crew
 and their status, the machine's free memory and disk and the plan board. When a worker's
 provider reports its usage limit, later spawns in the run use the next worker provider and
 the orchestrator is told once. Houston never spends a provider's quota reset.
 
-ZCode reports no usage limit, so Houston probes it: when a run whose workers include ZCode
-starts, and when a ZCode pane has been Working for 20 minutes without ending a turn, it runs
-one `zcode -p` request with the prompt "Reply with the single word OK." and no tools. A
-failed probe (a spent quota, a signed-out CLI, or no answer within 90 seconds) marks ZCode
-limited for the run; at the start it is also recorded as a warning on the run. Each probe
-sends that one prompt to your ZCode provider.
+Houston learns a limit from a provider's own typed report:
+
+| Provider | Limit detection |
+| --- | --- |
+| Claude | `StopFailure` hook with `error: rate_limit` |
+| OpenCode | `session.error` with a typed `APIError` status 429 or 402 |
+| Codex | app-server limit notification on Linux; a stall probe on Windows |
+| ZCode | a stall probe, since it reports no turn end for a failed turn |
+| Cursor, Antigravity, Grok | none; they are refused as workers and reviewers |
+
+Houston also confirms a provider's quota with one fixed headless request. Every probe sends
+only "Reply with the single word OK.", runs in Houston's own scratch directory and spends a
+little of that provider's plan quota:
+
+| Provider | Probe | When |
+| --- | --- | --- |
+| Claude | `claude -p "Reply with the single word OK." --tools ""` | run start |
+| Codex | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral --color never "Reply with the single word OK."` | run start; after a 20-minute Working stall on Windows |
+| OpenCode | `opencode run "Reply with the single word OK." --agent plan --pure` | run start |
+| ZCode | `zcode -p "Reply with the single word OK." --mode build --disallowed-tools "Bash Edit Write"` | run start; after a 20-minute Working stall |
+
+A failed probe (a spent quota or a signed-out CLI) marks that provider limited for the run, so
+later spawns use the next worker provider; at the start it is also recorded as a warning on
+the run. A start probe that does not answer within 90 seconds is inconclusive: it warns the
+run without marking the provider limited, while a pane already stalled treats the same timeout
+as a failure. A probe Houston cannot run at all (the CLI is not installed, cannot start, or
+its scratch directory cannot be made) is recorded as a warning and never marks the provider
+limited. A probe answered at the start is recorded as an answered check, and a provider
+whose sign-in check already blocked is not probed.
+
+Outside a Night shift run, Settings ▸ Agents ▸ **Check ZCode plan quota when a pane stalls**
+applies the same ZCode probe to a pane that has shown Working for 20 minutes: at most one
+probe runs at a time, and a pane is probed at most once per stall window. A failed probe marks
+the pane Limited, ends the failed turn and tells its parent once. The setting is off by
+default and spends a little of your ZCode plan quota.
 
 If the daemon restarts during a run, the run continues when the orchestrator pane is still
 running (a Linux daemon handover keeps it), or when the daemon is back before wrap-up and
@@ -200,13 +252,26 @@ the interruption is recorded. Otherwise the run ends with the interruption recor
 When a run ends, Houston shows one notice such as "7 PRs, 2 open decisions"; **Open report** opens
 the **Morning report**. It lists the parked decisions with answer buttons (an answer is
 final), pull requests grouped by theme with their gates, the suggested merge order, events
-such as interruptions and limits, and the cost in pane-hours per provider. Checks, CI and
-Verify are facts: Houston runs the checks itself on each pull request's head in a scratch
-worktree (inside the build slot the merge queue and `hs-pane heavy` share), CI comes from the
-pull request watch, and Verify follows the verifier's verdicts. Review and QA are agents'
+such as interruptions and limits, and the cost in pane-hours and tokens per provider. After
+a run ends, Houston reads the local session logs of the providers that expose token counts
+to it (Claude and Codex), for the run's window, and counts the sessions of the run's panes
+by their working directories; your own panes elsewhere in the workspace are not counted.
+It reads the logs only to total those counts; nothing about the logs affects the run's
+status or outcome. A provider with no such source shows **not tracked** rather than a zero. Checks, CI and Verify are facts: Houston runs the checks itself on each
+pull request's head in a scratch worktree (inside the build slot the merge queue and
+`hs-pane heavy` share), CI comes from the pull request watch, and Verify follows the
+verifier's verdicts. Review and QA are agents'
 verdicts. Under each pull request the report lists any failed check and every claim of its
-planned changes with the verifier's verdict and evidence. A pull request whose CI failed on a
-test the ledger lists as flaky is re-run once.
+planned changes with the verifier's verdict and evidence. When CI fails, Houston acts instead of
+asking the orchestrator: a failure on a test the ledger lists as flaky is re-run once by
+Houston, which records the re-run and tells the orchestrator. A failure on any other check, or
+the same flaky failure again, starts a fixer pane under the run's orchestrator. The fixer works
+in its own fresh worktree at the workspace's HEAD, so the run's own worktree stays on its
+branch; it fetches the pull request's head, branches from it, and is asked to push a fix commit
+to the pull request's head branch, run the configured checks and report back through its normal
+handback. A pull
+request gets at most two fixer panes and at most one live at a time; a refused spawn names its
+limit, and reaching the cap tells the orchestrator to take the failure itself.
 
 Every change follows the same method: before building, its plan entry lists claims (what must
 be true, with a concrete value) and the specific test proving each; the worker writes the

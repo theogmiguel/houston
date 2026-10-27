@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PrListItem } from '../../houston/client'
+import type { HoustonClient, PrListItem } from '../../houston/client'
+import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import { PullRequestsScreen } from './PullRequestsScreen'
 
 const item: PrListItem = {
@@ -106,4 +107,28 @@ it('requests the restored state instead of filtering an unrelated open listing',
   render(<PullRequestsScreen repoName="Houston" workspace="/repo" currentUser="theo" items={[]} state="open" onStateChange={onStateChange} />)
   expect(screen.getByRole('radio', { name: 'Merged' }).getAttribute('aria-checked')).toBe('true')
   expect(onStateChange).toHaveBeenCalledWith('merged')
+})
+
+it('shows the review-request queue next to Requests and the merge queue', async () => {
+  const handlers = new Map<string, (msg: ServerMsg) => void>()
+  const client = {
+    subscribe: (kind: string, handler: (msg: ServerMsg) => void) => { handlers.set(kind, handler); return () => handlers.delete(kind) },
+    mergeQueueGet: () => {},
+    taskStartSettingsGet: () => {},
+    reviewRequestsGet: () => handlers.get('review_requests')?.({
+      type: 'review_requests',
+      mode: 'notify',
+      items: [{
+        id: 7, host: 'github.com', repo: 'acme/houston', number: 42, title: 'A pane keeps its name',
+        author: 'octocat', url: 'https://github.com/acme/houston/pull/42', head_sha: 'abc1234', tier: 'b',
+        reasons: ['Touches 6 files'], state: 'new', workspace: '/repo', provider: 'claude'
+      }],
+      paused_until_ms: null,
+      note: null
+    })
+  } as unknown as HoustonClient
+  render(<PullRequestsScreen repoName="acme/houston" workspace="/repo" currentUser="theo" items={[item]} client={client} directory="/repo" />)
+  fireEvent.click(screen.getByRole('radio', { name: /Review requests/ }))
+  expect(await screen.findByText('acme/houston#42 · A pane keeps its name')).toBeTruthy()
+  expect(screen.getByText('Touches 6 files')).toBeTruthy()
 })

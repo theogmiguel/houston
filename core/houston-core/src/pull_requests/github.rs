@@ -6,7 +6,7 @@ use houston_protocol::{
 use serde_json::Value;
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 pub struct LinkContext<'a> {
     pub host: &'a str,
@@ -113,6 +113,7 @@ pub fn detail_from_json(
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
         github_merge: None,
+        read_only: None,
     };
     Some((link, detail))
 }
@@ -370,7 +371,7 @@ fn reviews(v: Option<&serde_json::Value>) -> Vec<PrReview> {
         .collect()
 }
 
-fn clip(body: String) -> String {
+pub(super) fn clip(body: String) -> String {
     let max = super::DETAIL_BODY_MAX;
     if body.len() <= max {
         return body;
@@ -406,7 +407,7 @@ const ACCESS_QUERY: &str = "query PrAccess($owner: String!, $name: String!, $num
     timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_DISABLED_EVENT]) { \
     nodes { ... on RemovedFromMergeQueueEvent { createdAt reason } \
     ... on AutoMergeDisabledEvent { createdAt reason } } } \
-    baseRef { refUpdateRule { requiredStatusCheckContexts } } } } }";
+    baseRef { name refUpdateRule { requiredStatusCheckContexts } } } } }";
 
 const ACCESS_COMPARE_QUERY: &str =
     "query PrAccess($owner: String!, $name: String!, $number: Int!, $headRef: String!) { \
@@ -419,7 +420,7 @@ const ACCESS_COMPARE_QUERY: &str =
     timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_DISABLED_EVENT]) { \
     nodes { ... on RemovedFromMergeQueueEvent { createdAt reason } \
     ... on AutoMergeDisabledEvent { createdAt reason } } } \
-    baseRef { compare(headRef: $headRef) { behindBy } \
+    baseRef { name compare(headRef: $headRef) { behindBy } \
     refUpdateRule { requiredStatusCheckContexts } } } } }";
 
 /// The access read without the hand-off fields, for a host whose schema lacks them.
@@ -456,6 +457,15 @@ const HAND_OFF_FIELDS: &[&str] = &[
 static NO_HAND_OFF_HOSTS: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
+/// The host set is process-wide; a test suite that flips one host's schema empties
+/// it so the next fixture starts as a fresh daemon would.
+#[doc(hidden)]
+pub fn clear_hand_off_hosts_for_test() {
+    if let Ok(mut hosts) = NO_HAND_OFF_HOSTS.lock() {
+        hosts.clear();
+    }
+}
+
 /// The host the workspace's remote names, or the remote itself for a local path.
 fn api_host(dir: &Path) -> String {
     let Some(url) = crate::git::remote_url(dir) else {
@@ -479,6 +489,203 @@ fn hand_off_unsupported(host: &str) -> bool {
         .lock()
         .map(|hosts| hosts.contains(host))
         .unwrap_or(false)
+}
+
+/// How many workspace/base branch answers the rules cache keeps; a daemon that
+/// visits many checkouts stays bounded.
+const BRANCH_RULES_CACHE_MAX_ENTRIES: usize = 64;
+/// A successful answer stays fresh for an hour: base rules change rarely, not never.
+const BRANCH_RULES_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+/// A failure retries after ten minutes: a permission or older-host error can be fixed.
+const BRANCH_RULES_FAILURE_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// The base branch's effective required checks, or why they could not be read.
+type BranchRules = Result<Vec<String>, String>;
+
+struct BranchRulesEntry {
+    workspace: std::path::PathBuf,
+    base_ref: String,
+    at: std::time::Instant,
+    answer: BranchRules,
+}
+
+/// One answer per workspace and base branch, re-read only when an access read
+/// needs it after its TTL; there is no timer and no polling.
+static BRANCH_RULES_CACHE: std::sync::Mutex<Vec<BranchRulesEntry>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn branch_rules_ttl(answer: &BranchRules) -> std::time::Duration {
+    match answer {
+        Ok(_) => BRANCH_RULES_TTL,
+        Err(_) => BRANCH_RULES_FAILURE_TTL,
+    }
+}
+
+fn cached_branch_rules(
+    workspace: &Path,
+    base_ref: &str,
+    now: std::time::Instant,
+) -> Option<BranchRules> {
+    let cache = BRANCH_RULES_CACHE.lock().ok()?;
+    cache
+        .iter()
+        .find(|e| {
+            e.workspace == workspace
+                && e.base_ref == base_ref
+                && now.saturating_duration_since(e.at) < branch_rules_ttl(&e.answer)
+        })
+        .map(|e| e.answer.clone())
+}
+
+fn remember_branch_rules(
+    workspace: &Path,
+    base_ref: &str,
+    at: std::time::Instant,
+    answer: BranchRules,
+) -> BranchRules {
+    let Ok(mut cache) = BRANCH_RULES_CACHE.lock() else {
+        // A poisoned lock only loses the cache; the read already has its answer.
+        return answer;
+    };
+    cache.retain(|e| !(e.workspace == workspace && e.base_ref == base_ref));
+    if cache.len() >= BRANCH_RULES_CACHE_MAX_ENTRIES {
+        if let Some(oldest) = cache
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, e)| e.at)
+            .map(|(index, _)| index)
+        {
+            cache.remove(oldest);
+        }
+    }
+    cache.push(BranchRulesEntry {
+        workspace: workspace.to_path_buf(),
+        base_ref: base_ref.to_string(),
+        at,
+        answer: answer.clone(),
+    });
+    answer
+}
+
+/// The checks every `required_status_checks` rule of the base branch requires,
+/// deduplicated. Cached per workspace and base branch until its TTL; a failure
+/// is cached likewise, so an unreadable rule keeps Houston merging.
+fn rules_required_checks(dir: &Path, repository: &str, base_ref: &str) -> BranchRules {
+    let now = std::time::Instant::now();
+    if let Some(cached) = cached_branch_rules(dir, base_ref, now) {
+        return cached;
+    }
+    let answer = read_branch_rules(dir, repository, base_ref).map_err(|e| {
+        tracing::info!(
+            "merge queue: could not read the rules of {base_ref} in {repository} from {}: {e:#}; Houston merges",
+            dir.display()
+        );
+        format!("{e:#}")
+    });
+    remember_branch_rules(dir, base_ref, now, answer)
+}
+
+fn read_branch_rules(dir: &Path, repository: &str, base_ref: &str) -> Result<Vec<String>> {
+    let (owner, name) = crate::gh::split_repository(repository).ok_or_else(|| {
+        anyhow::anyhow!(
+            "cannot read the rules of {base_ref}: repository {repository:?} is not `owner/name`"
+        )
+    })?;
+    let path = format!(
+        "repos/{owner}/{name}/rules/branches/{}",
+        crate::gh::percent_encode_path(base_ref)
+    );
+    let value = crate::gh::api_get(dir, &path)
+        .with_context(|| format!("reading the rules of {base_ref} in {repository}"))?;
+    checks_from_branch_rules(&value)
+        .with_context(|| format!("GitHub's rules for {base_ref} in {repository}"))
+}
+
+/// The REST rules answer's `required_status_checks` contexts, in the order
+/// GitHub lists them. Anything but an array is an error rather than an empty
+/// answer, so a malformed read never looks like an unprotected branch.
+fn checks_from_branch_rules(value: &Value) -> Result<Vec<String>> {
+    let rules = value.as_array().ok_or_else(|| {
+        anyhow::anyhow!(
+            "expected a JSON array of branch rules, got {}",
+            json_shape(value)
+        )
+    })?;
+    let mut checks: Vec<String> = Vec::new();
+    for rule in rules
+        .iter()
+        .filter(|rule| rule.get("type").and_then(Value::as_str) == Some("required_status_checks"))
+    {
+        let Some(required) = rule
+            .pointer("/parameters/required_status_checks")
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for check in required {
+            let Some(context) = check.get("context").and_then(Value::as_str) else {
+                continue;
+            };
+            if !context.is_empty() && !checks.iter().any(|known| known == context) {
+                checks.push(context.to_string());
+            }
+        }
+    }
+    Ok(checks)
+}
+
+fn json_shape(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Object(_) => "an object",
+        Value::Array(_) => "an array",
+    }
+}
+
+/// Classic branch protection's checks plus a ruleset's, once each.
+fn merged_required_checks(classic: Option<Vec<String>>, rules: Vec<String>) -> Vec<String> {
+    let mut checks = classic.unwrap_or_default();
+    for check in rules {
+        if !checks.contains(&check) {
+            checks.push(check);
+        }
+    }
+    checks
+}
+
+/// Fills in the base branch's ruleset checks when the hand-off could use them:
+/// auto-merge is allowed and classic branch protection names no check. A failed
+/// read leaves the access query's list, so the queue never guesses.
+fn add_rules_checks(
+    dir: &Path,
+    repository: &str,
+    base_ref: Option<&str>,
+    github_merge: &mut proto::PrGitHubMerge,
+) {
+    if github_merge.auto_merge_allowed != Some(true) {
+        return;
+    }
+    if github_merge
+        .required_checks
+        .as_ref()
+        .is_some_and(|checks| !checks.is_empty())
+    {
+        return;
+    }
+    let Some(base_ref) = base_ref else {
+        return;
+    };
+    let Ok(rules) = rules_required_checks(dir, repository, base_ref) else {
+        return;
+    };
+    if rules.is_empty() {
+        return;
+    }
+    let merged = merged_required_checks(github_merge.required_checks.take(), rules);
+    github_merge.required_checks = Some(merged);
 }
 
 pub struct PrAccessData {
@@ -623,7 +830,18 @@ pub fn access(
         });
     // A host without the fields has neither tool to hand off to: Houston merges.
     let github_merge = match hand_off {
-        true => github_merge_from(repository_node, pull_request),
+        true => {
+            let mut github_merge = github_merge_from(repository_node, pull_request);
+            add_rules_checks(
+                dir,
+                repository,
+                pull_request
+                    .pointer("/baseRef/name")
+                    .and_then(Value::as_str),
+                &mut github_merge,
+            );
+            github_merge
+        }
         false => proto::PrGitHubMerge {
             merge_queue_required: Some(false),
             auto_merge_allowed: Some(false),
@@ -1982,5 +2200,77 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].id, 7);
         assert_eq!(runs[0].name, "ci");
+    }
+
+    #[test]
+    fn branch_rules_contribute_every_required_check_once() {
+        let rules = json!([
+            {"type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "ci"}, {"context": "build"}]
+            }},
+            {"type": "pull_request", "parameters": {}},
+            {"type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "ci"}, {"context": "lint"}]
+            }},
+            {"type": "required_status_checks"}
+        ]);
+        assert_eq!(
+            checks_from_branch_rules(&rules).unwrap(),
+            ["ci", "build", "lint"]
+        );
+        assert_eq!(
+            checks_from_branch_rules(&json!([])).unwrap(),
+            Vec::<String>::new()
+        );
+        let err = checks_from_branch_rules(&json!({"not": "a list"}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("JSON array"), "{err}");
+        assert!(err.contains("an object"), "{err}");
+    }
+
+    #[test]
+    fn ruleset_checks_join_the_classic_ones_without_duplicates() {
+        assert_eq!(
+            merged_required_checks(
+                Some(vec!["ci".to_string()]),
+                vec!["build".to_string(), "ci".to_string()]
+            ),
+            ["ci", "build"]
+        );
+        assert_eq!(merged_required_checks(None, vec!["ci".to_string()]), ["ci"]);
+        assert!(merged_required_checks(Some(Vec::new()), Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn an_expired_branch_rules_answer_is_read_again() {
+        let at = std::time::Instant::now();
+        let workspace = Path::new("/rules-ttl/success");
+        let _ = remember_branch_rules(workspace, "main", at, Ok(vec!["ci".to_string()]));
+        assert_eq!(
+            cached_branch_rules(workspace, "main", at).unwrap().unwrap(),
+            ["ci"]
+        );
+        assert!(cached_branch_rules(
+            workspace,
+            "main",
+            at + BRANCH_RULES_TTL - std::time::Duration::from_secs(1)
+        )
+        .is_some());
+        assert!(cached_branch_rules(workspace, "main", at + BRANCH_RULES_TTL).is_none());
+
+        // Reading again replaces the key instead of leaving an expired twin behind.
+        let _ = remember_branch_rules(workspace, "main", at + BRANCH_RULES_TTL, Ok(Vec::new()));
+        assert!(cached_branch_rules(workspace, "main", at + BRANCH_RULES_TTL).is_some());
+
+        let failed = Path::new("/rules-ttl/failure");
+        let _ = remember_branch_rules(failed, "main", at, Err("HTTP 403".to_string()));
+        assert!(cached_branch_rules(
+            failed,
+            "main",
+            at + BRANCH_RULES_FAILURE_TTL - std::time::Duration::from_secs(1)
+        )
+        .is_some());
+        assert!(cached_branch_rules(failed, "main", at + BRANCH_RULES_FAILURE_TTL).is_none());
     }
 }

@@ -1627,6 +1627,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <Text tone="warning" size="small">npx was not found</Text>
               <SingleLineText>Single line</SingleLineText>
             </InlineCluster>
+            <InlineCluster insetBlock gap="sm">
+              <Text size="small" tone="muted">Inset cluster row</Text>
+            </InlineCluster>
             <CenteredEmptyNote>No report yet.</CenteredEmptyNote>
             <ReportFrame><Text as="h2" size="ui" weight="semibold" tone="primary" flush>Report</Text></ReportFrame>
             <BulletList items={['One', 'Two']} />

@@ -37,8 +37,10 @@ repository's AGENTS.md (or CLAUDE.md) first; its rules bind you and every pane y
    night_decision.
 5. Pull requests. Size them as the output line below says, one branch per pull request.
    Record review and qa verdicts with night_pr as they come. Houston watches every recorded
-   pull request's CI. When CI fails, read the failing test: a test the ledger lists as flaky
-   is re-run once; any other failure goes back to a fixer pane.
+   pull request's CI: it re-runs a known flaky failure once itself, and otherwise starts a
+   fixer pane that checks out the pull request's branch and pushes a fix. Houston tells you
+   what it did. A fixer that cannot start, or a pull request that has used its two fixers,
+   comes back to you: park it with night_decision if it cannot be fixed before wrap-up.
 6. Lessons. Whenever something cost you time that the next run should know, record it with
    night_lesson. A test that failed and then passed without a change is recorded with
    night_lesson and its flaky test name.

@@ -46,7 +46,7 @@ describe('useHarnessSignals', () => {
 
     act(() => handlers.get('harness_overview')?.({
       type: 'harness_overview',
-      rows: [{ workspace: '/a', open: 1, fixing: 1, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 1, attention: 2 }]
+      rows: [{ workspace: '/a', open: 1, fixing: 1, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, seen_review_id: 1, attention: 2 }]
     }))
     expect(container.textContent).toBe('2')
 

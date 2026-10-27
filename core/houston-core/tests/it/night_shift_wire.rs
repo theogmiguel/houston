@@ -7,7 +7,7 @@ use futures_util::SinkExt;
 use houston_core::daemon::Daemon;
 use houston_core::hook_drop::HookDrop;
 use houston_core::mcp_creds::McpScope;
-use houston_core::night_shift::preflight::{Facts, MachineFacts, ProviderFacts};
+use houston_core::night_shift::preflight::{Facts, MachineFacts, ProviderFacts, SignIn};
 use houston_protocol as proto;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -93,6 +93,11 @@ fn healthy_facts() -> Facts {
             hooks_on: true,
             cli_present: true,
             rea: Some(true),
+            sign_in: SignIn::In(Some(format!(
+                "{}@example.com",
+                houston_core::agent_hooks::provider_slug(provider)
+            ))),
+            env_credential: None,
         })
         .collect(),
         machine: MachineFacts {
@@ -862,8 +867,84 @@ async fn cost_counts_the_orchestrator_and_its_crew() {
     }
 }
 
-/// Direction steers the run from inside the brief; a Claude orchestrator is
-/// sent no `/goal`, which would make it a completion condition.
+/// A settled run totals its providers' tokens from the working directories of
+/// its own panes only: a sibling workspace session and the workspace's own
+/// non-crew sessions stay out.
+#[tokio::test]
+async fn a_settled_run_records_its_crew_working_directories_tokens_only() {
+    let r = rig().await;
+    let routine = r.ready(|s| {
+        s.orchestrator = proto::NightAgent {
+            provider: proto::AgentKind::Claude,
+            model: None,
+        }
+    });
+    let run = r.run_now(routine.id, 120);
+    let run_cwd = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|pane| Some(pane.id) == run.session_id)
+        .expect("the orchestrator pane")
+        .cwd;
+    let other = std::fs::canonicalize(r.state.path())
+        .unwrap()
+        .join("elsewhere");
+    std::fs::create_dir_all(&other).unwrap();
+    let root = shim_dir().join("home/.claude/projects/night-token-wire");
+    std::fs::create_dir_all(&root).unwrap();
+    let stamp = houston_core::harness::window::format_ms(houston_core::daemon::now_unix_ms());
+    let record = |id: &str, cwd: &Path, output: u64| {
+        json!({
+            "type": "assistant", "timestamp": stamp, "sessionId": id,
+            "cwd": cwd.display().to_string(), "requestId": format!("request-{id}"),
+            "message": {"id": id, "model": "claude-opus-5",
+                "usage": {"input_tokens": 10, "output_tokens": output}}
+        })
+        .to_string()
+    };
+    std::fs::write(
+        root.join("run.jsonl"),
+        format!(
+            "{}\n{}\n{}\n",
+            record("inside", Path::new(&run_cwd), 120),
+            record("outside", &other, 900),
+            record("user-pane", &r.ws, 700)
+        ),
+    )
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    r.daemon.night_shift_stop_now(run.run_id).unwrap();
+    wait_until("the run's token totals", || {
+        r.run(run.run_id)
+            .cost
+            .per_provider
+            .iter()
+            .any(|line| line.tokens.is_some())
+    })
+    .await;
+    let cost = r.run(run.run_id).cost;
+    let claude = cost
+        .per_provider
+        .iter()
+        .find(|line| line.provider == proto::AgentKind::Claude)
+        .expect("the Claude line");
+    let tokens = claude.tokens.as_ref().expect("Claude's token totals");
+    assert_eq!(
+        tokens.output_tokens, 120,
+        "only the run's own panes count: {cost:?}"
+    );
+    assert!(
+        cost.per_provider
+            .iter()
+            .all(|line| line.provider == proto::AgentKind::Claude),
+        "no line for a provider that never ran: {cost:?}"
+    );
+}
+
+/// Direction steers the run from inside the brief; the brief itself never
+/// carries a `/goal`, which is sent separately for Claude.
 #[tokio::test]
 async fn direction_is_not_typed_as_a_goal() {
     let r = rig().await;
@@ -886,6 +967,219 @@ async fn direction_is_not_typed_as_a_goal() {
     let text = std::fs::read_to_string(&typed).unwrap();
     assert!(!text.contains("/goal"), "{text:?}");
     assert!(text.contains("CI stays green"), "{text:?}");
+}
+
+/// A Claude orchestrator with a Direction gets one `/goal` follow-up after its
+/// first lifecycle hook, and never a second one for the same run.
+#[tokio::test]
+async fn a_claude_orchestrator_gets_its_direction_once_as_a_goal() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "Stop".into(),
+        ..Default::default()
+    })
+    .await;
+    wait_until("the /goal follow-up", || {
+        std::fs::read_to_string(&typed).is_ok_and(|text| text.contains("/goal"))
+    })
+    .await;
+    let first = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(first.matches("/goal").count(), 1, "{first:?}");
+    let goal_at = first.find("/goal ").expect("a /goal input");
+    assert!(
+        first[goal_at..].starts_with("/goal Night shift run"),
+        "Claude sets a goal only for a `/goal` command: {first:?}"
+    );
+    assert!(first.contains("CI stays green"), "{first:?}");
+    assert!(first.contains("night_report"), "{first:?}");
+
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "SessionStart".into(),
+        ..Default::default()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let after = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(
+        after.matches("/goal").count(),
+        1,
+        "the goal is sent once per run: {after:?}"
+    );
+}
+
+/// A `/goal` refused while the pane needs input stays unsent, so the next
+/// lifecycle hook retries it; the refusal is not an interruption.
+#[tokio::test]
+async fn a_refused_goal_is_retried_by_the_next_hook() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-retry-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::NeedsInput);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "SessionStart".into(),
+        ..Default::default()
+    })
+    .await;
+    wait_until("the refused goal attempt", || {
+        r.daemon.night_shift_goal_refusals_for_test(run.run_id) == 1
+    })
+    .await;
+    let refused = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!refused.contains("/goal"), "{refused:?}");
+    assert!(
+        r.run(run.run_id).interruptions.is_empty(),
+        "a retryable refusal writes no note: {:?}",
+        r.run(run.run_id).interruptions
+    );
+
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::Idle);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    wait_until("the retried /goal", || {
+        std::fs::read_to_string(&typed).is_ok_and(|text| text.contains("/goal"))
+    })
+    .await;
+    let text = std::fs::read_to_string(&typed).unwrap();
+    assert_eq!(text.matches("/goal").count(), 1, "{text:?}");
+    assert!(text.contains("CI stays green"), "{text:?}");
+    assert!(
+        r.run(run.run_id).interruptions.is_empty(),
+        "{:?}",
+        r.run(run.run_id).interruptions
+    );
+}
+
+/// Three refused attempts are final: one note says why, and a later hook does
+/// not send the goal.
+#[tokio::test]
+async fn three_refused_goals_write_one_note_and_stop() {
+    let r = rig().await;
+    let typed = r.ws.join("goal-give-up-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| s.direction = "CI stays green".into());
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::NeedsInput);
+    for attempt in 1..=3 {
+        r.drop_hook(HookDrop {
+            session,
+            agent: Some("claude".into()),
+            event: "SessionStart".into(),
+            ..Default::default()
+        })
+        .await;
+        wait_until("the refused goal attempt", || {
+            r.daemon.night_shift_goal_refusals_for_test(run.run_id) == attempt
+        })
+        .await;
+    }
+    wait_until("the give-up note", || {
+        r.run(run.run_id).interruptions.len() == 1
+    })
+    .await;
+    let note = &r.run(run.run_id).interruptions[0];
+    assert!(note.detail.contains("after 3 refused attempts"), "{note:?}");
+    assert!(note.detail.contains("needs input"), "{note:?}");
+
+    r.daemon
+        .set_session_status_for_test(session, proto::AgentStatus::Idle);
+    r.drop_hook(HookDrop {
+        session,
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        ..Default::default()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(r.run(run.run_id).interruptions.len(), 1, "one note");
+    let text = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!text.contains("/goal"), "the goal is abandoned: {text:?}");
+}
+
+/// The other orchestrator providers have no `/goal`; the brief alone steers.
+#[tokio::test]
+async fn another_orchestrator_provider_gets_no_goal() {
+    let r = rig().await;
+    let typed = r.ws.join("codex-input");
+    r.daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "stty -echo; printf '\\033[?2004h\\033[?25h'; exec cat > '{}'",
+            typed.display()
+        ),
+    ]);
+    let routine = r.ready(|s| {
+        s.orchestrator = proto::NightAgent {
+            provider: proto::AgentKind::Codex,
+            model: None,
+        };
+        s.direction = "CI stays green".into();
+    });
+    let run = r.run_now(routine.id, 120);
+    let session = run.session_id.unwrap();
+    for event in ["UserPromptSubmit", "Stop", "SessionStart"] {
+        r.drop_hook(HookDrop {
+            session,
+            agent: Some("codex".into()),
+            event: event.into(),
+            ..Default::default()
+        })
+        .await;
+    }
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let text = std::fs::read_to_string(&typed).unwrap_or_default();
+    assert!(!text.contains("/goal"), "{text:?}");
 }
 
 #[tokio::test]
@@ -1569,6 +1863,50 @@ async fn blocking_preflight_refuses_run() {
     assert_eq!(runs[0].status, proto::RoutineRunStatus::EngineRefused);
 }
 
+/// A provider whose own credential store explicitly records no sign-in blocks
+/// a Run now and names the command that fixes it.
+#[tokio::test]
+async fn a_signed_out_provider_blocks_run_now() {
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let mut facts = healthy_facts();
+    for provider in &mut facts.providers {
+        provider.sign_in = SignIn::In(Some("dev@example.com".into()));
+        provider.env_credential = None;
+    }
+    facts
+        .providers
+        .iter_mut()
+        .find(|p| p.provider == proto::AgentKind::Codex)
+        .expect("the fixture lists Codex")
+        .sign_in = SignIn::Out;
+    r.daemon.set_night_shift_facts_for_test(Some(facts));
+    let before = r.daemon.list().len();
+    let run = r.run_now(routine.id, 120);
+    assert_eq!(run.phase, proto::NightRunPhase::Refused);
+    assert_eq!(run.session_id, None);
+    assert_eq!(r.daemon.list().len(), before, "no pane opened");
+    let item = run
+        .preflight
+        .iter()
+        .find(|i| i.id == "signin:codex")
+        .expect("Codex's sign-in item");
+    assert_eq!(item.status, proto::PreflightStatus::Block, "{item:?}");
+    assert!(
+        item.detail.contains("run `codex` and sign in"),
+        "{}",
+        item.detail
+    );
+    assert!(
+        run.stop_detail
+            .as_deref()
+            .is_some_and(|d| d.contains("signin:codex")),
+        "the refusal names the blocking item: {:?}",
+        run.stop_detail
+    );
+    assert!(!r.in_flight(routine.id));
+}
+
 /// A pane that cannot be opened leaves a refused run naming why, not a run
 /// shown in flight or settled as if its pane had exited.
 #[tokio::test]
@@ -1787,6 +2125,72 @@ async fn claude_limit_marks_provider() {
 }
 
 #[tokio::test]
+async fn opencode_limit_marks_provider() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let routine = r.ready(|s| {
+        s.workers = vec![
+            proto::NightAgent {
+                provider: proto::AgentKind::Opencode,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Claude,
+                model: None,
+            },
+        ];
+    });
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    let (status, body) = r.spawn_child(o, "opencode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    for _ in 0..2 {
+        r.drop_hook(HookDrop {
+            session: child,
+            agent: Some("opencode".into()),
+            event: "message.updated".into(),
+            ..Default::default()
+        })
+        .await;
+        r.drop_hook(HookDrop {
+            session: child,
+            agent: Some("opencode".into()),
+            event: "session.error".into(),
+            error: Some("rate_limit".into()),
+            error_details: Some("usage limit reached".into()),
+            ..Default::default()
+        })
+        .await;
+    }
+    assert_eq!(r.run(run.run_id).limited, [proto::AgentKind::Opencode]);
+    assert_eq!(
+        r.notes(o, "Night shift: opencode limited"),
+        1,
+        "the orchestrator is told once"
+    );
+    let note = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("Night shift: opencode limited"))
+        .expect("the Night shift note");
+    assert!(
+        note.body.contains("session.error"),
+        "names the provider's own event: {}",
+        note.body
+    );
+    let (status, body) = r.spawn_child(o, "opencode").await;
+    assert_eq!(status, 200, "{body}");
+    let next = body["session_id"].as_u64().unwrap() as u32;
+    assert_eq!(
+        r.daemon.agent_kind_of(next),
+        Some(proto::AgentKind::Claude),
+        "the limited provider was swapped"
+    );
+}
+
+#[tokio::test]
 async fn spawn_substitutes_next_provider() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
@@ -1834,26 +2238,84 @@ async fn spawn_substitutes_next_provider() {
     assert!(text.contains("claude") && text.contains("codex"), "{text}");
 }
 
-/// A stand-in `zcode -p`: `ok` answers; otherwise it fails as a spent quota
-/// does, with the provider error ZCode prints. It records its arguments.
-fn zcode_probe_script(dir: &Path, ok: bool) -> PathBuf {
+/// A stand-in provider CLI: `ok` answers; otherwise it fails as a spent quota
+/// does, with the provider error ZCode prints. It records its arguments in
+/// `<name>-args`, so a test can tell one provider's probes from another's.
+fn probe_script(dir: &Path, name: &str, ok: bool) -> (PathBuf, PathBuf) {
     use std::os::unix::fs::PermissionsExt;
-    let path = dir.join(if ok { "zcode-ok" } else { "zcode-spent" });
+    let path = dir.join(name);
+    let args = dir.join(format!("{name}-args"));
     let body = if ok {
         "echo OK"
     } else {
-        "echo 'ProviderBusinessError: [1310][Weekly/Monthly Limit Exhausted.]' >&2; exit 1"
+        "echo 'ProviderBusinessError: [1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 22:18:34]' >&2; exit 1"
     };
     std::fs::write(
         &path,
-        format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\n{body}\n",
-            dir.join("probe-args").display()
-        ),
+        format!("#!/bin/sh\necho \"$*\" >> '{}'\n{body}\n", args.display()),
     )
     .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
+    (path, args)
+}
+
+/// Answers every start probe except `failing`'s, so a test never runs a real
+/// CLI and never spends quota. Answers the answer and the failure's arg logs.
+fn probe_scripts(
+    r: &Rig,
+    dir: &Path,
+    failing: Option<proto::AgentKind>,
+) -> (PathBuf, Option<PathBuf>) {
+    let (answer, answer_args) = probe_script(dir, "answer", true);
+    let spent = failing.map(|provider| {
+        let (script, args) = probe_script(
+            dir,
+            &format!(
+                "spent-{}",
+                houston_core::agent_hooks::provider_slug(provider)
+            ),
+            false,
+        );
+        (provider, script, args)
+    });
+    for provider in [
+        proto::AgentKind::Claude,
+        proto::AgentKind::Codex,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Zcode,
+    ] {
+        let script = spent
+            .as_ref()
+            .filter(|(p, _, _)| *p == provider)
+            .map(|(_, s, _)| s.clone())
+            .unwrap_or_else(|| answer.clone());
+        r.daemon
+            .set_night_shift_probe_for_test(provider, Some(script));
+    }
+    (answer_args, spent.map(|(_, _, args)| args))
+}
+
+/// A parent pane outside any routine, so its delegated child is not a Night
+/// shift pane.
+fn plain_parent(r: &Rig) -> u32 {
+    r.daemon
+        .create_session(houston_core::daemon::CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: r.ws.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "sleep 60".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap()
+        .id
 }
 
 #[tokio::test]
@@ -1861,13 +2323,12 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     let r = rig().await;
     r.daemon.orchestration_set(true).unwrap();
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), true)));
+    let (answer_args, _) = probe_scripts(&r, scripts.path(), None);
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 600);
     let o = run.session_id.unwrap();
-    wait_until("the start probe", || {
-        !r.daemon.night_shift_zcode_probing(run.run_id)
+    wait_until("the start probes", || {
+        !r.daemon.night_shift_probing(run.run_id)
     })
     .await;
     assert!(
@@ -1883,26 +2344,32 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
     r.daemon.night_shift_tick_at(t0);
     r.daemon.night_shift_tick_at(t0 + 21 * MINUTE);
     wait_until("the stall probe", || {
-        !r.daemon.night_shift_zcode_probing(run.run_id)
+        !r.daemon.night_shift_probing(run.run_id)
     })
     .await;
     assert!(
         r.run(run.run_id).limited.is_empty(),
         "a stall whose probe answers is not a limit"
     );
-    let probes = std::fs::read_to_string(scripts.path().join("probe-args")).unwrap();
+    let probes = std::fs::read_to_string(&answer_args).unwrap();
     assert_eq!(
         probes.lines().count(),
-        2,
-        "one probe at start, one per stall: {probes}"
+        3,
+        "two providers probed at start, one per ZCode stall: {probes}"
     );
+    let zcode_probes: Vec<&str> = probes
+        .lines()
+        .filter(|l| l.contains("--disallowed-tools Bash Edit Write"))
+        .collect();
+    assert_eq!(zcode_probes.len(), 2, "{probes}");
     assert!(
-        probes.contains("-p Reply with the single word OK."),
+        zcode_probes[0].starts_with("-p Reply with the single word OK."),
         "{probes}"
     );
 
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
     r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
     r.daemon.night_shift_tick_at(t0 + 42 * MINUTE);
     wait_until("ZCode to be limited", || {
         r.run(run.run_id).limited == [proto::AgentKind::Zcode]
@@ -1920,22 +2387,222 @@ async fn zcode_stall_with_failed_probe_marks_provider() {
         "names the probe's error: {}",
         note.body
     );
+    let failed = std::fs::read_to_string(&spent_args).unwrap();
+    assert_eq!(failed.lines().count(), 1, "{failed}");
     r.daemon.night_shift_tick_at(t0 + 63 * MINUTE);
     assert_eq!(r.notes(o, "Night shift: zcode limited"), 1, "told once");
+}
+
+/// A run probes every distinct worker and reviewer provider that has a typed
+/// limit signal, each with its own headless flags.
+#[tokio::test]
+async fn start_probe_covers_every_worker_provider() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    let (answer_args, spent_args) =
+        probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Codex));
+    let routine = r.ready(|s| {
+        s.workers = vec![
+            proto::NightAgent {
+                provider: proto::AgentKind::Claude,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Codex,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Opencode,
+                model: None,
+            },
+            proto::NightAgent {
+                provider: proto::AgentKind::Zcode,
+                model: None,
+            },
+        ];
+    });
+    let run = r.run_now(routine.id, 120);
+    wait_until("every start probe", || {
+        !r.daemon.night_shift_probing(run.run_id)
+    })
+    .await;
+    assert_eq!(
+        r.run(run.run_id).limited,
+        [proto::AgentKind::Codex],
+        "only the failed probe limits a provider"
+    );
+    let preflight = r.run(run.run_id).preflight;
+    let item = |id: &str| {
+        preflight
+            .iter()
+            .find(|i| i.id == id)
+            .unwrap_or_else(|| panic!("{id} missing: {preflight:?}"))
+    };
+    assert_eq!(
+        item("quota:claude").status,
+        proto::PreflightStatus::Ok,
+        "{:?}",
+        item("quota:claude")
+    );
+    assert_eq!(item("quota:claude").detail, "answered a one-word probe");
+    assert_eq!(item("quota:codex").status, proto::PreflightStatus::Warn);
+    assert!(item("quota:codex").detail.contains("[1310]"));
+    assert_eq!(item("quota:opencode").status, proto::PreflightStatus::Ok);
+    assert_eq!(item("quota:zcode").status, proto::PreflightStatus::Ok);
+
+    let args = std::fs::read_to_string(&answer_args).unwrap();
+    assert!(
+        args.contains("-p Reply with the single word OK. --tools"),
+        "{args}"
+    );
+    assert!(
+        args.contains("run Reply with the single word OK. --agent plan --pure"),
+        "OpenCode's probe uses its plan agent: {args}"
+    );
+    assert!(
+        args.contains("--disallowed-tools Bash Edit Write"),
+        "{args}"
+    );
+    let spent = std::fs::read_to_string(spent_args.expect("Codex's arg log")).unwrap();
+    assert!(
+        spent.contains("exec --sandbox read-only --skip-git-repo-check --ephemeral --color never"),
+        "Codex's probe is read-only: {spent}"
+    );
+    assert_eq!(spent.lines().count(), 1, "{spent}");
+}
+
+/// A probe Houston cannot even start says nothing about the account: it warns
+/// on the run and never limits the provider.
+#[tokio::test]
+async fn an_unusable_start_probe_warns_without_limiting() {
+    let r = rig().await;
+    let scripts = tempfile::tempdir().unwrap();
+    probe_scripts(&r, scripts.path(), None);
+    r.daemon.set_night_shift_probe_for_test(
+        proto::AgentKind::Claude,
+        Some(scripts.path().join("not-an-executable")),
+    );
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    wait_until("the Claude quota item", || {
+        r.run(run.run_id)
+            .preflight
+            .iter()
+            .any(|item| item.id == "quota:claude")
+    })
+    .await;
+    wait_until("every start probe", || {
+        !r.daemon.night_shift_probing(run.run_id)
+    })
+    .await;
+    let run_state = r.run(run.run_id);
+    assert!(
+        run_state.limited.is_empty(),
+        "a probe that could not run is no limit: {:?}",
+        run_state.limited
+    );
+    let item = run_state
+        .preflight
+        .iter()
+        .find(|i| i.id == "quota:claude")
+        .unwrap_or_else(|| panic!("quota:claude missing: {:?}", run_state.preflight));
+    assert_eq!(item.status, proto::PreflightStatus::Warn);
+    assert!(item.detail.contains("could not run"), "{item:?}");
+    assert!(
+        item.detail.contains("did not mark claude limited"),
+        "{item:?}"
+    );
+}
+
+/// Outside Night shift, a stalled delegated ZCode pane becomes Limited and its
+/// parent gets one `limited` row, but only when the opt-in check is on.
+#[tokio::test]
+async fn a_stalled_zcode_pane_is_limited_when_the_check_is_on() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
+    r.daemon
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
+    r.daemon.set_zcode_quota_check(true).unwrap();
+    assert!(r.daemon.zcode_quota_check_enabled());
+    let parent = plain_parent(&r);
+    let (status, body) = r.spawn_child(parent, "zcode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .set_session_status_for_test(child, proto::AgentStatus::Working);
+    let t0 = houston_core::daemon::now_unix_ms();
+    r.daemon.set_session_status_since_for_test(child, t0 as u64);
+    r.daemon.zcode_quota_tick_at((t0 + 21 * MINUTE) as u64);
+    wait_until("ZCode to be limited", || {
+        r.daemon
+            .session_limit(child)
+            .is_some_and(|limit| limit.error == "quota")
+    })
+    .await;
+    let limit = r.daemon.session_limit(child).expect("the pane is limited");
+    let details = limit.details.expect("the probe's reason");
+    assert!(details.contains("[1310]"), "{details}");
+    assert!(
+        details.contains("reset at 2026-10-24 22:18:34"),
+        "the typed reset time is kept: {details}"
+    );
+    assert_eq!(
+        r.daemon.session_status(child).unwrap(),
+        Some(proto::AgentStatus::Idle),
+        "the failed turn ended"
+    );
+    wait_until("the parent to be told once", || {
+        r.notes(parent, "zcode limited") == 1
+    })
+    .await;
+    let args = std::fs::read_to_string(&spent_args).unwrap();
+    assert_eq!(args.lines().count(), 1, "{args}");
+    r.daemon.zcode_quota_tick_at((t0 + 42 * MINUTE) as u64);
+    assert_eq!(
+        r.notes(parent, "zcode limited"),
+        1,
+        "one row per failed turn"
+    );
+}
+
+#[tokio::test]
+async fn the_stalled_zcode_check_does_nothing_when_off() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    let (spent, spent_args) = probe_script(scripts.path(), "zcode-spent", false);
+    r.daemon
+        .set_night_shift_probe_for_test(proto::AgentKind::Zcode, Some(spent));
+    assert!(!r.daemon.zcode_quota_check_enabled(), "the check is opt-in");
+    let parent = plain_parent(&r);
+    let (status, body) = r.spawn_child(parent, "zcode").await;
+    assert_eq!(status, 200, "{body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .set_session_status_for_test(child, proto::AgentStatus::Working);
+    let t0 = houston_core::daemon::now_unix_ms();
+    r.daemon.set_session_status_since_for_test(child, t0 as u64);
+    r.daemon.zcode_quota_tick_at((t0 + 21 * MINUTE) as u64);
+    assert_eq!(r.daemon.session_limit(child), None);
+    assert!(!spent_args.exists(), "no probe ran");
+    assert_eq!(r.notes(parent, "zcode limited"), 0);
 }
 
 #[tokio::test]
 async fn failed_start_probe_limits_zcode_from_the_start() {
     let r = rig().await;
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    let (_, spent_args) = probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Zcode));
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     wait_until("ZCode to be limited", || {
         r.run(run.run_id).limited == [proto::AgentKind::Zcode]
     })
     .await;
+    let spent = std::fs::read_to_string(spent_args.expect("ZCode's arg log")).unwrap();
+    assert_eq!(spent.lines().count(), 1, "{spent}");
     let item = r
         .run(run.run_id)
         .preflight
@@ -1970,8 +2637,7 @@ async fn failed_start_probe_limits_zcode_from_the_start() {
 async fn a_limit_with_no_other_worker_says_spawns_are_refused() {
     let r = rig().await;
     let scripts = tempfile::tempdir().unwrap();
-    r.daemon
-        .set_night_shift_zcode_probe_for_test(Some(zcode_probe_script(scripts.path(), false)));
+    probe_scripts(&r, scripts.path(), Some(proto::AgentKind::Zcode));
     let routine = r.ready(|s| s.workers.truncate(1));
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
@@ -2083,9 +2749,79 @@ async fn build_slot_waits_for_the_memory_floor() {
 
 // ---- S6 ----
 
+fn install_fake_gh() -> (tempfile::TempDir, PathBuf, common::PathPrepend) {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::copy(
+        env!("CARGO_BIN_EXE_fake_gh"),
+        bin.join(format!("gh{}", std::env::consts::EXE_SUFFIX)),
+    )
+    .unwrap();
+    let prepend = common::prepend_path(&bin);
+    (dir, bin, prepend)
+}
+
+fn fixer_pane(r: &Rig, run: u32, number: u32) -> Option<u32> {
+    let role = format!("fixer-{number}");
+    r.run(run)
+        .crew
+        .into_iter()
+        .find(|c| c.role.as_deref() == Some(role.as_str()))
+        .map(|c| c.session_id)
+}
+
+/// The shape the PR watch hands Houston: one failed check with its own run and
+/// lines, or none when no check was reported.
+fn failed_checks(
+    checks: &[String],
+    texts: &[String],
+    run: Option<u64>,
+) -> Vec<houston_core::night_shift::FailedCheck> {
+    if checks.is_empty() {
+        Vec::new()
+    } else {
+        vec![houston_core::night_shift::FailedCheck {
+            name: checks.join(", "),
+            run,
+            lines: texts.to_vec(),
+        }]
+    }
+}
+
+async fn ci_failure(
+    r: &Rig,
+    o: u32,
+    number: u32,
+    checks: &[String],
+    log: &[String],
+    gh: Option<u64>,
+) -> Option<houston_core::night_shift::CiAction> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(action) = r
+            .daemon
+            .night_shift_ci_failed_checks(o, number, &failed_checks(checks, log, gh))
+            .unwrap()
+        {
+            return Some(action);
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "PR #{number}'s CI action never became available"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 #[tokio::test]
-async fn flaky_failure_rerun_once() {
+async fn flaky_failure_rerun_once_then_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
     let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
     let routine = r.ready(|_| {});
     let run = r.run_now(routine.id, 120);
     let o = run.session_id.unwrap();
@@ -2101,32 +2837,323 @@ async fn flaky_failure_rerun_once() {
     ] {
         assert_eq!(r.night(o, verb, body).await.0, 200);
     }
+    let checks = vec!["core-checks".to_string()];
     let log = vec![
         "core-checks".to_string(),
         "test pty::resize_race ... FAILED".to_string(),
     ];
-    assert!(r.daemon.night_shift_ci_failed(o, 21, &log).unwrap());
-    let pr = |r: &Rig| {
-        r.run(run.run_id)
-            .entries
-            .into_iter()
-            .find(|e| e.pr_number == Some(21))
-            .unwrap()
-    };
-    assert_eq!(pr(&r).gates.reruns, 1);
-    assert_eq!(pr(&r).gates.ci, proto::NightGate::Pending);
-    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
-    assert!(
-        !r.daemon.night_shift_ci_failed(o, 21, &log).unwrap(),
-        "a second failure is not re-run again"
+    let action = r
+        .daemon
+        .night_shift_ci_failed_checks(o, 21, &failed_checks(&checks, &log, Some(777)))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
     );
-    assert_eq!(r.notes(o, "Night shift: re-run CI on PR #21"), 1);
-    assert_eq!(r.notes(o, "Night shift: PR #21 failed again"), 1);
-    assert_eq!(pr(&r).gates.reruns, 1);
-    assert_eq!(pr(&r).gates.ci, proto::NightGate::Failed);
-    assert!(
-        !r.daemon.night_shift_ci_failed(o, 99, &log).unwrap(),
+    wait_until("the re-run to be recorded", || {
+        pr_entry(&r, run.run_id, 21).gates.reruns == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 21);
+    assert_eq!(pr.gates.ci, proto::NightGate::Pending);
+    assert_eq!(pr.gates.fixes, 0);
+    let calls = std::fs::read_to_string(gh_bin.join("gh.log")).unwrap_or_default();
+    assert!(calls.contains("run rerun 777 --failed"), "{calls}");
+    assert_eq!(
+        r.notes(o, "Night shift: re-run requested for PR #21"),
+        1,
+        "the orchestrator is told Houston re-ran it"
+    );
+
+    // The same failure again is real: Houston starts a fixer pane.
+    let action = ci_failure(&r, o, 21, &checks, &log, Some(777)).await;
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 21).is_some()
+    })
+    .await;
+    wait_until("the fixer to be counted", || {
+        pr_entry(&r, run.run_id, 21).gates.fixes == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 21);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(pr.gates.reruns, 1, "a flaky test is re-run only once");
+    assert_eq!(r.notes(o, "Night shift: fixer started on PR #21"), 1);
+    let fixer = fixer_pane(&r, run.run_id, 21).expect("the fixer is live");
+    assert!(r.live(fixer));
+    assert_eq!(
+        r.daemon
+            .night_shift_ci_failed_checks(o, 99, &failed_checks(&checks, &log, None))
+            .unwrap(),
+        None,
         "a PR the run never recorded is not its business"
+    );
+}
+
+#[tokio::test]
+async fn a_rerun_waits_while_the_run_has_jobs_in_progress() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
+    std::fs::write(
+        gh_bin.join("run-status-778.json"),
+        r#"{"status":"in_progress","conclusion":null}"#,
+    )
+    .unwrap();
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    r.daemon
+        .set_night_shift_ci_wait_for_test(Duration::from_millis(10), Duration::from_millis(150));
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (verb, body) in [
+        (
+            "lesson",
+            json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+        ),
+        (
+            "pr",
+            json!({ "number": 24, "title": "Tray fix", "head": "HEAD" }),
+        ),
+    ] {
+        assert_eq!(r.night(o, verb, body).await.0, 200);
+    }
+    let checks = vec!["core-checks".to_string()];
+    let log = vec![
+        "core-checks".to_string(),
+        "test pty::resize_race ... FAILED".to_string(),
+    ];
+    let action = r
+        .daemon
+        .night_shift_ci_failed_checks(o, 24, &failed_checks(&checks, &log, Some(778)))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
+    );
+    wait_until("the orchestrator to hear the wait timed out", || {
+        r.notes(o, "Night shift: PR #24 re-run waited") == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 24);
+    assert_eq!(pr.gates.reruns, 0, "no re-run was counted");
+    assert_eq!(pr.gates.fixes, 0, "no fixer was counted");
+    assert!(fixer_pane(&r, run.run_id, 24).is_none());
+    let calls = std::fs::read_to_string(gh_bin.join("gh.log")).unwrap_or_default();
+    assert!(
+        calls.contains("run view 778 --json status,conclusion"),
+        "{calls}"
+    );
+    assert!(
+        !calls.contains("run rerun 778"),
+        "GitHub would refuse a run with jobs in progress: {calls}"
+    );
+}
+
+#[tokio::test]
+async fn a_rerun_refused_after_the_run_completed_starts_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let _serial = crate::merge_queue_rig::SERIAL.lock().await;
+    let (_gh_dir, gh_bin, _path) = install_fake_gh();
+    std::fs::write(
+        gh_bin.join("run-status-779.json"),
+        r#"{"status":"completed","conclusion":"failure"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        gh_bin.join("rerun-refused"),
+        "Cannot rerun a workflow run that is not completed",
+    )
+    .unwrap();
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    r.daemon
+        .set_night_shift_ci_wait_for_test(Duration::from_millis(10), Duration::from_millis(150));
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    for (verb, body) in [
+        (
+            "lesson",
+            json!({ "title": "Resize races", "flaky_test": "pty::resize_race" }),
+        ),
+        (
+            "pr",
+            json!({ "number": 25, "title": "Tray fix", "head": "HEAD" }),
+        ),
+    ] {
+        assert_eq!(r.night(o, verb, body).await.0, 200);
+    }
+    let checks = vec!["core-checks".to_string()];
+    let log = vec![
+        "core-checks".to_string(),
+        "test pty::resize_race ... FAILED".to_string(),
+    ];
+    let action = r
+        .daemon
+        .night_shift_ci_failed_checks(o, 25, &failed_checks(&checks, &log, Some(779)))
+        .unwrap();
+    assert_eq!(
+        action,
+        Some(CiAction::Rerun {
+            test: "pty::resize_race".into()
+        })
+    );
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 25).is_some()
+    })
+    .await;
+    wait_until("the fixer to be counted", || {
+        pr_entry(&r, run.run_id, 25).gates.fixes == 1
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 25);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(
+        pr.gates.reruns, 0,
+        "a refused re-run is not a re-run Houston counted"
+    );
+    assert_eq!(r.notes(o, "Night shift: PR #25 re-run failed"), 1);
+}
+
+#[tokio::test]
+async fn a_real_ci_failure_starts_a_fixer() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 22, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let action = r
+        .daemon
+        .night_shift_ci_failed_checks(
+            o,
+            22,
+            &failed_checks(&["core-checks".into()], &["lint failed".into()], None),
+        )
+        .unwrap();
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the fixer pane to appear", || {
+        fixer_pane(&r, run.run_id, 22).is_some()
+    })
+    .await;
+    let pr = pr_entry(&r, run.run_id, 22);
+    assert_eq!(pr.gates.fixes, 1);
+    assert_eq!(pr.gates.ci, proto::NightGate::Failed);
+    assert_eq!(r.notes(o, "Night shift: fixer started on PR #22"), 1);
+}
+
+#[tokio::test]
+async fn a_pr_gets_at_most_two_fixer_panes() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(8, 3).unwrap();
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 23, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let checks = vec!["core-checks".to_string()];
+    let log = vec!["lint failed".to_string()];
+    for fixes in 1..=2 {
+        assert_eq!(
+            ci_failure(&r, o, 23, &checks, &log, None).await,
+            Some(CiAction::Fix)
+        );
+        wait_until("the fixer to appear", || {
+            fixer_pane(&r, run.run_id, 23).is_some()
+        })
+        .await;
+        wait_until("the fixer to be counted", || {
+            pr_entry(&r, run.run_id, 23).gates.fixes == fixes
+        })
+        .await;
+        let fixer = fixer_pane(&r, run.run_id, 23).expect("the fixer is live");
+        r.daemon.kill(fixer).unwrap();
+        wait_until("the fixer to exit", || !r.live(fixer)).await;
+    }
+    let action = ci_failure(&r, o, 23, &checks, &log, None).await;
+    assert!(
+        matches!(action, Some(CiAction::GiveUp { ref why }) if why.contains("2 fixer panes")),
+        "{action:?}"
+    );
+    assert!(fixer_pane(&r, run.run_id, 23).is_none(), "no third fixer");
+    assert_eq!(r.notes(o, "Night shift: PR #23 CI needs you"), 1);
+}
+
+#[tokio::test]
+async fn a_refused_fixer_spawn_is_reported_with_its_reason() {
+    use houston_core::night_shift::CiAction;
+    let r = rig().await;
+    let routine = r.ready(|_| {});
+    let run = r.run_now(routine.id, 120);
+    let o = run.session_id.unwrap();
+    assert_eq!(
+        r.night(
+            o,
+            "pr",
+            json!({ "number": 24, "title": "Tray fix", "head": "HEAD" })
+        )
+        .await
+        .0,
+        200
+    );
+    let action = r
+        .daemon
+        .night_shift_ci_failed_checks(
+            o,
+            24,
+            &failed_checks(&["core-checks".into()], &["lint failed".into()], None),
+        )
+        .unwrap();
+    assert_eq!(action, Some(CiAction::Fix));
+    wait_until("the refusal note", || {
+        r.notes(o, "Night shift: PR #24 fixer did not start") == 1
+    })
+    .await;
+    let note = r
+        .daemon
+        .inbox_rows_for_test(o)
+        .into_iter()
+        .find(|row| row.summary.contains("PR #24 fixer did not start"))
+        .expect("the refusal is recorded");
+    assert!(
+        note.body.contains("agent spawning is switched off"),
+        "{}",
+        note.body
+    );
+    assert_eq!(pr_entry(&r, run.run_id, 24).gates.fixes, 1);
+    assert!(
+        fixer_pane(&r, run.run_id, 24).is_none(),
+        "a refused spawn starts no pane"
     );
 }
 
@@ -2196,19 +3223,24 @@ async fn pr_watch_feeds_ci_and_fate_to_the_run() {
         12,
         "statusCheckRollup",
         json!([{ "__typename": "CheckRun", "name": "test pty::resize_race",
-                 "status": "COMPLETED", "conclusion": "FAILURE" }]),
+                 "status": "COMPLETED", "conclusion": "FAILURE",
+                 "detailsUrl": "https://github.com/owner/repo/actions/runs/4242/job/1" }]),
     );
     gh.read_pass().await;
+    wait_until("Houston's one re-run to be recorded", || {
+        entry(&d).gates.reruns == 1
+    })
+    .await;
     let pr = entry(&d);
     assert_eq!(
         (pr.gates.reruns, pr.gates.ci),
         (1, proto::NightGate::Pending)
     );
     assert!(
-        d.inbox_rows_for_test(o)
-            .iter()
-            .any(|row| row.summary.contains("Night shift: re-run CI on PR #12")),
-        "the orchestrator is asked for one re-run"
+        d.inbox_rows_for_test(o).iter().any(|row| row
+            .summary
+            .contains("Night shift: re-run requested for PR #12")),
+        "the orchestrator is told Houston re-ran it"
     );
 
     gh.pr_set(12, "state", json!("MERGED"));

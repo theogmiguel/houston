@@ -25,6 +25,7 @@ interface PullRequestsRailScreenProps {
   onOpenUrlInPane?: (url: string) => void
   onHandOff?: (worktree: string, prompt: string, agent: AgentKind) => void
   onOpenMergeQueueSettings?: () => void
+  onOpenReviewSettings?: () => void
 }
 
 export function PullRequestsRailScreen(props: PullRequestsRailScreenProps): React.JSX.Element {

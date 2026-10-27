@@ -195,3 +195,85 @@ async fn a_missing_gh_leaves_the_task_in_review_with_a_visible_reason() {
         "no merge is recorded without gh"
     );
 }
+
+fn git(dir: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A `gh` stub that reports a merged PR and logs each call, on a PATH that
+/// still has `git`. The guard keeps the stub first until the test ends.
+fn merged_gh_logging_calls(bin: &Path) -> (common::PathPrepend, PathBuf) {
+    write_stub_gh(bin, true);
+    let real = bin.join("gh");
+    let logged = bin.join("gh-real");
+    std::fs::rename(&real, &logged).unwrap();
+    let log = bin.join("calls.log");
+    std::fs::write(
+        &real,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> {}\nexec {} \"$@\"\n",
+            log.display(),
+            logged.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (common::prepend_path(bin), log)
+}
+
+#[tokio::test]
+async fn a_bitbucket_worktree_is_not_asked_of_gh() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("pr-bitbucket").await;
+    let (id, run_id, worktree) = r.in_review_task("On Bitbucket");
+    let bin = tempfile::tempdir().unwrap();
+    let (_path, log) = merged_gh_logging_calls(bin.path());
+    git(&worktree, &["init", "-q"]);
+    git(
+        &worktree,
+        &["remote", "add", "origin", "git@bitbucket.org:ws/repo.git"],
+    );
+
+    r.daemon.task_pr_watch_tick();
+
+    assert_eq!(r.task_status(id), "in_review");
+    let reason = r.run_reason(run_id).expect("the run carries the reason");
+    assert!(reason.contains("Bitbucket Cloud"), "{reason}");
+    assert!(!log.exists(), "gh was run for a Bitbucket worktree");
+}
+
+#[tokio::test]
+async fn a_github_ssh_alias_worktree_is_still_watched_through_gh() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("pr-alias").await;
+    let (id, _run_id, worktree) = r.in_review_task("Through an alias");
+    let bin = tempfile::tempdir().unwrap();
+    let (_path, log) = merged_gh_logging_calls(bin.path());
+    git(&worktree, &["init", "-q"]);
+    git(
+        &worktree,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "git@github.com-work:owner/repo.git",
+        ],
+    );
+
+    r.daemon.task_pr_watch_tick();
+
+    assert_eq!(r.task_status(id), "done");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(calls.contains("pr view"), "{calls}");
+}

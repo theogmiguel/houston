@@ -25,6 +25,7 @@ struct Entry {
     read_at_ms: i64,
     state: PullRequestState,
     head_ref: Option<String>,
+    head_sha: Option<String>,
     cross_repository: bool,
 }
 
@@ -236,6 +237,7 @@ impl SharedReads {
                 read_at_ms: now_ms,
                 state: link.state,
                 head_ref: detail.head_ref.clone(),
+                head_sha: (!detail.head_sha.trim().is_empty()).then(|| detail.head_sha.clone()),
                 cross_repository: detail.cross_repository,
             },
         );
@@ -262,6 +264,28 @@ impl SharedReads {
             })
             .map(|((_, number), e)| (*number, e.state))
             .max_by_key(|(number, _)| *number)
+    }
+
+    /// The same cached match as `branch_state`, with the head it was read at.
+    /// The task PR watch uses the head to review only a pushed branch.
+    pub fn branch_snapshot(
+        &self,
+        repository: &str,
+        branch: &str,
+        now_ms: i64,
+    ) -> Option<(u32, PullRequestState, Option<String>)> {
+        let repository = repository.to_ascii_lowercase();
+        self.lock()
+            .entries
+            .iter()
+            .filter(|((repo, _), e)| {
+                *repo == repository
+                    && now_ms - e.read_at_ms < SHARED_READ_TTL_MS
+                    && !e.cross_repository
+                    && e.head_ref.as_deref() == Some(branch)
+            })
+            .map(|((_, number), e)| (*number, e.state, e.head_sha.clone()))
+            .max_by_key(|(number, _, _)| *number)
     }
 }
 

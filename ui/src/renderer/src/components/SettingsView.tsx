@@ -1,4 +1,5 @@
 import { GeneratedTitlesSetting } from './settings/GeneratedTitlesSetting'
+import { ZcodeQuotaCheckSetting } from './settings/ZcodeQuotaCheckSetting'
 import { DefaultViewSetting } from './settings/DefaultViewSetting'
 import type { VoiceExternalModel } from '../houston/generated/VoiceExternalModel'
 import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
@@ -29,6 +30,7 @@ import { PageFrame, type PageWidth } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { MergeQueueSettingsSection } from './settings/MergeQueueSettingsSection'
+import { ReviewRequestsSection } from './settings/ReviewRequestsSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { MascotSettings } from './settings/MascotSettings'
 import { TerminalSection } from './settings/TerminalSection'
@@ -352,6 +354,7 @@ function SectionDispatch({
         {section === 'agents-clis' && (
           <>
             <AgentStatusSection
+              client={daemonClient}
               providers={agentHooks}
               agentAccounts={agentAccounts}
               onSet={onAgentHooksSet}
@@ -362,6 +365,7 @@ function SectionDispatch({
               onAgentProfileDelete={onAgentProfileDelete}
               onAgentProfileSetActive={onAgentProfileSetActive}
             />
+            <ZcodeQuotaCheckSetting client={daemonClient} />
             <DefaultViewSetting client={daemonClient} />
           </>
         )}
@@ -436,6 +440,7 @@ function SectionDispatch({
             onSessionPolicy={onSessionPolicy}
           />
           <MergeQueueSettingsSection client={daemonClient} workspace={historyWorkspace} />
+          <ReviewRequestsSection client={daemonClient} />
           </>
         )}
 

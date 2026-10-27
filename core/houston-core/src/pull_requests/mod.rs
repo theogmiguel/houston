@@ -1,3 +1,4 @@
+pub mod bitbucket;
 pub(crate) mod github;
 pub(crate) mod shared;
 pub(crate) mod watch;
@@ -42,18 +43,21 @@ impl Host {
     }
 }
 
+/// The remote's host by name, without its userinfo: a remote URL can embed a
+/// token, and this name reaches refusals on screen.
 pub fn classify_remote(url: &str) -> Host {
-    let lower = url.to_lowercase();
-    if lower.contains("github.com") {
-        Host::GitHub
-    } else if lower.contains("gitlab") {
-        Host::GitLab
-    } else if lower.contains("bitbucket") {
-        Host::Bitbucket
-    } else if lower.contains("dev.azure.com") || lower.contains("visualstudio.com") {
-        Host::AzureDevOps
-    } else {
-        Host::Unknown(url.to_string())
+    use crate::forge::{Forge, ForgeResolution};
+    match crate::forge::resolve_url(url) {
+        ForgeResolution::Ready(Forge::GitHub) => Host::GitHub,
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => Host::Bitbucket,
+        ForgeResolution::Unsupported { host } => match host.as_str() {
+            "GitLab" => Host::GitLab,
+            "Azure DevOps" => Host::AzureDevOps,
+            "Bitbucket Data Center" | "bitbucket.org" => Host::Bitbucket,
+            _ => Host::Unknown(host),
+        },
+        ForgeResolution::Unknown { host } => Host::Unknown(host),
+        ForgeResolution::NoRemote => Host::Unknown("no remote".to_string()),
     }
 }
 
@@ -104,6 +108,13 @@ pub fn create(
 
 pub fn refresh(dir: &Path, existing: &PullRequestLink) -> Result<PullRequestLink> {
     read(dir, Some(existing.number), existing.source, Some(existing)).map(|(link, _)| link)
+}
+
+/// The hand-off schema host cache is process-wide; a test suite that flips one
+/// host's schema empties it so the next fixture starts as a fresh daemon would.
+#[doc(hidden)]
+pub fn clear_hand_off_hosts_for_test() {
+    github::clear_hand_off_hosts_for_test();
 }
 
 /// Read one pull request whole: its link (identity + state) and its detail
@@ -619,7 +630,7 @@ pub fn unlink_pr(
     removed
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -684,6 +695,7 @@ mod tests {
             cross_repository: false,
             merge_methods: Vec::new(),
             github_merge: None,
+            read_only: None,
         }
     }
 

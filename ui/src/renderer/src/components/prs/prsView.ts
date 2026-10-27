@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { HoustonClient, PrInfo, SessionInfo } from '../../houston/client'
 
-export type PrsView = 'requests' | 'queue'
+export type PrsView = 'requests' | 'queue' | 'review-requests'
 
 /** A request from outside the page, such as the command palette, to show a
  *  view and optionally add a pull request to the merge queue once it is shown. */

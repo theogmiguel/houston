@@ -30,6 +30,7 @@ import { Icon } from '../ui/Icon'
 import { IconGitBranch, IconPlay } from '../icons'
 import { Select, type SelectOption } from '../ui/Select'
 import { Tooltip } from '../ui/Tooltip'
+import { TaskReviewResult } from './TaskReviewResult'
 import {
   READ_ONLY_REASON,
   TASK_AGENTS,
@@ -78,6 +79,14 @@ function RunReason({ reason }: { reason: string }): React.JSX.Element {
   return (
     <TaskRunNote kind="reason">{reason}</TaskRunNote>
   )
+}
+
+/** The newer head-pinned verdict when the daemon sent one; older runs keep the
+ *  legacy reviewer summary. */
+function RunReviewBlock({ structured, outcome }: { structured: TaskRun['review']; outcome: TaskReviewOutcome | null }): React.JSX.Element | null {
+  if (structured) return <TaskReviewResult review={structured} />
+  if (outcome) return <ReviewFindings outcome={outcome} />
+  return null
 }
 
 function RunControlButton({
@@ -237,6 +246,7 @@ export function TaskExecutionCard({
   const tone = parentOwned ? 'idle' : runStateTone(run.state)
   const reason = parentOwned ? null : run.reason ?? null
   const outcome = review ?? null
+  const structuredReview = run.review ?? null
   const retryRunId = outcome?.retryRunId ?? null
 
   if (presentation === 'drawer') return <TaskDrawerExecution
@@ -245,6 +255,7 @@ export function TaskExecutionCard({
     now={now}
     readOnly={readOnly}
     outcome={outcome}
+    structuredReview={structuredReview}
     reason={reason}
     retryRunId={retryRunId}
     branchReuse={branchReuse}
@@ -271,9 +282,9 @@ export function TaskExecutionCard({
           </TaskTagChip>
         )}
         <TaskAgentTag agent={run.provider} label={taskAgentLabel(run.provider)} size="compact" tone="secondary" />
-        {outcome && <ReviewMeta outcome={outcome} />}
+        {!structuredReview && outcome && <ReviewMeta outcome={outcome} />}
       </TaskExecDetails>
-      {outcome !== null && <ReviewFindings outcome={outcome} />}
+      <RunReviewBlock structured={structuredReview} outcome={outcome} />
       {reason !== null && reason !== '' && <RunReason reason={reason} />}
       <ExecutionActions
         run={run}
@@ -303,6 +314,7 @@ function TaskDrawerExecution({
   now,
   readOnly,
   outcome,
+  structuredReview,
   reason,
   retryRunId,
   branchReuse,
@@ -316,6 +328,7 @@ function TaskDrawerExecution({
   now: number
   readOnly: boolean
   outcome: TaskReviewOutcome | null
+  structuredReview: TaskRun['review']
   reason: string | null
   retryRunId: number | null
   branchReuse?: string | null
@@ -336,7 +349,7 @@ function TaskDrawerExecution({
     metadata={`${age} · Attempt ${run.attempt} · ${run.provider === 'claude' ? 'Claude Code' : taskAgentLabel(run.provider)}`}
     reuse={`${branch} · ${pullRequest ? `pull request #${pullRequest}` : 'no pull request yet'}`}
   >
-    {outcome !== null && <ReviewFindings outcome={outcome} />}
+    <RunReviewBlock structured={structuredReview} outcome={outcome} />
     {reason !== null && reason !== '' && <RunReason reason={reason} />}
     <ExecutionActions
       run={run}

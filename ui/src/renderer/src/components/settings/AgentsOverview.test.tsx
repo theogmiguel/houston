@@ -25,7 +25,7 @@ it('presents unchecked sources without claiming setup is healthy', () => {
 })
 
 it('shows each open review finding with severity and session evidence, and makes status rows clickable', () => {
-  const attention = agentAttentionFor({ agentHooks: [], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/ws', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
+  const attention = agentAttentionFor({ agentHooks: [], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/ws', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, suspected_defects: 0, seen_review_id: 0 }] })
   const state: import('../../houston/useHarness').HarnessState = { workspace: '/ws', routine: null, reviews: [{ id: 1, workspace: '/ws', routine_id: 1, run_id: 1, status: 'published', started_at_ms: 1, run_dir: '/ws/.houston/harness/r1', sessions: 38, finding_count: 1 }], findings: [{ review_id: 1, key: 'style', title: 'Agents re-read the styleguide on every UI change', category: 'workflow', confidence: 'high', sessions: ['a'], count: 9, quotes: [], recommendation_kind: 'workflow', target: 'AGENTS.md', recommendation: 'Read once', apply_prompt: 'Read once', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1 }], models: [], providerCoverage: [], engineRefusals: [] }
   const { container } = render(<AgentsOverview attention={attention} reviewStates={[state]} onRepair={vi.fn()} onCheck={vi.fn()} />)
   expect(screen.getByText('Agents re-read the styleguide on every UI change')).toBeTruthy()

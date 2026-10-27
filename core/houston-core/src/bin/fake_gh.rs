@@ -171,6 +171,9 @@ fn graphql() {
         .map(|reason| serde_json::json!({ "createdAt": now_rfc3339(), "reason": reason.trim() }))
         .into_iter()
         .collect();
+    let base_ref = pr(&number)
+        .and_then(|v| v["baseRefName"].as_str().map(str::to_string))
+        .unwrap_or_else(|| "main".to_string());
     let answer = serde_json::json!({ "data": { "repository": {
         "viewerPermission": "WRITE",
         "squashMergeAllowed": allowed("squash"),
@@ -189,10 +192,163 @@ fn graphql() {
             "mergeQueueEntry": queue_entry,
             "autoMergeRequest": auto_merge,
             "timelineItems": { "nodes": timeline },
-            "baseRef": { "refUpdateRule": rule }
+            "baseRef": { "name": base_ref, "refUpdateRule": rule }
         }
     } } });
     print!("{answer}");
+}
+
+/// The base branch's effective rules: `rules-checks` lists the checks its
+/// `required_status_checks` rule requires; `rules-unreadable` fails the read.
+/// Every read is appended to `rules.log`, so tests count them.
+fn rules(path: &str) {
+    if let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir().join("rules.log"))
+    {
+        let _ = log.lock();
+        let _ = log.write_all(format!("{path}\n").as_bytes());
+        let _ = log.unlock();
+    }
+    if let Some(refused) = read("rules-unreadable") {
+        let message = refused.trim();
+        fail(if message.is_empty() {
+            "gh: Resource not accessible by integration (HTTP 403)"
+        } else {
+            message
+        });
+    }
+    let required: Vec<serde_json::Value> = read("rules-checks")
+        .map(|checks| {
+            checks
+                .split(',')
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(|c| serde_json::json!({ "context": c }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let answer = if required.is_empty() {
+        serde_json::json!([])
+    } else {
+        serde_json::json!([{
+            "type": "required_status_checks",
+            "parameters": { "required_status_checks": required }
+        }])
+    };
+    print!("{answer}");
+}
+
+/// `viewer-login` names the account `gh api user` answers; `tester` otherwise.
+fn viewer_login() {
+    print!(
+        "{}",
+        read("viewer-login").unwrap_or_else(|| "tester".into())
+    );
+}
+
+/// `configured-login` names the account gh's local config answers for a host.
+/// No file means no configured user, which is a failed lookup, not a network call.
+fn configured_login(args: &[String]) {
+    let host = flag(args, "--host").unwrap_or_else(|| "github.com".into());
+    match read("configured-login") {
+        Some(login) => print!("{login}"),
+        None => fail(&format!("no user configured for {host}")),
+    }
+}
+
+/// `issues-search.json` is the one `gh search issues` answer; no file means no
+/// likely duplicates. `issues-search-error` fails the call instead, for the
+/// rate-limit and failure paths.
+fn search_issues() {
+    if let Some(error) = read("issues-search-error") {
+        fail(&error);
+    }
+    let answer = read("issues-search.json").unwrap_or_else(|| "[]".into());
+    print!("{answer}");
+}
+
+/// `review-requested-prs.json` is the one `gh search prs` answer, and
+/// `review-requested-prs-error` fails the call for the pause and credential paths.
+/// Only the fields `gh search prs` really offers are accepted.
+const SEARCH_PR_FIELDS: &[&str] = &[
+    "assignees",
+    "author",
+    "authorAssociation",
+    "body",
+    "closedAt",
+    "commentsCount",
+    "createdAt",
+    "id",
+    "isDraft",
+    "isLocked",
+    "isPullRequest",
+    "labels",
+    "number",
+    "repository",
+    "state",
+    "title",
+    "updatedAt",
+    "url",
+];
+
+fn search_prs(args: &[String]) {
+    let fields = flag(args, "--json").unwrap_or_default();
+    for field in fields.split(',').map(str::trim).filter(|f| !f.is_empty()) {
+        if !SEARCH_PR_FIELDS.contains(&field) {
+            fail(&format!(
+                "gh search prs: unknown JSON field {field:?}; expected one of {}",
+                SEARCH_PR_FIELDS.join(", ")
+            ));
+        }
+    }
+    if let Some(error) = read("review-requested-prs-error") {
+        fail(&error);
+    }
+    let answer = read("review-requested-prs.json").unwrap_or_else(|| "[]".into());
+    print!("{answer}");
+}
+
+/// `issue create` records what it would have filed (title, body, repository and
+/// number) in `created-issue.json` and prints the issue URL gh prints.
+fn issue_create(args: &[String]) {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let repo = flag(args, "--repo").unwrap_or_else(|| "owner/repo".into());
+    let title = flag(args, "--title").unwrap_or_default();
+    let number = read("issue-number")
+        .and_then(|n| n.trim().parse::<u32>().ok())
+        .unwrap_or(42);
+    let url = format!("https://github.com/{repo}/issues/{number}");
+    write(
+        "created-issue.json",
+        &serde_json::json!({
+            "repo": repo, "number": number, "title": title, "body": input, "url": url
+        })
+        .to_string(),
+    );
+    print!("{url}");
+}
+
+/// `issue comment` records the comment body and target in `commented-issue.json`.
+fn issue_comment(args: &[String]) {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let repo = flag(args, "--repo").unwrap_or_else(|| "owner/repo".into());
+    let number = args.get(2).cloned().unwrap_or_default();
+    write(
+        "commented-issue.json",
+        &serde_json::json!({ "repo": repo, "number": number, "body": input }).to_string(),
+    );
+    print!("https://github.com/{repo}/issues/{number}");
+}
+
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 /// `pr edit N --base B` moves the pull request's base.
@@ -319,6 +475,38 @@ fn squash(origin: &str, base: &str, head: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// `run view N --log-failed` answers `run-N.log` (or `run.log`); `run view N
+/// --json status,conclusion` answers `run-status-N.json`, a completed failure by
+/// default; `run rerun N --failed` records `rerun-N` or fails with `rerun-refused`.
+fn run_command(args: &[String]) {
+    let id = args.get(2).map(String::as_str).unwrap_or_default();
+    match args.get(1).map(String::as_str) {
+        Some("view") if args.iter().any(|a| a == "--json") => {
+            print!(
+                "{}",
+                read(&format!("run-status-{id}.json")).unwrap_or_else(|| {
+                    r#"{"status":"completed","conclusion":"failure"}"#.to_string()
+                })
+            );
+        }
+        Some("view") => {
+            print!(
+                "{}",
+                read(&format!("run-{id}.log"))
+                    .or_else(|| read("run.log"))
+                    .unwrap_or_default()
+            );
+        }
+        Some("rerun") if args.iter().any(|a| a == "--failed") => {
+            if let Some(refused) = read("rerun-refused") {
+                fail(refused.trim());
+            }
+            write(&format!("rerun-{id}"), "1");
+        }
+        _ => fail(&format!("fake gh: unsupported run call {args:?}")),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Concurrent calls (a read's access and thread queries) each append whole lines.
@@ -347,7 +535,17 @@ fn main() {
         }
         ("pr", "merge") => merge(&args),
         ("pr", "edit") => edit(&args),
+        ("search", "issues") => search_issues(),
+        ("search", "prs") => search_prs(&args),
+        ("issue", "create") => issue_create(&args),
+        ("issue", "comment") => issue_comment(&args),
+        ("api", "user") => viewer_login(),
+        ("config", "get") => configured_login(&args),
+        ("run", _) => run_command(&args),
         ("api", "graphql") => graphql(),
+        ("api", path) if path.starts_with("repos/") && path.contains("/rules/branches/") => {
+            rules(path)
+        }
         ("api", _) => fail("gh: Not Found (HTTP 404)"),
         _ => fail(&format!("fake gh: unsupported call {args:?}")),
     }

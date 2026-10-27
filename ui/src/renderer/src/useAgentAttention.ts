@@ -32,6 +32,12 @@ export interface AgentAttention {
   known: { clis: boolean; skills: boolean; mcp: boolean }
 }
 
+/** The daemon counts undecided suspected defects in `attention`; taking the larger
+ *  also covers an older snapshot that reports only `suspected_defects`. */
+export function harnessAttentionCount(row: Pick<HarnessAttention, 'attention' | 'suspected_defects'>): number {
+  return Math.max(row.attention, row.suspected_defects)
+}
+
 export function agentAttentionFor({ agentHooks, skills, checks, reviews, serverCount }: AgentAttentionInput): AgentAttention {
   const issues: AgentAttentionIssue[] = []
   const providers = new Set<AgentKind>()
@@ -56,9 +62,10 @@ export function agentAttentionFor({ agentHooks, skills, checks, reviews, serverC
   const counts: AgentAttention['counts'] = { 'agents-clis': 0, 'agents-skills': 0, 'agents-mcp': 0, 'agents-review': 0 }
   for (const issue of issues) counts[issue.section]++
   for (const review of reviews) {
-    if (review.attention <= 0) continue
-    counts['agents-review'] += review.attention
-    issues.push({ key: `review:${review.workspace}`, section: 'agents-review', title: `${review.attention} review ${review.attention === 1 ? 'finding needs' : 'findings need'} you`, detail: review.workspace, action: 'open', workspace: review.workspace })
+    const attention = harnessAttentionCount(review)
+    if (attention <= 0) continue
+    counts['agents-review'] += attention
+    issues.push({ key: `review:${review.workspace}`, section: 'agents-review', title: `${attention} review ${attention === 1 ? 'finding needs' : 'findings need'} you`, detail: review.workspace, action: 'open', workspace: review.workspace })
   }
   return { sources: { installedClis: new Set((agentHooks ?? []).filter((hook) => hook.present).map((hook) => hook.provider)).size, skillCount: buildSkillRows(skills ?? []).length, serverCount: serverCount ?? new Set((checks ?? []).map(([name]) => name)).size }, total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts, issues, known: { clis: agentHooks !== null, skills: skills !== null, mcp: checks !== null } }
 }

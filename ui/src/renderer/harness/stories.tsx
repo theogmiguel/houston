@@ -62,7 +62,7 @@ import {
   HarnessHistoryEmptyStory,
   HarnessFindingsDismissedStory
 } from './navStories'
-import { NightShiftSetupStory } from './nightShiftStories'
+import { NightShiftReportStory, NightShiftSetupStory } from './nightShiftStories'
 import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory, ParentFirstAttentionStory, ArchivedResultsStory, InstructionRecoveryStory, PermissionOwnershipStory } from './orchestrationStories'
 import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
 import { RenameTitleStory } from './renameTitleStories'
@@ -516,6 +516,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/night-shift-setup': () => <NightShiftSetupStory />,
   'nav/night-shift-setup-open': () => <NightShiftSetupStory open />,
+  'nav/night-shift-report': () => <NightShiftReportStory />,
   'nav/routine-editor': () => <NavRoutineEditor />,
   'nav/routine-editor-clock': () => <NavRoutineEditorClock />,
   'nav/routine-editor-interval': () => <NavRoutineEditorInterval />,

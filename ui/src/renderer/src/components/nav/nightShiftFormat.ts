@@ -1,5 +1,6 @@
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { NightClock } from '../../houston/generated/NightClock'
+import type { NightCostLine } from '../../houston/generated/NightCostLine'
 import type { NightEntry } from '../../houston/generated/NightEntry'
 import type { NightFocus } from '../../houston/generated/NightFocus'
 import type { NightRun } from '../../houston/generated/NightRun'
@@ -7,8 +8,10 @@ import type { NightShiftSettings } from '../../houston/generated/NightShiftSetti
 import type { NightStopReason } from '../../houston/generated/NightStopReason'
 import type { NightVerification } from '../../houston/generated/NightVerification'
 import type { NightWindow } from '../../houston/generated/NightWindow'
+import type { UsageTokenTotals } from '../../houston/generated/UsageTokenTotals'
 import type { WindowMark } from '../ui'
 import { engineLabel } from '../engineLabel'
+import { formatTokens } from '../../usage'
 
 /** Each area with the one-line definition the brief gives the orchestrator (`brief.rs::focus_areas`). */
 export const FOCUS_AREAS: { key: keyof NightFocus; label: string; definition: string }[] = [
@@ -195,6 +198,27 @@ export function decisionText(entry: NightEntry): string {
 
 export function countLabel(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
+}
+
+/** The four token classes the Usage page totals; reasoning already sits inside output. */
+export function tokenTotal(t: UsageTokenTotals): number {
+  return t.uncached_input_tokens + t.cached_input_tokens + t.cache_creation_tokens + t.output_tokens
+}
+
+/** One provider's tokens, named as Settings ▸ Usage names them. */
+export function tokenBreakdown(t: UsageTokenTotals): string {
+  return `${formatTokens(t.uncached_input_tokens)} input · ${formatTokens(t.output_tokens)} output · ${formatTokens(t.cached_input_tokens)} cache read · ${formatTokens(t.cache_creation_tokens)} cache write`
+}
+
+/** A provider's cost readout: tokens when its CLI reports them, never a zero for unknown. */
+export function providerCostValue(line: NightCostLine): string {
+  if (line.tokens) return `${formatTokens(tokenTotal(line.tokens))} tokens`
+  return line.pane_hours > 0 ? 'tokens not tracked' : '—'
+}
+
+export function providerCostSub(line: NightCostLine): string {
+  const panes = countLabel(line.panes, 'pane', 'panes')
+  return line.tokens ? `${panes} · ${tokenBreakdown(line.tokens)}` : panes
 }
 
 /** Answered decisions stay listed, so the count says it is of open ones. */

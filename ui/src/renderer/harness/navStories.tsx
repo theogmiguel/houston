@@ -581,6 +581,7 @@ export function HarnessPageStory({ firstRun = false, noReviews = false, inSettin
       not_seen: 1,
       resolved: 1,
       dismissed: 1,
+      suspected_defects: 0,
       latest_published_review_id: 13,
       seen_review_id: 12,
       attention: 4
