@@ -112,8 +112,11 @@ export function useGitToolsSubscription({
       pendingTools.current = null
       setToolsBusy(false)
       setToolsError(null)
-      setWorktrees(msg.worktrees)
       if (msg.message) setToolsNotice(msg.message)
+      // A mutation's reply carries only its note; a real listing always holds the main
+      // worktree, so an empty one is the note alone and the list is asked for again.
+      if (msg.message && msg.worktrees.length === 0) client.gitWorktrees(repoDir)
+      else setWorktrees(msg.worktrees)
     })
     // Broadcast after every daemon pass as well as in reply, so an open dialog
     // follows the automatic cleanup without asking.

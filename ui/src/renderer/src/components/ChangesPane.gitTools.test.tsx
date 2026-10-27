@@ -131,6 +131,25 @@ describe('Changes pane — git tools', () => {
     expect(h.client.gitBranchDeleteCalls).toEqual([{ dir: '/repo', name: 'feat/new', force: false }])
   })
 
+  it('a worktree mutation reply keeps the listed worktrees and asks for the fresh list', () => {
+    const h = mount({})
+    h.status([file({ path: 'src/app.ts' })])
+    click(q('[data-testid="git-tools-menu"]'))
+    click(q('[data-testid="git-tools-worktrees"]'))
+    const main = { path: '/repo', branch: 'main', head: 'abcdef1234567890', is_main: true, is_detached: false, is_bare: false, dirty: false }
+    const added = { ...main, path: '/repo/.houston/worktrees/x', branch: 'x', is_main: false }
+    act(() => { h.client.emit({ type: 'git_worktrees', dir: '/repo', worktrees: [main], message: null }) })
+
+    // The daemon answers a create with the note and no list.
+    act(() => { h.client.emit({ type: 'git_worktrees', dir: '/repo', worktrees: [], message: 'Created worktree at /repo/.houston/worktrees/x (branch x).' }) })
+    expect(qa('[data-testid="worktree-row"]').length, 'rows kept until the fresh list arrives').toBe(1)
+    expect(h.client.gitWorktreesCalls).toEqual(['/repo', '/repo'])
+
+    act(() => { h.client.emit({ type: 'git_worktrees', dir: '/repo', worktrees: [main, added], message: null }) })
+    expect(qa('[data-testid="worktree-row"]').length).toBe(2)
+    expect(document.body.textContent).toContain('Created worktree at /repo/.houston/worktrees/x')
+  })
+
   it('worktrees and checkpoints load on open and keep the daemon as the source', () => {
     const h = mount({})
     h.status([file({ path: 'src/app.ts' })])
