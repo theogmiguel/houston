@@ -131,8 +131,8 @@ async fn either_half_ending_releases_a_backpressured_connection() {
     // The writer half ends.
     let mut ws = connect_unread(addr).await;
     // Attach with no replay and read the reply first: until the offloaded attach lands its
-    // frames are held, so a queued tap at that point says nothing about the writer being
-    // blocked. With the reply read and the tap starting empty, a queued backlog is blockage.
+    // frames are held, which looks like a stalled writer. With the reply read and the tap
+    // starting empty, a backlog that stops draining is blockage.
     attach_until_reply(&mut ws, flood_id, 0).await;
     wait_for_backlog(&daemon, flood_id).await;
     // Overrun the control broadcast while the writer is blocked, so it ends the connection

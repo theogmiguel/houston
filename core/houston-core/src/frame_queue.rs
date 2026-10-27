@@ -148,6 +148,21 @@ impl FrameTap {
         self.state.lock().expect("frame tap lock").bytes
     }
 
+    /// Stream offset of the oldest queued output; it moves only when a writer drains.
+    #[doc(hidden)]
+    pub fn oldest_queued_offset_for_test(&self) -> Option<u64> {
+        let s = self.state.lock().expect("frame tap lock");
+        s.queue
+            .iter()
+            .find_map(|item| match item {
+                Queued::Frame(frame) => {
+                    proto::decode_output_frame(frame).map(|(_, offset, _)| offset)
+                }
+                Queued::Gap { .. } => None,
+            })
+            .or_else(|| s.pending.as_ref().map(|pending| pending.offset))
+    }
+
     pub fn clear(&self) {
         let mut s = self.state.lock().expect("frame tap lock");
         s.queue.clear();
@@ -663,6 +678,24 @@ mod tests {
         };
         assert_eq!(frame_end(tail), 130);
         assert_eq!(tap.queued_bytes_for_test(), 0);
+    }
+
+    #[test]
+    fn the_oldest_queued_offset_moves_only_when_the_queue_drains() {
+        let tap = FrameTap::new(Some(1), Arc::new(Notify::new()));
+        assert_eq!(tap.oldest_queued_offset_for_test(), None);
+        tap.offer(0, 10, &frame(1, 0, 10));
+        tap.offer(10, 10, &frame(1, 10, 10));
+        tap.offer(100, 30, &frame(1, 100, 30));
+        assert_eq!(
+            tap.oldest_queued_offset_for_test(),
+            Some(0),
+            "merging and queuing behind the head leave it in place"
+        );
+        tap.drain_up_to(25);
+        assert_eq!(tap.oldest_queued_offset_for_test(), Some(105));
+        tap.drain_up_to(25);
+        assert_eq!(tap.oldest_queued_offset_for_test(), None);
     }
 
     #[test]
