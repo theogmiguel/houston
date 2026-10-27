@@ -1059,10 +1059,16 @@ async fn handoff_restores_a_live_thread_and_resumes_its_conversation() {
             sessions.iter().any(|s| s.id == pane),
             "the PTY pane must be adopted: {sessions:?}"
         );
-        if let Some(info) = sessions.into_iter().find(|s| {
+        if let Some(info) = sessions.iter().find(|s| {
             s.session_origin == Some(thread.id) && s.state == proto::SessionState::Running
         }) {
-            break info;
+            // The adopting generation also loads stopped panes; the thread it restored is not one.
+            let lineage: Vec<_> = sessions
+                .iter()
+                .filter(|s| s.id == thread.id || s.session_origin == Some(thread.id))
+                .collect();
+            assert_eq!(lineage.len(), 1, "one pane per thread: {lineage:?}");
+            break info.clone();
         }
         assert!(
             Instant::now() < deadline,
