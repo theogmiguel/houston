@@ -124,11 +124,20 @@ you to review. Turn the queue on in **Settings ▸ Workspaces ▸ Review request
 - **Notify** asks GitHub every 2 minutes, through your `gh` login, which pull requests await
   your review, reads their size and files, and tells you.
 - **Review** also checks out the pull request head in a worktree for medium and large requests
-  and starts the workspace's default agent in it: the diff goes to that agent's provider, and a
-  pull request from someone else can bring its own agent configuration (project settings,
-  hooks, MCP servers, instruction files) that the agent will load. Prefer **Notify** for
-  repositories whose authors you do not trust. Houston never approves a pull request or posts
-  anything to GitHub.
+  and starts the workspace's default agent in it as a read-only review pane. The diff goes to
+  that agent's provider. Houston never approves a pull request or posts anything to GitHub.
+
+A review pane can read the checkout and the diff in its brief and report findings in the pane;
+it cannot edit files or run commands, and the pull request's own agent configuration does not
+load. With **Claude**, Houston starts it with only the Read, Grep and Glob tools, loads user
+settings only (not the project's `.claude/` settings or hooks), and uses Houston's MCP server
+alone (not the project's `.mcp.json`). With **Codex**, it runs in the read-only sandbox with
+approvals off, and the checkout is marked untrusted so Codex skips the project's `.codex/`
+configuration. The pull request's instruction files (such as `CLAUDE.md` or `AGENTS.md`) are
+still read as text, so prefer **Notify** for repositories whose authors you do not trust.
+Antigravity, OpenCode and ZCode have no launch flags that restrict tools or skip project
+configuration, so a workspace whose default task agent is one of them opens no review pane;
+the view says so by name. Pick Claude or Codex as the workspace's start agent in Tasks.
 
 Each row names its repository and number, title, author and one of three tiers. The tier is
 never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
