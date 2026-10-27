@@ -278,13 +278,19 @@ mod tests {
             "reply_reasked",
             &format!("A worker re-asked from {home}/x"),
             &format!("saw GITHUB_TOKEN={token} in {workspace}/a.rs"),
-            vec![format!("branch {token}, PR #1"), format!("{home}/notes")],
+            vec![
+                format!("branch {token}, PR #1"),
+                format!("{home}/notes"),
+                format!("edited {workspace}/a.rs"),
+            ],
         ));
         let rows = daemon.suspected_defect_rows(&workspace).unwrap();
         let wire = serde_json::to_string(&rows).unwrap();
+        // The row's `workspace` key is the real path by design; only free text is redacted.
+        let text = serde_json::to_string(&(&rows[0].title, &rows[0].evidence)).unwrap();
         assert!(!wire.contains(token), "{wire}");
-        assert!(!wire.contains(&home), "{wire}");
-        assert!(wire.contains("<workspace>/a.rs"), "{wire}");
+        assert!(!text.contains(&home), "{wire}");
+        assert!(text.contains("<workspace>/a.rs"), "{wire}");
     }
 
     #[test]
