@@ -131,10 +131,18 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         has("TR_SESSION="),
         "sanity: this really is a daemon-spawned pane: {child_env}"
     );
-    for (name, _) in LAUNCHER_MARKERS.iter().chain(&INJECTED_PANE_VARIABLES) {
+    for (name, _) in &LAUNCHER_MARKERS {
         assert!(
             !has(&format!("{name}=")),
             "pane inherited {name} — {child_env}"
+        );
+    }
+    // The daemon sets some of these per pane (the tool-boundary signal path), so only the
+    // launcher's value is proof of inheritance.
+    for (name, value) in &INJECTED_PANE_VARIABLES {
+        assert!(
+            !lines.contains(&format!("{name}={value}").as_str()),
+            "pane inherited {name}={value} — {child_env}"
         );
     }
     assert!(
