@@ -1436,6 +1436,7 @@ impl ToolRole {
                     | "pane_message"
                     | "pane_wait"
                     | "workspace_info"
+                    | "night_verdict"
             ),
             ToolRole::Operator => tool == "pane_reply" || !PANE_TOOL_NAMES.contains(&tool),
             ToolRole::Orchestrator {
@@ -4245,6 +4246,10 @@ mod tests {
         assert!(leaf.advertises("pane_reply"));
         assert!(leaf.advertises("pane_wait"));
         assert!(leaf.advertises("workspace_info"));
+        assert!(
+            leaf.advertises("night_verdict"),
+            "a Night shift verifier is a leaf child"
+        );
         for hidden in [
             "pane_spawn",
             "pane_list",
