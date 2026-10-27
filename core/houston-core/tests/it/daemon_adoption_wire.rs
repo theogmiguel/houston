@@ -368,6 +368,8 @@ fn ended_claude_session(id: u32, project: &std::path::Path, title: &str) -> prot
         last_agent_message: Some(format!("{title} reply")),
         slept_at_ms: None,
         limit: None,
+        view: Default::default(),
+        permission_mode: None,
         transferred_at_ms: None,
         transfer_fork: false,
     }
