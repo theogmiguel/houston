@@ -26,7 +26,7 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     // Idle until a workspace has a merge queue; a pause stops its pushes and merges.
     tokio::spawn(daemon.clone().merge_queue_loop());
     tokio::spawn(crate::checkout_watch::checkout_watch_loop(daemon.clone()));
-    // Idle until Settings ▸ Slack turns the intake on.
+    // Idle until Tasks ▸ Sources ▸ Slack turns the intake on.
     tokio::spawn(daemon.clone().slack_loops());
     // Idle until a workspace opts into a task tracker.
     tokio::spawn(daemon.clone().task_tracker_loop());

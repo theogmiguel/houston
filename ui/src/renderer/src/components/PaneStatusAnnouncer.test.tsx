@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../houston/client'
 import { ANNOUNCE_CLEAR_MS, ANNOUNCE_SETTLE_MS, announcement, announcerSnapshot, StatusAnnouncerRegion, type AnnouncerSnapshot } from './PaneStatusAnnouncer'
 
-const snap = (over: Partial<AnnouncerSnapshot> = {}): AnnouncerSnapshot => ({ pane: 1, title: 'api', status: 'idle', othersNeedingYou: 0, ...over })
+const snap = (over: Partial<AnnouncerSnapshot> = {}): AnnouncerSnapshot => ({ pane: 1, title: 'api', status: 'idle', waitingOnOrchestrator: false, othersNeedingYou: 0, ...over })
 
 describe('announcement', () => {
   it('names the focused pane for each reported transition', () => {
@@ -12,6 +12,14 @@ describe('announcement', () => {
     expect(announcement(snap({ status: 'working' }), snap({ status: 'idle' }))).toBe('api finished.')
     expect(announcement(snap({ status: 'working' }), snap({ status: 'needs-input' }))).toBe('api needs your input.')
     expect(announcement(snap({ status: 'needs-input' }), snap({ status: 'idle' }))).toBe('api is ready.')
+  })
+
+  it('does not say a child blocked on its orchestrator finished', () => {
+    const blocked = snap({ status: 'idle', waitingOnOrchestrator: true })
+    expect(announcement(snap({ status: 'working' }), blocked)).toBe('api is waiting on the orchestrator.')
+    expect(announcement(snap({ status: 'working' }), blocked)).not.toMatch(/finished/)
+    expect(announcement(blocked, snap({ status: 'idle' }))).toBe('api is ready.')
+    expect(announcement(blocked, snap({ status: 'working' }))).toBe('api is working.')
   })
 
   it('stays silent for starting, unavailable and unchanged statuses', () => {
@@ -36,8 +44,26 @@ describe('announcerSnapshot', () => {
   const session = (id: number, status: SessionInfo['status']): SessionInfo => ({ id, title: `pane-${id}`, status, state: 'running', spawned_by: null } as SessionInfo)
 
   it('reads the focused pane and leaves it out of the needs-you count', () => {
-    expect(announcerSnapshot(session(1, 'needs-input'), [1, 2])).toEqual({ pane: 1, title: 'pane-1', status: 'needs-input', othersNeedingYou: 1 })
-    expect(announcerSnapshot(undefined, [1, 2])).toEqual({ pane: null, title: '', status: null, othersNeedingYou: 2 })
+    expect(announcerSnapshot(session(1, 'needs-input'), [1, 2])).toEqual({ pane: 1, title: 'pane-1', status: 'needs-input', waitingOnOrchestrator: false, othersNeedingYou: 1 })
+    expect(announcerSnapshot(undefined, [1, 2])).toEqual({ pane: null, title: '', status: null, waitingOnOrchestrator: false, othersNeedingYou: 2 })
+  })
+})
+
+describe('announcerSnapshot for a child that asked its orchestrator', () => {
+  const child = (over: Partial<SessionInfo>): SessionInfo => ({
+    id: 5, title: 'child', status: 'idle', state: 'running', spawned_by: 1, children_waiting: 0, ...over,
+  } as SessionInfo)
+
+  it('flags a permission request owned by the orchestrator instead of reading it as finished', () => {
+    const blocked = child({ status: 'needs-input', delegation: { state: 'asked_orchestrator', input_request: { owner: 'orchestrator', kind: 'permission' } } as SessionInfo['delegation'] })
+    const snapshot = announcerSnapshot(blocked, [])
+    expect(snapshot).toMatchObject({ status: 'idle', waitingOnOrchestrator: true })
+    expect(announcement(announcerSnapshot(child({ status: 'working' }), []), snapshot)).toBe('child is waiting on the orchestrator.')
+  })
+
+  it('leaves a child that is still working to the working phrase', () => {
+    const asked = child({ status: 'working', delegation: { state: 'asked_orchestrator', input_request: { owner: 'orchestrator', kind: 'question' } } as SessionInfo['delegation'] })
+    expect(announcerSnapshot(asked, [])).toMatchObject({ status: 'working', waitingOnOrchestrator: false })
   })
 })
 

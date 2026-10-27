@@ -258,12 +258,13 @@ impl Agent {
                         "pane_wait",
                         "pane_deny",
                         "pane_escalate",
+                        "pane_note",
                     ]
                     .map(|name| format!("mcp__houston__{name}"));
                     if required.iter().any(|name| !allowed.contains(name))
                         || allowed.len() != required.len()
                     {
-                        bail!("expected only the seven local dialogue and input tools in {expected}; got {allowed:?}");
+                        bail!("expected only the eight local dialogue, input and status tools in {expected}; got {allowed:?}");
                     }
                     self.log("handback_allowed", Value::Null)?;
                 }

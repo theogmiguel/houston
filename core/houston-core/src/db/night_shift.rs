@@ -582,8 +582,8 @@ impl Db {
         Ok(())
     }
 
-    /// Deferred, rejected, lesson and flaky entries, and PRs with their fate,
-    /// of the routine's runs before `before_run`, newest first.
+    /// Deferred, rejected, lesson, flaky and studied entries, and PRs with
+    /// their fate, of the routine's runs before `before_run`, newest first.
     pub fn night_digest(
         &self,
         routine_id: u32,
@@ -594,7 +594,7 @@ impl Db {
         let mut stmt = conn.prepare(&format!(
             "{ENTRY_SELECT} WHERE run_id IN \
                 (SELECT run_id FROM night_runs WHERE routine_id = ?1 AND run_id < ?2) \
-             AND (kind IN ('deferred', 'lesson', 'flaky', 'pr') \
+             AND (kind IN ('deferred', 'lesson', 'flaky', 'studied', 'pr') \
                   OR status IN ('rejected', 'closed') \
                   OR lower(trim(coalesce(choice, ''))) LIKE 'reject%') \
              ORDER BY created_at_ms DESC, id DESC LIMIT ?3"

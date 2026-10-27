@@ -132,8 +132,8 @@ not synchronize the manifest; finish editorial review before promoting it.
 The three internal workflows are called by the manual workflows; their lack of
 independent runs does not mean they are unused. They are not dispatched directly.
 
-CI runs seven jobs: `safety-checks`, `renderer-checks`, `core-checks`,
-`linux-native-checks`, `windows-renderer-checks`, `windows-checks` and
+CI runs eight jobs: `safety-checks`, `renderer-checks`, `core-checks`,
+`core-integration`, `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and
 `licence-inventory`. Cut release requires a successful run for the exact source
 commit and successful completion of every required job. A green run for an older
 commit is insufficient. Stable cuts require main CI; RC cuts may use PR CI for

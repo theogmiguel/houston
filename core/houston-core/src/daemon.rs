@@ -9877,6 +9877,25 @@ impl Daemon {
         )
     }
 
+    /// A session whose launch carries restriction flags the caller assembled (the review pane).
+    pub(crate) fn create_restricted_session(
+        self: &Arc<Self>,
+        p: CreateParams,
+        spawn_args: Vec<String>,
+    ) -> Result<proto::SessionInfo> {
+        self.create_session_with_env(
+            p,
+            Vec::new(),
+            spawn_args,
+            None,
+            None,
+            false,
+            None,
+            false,
+            None,
+        )
+    }
+
     /// `env` extends the profile, `spawn_args` follow provider flags, and `cwd` may differ from `project_dir`.
     /// `prompt_label` names the prompt file; `prefill_follows` means the caller pastes after startup.
     /// `launch_override` carries typed choices when the caller already assembled flags.
@@ -21455,6 +21474,15 @@ impl Daemon {
                     message: message.clone(),
                 })
                 .collect::<Vec<_>>();
+            notes.extend(
+                created
+                    .branch_note
+                    .clone()
+                    .map(|message| proto::PaneSpawnWarning {
+                        code: "worktree_branch_ambiguous".into(),
+                        message,
+                    }),
+            );
             notes.extend(slug_history_note.map(|message| proto::PaneSpawnWarning {
                 code: "worktree_slug_history".into(),
                 message,
@@ -21642,7 +21670,7 @@ impl Daemon {
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
-        if ask.branch.is_some() {
+        let branch_note = if ask.branch.is_some() {
             crate::worktrees::create_on_named_branch(
                 project_dir,
                 &branch,
@@ -21650,8 +21678,9 @@ impl Daemon {
                 &dest,
                 &self.merge_tree_scratch(),
             )
+            .map(|(_, note)| note)
         } else {
-            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
+            crate::worktrees::create_on_branch(project_dir, &branch, None, &dest).map(|_| None)
         }
         .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
@@ -21660,6 +21689,7 @@ impl Daemon {
             path,
             branch,
             include_warnings: Vec::new(),
+            branch_note,
         };
         let row = crate::db::ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -22527,7 +22557,7 @@ impl Daemon {
                 return Ok(result);
             }
             let workspace = self.current_workspace(child)?;
-            let input = crate::db::DefectInput {
+            let mut input = crate::db::DefectInput {
                 workspace: workspace.clone(),
                 source: proto::DefectSource::Agent,
                 detector: None,
@@ -22537,6 +22567,7 @@ impl Daemon {
                 destination,
                 reporter_session: Some(child),
             };
+            self.redact_defect_input(&mut input);
             let (result, record) = self.db.record_agent_finding(
                 &input,
                 &receipt,
@@ -25711,6 +25742,8 @@ pub(crate) struct CreatedWorktree {
     pub(crate) branch: String,
     /// What `.worktreeinclude` could not carry over when this call created the tree.
     pub(crate) include_warnings: Vec<String>,
+    /// Set when an explicit branch matched several remote refs and so started untracked.
+    pub(crate) branch_note: Option<String>,
 }
 
 fn slug_history_note_message(asked: &str, resolved: &str) -> String {

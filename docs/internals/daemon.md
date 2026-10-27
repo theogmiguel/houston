@@ -244,7 +244,12 @@ leak that identity into everything it spawns. The same scrub drops the launching
 multiplexer's variables (`TMUX`, `STY`, `ZELLIJ` and their pane/session companions), which
 would point pane shells at the outer tmux server, and `ELECTRON_RUN_AS_NODE`, which an
 Electron-based editor's terminal sets and which turns Electron tools started in a pane into
-plain Node. `login_path.rs` probes `$SHELL -lic` once and
+plain Node. It also drops the variables Houston injects into a pane only for some providers
+or launch paths (`HOUSTON_MCP_URL`/`_TOKEN`/`_CONFIG`, `ZCODE_HOUSTON_MCP_URL[_<CHANNEL>]`, the
+`HOUSTON_CODEX_*` shell wrapper, shell-integration, task and routine variables): a pane that gets
+no value of its own would otherwise pass the hosting channel's endpoint and credential on.
+`HOUSTON_SESSION` and `TR_SESSION` are exempt because every pane overwrites them and the app
+reads `HOUSTON_SESSION` for `--fresh`. `login_path.rs` probes `$SHELL -lic` once and
 merges the login `PATH` in front of the inherited one, best-effort and fail-soft.
 
 ## Supervisor
@@ -812,7 +817,9 @@ refusal, and `conflict_note_merged_branch` consults only `SharedReads::branch_st
 `DEFECT_DETECTOR_DAILY_CAP` (5) occurrences per workspace per UTC day; the store keeps
 200 rows per workspace and prunes the oldest decided one. Decisions reuse
 `harness_decisions`, so a later occurrence after a decision reopens the defect as
-`recurred`. None of this reads terminal pixels or text: the reported-status invariant
+`recurred`. Title, description and evidence are redacted with the issue draft's redactor
+before they are stored, so neither the database nor the wire reply holds a secret or the home
+path; rows stored before that change stay as they were. None of this reads terminal pixels or text: the reported-status invariant
 holds. The issue draft redacts `defect_redaction` values and makes one
 `gh search issues` request; `defect_issue_file` is the only message that runs
 `gh issue create` or `gh issue comment`, and it redacts the client's title and body

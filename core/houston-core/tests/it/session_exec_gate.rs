@@ -220,6 +220,16 @@ fn typed_codex_keeps_its_contained_shell_scope_and_uses_hooks() {
     command.arg("--");
     command.arg(&cli);
     command.cwd(directory.path());
+    // Run from a Houston pane, the launcher would add that pane's MCP endpoint to Codex's arguments.
+    let markers: Vec<String> = houston_core::host_env::HostEnv::capture()
+        .names()
+        .filter_map(|name| name.to_str())
+        .filter(|name| houston_core::env_hygiene::is_marker(name))
+        .map(str::to_owned)
+        .collect();
+    for name in markers {
+        command.env_remove(name);
+    }
     command.env("HOUSTON_CHANNEL", "execfixture");
     command.env("HOUSTON_SESSION", "7");
     session_isolation::wrap(&mut command, launcher, "execfixture", 7);

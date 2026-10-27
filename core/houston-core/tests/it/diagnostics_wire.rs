@@ -23,14 +23,19 @@ async fn the_diagnostics_file_is_redacted_capped_and_holds_no_terminal_output() 
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let project = tempfile::tempdir().unwrap();
     // The marker is split in the command line, so only the pane's output spells it whole.
+    // It repeats for 30 s, so one line written before the client subscribes cannot be all.
     #[cfg(unix)]
-    let cmd = vec!["sh", "-c", "echo TERM-''MARKER; sleep 30"];
+    let cmd = vec![
+        "sh",
+        "-c",
+        "n=0; while [ $n -lt 30 ]; do echo TERM-''MARKER; n=$((n+1)); sleep 1; done",
+    ];
     #[cfg(windows)]
     let cmd = vec![
         "powershell.exe",
         "-NoProfile",
         "-Command",
-        "Write-Output ('TERM-' + 'MARKER'); Start-Sleep 30",
+        "1..30 | ForEach-Object { Write-Output ('TERM-' + 'MARKER'); Start-Sleep 1 }",
     ];
     ws.send(Message::text(create_custom_msg(cmd, project.path())))
         .await

@@ -19,7 +19,9 @@ The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
 it does not follow the caller's feature branch. `branch` names the new branch, not its
 base; `pane_spawn` has no base override. The exception is a `branch` that only one remote
 has: it starts from that remote branch and tracks it, unless the base already holds its
-changes (a merged PR whose remote ref is still fetched). `pane_spawn`'s derived
+changes (a merged PR whose remote ref is still fetched). A `branch` that matches several remote
+branches is never guessed between: it starts fresh and `pane_spawn` returns
+`worktree_branch_ambiguous`. `pane_spawn`'s derived
 `houston/<slug>` never does, so a reused slug cannot pick up an old pushed branch; a task's
 derived branch does, so a task restarted after its local branch was deleted continues it. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
@@ -1171,7 +1173,8 @@ without which the hold would be a one-way door the operator cannot see.
 A pane's tool list is its role. A leaf child —
 spawned by another pane, unable to spawn, with no managed children of its own —
 keeps `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_wait` and `workspace_info`:
-its handback, intermediate dialogue and identity. The `task_*` tools are withheld from every child, not only a leaf:
+its handback, intermediate dialogue and identity. `night_verdict` is also kept, because a
+Night shift run's verifier is a leaf child; its provider lists it only to that run's panes. The `task_*` tools are withheld from every child, not only a leaf:
 a child's scope is the brief, so its provider checks parentage before access
 and its direct calls are refused the same way. An orchestrator — one that may spawn,
 has managed children or owes an answer to an inherited question — sees

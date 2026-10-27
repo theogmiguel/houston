@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { HoustonClient, MergeQueueAway } from '../../houston/client'
 import type { NoticeInput } from '../../notices'
+import { requestMergeQueue, requestMergeQueueSummary } from '../../houston/sharedListRequests'
 
 function clockTime(ms: number): string {
   const at = new Date(ms)
@@ -74,7 +75,7 @@ export function useMergeQueueAwayNotice(
       }
     })
     window.addEventListener('focus', show)
-    client.mergeQueueGet(workspace)
+    requestMergeQueue(client, workspace)
     return () => { off(); window.removeEventListener('focus', show) }
   }, [client, workspace])
 }
@@ -101,7 +102,7 @@ export function useMergeQueueParked(client: HoustonClient | null): number {
         return next
       })
     })
-    client.mergeQueueSummaryGet()
+    requestMergeQueueSummary(client)
     return () => { offSummary(); offQueue() }
   }, [client])
   let total = 0

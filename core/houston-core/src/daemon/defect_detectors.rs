@@ -127,7 +127,7 @@ impl Daemon {
         if !self.detector_cap_allows(workspace, detector, now_ms) {
             return false;
         }
-        let input = DefectInput {
+        let mut input = DefectInput {
             workspace: workspace.to_string(),
             source: proto::DefectSource::Detector,
             detector: Some(detector.to_string()),
@@ -137,6 +137,7 @@ impl Daemon {
             destination: proto::DefectDestination::Houston,
             reporter_session: None,
         };
+        self.redact_defect_input(&mut input);
         match self.db.record_defect(&input, now_ms, detector) {
             Ok(record) => {
                 self.note_detector_occurrence(workspace, detector, now_ms);
@@ -258,6 +259,38 @@ mod tests {
             row.count, DEFECT_DETECTOR_DAILY_CAP,
             "eight concurrent occurrences stop at the cap"
         );
+    }
+
+    #[test]
+    fn a_detector_occurrence_is_stored_redacted() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(crate::daemon::DaemonConfig::new(
+            "defect-redaction".into(),
+            state.path().join("test.db"),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
+        ))
+        .unwrap();
+        let workspace = state.path().join("ws").display().to_string();
+        let home = state.path().display().to_string();
+        let token = "ghp_abcdefghijklmnopqrstuvwx";
+        assert!(daemon.record_detector(
+            &workspace,
+            "reply_reasked",
+            &format!("A worker re-asked from {home}/x"),
+            &format!("saw GITHUB_TOKEN={token} in {workspace}/a.rs"),
+            vec![
+                format!("branch {token}, PR #1"),
+                format!("{home}/notes"),
+                format!("edited {workspace}/a.rs"),
+            ],
+        ));
+        let rows = daemon.suspected_defect_rows(&workspace).unwrap();
+        let wire = serde_json::to_string(&rows).unwrap();
+        // The row's `workspace` key is the real path by design; only free text is redacted.
+        let text = serde_json::to_string(&(&rows[0].title, &rows[0].evidence)).unwrap();
+        assert!(!wire.contains(token), "{wire}");
+        assert!(!text.contains(&home), "{wire}");
+        assert!(text.contains("<workspace>/a.rs"), "{wire}");
     }
 
     #[test]

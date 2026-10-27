@@ -19,6 +19,26 @@ const LAUNCHER_MARKERS: [(&str, &str); 10] = [
     ("ELECTRON_RUN_AS_NODE", "1"),
 ];
 
+/// What Houston injects into a pane for its own provider or launch path. A daemon started
+/// from a pane inherits them, and a pane that gets no value of its own would pass the
+/// hosting channel's endpoint and credential on to its agent.
+const INJECTED_PANE_VARIABLES: [(&str, &str); 14] = [
+    ("HOUSTON_MCP_URL", "http://127.0.0.1:1/mcp"),
+    ("HOUSTON_MCP_TOKEN", "the-hosting-panes-token"),
+    ("HOUSTON_MCP_CONFIG", "{}"),
+    ("ZCODE_HOUSTON_MCP_URL", "http://127.0.0.1:1/mcp"),
+    ("ZCODE_HOUSTON_MCP_URL_DEV", "http://127.0.0.1:1/mcp"),
+    ("HOUSTON_TOOL_BOUNDARY_CONTEXT", "/tmp/boundary"),
+    ("HOUSTON_CODEX_LAUNCHER", "/tmp/launcher"),
+    ("HOUSTON_CODEX_CLI", "/tmp/codex"),
+    ("HOUSTON_CODEX_HOOK_DROP_DIR", "/tmp/drop"),
+    ("HOUSTON_USER_ZDOTDIR", "/tmp/zdot"),
+    ("HOUSTON_SHELL_INTEGRATION_TOKEN_FILE", "/tmp/token"),
+    ("HOUSTON_TASK", "HOU-1"),
+    ("HOUSTON_ROUTINE_RUN", "run-1"),
+    ("HOUSTON_NIGHT_RUN_DIR", "/tmp/night"),
+];
+
 #[tokio::test]
 async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     let tmp = tempfile::tempdir().unwrap();
@@ -26,7 +46,7 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("HOME", tmp.path());
     std::env::set_var("USERPROFILE", tmp.path());
 
-    for (name, value) in LAUNCHER_MARKERS {
+    for (name, value) in LAUNCHER_MARKERS.iter().chain(&INJECTED_PANE_VARIABLES) {
         std::env::set_var(name, value);
     }
     std::env::set_var("CLAUDE_EFFORT", "xhigh");
@@ -111,10 +131,18 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         has("TR_SESSION="),
         "sanity: this really is a daemon-spawned pane: {child_env}"
     );
-    for (name, _) in LAUNCHER_MARKERS {
+    for (name, _) in &LAUNCHER_MARKERS {
         assert!(
             !has(&format!("{name}=")),
             "pane inherited {name} — {child_env}"
+        );
+    }
+    // The daemon sets some of these per pane (the tool-boundary signal path), so only the
+    // launcher's value is proof of inheritance.
+    for (name, value) in &INJECTED_PANE_VARIABLES {
+        assert!(
+            !lines.contains(&format!("{name}={value}").as_str()),
+            "pane inherited {name}={value} — {child_env}"
         );
     }
     assert!(

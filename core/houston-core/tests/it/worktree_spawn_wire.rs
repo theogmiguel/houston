@@ -488,6 +488,76 @@ async fn pane_spawn_on_a_branch_only_the_remote_has_continues_it() {
     assert_eq!((sync.ahead, sync.behind), (1, 0));
 }
 
+/// A branch both remotes hold is not guessed, but the spawn says so instead of
+/// quietly starting a branch that tracks nothing.
+#[tokio::test]
+async fn pane_spawn_on_a_branch_two_remotes_hold_warns_naming_both() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("spawn-ambiguous-branch", true).await;
+    let mut shas = Vec::new();
+    for remote in ["origin", "up"] {
+        let bare = r.state.path().join(format!("{remote}.git"));
+        let clone = r.state.path().join(format!("{remote}-clone"));
+        git(
+            r.state.path(),
+            &["init", "--bare", "-b", "main", bare.to_str().unwrap()],
+        );
+        git(
+            &r.ws_dir,
+            &["remote", "add", remote, bare.to_str().unwrap()],
+        );
+        git(&r.ws_dir, &["push", remote, "main"]);
+        git(
+            r.state.path(),
+            &["clone", bare.to_str().unwrap(), clone.to_str().unwrap()],
+        );
+        git(&clone, &["config", "user.email", "t@t.local"]);
+        git(&clone, &["config", "user.name", "t"]);
+        git(&clone, &["switch", "-c", "feature/amb"]);
+        std::fs::write(clone.join("amb.txt"), format!("{remote}\n")).unwrap();
+        git(&clone, &["add", "amb.txt"]);
+        git(&clone, &["commit", "-m", &format!("work on {remote}")]);
+        git(&clone, &["push", "origin", "feature/amb"]);
+        git(&r.ws_dir, &["fetch", remote]);
+        shas.push(git(&clone, &["rev-parse", "HEAD"]).trim().to_string());
+    }
+    assert_ne!(shas[0], shas[1], "the two remotes must disagree");
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+
+    let result = r
+        .spawn(
+            &token,
+            serde_json::json!({
+                "kind": "codex",
+                "prompt": "go",
+                "worktree": "amb",
+                "branch": "feature/amb",
+            }),
+        )
+        .await;
+    spawned_session(&result);
+
+    let warnings = result["structuredContent"]["warnings"].as_array().unwrap();
+    let note = warnings
+        .iter()
+        .find(|w| w["code"] == "worktree_branch_ambiguous")
+        .unwrap_or_else(|| panic!("an ambiguous branch must be reported: {warnings:?}"));
+    let message = note["message"].as_str().unwrap();
+    assert!(
+        message.contains("feature/amb")
+            && message.contains("origin/feature/amb")
+            && message.contains("up/feature/amb"),
+        "the warning must name the branch and both remotes: {message}"
+    );
+    let tree = r.worktrees_dir().join("amb");
+    assert!(
+        !tree.join("amb.txt").exists(),
+        "the ambiguous remote's commits are not checked out"
+    );
+    assert_eq!(houston_core::git::sync(&tree).upstream, None);
+}
+
 #[tokio::test]
 async fn the_worktrees_dir_gets_a_gitignore_once() {
     let _guard = SERIAL.lock().await;

@@ -960,11 +960,10 @@ async fn the_zcode_toggle_writes_and_removes_the_channels_plugin() {
     std::fs::create_dir_all(&state_dir).unwrap();
     let previous_home = std::env::var_os("HOME");
     std::env::set_var("HOME", home.path());
-    std::env::set_var("ZCODE_HOUSTON_MCP_URL", "http://127.0.0.1:1/mcp");
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        common::base_env(),
+        common::base_env().with("ZCODE_HOUSTON_MCP_URL", Some("http://127.0.0.1:1/mcp")),
     ))
     .unwrap();
     let _addr = serve(&daemon).await;
@@ -1025,7 +1024,6 @@ async fn the_zcode_toggle_writes_and_removes_the_channels_plugin() {
         "nothing of Houston's is left"
     );
 
-    std::env::remove_var("ZCODE_HOUSTON_MCP_URL");
     match previous_home {
         Some(h) => std::env::set_var("HOME", h),
         None => std::env::remove_var("HOME"),

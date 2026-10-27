@@ -133,7 +133,7 @@ impl Rig {
         let gh = bin.join(format!("gh{}", std::env::consts::EXE_SUFFIX));
         std::fs::copy(env!("CARGO_BIN_EXE_fake_gh"), &gh).unwrap();
         std::fs::write(bin.join("origin"), origin.display().to_string()).unwrap();
-        let path = common::prepend_path(&bin);
+        let path = common::prepend_path_for(&daemon, &bin);
         Rig {
             daemon,
             state,

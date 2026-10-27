@@ -246,7 +246,9 @@ An agent can say where its work stands in one line on its grid's rail card:
 Each note replaces the pane's last one, and the card shows the newest note of its panes with
 its age and phase. A note longer than 512 bytes is refused, naming the limit; newlines become
 spaces. The **×** on the line clears it, as does `pane_note{clear: true}`
-(`hs-pane note --clear`). A note goes when its pane closes or restarts.
+(`hs-pane note --clear`). A note goes when its pane closes or restarts. Every agent pane
+sees `pane_note`: a delegated worker with no spawn rights and a pane with orchestration off
+list it beside their other tools.
 
 ## Workspaces and child lifetime
 
@@ -264,7 +266,9 @@ in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records i
 supplied. An explicit `branch` that exists on exactly one remote but not locally continues
 that remote branch and tracks it, as `git switch` would, unless the base already contains
 its changes. When two remotes hold it, or remote names overlap so the ref is ambiguous,
-Houston does not guess and starts a new branch. Existing local branches and occupied paths are refused. If creation or provider
+Houston does not guess: it starts a new branch that tracks nothing and returns a
+`worktree_branch_ambiguous` warning in the `pane_spawn` result naming the branch and the
+remote branches it matched. Existing local branches and occupied paths are refused. If creation or provider
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 
@@ -299,10 +303,12 @@ pane's message; the worktree is created either way. Houston runs no command from
 repository while doing this.
 
 If the repository declares submodules, Houston also initialises them in a worktree it
-creates, the same way `git submodule update --init --recursive` does. Each submodule is
+creates, the same way `git submodule update --init --recursive` does, one submodule at a
+time so a submodule that cannot be fetched does not stop the others. Each submodule is
 cloned from the URL in `.gitmodules`, which can use the network; this happens only at
-creation, and the step is abandoned after 30 seconds with a warning. A submodule that
-cannot be fetched is named in the same warning, and the worktree is created either way.
+creation, and the step shares a 30-second budget. A submodule that cannot be fetched, or
+that the budget did not reach, is named with Git's reason in one warning, and the worktree
+is created either way.
 
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the

@@ -195,6 +195,7 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
         names,
         vec![
             "pane_message".to_string(),
+            "pane_note".to_string(),
             "pane_reply".to_string(),
             "pane_report".to_string(),
             "pane_submit".to_string(),
@@ -211,10 +212,11 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     let leaf_bytes = response_bytes(&tools);
     let parent_tools = r.tools_list(&parent_token).await;
     let orchestrator_bytes = response_bytes(&parent_tools);
-    // Two merge queue verbs (#124); measured 28,509 bytes after adding them.
+    // Two merge queue verbs (#124) and `pane_note` (657 bytes, #348); measured 29,393 bytes
+    // with all three, so 30,000 leaves 2% headroom.
     assert!(
-        orchestrator_bytes < 29_000,
-        "root tools/list catalog exceeds 29000 bytes: {orchestrator_bytes}"
+        orchestrator_bytes < 30_000,
+        "root tools/list catalog exceeds 30000 bytes: {orchestrator_bytes}"
     );
     assert!(tool_names(&parent_tools)
         .iter()
@@ -224,16 +226,17 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     let operator = r.pane();
     let operator_tools = r.tools_list(&r.token_for(operator.id)).await;
     let operator_bytes = response_bytes(&operator_tools);
+    // Measured 17,354 bytes with pane_note advertised; 17,500 leaves about 150 bytes of headroom.
     assert!(
-        operator_bytes < 16_700,
-        "orchestration-disabled tools/list catalog exceeds 16700 bytes: {operator_bytes}"
+        operator_bytes < 17_500,
+        "orchestration-disabled tools/list catalog exceeds 17500 bytes: {operator_bytes}"
     );
     assert!(
         operator_tools.iter().all(|t| {
             let n = t["name"].as_str().unwrap_or_default();
-            !n.starts_with("pane_") || n == "pane_reply"
+            !n.starts_with("pane_") || n == "pane_reply" || n == "pane_note"
         }),
-        "an operator pane with the switch off keeps only the reply verb: {:?}",
+        "an operator pane with the switch off keeps only the reply and note verbs: {:?}",
         tool_names(&operator_tools)
     );
 
@@ -241,10 +244,50 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
         "tool_roles bytes: leaf {leaf_bytes} B / orchestrator {orchestrator_bytes} B / \
          operator {operator_bytes} B"
     );
+    // Measured 5,496 bytes for a leaf with pane_note advertised; the 8 KiB cap is unchanged.
     assert!(
         leaf_bytes < 8_192 && leaf_bytes < orchestrator_bytes / 2,
         "five leaf dialogue/identity schemas must fit 8 KiB and remain below half the parent cost; measured {leaf_bytes} B / {orchestrator_bytes} B"
     );
+}
+
+#[tokio::test]
+async fn every_pane_lists_pane_note_and_can_post_one() {
+    let _guard = serial().await;
+    let r = rig("pane-note-everywhere").await;
+    r.daemon.orchestration_set(true).unwrap();
+    let parent = r.pane();
+    let parent_token = r.token_for(parent.id);
+    let child = r.spawn_child(&parent_token, "leaf brief").await;
+    let child_token = r.token_for(child);
+    r.daemon.orchestration_set(false).unwrap();
+    let operator = r.pane();
+    let operator_token = r.token_for(operator.id);
+
+    for (role, token, session) in [
+        ("leaf", child_token, child),
+        ("operator", operator_token, operator.id),
+    ] {
+        let names = tool_names(&r.tools_list(&token).await);
+        assert!(
+            names.iter().any(|name| name == "pane_note"),
+            "a {role} pane must list pane_note: {names:?}"
+        );
+        let note = r
+            .mcp(
+                &token,
+                "tools/call",
+                serde_json::json!({
+                    "name": "pane_note",
+                    "arguments": { "text": format!("{role} status") }
+                }),
+            )
+            .await;
+        assert_eq!(
+            note["result"]["isError"], false,
+            "a {role} pane (session {session}) must be able to post a note: {note}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -367,6 +410,7 @@ async fn a_role_change_pushes_tools_list_changed() {
         names,
         vec![
             "pane_message".to_string(),
+            "pane_note".to_string(),
             "pane_reply".to_string(),
             "pane_report".to_string(),
             "pane_submit".to_string(),

@@ -461,7 +461,7 @@ function ResizeHandleStory({ dragging }: { dragging: boolean }): React.JSX.Eleme
   return (
     <div ref={ref} style={{ position: 'relative', height: '100%', ['--w-rail' as string]: '240px', background: 'var(--content-bg)' }}>
       <div style={{ width: 240, height: '100%', background: 'var(--rail-bg)' }} />
-      <RailResizeHandle width={240} collapsed={false} onChange={noop} onCollapse={noop} />
+      <RailResizeHandle width={240} collapsed={false} onChange={noop} onCommit={noop} onCollapse={noop} />
     </div>
   )
 }

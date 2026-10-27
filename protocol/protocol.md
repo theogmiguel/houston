@@ -554,7 +554,7 @@ A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_cle
 | `git_commit` | `dir`, `sha`, `summary` | direct reply to `git_commit`, followed by a fresh `git_status` |
 | `git_review_diffs` | `dir`, `branch?`, `upstream?`, `ahead`, `behind`, `head?`, `files: GitFileStatus[]`, `sections: GitReviewSection[]`, `blocked_paths`, `warnings`, `truncated`, `redacted` | direct reply to `git_review_diffs`; one entry per non-empty scope |
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
-| `git_worktrees` | `dir`, `worktrees: GitWorktreeInfo[]`, `message?` | direct reply to `git_worktrees` and every worktree mutation; `message` is the mutation's note |
+| `git_worktrees` | `dir`, `worktrees: GitWorktreeInfo[]`, `message?` | direct reply to `git_worktrees` and every worktree mutation; `message` is the mutation's note and a mutation reply carries an empty `worktrees`, so a client re-requests the list |
 | `worktree_cleanup` | `dir`, `entries: ManagedWorktreeInfo[]`, `removed: RemovedWorktree[]` | direct reply to `worktree_cleanup_status` (`removed` empty); bcast after every pass over `dir`, by cleanup, stale removal, or the 6-hourly loop (which runs only while `worktree_cleanup_enabled` is on) |
 | `worktree_check` | `dir`, `path`, `check: WorktreeCheckResult` | direct reply to `worktree_check`. `dirty_files`, `newest_change_ms` (newest modification among the uncommitted files that still exist), `base`, `ahead` (commits on `HEAD` the base lacks), `unpushed` (commits no remote-tracking ref has) and `panes` (Houston panes whose working directory is inside the tree). A part that could not look is `null` with a `gaps` entry naming its `part` (`changes`, `commits`, `unpushed`) and the `reason`; the reply is never an error |
 | `worktree_idle_removal_days` | `days` | direct reply to `worktree_idle_removal_days_get` |
@@ -1451,7 +1451,8 @@ target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 entries contain `code` and `message`. Codes include `shared_checkout`, `worktree_trust`,
 `worktree_include` (ignored files `.worktreeinclude` listed that were not copied, and why),
 `worktree_slug_history` (the asked-for slug was suffixed because Claude history survives at
-its path) and provider-specific guidance. Codex setup failures use `hooks_off`,
+its path), `worktree_branch_ambiguous` (an explicit `branch` matched several remote
+branches, so the worktree started a fresh untracked branch) and provider-specific guidance. Codex setup failures use `hooks_off`,
 `hooks_not_installed` or `hooks_trust_unconfirmed`; the message names the cause and
 Settings → Agent status → Codex repair path. The same cause is recorded in an
 `operator_note` inbox row's `reason` and `body`, with `from_session` identifying the pane.

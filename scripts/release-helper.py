@@ -19,8 +19,8 @@ from urllib.parse import quote
 
 CATEGORIES = ("Features", "Fixes", "Performance", "Refactoring", "Other")
 REQUIRED_JOBS = (
-    "safety-checks", "renderer-checks", "core-checks", "linux-native-checks",
-    "windows-renderer-checks", "windows-checks", "licence-inventory",
+    "safety-checks", "renderer-checks", "core-checks", "core-integration",
+    "linux-native-checks", "windows-renderer-checks", "windows-checks", "licence-inventory",
 )
 STABLE_TAG = re.compile(r"v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
 NONE = re.compile(r"(?:none|internal[ -]only)[.!]?", re.IGNORECASE)

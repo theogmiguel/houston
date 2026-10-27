@@ -12,11 +12,13 @@ export function RailResizeHandle({
   width,
   collapsed,
   onChange,
+  onCommit,
   onCollapse,
 }: {
   width: number;
   collapsed: boolean;
   onChange: (next: number) => void;
+  onCommit: () => void;
   onCollapse: () => void;
 }): React.JSX.Element | null {
   const [dragging, setDragging] = useState(false);
@@ -26,6 +28,7 @@ export function RailResizeHandle({
 
   const apply = (x: number): void => {
     if (x < RAIL_COLLAPSE_AT) {
+      onCommit();
       onCollapse();
       return;
     }
@@ -58,6 +61,7 @@ export function RailResizeHandle({
     }
     if (commit) flush();
     else pendingX.current = null;
+    onCommit();
     setDragging(false);
     e.currentTarget.releasePointerCapture?.(e.pointerId);
   };
@@ -84,7 +88,10 @@ export function RailResizeHandle({
       }}
       onPointerUp={(e) => endDrag(e, true)}
       onPointerCancel={(e) => endDrag(e, false)}
-      onDoubleClick={() => onChange(RAIL_DEFAULT)}
+      onDoubleClick={() => {
+        onChange(RAIL_DEFAULT);
+        onCommit();
+      }}
     />
   );
 }

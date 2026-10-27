@@ -3303,6 +3303,7 @@ impl Daemon {
                 path,
                 branch: branch.to_string(),
                 include_warnings: Vec::new(),
+                branch_note: None,
             });
         }
         if let Some(parent) = dest.parent() {
@@ -3311,14 +3312,16 @@ impl Daemon {
         // A tree removed by hand leaves a registration that blocks re-adding
         // the same path; prune first, then reuse the branch.
         let _ = crate::worktrees::prune(repo);
-        crate::worktrees::create_task(repo, branch, base, dest, &self.merge_tree_scratch())
-            .context("task_start refused")?;
+        let (_, branch_note) =
+            crate::worktrees::create_task(repo, branch, base, dest, &self.merge_tree_scratch())
+                .context("task_start refused")?;
         let path = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
         let mut created = CreatedWorktree {
             repo: repo.to_path_buf(),
             path,
             branch: branch.to_string(),
             include_warnings: Vec::new(),
+            branch_note: None,
         };
         let row = ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -3341,7 +3344,8 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording task worktree {}: {e:#}", created.path.display());
         }
-        let mut warnings = crate::worktrees::init_submodules_best_effort(&created.path);
+        let mut warnings: Vec<String> = branch_note.into_iter().collect();
+        warnings.extend(crate::worktrees::init_submodules_best_effort(&created.path));
         warnings.extend(crate::worktree_include::carry_over(repo, &created.path).warnings);
         created.include_warnings = warnings;
         Ok(created)
@@ -4947,6 +4951,7 @@ impl Daemon {
                     path,
                     branch: branch.to_string(),
                     include_warnings: Vec::new(),
+                    branch_note: None,
                 });
             }
         }
@@ -5000,6 +5005,7 @@ impl Daemon {
             path,
             branch: branch.to_string(),
             include_warnings: Vec::new(),
+            branch_note: None,
         })
     }
 

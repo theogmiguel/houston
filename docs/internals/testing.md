@@ -19,11 +19,20 @@ Rules:
 
 - New daemon behaviour gets an integration test. Bug fixes get a regression test that fails
   before the fix.
+- CI runs every `houston-core` test on Linux: the `core-integration` job is the full
+  `cargo nextest run -p houston-core` (library and `it`) on every PR and every push to
+  `main`. A test file is covered once its `mod` line is in `tests/it/main.rs`.
+  Windows runs unit tests and a named set of portable suites. Graphical tests and the
+  `#[ignore]`d perf and latency gates stay local because their results depend on an idle
+  machine or a desktop session.
 - Tests redirect the state dir through `HOME` (`home_dir.rs` is environment-first for this
   reason) and never touch a real channel.
 - An in-process daemon takes its environment from `tests/common`'s `base_env()` or
-  `capture_env()`, never from the raw process environment: they swap the account's config
-  homes for a throwaway and confine the test process, after which `ConfigHome` refuses any
+  `capture_env()`, never from the raw process environment: they drop the pane and agent-session
+  identity the runner inherited (`HOUSTON_SESSION`, `HOUSTON_MCP_*`, `CLAUDECODE`,
+  `CLAUDE_CODE_*`, `ZCODE_HOUSTON_MCP_URL*`, multiplexer markers), so a run inside a Houston
+  pane matches one under CI, swap the account's config homes for a throwaway and confine the
+  test process, after which `ConfigHome` refuses any
   config home outside the temp, fixture and target scratch roots, whatever the runner.
   Unit tests build daemons from `HostEnv::capture_with_home`. The confinement covers
   Houston's own config writes; a real CLI the daemon runs still sees the daemon's `HOME`.
@@ -94,7 +103,10 @@ collaborator's contract, not just against its own assertions.
 - `ansi_flood` (`src/bin/ansi_flood.rs`) sprays heavy TUI output at maximum speed for
   throughput tests.
 - Agent sessions launched with an explicit `cmd` run that command, so a fixture never
-  silently launches whichever real CLI is installed. Shell sessions select their configured
+  silently launches whichever real CLI is installed. A fake provider binary is found through
+  the daemon's captured `PATH`, not the process's: a rig that puts one on `PATH` after the
+  daemon started uses `common::prepend_path_for(&daemon, dir)`. A test passes with no `claude`
+  or `codex` installed and with them installed. Shell sessions select their configured
   shell instead; fixtures must also isolate `SHELL` to avoid first-run setup prompts.
 - `HOUSTON_DISABLE_AUTO_RESTORE=1` and `HOUSTON_SAFE_MODE=1` keep a booted test
   daemon from restoring or auto-launching anything.

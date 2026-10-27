@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PrWatchInfo } from '../../houston/generated/PrWatchInfo'
 import type { HoustonClient } from '../../houston/client'
+import { requestPrWatchList } from '../../houston/sharedListRequests'
 
 export function usePrWatch(client: HoustonClient | null, session: number | null): PrWatchInfo[] {
   const [watches, setWatches] = useState<PrWatchInfo[]>([])
@@ -21,7 +22,7 @@ export function usePrWatch(client: HoustonClient | null, session: number | null)
       apply(session, message.watches.find((item) => item.session === session)?.watches ?? [])
     })
     const offChanged = client.subscribe('pr_watch_changed', (message) => apply(message.session, message.watches))
-    client.send({ type: 'pr_watch_list' })
+    requestPrWatchList(client)
     return () => { offList(); offChanged() }
   }, [client, session])
   return watches

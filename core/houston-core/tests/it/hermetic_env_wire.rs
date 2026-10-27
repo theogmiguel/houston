@@ -131,3 +131,62 @@ async fn refusing_child() {
         "enabling Codex hooks must name the refused home: {codex:?}"
     );
 }
+
+const IDENTITY_CHILD: &str = "HOUSTON_HERMETIC_IDENTITY_CHILD";
+const INHERITED_IDENTITY: [&str; 7] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_SESSION_ID",
+    "HOUSTON_SESSION",
+    "HOUSTON_MCP_URL",
+    "HOUSTON_WORKTREE_SLUG",
+    "ZCODE_HOUSTON_MCP_URL_DEV",
+    "TMUX",
+];
+
+#[test]
+fn a_test_daemon_does_not_inherit_the_pane_identity_or_locale_of_its_runner() {
+    if common::process_var_os(IDENTITY_CHILD).is_some() {
+        for (label, env) in [
+            ("base_env", common::base_env()),
+            ("capture_env", common::capture_env()),
+        ] {
+            for name in INHERITED_IDENTITY {
+                assert_eq!(env.var_os(name), None, "{label} kept the inherited {name}");
+                assert_eq!(
+                    common::process_var_os(name),
+                    None,
+                    "{label} left {name} in the process, where a spawn would diff against it"
+                );
+            }
+            assert!(
+                env.var_os("PATH").is_some(),
+                "{label} keeps unrelated variables"
+            );
+        }
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let mut command = common::hermetic_command(std::env::current_exe().unwrap(), home.path());
+    command
+        .args([
+            "--exact",
+            &common::exact_path(
+                module_path!(),
+                "a_test_daemon_does_not_inherit_the_pane_identity_or_locale_of_its_runner",
+            ),
+            "--nocapture",
+        ])
+        .env(IDENTITY_CHILD, "1")
+        .env("LANGUAGE", "pt_BR:pt:en")
+        .env("LC_ALL", "pt_BR.UTF-8");
+    for name in INHERITED_IDENTITY {
+        command.env(name, "outer");
+    }
+    let out = command.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

@@ -142,7 +142,7 @@ pub fn ensure_launchable(agent: proto::AgentKind) -> Result<()> {
 pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
-        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
+        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate,mcp__houston__pane_note".into()],
         _ => Vec::new(),
     }
 }
@@ -440,6 +440,61 @@ pub fn planning_refusal(agent: proto::AgentKind) -> Option<&'static str> {
         ),
         _ => None,
     }
+}
+
+/// Why `agent` cannot run a review pane whose read-only mode is enforced at launch.
+/// `review_pane_args` refuses exactly these.
+pub fn review_pane_refusal(agent: proto::AgentKind) -> Option<&'static str> {
+    match agent {
+        proto::AgentKind::Claude | proto::AgentKind::Codex => None,
+        proto::AgentKind::Antigravity => Some(
+            "its command line has no tool restriction and no way to skip the reviewed pull \
+             request's project configuration",
+        ),
+        proto::AgentKind::Opencode => Some(
+            "its command line has no tool restriction and no way to skip the reviewed pull \
+             request's opencode.json and plugins",
+        ),
+        proto::AgentKind::Zcode => Some(
+            "its command line has no tool restriction and no way to skip the reviewed pull \
+             request's project configuration",
+        ),
+        _ => Some("it is not a provider Houston launches"),
+    }
+}
+
+/// Launch flags that make a review pane read-only and keep the reviewed pull request's own
+/// agent configuration out of it. `cwd` is the review checkout.
+pub fn review_pane_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<String>> {
+    if let Some(reason) = review_pane_refusal(agent) {
+        bail!(
+            "agent {agent:?} refused for a read-only review pane: {reason}; expected claude or \
+             codex (choose one as the workspace's Start agent in Tasks)"
+        );
+    }
+    Ok(match agent {
+        // `=` forms keep the variadic tool lists from taking the prompt that follows.
+        proto::AgentKind::Claude => vec![
+            "--setting-sources=user".into(),
+            "--strict-mcp-config".into(),
+            "--tools=Read,Grep,Glob".into(),
+            "--disallowedTools=Edit,Write,NotebookEdit,Bash,PowerShell".into(),
+            "--permission-mode=default".into(),
+        ],
+        proto::AgentKind::Codex => {
+            // A review checkout is not a trusted project, so its `.codex/` layers stay off.
+            let path = toml::Value::String(cwd.display().to_string()).to_string();
+            vec![
+                "-s".into(),
+                "read-only".into(),
+                "-a".into(),
+                "never".into(),
+                "-c".into(),
+                format!("projects={{{path}={{trust_level=\"untrusted\"}}}}"),
+            ]
+        }
+        _ => unreachable!("refused above"),
+    })
 }
 
 /// Every refusal `planning_refusal` makes, for the planning control.
@@ -764,7 +819,7 @@ mod tests {
         use houston_protocol::AgentKind::*;
         assert_eq!(
             super::dialogue_permission_args(Claude),
-            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
+            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate,mcp__houston__pane_note"]
         );
         for agent in [Codex, Antigravity, Opencode, Cursor, Grok] {
             assert!(super::dialogue_permission_args(agent).is_empty());
@@ -993,6 +1048,7 @@ mod tests {
             "mcp__houston__pane_wait",
             "mcp__houston__pane_deny",
             "mcp__houston__pane_escalate",
+            "mcp__houston__pane_note",
         ] {
             assert!(rules.split(',').any(|r| r == tool), "{tool} lost: {flag}");
         }
@@ -1580,5 +1636,37 @@ mod worktree_trust_tests {
             parsed["projects"][path.display().to_string()]["trust_level"].as_str(),
             Some("trusted")
         );
+    }
+
+    #[test]
+    fn review_pane_args_restrict_claude_and_codex_and_refuse_the_rest_by_name() {
+        let cwd = Path::new("/tmp/review/checkout");
+        let claude = review_pane_args(proto::AgentKind::Claude, cwd).unwrap();
+        assert!(claude.contains(&"--setting-sources=user".to_string()));
+        assert!(claude.contains(&"--strict-mcp-config".to_string()));
+        assert!(claude
+            .iter()
+            .any(|a| a.starts_with("--disallowedTools=") && a.contains("Bash")));
+        let codex = review_pane_args(proto::AgentKind::Codex, cwd).unwrap();
+        assert_eq!(&codex[..4], ["-s", "read-only", "-a", "never"]);
+        let parsed: toml::Value = codex[5]
+            .parse()
+            .unwrap_or_else(|e| panic!("projects override {:?} must be TOML: {e}", codex[5]));
+        let projects = &parsed["projects"];
+        assert_eq!(
+            projects[cwd.display().to_string()]["trust_level"].as_str(),
+            Some("untrusted")
+        );
+        for agent in [
+            proto::AgentKind::Antigravity,
+            proto::AgentKind::Opencode,
+            proto::AgentKind::Zcode,
+        ] {
+            let err = review_pane_args(agent, cwd).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("{agent:?}")) && err.contains("read-only review pane"),
+                "{err}"
+            );
+        }
     }
 }

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import type { GitWorktreeInfo } from '../../houston/generated/GitWorktreeInfo'
 import { ConfirmModal } from '../ConfirmModal'
 import { Caption, Notice, Stack } from '../ui'
@@ -13,7 +14,8 @@ export interface WorktreeRemoveConfirmProps {
 }
 
 // Confirm waits for the daemon's check, so what the removal would interrupt or lose is
-// on screen before it can proceed.
+// on screen before it can proceed. It mounts on `document.body` for the same reason as
+// GitDialogShell.
 export function WorktreeRemoveConfirm({ worktree, force, check, nowMs, onConfirm, onCancel }: WorktreeRemoveConfirmProps): React.JSX.Element {
   const ready = check?.path === worktree.path && check.status === 'ready' ? check.check : null
   const findings = ready ? worktreeCheckFindings(ready, nowMs) : []
@@ -22,7 +24,7 @@ export function WorktreeRemoveConfirm({ worktree, force, check, nowMs, onConfirm
     : findings.length === 0
       ? <Caption>No uncommitted changes, unpushed commits or open panes found.</Caption>
       : <Notice tone="warn" data-testid="worktree-check-findings"><Stack gap={0}>{findings.map((line) => <span key={line}>{line}</span>)}</Stack></Notice>
-  return (
+  return createPortal(
     <ConfirmModal
       title={force ? 'FORCE REMOVE WORKTREE' : 'REMOVE WORKTREE'}
       message={worktreeRemoveConfirm(worktree, force)}
@@ -31,6 +33,7 @@ export function WorktreeRemoveConfirm({ worktree, force, check, nowMs, onConfirm
       confirmDisabled={ready === null}
       onConfirm={onConfirm}
       onCancel={onCancel}
-    />
+    />,
+    document.body
   )
 }
