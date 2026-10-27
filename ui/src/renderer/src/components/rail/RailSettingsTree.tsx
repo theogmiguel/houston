@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { AgentAttention } from "../../useAgentAttention";
 import { HintKey } from "../ui/ShortcutHint";
-import { SettingsNavigationGroup, SettingsNavigation } from "../ui/NavigationRailFooter";
+import { SettingsNavigationGroup, SettingsNavigation, SettingsRailStack } from "../ui/NavigationRailFooter";
 import { GLYPH_FOR_VERB } from "../verbGlyphs";
 import { setSettingsOpen, setSettingsSection } from "../../settingsNav";
 import type { SettingsSectionDef } from "../../settingsSections";
@@ -108,7 +108,7 @@ export function SettingsTree({
     section.keywords.some((keyword) => keyword.toLowerCase().includes(query)),
   );
   return (
-    <div className="grid gap-[var(--space-1)]">
+    <SettingsRailStack>
       <NavigationRailItem icon={IconChevronLeft} label="Back to workspaces" trailing={<HintKey size="compact">Esc</HintKey>} onClick={() => { setTreeFilter(null); setSettingsOpen(false); }} />
       <SettingsSearch
           inputRef={filterRef}
@@ -129,7 +129,7 @@ export function SettingsTree({
         {query ? <SettingsTreeSearch rows={rowHits} sections={sections} onDone={() => setTreeFilter(null)} /> : <SettingsTreeGroups sections={sections} active={activeSettingsSection} attention={attention} />}
 
       </SettingsNavigation>
-    </div>
+    </SettingsRailStack>
   );
 }
 
