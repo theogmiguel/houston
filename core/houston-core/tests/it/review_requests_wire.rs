@@ -2,7 +2,6 @@
 //! triage reasons, pause and credential visibility, and read-only pane spawn.
 #![allow(clippy::disallowed_methods)]
 
-use crate::common;
 use crate::merge_queue_rig::{agent_pane, git, Rig, SERIAL};
 
 use houston_core::daemon::Outbound;
@@ -621,7 +620,11 @@ async fn dismiss_and_reopen_are_visible_decisions() {
 /// A `claude` on PATH that records its argv. The daemon captures PATH when it starts, so
 /// the directory must be on PATH before `Rig::new`; the returned guard restores PATH.
 #[cfg(unix)]
-fn argv_recording_claude() -> (tempfile::TempDir, common::PathPrepend, std::path::PathBuf) {
+fn argv_recording_claude() -> (
+    tempfile::TempDir,
+    crate::common::PathPrepend,
+    std::path::PathBuf,
+) {
     let dir = tempfile::tempdir().unwrap();
     let record = dir.path().join("claude.argv");
     let script = format!(
@@ -632,7 +635,7 @@ fn argv_recording_claude() -> (tempfile::TempDir, common::PathPrepend, std::path
     std::fs::write(&path, script).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let guard = common::prepend_path(dir.path());
+    let guard = crate::common::prepend_path(dir.path());
     (dir, guard, record)
 }
 
