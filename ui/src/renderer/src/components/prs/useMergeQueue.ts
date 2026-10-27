@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HoustonClient, MergeQueueAway, MergeQueueEntry, MergeQueueHandOffInfo, MergeQueueLogEntry, MergeQueueSettings, PrMergeMethod } from '../../houston/client'
+import { requestMergeQueue } from '../../houston/sharedListRequests'
 
 export interface MergeQueueReply {
   ok: boolean
@@ -93,7 +94,7 @@ export function useMergeQueue(client: HoustonClient | null, dir: string | null |
       setBusy(null)
       setReply({ ok: message.ok, number: message.number, text: message.message ?? (message.ok ? 'Done' : 'The merge queue refused the request') })
     })
-    client.mergeQueueGet(dir)
+    requestMergeQueue(client, dir)
     return () => { offQueue(); offSummary(); offReply() }
   }, [client, dir, active])
 

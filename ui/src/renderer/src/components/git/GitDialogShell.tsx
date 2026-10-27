@@ -1,5 +1,6 @@
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useFocusRestore, useFocusTrap } from '../dialogFocus'
 import { DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle, Text } from '../ui'
 import { IconClose } from '../icons'
@@ -14,7 +15,8 @@ export interface GitDialogShellProps {
 }
 
 // One shell for every Git dialog: same scrim, focus trap, Escape and chrome, so
-// the four tools cannot drift apart. Body scrolls; header and footer do not.
+// the four tools cannot drift apart. Body scrolls; header and footer do not. It mounts
+// on `document.body`: a filtered or contained ancestor would otherwise size the scrim.
 export function GitDialogShell({
   heading,
   testid,
@@ -30,7 +32,7 @@ export function GitDialogShell({
     'button:not([disabled]), input:not([disabled]), textarea:not([disabled])'
   )
 
-  return (
+  return createPortal(
     <DialogBackdrop tone="git" onMouseDown={onClose}>
       <DialogPanel
         size="git"
@@ -69,6 +71,7 @@ export function GitDialogShell({
           </DialogActions>
         )}
       </DialogPanel>
-    </DialogBackdrop>
+    </DialogBackdrop>,
+    document.body
   )
 }
