@@ -223,7 +223,7 @@ impl ToolProvider for OrchestrationTools {
             return self
                 .pane_tools(None, false)
                 .into_iter()
-                .filter(|tool| tool.name == "pane_reply")
+                .filter(|tool| matches!(tool.name.as_str(), "pane_reply" | "pane_note"))
                 .collect();
         }
         let max = daemon.child_cap_of(scope.session_id);
@@ -1331,6 +1331,8 @@ mod tests {
         }
         assert!(orchestrate::ToolRole::Leaf.advertises("pane_reply"));
         assert!(orchestrate::ToolRole::Operator.advertises("pane_reply"));
+        assert!(orchestrate::ToolRole::Leaf.advertises("pane_note"));
+        assert!(orchestrate::ToolRole::Operator.advertises("pane_note"));
     }
 
     #[test]

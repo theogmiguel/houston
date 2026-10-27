@@ -246,7 +246,9 @@ An agent can say where its work stands in one line on its grid's rail card:
 Each note replaces the pane's last one, and the card shows the newest note of its panes with
 its age and phase. A note longer than 512 bytes is refused, naming the limit; newlines become
 spaces. The **×** on the line clears it, as does `pane_note{clear: true}`
-(`hs-pane note --clear`). A note goes when its pane closes or restarts.
+(`hs-pane note --clear`). A note goes when its pane closes or restarts. Every agent pane
+sees `pane_note`: a delegated worker with no spawn rights and a pane with orchestration off
+list it beside their other tools.
 
 ## Workspaces and child lifetime
 
