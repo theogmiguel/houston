@@ -615,6 +615,7 @@ mod codex {
                 "call_tool",
                 "list_tools",
                 "pane_message",
+                "pane_note",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -1091,6 +1092,7 @@ mod opencode {
             names,
             vec![
                 "pane_message",
+                "pane_note",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -1467,6 +1469,7 @@ mod antigravity {
             names,
             vec![
                 "pane_message",
+                "pane_note",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",

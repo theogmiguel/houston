@@ -2571,6 +2571,7 @@ async fn a_child_pane_keeps_its_reporting_tools_consent_or_not() {
         names,
         vec![
             "pane_message",
+            "pane_note",
             "pane_reply",
             "pane_report",
             "pane_submit",
@@ -5834,6 +5835,7 @@ async fn pane_spawn_is_advertised_only_while_it_could_be_used() {
         kid_names,
         vec![
             "pane_message",
+            "pane_note",
             "pane_reply",
             "pane_report",
             "pane_submit",
