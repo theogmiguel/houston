@@ -244,7 +244,7 @@
     "bounded request queue per connection (`houston/sharedListRequests.ts`), so a page load",
     "stays inside the daemon's control handler limit; the queue runs at first paint."
   ],
-  "maxBootBytes": 960750,
+  "maxBootBytes": 960900,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

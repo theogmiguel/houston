@@ -13,6 +13,11 @@ export function WorkspaceList({ children, dragging = false }: { children: ReactN
   return <nav className={`wlist ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col gap-[var(--space-1)] p-[var(--space-2)] overflow-y-auto ${dragging ? 'cursor-grabbing' : ''}`}>{children}</nav>
 }
 
+/** One minmax(0, 1fr) track: an `auto` track would size to the search field's intrinsic width and push the rows past the rail. */
+export function SettingsRailStack({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid grid-cols-1 gap-[var(--space-1)]">{children}</div>
+}
+
 export function SettingsNavigation({ children }: { children: ReactNode }): React.JSX.Element {
   return <nav className="flex flex-col gap-[var(--space-1)] px-[var(--space-2)] pb-[var(--space-2)]" aria-label="Settings sections">{children}</nav>
 }

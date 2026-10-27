@@ -251,6 +251,12 @@ describe('Sidebar rail — Settings mode state matrix', () => {
     expect(label?.className).toContain('truncate')
   })
 
+  it('Overflow — the tree stacks in a single minmax(0, 1fr) track so the search field cannot widen the rail column', () => {
+    render()
+    const tree = container.querySelector('[aria-label="Search settings"]')?.closest('label')?.parentElement
+    expect(tree?.className).toContain('grid-cols-1')
+  })
+
   it('Empty set — a filter matching no section renders the empty-set message, not a blank list', () => {
     render()
     const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
