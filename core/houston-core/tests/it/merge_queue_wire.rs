@@ -137,7 +137,7 @@ impl Rig {
         daemon.workspace_add(&workspace).unwrap();
         let bin = state.path().join("bin");
         write_fake_gh(&bin);
-        let path = common::prepend_path(&bin);
+        let path = common::prepend_path_for(&daemon, &bin);
         Rig {
             daemon,
             state,
