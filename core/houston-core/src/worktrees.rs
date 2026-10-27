@@ -208,11 +208,9 @@ pub fn create_on_branch(
     add_worktree(repo, &branch, &base, dest)
 }
 
-/// A named branch only one remote has continues that branch and tracks it, as `git
-/// switch` does, unless `base` already holds its changes (a merged PR's stale remote
-/// ref); otherwise it is a fresh branch off `base`. The second value is a warning when
-/// the branch matched several remote refs: those are never guessed between, so the
-/// caller must say the fresh branch tracks nothing.
+/// A branch only one remote has is continued and tracked (as `git switch` does) unless
+/// `base` already holds it; otherwise a fresh branch off `base`. The second value warns
+/// when several remotes matched: they are never guessed between.
 pub fn create_on_named_branch(
     repo: &Path,
     branch: &str,
@@ -372,10 +370,9 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
     })
 }
 
-/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same branch
-/// checked out again (or continued from the one remote still holding it) when its
-/// earlier tree is gone. The caller handles a tree already there and on the branch. The
-/// second value is `create_on_named_branch`'s ambiguity warning.
+/// A task worktree: a fresh branch off `base`, or on a re-Start the same branch again
+/// (or continued from the one remote holding it). The second value is
+/// `create_on_named_branch`'s ambiguity warning.
 pub fn create_task(
     repo: &Path,
     branch: &str,
@@ -505,13 +502,9 @@ pub fn has_submodules(worktree: &Path) -> bool {
     worktree.join(".gitmodules").is_file()
 }
 
-/// `git worktree add` leaves submodules empty. A clone can need the network and a
-/// credential prompt can never be answered, so the work is bounded by one shared
-/// deadline; failing must not undo a worktree that exists.
-///
-/// Each declared submodule is initialised on its own, because one `git submodule
-/// update` aborts at the first failure and leaves the later ones unpopulated. Returns
-/// one `path: reason` entry per submodule that did not come up.
+/// Initialises each declared submodule on its own (one `git submodule update` stops at
+/// the first failure) under one shared deadline, never undoing the worktree. Returns a
+/// `path: reason` entry per submodule that did not come up.
 pub fn init_submodules(worktree: &Path) -> Vec<String> {
     let paths = declared_submodule_paths(worktree);
     if paths.is_empty() {

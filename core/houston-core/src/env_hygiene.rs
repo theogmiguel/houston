@@ -1,7 +1,6 @@
-//! Drop inherited agent-session and multiplexer identities, the variables Houston
-//! injects into a pane, and private supervisor startup state before the daemon spawns
-//! children. Agent settings such as `CLAUDE_CONFIG_DIR` and `ANTHROPIC_*` remain
-//! available.
+//! Drop inherited agent-session and multiplexer identities, variables Houston injects
+//! into panes, and supervisor startup state before the daemon spawns children. Agent
+//! settings such as `CLAUDE_CONFIG_DIR` and `ANTHROPIC_*` remain available.
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_CODE_CHILD_SESSION",
@@ -18,10 +17,9 @@ const SESSION_MARKERS: &[&str] = &[
     crate::daemon::WORKSPACE_ENV,
     crate::daemon::WORKTREE_SLUG_ENV,
     crate::supervisor::SUPERVISOR_FD_ENV,
-    // Injected into a pane only when its provider or launch path needs them, so a daemon
-    // started from a pane would hand the hosting channel's endpoint and credential to
-    // panes that get no value of their own. `HOUSTON_SESSION` and `TR_SESSION` are not
-    // listed: every pane sets them, and the app reads `HOUSTON_SESSION` for `--fresh`.
+    // Set only for some providers, so panes without their own would inherit the hosting
+    // channel's endpoint and credential. `HOUSTON_SESSION`/`TR_SESSION` stay: every pane
+    // sets them, and the app reads `HOUSTON_SESSION` for `--fresh`.
     "HOUSTON_MCP_URL",
     "HOUSTON_MCP_TOKEN",
     "HOUSTON_MCP_CONFIG",
