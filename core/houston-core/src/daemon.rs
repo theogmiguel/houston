@@ -9877,6 +9877,25 @@ impl Daemon {
         )
     }
 
+    /// A session whose launch carries restriction flags the caller assembled (the review pane).
+    pub(crate) fn create_restricted_session(
+        self: &Arc<Self>,
+        p: CreateParams,
+        spawn_args: Vec<String>,
+    ) -> Result<proto::SessionInfo> {
+        self.create_session_with_env(
+            p,
+            Vec::new(),
+            spawn_args,
+            None,
+            None,
+            false,
+            None,
+            false,
+            None,
+        )
+    }
+
     /// `env` extends the profile, `spawn_args` follow provider flags, and `cwd` may differ from `project_dir`.
     /// `prompt_label` names the prompt file; `prefill_follows` means the caller pastes after startup.
     /// `launch_override` carries typed choices when the caller already assembled flags.

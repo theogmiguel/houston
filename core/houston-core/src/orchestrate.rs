@@ -1435,9 +1435,12 @@ impl ToolRole {
                     | "pane_reply"
                     | "pane_message"
                     | "pane_wait"
+                    | "pane_note"
                     | "workspace_info"
             ),
-            ToolRole::Operator => tool == "pane_reply" || !PANE_TOOL_NAMES.contains(&tool),
+            ToolRole::Operator => {
+                matches!(tool, "pane_reply" | "pane_note") || !PANE_TOOL_NAMES.contains(&tool)
+            }
             ToolRole::Orchestrator {
                 has_parent,
                 spawnable,
@@ -4280,6 +4283,7 @@ mod tests {
         assert!(leaf.advertises("pane_report"));
         assert!(leaf.advertises("pane_reply"));
         assert!(leaf.advertises("pane_wait"));
+        assert!(leaf.advertises("pane_note"));
         assert!(leaf.advertises("workspace_info"));
         for hidden in [
             "pane_spawn",
@@ -4341,13 +4345,14 @@ mod tests {
         let operator = Operator;
         for hidden in PANE_TOOL_NAMES
             .into_iter()
-            .filter(|name| *name != "pane_reply")
+            .filter(|name| !matches!(*name, "pane_reply" | "pane_note"))
         {
             assert!(
                 !operator.advertises(hidden),
                 "an operator pane sees no {hidden}"
             );
         }
+        assert!(operator.advertises("pane_note"));
         assert!(operator.advertises("workspace_info"));
         assert!(operator.advertises("routine_create"));
     }

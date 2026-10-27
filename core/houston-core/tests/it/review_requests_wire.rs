@@ -2,6 +2,7 @@
 //! triage reasons, pause and credential visibility, and read-only pane spawn.
 #![allow(clippy::disallowed_methods)]
 
+use crate::common;
 use crate::merge_queue_rig::{agent_pane, git, Rig, SERIAL};
 
 use houston_core::daemon::Outbound;
@@ -615,4 +616,133 @@ async fn dismiss_and_reopen_are_visible_decisions() {
         panic!("not a state")
     };
     assert_eq!(items[0].state, proto::ReviewRequestState::New);
+}
+
+/// A `claude` on PATH that records its argv. The daemon captures PATH when it starts, so
+/// the directory must be on PATH before `Rig::new`; the returned guard restores PATH.
+fn argv_recording_claude() -> (tempfile::TempDir, common::PathPrepend, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let record = dir.path().join("claude.argv");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nstty -echo 2>/dev/null\nexec cat\n",
+        record.display()
+    );
+    let path = dir.path().join("claude");
+    std::fs::write(&path, script).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let guard = common::prepend_path(dir.path());
+    (dir, guard, record)
+}
+
+fn open_review_pane(rig: &Rig, number: u32) -> Value {
+    let pushed = crate::merge_queue_rig::commit(
+        &rig.root,
+        "app.txt",
+        "one\ntwo\nthree\nfour\nfive\n",
+        "review me",
+    );
+    git(&rig.root, &["push", "-q", "origin", "main"]);
+    git(
+        &rig.origin,
+        &["update-ref", &format!("refs/pull/{number}/head"), &pushed],
+    );
+    rig.daemon
+        .review_requests_set(proto::ReviewRequestMode::Review)
+        .unwrap();
+    search(rig, &[]);
+    rig.daemon.review_request_tick();
+    search(
+        rig,
+        &[("owner/repo", number, "2026-10-26T00:00:00Z", "Restrict me")],
+    );
+    pr(
+        rig,
+        number,
+        "houston/review-restricted",
+        json!([{"path": "src/lib.rs", "additions": 30, "deletions": 0}]),
+        "main",
+        true,
+    );
+    head(rig, number, &pushed);
+    rig.daemon.review_request_tick();
+    json!(state(rig).2)
+}
+
+#[tokio::test]
+async fn the_claude_review_pane_launches_read_only_without_project_configuration() {
+    let _serial = SERIAL.lock().await;
+    let (_shim, _path, record) = argv_recording_claude();
+    let rig = Rig::new().await;
+    let anchor = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+    let note = open_review_pane(&rig, 21);
+    let sessions: Vec<_> = rig
+        .daemon
+        .list()
+        .into_iter()
+        .filter(|session| session.id != anchor)
+        .collect();
+    assert_eq!(sessions.len(), 1, "one review pane opened: {note}");
+    let mut argv = String::new();
+    for _ in 0..300 {
+        argv = std::fs::read_to_string(&record).unwrap_or_default();
+        if !argv.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let args: Vec<&str> = argv.lines().collect();
+    for required in [
+        "--setting-sources=user",
+        "--strict-mcp-config",
+        "--tools=Read,Grep,Glob",
+        "--disallowedTools=Edit,Write,NotebookEdit,Bash,PowerShell",
+        "--permission-mode=default",
+        "--mcp-config",
+    ] {
+        assert!(
+            args.contains(&required),
+            "review pane argv lacks {required}: {args:?}"
+        );
+    }
+    assert!(
+        !args.iter().any(|arg| arg.contains("bypassPermissions")
+            || arg.contains("--dangerously-skip-permissions")),
+        "a review pane never bypasses permissions: {args:?}"
+    );
+    assert!(
+        argv.contains("Diff against") && argv.contains("HOUSTON-REVIEW-DIFF"),
+        "the brief carries the diff because the pane has no shell: {argv}"
+    );
+    for session in sessions {
+        let _ = rig.daemon.kill(session.id);
+    }
+    let _ = rig.daemon.kill(anchor);
+}
+
+#[tokio::test]
+async fn a_provider_without_launch_restrictions_is_refused_for_review_by_name() {
+    let _serial = SERIAL.lock().await;
+    for agent in [
+        proto::AgentKind::Antigravity,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Zcode,
+    ] {
+        let rig = Rig::new().await;
+        rig.daemon
+            .tasks_start_settings_set(&rig.workspace, agent, proto::TaskPromptDelivery::Send)
+            .unwrap();
+        let _anchor = agent_pane(&rig.daemon, Path::new(&rig.workspace));
+        let note = open_review_pane(&rig, 22);
+        assert_eq!(
+            rig.daemon.list().len(),
+            1,
+            "only the anchor pane for {agent:?}"
+        );
+        let note = note.as_str().unwrap_or_default().to_string();
+        assert!(
+            note.contains(&format!("{agent:?}")) && note.contains("read-only review pane"),
+            "the refusal names the provider and the pane: {note}"
+        );
+    }
 }
