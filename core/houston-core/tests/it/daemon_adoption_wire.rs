@@ -68,6 +68,18 @@ struct DaemonFile {
     pid_creation: Option<u64>,
 }
 
+/// The retiring generation shares the listener until it exits, so a client that connects as
+/// soon as the commit record appears can reach it and be refused as "handing off".
+fn retired(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| {
+        stat.rsplit(')')
+            .next()
+            .unwrap_or("")
+            .trim_start()
+            .starts_with('Z')
+    })
+}
+
 fn read_daemon_json(path: &std::path::Path) -> Option<DaemonFile> {
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
@@ -235,7 +247,8 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
 
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(expected_generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(expected_generation))
+            .then_some(f)
     });
     assert_eq!(
         ownership_receipt(&channel_dir, session_id),
@@ -734,7 +747,8 @@ async fn a_real_exit_code_reaches_the_new_generation_through_the_supervisor() {
     let generation = result.generation.unwrap();
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
@@ -793,7 +807,8 @@ async fn a_signalled_session_finishes_through_the_supervisor_with_no_exit_code()
     let generation = result.generation.unwrap();
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
@@ -848,7 +863,8 @@ async fn shutdown_ends_an_adopted_session_that_ignores_sigterm() {
     let generation = result.generation.unwrap();
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
 
     manage_shutdown(after.port, &after.token).await;
@@ -911,7 +927,8 @@ async fn queued_hooks_cross_the_boundary_exactly_once_and_in_order() {
     let generation = result.generation.unwrap();
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
@@ -1025,7 +1042,8 @@ async fn an_escape_sequence_split_across_the_handoff_continues_on_the_new_genera
     let cfg_path = channel_dir.join("daemon.json");
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(expected_generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(expected_generation))
+            .then_some(f)
     });
 
     let mut ws2 = connect_when_ready(addr, &after.token).await;
@@ -1120,7 +1138,8 @@ async fn handoff_spawns_the_candidate_binary_the_caller_named() {
 
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
     let exe = std::fs::read_link(format!("/proc/{}/exe", after.pid)).expect("/proc/<pid>/exe");
     assert_eq!(
@@ -2481,7 +2500,8 @@ async fn an_adopted_session_in_a_git_checkout_leaves_the_head_watcher_idle() {
         .expect("accepted handoff names a generation");
     let after = poll_until(POLL_TIMEOUT, || {
         let f = read_daemon_json(&cfg_path)?;
-        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+        (f.pid != before.pid && retired(before.pid) && f.generation == Some(generation))
+            .then_some(f)
     });
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
     let mut ws = connect_when_ready(addr, &after.token).await;
