@@ -620,6 +620,7 @@ async fn dismiss_and_reopen_are_visible_decisions() {
 
 /// A `claude` on PATH that records its argv. The daemon captures PATH when it starts, so
 /// the directory must be on PATH before `Rig::new`; the returned guard restores PATH.
+#[cfg(unix)]
 fn argv_recording_claude() -> (tempfile::TempDir, common::PathPrepend, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let record = dir.path().join("claude.argv");
@@ -669,6 +670,7 @@ fn open_review_pane(rig: &Rig, number: u32) -> Value {
     json!(state(rig).2)
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn the_claude_review_pane_launches_read_only_without_project_configuration() {
     let _serial = SERIAL.lock().await;
