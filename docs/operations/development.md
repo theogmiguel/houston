@@ -525,14 +525,16 @@ committed inventory and runs in its own `licence-inventory` job.
 |---|---|---|
 | `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | Safety scripts, workflow syntax/contracts, plus offline release-note, CI-preflight, draft-publication and updater-signature regression tests |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
-| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests, protocol compatibility, correlated session creation and Bash/Zsh restored-agent regressions |
+| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests and doctests |
+| `core-integration` | every PR, and every push to `main` except a docs-only change | the full `cargo nextest run -p houston-core` on Linux, the `it` integration binary included, with an isolated keyring |
 | `linux-native-checks` | every PR, and every push to `main` except a docs-only change | fresh renderer assets and debug sidecars, native formatting, Clippy and tests with default and `bench` features; tests use an isolated keyring |
 | `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
 | `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus protocol compatibility, Windows Claude and Codex hooks, subprocess deadlines, stalled SSH, Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
-The remaining integration suites in `core/houston-core/tests/`, graphical tests
-requiring a desktop session, and load-sensitive gates stay local.
+Graphical tests requiring a desktop session and load-sensitive gates (`perf_smoke`,
+`idle_loops_wire`, latency benchmarks) stay local; Windows runs a named set of
+`houston-core` suites rather than all of them.
 Windows renderer and Rust checks run in parallel; the native
 job builds its own fresh frontend assets and covers portable ConPTY regressions,
 including Tasks start/stop/resume for all six providers and queue execution with

@@ -115,9 +115,9 @@ The [development runbook](docs/operations/development.md) contains exact command
   states the system can actually produce.
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
-- Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks`,
-  `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and `licence-inventory`. Contributors must
-  also run the local integration suites.
+- Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks`, `core-integration`,
+  `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and `licence-inventory`.
+  Contributors still run the full suites locally before every push.
 
 ## Pull requests and releases
 
