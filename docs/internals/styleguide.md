@@ -26,10 +26,13 @@ one affirmative action.**
 - **Surfaces are materials, not colours**, and materials come as a ladder — base,
   shell, inset, raised, overlay. Ask for a step, not a hex. Each rung carries its
   own ground, border, shadow and quiet ink, and its own measured receipt.
-- **Selection and hover are achromatic** — a white/black overlay at 10%/5% alpha,
-  never an accent tint. Accent appears in exactly two places: focus rings and the
-  primary (or destructive-primary) action.
-- **Status colour is a small, fixed vocabulary** — ok / warn / stop, plus info.
+- **Selection and hover are achromatic** — the `--sel` and `--hover` overlays, never an
+  accent tint. `--accent` is the fill; `--accent-ink` is the readable accent used by
+  links, focus rings and the working status glyph.
+- **Status is one glyph vocabulary** — `working`, `needs`, `finished`, `error`, `idle`,
+  all rendered by `StatusGlyph`. Status colour stays inside that primitive.
+- **Every page shares one column** — `--page-w` (960px), centred the same way. Do not
+  set a per-page max width.
 - **The background is one field** — in Custom mode, a single dithered image behind
   the whole window. The canvas and gutters let it through raw; the chrome (rail,
   titlebar) and the terminal panes stand on it under a scrim of their own. Solid
@@ -59,7 +62,7 @@ When in doubt:
 | Select trigger chrome | `ui/src/renderer/src/components/ui/selectChrome.ts` |
 | The only import surfaces for icons, dropdowns and hover labels | `components/{icons,ui/Select,ui/Tooltip}.tsx` |
 | Terminal palettes (separate axis from chrome) | `ui/src/renderer/src/theme.ts` |
-| Enforcement | `bun run check:css`, `scripts/check-icon-imports.sh`, `scripts/check-icon-metrics.sh`, `scripts/check-title-tooltip-guard.sh`, `scripts/check-native-select.sh` |
+| Enforcement | `bun run check:css`, `scripts/check-icon-imports.sh`, `scripts/check-icon-metrics.sh`, `scripts/check-title-tooltip-guard.sh`, `scripts/check-native-select.sh`, `scripts/check-status-glyph.sh`, `scripts/check-page-width.sh` |
 
 `theme.css` is **unlayered on purpose**, so its `:root` beats Tailwind's `@theme`
 defaults. That is why Houston's own scales are prefixed (`--tr-radius-*`, `--tr-text-*`):
@@ -89,12 +92,18 @@ Tokens come in surface/foreground pairs. Use them together.
 
 | Token | Use it for |
 |---|---|
-| `--text-primary` | Titles, active rows, values the user is reading |
-| `--text-secondary` | Sub-labels, unselected segmented items, supporting copy |
-| `--text-muted` | De-emphasized chrome, placeholders, icon-button rest colour |
-| `--text-faint` | The quietest tier — timestamps, disabled captions |
+| `--t1` (`--text-primary`) | Titles, active rows, values the user is reading |
+| `--t2` (`--text-secondary`) | Sub-labels, descriptions, supporting copy |
+| `--t3` (`--text-muted`) | De-emphasized chrome, placeholders, icon-button rest colour, disabled captions |
 
-There is no `--ink-*` family. `--text-*` is the naming.
+Three tiers only. `--text-faint` is decorative (rules, tracks, non-text marks), never
+body copy or a readable label. Contrast: t1/t2/t3 clear 4.5:1 on every ground they sit on.
+
+### Selection and hover
+
+`--hover` is a 5% white/black overlay and `--sel` a 9% one, exposed as `--hover-fill` and
+`--selected-fill`. They are achromatic: no accent tint, no left bar. A selected row keeps
+the same fill under hover; it does not get a second colour.
 
 ### Borders
 
@@ -110,12 +119,11 @@ There is no `--ink-*` family. `--text-*` is the naming.
 
 ### Accent
 
-`--accent` / `--accent-ink` / `--accent-hover` / `--accent-muted`, aliased as
-`--primary` / `--primary-foreground`. Accent is for **focus rings and the single
-affirmative action** — not a hover colour, not a selection tint, not decoration. A
-filled affirmative button uses `--primary-fill` with the white `--primary-foreground`
-label. On Graphite the fill is a deeper step of the accent so the white label keeps
-4.5:1; on Paper it is the accent itself.
+`--accent` is the fill: a solid plate that carries white `--on-accent` ink at ≥4.5:1
+(`#2f6fe8` on Graphite, `#0a63e0` on Paper). `--accent-ink` is the readable accent for
+links, focus rings and the working status glyph (`#64a0ff` / `#0a5cd1`). A filled
+affirmative action uses `--accent`; a link, focus ring or working arc uses `--accent-ink`.
+`--accent-hover` and `--accent-muted` derive from the fill, not a new hex.
 
 ### Status
 
@@ -226,12 +234,12 @@ Need a tint? `color-mix` against an existing token, never a new hex —
 
 | Family | Token | Use |
 |---|---|---|
-| Plus Jakarta Sans | `--font-sans` | All chrome and body text |
-| JetBrains Mono | `--font-mono` | Paths, fingerprints, IDs, terminal-adjacent UI — **machine values, never emphasis** |
-| Source Serif 4 | `--f-serif` | Display only: empty states, onboarding, About. Never in chrome, menus, chips, tables or pane headers, and never below 20px |
+| Inter Variable | `--font-sans` | Every chrome and body surface. Imported with optical sizing (`@fontsource-variable/inter/opsz.css`); `base.css` sets `font-optical-sizing: auto`. |
+| Source Serif 4 | `--tr-text-display-family` / `--f-serif` | Display moments only: empty states, first run, About. Never chrome, menus, chips, tables or pane headers, and never below 20px. Ships 400/500/600. |
+| JetBrains Mono | `--font-mono` | Machine values only: paths, fingerprints, IDs, branches, code and terminal-adjacent UI. Never prose and never emphasis. |
 
-All three are self-hosted; there is no network font fetch at runtime. Serif ships
-weights 400/500/600 only — display-only means 700 has no consumer.
+All three are self-hosted; nothing is fetched at runtime. The UI no longer ships Plus
+Jakarta Sans.
 
 A wrapped line never holds a single word. `base.css` sets `text-wrap: pretty` on the body
 and `balance` on headings; copy is shortened so a short label fits one line rather than
@@ -239,36 +247,37 @@ wrapping.
 
 ### The semantic scale
 
-Eight steps, each with size + weight + tracking-or-leading. Use the step, not a
+Sizes are declared as tokens, so shell zoom moves them together. Use the step, not a
 pixel value.
 
-| Step | Size | Weight | Tracking / leading | Use |
-|---|---|---|---|---|
-| `display` | 44px | 500 | family = `--f-serif` | Empty states only |
-| `title` | 30px | 700 | -0.02em | Page titles |
-| `heading` | 22px | 700 | -0.014em | Panel headers |
-| `subhead` | 17px | 600 | -0.006em | Settings groups |
-| `body` | 15px | 400 | leading 1.6 | Body copy, transcript prose |
-| `ui` | 13px | 500 | leading 1.5 | List rows, table cells, menu items, buttons — **the workhorse** |
-| `small` | 12px | 500 | leading 1.45 | Chips, pane headers, secondary metadata |
-| `label` | 11px | 700 | tracking 0.1em, `uppercase` | Rail group heads, table heads |
+| Step | Size / leading | Weight | Use |
+|---|---|---|---|
+| `largeTitle` | 26 / 32 | 700 | Every destination page title, including Settings |
+| `title` | 20 / 26 | 650 | Large panel and dialog titles |
+| `headline` | 13 / 18 | 600 | Section and group headings |
+| `body` | 13 / 18 | 400 | Default body and control copy |
+| `callout` | 12 / 16 | 400 | Secondary lines and captions |
+| `caption` | 11 / 14 | 600 | Dense labels and metadata |
+| prose | 14 / 20 | 400 | Long-form reading: Markdown, pull-request bodies, empty-state sentences |
+| label | 11 / 14 | 600 | Table heads and section labels; tracking is 0.01em, not uppercase by default |
 
-Tokens are `--tr-text-<step>-{size,weight,tracking,leading,family,transform}`
-(`theme.css`). A parallel numeric scale `--tr-text-{xs…3xl}` exists for older
-sites; new work uses the semantic steps.
+The `ui` step remains the 13px workhorse for list rows, table cells, menu items and
+buttons (400 weight). `small` is 12px for chips and secondary metadata. Tokens are
+`--tr-text-<step>-{size,weight,tracking,leading,family,transform}` in `theme.css`; the
+parallel numeric scale `--tr-text-{xs…3xl}` exists for older sites and new work uses the
+semantic steps.
 
-`check-type-scale.sh` rejects legacy `text-[Nunit]` and raw scale utilities, CSS
-`font-size` declarations and `[font-size:Nunit]` classes in `components/ui/` and
-the foundation stylesheets. The semantic scale starts at the 11px label step.
+`check-type-scale.sh` rejects legacy `text-[Nunit]`, raw scale utilities, CSS
+`font-size` declarations and `[font-size:Nunit]` in `components/ui/` and the four
+foundation stylesheets. The floor is the 11px label/caption step.
 
-**Label rule:** uppercase always pairs with tracking, and never appears below 11px.
-An uppercase run with default tracking is a bug. So is the reverse: the `label`
-step's 0.1em on a title-case run spaces a word out until it reads as a
-different typeface. `scripts/check-label-tracking.sh` enforces the pairing.
+**Label rule:** uppercase is an explicit `uppercase` transform and always pairs with the
+tracking token; never type the capitals yourself, and never apply either to title-case
+copy. `scripts/check-label-tracking.sh` enforces the pairing. Digits that must line up get
+`tabular-nums`; numeric table columns right-align.
 
-Body base is **13px / weight 500**, set on `<body>` (not `<html>`) so rem-based
-metrics elsewhere don't shrink; 400 reads too light for chrome. Digits that must
-line up get `tabular-nums`, and numeric table columns right-align.
+Body base is **13px / weight 400**, set on `<body>` (not `<html>`); long-form prose is
+14/20 through the prose step.
 
 ## Spacing & control metrics
 
@@ -282,18 +291,26 @@ A 4pt scale, nine steps, in `ui/src/renderer/src/theme.css`:
 
 The half-integer steps have specific jobs: `--space-1-5` is the icon↔label gap inside
 a chip, `--space-2-5` the gap between chips in a cluster, `--space-4-5` fills the
-16→24 jump. Row padding is `--space-2` for dense controls (Select options, segmented
-items) or `--space-3` for table cells and settings rows. Control metrics, same file:
+16→24 jump.
+
+**Row recipe:** rail rows are 28px (`--h-row`); list rows are 36px. A group heading sits
+8px above its group and groups are separated by `--space-5` (24px). Page content uses one
+column, `--page-w` (960px), centred on the content region; Settings, Tasks, Routines,
+Pull requests and Usage all read the same token.
 
 | Token | Value | What it measures |
 |---|---|---|
 | `--h-titlebar` | 28px | OS-frame titlebar, pre-boot screen only |
-| `--h-top` | 44px | Live app topbar |
-| `--h-railhead` | 44px | Rail brand-mark row — equal to `--h-top` so both land on the same pixel row |
+| `--h-top` | 38px | Live app topbar |
+| `--h-railhead` | 38px | Rail brand-mark row — equal to `--h-top` so both land on the same pixel row |
 | `--h-pane-head` | 28px | Every pane header, everywhere |
 | `--h-ctl` | 28px | Buttons, selects, inputs |
-| `--h-row` | 28px | List and table rows |
+| `--h-row` | 28px | Rail rows |
 | `--h-pill` | 26px | Chips |
+| `--page-w` | 960px | The one page column |
+
+List-detail rows and Settings list rows use the 36px list recipe; Settings group headings
+are 13/600 in `--text-primary`, above the group rather than inside its card.
 
 **Every interactive target stays ≥28px tall**, regardless of its visible box — a 22px
 icon button is fine only inside a 28px hit area. `--shell-zoom` mirrors the live zoom
@@ -313,45 +330,33 @@ are deliberately uneven.
 
 ## Radius
 
-Shared radius roles are defined in `ui/src/renderer/src/theme.css`:
+Four roles, each with a legacy alias so feature code does not change:
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--tr-radius-input` | 4px | Inputs, select triggers |
-| `--tr-radius-sm` | 6px | Value chips, small tiles, menu option rows, badges, banners, mini icon buttons |
-| `--tr-radius-button` | 8px | Buttons, segmented track |
-| `--tr-radius-md` | 10px | Panes, overlays, modals, the command palette |
-| `--tr-radius-card` | 12px | Cards |
-| `--tr-radius-pill` | 9999px | Full capsule |
+| `--r-badge` | 4px | Badges, swatches, small value plates |
+| `--r-ctl` | 6px | Controls: buttons, inputs, selects, menu option rows, chips, banners |
+| `--r-group` | 10px | Groups: cards, panes, popovers, menus, overlays |
+| `--r-dialog` | 14px | Dialogs and other top-level floating surfaces |
 
-**The rule: rounded = a value, capsule = pressable.** For chip-sized plates, a status, tag or count is a value and uses
-`--tr-radius-sm`. A choice, filter, copy or removable chip is pressable and uses
-`--tr-radius-pill`. Clickable tags follow the pressable recipe; read-only tags keep
-the value recipe. Fields, menus, ordinary buttons and segmented controls retain the
-radii assigned to their roles in the table.
+Legacy names map to a role (`--tr-radius-sm` → `--r-ctl`, `--tr-radius-md` and
+`--tr-radius-card` → `--r-group`, `--tr-radius-dialog` → `--r-dialog`, and so on).
+`--tr-radius-pill` stays the full capsule.
 
-For cards containing fields, use `--tr-radius-card` with `--space-2` padding and
-`--tr-radius-input` fields. The 1px border plus padding gives a 9px inset; the
-12px outer radius stays within 1px of the 4px inner radius plus that inset.
-Launch slot selects, typed model IDs and checkout readouts share `FIELD_CLS` in
-`selectChrome.ts`: `--h-ctl` (28px), canvas fill, `--border`, `--tr-radius-input` and UI
-type size. An override changes the value and its source label; it does not invent a
-separate control recipe.
+**The rule: rounded = a value, capsule = pressable.** A status, tag or count is a value
+and uses `--r-ctl`. A choice, filter, copy or removable chip is pressable and uses the
+capsule. Fields, menus, ordinary buttons and segmented controls keep their role's rung.
 
-Series keys use `--tr-radius-legend-mark` (2px) to remain square at small sizes.
-Status dots and chart point markers remain circular. Match the neighbouring primitive
-rather than introducing a new radius.
+Status dots and chart markers remain circular; repair marks are square at small sizes.
 
-**One source, and a guard that keeps it that way.** A call site names the rung —
-`rounded-[var(--tr-radius-button)]`, `border-radius: var(--tr-radius-md)` — never
-the number. `.btn` (base.css) and the icon-button chrome constants read the tokens
-too, so changing one `--tr-radius-*` and rebuilding moves every surface wearing that
-meaning. `check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a
-`border-radius: Npx` in CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl`
-(unmapped in `tailwind.css`'s `@theme`, so they are the framework's scale, not this
-one), and `[border-radius:Nunit]` classes in `components/ui/` and the foundation
-stylesheets. `rounded-full` and `rounded-none` stay legal: a circle and a zero
-are shapes, not rungs.
+**One source, and a guard that keeps it that way.** A call site names the role —
+`rounded-[var(--tr-radius-button)]`, `border-radius: var(--r-group)` — never the number.
+`.btn` and the icon-button chrome constants read the tokens too.
+`check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a `border-radius: Npx` in
+CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl` (unmapped in `tailwind.css`'s
+`@theme`), and `[border-radius:Nunit]` classes in `components/ui/` and the foundation
+stylesheets. `rounded-full` and `rounded-none` stay legal: a circle and a zero are shapes,
+not rungs.
 
 ## Materials
 
@@ -451,15 +456,15 @@ There is no status bar row — diagnostics live in Settings.
 
 | Region | Metric / rule |
 |---|---|
-| **Rail** | Resizable between 200 and 420px, remembered per user; `sidebarRail` also hides it, and dragging under 160px collapses it. When hidden, a "Show sidebar" icon button appears in the topbar's left cell. Rail head is 44px; nav rows are ≥28px; Settings section rows are 36px. Selection is one class: an achromatic full-row fill plus `--text-primary` — no left bar, no accent tint. |
-| **Topbar** | 44px. Two-column grid: left = sidebar toggle, right = voice chip → Tidy-panes → Source control → window controls. The Agents/Code mode `Segmented` floats at the window's centre, a child of the shell root. Drag region; interactive children opt out with `no-drag`. |
+| **Rail** | 38px head, 28px rows. Hiding it leaves a Show sidebar control in the topbar. Status rolls up per grid: needs-input, exited, working, starting, unavailable, done, idle, with ties broken by the older `status_since_ms`; a parent with `children_waiting > 0` reads needs-input. The tree is documented with the sidebar migration. |
+| **Topbar** | 38px. Two-column grid: left = sidebar toggle, right = voice chip → Tidy-panes → Source control → window controls. The Agents/Code mode `Segmented` floats at the window's centre, a child of the shell root. Drag region; interactive children opt out with `no-drag`. |
 | **Window controls** | Ordered from the desktop's own button-layout setting, not a hardcoded cluster. Monochrome, no hue-coded discs, no reserved gutter. Sized in `calc(… / var(--shell-zoom))`. |
 | **Terminal grid** | Panes are absolutely positioned inside one container; geometry is computed as percentages then converted to pixel-gutter `calc()`. Outer margin **8px**, **4px** per shared interior edge. Splitters are 8px hit strips centred on the seam; keyboard nudge is 4% of the span. Expand-to-full hides siblings by `visibility`, it does not unmount them. |
 | **Pane headers** | 28px, every pane kind — session, editor, files, browser, skills. |
 | **Stack tabs** | 26px strip on `--card-bg` with a `--divider` bottom border. Each tab: status dot + truncated label (110px cap) + optional 6px `--warn` needs-input badge + a hover/focus-revealed close button. Active tab drops to `--content-bg`; inactive is muted with a neutral hover wash. A `n/cap` indicator appears at the stack's cap. |
 | **Source control** | A workspace panel beside the grid, with Changes and Pull request tabs. Preferred width 480px, compact minimum 340px; expansion is bounded by the main content width, reserving 360px for terminals when space permits. Smaller windows clamp the rendered width without replacing the remembered preference. Its divider uses the terminal splitter's hit area and neutral drag line. |
 | **Changes tab** | Responds to **container queries, not viewport breakpoints**. Wide (`@container (min-width: 720px)`): file list beside the diff. Narrow: stacked, tree capped at 45% height. It has no pane header, drag affordance or independent grid cell. |
-| **Settings** | One scrollable column; section nav lives **in the rail**, not inside the view. Column max-width **720px**. Rows are grouped into one bordered card per group with internal hairline dividers, so a group reads as a single object with internal divisions. Usage is a separate wide rail page. |
+| **Settings** | One scrollable column in the shared `--page-w` (960px). Section nav lives **in the rail**, not inside the view. Group headings sit above their group, 8px clear of it; groups are 24px apart. Row titles are 13/500, descriptions 12 in t3, and descriptions take the row's remaining width beside the control. |
 | **Notices** | Two anchors. `workspace-top`: centred, `min(560px, 100% - 24px)`, **no enter or exit animation**. `pane-corner`: bottom-right, `max-w-[min(300px, 100% - 24px)]`, enters from its own corner and exits by unmounting. Rows are ≥30px with a kind glyph, title, optional mono body, and one action or a dismiss. |
 | **Command palette** | Mounted only while open. Full-viewport scrim, panel `min(560px, 86vw)` at `max-h-[70vh]`, overlay glass, `--tr-radius-md`. 46px search header; `role="listbox"` with 32px option rows grouped under uppercase 11px headers. |
 
@@ -700,13 +705,13 @@ recognise.
 
 ### Page header
 
-Every destination page uses `PageFrame`; choose its `form` (720px) or `wide` (1040px)
-width from the content shape. Compose its heading with `PageHeader`. Use the `heading`
-text role for page titles, as Settings does. Reserve the larger
-`title` role for onboarding and About. A one-sentence description is optional.
-Place page actions at the end of the title row, and use the rail label verbatim as
-the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
-`PAGE_COLUMN_WIDE_CLS` (1040px) for tables and list-detail views.
+Every destination page uses `PageFrame width="page"`: the single `--page-w` (960px)
+column, centred the same way in the content region. Compose its heading with `PageHeader`,
+which renders the `largeTitle` step (26/32, 700) and a one-line description in t2.
+Settings pages that own their header use the same largeTitle through `SectionHead`. Place
+page actions at the end of the title row, and use the rail label verbatim as the page
+title. `PrPageContent` reads the same token. Do not add a per-page max width;
+`check-page-width.sh` rejects one.
 
 ### Section heading and count
 
@@ -739,20 +744,27 @@ chips only for multi-select filters.
 
 ### Status
 
-Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
-uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Starting, Result staged,
+Two primitives, two jobs.
+
+`StatusGlyph` is the one lifecycle mark: a 14px slot whose 9px arc (`working`), 8px warn
+dot with ring (`needs`), 6px accent-ink dot (`finished`), 11px stop circle with `!`
+(`error`) or nothing (`idle`). It takes `state` or maps a reported source through
+`statusGlyphState`; `label` becomes the accessible name. Never paint a rounded status
+fill outside `StatusGlyph` — `check-status-glyph.sh` fails a rounded element that paints a
+status fill and presents as a status image.
+
+`StatusLabel` remains the word-plus-dot label for enumerated domain states (pull-request
+checks, routines, tasks). Choose one word from this vocabulary: Working, Needs input,
+Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Starting, Result staged,
 Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
 Fixing, Not seen, Ready, Stale, Kept, Watching, Verified, Blocked, Merged, Verifying and
-Parked. The dot variant keeps an accessible status
-name when a row already
-identifies its state in a tooltip. Do not rely on colour alone. Idle, Paused, Off, Missing
-and Not seen use a hollow ring. Connected uses the ok dot; Reconnecting uses the warn dot.
-Blocked uses the warn dot and Merged the ok dot. Verifying uses the info dot and pulses
-while the run lasts; Parked uses the stop dot.
-“Ok” and
-“Not there” are not status words. A PR that introduces a status word adds it to
-this list.
+Parked. The dot variant keeps an accessible status name when a row already identifies its
+state elsewhere. Do not rely on colour alone.
+
+**Roll-up:** a grid or workspace takes the highest-ranked pane status, with ties broken by
+the older `status_since_ms`: needs-input, exited, working, starting, unavailable, done,
+idle. `gridStatus` in `components/ui/railRows.ts` owns that order; a parent with
+`children_waiting > 0` rolls up to needs-input.
 
 ### Empty state
 
@@ -786,7 +798,7 @@ variant for inline actions that open related content, such as a linked task key.
 
 ### List and detail
 
-Compose `ListDetail` inside `PageFrame width="wide"`. The list column uses the
+Compose `ListDetail` inside `PageFrame width="page"`. The list column uses the
 existing 280px split at the 720px container threshold; on narrow containers it shows
 one side at a time with a back button. Pass `selectedId` and `onSelect` when selection
 must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
@@ -836,7 +848,7 @@ tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.s
 
 | State | Treatment |
 |---|---|
-| **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
+| **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent-ink); outline-offset: 2px` — so no site can forget it. A site with its own ring still wins by utility order. |
 | **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." The other shared focus recipes (`FOCUS_RING_ACCENT_ICON_CLS`, `FOCUS_RING_ACCENT_INSET_45_CLS`, `FOCUS_HAIRLINE_INSET_CLS`) follow the same rule: a complete literal class, because Tailwind generates no CSS for `focus-visible:shadow-[${CONSTANT}]`. |
 | **Hover** | `ROW_STATE.rest` adds `--hover-fill` to an otherwise transparent row or rail item. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
@@ -977,6 +989,8 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
 | `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`), and any utility whose arbitrary value is interpolated. No exemptions. |
 | `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-status-glyph.sh` | Rejects a rounded element that paints a status fill (warn/danger/stop/ok/success/accent/info) and presents as a status image outside `components/ui/StatusGlyph.tsx`. The unread pip is read state and keeps its own accent dot. |
+| `scripts/check-page-width.sh` | Every page root uses the one `--page-w` column; a per-page arbitrary `max-w-[...]` or CSS `max-width` in the page surfaces fails. |
 | `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
 | `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
 | `scripts/check-spacing-tokens.sh` | Rejects directional child margins and raw spacing values under `components/ui/` and the four foundations, preserving alignment/reset and prose-rhythm exemptions. Any hit fails. |
