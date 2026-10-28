@@ -37,6 +37,7 @@ function transferClient(): HoustonClient {
       handlers.add(handler)
       return () => handlers.delete(handler)
     },
+    subscribeClose: () => noop,
     send: (message: ClientMsg) => {
       if (message.type !== 'transfer_inspect') return
       setTimeout(() => { for (const handler of [...handlers]) handler({ type: 'transfer_inspected', request: message.request, summary: SUMMARY }) }, 0)

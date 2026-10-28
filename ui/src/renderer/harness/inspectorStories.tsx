@@ -281,6 +281,12 @@ export class InspectorClient {
   }
 
   inboxList(workspace: string): void { queueMicrotask(() => this.emit({ type: 'inbox_rows', workspace, rows: [] })) }
+  instructionQueueList(session: number): void {
+    queueMicrotask(() => this.emit({
+      type: 'instruction_queue',
+      snapshot: { session, queued_count: 0, held_count: 0, uncertain_count: 0, hold_reason: null, items: [], truncated: false }
+    }))
+  }
   delegationResultsList(parent: number): void { queueMicrotask(() => this.emit({ type: 'delegation_results', parent, results: [] })) }
   workspaceLocalServers(workspace: string): void { this.send({ type: 'workspace_local_servers', workspace }) }
   prCheckLog(dir: string, run_id: number): void {

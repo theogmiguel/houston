@@ -3,6 +3,7 @@ import { BrowserSurface } from '../src/components/browser/BrowserSurface'
 import { BrowserActConfirm, BrowserActConfirmModal } from '../src/components/BrowserActConfirm'
 import { BrowserFullscreen } from '../src/components/BrowserFullscreen'
 import { PickerStrip, type PickerController } from '../src/components/BrowserPicker'
+import { SurfaceBoundary } from '../src/components/SurfaceBoundary'
 import { SurfaceBrowserTabs } from './inspectorStories'
 import type { ConfirmRequest } from '../src/houston/browserConfirm'
 
@@ -50,7 +51,7 @@ export const BrowserPaneInsecure = (): React.JSX.Element => <PaneStory url="http
 export const BrowserPanePhone = (): React.JSX.Element => <PaneStory click='[aria-label="Phone 393 × 852"]' />
 export const BrowserPaneTablet = (): React.JSX.Element => <PaneStory click='[aria-label="Tablet 820 × 1180"]' />
 export const BrowserPaneTabs = (): React.JSX.Element => <SurfaceBrowserTabs />
-export const BrowserPanePersistError = (): React.JSX.Element => <PaneStory failStorage />
+export const BrowserPanePersistError = (): React.JSX.Element => <SurfaceBoundary label="Browser"><PaneStory failStorage /></SurfaceBoundary>
 
 const pickerBase: PickerController = {
   enabled: true,
