@@ -25,7 +25,9 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
 - **Terminal: a drawer under the thread**, as upstream has it. The thread is the main surface; a
   shell PTY drawer sits below it with split, new and close. Agent CLIs no longer run in a terminal.
   The PTY side is ported with the server, the drawer with the renderer. A grid has at most one
-  drawer open: opening another thread's drawer closes the previous one.
+  drawer open: opening another thread's drawer closes the previous one. Threads are the product;
+  the drawer is secondary, keeps upstream's placement under its own thread, and comes after the
+  thread timeline and composer.
 - **Drawer rendering:** upstream's drawer (splits, persistent terminals, terminal context chips,
   links to the preview) is copied and adapted; inside it, Houston's terminal engine draws and
   carries the bytes (binary frames, bounded buffers, measured on WebKitGTK and Windows), through an
@@ -82,10 +84,10 @@ Everything in `src-tauri` and `ui/`, in this order:
 3. Thread pane mock in `mocks/houston-mocks.html`, then the A/B picks still open in the other
    fragments.
 4. Thread timeline: virtualized list, scroll anchoring and follow, incremental markdown, work groups.
-5. Composer: queue, steer and interrupt intents, approvals, questions, attachments; the terminal
-   drawer under the thread.
+5. Composer: queue, steer and interrupt intents, approvals, questions, attachments.
 6. Sidebar: workspaces → grids → threads, with grids of several threads.
-7. Settings and the remaining pages (Tasks, Routines, PRs, Usage, Changes) on the new server.
+7. Settings and the remaining pages (Tasks, Routines, PRs, Usage, Changes) on the new server;
+   the terminal drawer.
 8. Renderer side of the Houston-only features, after Augusto's matching server slice.
 
 Until Augusto's `contracts` slice lands, Theo works on items 1–3, which do not depend on it.
