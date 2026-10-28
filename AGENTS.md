@@ -5,6 +5,28 @@ A Tauri client connects to a detached Rust daemon that owns real PTYs in project
 The renderer presents sessions as terminal panes. Closing the application detaches the
 client; the daemon and its sessions continue running.
 
+## Branch `v2`
+
+On `v2` and its `v2/*` slice branches, Houston is being rebuilt: panes become **threads**
+(structured conversations) served by a TypeScript sidecar, ported from the upstream project
+named in [NOTICE](NOTICE). `handoff/` holds the decisions and the slice plan; read
+`handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice. Until the v2 invariants
+replace the sections below, these rules take precedence on this branch:
+
+- **Superseded:** terminal fidelity, PTY-based reported status, the binary-PTY-frame rule
+  and the `houston-core` host, transport and protocol checks do not bind v2 code. They
+  still bind any change to the existing daemon.
+- **Licence:** ported code is pushed only with its MIT notice in place (`NOTICE` and
+  `third-party-licenses.config.json`). A ported file keeps a header naming the upstream
+  path and commit it came from.
+- **Tests first:** a slice ports its upstream tests before its code and lands only with
+  them green.
+- **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
+  rebase or force-push `v2`; merge slice branches with `--no-ff`. Regenerate lockfiles
+  and the licence inventory instead of hand-merging them.
+- `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
+  merges into `main`.
+
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
 conflicts with the task, explain the conflict and obtain maintainer direction.

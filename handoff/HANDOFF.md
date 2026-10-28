@@ -37,11 +37,11 @@ re-run (no Rust diff vs `main`). Before/after captures are still owed on the PR:
    - `houston-core` (daemon), PTYs, hooks and the `/ws` protocol go away. Houston features T3 lacks
      (Night shift, task sources GitHub/Notion/Slack, workspace transfer, WSL) are decided per slice;
      default is to port or adapt them into the TS server, not keep a second backend.
-4. **Licence gate (hard):** T3 Code is MIT, "Copyright (c) 2026 T3 Tools Inc.". A 1:1 port is a
-   derivative work. The maintainer chose to omit the notice *for now*. The repository is public, so
-   **no ported code may be pushed until the MIT notice is added** (an entry in
-   `src-tauri/resources/third-party-licenses.json` plus the licence text). This `handoff/` commit has no
-   ported code.
+4. **Licence:** T3 Code is MIT, "Copyright (c) 2026 T3 Tools Inc.". A 1:1 port is a derivative
+   work. The maintainer keeps the notice (a clean-room rewrite was rejected: it would lose the
+   robustness that is the reason for the port). Commit 0 on `v2` adds it to `NOTICE` and
+   `third-party-licenses.config.json` at upstream commit `9826dbb9`; ported code may be pushed only
+   after it.
 5. **Branching:** one long-lived `v2` branch; one sub-branch per ported slice, merged into `v2`.
 6. **Workforce:** opencode panes on the DeepSeek 4.1 models (effectively unlimited for the maintainer).
    Claude usage is limited: the full-redesign mock fan-out (7 Sonnet panes) hit the 5-hour limit.
@@ -135,7 +135,7 @@ independent daemon, thread history stored by the service. Take the thread ideas,
      a sampled human-level review and a full gate at each integration into `v2`.
    - One sub-branch per slice, opencode + DeepSeek 4.1 workers, briefs in English.
 2. Mock the thread pane in `handoff/mocks/houston-mocks.html`.
-3. Add the MIT notice before the first push containing ported code.
+3. Done in commit 0: the MIT notice. Collaboration plan for two maintainers: `PLAN.md`.
 4. Rewrite `AGENTS.md` invariants for v2 when its architecture lands.
 
 ## 6. Traps learned in this session
