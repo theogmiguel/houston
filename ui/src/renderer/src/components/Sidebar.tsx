@@ -2,6 +2,7 @@ import { SettingsFooterItem } from './ui/SettingsFooterItem'
 import type { AgentAttention } from '../useAgentAttention'
 import { MascotMount } from '../mascot/MascotMount'
 import type { TagInfo } from "../houston/generated/TagInfo";
+import type { ReactNode } from "react";
 import {
   Suspense,
   lazy,
@@ -441,6 +442,8 @@ interface Props {
   onTogglePinWorkspace: (path: string) => void;
   /** Where reversible rail actions offer Undo. */
   notices?: Pick<NoticeStore, "push" | "dismiss">;
+  /** The connection banner, mounted at the top of the rail while the daemon is away. */
+  offlineBanner?: ReactNode;
   onSshConnect: () => void;
   railClient?: HoustonClient | null;
   checkoutBranches?: ReadonlyMap<number, string>;
@@ -1285,6 +1288,7 @@ export function Sidebar({
   pinnedWorkspaces,
   onTogglePinWorkspace,
   notices,
+  offlineBanner,
   onSshConnect,
   railClient,
   checkoutBranches = NO_BRANCHES,
@@ -1936,6 +1940,7 @@ export function Sidebar({
         onHeadDoubleClick={onHeadDoubleClick}
         onHideRail={onHideRail}
       />
+      {offlineBanner}
       <Suspense fallback={null}><GridRailGitSubscription client={railClient ?? null} sessions={sessions} /></Suspense>
       {}
       {!settingsOpen && (

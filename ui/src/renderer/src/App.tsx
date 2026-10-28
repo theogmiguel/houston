@@ -7,7 +7,7 @@ import { WorkspaceTransferHost } from './components/WorkspaceTransferHost';
 import { useSessionUpdates } from './useSessionUpdates';
 import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
-import { inputEpisode, ownUserInput } from './sessionAttention';
+import { inputEpisode, needsUserInput, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
@@ -408,6 +408,8 @@ import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/ui/Icon";
 import {
   Button,
+  Chip,
+  StatusGlyph,
   AppTitlebar,
   TitlebarLead,
   ContentRegion,
@@ -2320,6 +2322,12 @@ export function App(): React.JSX.Element {
     restoreOrigin: (origin) => restoreRequestOrigin(origin, sessionsRef.current, requestNavigation),
     nothingWaiting: () => pushNotice({ code: "next-request-empty", title: "Nothing is waiting on you" }),
   });
+  const needsYou = useMemo(
+    () => [...sessions.values()]
+      .filter((session) => needsUserInput(session) && !session.hidden)
+      .sort((a, b) => (a.status_since_ms ?? 0) - (b.status_since_ms ?? 0)),
+    [sessions],
+  );
   const handleAddGrid = useCallback((path: string): void => {
     if (!workspacesRef.current.some((w) => w.path === path)) return;
     const next = addGrid(path, "Untitled");
@@ -3754,6 +3762,19 @@ export function App(): React.JSX.Element {
               }
               pinnedWorkspaces={wsPinnedSet}
               notices={appNotices}
+              offlineBanner={conn.kind === "reconnecting" ? (
+                <Suspense fallback={null}>
+                  <ReconnectBanner
+                    since={conn.since}
+                    error={conn.error}
+                    placement="rail"
+                    onRetry={() => {
+                      clearTimeout(retryTimerRef.current);
+                      reconnectRef.current();
+                    }}
+                  />
+                </Suspense>
+              ) : null}
               onTogglePinWorkspace={(path) =>
                 setWsPinned((prev) =>
                   prev.includes(path)
@@ -3865,6 +3886,16 @@ export function App(): React.JSX.Element {
                 )}
               </TitlebarLead>
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
+              {sidebarRail && needsYou.length > 0 && (
+                <span data-testid="titlebar-needs-you">
+                  <Chip
+                    variant="choice"
+                    icon={<StatusGlyph state="needs" />}
+                    label={`${needsYou.length} needs you`}
+                    onClick={() => focusPane(needsYou[0].id)}
+                  />
+                </span>
+              )}
             </div>
             <ToolbarActions>
               <VoiceMicChip
@@ -3937,19 +3968,6 @@ export function App(): React.JSX.Element {
               )}
             </ToolbarActions>
           </AppTitlebar>
-
-          {conn.kind === "reconnecting" && (
-            <Suspense fallback={null}>
-              <ReconnectBanner
-                since={conn.since}
-                error={conn.error}
-                onRetry={() => {
-                  clearTimeout(retryTimerRef.current);
-                  reconnectRef.current();
-                }}
-              />
-            </Suspense>
-          )}
 
           {reviewRequestSignalsFor(conn, desktopNotificationMode, setReviewRequestCount)}
 
@@ -4146,6 +4164,7 @@ export function App(): React.JSX.Element {
                             <div className="relative flex-1 min-w-0 min-h-0">
                               <WorkspaceEmpty
                                 installedAgents={(agentHooks ?? []).filter((provider) => provider.present).map((provider) => provider.provider)}
+                                agentHooks={agentHooks ?? []}
                                 onSpawnAgent={spawnAgentPane}
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}

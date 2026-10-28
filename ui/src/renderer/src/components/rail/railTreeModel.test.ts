@@ -151,7 +151,7 @@ describe('railEmptyMessage', () => {
   const none = DEFAULT_RAIL_PREFS.filters
 
   it('says there are no workspaces before anything else', () => {
-    expect(railEmptyMessage({ workspaceCount: 0, filters: none, activeTagIds: [] })).toBe('No workspaces yet.')
+    expect(railEmptyMessage({ workspaceCount: 0, filters: none, activeTagIds: [] })).toBe('No workspaces yet')
   })
 
   it('invites a first grid when no filter is active', () => {

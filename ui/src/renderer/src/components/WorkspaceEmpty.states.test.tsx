@@ -72,6 +72,25 @@ describe('WorkspaceEmpty — state matrix', () => {
     expect(container.querySelector('[data-testid="workspace-empty-new-session"]')).toBeNull()
   })
 
+  it('names only the hooks-off exception under a launch tile', () => {
+    act(() =>
+      root.render(
+        <WorkspaceEmpty
+          installedAgents={['claude', 'codex']}
+          agentHooks={[
+            { provider: 'claude', path: '', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '2.1.263', trust: null },
+            { provider: 'codex', path: '', scope: 'global', enabled: false, installed: true, error: null, present: true, version: '0.160', trust: null }
+          ]}
+          onSpawnAgent={() => {}}
+          onTerminal={() => {}}
+          onBrowser={() => {}}
+        />
+      )
+    )
+    expect(container.textContent).toContain('No status: hooks off')
+    expect(container.textContent?.match(/No status: hooks off/g)).toHaveLength(1)
+  })
+
   it('Thread is gone, not merely disabled', () => {
     expect(container.querySelector('[data-testid="workspace-empty-thread"]')).toBeNull()
   })

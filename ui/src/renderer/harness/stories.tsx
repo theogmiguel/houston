@@ -1,6 +1,7 @@
 import { SettingsAgentsOverview } from './settingsStories'
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
+import { NarrowTitlebarStory, RailOfflineStory } from './titlebarStories'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { PrPanelStory } from './prPanelStories'
@@ -244,7 +245,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'browser/act-overlay': () => <BrowserActOverlayStory />,
   'browser/act-modal': () => <BrowserActModalStory />,
   'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
-  'shell/workspace-empty': () => <WorkspaceEmpty installedAgents={['claude', 'codex', 'opencode']} onSpawnAgent={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
+  'shell/workspace-empty': () => <WorkspaceEmpty installedAgents={['claude', 'codex', 'opencode']} agentHooks={[{ provider: 'claude', path: '', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '2.1.263', trust: null }, { provider: 'codex', path: '', scope: 'global', enabled: false, installed: true, error: null, present: true, version: '0.160', trust: null }, { provider: 'opencode', path: '', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '1.18.27', trust: null }]} onSpawnAgent={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'harness/smoke': () => (
     <div
       style={{
@@ -344,6 +345,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'voice/dictation-listening': () => <DictationListeningStory />,
   'voice/dictation-transcribing': () => <DictationTranscribingStory />,
   'shell/window-controls-resize': () => <WindowControlsStory />,
+  'shell/titlebar-narrow': () => <NarrowTitlebarStory />,
+  'shell/rail-offline': () => <RailOfflineStory />,
   'layout/drop-slots-splitter': () => <LayoutDropSlotsStory />,
   'shell/open-in-submenu': () => <OpenInSubmenuStory />,
   'files/surface-340': () => <FilesSurfaceTree340 />,

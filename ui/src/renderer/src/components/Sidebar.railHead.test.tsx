@@ -104,6 +104,13 @@ describe('Sidebar rail head — state matrix', () => {
     expect(brand!.compareDocumentPosition(hide!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('mounts the offline banner directly under the rail header', () => {
+    render({ offlineBanner: <div data-testid="offline-banner" /> })
+    const head = container.querySelector('aside > div')!
+    const banner = container.querySelector('[data-testid="offline-banner"]')!
+    expect(head.nextElementSibling).toBe(banner)
+  })
+
   it('Hover — the hide button is the head\'s one affordance: a 28px chrome button with the hover wash, offered only when the app wires onHideRail', () => {
     render({ onHideRail: noop })
     const btn = container.querySelector('aside > div button[aria-label="Hide sidebar"]') as HTMLElement | null

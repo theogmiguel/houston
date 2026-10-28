@@ -33,7 +33,7 @@ export interface ChoiceGridProps {
 
 export function ChoiceGrid({ children, columns, spacing = 'relaxed', role, 'aria-label': ariaLabel }: ChoiceGridProps): React.JSX.Element {
   const columnClass = columns === 2 ? 'grid-cols-[repeat(2,minmax(0,1fr))]' : 'grid-cols-[repeat(3,minmax(0,1fr))]'
-  const style = spacing === 'relaxed' ? { marginBlockStart: 'var(--space-2)', marginBlockEnd: 'var(--space-4)' } : undefined
+  const style = spacing === 'relaxed' ? { marginBlockStart: 'var(--space-2)' } : undefined
   return <div role={role} aria-label={ariaLabel} style={style} className={`grid ${columnClass} ${spacing === 'inset' ? 'gap-[var(--space-2)] px-[var(--space-4)] pt-[var(--space-3)] pb-[var(--space-4)]' : 'gap-[var(--space-3)]'}`}>{children}</div>
 }
 
