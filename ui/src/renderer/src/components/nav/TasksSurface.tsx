@@ -127,7 +127,7 @@ export function TasksSurface({
   if (create) {
     return (
       <NavSurfaceFrame data-page="tasks">
-        <PageFrame width="wide" className="flex-1 min-w-0">
+        <PageFrame width="page" className="flex-1 min-w-0">
           <TaskComposer parentOptions={parentOptions} initialTitle={createDraft?.title} initialDescription={createDraft?.description} onCancel={() => setCreate(false)} onCreate={(patch) => {
             tasks.createTask(patch, open)
             setCreate(false)
@@ -140,7 +140,7 @@ export function TasksSurface({
   const activeProjects = (projects.projects ?? []).filter((project) => project.archived_at_ms == null)
   return (
     <NavSurfaceFrame data-page="tasks">
-      <PageFrame width="wide" className="flex-1 min-w-0">
+      <PageFrame width="page" className="flex-1 min-w-0">
         <PageHeader
           heading="Tasks"
           description="Work for you and your agents. Each task runs in its own worktree and ends in a pull request."

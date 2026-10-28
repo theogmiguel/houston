@@ -124,6 +124,8 @@ jobs:
         run: bash scripts/check-empty-state-action.sh
       - name: check-ui-boundary.sh (feature class strings use layout utilities only)
         run: bash scripts/check-ui-boundary.sh
+      - name: check-page-width.sh (every page root uses the one --page-w column)
+        run: bash scripts/check-page-width.sh
       - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
         run: bash scripts/check-copy.sh
       - name: check-ratchets-only-tighten.sh (the complexity ratchet only tightens)

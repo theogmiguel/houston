@@ -351,7 +351,7 @@ export function UsageSection({
 
   return (
     <div className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
-      <PageFrame width="wide" scroll={false} padding="page">
+      <PageFrame width="page" scroll={false} padding="page">
       <PageHeader heading="Usage" description="What your Claude Code and Codex sessions on this machine would cost at API prices. Houston reads their transcripts locally; nothing is sent anywhere." actions={
         <>
           <Select prefix={<Icon glyph={IconFolder} role="ui" />} aria-label="Usage workspace" data-testid="usage-workspace" value={selectedWorkspace} options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]} onChange={setSelectedWorkspace} />

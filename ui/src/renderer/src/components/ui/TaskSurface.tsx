@@ -179,7 +179,7 @@ export interface TaskRowProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   withWorkspace?: boolean
 }
 
-/** One task in the list: priority, status, key, title, optional workspace, and a trailing slot. */
+/** One task in the list: priority (blank when unset), status, key, title, optional workspace, and a trailing slot. */
 export function TaskListRow({ selected = false, withWorkspace = false, className, ...props }: TaskRowProps): React.JSX.Element {
   return (
     <button
@@ -269,6 +269,10 @@ export function TaskTagChip({ narrow = false, className, children, ...props }: T
 export { TaskKeyChip, TaskKeyTag, type TaskKeyChipProps } from './TaskKeyChip'
 
 /** A provider mark at 14px. */
+export function TaskPriorityMark({ children }: { children: ReactNode }): React.JSX.Element {
+  return <span data-testid="task-priority-mark" aria-hidden="true" className="flex-none text-[var(--text-muted)]">{children}</span>
+}
+
 export function TaskAgentIcon({ agent }: { agent: AgentKind }): React.JSX.Element {
   return <IconAgent agent={agent} brand className="size-[var(--tr-icon-heading-size)] flex-none" />
 }
@@ -578,7 +582,6 @@ export function TaskSurfaceSpecimen(): React.JSX.Element {
         </TaskGroupHeader>
         <TaskListRow>
           <span />
-          <span />
           <TaskKey>HOU-41</TaskKey>
           <TaskListTitle>pane_spawn refuses unsafe worktree slugs</TaskListTitle>
           <TaskLive>
@@ -587,7 +590,7 @@ export function TaskSurfaceSpecimen(): React.JSX.Element {
           </TaskLive>
         </TaskListRow>
       </TaskGroupSection>
-      <TaskListRow selected withWorkspace><span /><span /><TaskKey>HOU-43</TaskKey><TaskListTitle>Regression test</TaskListTitle><TaskTagChip narrow>houston</TaskTagChip><TaskAge>1h</TaskAge></TaskListRow>
+      <TaskListRow selected withWorkspace><span /><TaskKey>HOU-43</TaskKey><TaskListTitle>Regression test</TaskListTitle><TaskTagChip narrow>houston</TaskTagChip><TaskAge>1h</TaskAge></TaskListRow>
       <div className="flex items-center gap-[var(--space-2)] px-3.5">
         <TaskKeyChip>HOU-41</TaskKeyChip>
         <TaskKeyTag compact>HOU-42</TaskKeyTag>

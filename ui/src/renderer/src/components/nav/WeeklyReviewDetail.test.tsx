@@ -51,6 +51,15 @@ it('uses review history for its workspace and writes schedule helpers including 
   emit({ type: 'harness_report', review_id: 7, markdown: 'Workspace A report', truncated: false })
   expect(screen.getByRole('dialog', { name: 'Weekly review report' })).toBeTruthy()
 })
+it('opens a published run from its row as well as its report link', () => {
+  const { client, emit, state, harnessReport } = fixture()
+  render(<WeeklyReviewDetail client={client} workspaceName="A" routine={ROUTINE} runsLoading={false} now={100} running={false} pending={false} atLimit={null}
+    onRunNow={vi.fn()} onToggleEnabled={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} onUpdateSchedule={vi.fn()} onUpdateEngine={vi.fn()} onOpenSession={vi.fn()} />)
+  emit(state('/a'))
+  fireEvent.click(screen.getByTestId('review-run-7'))
+  expect(harnessReport).toHaveBeenCalledWith(7)
+})
+
 it('creates a missing per-workspace review with shared setup fields without starting a run', () => {
   const { client, emit, state, harnessRoutineCreate } = fixture()
   const onRunNow = vi.fn()
@@ -89,4 +98,5 @@ it('shows a running banner from reported review state without inventing session 
   emit(message)
   expect(screen.getByText('Reading sessions in A · started 3 min ago in a background pane')).toBeTruthy()
   expect(screen.queryByText('Published')).toBeNull()
+  expect(screen.queryByTestId('routine-run-now')).toBeNull()
 })

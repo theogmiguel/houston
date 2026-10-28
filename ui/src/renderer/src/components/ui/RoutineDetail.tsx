@@ -1,4 +1,5 @@
-import { Card, Chip, Button, Notice, SectionHead, Segmented, Select, StatusLabel, Table, type TableColumn } from './index'
+import { Card, Chip, Button, Notice, SectionHead, Segmented, Select, StatusLabel, Table, Text, type TableColumn } from './index'
+import { BlockRow, BlockRowActions } from './Block'
 import { ActionMenu } from './ActionMenu'
 import { IconPlay } from '../icons'
 import { Toggle } from './settingsPrimitives'
@@ -147,15 +148,55 @@ function RoutineDetailHeader({ routine, displayName, subheading, description, ru
     <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
       <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
         {subheading
-          ? <h3 className="m-0 min-w-0 truncate text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]">{displayName}</h3>
+          ? <h3 className="m-0 min-w-0 truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{displayName}</h3>
           : <h2 className="m-0 min-w-0 truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] tracking-[var(--tr-text-subhead-tracking)] text-[var(--text-primary)]">{displayName}</h2>}
         {routine.kind === 'harness_review' && !subheading && <Chip variant="label" label="Built in" />}
       </div>
       {description}
     </div>
-    <Button variant="secondary" icon={IconPlay} data-testid="routine-run-now" disabled={running || pending} onClick={onRunNow} className="flex-none">{pending ? 'Starting…' : 'Run now'}</Button>
+    {!running && !pending && <Button variant="secondary" icon={IconPlay} data-testid="routine-run-now" onClick={onRunNow} className="flex-none">Run now</Button>}
+    {pending && <Text as="span" role="status" size="small" tone="muted" className="flex-none">Starting…</Text>}
     <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: onEdit }, { label: 'Delete', onSelect: onDelete, tone: 'danger' }]} />
   </header>
+}
+
+
+/** One recent run. A published run is clickable and reveals its Report link on hover or focus. */
+export function RoutineRunRow({ date, meta, status, testId, reportTestId, onOpenReport }: {
+  date: string
+  meta: string
+  status?: React.ReactNode
+  testId?: string
+  reportTestId?: string
+  onOpenReport?: () => void
+}): React.JSX.Element {
+  const open = onOpenReport !== undefined
+  return <BlockRow
+    data-testid={testId}
+    role={open ? 'button' : undefined}
+    tabIndex={open ? 0 : undefined}
+    onClick={open ? onOpenReport : undefined}
+    onKeyDown={open ? (event) => {
+      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        onOpenReport()
+      }
+    } : undefined}
+    className="items-start"
+  >
+    <span className="grid min-w-0 flex-1 grid-cols-[var(--w-routine-run-date)_minmax(0,1fr)] items-center gap-[var(--space-3)]">
+      <Text as="span" size="small" tone="secondary" className="tabular-nums">{date}</Text>
+      <Text as="span" size="small" tone="muted" className="truncate">{meta}</Text>
+    </span>
+    {status}
+    {open && <BlockRowActions>
+      <Button variant="muted-link" size="sm" aria-label="Open report" data-testid={reportTestId} onClick={(event) => { event.stopPropagation(); onOpenReport() }}>Report</Button>
+    </BlockRowActions>}
+  </BlockRow>
+}
+
+export function RoutineSettingsGroup({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <div role="group" aria-label="Routine settings" className="@container">{children}</div>
 }
 
 function RoutineSettings({ routine, displayName, engineRefusals, scheduleControl, onUpdateSchedule, onUpdateEngine, onToggleEnabled }: {
@@ -167,9 +208,9 @@ function RoutineSettings({ routine, displayName, engineRefusals, scheduleControl
   onUpdateEngine: (engine: AgentKind) => void
   onToggleEnabled: () => void
 }): React.JSX.Element {
-  return <Card layout="fields" shape="card" role="group" aria-label="Routine settings">
+  return <RoutineSettingsGroup>
     <Card.Field label="Schedule">{scheduleControl ?? <Segmented aria-label="Schedule" value={scheduleChoice(routine)} onChange={(value) => { if (value !== 'manual') onUpdateSchedule(cadenceFor(value, routine)) }} options={[{ value: 'manual', label: 'Manual', disabled: true }, { value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]} />}</Card.Field>
     <Card.Field label="Runs on"><Select aria-label="Runs on" data-testid="routine-detail-engine" value={routine.engine} options={routineEngineOptions(engineRefusals, routine.permission_mode, "Change the routine's access with Edit first.")} onChange={(value) => onUpdateEngine(value as AgentKind)} width="full" /></Card.Field>
     <Card.Field label="Enabled"><Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label={`Enable ${displayName}`} /></Card.Field>
-  </Card>
+  </RoutineSettingsGroup>
 }

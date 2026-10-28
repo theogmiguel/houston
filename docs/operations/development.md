@@ -522,6 +522,8 @@ committed inventory and runs in its own `licence-inventory` job.
 | `check-empty-state-action.sh` | an empty state offers the action its copy names — copy that says "Start a chat" while the control lives in some other chrome fails | scans `ui/src` for elements with an empty-ish `data-testid` (`*empty*`/`*no-matches*`/`*unselected*`), requires `<button`, `<a `, or an `<EmptyState` render in the subtree whenever the copy opens with an imperative; `EmptyState`'s own `action` is required BY TYPE so tsc guards that half; three reasoned testid exemptions |
 | `check-third-party-licenses.sh` | the committed inventory of every third-party package in the binaries (`src-tauri/resources/third-party-licenses.json`) matches the dependency graphs the tree resolves to | runs `scripts/gen-third-party-licenses.mjs --out <tmp>` and diffs the deterministic output against the committed file; a difference names the differing line count and only the first diff lines, never the whole 1.4 MB file |
 
+| `check-page-width.sh` | every page root uses the one `--page-w` column (960px in `theme.css`), never a per-page `max-w-[Npx]` | scans `components/nav/`, `components/prs/`, `UsageSection.tsx` and `ui/PrPage.tsx` for arbitrary max widths; only `max-w-[var(--page-w)]` passes |
+
 ### What CI runs
 
 | Job | Runs on | What it does |

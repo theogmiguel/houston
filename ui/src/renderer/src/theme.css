@@ -1567,6 +1567,8 @@
   --h-titlebar: 28px;
   --pane-gutter: 8px;
   --h-top: 38px;
+  /* One column for every page: wide enough for a list beside its detail. */
+  --page-w: 960px;
   --h-railhead: 38px;
   --h-tree-group-header: 30px;
   --sz-brand-mark: 32px;
@@ -1583,6 +1585,8 @@
   --w-filter-badge-min: 13px;
   --w-context-menu: 244px;
   --w-workspace-refusal: 430px;
+  /* The recent-run date gutter, so every run's description starts on one line. */
+  --w-routine-run-date: 90px;
   --w-empty-state-heading: 20ch;
   --w-empty-state-description: 52ch;
   --w-rail-specimen: 256px;
