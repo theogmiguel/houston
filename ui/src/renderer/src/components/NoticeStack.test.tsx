@@ -72,8 +72,8 @@ describe('NoticeStack rows', () => {
       />
     )
     const open = screen.getByRole('button', { name: 'Open pane' })
-    expect(open.className).toContain('bg-[var(--hover-fill)]')
-    expect(open.className).toContain('border-[var(--border)]')
+    expect(open.className).toContain('bg-[var(--field)]')
+    expect(open.className).toContain('border-[var(--line-strong)]')
   })
 
   it('gives an error row role=alert and every other kind role=status', () => {

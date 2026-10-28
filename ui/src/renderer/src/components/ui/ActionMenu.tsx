@@ -2,13 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { IconMoreHorizontal } from '../icons'
 import { Button } from './Button'
 import { AnimOut } from './AnimOut'
-import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 
 export interface ActionMenuItem {
   label: string
   onSelect: () => void
   tone?: 'default' | 'danger'
 }
+
+const MENU_CLS =
+  'absolute left-0 top-[calc(100%+var(--space-1))] z-50 grid min-w-[140px] gap-[var(--space-0-5)] p-[var(--space-1)] ' +
+  'rounded-[var(--tr-radius-md)] bg-[var(--raised)] shadow-[var(--shadow-float)]'
+
+const ITEM_CLS =
+  'flex w-full items-center gap-[var(--space-2-5)] h-[var(--h-row)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] ' +
+  'border-0 bg-transparent text-left [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] ' +
+  'hover:bg-[var(--accent)] hover:text-[var(--on-accent)] ' +
+  'focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px]'
 
 export function ActionMenu({
   label,
@@ -47,25 +56,20 @@ export function ActionMenu({
         : <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{label}</Button>}
       <AnimOut open={open} suppress="popover">
         {open && (
-          <div
-            {...OVERLAY_RAISED_ATTRS}
-            role="menu"
-            className={`absolute left-0 top-[calc(100%+var(--space-1))] z-50 grid min-w-[140px] gap-[var(--space-1)] p-[var(--space-1)] ${OVERLAY_RAISED_CLS}`}
-          >
+          <div role="menu" className={MENU_CLS}>
             {items.map((item) => (
-              <Button
+              <button
                 key={item.label}
+                type="button"
                 role="menuitem"
-                variant={item.tone === 'danger' ? 'danger' : 'ghost'}
-                size="sm"
-                className="justify-start"
+                className={`${ITEM_CLS} ${item.tone === 'danger' ? '!text-[var(--stop)]' : ''}`}
                 onClick={() => {
                   setOpen(false)
                   item.onSelect()
                 }}
               >
                 {item.label}
-              </Button>
+              </button>
             ))}
           </div>
         )}

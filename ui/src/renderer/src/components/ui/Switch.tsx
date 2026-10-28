@@ -34,8 +34,8 @@ export interface SwitchProps {
 
 export function Switch({ on, disabled, label, onChange, testId, size = 'field' }: SwitchProps): React.JSX.Element {
   const trackTone = size === 'panel'
-    ? on ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]' : 'border-[var(--border-control)] bg-[var(--hover-fill)]'
-    : on ? 'border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[var(--accent)]' : 'border-[var(--border-control)] bg-[var(--hover-fill)]'
+    ? on ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]' : 'border-[var(--border-control)] bg-[var(--tog-off)]'
+    : on ? 'border-transparent bg-[var(--accent)]' : 'border-transparent bg-[var(--tog-off)]'
   const thumbPosition = size === 'status'
     ? on ? 'translate-x-[var(--tr-switch-compact-travel)]' : ''
     : size === 'configuration'
@@ -43,5 +43,5 @@ export function Switch({ on, disabled, label, onChange, testId, size = 'field' }
       : size === 'panel'
         ? on ? 'translate-x-[var(--space-panel-switch-travel)]' : ''
         : on ? 'translate-x-[var(--space-switch-thumb-shift)]' : ''
-  return <button type="button" role="switch" aria-checked={on} aria-label={label} data-testid={testId ?? (size === 'status' || size === 'configuration' ? undefined : 'nav-switch')} disabled={disabled} onClick={() => onChange(!on)} className={`btn relative flex-none ${TRACK[size]} p-0 rounded-full border cursor-pointer ${TRANSITION[size]} disabled:cursor-default disabled:opacity-55 ${HIT_TARGET_28} ${trackTone}`}><span aria-hidden={size === 'status' || undefined} className={`absolute ${THUMB[size]} rounded-full ${on ? `bg-[var(--on-accent)] ${thumbPosition}` : 'bg-[var(--text-secondary)]'}`} /></button>
+  return <button type="button" role="switch" aria-checked={on} aria-label={label} data-testid={testId ?? (size === 'status' || size === 'configuration' ? undefined : 'nav-switch')} disabled={disabled} onClick={() => onChange(!on)} className={`btn relative flex-none ${TRACK[size]} p-0 rounded-full border cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px] ${TRANSITION[size]} disabled:cursor-default disabled:opacity-55 ${HIT_TARGET_28} ${trackTone}`}><span aria-hidden={size === 'status' || undefined} className={`absolute ${THUMB[size]} rounded-full bg-[var(--on-accent)] shadow-[var(--shadow-switch-thumb)] ${thumbPosition}`} /></button>
 }

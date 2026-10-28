@@ -52,11 +52,11 @@ describe('WorkspacesEmpty — state matrix', () => {
     expect(container.querySelector('[data-testid="workspaces-empty-refusals"]')).toBeNull()
   })
 
-  it('Empty — the headline is the 44px display serif (overlays-02)', () => {
+  it('Empty — the headline is the 34px empty-title serif (overlays-02)', () => {
     render()
     const headline = container.querySelector('[data-testid="empty-state-headline"]')
     expect(headline?.textContent).toBe('No workspaces yet')
-    expect(headline?.className).toContain('text-[length:var(--tr-text-display-size)]')
+    expect(headline?.className).toContain('text-[length:var(--tr-text-empty-title-size)]')
   })
 
   it('Pending — the label becomes "Opening picker…" and the button disables', () => {

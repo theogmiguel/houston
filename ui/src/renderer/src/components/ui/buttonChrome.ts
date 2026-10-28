@@ -1,6 +1,6 @@
 export const BTN_PRIMARY =
-  'bg-[var(--primary-fill)] [border-color:var(--primary-fill)] text-[var(--primary-foreground)] font-bold ' +
-  'hover:bg-[var(--primary-fill-hover)]'
+  'bg-[var(--accent)] [border-color:transparent] text-[var(--on-accent)] font-semibold ' +
+  'hover:enabled:brightness-[1.08]'
 
 // text-white is a fixed contrast pair, not a themed surface: every theme's
 // --danger is dark enough (#ef4444/#dc2626) for white to clear 4.5:1, which
@@ -10,7 +10,7 @@ export const BTN_DANGER_SOLID =
   'hover:bg-[color-mix(in_srgb,var(--danger)_85%,black)]'
 
 export const BTN_SECONDARY =
-  'btn border border-[var(--border)] bg-[var(--content-bg)] text-[var(--text-primary)] hover:enabled:bg-[var(--hover-fill)] disabled:opacity-55'
+  'btn border border-[var(--line-strong)] bg-[var(--field)] text-[var(--text-primary)] hover:enabled:bg-[var(--sel)] disabled:opacity-55'
 
 // Background half of the ghost look, for sites that keep their own text colour
 // and border (App.tsx's inherit-colour button).

@@ -251,9 +251,12 @@
 
     "Re-cut against 961,677 bytes (one boot chunk) for the status-glyph pass: the primitive,",
     "its source mapping and the two-theme specimen add 625 bytes while replacing five local",
-    "dot implementations. Same small headroom."
+    "dot implementations. Same small headroom.",
+    "Re-cut against 963,021 bytes (one boot chunk): the native recipes add the control, row,",
+    "menu, palette, banner and empty-state utilities first paint renders, a 1,344-byte gain",
+    "over the status-glyph pass. Same small headroom."
   ],
-  "maxBootBytes": 961900,
+  "maxBootBytes": 963300,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

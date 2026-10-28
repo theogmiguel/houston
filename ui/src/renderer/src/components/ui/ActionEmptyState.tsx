@@ -6,13 +6,13 @@ const SIZE = {
   full: {
     root: 'gap-[var(--space-4)] px-[var(--space-6)]',
     headline:
-      'font-[family-name:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)] ' +
-      'leading-[1.15] tracking-[-0.02em] max-w-[20ch]',
-    headlineWeight: 'var(--tr-text-display-weight)',
+      'font-[family-name:var(--tr-text-display-family)] text-[length:var(--tr-text-empty-title-size)] ' +
+      'leading-[var(--tr-text-empty-title-leading)] tracking-[var(--tr-text-empty-title-tracking)] max-w-[20ch]',
+    headlineWeight: 'var(--tr-text-empty-title-weight)',
     description:
       'max-w-[52ch] [font-size:var(--tr-text-prose-size)] [font-weight:var(--tr-text-prose-weight)] leading-[var(--tr-text-prose-leading)]',
     action:
-      'h-9 px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] ' +
+      'h-[var(--h-ctl)] px-[var(--space-3)] [font-size:var(--tr-text-ui-size)] ' +
       '[font-weight:var(--tr-text-ui-weight)]',
     actionInset: 'pt-[var(--space-2)]'
   },

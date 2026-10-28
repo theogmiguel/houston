@@ -1296,6 +1296,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             </div>
           </SpecimenRow>
           <SpecimenRow>
+            <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} />
             <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} size="compact" />
             <ActionEmptyState surface="shell" className="h-full" headline="No file selected" description="Choose a file to inspect its diff." action={{ label: 'Review', onClick: noop }} size="compact" />
           </SpecimenRow>

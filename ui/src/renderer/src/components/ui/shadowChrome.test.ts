@@ -9,7 +9,8 @@ describe('focus halo', () => {
     const literal = 'focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]'
     expect(FOCUS_HALO_CLS).toBe(literal)
     expect(readFileSync(new URL('./shadowChrome.ts', import.meta.url), 'utf8')).toContain(`'${literal}'`)
-    expect(SEG_ITEM_CLS.split(' ')).toContain(literal)
+    expect(SEG_ITEM_CLS.split(' ')).toContain('focus-visible:outline-2')
+    expect(SEG_ITEM_CLS.split(' ')).toContain('focus-visible:outline-[var(--accent-ink)]')
   })
 
   it('spells every shared focus class as one literal utility, never an interpolation', () => {

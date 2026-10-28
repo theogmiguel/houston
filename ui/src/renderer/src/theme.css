@@ -100,13 +100,13 @@
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
-  --w-switch-knob: 11px;
+  --w-switch-knob: 14px;
   --space-switch-inset: 2px;
-  --space-switch-travel: 13px;
+  --space-switch-travel: 12px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
@@ -117,6 +117,16 @@
   --border: #2a2a31;
   --border-hover: #35353d;
   --border-focus: #6f6f7a;
+  --line-strong: rgba(255, 255, 255, .16);
+  --field: rgba(255, 255, 255, .06);
+  --hover: rgba(255, 255, 255, .05);
+  --sel: rgba(255, 255, 255, .09);
+  --tog-off: rgba(255, 255, 255, .18);
+  --warn-wash: rgba(245, 165, 36, .08);
+  --warn-line: rgba(245, 165, 36, .32);
+  --shadow-float: 0 12px 32px -8px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .08);
+  --shadow-seg-active: 0 1px 2px rgba(0, 0, 0, .2), 0 0 0 1px var(--border);
+  --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-roster-dot: 0 0 0 2px var(--card-bg);
@@ -391,14 +401,14 @@
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  /* Row states measured on the rung grounds (dL* >= 5 against rest): hover 7%, selected 14%,
-     selected+hover 16%. The previous 5% / 10% recipe failed the threshold on Graphite and Paper. */
-  --hover-fill: #ffffff12;
-  --selected-fill: #ffffff24;
-  --selected-hover-fill: #ffffff29;
-  /* Border of a control identified by its edge (number field, segmented track, off switch): a step
-     above --border-hover. Full 3:1 (#616167) read as a bright frame around every control; these
-     controls also carry a fill or a selected segment. --border stays for decorative dividers. */
+  /* Row states take the native recipe's translucent greys: hover 5%, selected 9% in both
+     themes, so selection reads as one quiet wash rather than a second raised surface. */
+  --hover-fill: var(--hover);
+  --selected-fill: var(--sel);
+  --selected-hover-fill: var(--sel);
+  /* Border of a control identified by its edge (the number field): a step above --border-hover.
+     Full 3:1 (#616167) read as a bright frame around every control; this control also carries a
+     fill. --border stays for decorative dividers. */
   --border-control: #4a4a52;
   --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
@@ -610,13 +620,13 @@
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
-  --w-switch-knob: 11px;
+  --w-switch-knob: 14px;
   --space-switch-inset: 2px;
-  --space-switch-travel: 13px;
+  --space-switch-travel: 12px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
@@ -627,6 +637,16 @@
   --border: #d7d7dd;
   --border-hover: #c2c2cb;
   --border-focus: #4a4a55;
+  --line-strong: rgba(0, 0, 0, .16);
+  --field: rgba(0, 0, 0, .05);
+  --hover: rgba(0, 0, 0, .045);
+  --sel: rgba(0, 0, 0, .09);
+  --tog-off: rgba(0, 0, 0, .22);
+  --warn-wash: rgba(180, 83, 9, .06);
+  --warn-line: rgba(180, 83, 9, .3);
+  --shadow-float: 0 12px 32px -10px rgba(0, 0, 0, .18), 0 0 0 1px rgba(0, 0, 0, .08);
+  --shadow-seg-active: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 1px var(--border);
+  --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-roster-dot: 0 0 0 2px var(--card-bg);
@@ -900,9 +920,9 @@
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --hover-fill: #00000012;
-  --selected-fill: #00000029;
-  --selected-hover-fill: #0000002e;
+  --hover-fill: var(--hover);
+  --selected-fill: var(--sel);
+  --selected-hover-fill: var(--sel);
   --border-control: #b4b4bc;
   --hover-strong: #00000014;
   --selection: var(--selected-fill);
@@ -1094,13 +1114,13 @@
   --space-empty-pane-body-bottom: 16px;
   --space-footnote-top: 10px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
   --space-switch-thumb-inset: 2px;
-  --sz-switch-thumb: 11px;
-  --space-switch-thumb-shift: 13px;
+  --sz-switch-thumb: 14px;
+  --space-switch-thumb-shift: 12px;
   --h-back-bar: 42px;
   --sz-navigation-row-icon: 34px;
   --space-back-bar-inset: 14px;
@@ -1275,6 +1295,7 @@
   --tr-radius-button: var(--r-ctl);
   --tr-radius-card: var(--r-group);
   --tr-radius-ssh-panel: var(--r-dialog);
+  --tr-radius-dialog: var(--r-dialog);
   --tr-radius-menu: var(--r-group);
   --tr-radius-workspace-selection-rail: var(--r-badge);
   --tr-radius-workspace-drop-indicator: var(--r-badge);
@@ -1498,6 +1519,11 @@
   --tr-type-zoom-delta: calc((var(--shell-zoom) - 1) * 15px);
   --tr-text-display-size: calc(44px + var(--tr-type-zoom-delta));
   --tr-text-display-leading: 1.15;
+  /* Empty-screen display moment: a smaller serif cut than the onboarding display step. */
+  --tr-text-empty-title-size: calc(34px + var(--tr-type-zoom-delta));
+  --tr-text-empty-title-leading: 1.1765;
+  --tr-text-empty-title-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
+  --tr-text-empty-title-tracking: -0.01em;
   --tr-text-brand-tracking: -0.025em;
   --tr-text-empty-leading: 1.65;
   --tr-text-display-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
@@ -1578,6 +1604,9 @@
   --sz-titlebar-mark: 18px;
   --h-pane-head: 28px;
   --h-pill: 26px;
+  --h-chip: 24px;
+  --h-palette-row: 34px;
+  --h-palette-input: 46px;
   --h-ctl: 28px;
   --h-agent-row: 22px;
   --h-segmented-xs: 18px;

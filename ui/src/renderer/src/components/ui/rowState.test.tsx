@@ -14,10 +14,16 @@ function recipe(element: Element, state: string): void {
 describe('shared row painting', () => {
   it('renders the same rest and selected recipe across navigation, settings, workspace, chips, files and PRs', () => {
     render(<RowStateSpecimen />)
-    for (const label of ['navigation', 'settings', 'workspace', 'choice', 'file', 'pull request']) {
+    for (const label of ['navigation', 'settings', 'workspace', 'file', 'pull request']) {
       recipe(screen.getByText(`Selected ${label}`).closest('button, [role="button"]')!, ROW_STATE.selected)
       recipe(screen.getByText(`Rest ${label}`).closest('button, [role="button"]')!, ROW_STATE.rest)
     }
+    const selectedChoice = screen.getByText('Selected choice').closest('button')!
+    expect(selectedChoice.className).toContain('bg-selected-fill')
+    expect(selectedChoice.className).toContain('hover:bg-selected-hover-fill')
+    const restChoice = screen.getByText('Rest choice').closest('button')!
+    expect(restChoice.className).toContain('bg-[var(--field)]')
+    expect(restChoice.className).toContain('hover:bg-hover-fill')
     recipe(screen.getByRole('button', { name: 'Pressed toolbar' }), ROW_STATE.selected)
     recipe(screen.getByRole('button', { name: 'Rest toolbar' }), ROW_STATE.rest)
     const tree = screen.getByText('Selected file')

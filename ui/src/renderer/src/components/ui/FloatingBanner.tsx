@@ -10,7 +10,7 @@ export function FloatingBanner({ children, onDismiss, 'data-testid': testId }: {
     <div
       data-testid={testId}
       role="status"
-      className="absolute top-3 left-1/2 -translate-x-1/2 z-[var(--z-overlay)] flex items-center gap-3 rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--card-bg)] shadow-[var(--shadow-md)] px-3.5 py-2 max-w-[var(--w-floating-banner)]"
+      className="absolute top-[var(--space-3)] left-1/2 -translate-x-1/2 z-[var(--z-overlay)] flex items-center gap-[var(--space-3)] rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--raised)] shadow-[var(--shadow-float)] px-[var(--space-3)] py-[var(--space-2)] max-w-[var(--w-floating-banner)]"
     >
       <Text size="small" weight="small" tone="secondary">{children}</Text>
       <QuietButton variant="dismiss" aria-label="Dismiss" onClick={onDismiss}>

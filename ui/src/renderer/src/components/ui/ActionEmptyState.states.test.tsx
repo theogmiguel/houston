@@ -32,7 +32,7 @@ describe('EmptyState — state matrix', () => {
     })
     const headline = container.querySelector('[data-testid="empty-state-headline"]')
     expect(headline?.textContent).toBe('An agent, not a workspace')
-    expect(headline?.className).toContain('text-[length:var(--tr-text-display-size)]')
+    expect(headline?.className).toContain('text-[length:var(--tr-text-empty-title-size)]')
     expect(container.textContent).toContain('A name, an engine, two memory files.')
     expect(container.querySelectorAll('button')).toHaveLength(1)
     expect(container.querySelector('[data-testid="empty-state-action"]')?.textContent).toContain(
@@ -88,7 +88,7 @@ describe('EmptyState — state matrix', () => {
       root.render(<EmptyState headline="x" action={{ label: 'Go', onClick: () => {} }} />)
     })
     expect(container.querySelector('[data-testid="empty-state-action"]')?.className).toContain(
-      'hover:bg-'
+      'hover:enabled:brightness-'
     )
   })
 
@@ -125,12 +125,12 @@ describe('EmptyState — state matrix', () => {
     return el
   }
 
-  it('Size — full keeps the 44px display serif, and is the default', () => {
+  it('Size — full keeps the 34px empty-title serif, and is the default', () => {
     act(() => {
       root.render(<EmptyState headline="x" action={{ label: 'Go', onClick: () => {} }} />)
     })
     expect(container.querySelector('[data-testid="empty-state"]')?.getAttribute('data-size')).toBe('full')
-    expect(headline().className).toContain('var(--tr-text-display-size)')
+    expect(headline().className).toContain('var(--tr-text-empty-title-size)')
     expect(headline().className).toContain('var(--tr-text-display-family)')
   })
 
@@ -141,7 +141,7 @@ describe('EmptyState — state matrix', () => {
       )
     })
     expect(headline().className).toContain('var(--tr-text-subhead-size)')
-    expect(headline().className).not.toContain('var(--tr-text-display-size)')
+    expect(headline().className).not.toContain('var(--tr-text-empty-title-size)')
     expect(headline().className).not.toContain('display-family')
     expect(container.querySelector('p')?.className).toContain('var(--tr-text-small-size)')
     expect(container.querySelector('[data-testid="empty-state-action"]')?.className).toContain(
