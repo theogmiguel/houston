@@ -79,7 +79,7 @@ export function WorkspaceEmpty({
           Browser
         </Button>
       </EmptyStateActions>
-      <Inline gap="small" wrap className="justify-center">
+      <Inline gap="small" wrap align="start" className="justify-center">
         {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'zcode'].includes(agent)).map((agent) => {
           const hooks = agentHooks.find((state) => state.provider === agent)
           const hooksOff = hooks !== undefined && (!hooks.enabled || !hooks.installed)
