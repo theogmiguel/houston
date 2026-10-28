@@ -15,14 +15,17 @@ replace the sections below, these rules take precedence on this branch:
 
 - **Superseded:** terminal fidelity, PTY-based reported status, the binary-PTY-frame rule
   and the `houston-core` host, transport and protocol checks do not bind v2 code. They
-  still bind any change to the existing daemon.
-- **Licence:** ported code is pushed only with its MIT notice in place (`NOTICE` and
-  `third-party-licenses.config.json`). A ported file keeps a header naming the upstream
-  path and commit it came from.
+  still bind any change to the existing daemon. A thread may have a shell terminal drawer;
+  agent CLIs do not run in terminals.
+- **Copy, then adapt:** upstream files are copied as they are and changed only where
+  Houston differs; do not retype them. Each keeps a header naming the upstream path and
+  commit. Ported code is pushed only with the MIT notice in `NOTICE` and
+  `third-party-licenses.config.json`.
+- **Detached server:** closing the app must not stop the server or its agents.
 - **Tests first:** a slice ports its upstream tests before its code and lands only with
   them green.
 - **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
-  rebase or force-push `v2`; merge slice branches with `--no-ff`. Regenerate lockfiles
+  rebase or force-push `v2`; slices enter through PRs `v2/<slice> → v2`. Regenerate lockfiles
   and the licence inventory instead of hand-merging them.
 - `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
   merges into `main`.

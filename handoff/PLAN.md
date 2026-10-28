@@ -8,10 +8,29 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
 - `v2` is the integration branch and the head of the draft PR. Nobody merges that PR alone.
 - Each slice lives on a short branch `v2/<slice>` (for example `v2/contracts`, `v2/claude-adapter`),
   owned by one person, pushed to `origin` so the other can read it.
-- A finished slice enters `v2` with `git merge --no-ff v2/<slice>` and a push. Pull first; if the
-  push is rejected, pull and merge again. Never rebase or force-push `v2`.
+- A finished slice enters `v2` through a PR `v2/<slice> → v2`, merged with a merge commit after CI
+  and review. Small direct pushes to `v2` (plan updates, `main` merges) pull first; if the push is
+  rejected, pull and merge again. Never rebase or force-push `v2`.
 - `main` is merged into `v2` (never rebased) once per release cut, by the person on integration duty
   that week. PR #368 (`feat/design-native`) is `v2`'s base: merge it into `main` soon, then into `v2`.
+
+## Decisions
+
+- **Copy, then adapt.** Upstream files are copied as they are, with the origin header, and changed
+  only where Houston differs: Electron → Tauri, names, Houston features. Workers adapt; they do not
+  retype. A small diff against upstream keeps its later fixes easy to pull.
+- **The server is detached.** Closing the app disconnects the client; threads and their agents keep
+  running, as sessions do today. The server is not a plain Tauri sidecar (that dies with the app): the
+  host spawns it detached, finds it through its state-directory lock, and reconnects.
+- **Terminal: a drawer under the thread**, as upstream has it. The thread is the main surface; a
+  shell PTY drawer sits below it with split, new and close. Agent CLIs no longer run in a terminal.
+  The PTY side is ported with the server, the drawer with the renderer. Open: upstream's terminal
+  renderer or Houston's libghostty-vt.
+- **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
+- **Slices merge through mini-PRs** `v2/<slice> → v2`, each with CI and the other maintainer's review.
+- **PR #368 merges into `main` first**, then `main` into `v2`, so the v2 PR does not carry the
+  redesign's diff. #368 is red (`safety-checks`, `windows-checks`, `windows-renderer-checks`); Theo
+  fixes it before anything else.
 
 ## Licence
 
@@ -36,7 +55,7 @@ Everything under the TypeScript sidecar, in this order:
 2. Persistence: event store, projections, migrations, outbox, command receipts.
 3. Provider core and the Claude adapter. First read the Claude Agent SDK terms and decide SDK versus
    the CLI's stream-json protocol; PR #363 already implements the latter.
-4. Codex, OpenCode and ACP adapters.
+4. Codex, OpenCode and ACP adapters, and the terminal PTY service behind the drawer.
 5. orchestration-v2 (replaces `pane_*`).
 6. Git, pull requests, worktrees, checkpoints, usage.
 7. MCP toolkits (the orchestration tools agents call).
@@ -52,12 +71,15 @@ Everything in `src-tauri` and `ui/`, in this order:
 1. The `v2-checks` CI workflow. It exists with doc hygiene outside `handoff/` and the licence
    notice gate; each slice adds its own job (server tests, sidecar build), and the `ci.yml` jobs
    for `houston-core` are dropped when the daemon is removed.
-2. Tauri sidecar supervisor: bundled runtime, start, health check, restart, logs; keychain, tray,
-   updater and native browser kept working against the new server.
+0. Fix PR #368's CI and merge it into `main`, then `main` into `v2`.
+2. Server host: bundled runtime; spawn the server detached so it outlives the app; find it through
+   its state-directory lock; health check, restart, logs, reconnect; keychain, tray, updater and
+   native browser kept working against the new server.
 3. Thread pane mock in `mocks/houston-mocks.html`, then the A/B picks still open in the other
    fragments.
 4. Thread timeline: virtualized list, scroll anchoring and follow, incremental markdown, work groups.
-5. Composer: queue, steer and interrupt intents, approvals, questions, attachments.
+5. Composer: queue, steer and interrupt intents, approvals, questions, attachments; the terminal
+   drawer under the thread.
 6. Sidebar: workspaces → grids → threads, with grids of several threads.
 7. Settings and the remaining pages (Tasks, Routines, PRs, Usage, Changes) on the new server.
 8. Renderer side of the Houston-only features, after Augusto's matching server slice.
@@ -94,6 +116,7 @@ Until Augusto's `contracts` slice lands, Theo works on items 1–3, which do not
 
 ## Open decisions
 
-1. Slice merges: direct `--no-ff` merges into `v2` (above), or mini-PRs `v2/<slice> → v2` for
-   cross-review and per-slice CI. Decide together before the first slice merges.
-2. PR #363: Augusto's call (see his list).
+1. PR #363 and the Claude adapter's base (Agent SDK or CLI stream-json, given the subscription
+   policy): Augusto's call, early in his slice 3.
+2. The drawer's terminal renderer: upstream's or Houston's libghostty-vt. Theo's call, in his
+   slice 5.
