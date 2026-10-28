@@ -19,7 +19,7 @@ export function GridRailRowFallback({ name, selected, jumpNumber, cardMode = 'de
   onContextMenu: (event: React.MouseEvent) => void
   onRemove?: () => void
 }): React.JSX.Element {
-  return <div role="button" tabIndex={0} data-testid="grid-row" data-selected={selected ? 'true' : undefined} aria-current={selected ? 'true' : undefined} aria-label={name} className={`rail-grid-row group relative flex ${FALLBACK_MIN_HEIGHT[cardMode]} min-w-0 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] [font-weight:var(--tr-text-ui-weight)] ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`} onClick={onSelect} onContextMenu={onContextMenu} onKeyDown={(event) => {
+  return <div role="button" tabIndex={0} data-testid="grid-row" data-selected={selected ? 'true' : undefined} aria-current={selected ? 'true' : undefined} aria-label={name} className={`rail-grid-row group relative flex ${FALLBACK_MIN_HEIGHT[cardMode]} min-w-0 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] [font-weight:var(--tr-text-ui-weight)] ${selected ? 'bg-[var(--sel)] text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`} onClick={onSelect} onContextMenu={onContextMenu} onKeyDown={(event) => {
     if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
     event.preventDefault()
     onSelect()

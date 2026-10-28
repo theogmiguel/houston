@@ -259,9 +259,9 @@ describe('Sidebar rail list', () => {
 
     it('highlights the selected workspace when it is collapsed, and not while its card is listed', () => {
       render()
-      expect(wsRow('/a').className).not.toContain('bg-selected-fill')
+      expect(wsRow('/a').className).not.toContain('bg-[var(--sel)]')
       act(() => chevron('/a').click())
-      expect(wsRow('/a').className).toContain('bg-selected-fill')
+      expect(wsRow('/a').className).toContain('bg-[var(--sel)]')
     })
 
     it('keeps the row of a workspace whose grids are all pinned, without a count or chevron', () => {

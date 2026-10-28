@@ -47,7 +47,7 @@ function AgentRow({ agent, now, onFocusPane, lastMessage }: { agent: RailAgentRo
   const warnContext = context != null && context >= CONTEXT_WARN_PERCENT
   const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
-    <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-left text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
+    <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-left text-[length:var(--tr-text-xs)] leading-none hover:bg-[var(--hover)]">
       <AgentStatusDot session={agent.session} />
       <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">

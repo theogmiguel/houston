@@ -29,11 +29,11 @@ function gridRowClassName({ cardMode, hasChipRow, dragging, dragPosition, select
   selected: boolean
 }): string {
   return `rail-grid-row group relative min-w-0 rounded-[var(--tr-radius-button)] border border-transparent pr-1.5
-    transition-[background-color,border-color] duration-150 ${selected ? 'hover:bg-selected-fill' : 'hover:bg-hover-fill'}
+    transition-[background-color,border-color] duration-150 ${selected ? 'hover:bg-[var(--sel)]' : 'hover:bg-[var(--hover)]'}
     ${cardMode === 'compact' ? hasChipRow ? 'flex min-h-8 items-start gap-1.5 pl-1 py-1' : 'flex h-8 items-center gap-1.5 pl-1 py-1' : 'flex gap-1.5 pl-1 pt-1.5 pb-[7px]'}
     ${dragging ? 'opacity-50' : ''}
     ${dragPosition ? `after:absolute after:left-1 after:right-1 after:h-px after:bg-[var(--accent)] ${dragPosition === 'before' ? 'after:top-0' : 'after:bottom-0'}` : ''}
-    ${selected ? 'border-[var(--border)] bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`
+    ${selected ? 'border-[var(--border)] bg-[var(--sel)] text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`
 }
 
 export function GridRailRowView({

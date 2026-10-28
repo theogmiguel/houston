@@ -72,7 +72,7 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
     })
     const grid = container.querySelector<HTMLButtonElement>('[data-testid="grid-row"]')
     expect(grid).not.toBeNull()
-    expect(grid?.className).toContain('bg-selected-fill')
+    expect(grid?.className).toContain('bg-[var(--sel)]')
     expect(grid?.querySelector('.w-\\[2px\\]')).toBeNull()
   })
 
@@ -81,8 +81,8 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
       gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main', sessionIds: [1] }] },
       selectedGridId: 'g1', onSelectGrid: noop })
     const row = container.querySelector('[data-testid="ws-disclosure"]')!
-    expect(row.className).not.toContain('bg-selected-fill')
-    expect(container.querySelector('[data-testid="grid-row"]')?.className).toContain('bg-selected-fill')
+    expect(row.className).not.toContain('bg-[var(--sel)]')
+    expect(container.querySelector('[data-testid="grid-row"]')?.className).toContain('bg-[var(--sel)]')
   })
 
   it('a selected settings-section row carries the fill', () => {
@@ -92,14 +92,14 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
       '[data-testid="settings-section-row"][data-section-id="appearance"]'
     )
     expect(section).not.toBeNull()
-    expect(section?.className).toContain('bg-selected-fill')
+    expect(section?.className).toContain('bg-[var(--sel)]')
   })
 
   it('a selected plain workspace row (no grids) carries the achromatic fill, not an identity-colored bar', () => {
     render({ workspaces: [ws('/a', 'alpha')], selected: '/a' })
     const row = container.querySelector<HTMLButtonElement>('.witem[role="button"]')
     expect(row).not.toBeNull()
-    expect(row?.className).toContain('bg-selected-fill')
+    expect(row?.className).toContain('bg-[var(--sel)]')
     expect(row?.style.background).toBe('')
   })
 
@@ -111,7 +111,7 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
     expect(toggle?.getAttribute('aria-current')).toBeNull()
     expect(toggle?.getAttribute('aria-pressed')).not.toBe('true')
     expect(toggle?.className).toContain('bg-transparent')
-    expect(toggle?.className).not.toContain('bg-selected-fill')
-    expect(container.querySelector('[data-testid="settings-section-row"][aria-current="true"]')?.className).toContain('bg-selected-fill')
+    expect(toggle?.className).not.toContain('bg-[var(--sel)]')
+    expect(container.querySelector('[data-testid="settings-section-row"][aria-current="true"]')?.className).toContain('bg-[var(--sel)]')
   })
 })

@@ -69,7 +69,7 @@ describe('AppearancePicker — state matrix', () => {
     act(() => rows()[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     expect(container.querySelector('[data-highlighted="true"]')).toBe(rows()[1])
     pressArrowDown()
-    expect(container.querySelectorAll('.bg-selected-fill')).toHaveLength(1)
+    expect(Array.from(rows()).filter((row) => row.className.includes('bg-[var(--sel)]'))).toHaveLength(1)
     expect(container.querySelector('[data-highlighted="true"]')).toBe(rows()[2])
     expect(search.getAttribute('aria-activedescendant')).toBe(rows()[2].id)
     expect(document.activeElement).toBe(search)
@@ -104,7 +104,7 @@ describe('AppearancePicker — state matrix', () => {
     })
     const el = container.querySelector('[data-testid="appearance-picker-row"][aria-selected="true"]')
     expect(el).not.toBeNull()
-    expect(el?.className).toContain('bg-selected-fill')
+    expect(el?.className).toContain('bg-[var(--sel)]')
   })
 
   it('Disabled — N/A: every catalog entry is always selectable; nothing in the 24-palette list has a disablement condition to represent.', () => {

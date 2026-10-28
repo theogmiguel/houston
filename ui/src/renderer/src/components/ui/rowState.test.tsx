@@ -24,6 +24,8 @@ describe('shared row painting', () => {
     const restChoice = screen.getByText('Rest choice').closest('button')!
     expect(restChoice.className).toContain('bg-[var(--field)]')
     expect(restChoice.className).toContain('hover:bg-hover-fill')
+    expect(ROW_STATE.rest).toContain('hover:bg-[var(--hover)]')
+    expect(ROW_STATE.selected).toContain('bg-[var(--sel)]')
     recipe(screen.getByRole('button', { name: 'Pressed toolbar' }), ROW_STATE.selected)
     recipe(screen.getByRole('button', { name: 'Rest toolbar' }), ROW_STATE.rest)
     const tree = screen.getByText('Selected file')
@@ -44,7 +46,7 @@ describe('shared row painting', () => {
     fireEvent.mouseEnter(options[1])
     recipe(options[0], ROW_HIGHLIGHT.rest)
     recipe(options[1], ROW_HIGHLIGHT.selected)
-    expect(options.filter((row) => row.classList.contains('bg-selected-fill'))).toHaveLength(1)
+    expect(options.filter((row) => row.classList.contains('bg-[var(--sel)]'))).toHaveLength(1)
     expect(options[0].getAttribute('aria-selected')).toBe('true')
   })
 
