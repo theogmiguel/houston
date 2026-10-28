@@ -120,6 +120,11 @@ export function paneDimming(info: SessionInfo, live: boolean, ended: string | nu
   return isRestoreHusk(info, live) ? 'body' : Boolean(ended)
 }
 
+/** An exit with no recovery story: the exit footer and its Restart replace the header's restart. */
+export function isPlainExit(info: SessionInfo, live: boolean): boolean {
+  return !live && info.state === 'exited' && !isRestoreHusk(info, live) && !info.resume_notice
+}
+
 /** The footer under an exited pane's output, with the one action that keeps it on screen. */
 export function ExitedFooter({
   info,
@@ -133,7 +138,7 @@ export function ExitedFooter({
   shellIntegration: boolean
 }): React.JSX.Element | null {
   const exitCode = useSessionExitCode(info.id)
-  if (live || info.state !== 'exited') return null
+  if (!isPlainExit(info, live)) return null
   return (
     <PaneFooterNotice
       data-testid="exit-footer"

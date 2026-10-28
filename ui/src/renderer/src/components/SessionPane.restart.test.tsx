@@ -214,6 +214,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
     const notice = () => container.querySelector(recovery.restore_deferred ? '[data-testid="recovery-footer"]' : '[data-testid="resume-notice"]')?.textContent
     const reason = recovery.restore_deferred ? 'This conversation could not be resumed.' : 'Started a new conversation'
     expect(notice()).toContain(reason)
+    expect(container.querySelector('[data-testid="exit-footer"]')).toBeNull()
     expect(restartTooltip(info)).toBe('Retry session recovery')
     openPaneMenu()
     const all = labels()

@@ -32,6 +32,7 @@ import {
   ExitedFooter,
   RecoveryFooter,
   RestartConfirm,
+  isPlainExit,
   isRestoreHusk,
   paneDimming,
   restartEntries,
@@ -948,7 +949,7 @@ function SessionHeaderActions({ info, client, live, expanded, shellIntegration, 
           {live && <PaneLimitDetail limit={info.limit} />}
           <PaneTransferDetail info={info} />
           <ContextIndicator context={info.context} />
-          {!live && info.state !== 'exited' && (
+          {!live && !isPlainExit(info, live) && (
             <Tooltip
               label={info.state === 'sleeping' ? 'Wake conversation' : restartTooltip(info)}
             >
