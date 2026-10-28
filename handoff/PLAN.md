@@ -24,8 +24,12 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   host spawns it detached, finds it through its state-directory lock, and reconnects.
 - **Terminal: a drawer under the thread**, as upstream has it. The thread is the main surface; a
   shell PTY drawer sits below it with split, new and close. Agent CLIs no longer run in a terminal.
-  The PTY side is ported with the server, the drawer with the renderer. Open: upstream's terminal
-  renderer or Houston's libghostty-vt.
+  The PTY side is ported with the server, the drawer with the renderer. A grid has at most one
+  drawer open: opening another thread's drawer closes the previous one.
+- **Drawer rendering:** upstream's drawer (splits, persistent terminals, terminal context chips,
+  links to the preview) is copied and adapted; inside it, Houston's terminal engine draws and
+  carries the bytes (binary frames, bounded buffers, measured on WebKitGTK and Windows), through an
+  adapter. Both use libghostty-vt; upstream's wrapper was never run on WebKitGTK.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
 - **Slices merge through mini-PRs** `v2/<slice> → v2`, each with CI and the other maintainer's review.
 - **PR #368 merges into `main` first**, then `main` into `v2`, so the v2 PR does not carry the
@@ -118,5 +122,3 @@ Until Augusto's `contracts` slice lands, Theo works on items 1–3, which do not
 
 1. PR #363 and the Claude adapter's base (Agent SDK or CLI stream-json, given the subscription
    policy): Augusto's call, early in his slice 3.
-2. The drawer's terminal renderer: upstream's or Houston's libghostty-vt. Theo's call, in his
-   slice 5.
