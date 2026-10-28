@@ -36,6 +36,35 @@ counts="$(perl -e '
   }
 ' "${sources[@]}")"
 
+# The remaining outline-none sites are a ratchet: no new one may land without a
+# matching removal, so a control cannot quietly rely on the UA outline again.
+MAX_OUTLINE_NONE=69
+total="$(perl -e '
+  my $n = 0;
+  for my $f (@ARGV) {
+    open my $fh, "<", $f or next;
+    local $/ = undef;
+    my $src = <$fh>;
+    close $fh;
+    (my $code = $src) =~ s{/\*.*?\*/}{}gs;
+    $code =~ s{//[^\n]*}{}g;
+    for my $re ("`([^`]*)`", "\"([^\"\\n]*)\"", "'"'"'([^'"'"'\\n]*)'"'"'") {
+      while ($code =~ /$re/gs) {
+        $n++ if $1 =~ /\boutline-none\b/;
+      }
+    }
+  }
+  print $n;
+' "${sources[@]}")"
+if [ "$total" -gt "$MAX_OUTLINE_NONE" ]; then
+  echo "FAIL: $total class strings contain outline-none; the ratchet allows $MAX_OUTLINE_NONE." >&2
+  echo "      Add a focus-visible paint and remove the outline-none, or lower another site's count." >&2
+  exit 1
+fi
+if [ "$total" -lt "$MAX_OUTLINE_NONE" ]; then
+  echo "note: outline-none count is $total; tighten MAX_OUTLINE_NONE from $MAX_OUTLINE_NONE."
+fi
+
 # Tailwind generates only classes it can read whole, so a utility whose arbitrary value
 # is interpolated (shadow-[${X}], focus-visible:shadow-[${X}]) produces no CSS and never paints.
 interpolated="$(perl -e '

@@ -183,8 +183,8 @@ export function CrewButton({
       <Text as="span" data-testid="roster-secondary" size="xs" tone="faint" className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">
         {secondary}
       </Text>
-      <Text className="ml-auto flex-none uppercase" size="caption" weight="label" tone={tone}>
-        {state}
+      <Text className="ml-auto flex-none" size="caption" weight="label" tone={tone}>
+        {state.replace(/^./, (letter) => letter.toUpperCase())}
       </Text>
     </Button>
   )

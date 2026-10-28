@@ -241,12 +241,12 @@ it('updates an open delegation card from the live store with unchanged roster pr
     badge.click()
     await import('./DelegationPanel')
   })
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('working')
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Working')
   act(() => store.set((previous) => new Map(previous)
     .set(1, { ...parent, children_waiting: 1 })
     .set(2, withInputOwner({ ...child, delegation: { ...child.delegation!, state: 'needs_input', stalled: true } }, 'user'))))
   expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('needs input')
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Needs input')
 })
 
 it('shows an idle orchestrator as working in its header while a child works, and keeps its roster row idle', () => {

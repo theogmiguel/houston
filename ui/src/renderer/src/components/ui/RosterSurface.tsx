@@ -63,7 +63,7 @@ export function RosterList({ children }: { children: ReactNode }): React.JSX.Ele
 
 export function RosterGroupHead({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <div className="children-group [font-size:var(--tr-text-xs)] font-bold [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)] pt-3 px-3.5 pb-1 flex justify-between items-center gap-2">
+    <div className="children-group [font-size:var(--tr-text-xs)] font-bold text-[var(--text-faint)] pt-3 px-3.5 pb-1 flex justify-between items-center gap-2">
       {children}
     </div>
   )

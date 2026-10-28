@@ -164,7 +164,7 @@
 .mascot-cta button, .mascot-meet button { font: 600 var(--mascot-control-size) var(--font-sans); padding: var(--mascot-control-padding); border-radius: var(--mascot-control-radius); border: 1px solid var(--border); background: transparent; color: var(--text-primary); cursor: pointer; }
 .mascot-cta button.primary, .mascot-meet button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .mascot-skipintro { position: absolute; right: 16px; bottom: 14px; font: 500 var(--tr-text-small-size) var(--font-sans); color: var(--text-muted); background: none; border: 0; cursor: pointer; min-height: var(--h-ctl); }
-.mascot-continue { font: 500 var(--mascot-small-size) var(--font-mono); color: var(--text-muted); letter-spacing: .04em; }
+.mascot-continue { font: 500 var(--mascot-small-size) var(--font-sans); color: var(--text-muted); }
 .mascot-welcome.leaving .mascot-speech, .mascot-welcome.leaving .mascot-dots, .mascot-welcome.leaving .mascot-cta, .mascot-welcome.leaving .mascot-skipintro, .mascot-welcome.leaving .mascot-continue { opacity: 0; transition: opacity .2s; }
 .mascot-meet { position: fixed; z-index: var(--z-popover); width: 260px; display: grid; gap: var(--space-2); padding: var(--mascot-meet-padding); background: var(--card-hover); border: 1px solid var(--border-hover); border-radius: var(--tr-radius-card); box-shadow: var(--mascot-meet-shadow); text-align: left; }
 .mascot-meet::before { content: ""; position: absolute; left: -6px; bottom: 26px; width: var(--mascot-pointer-size); height: var(--mascot-pointer-size); background: var(--card-hover); border-left: 1px solid var(--border-hover); border-bottom: 1px solid var(--border-hover); transform: rotate(45deg); }

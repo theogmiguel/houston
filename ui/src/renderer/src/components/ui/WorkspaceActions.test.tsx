@@ -32,7 +32,7 @@ describe('WorkspaceActions', () => {
   it('runs an action from its workspace list', () => {
     const run = vi.fn()
     const el = mount(run)
-    const button = Array.from(el.querySelectorAll('button')).find((item) => item.textContent?.includes('▶ test'))!
+    const button = Array.from(el.querySelectorAll('button')).find((item) => item.textContent?.trim() === 'test')!
     act(() => button.click())
     expect(run).toHaveBeenCalledWith(ACTION)
   })
@@ -71,7 +71,7 @@ describe('WorkspaceActions', () => {
 
   it('uses compact, left-aligned fields in the action form', () => {
     const el = mount()
-    act(() => Array.from(el.querySelectorAll('button')).find((button) => button.textContent === '＋ Add action')!.click())
+    act(() => Array.from(el.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Add action')!.click())
     const dialog = el.querySelector('[role="dialog"]')!
     expect(dialog.className).toContain('text-left')
     expect(el.querySelector('input[aria-labelledby$="-label"]')?.className).toContain('bg-[var(--card-bg)]')
@@ -93,7 +93,7 @@ describe('WorkspaceActions', () => {
   it('captures a shortcut and refuses an owner already using it', () => {
     const el = mount()
     const buttons = Array.from(el.querySelectorAll('button'))
-    act(() => buttons.find((button) => button.textContent === '＋ Add action')!.click())
+    act(() => buttons.find((button) => button.textContent?.trim() === 'Add action')!.click())
     act(() => Array.from(el.querySelectorAll('button')).find((button) => button.textContent === 'Press shortcut')!.click())
     const event = new KeyboardEvent('keydown', { key: 't', code: 'KeyT', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
     act(() => window.dispatchEvent(event))

@@ -813,7 +813,7 @@
   --task-banner-error-fill: color-mix(in srgb, var(--stop) 9%, transparent);
   --task-queue-meter-fill: color-mix(in srgb, var(--text-primary) 10%, transparent);
   --ok: #16a34a;
-  --warn: #ca8a04;
+  --warn: #8a5a00;
   --stop: #dc2626;
   --online: var(--ok);
   --danger: var(--stop);

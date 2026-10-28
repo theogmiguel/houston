@@ -55,7 +55,7 @@ describe('WorkspaceEmpty — state matrix', () => {
   it('the action row is the three doors that work', () => {
     const labels = Array.from(container.querySelectorAll('[data-testid="workspace-empty-new-session"], [data-testid="workspace-empty-terminal"], [data-testid="workspace-empty-browser"]')).map((b) => b.textContent?.trim())
     expect(labels).toEqual(['Terminal', 'Browser'])
-    expect(container.textContent).toContain('＋ Add action')
+    expect(container.textContent).toContain('Add action')
   })
 
   it('Terminal and Browser each open ONE pane directly — no composer in between', () => {

@@ -254,7 +254,7 @@ describe("the delegation card, opened from a parent's badge", () => {
     expect(rows[0]).toContain('reviewer')
     expect(rows[1]).toContain('test-writer')
     expect(rows[2]).toContain('docs-sweep')
-    expect(rows[2]).toContain('stalled')
+    expect(rows[2]).toContain('Stalled')
   })
 
   it('names the limit, the actual value and what it means when the crew is at the cap', async () => {
