@@ -259,9 +259,12 @@
 
     "Re-cut against 962,955 bytes (one boot chunk) for the pane-header pass: the status word,",
     "the exit-code store and the exited footer add 1,278 bytes of boot-path chrome. Same",
-    "small headroom."
+    "small headroom.",
+    "Re-cut against 970,241 bytes (one boot chunk) for the expanded sidebar and the label",
+    "cleanup: session rows, grid captions, the workspace roll-up and the recovery-husk exit",
+    "rule add 7,286 bytes of first-paint rail and pane chrome. Same small headroom."
   ],
-  "maxBootBytes": 963300,
+  "maxBootBytes": 970550,
 
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
