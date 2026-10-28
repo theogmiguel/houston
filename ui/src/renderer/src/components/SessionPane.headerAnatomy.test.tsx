@@ -165,11 +165,12 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     ).toBeTruthy()
   })
 
-  it('renders the worktree slug in the header chip using monospace text', () => {
+  it('renders the branch in the header chip using monospace text and keeps the worktree slug in its tooltip', () => {
     const el = mountPane({ checkout: { root: '/tmp/worktree', kind: { worktree: { slug: 'feature' } }, branch: 'feat/x', head: 'abcdef0' } })
     const chip = el.querySelector('[data-testid="branch-chip"]')!
-    expect(chip.textContent).toContain('wt/feature · feat/x')
+    expect(chip.textContent).toContain('feat/x')
     expect(chip.querySelector('.font-mono')).not.toBeNull()
+    expect(chip.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('wt/feature · feat/x')
   })
 
   it('renders the ACP badge as bare text without delegation chrome', () => {

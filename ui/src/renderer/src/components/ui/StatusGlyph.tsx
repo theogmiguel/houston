@@ -24,7 +24,7 @@ export type StatusGlyphSource =
   | 'Result staged'
   | null
 
-const STATE_BY_SOURCE: Record<Exclude<StatusGlyphSource, null>, StatusGlyphState> = {
+const STATE_BY_SOURCE: Record<Exclude<StatusGlyphSource, null | 'exited'>, StatusGlyphState> = {
   spawning: 'working',
   starting: 'working',
   working: 'working',
@@ -38,7 +38,6 @@ const STATE_BY_SOURCE: Record<Exclude<StatusGlyphSource, null>, StatusGlyphState
   'Result staged': 'finished',
   failed: 'error',
   Failed: 'error',
-  exited: 'error',
   idle: 'idle',
   Idle: 'idle',
   unavailable: 'idle',
@@ -46,7 +45,8 @@ const STATE_BY_SOURCE: Record<Exclude<StatusGlyphSource, null>, StatusGlyphState
   'Asked orchestrator': 'idle'
 }
 
-export function statusGlyphState(status: StatusGlyphSource): StatusGlyphState {
+export function statusGlyphState(status: StatusGlyphSource, exitCode?: number | null): StatusGlyphState {
+  if (status === 'exited') return exitCode === 0 ? 'finished' : 'error'
   return status === null ? 'idle' : STATE_BY_SOURCE[status]
 }
 

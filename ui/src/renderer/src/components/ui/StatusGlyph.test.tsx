@@ -19,7 +19,6 @@ const MAPPING: [StatusGlyphSource, StatusGlyphState][] = [
   ['Result staged', 'finished'],
   ['failed', 'error'],
   ['Failed', 'error'],
-  ['exited', 'error'],
   ['idle', 'idle'],
   ['Idle', 'idle'],
   ['unavailable', 'idle'],
@@ -35,6 +34,19 @@ describe('statusGlyphState', () => {
 
   it('covers every source value the callers pass', () => {
     expect(new Set(MAPPING.map(([source]) => source)).size).toBe(MAPPING.length)
+  })
+
+  it.each([
+    [0, 'finished'],
+    [1, 'error'],
+    [130, 'error']
+  ] as const)('reads an exited session with code %i as %s', (exitCode, state) => {
+    expect(statusGlyphState('exited', exitCode)).toBe(state)
+  })
+
+  it('reads an exited session with no code as error', () => {
+    expect(statusGlyphState('exited', null)).toBe('error')
+    expect(statusGlyphState('exited')).toBe('error')
   })
 })
 

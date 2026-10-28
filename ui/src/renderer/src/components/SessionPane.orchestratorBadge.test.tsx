@@ -284,7 +284,7 @@ it('shows an idle orchestrator as working in its header while a child works, and
     </SessionsStoreContext.Provider>
   ))
   const headerGlyph = container!.querySelector('[data-testid="head-identity"] [data-status-glyph]')
-  expect(headerGlyph?.getAttribute('aria-label')).toBe('working')
+  expect(headerGlyph?.getAttribute('aria-label')).toBe('Working')
   const orchestratorRow = container!.querySelector('[aria-label="Children roster"] .children-row')!
   expect(orchestratorRow.textContent).toContain('Orchestrator')
   expect(orchestratorRow.querySelector('[data-status-glyph="working"]')).toBeNull()

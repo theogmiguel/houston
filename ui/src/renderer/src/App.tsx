@@ -16,6 +16,7 @@ import type { RelocateState } from "./workspaceRelocate";
 import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
+import { forgetSessionExitCode, rememberSessionExitCode, resetSessionExitCodes } from './sessionExitCodes';
 import type { NoticeInput } from './notices';
 import { setTaskbarAttentionCount } from './houston/taskbarCount';
 import { focusWaitingRequest, restoreRequestOrigin, useNextRequest, useOperatorInbox, waitingRequests, type RequestNavigation } from './nextRequest';
@@ -1397,6 +1398,7 @@ export function App(): React.JSX.Element {
 
     function handleSessionState(client: HoustonClient, msg: SessionStateMessage): void {
       client.paneOps.respawnSettled(msg.session);
+      rememberSessionExitCode(msg.session, msg.exit_code);
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
@@ -1443,6 +1445,7 @@ export function App(): React.JSX.Element {
         });
         switch (msg.type) {
           case "hello_ok":
+            resetSessionExitCodes();
             client.snapshotAttach = msg.snapshot_attach;
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
@@ -1528,6 +1531,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_removed":
             client.paneOps.sessionRemoved(msg.session);
+            forgetSessionExitCode(msg.session);
             setRemovedSessions((prev) => new Set(prev).add(msg.session));
             setLayouts((prev) => removeSessionFromLayouts(prev, msg.session));
             setSessions((prev) => {

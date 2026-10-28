@@ -6,8 +6,8 @@ import { FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Tooltip, TooltipContext } from './Tooltip'
 
-export function PaneHeadActions({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="head-actions ml-auto flex items-center gap-px flex-none">{children}</span>
+export function PaneHeadActions({ children, reveal = false }: { children: ReactNode; reveal?: boolean }): React.JSX.Element {
+  return <span className={`head-actions ml-auto flex items-center gap-px flex-none${reveal ? ' pane-head-actions' : ''}`}>{children}</span>
 }
 
 const HEAD_BUTTON_STYLE =

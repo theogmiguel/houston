@@ -8,8 +8,10 @@ import { shallowArrayEqual, useSession, useSessionFamily, useSessionsSelector } 
 import { hasWorkingDescendant } from './ui/railRows'
 import { TERMINAL_FOCUS_EVENT, openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useCallback, useEffect, useContext, useRef, useState } from 'react'
-import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
-import { StatusGlyph, statusGlyphState } from './ui/StatusGlyph'
+import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { StatusGlyph, statusGlyphState, type StatusGlyphState } from './ui/StatusGlyph'
+import { classifyChild } from '../childStatus'
+import { useSessionExitCode } from '../sessionExitCodes'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
 import type {
@@ -27,6 +29,7 @@ import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
 import {
+  ExitedFooter,
   RecoveryFooter,
   RestartConfirm,
   isRestoreHusk,
@@ -71,7 +74,6 @@ import {
   PaneHeadActions,
   PaneHeadButton,
   PaneHeadIdentity,
-  PaneStateChip,
   PaneSubtitle,
   PaneHeadBadge,
   PaneNotice
@@ -297,8 +299,8 @@ export function BranchChip({
         <Tooltip label={formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text}>
           <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
             <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
-              <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
-              {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
+              <Icon glyph={IconGitBranch} role="small" />
+              <span className="truncate">{detail ?? formatted.badge}</span>
             </span>
           </ShellBranchCopyChip>
         </Tooltip>
@@ -614,7 +616,6 @@ function SessionPaneImpl({
         }}
       >
         <PaneHeadIdentity>
-          <SessionHeaderStatusDot info={info} live={live} />
           <Tooltip label={`${glyphAgent} session`}>
             <PaneEngineGlyph
               data-testid="engine-glyph"
@@ -634,6 +635,7 @@ function SessionPaneImpl({
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />
           <BranchChip checkout={(info as CheckoutOf).checkout} remoteHost={info.ssh_host} worktreeChildren={worktreeChildren} onFocusChild={selectChild} />
+          <SessionHeaderStatus info={info} live={live} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
@@ -644,11 +646,12 @@ function SessionPaneImpl({
           )}
         </PaneHeadIdentity>
         <SessionInboxButton info={info} />
-        <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
+        <SessionHeaderActions info={info} client={client} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
       <ChildInputBanner info={info} client={client} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} dismissLifecycleError={dismissLifecycleError} memoryResult={memoryResult} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
+      <ExitedFooter info={info} live={live} client={client} shellIntegration={shellIntegration} />
       <RecoveryFooter info={info} live={live} client={client} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} />
       <GenerateTitleConfirm open={confirmGenerateTitle} info={info} onCancel={() => setConfirmGenerateTitle(false)} onConfirm={() => { setConfirmGenerateTitle(false); client.send({ type: 'session_title_generate', session: info.id }) }} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
@@ -855,11 +858,59 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
             })}</>
 }
 
-function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element {
-  const delegating = useSessionsSelector(useCallback((sessions) => hasWorkingDescendant(info.id, sessions.values()), [info.id]), Object.is, false)
-  if (info.spawned_by != null) return <ChildStatusDot info={info} />
+function capitalize(word: string): string {
+  return word.replace(/^./, (letter) => letter.toUpperCase())
+}
+
+function exitedWord(code: number | null | undefined): string {
+  return code == null ? 'Exited' : `Exited with code ${code}`
+}
+
+const STATUS_WRAP_CLS = 'inline-flex min-w-0 items-center gap-[var(--space-1-5)]'
+
+function StatusWord({ state, word, tone }: { state: StatusGlyphState; word: string; tone: 'secondary' | 'warn' | 'danger' }): React.JSX.Element {
+  return (
+    <span data-testid="pane-state" className={`${STATUS_WRAP_CLS} [@container_(max-width:490px)]:hidden`}>
+      <StatusGlyph state={state} label={word} />
+      <Text size="small" tone={tone}>{word}</Text>
+    </span>
+  )
+}
+
+function ChildStatusWord({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  const classification = classifyChild(info)
+  const state = statusGlyphState(classification.dot)
+  if (state === 'idle') return null
+  return <StatusWord state={state} word={capitalize(classification.word)} tone={state === 'needs' ? 'warn' : 'secondary'} />
+}
+
+function EndedStatusWord({ info, exitCode }: { info: SessionInfo; exitCode: number | null | undefined }): React.JSX.Element {
+  const exited = info.state === 'exited'
+  const state = exited ? statusGlyphState('exited', exitCode) : 'error'
+  const word = exited
+    ? exitedWord(exitCode)
+    : info.state === 'killed'
+      ? 'Killed'
+      : info.state === 'interrupted'
+        ? 'Interrupted'
+        : 'Ended'
+  return <StatusWord state={state} word={word} tone={state === 'error' ? 'danger' : 'secondary'} />
+}
+
+function RunningStatusWord({ info, delegating }: { info: SessionInfo; delegating: boolean }): React.JSX.Element | null {
   const status = needsUserInput(info) ? 'needs-input' : askedOrchestrator(info) ? 'idle' : info.status === 'idle' && delegating ? 'working' : attentionStatus(info)
-  return <StatusDot status={status} live={live || info.children_waiting > 0} />
+  const word = status === 'needs-input' ? 'Needs you' : status === 'working' ? 'Working' : status === 'spawning' ? 'Starting' : null
+  if (word == null) return null
+  const state = statusGlyphState(status ?? null)
+  return <StatusWord state={state} word={word} tone={state === 'needs' ? 'warn' : 'secondary'} />
+}
+
+function SessionHeaderStatus({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element | null {
+  const delegating = useSessionsSelector(useCallback((sessions) => hasWorkingDescendant(info.id, sessions.values()), [info.id]), Object.is, false)
+  const exitCode = useSessionExitCode(info.id)
+  if (info.spawned_by != null) return <ChildStatusWord info={info} />
+  if (!live) return endedLabel(info.state) == null ? null : <EndedStatusWord info={info} exitCode={exitCode} />
+  return <RunningStatusWord info={info} delegating={delegating} />
 }
 
 // Provider-reported only. Details may carry the provider's own reset time.
@@ -887,23 +938,17 @@ function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element 
   return <Tooltip label={label}><Button variant="ghost" size="sm" aria-label={label} className="flex-none" onClick={() => openSideOverview(info.id)}>Inbox<Count value={info.inbox_unread} /></Button></Tooltip>
 }
 
-function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegration, onReconnectSsh, onExpand, onAddPane, menuOpen, closeMenu, openMenuAtButton }: Pick<Props, 'info' | 'client' | 'expanded' | 'shellIntegration' | 'onReconnectSsh' | 'onExpand' | 'onAddPane'> & {
-  ended: string | null
+function SessionHeaderActions({ info, client, live, expanded, shellIntegration, onReconnectSsh, onExpand, onAddPane, menuOpen, closeMenu, openMenuAtButton }: Pick<Props, 'info' | 'client' | 'expanded' | 'shellIntegration' | 'onReconnectSsh' | 'onExpand' | 'onAddPane'> & {
   live: boolean
   menuOpen: boolean
   closeMenu: () => void
   openMenuAtButton: (rect: DOMRect) => void
 }): React.JSX.Element {
-  return (<PaneHeadActions>
+  return (<PaneHeadActions reveal>
           {live && <PaneLimitDetail limit={info.limit} />}
           <PaneTransferDetail info={info} />
           <ContextIndicator context={info.context} />
-          {ended && (
-            <PaneStateChip data-testid="pane-state" className="[@container_(max-width:490px)]:hidden" state={info.state}>
-              {ended}
-            </PaneStateChip>
-          )}
-          {!live && (
+          {!live && info.state !== 'exited' && (
             <Tooltip
               label={info.state === 'sleeping' ? 'Wake conversation' : restartTooltip(info)}
             >
