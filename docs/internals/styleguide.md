@@ -761,10 +761,12 @@ Fixing, Not seen, Ready, Stale, Kept, Watching, Verified, Blocked, Merged, Verif
 Parked. The dot variant keeps an accessible status name when a row already identifies its
 state elsewhere. Do not rely on colour alone.
 
-**Roll-up:** a grid or workspace takes the highest-ranked pane status, with ties broken by
-the older `status_since_ms`: needs-input, exited, working, starting, unavailable, done,
-idle. `gridStatus` in `components/ui/railRows.ts` owns that order; a parent with
-`children_waiting > 0` rolls up to needs-input.
+**Roll-up:** a grid takes the highest-ranked pane status, with ties broken by the older
+`status_since_ms`: needs-input, exited, working, starting, unavailable, done, idle.
+`gridStatus` in `components/ui/railRows.ts` owns that order; a parent with
+`children_waiting > 0` rolls up to needs-input. A collapsed workspace shows one status
+glyph for all its sessions, ranked needs, error, working, finished; `rollupStatus` owns
+that order, and a workspace with only idle sessions shows none.
 
 ### Empty state
 
