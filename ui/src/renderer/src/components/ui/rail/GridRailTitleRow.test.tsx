@@ -39,7 +39,7 @@ describe('rail card unread marker', () => {
   it('shows no marker for a read card', () => {
     const title = renderTitle(false)
     expect(title.querySelector('[data-testid="grid-unread-pip"]')).toBeNull()
-    expect(title.querySelector('[data-testid="grid-name"]')!.className).not.toContain('font-semibold')
+    expect(title.querySelector('[data-testid="grid-name"]')!.classList.contains('text-[var(--text-primary)]')).toBe(false)
   })
 })
 
@@ -58,10 +58,9 @@ describe('rail card close button', () => {
 
   it('is reachable from the keyboard and reserves room so it never covers right-aligned chips', () => {
     const el = renderWithRemove()
-    const close = el.querySelector<HTMLElement>('[data-testid="grid-close"]')!
-    expect(close.className).toContain('group-focus-within:flex')
-    expect(el.firstElementChild!.className).toContain('group-hover:pr-5')
-    expect(el.firstElementChild!.className).toContain('group-focus-within:pr-5')
+    expect(el.querySelector('span.hidden')?.className).toContain('group-focus-within/grid:flex')
+    expect(el.firstElementChild!.className).toContain('group-hover/grid:pr-5')
+    expect(el.firstElementChild!.className).toContain('group-focus-within/grid:pr-5')
   })
 
   it('is worded like the context menu: Close grid', () => {

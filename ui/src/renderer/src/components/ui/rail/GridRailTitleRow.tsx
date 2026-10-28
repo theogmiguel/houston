@@ -18,7 +18,6 @@ export function GridRailTitleRow({
   pr,
   hasPr,
   hasCheckout,
-  cardMode,
   checkoutLabel,
   primary,
   hasRemove,
@@ -50,50 +49,49 @@ export function GridRailTitleRow({
 }): React.JSX.Element {
   const tagNames = tags.map((tag) => tag.name)
   return (
-    <div className={`flex h-5 min-w-0 items-center gap-1.5 text-[length:var(--tr-text-base)] leading-5 ${hasRemove ? 'group-hover:pr-5 group-focus-within:pr-5' : ''}`}>
-      <span data-testid="grid-name" className={`min-w-0 truncate ${unread ? 'font-semibold text-[var(--text-primary)]' : ''}`}>{name}</span>
+    <div data-testid="grid-caption" className={`group/caption flex h-[var(--h-grid-caption)] min-w-0 items-center gap-[var(--space-2)] pr-[var(--space-2)] text-[length:var(--tr-text-label-size)] leading-[var(--tr-text-label-leading)] text-[var(--text-muted)] ${hasRemove ? 'group-hover/grid:pr-5 group-focus-within/grid:pr-5' : ''}`}>
+      <span data-testid="grid-name" className={`min-w-0 truncate font-semibold ${unread ? 'text-[var(--text-primary)]' : ''} group-hover/grid:text-[var(--text-primary)] group-focus-within/grid:text-[var(--text-primary)]`}>{name}</span>
       {unread && <span role="img" aria-label="Unread" data-testid="grid-unread-pip" className="size-1.5 flex-none rounded-full bg-[var(--accent)]" />}
-      <span aria-hidden className="min-w-0 flex-1" />
-      {hasTags && tags.length > 0 && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
-      {hasTags && tagDisplay === 'icon' && tags.length > 0 && (
-        <Tooltip label={`Edit tags: ${tagNames.join(' · ')}`}>
-          <button
-            type="button"
-            aria-label={`Edit tags: ${tagNames.join(', ')}`}
-            data-testid="rail-tags"
-            className="inline-flex flex-none items-center gap-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            onClick={(event) => {
-              event.stopPropagation()
-              openTagPopover({ anchor: event.currentTarget, gridId, view: 'pick' })
-            }}
-          >
-            <span data-testid="rail-tag-glyph" style={{ color: tags[0].color }}><Icon glyph={IconTag} role="small" /></span>
-            {tags.length > 1 && <span className="text-[length:var(--tr-text-xs)]">+{tags.length - 1}</span>}
-          </button>
-        </Tooltip>
-      )}
-      {hasPr && pr && <GridRailPrChip pr={pr} primary={primary} onOpenInspector={onOpenInspector} />}
-      {cardMode === 'compact' && hasCheckout && checkoutLabel?.branch && (
+      {hasCheckout && checkoutLabel?.branch && (
         <Tooltip label={checkoutLabel.text}>
-          <span className="max-w-24 truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{checkoutLabel.branch}</span>
+          <span className="min-w-0 truncate font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-muted)]">{checkoutLabel.branch}</span>
         </Tooltip>
       )}
-      {hasRemove && (
-        <Tooltip label="Close grid">
-        <button
-          type="button"
-          data-testid="grid-close"
-          aria-label={`Close grid ${name}`}
-          className="absolute right-1 top-1 hidden size-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex"
-          onClick={(event) => {
-            event.stopPropagation()
-            onRemove?.()
-          }}
-        >
-          <Icon glyph={IconClose} role="small" />
-        </button>
-        </Tooltip>
-      )}
+      <span aria-hidden className="min-w-0 flex-1" />
+      <span className="hidden flex-none items-center gap-[var(--space-2)] group-hover/grid:flex group-focus-within/grid:flex">
+        {hasTags && tags.length > 0 && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
+        {hasTags && tagDisplay === 'icon' && tags.length > 0 && (
+          <Tooltip label={`Edit tags: ${tagNames.join(' · ')}`}>
+            <button
+              type="button"
+              aria-label={`Edit tags: ${tagNames.join(', ')}`}
+              data-testid="rail-tags"
+              className="inline-flex flex-none items-center gap-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              onClick={(event) => {
+                event.stopPropagation()
+                openTagPopover({ anchor: event.currentTarget, gridId, view: 'pick' })
+              }}
+            >
+              <span data-testid="rail-tag-glyph" style={{ color: tags[0].color }}><Icon glyph={IconTag} role="small" /></span>
+              {tags.length > 1 && <span className="text-[length:var(--tr-text-xs)]">+{tags.length - 1}</span>}
+            </button>
+          </Tooltip>
+        )}
+        {hasPr && pr && <GridRailPrChip pr={pr} primary={primary} onOpenInspector={onOpenInspector} />}
+        {hasRemove && (
+          <Tooltip label="Close grid">
+            <button
+              type="button"
+              data-testid="grid-close"
+              aria-label={`Close grid ${name}`}
+              className="flex size-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-primary)]"
+              onClick={(event) => { event.stopPropagation(); onRemove?.() }}
+            >
+              <Icon glyph={IconClose} role="small" />
+            </button>
+          </Tooltip>
+        )}
+      </span>
     </div>
   )
 }

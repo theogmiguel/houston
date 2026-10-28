@@ -1,13 +1,12 @@
 import type { RailCard } from '../../rail/railCardModel'
 import type { RailAgentRow } from '../../rail/railCardModel'
 import type { TagInfo } from '../../../houston/generated/TagInfo'
-import type { PrInfo } from '../../../houston/client'
 import type { AgentActivityMode, RailCardMode, RailCardProperty, RailTagDisplay } from '../../../railPrefs'
 import { Tooltip } from '../Tooltip'
 import { StatusGlyph, statusGlyphState } from '../StatusGlyph'
 import { GridRailTitleRow } from './GridRailTitleRow'
-import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailAgentRows } from './GridRailAgentRows'
+import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailNoteLine, newestNote } from './GridRailNoteLine'
 import { GridRailHoverCardHost } from './GridRailHoverCardHost'
 import { TagCardAffordance } from '../../tags/TagCardAffordance'
@@ -21,27 +20,24 @@ function StatusDot({ card }: { card: RailCard }): React.JSX.Element {
   )
 }
 
-function gridRowClassName({ cardMode, hasChipRow, dragging, dragPosition, selected }: {
+function gridRowClassName({ dragging, dragPosition }: {
   cardMode: RailCardMode
   hasChipRow: boolean
   dragging: boolean
   dragPosition: 'before' | 'after' | null
   selected: boolean
 }): string {
-  return `rail-grid-row group relative min-w-0 rounded-[var(--tr-radius-button)] border border-transparent pr-1.5
-    transition-[background-color,border-color] duration-150 ${selected ? 'hover:bg-[var(--sel)]' : 'hover:bg-[var(--hover)]'}
-    ${cardMode === 'compact' ? hasChipRow ? 'flex min-h-8 items-start gap-1.5 pl-1 py-1' : 'flex h-8 items-center gap-1.5 pl-1 py-1' : 'flex gap-1.5 pl-1 pt-1.5 pb-[7px]'}
+  return `rail-grid-block group/grid relative min-w-0
     ${dragging ? 'opacity-50' : ''}
-    ${dragPosition ? `after:absolute after:left-1 after:right-1 after:h-px after:bg-[var(--accent)] ${dragPosition === 'before' ? 'after:top-0' : 'after:bottom-0'}` : ''}
-    ${selected ? 'border-[var(--border)] bg-[var(--sel)] text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`
+    ${dragPosition ? `after:absolute after:left-1 after:right-1 after:h-px after:bg-[var(--accent)] ${dragPosition === 'before' ? 'after:top-0' : 'after:bottom-0'}` : ''}`
 }
 
 export function GridRailRowView({
   name, workspace, gridId, selected, pinned, tags,
-  cardMode, tagDisplay, agentActivity, properties, dragPosition, dragging, dragRefusal, onGridPointerDown,
+  cardMode, tagDisplay, properties, dragPosition, dragging, dragRefusal, onGridPointerDown,
   onToggleUnread, onFilterTag, jumpNumber, onRemove, onSelect, onFocusPane, onContextMenu, onOpenInspector, onClearNote, card, primary,
-  checkoutLabel, many, hasUnread, altHeld, hoverPosition, hoverVisible, expanded, now, rowRef,
-  openTagPopover, startHover, closeHover, onToggleExpanded, onKeyDown,
+  checkoutLabel, many, hasUnread, altHeld, hoverPosition, hoverVisible, now, rowRef,
+  openTagPopover, startHover, closeHover, onKeyDown,
 }: {
   name: string
   workspace: string
@@ -110,15 +106,28 @@ export function GridRailRowView({
         onMouseEnter={startHover}
         onMouseLeave={closeHover}
       >
-        <GridRailUnreadToggle card={card} cardMode={cardMode} hasUnread={hasUnread} enabled={properties.includes('unread')} onToggleUnread={onToggleUnread} />
-        <div className={`flex min-w-0 flex-1 flex-col ${cardMode === 'compact' && !hasChipRow ? 'justify-center' : 'gap-[5px]'}`}>
-          <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
-          <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
-          {hasChipRow && <div className="flex min-h-4 items-center text-[length:var(--tr-text-xs)]"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
-          {note && <GridRailNoteLine note={note} now={now} onClear={onClearNote} />}
-          {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
-          <GridRailAgentRows agents={card.agents} cardMode={cardMode} agentActivity={agentActivity} properties={properties} expanded={expanded} onToggleExpanded={onToggleExpanded} now={now} onFocusPane={(paneId) => { onSelect(); onFocusPane?.(paneId) }} />
+        <div className="relative flex min-w-0 items-center">
+          <div className="absolute left-0 top-0 flex h-[var(--h-grid-caption)] w-[var(--space-5)] items-center justify-center opacity-0 [transition:opacity_0.12s] group-hover/grid:opacity-100 group-focus-within/grid:opacity-100">
+            <GridRailUnreadToggle card={card} cardMode={cardMode} hasUnread={hasUnread} enabled={properties.includes('unread')} onToggleUnread={onToggleUnread} />
+          </div>
+          <div className="min-w-0 flex-1 pl-[var(--space-6)]">
+            <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
+          </div>
         </div>
+        {properties.includes('checkout') && checkoutLabel && (
+          <div className="hidden min-h-4 items-center pl-[var(--space-6)] group-hover/grid:flex group-focus-within/grid:flex">
+            <GridRailCheckoutLine label={checkoutLabel} pr={properties.includes('pr') ? pr : null} diff={properties.includes('diff') ? card.diff : null} onOpenInspector={() => primary && onOpenInspector(primary.session.id, 'pull-request')} />
+          </div>
+        )}
+        {hasChipRow && <div className="hidden min-h-4 items-center pl-[var(--space-6)] text-[length:var(--tr-text-xs)] group-hover/grid:flex group-focus-within/grid:flex"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
+        {note && <GridRailNoteLine note={note} now={now} onClear={onClearNote} />}
+        {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="pl-[var(--space-6)] text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
+        <GridRailAgentRows
+          agents={properties.includes('inline-agents') ? card.agents : []}
+          selectedSessionId={selected ? primary?.session.id : undefined}
+          now={now}
+          onFocusPane={(paneId) => { onSelect(); onFocusPane?.(paneId) }}
+        />
         <GridRailJumpNumber number={jumpNumber} altHeld={altHeld} />
       </div>
       {hoverPosition && <GridRailHoverCardHost card={card} tags={tags} position={hoverPosition} visible={hoverVisible} />}
@@ -145,21 +154,6 @@ function GridRailUnreadToggle({ card, cardMode, hasUnread, enabled, onToggleUnre
       <StatusDot card={card} />
     </button>
   </Tooltip>
-}
-
-function GridRailCheckout({ cardMode, hasCheckout, label, pr, hasPr, hasDiff, diff, primary, onOpenInspector }: {
-  cardMode: RailCardMode
-  hasCheckout: boolean
-  label: { branch: string | null; text: string } | null
-  pr: PrInfo | null
-  hasPr: boolean
-  hasDiff: boolean
-  diff: RailCard['diff']
-  primary?: RailAgentRow
-  onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
-}): React.JSX.Element | null {
-  if (cardMode !== 'detailed' || !hasCheckout || !label) return null
-  return <GridRailCheckoutLine label={label} pr={hasPr ? pr : null} diff={hasDiff ? diff : null} onOpenInspector={() => primary && onOpenInspector(primary.session.id, 'pull-request')} />
 }
 
 function GridRailJumpNumber({ number, altHeld }: { number?: number; altHeld: boolean }): React.JSX.Element | null {

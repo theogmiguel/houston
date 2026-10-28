@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export function WorkspaceGroupLabel({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="px-[var(--space-2)] pt-[var(--space-2)] pb-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tracking-[0.1em] uppercase text-[var(--text-faint)] select-none">{children}</div>
+  return <div className="px-[var(--space-2)] pt-[var(--space-2)] pb-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--text-muted)] select-none">{children}</div>
 }
 
 export function WorkspaceGroupLabelSpecimen(): React.JSX.Element {

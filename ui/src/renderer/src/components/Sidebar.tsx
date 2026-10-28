@@ -109,6 +109,9 @@ import {
   type RailPrefs,
 } from "../railPrefs";
 import { gridStorageKey } from "../layout/tree";
+import { readSessionExitCode } from "../sessionExitCodes";
+import { StatusGlyph, type StatusGlyphState } from "./ui/StatusGlyph";
+import { glyphStateLabel, rollupStatus, sessionGlyphState } from "./ui/railRows";
 import { TagPopoverHost, useTagPopover, type TagGrid } from "./tags/TagPopover";
 
 /** Window event that opens tag management anchored to the rail Options button. */
@@ -218,6 +221,7 @@ function WorkspaceRailGroupRow({
   onNewSession,
   onRenameSubmit,
   onRenameCancel,
+  rollup,
 }: {
   workspace: Workspace;
   count: number;
@@ -241,6 +245,8 @@ function WorkspaceRailGroupRow({
   onNewSession?: (path: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
+  /** Most urgent child status, shown only while the workspace is collapsed. */
+  rollup: StatusGlyphState;
 }): React.JSX.Element {
   if (renaming) {
     return <WorkspaceRenameField w={workspace} i={index} color={color} onRenameSubmit={onRenameSubmit} onRenameCancel={onRenameCancel} />;
@@ -300,8 +306,8 @@ function WorkspaceRailGroupRow({
           </Button>
         )}
         {!hasGrids && <span aria-hidden="true" className="flex-none"><RailChevron collapsed /></span>}
-        <Icon glyph={IconFolder} role="ui" opacity="muted" />
         <WorkspaceTreeLabel heading>{workspace.name}</WorkspaceTreeLabel>
+        {collapsed && rollup !== "idle" && <StatusGlyph state={rollup} label={`Most urgent: ${glyphStateLabel(rollup)}`} />}
         {count > 0 && <RailRowCount count={count} />}
         <EnvironmentBadge path={workspace.path} />
         {pinned && <PinIndicator />}
@@ -1163,6 +1169,7 @@ function RailTree({
     }
     if (group.workspace) {
       const workspace = group.workspace;
+      const rollup = rollupStatus(group.cards.flatMap(({ card }) => card.agents.map((agent) => sessionGlyphState(agent.session, readSessionExitCode(agent.session.id)))));
       items.push({
         key: group.key,
         kind: 'group',
@@ -1188,6 +1195,7 @@ function RailTree({
             onNewSession={onNewWorkspaceSession}
             onRenameSubmit={onRenameSubmit}
             onRenameCancel={onRenameCancel}
+            rollup={rollup}
           />
         ),
       });

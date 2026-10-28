@@ -28,7 +28,7 @@ export function WorkspaceTreeRow({ children, kind, selected = false, dragging = 
 }
 
 export function WorkspaceTreeLabel({ children, size = 'ui', heading = false }: { children: ReactNode; size?: 'ui' | 'md'; heading?: boolean }): React.JSX.Element {
-  return <Text size={size} weight={heading ? 'semibold' : undefined} className="min-w-0 truncate">{children}</Text>
+  return <Text size={size} weight={heading ? 'semibold' : undefined} className="min-w-0 flex-1 truncate">{children}</Text>
 }
 
 export function WorkspaceTreeActions({ children }: { children: ReactNode }): React.JSX.Element {

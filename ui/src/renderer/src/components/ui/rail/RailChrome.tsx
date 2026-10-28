@@ -131,7 +131,7 @@ export function RailWorkspaceGroupRow(props: ComponentProps<typeof WorkspaceTree
 }
 
 export function RailRowCount({ count }: { count: number }): React.JSX.Element {
-  return <span aria-hidden="true" data-count={count} className="flex-none [font-size:var(--tr-text-label-size)] font-medium text-[var(--text-muted)] after:content-[attr(data-count)]" />
+  return <span aria-hidden="true" data-count={count} className="flex-none [font-size:var(--tr-text-label-size)] font-medium tabular-nums text-[var(--text-muted)] after:content-[attr(data-count)]" />
 }
 
 export function RailPinnedIndicator(): React.JSX.Element {

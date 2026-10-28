@@ -1,5 +1,6 @@
 import { attentionStatus } from '../../sessionAttention'
 import type { SessionInfo } from '../../houston/client'
+import { statusGlyphState, type StatusGlyphState } from './StatusGlyph'
 
 export type RailStatusKind = 'needs-input' | 'working' | 'starting' | 'exited' | 'done' | 'idle' | 'unavailable'
 
@@ -73,4 +74,25 @@ export function formatRailDuration(since: number | null, now = Date.now()): stri
   const days = Math.floor(hours / 24)
   if (days < 14) return `${days}d`
   return `${Math.floor(days / 7)}w`
+}
+
+export function sessionGlyphState(session: SessionInfo, exitCode?: number | null): StatusGlyphState {
+  if (session.state === 'running') return statusGlyphState(attentionStatus(session) ?? null, exitCode)
+  if (session.state === 'exited') return statusGlyphState('exited', exitCode)
+  return session.state === 'sleeping' ? 'idle' : 'error'
+}
+
+const GLYPH_LABEL: Record<StatusGlyphState, string> = { needs: 'Needs you', error: 'Ended with an error', working: 'Working', finished: 'Finished', idle: 'Idle' }
+
+export function glyphStateLabel(state: StatusGlyphState): string {
+  return GLYPH_LABEL[state]
+}
+
+const ROLLUP_RANK: Record<StatusGlyphState, number> = { idle: 0, finished: 1, working: 2, error: 3, needs: 4 }
+
+/** A collapsed workspace shows one glyph: the most urgent state among its sessions. */
+export function rollupStatus(states: Iterable<StatusGlyphState>): StatusGlyphState {
+  let best: StatusGlyphState = 'idle'
+  for (const state of states) if (ROLLUP_RANK[state] > ROLLUP_RANK[best]) best = state
+  return best
 }

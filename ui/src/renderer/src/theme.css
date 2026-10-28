@@ -110,7 +110,7 @@
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
-  --rail-bg: #0f0f12;
+  --rail-bg: #1c1c1f;
   --content-bg: #0a0a0b;
   --card-bg: #131316;
   --card-hover: #1c1c20;
@@ -378,7 +378,7 @@
   --material-shell-custom-worst: #36363a;
   --material-base-custom-worst: #2b2b2f;
   --material-shell-text-muted: var(--text-muted);
-  --material-shell-text-faint: #52525a;
+  --material-shell-text-faint: #5a5a63;
   --material-inset-text-muted: #7e7e88;
   --material-inset-text-faint: #54545c;
   --material-raised-text-muted: #83838d;
@@ -630,7 +630,7 @@
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
-  --rail-bg: #f1f1f3;
+  --rail-bg: #ececef;
   --content-bg: #e8e8ea;
   --card-bg: #fbfbfc;
   --card-hover: #ffffff;
@@ -1603,6 +1603,7 @@
   --sz-brand-mark: 32px;
   --sz-titlebar-mark: 18px;
   --h-pane-head: 28px;
+  --h-grid-caption: 26px;
   --h-pill: 26px;
   --h-chip: 24px;
   --h-palette-row: 34px;

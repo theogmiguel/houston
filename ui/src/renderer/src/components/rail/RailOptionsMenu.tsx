@@ -15,8 +15,7 @@ const CARD_PROPERTIES: { keys: RailCardProperty[]; label: string; hint?: string 
   { keys: ['tags'], label: 'Tags' },
   { keys: ['pr'], label: 'Pull request and checks' },
   { keys: ['checkout', 'diff'], label: 'Branch and changes' },
-  { keys: ['inline-agents'], label: 'Agents', hint: 'summary past 2' },
-  { keys: ['last-message'], label: 'Last message' },
+  { keys: ['inline-agents'], label: 'Sessions' },
 ]
 const SORT_LABEL = { smart: 'Agent activity', manual: 'Manual', recent: 'Recent', name: 'Name' }
 
@@ -59,10 +58,6 @@ function RailDisplayOptions({ prefs, onChange }: { prefs: RailPrefs; onChange: (
   return <>
     <RailOptionsSectionLabel>Layout</RailOptionsSectionLabel>
     <RailCardModeSegment value={prefs.cardMode} onChange={(mode) => onChange(setRailCardMode(prefs, mode))} />
-    <RailOptionsSectionLabel>Agent activity</RailOptionsSectionLabel>
-    {(['compact', 'full'] as const).map((mode) => <RailMenuRow key={mode} onClick={() => onChange({ ...prefs, agentActivity: mode })}>
-      {mode === 'full' ? 'Expanded' : 'Collapsed'}<RailMenuValue>{prefs.agentActivity === mode && <Icon glyph={IconCheck} role="small" />}</RailMenuValue>
-    </RailMenuRow>)}
     <RailOptionsSectionLabel>Tags display</RailOptionsSectionLabel>
     <RailTagDisplaySegment value={prefs.tagDisplay} onChange={(tagDisplay) => onChange({ ...prefs, tagDisplay, tagDisplayChosen: true })} />
   </>
