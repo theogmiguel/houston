@@ -7,7 +7,6 @@ import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { HeaderDelegationBadge, pendingDeliveryStatus, type PaneRoster } from './DelegationCard'
-import { StatusDot } from './SessionPane'
 import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './ui/Icon'
 import { Text } from './ui/Text'
@@ -34,6 +33,7 @@ import {
   RosterStrip
 } from './ui'
 import { StatusLabel } from './ui/StatusLabel'
+import { StatusGlyph, statusGlyphState } from './ui/StatusGlyph'
 import { ChildContextMenu } from './ChildContextMenu'
 
 // The queue view and the task chip carry the backlog helpers; both load on
@@ -76,11 +76,15 @@ export function delegationAge(start: number, now: number): string {
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
   const classification = classifyChild(info)
-  if (classification.dot === 'Needs input') return <StatusDot live status="needs-input" />
-  if (classification.dot === 'Working') return <StatusDot live status="working" />
-  return classification.dot == null
-    ? <StatusDot live status="unavailable" />
-    : <Tooltip label={classification.dot === 'Stalled' ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ') : classification.word}><StatusLabel status={classification.dot} variant="dot" /></Tooltip>
+  const label = classification.dot == null
+    ? 'Status unavailable'
+    : classification.dot === 'Needs input'
+      ? 'needs your input'
+      : classification.dot
+  const tooltip = classification.dot === 'Stalled'
+    ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ')
+    : label
+  return <Tooltip label={tooltip}><StatusGlyph state={statusGlyphState(classification.dot)} label={label} /></Tooltip>
 }
 
 function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {

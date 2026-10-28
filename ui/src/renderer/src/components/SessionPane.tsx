@@ -9,6 +9,7 @@ import { hasWorkingDescendant } from './ui/railRows'
 import { TERMINAL_FOCUS_EVENT, openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useCallback, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { StatusGlyph, statusGlyphState } from './ui/StatusGlyph'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
 import type {
@@ -71,7 +72,6 @@ import {
   PaneHeadButton,
   PaneHeadIdentity,
   PaneStateChip,
-  PaneStatusDot,
   PaneSubtitle,
   PaneHeadBadge,
   PaneNotice
@@ -191,7 +191,7 @@ export function StatusDot({
   if (!live || !status) return null
   return (
     <Tooltip label={statusLabel(status)}>
-      <PaneStatusDot status={status} role="img" aria-label={statusLabel(status)} />
+      <StatusGlyph state={statusGlyphState(status)} label={statusLabel(status)} />
     </Tooltip>
   )
 }

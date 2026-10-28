@@ -247,9 +247,13 @@
     "Re-cut against 961,052 bytes (one boot chunk) after the token pass swapped Plus Jakarta",
     "for Inter Variable's `opsz.css`: seven subset faces replace four static weight imports",
     "and the prose text step adds its utilities, a 558-byte net gain. The cap carries its",
-    "usual small headroom rather than the previous exact-fit 48 bytes."
+    "usual small headroom rather than the previous exact-fit 48 bytes.",
+
+    "Re-cut against 961,677 bytes (one boot chunk) for the status-glyph pass: the primitive,",
+    "its source mapping and the two-theme specimen add 625 bytes while replacing five local",
+    "dot implementations. Same small headroom."
   ],
-  "maxBootBytes": 961350,
+  "maxBootBytes": 961900,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

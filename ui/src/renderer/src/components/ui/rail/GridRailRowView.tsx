@@ -4,7 +4,7 @@ import type { TagInfo } from '../../../houston/generated/TagInfo'
 import type { PrInfo } from '../../../houston/client'
 import type { AgentActivityMode, RailCardMode, RailCardProperty, RailTagDisplay } from '../../../railPrefs'
 import { Tooltip } from '../Tooltip'
-import { WorkingSpinner } from '../Spinner'
+import { StatusGlyph, statusGlyphState } from '../StatusGlyph'
 import { GridRailTitleRow } from './GridRailTitleRow'
 import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailAgentRows } from './GridRailAgentRows'
@@ -12,18 +12,13 @@ import { GridRailNoteLine, newestNote } from './GridRailNoteLine'
 import { GridRailHoverCardHost } from './GridRailHoverCardHost'
 import { TagCardAffordance } from '../../tags/TagCardAffordance'
 
-function statusDotClass(kind: RailCard['status']['kind']): string {
-  if (kind === 'needs-input') return 'bg-[var(--warn)]'
-  if (kind === 'starting') return 'bg-[var(--accent)]'
-  if (kind === 'exited') return 'bg-[var(--stop)]'
-  if (kind === 'done') return 'bg-[var(--ok)]'
-  return 'bg-[var(--text-faint)]'
-}
-
 function StatusDot({ card }: { card: RailCard }): React.JSX.Element {
   const state = card.status.kind === 'exited' ? 'stopped' : card.status.kind
-  if (card.status.kind === 'working') return <WorkingSpinner testId="grid-state-dot" state={state} label={card.status.label} />
-  return <span data-testid="grid-state-dot" data-state={state} role="img" className={`inline-block size-2 flex-none rounded-full ${statusDotClass(card.status.kind)}`} aria-label={state === 'unavailable' ? 'Grid status unavailable' : card.status.label} />
+  return (
+    <span data-testid="grid-state-dot" data-state={state} className="inline-flex flex-none">
+      <StatusGlyph state={statusGlyphState(card.status.kind)} label={state === 'unavailable' ? 'Grid status unavailable' : card.status.label} />
+    </span>
+  )
 }
 
 function gridRowClassName({ cardMode, hasChipRow, dragging, dragPosition, selected }: {

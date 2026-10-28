@@ -15,7 +15,7 @@ import {
   DefinitionEntry,
   DefinitionList,
   MutedText,
-  StatusGlyph,
+  DelegationGlyph,
   PopoverHeader,
   IdentityLine,
   TabularNumber,
@@ -280,7 +280,7 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
           )
         }
       >
-        <StatusGlyph glyph={IconGitFork} role="small" tone={waiting > 0 ? "warn" : "muted"} />
+        <DelegationGlyph glyph={IconGitFork} role="small" tone={waiting > 0 ? "warn" : "muted"} />
         <PopoverTitle>{identity}</PopoverTitle>
         <PopoverDescription>· {info.live_children} live</PopoverDescription>
       </PopoverHeader>

@@ -17,68 +17,51 @@ afterEach(() => {
   container = null
 })
 
-function renderDot(status: AgentStatus): HTMLElement {
+function renderDot(status: AgentStatus): HTMLElement | null {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => {
     root!.render(<StatusDot status={status} live={true} />)
   })
-  const dot = container.querySelector('.agent-dot')
-  if (!(dot instanceof HTMLElement)) throw new Error('StatusDot did not render .agent-dot')
-  return dot
+  return container.querySelector<HTMLElement>('[data-status-glyph]')
 }
 
-const PULSE = 'motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
-
-describe('per-pane status dot colour', () => {
-  it('working paints informational blue, not completion green', () => {
-    const dot = renderDot('working')
-    expect(dot.className).toContain('bg-[var(--info)]')
-    expect(dot.className).not.toContain('--ok')
+describe('per-pane status glyph', () => {
+  it('working shows the accent-ink arc, not a completion fill', () => {
+    const glyph = renderDot('working')!
+    expect(glyph.dataset.state).toBe('working')
+    expect(glyph.innerHTML).toContain('var(--accent-ink)')
+    expect(glyph.innerHTML).not.toContain('var(--ok)')
   })
 
-  it('idle paints neutral, not active blue or completion green', () => {
-    const dot = renderDot('idle')
-    expect(dot.className).toContain('bg-[var(--text-muted)]')
-    expect(dot.className).not.toContain('--info')
-    expect(dot.className).not.toContain('--ok')
+  it('spawning borrows the working arc while the CLI starts', () => {
+    expect(renderDot('spawning')?.dataset.state).toBe('working')
   })
 
-  it('needs-input paints --warn', () => {
-    const dot = renderDot('needs-input')
-    expect(dot.className).toContain('bg-[var(--warn)]')
+  it('idle renders nothing', () => {
+    expect(renderDot('idle')).toBeNull()
   })
 
-  it("spawning paints --accent, the mock's own d-spawn rule", () => {
-    const dot = renderDot('spawning')
-    expect(dot.className).toContain('bg-[var(--accent)]')
+  it('needs-input shows the warn dot with its ring', () => {
+    const glyph = renderDot('needs-input')!
+    expect(glyph.dataset.state).toBe('needs')
+    expect(glyph.innerHTML).toContain('var(--warn)')
   })
 
-  it('unavailable is a readable outline drawn with a border, so the roster dot halo cannot erase it', () => {
-    const dot = renderDot('unavailable')
-    expect(dot.className).toContain('border-[var(--text-secondary)]')
-    expect(dot.className).not.toContain('ring-')
-    expect(dot.getAttribute('aria-label')).toBe('status unavailable')
-    expect(dot.getAttribute('role')).toBe('img')
+  it('unavailable has no glyph in this vocabulary', () => {
+    expect(renderDot('unavailable')).toBeNull()
   })
 })
 
-describe('per-pane status dot motion (§11 rule 4, motion-r4/motion-k11)', () => {
-  it('working and spawning keep looping — genuine indeterminates', () => {
-    expect(renderDot('working').className).toContain(PULSE)
-    expect(renderDot('spawning').className).toContain(PULSE)
+describe('per-pane status glyph motion', () => {
+  it('working keeps its loop only when motion is allowed', () => {
+    const glyph = renderDot('working')!
+    expect(glyph.innerHTML).toContain('motion-safe:animate-[spin_0.9s_linear_infinite]')
+    expect(glyph.innerHTML).not.toContain(' animate-[spin')
   })
 
-  it('needs-input no longer loops — settled-until-addressed, not indeterminate', () => {
-    expect(renderDot('needs-input').className).not.toContain(PULSE)
-  })
-
-  it('idle never looped either way', () => {
-    expect(renderDot('idle').className).not.toContain(PULSE)
-  })
-
-  it('unavailable stays static', () => {
-    expect(renderDot('unavailable').className).not.toContain(PULSE)
+  it('needs-input stays still — settled until addressed, not indeterminate', () => {
+    expect(renderDot('needs-input')!.innerHTML).not.toContain('animate-')
   })
 })

@@ -56,13 +56,14 @@ describe('settled children', () => {
     act(() => row.querySelector<HTMLButtonElement>('[aria-label="Close 2"]')!.click())
     expect(closeSession).toHaveBeenCalledWith(2)
   })
-  it.each(['done', 'failed'] as const)('uses the shared verdict dot for a settled %s child', (state) => {
+  it.each(['done', 'failed'] as const)('uses the shared verdict glyph for a settled %s child', (state) => {
     children = [{ ...child(2, 'exited'), delegation: { state } as SessionInfo['delegation'] }]
     render()
+    const glyphState = state === 'done' ? 'finished' : 'error'
     const label = state === 'done' ? 'Done' : 'Failed'
-    const dot = host.querySelector(`.children-row.settled .children-status[data-state="${state}"] [aria-label="${label}"] .agent-dot`)
-    expect(dot).not.toBeNull()
-    expect(dot?.getAttribute('style')).toContain(state === 'done' ? 'var(--ok)' : 'var(--stop)')
+    const glyph = host.querySelector(`.children-row.settled .children-status[data-state="${state}"] [aria-label="${label}"]`)
+    expect(glyph?.getAttribute('data-status-glyph')).toBe(glyphState)
+    expect(glyph?.innerHTML).toContain(state === 'done' ? 'var(--accent-ink)' : 'var(--stop)')
   })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
@@ -183,9 +184,8 @@ describe('missing status signal', () => {
     children = [{ ...child(7), agent: 'codex', status: null } as unknown as SessionInfo]
     act(() => root.render(<ChildrenRoster {...props()} collapsed />))
     const glyph = host.querySelector<HTMLElement>('[aria-label="Open worker 7"]')!
-    const dot = glyph.querySelector('.agent-dot')!
-    expect(dot.getAttribute('aria-label')).toBe('status unavailable')
-    expect(dot.className).not.toContain('--info')
+    expect(glyph.querySelector('[data-status-glyph]')).toBeNull()
+    expect(glyph.querySelector('[data-status-glyph="working"]')).toBeNull()
     expect(childStateWord(children[0])).toBe('unavailable')
   })
 })
@@ -213,8 +213,8 @@ describe('reported child state', () => {
     expect(host.querySelector('.children-group')?.textContent).not.toContain('Needs you')
     expect(row.textContent).toContain('Asked orchestrator')
     expect(row.querySelector('[aria-label="needs your input"]')).toBeNull()
-    expect(row.querySelector('.agent-dot')?.className).not.toContain('var(--warn)')
-    expect(row.querySelector('.agent-dot')?.getAttribute('style') ?? '').not.toContain('var(--warn)')
+    expect(row.querySelector('[data-status-glyph="needs"]')).toBeNull()
+    expect(row.innerHTML).not.toContain('var(--warn)')
   })
   it('keeps a stalled working delegation out of human attention', () => {
     children = [{ ...child(2), delegation: { state: 'working', stalled: true, hold_reason: 'stalled? approval_outcome_unobserved' } as SessionInfo['delegation'] }]
@@ -222,10 +222,9 @@ describe('reported child state', () => {
     expect(childStateWord(children[0])).toBe('stalled')
     render()
     expect(host.querySelector('[aria-label="Answer 2"]')).toBeNull()
-    expect(host.querySelector('[aria-label="Stalled"]')).not.toBeNull()
-    const dot = host.querySelector('[aria-label="Stalled"]')!
-    expect(dot.querySelector('.agent-dot')?.getAttribute('style')).toContain('var(--text-muted)')
-    expect(dot.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('approval_outcome_unobserved')
+    const glyph = host.querySelector('[aria-label="Stalled"]')!
+    expect(glyph.getAttribute('data-status-glyph')).toBe('needs')
+    expect(glyph.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('approval_outcome_unobserved')
   })
   it.each(['done', 'failed'] as const)('shows a live %s verdict without closing the PTY', (state) => {
     children = [{ ...child(2), delegation: { state } as SessionInfo['delegation'] }]
@@ -261,7 +260,7 @@ it('groups parent-owned questions before working and separates idle staged and u
   const headings = [...host.querySelectorAll('.children-group')].map((heading) => heading.textContent)
   expect(headings[0]).toContain('Waiting on orchestrator')
   expect(headings[1]).toContain('Working')
-  expect(host.querySelector('[aria-label="Asked orchestrator"]')).not.toBeNull()
+  expect(host.querySelector('[data-status-glyph="needs"]')).toBeNull()
   expect(host.querySelector('[aria-label="Result staged"]')).not.toBeNull()
   expect(host.querySelector('button')?.textContent).not.toContain('Close settled')
   expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Close settled (0)')?.disabled).toBe(true)

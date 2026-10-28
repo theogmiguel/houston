@@ -283,11 +283,13 @@ it('shows an idle orchestrator as working in its header while a child works, and
       />
     </SessionsStoreContext.Provider>
   ))
-  const headerDot = container!.querySelector('[data-testid="head-identity"] .agent-dot')
-  expect(headerDot?.getAttribute('aria-label')).toBe('working')
-  expect(container!.querySelector('[aria-label="Children roster"] [role="img"][aria-label="Idle"]')).not.toBeNull()
+  const headerGlyph = container!.querySelector('[data-testid="head-identity"] [data-status-glyph]')
+  expect(headerGlyph?.getAttribute('aria-label')).toBe('working')
+  const orchestratorRow = container!.querySelector('[aria-label="Children roster"] .children-row')!
+  expect(orchestratorRow.textContent).toContain('Orchestrator')
+  expect(orchestratorRow.querySelector('[data-status-glyph="working"]')).toBeNull()
   act(() => store.set((previous) => new Map(previous).set(2, { ...child, status: 'idle' })))
-  expect(container!.querySelector('[data-testid="head-identity"] .agent-dot')?.getAttribute('aria-label')).toBe('ready')
+  expect(container!.querySelector('[data-testid="head-identity"] [data-status-glyph]')).toBeNull()
 })
 
 it("counts live children in worktrees on the orchestrator's branch chip, keeping the tooltip to its own checkout", () => {

@@ -45,7 +45,7 @@ describe('orchestrator children', () => {
     const child = makeSession({ id: 2, spawned_by: 1, status: 'needs-input', title: 'worker' })
     harness = await renderReadyApp({ sessions: [parent, child], workspaces: [makeWorkspace()] })
     expect(harness.container.querySelector('[aria-label="Answer 2"]')).toBeNull()
-    expect(harness.container.querySelector('.pane-head .agent-dot')?.className).not.toContain('var(--warn)')
+    expect(harness.container.querySelector('.pane-head [data-status-glyph="needs"]')).toBeNull()
     expect(harness.container.querySelector('.children-list')?.textContent).toContain('Asked orchestrator')
     const asked = withInputOwner(child, 'orchestrator', 'Choose the target branch')
     deliverControl({ type: 'delegation_changed', session: 2, delegation: asked.delegation! })
@@ -158,7 +158,7 @@ describe('orchestrator children', () => {
   }
   it('waiting children roll up to the parent header without changing workspace rows', async () => {
     harness = await renderReadyApp({ sessions: [makeSession({ id: 1, status: 'working', children_waiting: 1 }), withInputOwner(makeSession({ id: 2, spawned_by: 1, project_dir: '/tmp/other', status: 'needs-input' }), 'user')], workspaces: [makeWorkspace()] })
-    expect(harness.container.querySelector('.pane-head .agent-dot')?.className).toContain('var(--warn)')
+    expect(harness.container.querySelector('.pane-head [data-status-glyph="needs"]')).not.toBeNull()
     expect(harness.container.querySelector('[aria-label="Children need input"]')).toBeNull()
   })
 })
