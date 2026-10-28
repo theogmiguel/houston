@@ -631,14 +631,38 @@ function WorkspaceRenameField({
 }
 
 function RailHead({
+  settings = false,
   onHeadMouseDown,
   onHeadDoubleClick,
   onHideRail,
 }: {
+  settings?: boolean;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
   onHeadDoubleClick?: (e: React.MouseEvent) => void;
   onHideRail?: () => void;
 }): React.JSX.Element {
+  if (settings) {
+    return (
+      <NavigationRailHeader
+        onMouseDown={onHeadMouseDown}
+        onDoubleClick={onHeadDoubleClick}
+        action={onHideRail && (
+          <Tooltip label="Hide sidebar (Ctrl+B)">
+            <Button
+              variant="subtle-icon"
+              aria-label="Hide sidebar"
+              noDrag
+              onClick={onHideRail}
+            >
+              <Icon glyph={IconPanelLeft} role="ui" />
+            </Button>
+          </Tooltip>
+        )}
+      >
+        Settings
+      </NavigationRailHeader>
+    );
+  }
   return (
     <NavigationRailHeader
       logo={logoUrl}
@@ -1907,6 +1931,7 @@ export function Sidebar({
       className={className}
     >
       <RailHead
+        settings={settingsOpen}
         onHeadMouseDown={onHeadMouseDown}
         onHeadDoubleClick={onHeadDoubleClick}
         onHideRail={onHideRail}

@@ -42,6 +42,18 @@ describe('SettingsDetail — state matrix', () => {
     expect(container.textContent).toContain('Some setting')
   })
 
+  it('Filled — the page leads with a large title and a row description takes the row width', () => {
+    const groups: SettingsRowGroup[] = [
+      { heading: 'Preferences', rows: [{ id: 'r1', label: 'Some setting', description: 'A description that should use every column left beside its control.', control: { kind: 'node', node: <span>on</span> } }] }
+    ]
+    act(() => {
+      root.render(<SettingsDetail title="Voice" groups={groups} onSave={() => {}} />)
+    })
+    expect(container.querySelector('h1')?.className).toContain('--tr-text-large-title-size')
+    expect(container.querySelector('[data-testid="settings-detail-row-desc"]')?.className).not.toContain('max-w-')
+    expect(container.querySelector('h2')?.className).not.toContain('border-b')
+  })
+
   it('Hover — the Save button carries hover treatment', () => {
     act(() => {
       root.render(<SettingsDetail title="Voice" groups={oneGroup} onSave={() => {}} dirty />)

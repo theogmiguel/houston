@@ -78,7 +78,7 @@ export function SectionHead({
       <div className="flex items-center justify-between gap-[var(--space-4)]">
         <h2
           data-testid="settings-section-title"
-          className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)] m-0"
+          className="text-[length:var(--tr-text-large-title-size)] font-[var(--tr-text-large-title-weight)] tracking-[var(--tr-text-large-title-tracking)] leading-[var(--tr-text-large-title-leading)] text-[var(--text-primary)] m-0"
         >
           {title}
         </h2>
@@ -87,7 +87,7 @@ export function SectionHead({
         )}
       </div>
       {lede && (
-        <p className="mb-0 text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
+        <p className="mb-0 text-[length:var(--tr-text-ui-size)] leading-[var(--tr-text-ui-leading)] text-[var(--text-secondary)] max-w-[72ch]">
           {lede}
         </p>
       )}
@@ -95,11 +95,11 @@ export function SectionHead({
   )
 }
 
-export function SubHead({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }): React.JSX.Element {
+export function SubHead({ children, actions, group = false }: { children: React.ReactNode; actions?: React.ReactNode; group?: boolean }): React.JSX.Element {
   const heading = (
     <h2
       data-testid="settings-subhead"
-      className={`m-0 flex min-h-[var(--h-ctl)] items-center gap-[var(--space-2)] px-[var(--space-4)] text-[length:var(--tr-text-ui-size)] font-normal text-[var(--text-secondary)] ${actions ? 'flex-1' : 'pt-[var(--space-5)] pb-[var(--space-2-5)] [&:first-child]:pt-0'}`}
+      className={`m-0 flex items-center gap-[var(--space-2)] px-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)] ${group ? '' : 'min-h-[var(--h-ctl)]'} ${actions ? 'flex-1' : group ? '' : 'pt-[var(--space-5)] pb-[var(--space-2)] [&:first-child]:pt-0'}`}
     >
       {children}
     </h2>
@@ -126,8 +126,8 @@ export function Group({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <section data-testid="settings-group" className="mb-0 [&+&]:pt-[var(--space-5)]">
-      {heading && <SubHead>{heading}</SubHead>}
+    <section data-testid="settings-group" className="flex flex-col gap-[var(--space-2)] [&+&]:pt-[var(--space-5)]">
+      {heading && <SubHead group>{heading}</SubHead>}
       {plain ? children : <SettingsList>{padded ? <div className="p-[var(--space-3)]">{children}</div> : children}</SettingsList>}
     </section>
   )
@@ -181,10 +181,10 @@ export function Row({
               className={`pt-[var(--space-0-5)] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${
                 variant === 'list'
                   ? typeof desc === 'string'
-                    ? 'max-w-[58ch] whitespace-normal break-words'
+                    ? 'whitespace-normal break-words'
                     : ''
                   : variant === 'flush'
-                    ? 'max-w-[62ch]'
+                    ? ''
                     : ''
               }`}
             >

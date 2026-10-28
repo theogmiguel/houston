@@ -105,7 +105,7 @@ function DetailRow({ row }: { row: SettingsRow }): React.JSX.Element {
     <div className="min-w-0 flex-1">
       <div className="flex flex-col gap-[var(--space-settings-detail-caption)]">
         <Text as="div" className="text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]">{row.label}</Text>
-        {row.description && <Text as="div" className="text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] max-w-[var(--w-settings-description)]">{row.description}</Text>}
+        {row.description && <Text as="div" data-testid="settings-detail-row-desc" className="text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">{row.description}</Text>}
         {reason && <Text as="div" data-testid="settings-row-disabled-reason" className="text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--danger)]">{reason}</Text>}
       </div>
     </div>
@@ -123,12 +123,12 @@ export function SettingsDetailPanel({ title, description, groups, loading = fals
   return <div data-testid="settings-detail" className={`flex flex-col h-full min-h-0 ${className}`}>
     <div className={`flex flex-col flex-1 min-h-0 overflow-y-auto px-[var(--space-6)] py-[var(--space-6)] ${contentGap}`}>
       <header className="flex flex-col gap-[var(--space-1-5)]">
-        <Text as="h1" size="subhead" weight="semibold" tone="primary">{title}</Text>
+        <h1 className="m-0 text-[length:var(--tr-text-large-title-size)] font-[var(--tr-text-large-title-weight)] tracking-[var(--tr-text-large-title-tracking)] leading-[var(--tr-text-large-title-leading)] text-[var(--text-primary)]">{title}</h1>
         {description && <Text as="p" className="text-[length:var(--tr-text-base)] text-[var(--text-secondary)] leading-relaxed max-w-[var(--w-settings-intro)]">{description}</Text>}
       </header>
       <div className="flex flex-col gap-[var(--space-6)]">
         {error ? <SettingsFeedback error={error} loading={loading} /> : loading ? <SettingsFeedback loading /> : groups === undefined ? <SettingsFeedback loading={false} /> : groups.length === 0 ? <Text as="div" data-testid="settings-detail-empty-set" size="small" tone="muted" center className="py-[var(--space-6)]">Nothing to configure here</Text> : groups.map((group) => <section key={group.heading} className="flex flex-col gap-[var(--space-1)]">
-          <Text as="h2" className="[font-size:var(--tr-text-body-size)] font-semibold text-[var(--text-primary)] pb-[var(--space-2)] border-b border-[var(--divider)]">{group.heading}</Text>
+          <Text as="h2" className="[font-size:var(--tr-text-body-size)] font-semibold text-[var(--text-primary)] pb-[var(--space-2)]">{group.heading}</Text>
           <div className="flex flex-col">{group.rows.map((row) => <DetailRow key={row.id} row={row} />)}</div>
         </section>)}
       </div>

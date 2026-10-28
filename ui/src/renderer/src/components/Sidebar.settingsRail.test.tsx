@@ -83,6 +83,14 @@ describe('Sidebar rail — Settings mode state matrix', () => {
     expect(container.querySelector('[data-testid="settings-section-row"]')).toBeNull()
   })
 
+  it('names the rail Settings and hides the brand mark while settings are open', () => {
+    render({ onHideRail: noop })
+    const head = container.querySelector('aside > div') as HTMLElement
+    expect(head.textContent).toContain('Settings')
+    expect(head.querySelector('[data-testid="brand-mark"]')).toBeNull()
+    expect(head.querySelector('button[aria-label="Hide sidebar"]')).not.toBeNull()
+  })
+
   it('Filled — the flat section list renders in the approved order', () => {
     render()
     expect(SETTINGS_SECTIONS.map(({ id }) => id).every((id) => sectionRow(id) !== null)).toBe(true)

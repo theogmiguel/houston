@@ -15,7 +15,7 @@ export function WorkspaceList({ children, dragging = false }: { children: ReactN
 
 /** One minmax(0, 1fr) track: an `auto` track would size to the search field's intrinsic width and push the rows past the rail. */
 export function SettingsRailStack({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="grid grid-cols-1 gap-[var(--space-1)]">{children}</div>
+  return <div className="grid grid-cols-1 gap-[var(--space-2)]">{children}</div>
 }
 
 export function SettingsNavigation({ children }: { children: ReactNode }): React.JSX.Element {

@@ -35,8 +35,9 @@ describe('settings groups keep their rhythm', () => {
     const groups = container.querySelectorAll<HTMLElement>('[data-testid="settings-group"]')
     expect(groups).toHaveLength(2)
     for (const g of groups) expect(g.className).toContain('[&+&]:pt-[var(--space-5)]')
+    for (const g of groups) expect(g.className).toContain('gap-[var(--space-2)]')
     for (const h of container.querySelectorAll('[data-testid="settings-subhead"]')) {
-      expect(h.className).toContain('[&:first-child]:pt-0')
+      expect(h.className).not.toContain('pt-[var(--space-5)]')
     }
   })
 })
