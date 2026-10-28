@@ -1,12 +1,10 @@
 name: v2-checks
 
-# Gates for the v2 rebuild: its integration PR into main, slice PRs into v2, and pushes
-# to v2 and v2/* branches. ci.yml still runs the existing suites on the same PRs.
+# Gates for the v2 rebuild: its integration PR into main and slice PRs into v2. A push
+# to v2 already runs through the open integration PR, so there is no push trigger.
 on:
   pull_request:
     branches: [main, v2]
-  push:
-    branches: [v2, 'v2/**']
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +15,7 @@ jobs:
   # handoff/ is working material deleted before v2 merges into main; every other
   # Markdown file in the tree keeps the usual hygiene rules.
   doc-hygiene:
-    if: github.event_name != 'pull_request' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,7 +31,7 @@ jobs:
   # Ported code may only exist alongside its upstream MIT notice, in both the source
   # tree's NOTICE and the inventory the app ships.
   licence-notice:
-    if: github.event_name != 'pull_request' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
