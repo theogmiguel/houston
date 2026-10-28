@@ -49,7 +49,9 @@ Also Augusto's: the decision on PR #363 (close it, or name what v2 reuses from i
 
 Everything in `src-tauri` and `ui/`, in this order:
 
-1. The `v2-checks` CI workflow, and which `ci.yml` jobs it replaces on `v2`.
+1. The `v2-checks` CI workflow. It exists with doc hygiene outside `handoff/` and the licence
+   notice gate; each slice adds its own job (server tests, sidecar build), and the `ci.yml` jobs
+   for `houston-core` are dropped when the daemon is removed.
 2. Tauri sidecar supervisor: bundled runtime, start, health check, restart, logs; keychain, tray,
    updater and native browser kept working against the new server.
 3. Thread pane mock in `mocks/houston-mocks.html`, then the A/B picks still open in the other

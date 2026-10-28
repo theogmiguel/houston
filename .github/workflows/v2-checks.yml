@@ -1,0 +1,50 @@
+name: v2-checks
+
+# Gates for the v2 rebuild: its integration PR into main, slice PRs into v2, and pushes
+# to v2 and v2/* branches. ci.yml still runs the existing suites on the same PRs.
+on:
+  pull_request:
+    branches: [main, v2]
+  push:
+    branches: [v2, 'v2/**']
+  workflow_dispatch:
+
+concurrency:
+  group: v2-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # handoff/ is working material deleted before v2 merges into main; every other
+  # Markdown file in the tree keeps the usual hygiene rules.
+  doc-hygiene:
+    if: github.event_name != 'pull_request' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Drop handoff/ from the checked-out tree
+        run: |
+          if [ -d handoff ]; then
+            git rm -r -q --cached handoff
+            rm -rf handoff
+          fi
+      - name: check-doc-hygiene.sh (outside handoff/)
+        run: bash scripts/check-doc-hygiene.sh
+
+  # Ported code may only exist alongside its upstream MIT notice, in both the source
+  # tree's NOTICE and the inventory the app ships.
+  licence-notice:
+    if: github.event_name != 'pull_request' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Upstream MIT notice is present
+        run: |
+          notice='Copyright (c) 2026 T3 Tools Inc.'
+          for file in NOTICE third-party-licenses.config.json src-tauri/resources/third-party-licenses.json; do
+            if ! grep -qF "$notice" "$file"; then
+              echo "v2-checks: $file lacks the upstream licence line \"$notice\"; ported code cannot ship without it." >&2
+              echo "  Restore it in NOTICE and third-party-licenses.config.json, then run: node scripts/gen-third-party-licenses.mjs" >&2
+              exit 1
+            fi
+          done
+          echo "v2-checks: upstream MIT notice present in NOTICE and the licence inventory"
