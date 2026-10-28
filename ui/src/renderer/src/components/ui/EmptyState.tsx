@@ -25,7 +25,7 @@ export function EmptyStateHeading({ children, ...props }: HTMLAttributes<HTMLHea
 }
 
 export function EmptyStateDescription({ children, ...props }: HTMLAttributes<HTMLParagraphElement> & { children: ReactNode }): React.JSX.Element {
-  return <Text {...props} as="p" flush size="ui" weight="ui" tone="muted" leading="empty" className="max-w-[var(--w-empty-state-description)]">{children}</Text>
+  return <Text {...props} as="p" flush size="prose" weight="prose" tone="muted" leading="prose" className="max-w-[var(--w-empty-state-description)]">{children}</Text>
 }
 
 const stateClasses = variants('mx-auto flex w-full flex-col items-center text-center', {
@@ -73,7 +73,7 @@ function EmptyStateCopy({ heading, description, variant, copy, descriptionWidth 
         <Text as="h2" flush size={windowTitle ? undefined : copy === 'summary' ? 'subhead' : 'ui'} weight={windowTitle ? undefined : copy === 'summary' ? 'semibold' : 'ui'} leading={windowTitle ? undefined : 'ui'} tone="primary" className={windowTitle ? 'font-[var(--tr-text-display-weight)] [font-family:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)]' : ''}>
           {heading}
         </Text>
-        <Text as="p" size="ui" leading="ui" tone="secondary" flush className={copy === 'summary' ? 'max-w-[56ch]' : descriptionWidth === 'compact' ? 'max-w-[var(--tr-empty-compact-copy-max)]' : 'max-w-[var(--tr-empty-copy-max)]'}>{description}</Text>
+        <Text as="p" size="prose" weight="prose" leading="prose" tone="secondary" flush className={copy === 'summary' ? 'max-w-[56ch]' : descriptionWidth === 'compact' ? 'max-w-[var(--tr-empty-compact-copy-max)]' : 'max-w-[var(--tr-empty-copy-max)]'}>{description}</Text>
       </div>
       )}
   </>

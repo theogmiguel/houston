@@ -242,9 +242,14 @@
     "Re-cut against 960,494 bytes (one boot chunk) with 256 bytes of headroom: every mounted",
     "pane's PR watch hook, the rail's merge queue count and the morning notice share one",
     "bounded request queue per connection (`houston/sharedListRequests.ts`), so a page load",
-    "stays inside the daemon's control handler limit; the queue runs at first paint."
+    "stays inside the daemon's control handler limit; the queue runs at first paint.",
+
+    "Re-cut against 961,052 bytes (one boot chunk) after the token pass swapped Plus Jakarta",
+    "for Inter Variable's `opsz.css`: seven subset faces replace four static weight imports",
+    "and the prose text step adds its utilities, a 558-byte net gain. The cap carries its",
+    "usual small headroom rather than the previous exact-fit 48 bytes."
   ],
-  "maxBootBytes": 960900,
+  "maxBootBytes": 961350,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

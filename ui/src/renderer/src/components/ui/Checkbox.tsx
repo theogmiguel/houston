@@ -54,7 +54,7 @@ export function Checkbox({
           ${isChecked ? 'border-[var(--accent)] bg-[var(--accent)]' : 'bg-[var(--content-bg)]'}
           ${FOCUS_HALO_CLS} cursor-pointer`}
       >
-        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--accent-ink)]" />}
+        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--on-accent)]" />}
       </button>
       {label && <span className="truncate">{label}</span>}
     </label>

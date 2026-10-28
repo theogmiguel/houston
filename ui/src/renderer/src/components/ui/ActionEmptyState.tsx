@@ -10,7 +10,7 @@ const SIZE = {
       'leading-[1.15] tracking-[-0.02em] max-w-[20ch]',
     headlineWeight: 'var(--tr-text-display-weight)',
     description:
-      'max-w-[52ch] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.65]',
+      'max-w-[52ch] [font-size:var(--tr-text-prose-size)] [font-weight:var(--tr-text-prose-weight)] leading-[var(--tr-text-prose-leading)]',
     action:
       'h-9 px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] ' +
       '[font-weight:var(--tr-text-ui-weight)]',
