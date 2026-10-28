@@ -437,7 +437,10 @@ Captures for UI pull requests come from the story harness in
 on `127.0.0.1`, renders one story and writes a PNG (`--width`, `--height`,
 `--theme`, `--scale`); `node ui/harness/measure.mjs <story> '<selectors>'` prints
 the measured boxes of the given elements. Write captures outside the tracked
-tree (`ui/harness-shots/` is ignored).
+tree (`ui/harness-shots/` is ignored). `node scripts/capture-stories.mjs <outDir>
+[filterRegex]` boots one Vite server, captures every story in both chrome themes
+at 1280x800 into `<outDir>/<theme>/<story>.png`, and exits non-zero listing the
+stories that failed to render.
 
 `shot.mjs` renders in WebKit on Linux, the closest match to WebKitGTK, and in
 Chromium on Windows, the closest match to WebView2. `--browser webkit|chromium`
