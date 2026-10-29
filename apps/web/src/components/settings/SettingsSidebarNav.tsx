@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ArchiveIcon,
+  ChevronLeftIcon,
   FlaskConicalIcon,
   BotIcon,
   createLucideIcon,
@@ -58,6 +59,7 @@ import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchIte
 import { validateSettingsScopeSearch } from "./settingsScope";
 import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
+import { useCloseAppModal } from "../sidebar/mainAppLocation";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -127,6 +129,7 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
+  const closeAppModal = useCloseAppModal();
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = validateSettingsScopeSearch(currentSearch);
@@ -254,17 +257,25 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       {...navArea}
       role="navigation"
       className={cn(
-        "flex w-60 shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14",
+        "flex w-[264px] shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14",
         compactSearchOpen &&
           "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
       )}
     >
+      <div
+        className={cn(
+          "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
+          !compactSearchOpen && "max-md:hidden",
+        )}
+      >
+        Settings
+      </div>
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup>
           <div className="flex flex-col gap-2">
             <div
               className={cn(
-                "flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                "flex h-7 items-center gap-2 rounded-md bg-muted px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
                 !compactSearchOpen && "max-md:hidden",
               )}
             >
@@ -283,7 +294,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 onBlur={() => {
                   if (!isSearching) setCompactSearchOpen(false);
                 }}
-                placeholder="Search"
+                placeholder="Search settings"
                 aria-label="Search settings"
                 role="combobox"
                 aria-autocomplete="list"
@@ -294,7 +305,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     ? `settings-search-result-${results[activeResultIndex].id}`
                     : undefined
                 }
-                className="min-w-0 flex-1"
+                className="min-w-0 flex-1 [&_[data-slot=input]]:text-[13px]"
               />
               {isSearching ? (
                 <Button
@@ -311,7 +322,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <XIcon className="size-3" />
                 </Button>
               ) : (
-                <Kbd>/</Kbd>
+                <Kbd className="h-4 min-w-4 rounded px-1 text-[11px]">/</Kbd>
               )}
             </div>
             {isSearching && results.length === 0 ? (
@@ -390,14 +401,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         <h3
                           aria-hidden="true"
                           className={cn(
-                            "px-2 text-xs font-medium text-sidebar-muted-foreground/80",
+                            "px-2 text-[11px] leading-[14px] font-semibold text-sidebar-muted-foreground",
                             !compactSearchOpen && "max-md:hidden",
                           )}
                         >
                           {group.heading}
                         </h3>
                       ) : null}
-                      <SidebarMenu role="presentation">
+                      <SidebarMenu role="presentation" className="gap-px">
                         {group.paths.map((to) => {
                           const Icon = SETTINGS_SECTION_ICONS[to];
                           const isActive = activePath === to || activePath.startsWith(`${to}/`);
@@ -410,6 +421,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                 aria-selected={isActive}
                                 aria-current={isActive ? "page" : undefined}
                                 isActive={isActive}
+                                className="h-7 gap-2 px-2 text-[13px] font-medium"
                                 onClick={() => handleSectionClick(to)}
                               >
                                 <Icon />
@@ -438,6 +450,19 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         <Suspense fallback={null}>
           <T3ConnectSidebarAvatar />
         </Suspense>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="sm"
+              className="h-7 gap-2 px-2 text-[13px] font-medium"
+              onClick={() => void closeAppModal()}
+            >
+              <ChevronLeftIcon />
+              <span>Back</span>
+              <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </nav>
   );
