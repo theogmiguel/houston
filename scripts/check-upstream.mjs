@@ -53,7 +53,7 @@ function ignoredPaths(repoRoot, base, files) {
   return new Set(result.stdout.split("\0").filter(Boolean));
 }
 
-export function checkUpstream({ repoRoot, upstreamDir }) {
+export function checkUpstream({ repoRoot, upstreamDir, skip = [] }) {
   const config = JSON.parse(readFileSync(join(repoRoot, "upstream.json"), "utf8"));
   const adapted = config.adapted ?? {};
   const excluded = config.excluded ?? [];
@@ -66,6 +66,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     `${path} differs from upstream and is not listed in upstream.json adapted`;
 
   for (const imported of config.imported) {
+    if (isExcluded(imported, skip)) continue;
     // `excluded` prunes the walk below; an explicitly imported path is
     // deliberate, so excluded prefixes it sits under do not veto it or its
     // children.
@@ -117,7 +118,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     );
     for (const [rel, repoFile] of repoFiles) {
       const path = `${imported}/${rel}`;
-      if (isExcluded(path, activeExcluded)) continue;
+      if (isExcluded(path, activeExcluded) || isExcluded(path, skip)) continue;
       const upstreamFile = upstreamFiles.get(rel);
       if (!upstreamFile) {
         problems.push(`${path} exists only in the repo`);
@@ -132,13 +133,14 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     }
     for (const rel of upstreamFiles.keys()) {
       const path = `${imported}/${rel}`;
-      if (isExcluded(path, activeExcluded)) continue;
+      if (isExcluded(path, activeExcluded) || isExcluded(path, skip)) continue;
       problems.push(`${path} exists only upstream`);
     }
   }
 
   // An adapted entry that no longer adapts anything would hide later drift.
   for (const key of Object.keys(adapted)) {
+    if (isExcluded(key, skip)) continue;
     if (!compared.has(key)) {
       problems.push(`${key} is listed in upstream.json adapted but matches no imported file`);
     } else if (readFileSync(compared.get(key)[0]).equals(readFileSync(compared.get(key)[1]))) {
@@ -151,9 +153,19 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
 }
 
 function main() {
-  const upstreamDir = process.argv[2];
+  const args = process.argv.slice(2);
+  const skip = [];
+  for (let i = args.indexOf("--skip"); i !== -1; i = args.indexOf("--skip")) {
+    if (!args[i + 1]) {
+      process.stderr.write("check-upstream: --skip needs a path, for example --skip apps/web\n");
+      process.exit(2);
+    }
+    skip.push(args[i + 1].replace(/\/+$/, ""));
+    args.splice(i, 2);
+  }
+  const upstreamDir = args[0];
   if (!upstreamDir) {
-    process.stderr.write("usage: node scripts/check-upstream.mjs <upstream-checkout>\n");
+    process.stderr.write("usage: node scripts/check-upstream.mjs <upstream-checkout> [--skip <path>]...\n");
     process.exit(2);
   }
   const upstreamRoot = resolve(upstreamDir);
@@ -166,10 +178,12 @@ function main() {
   const { ok, problems, fileCount, commit } = checkUpstream({
     repoRoot: ROOT,
     upstreamDir: upstreamRoot,
+    skip,
   });
   for (const problem of problems) process.stderr.write(`check-upstream: ${problem}\n`);
   if (ok) {
-    process.stdout.write(`check-upstream: ok — ${fileCount} files match upstream ${commit}\n`);
+    const skipped = skip.length > 0 ? ` (skipped: ${skip.join(", ")})` : "";
+    process.stdout.write(`check-upstream: ok — ${fileCount} files match upstream ${commit}${skipped}\n`);
   }
   process.exit(ok ? 0 : 1);
 }
