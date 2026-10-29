@@ -192,7 +192,18 @@
     "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages, and drops patches for packages that are not installed",
     "apps/server/src/preview/PreviewBrowser.test.ts": "runs the install test without Effect's test clock; NTFS cannot store the pre-epoch fixture mtime",
     "apps/server/src/preview/ServerBrowserContexts.test.ts": "profile path expectations use node:path so they match the platform separators",
-    "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime",
-    "scripts/lib/third-party-licenses.ts": "accepts Houston inline licence text and object override map"
-  }
+    "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home, and every OTLP export is cleared",
+    "scripts/lib/third-party-licenses.ts": "accepts Houston inline licence text and object override map",
+    "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
+    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one"
+  },
+  "added": [
+    "apps/server/src/houston/analytics.test.ts",
+    "apps/server/src/houston/analytics.ts",
+    "apps/server/src/houston/baseDir.test.ts",
+    "apps/server/src/houston/baseDir.ts",
+    "apps/server/src/houston/entrypoint.test.ts",
+    "apps/server/src/houston/noTelemetry.test.ts",
+    "apps/server/src/houston/noTelemetry.ts"
+  ]
 }
