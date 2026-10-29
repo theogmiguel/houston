@@ -8,7 +8,7 @@ const environmentId = EnvironmentId.make("laptop");
 const projectId = ProjectId.make("project");
 
 describe("settingInheritanceLayers", () => {
-  it("shows the checkout's t3.json as a layer for file-backed keys", () => {
+  it("shows the checkout's houston.json as a layer for file-backed keys", () => {
     const file = { defaultThreadEnvMode: "worktree" as const };
     const fromFile = settingInheritanceLayers(
       {
@@ -23,7 +23,7 @@ describe("settingInheritanceLayers", () => {
     expect(fromFile.map((layer) => [layer.label, layer.value, layer.effective])).toEqual([
       ["Project", "Inherits", false],
       ["Laptop", "Inherits", false],
-      ["t3.json", "New worktree", true],
+      ["houston.json", "New worktree", true],
       ["Default", "Current checkout", false],
     ]);
     const settings = { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: "local" as const };

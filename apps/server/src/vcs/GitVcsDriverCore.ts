@@ -3882,7 +3882,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 Effect.flatMap((contents) => {
                   const file = parseT3ProjectFile(contents);
                   return file === null
-                    ? Effect.logWarning("t3.json is invalid; initializing submodules recursively", {
+                    ? Effect.logWarning("houston.json is invalid; initializing submodules recursively", {
                         worktreePath,
                       }).pipe(Effect.as(null))
                     : Effect.succeed(file);
