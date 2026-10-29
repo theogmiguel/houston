@@ -80,7 +80,7 @@ export function WizardSteps({
   const Step = onStepChange ? "button" : "div";
   return (
     <ol
-      className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-background p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
+      className="grid auto-cols-fr grid-flow-col gap-1 rounded-[var(--r-ctl)] bg-[var(--field)] p-1"
       role="list"
       aria-label="Setup progress"
     >
@@ -91,7 +91,7 @@ export function WizardSteps({
               ? { type: "button" as const, disabled: isStepDisabled?.(index) }
               : {})}
             className={cn(
-              "flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-sm:justify-center max-sm:px-2",
+              "flex w-full min-w-0 items-center gap-2 rounded-[var(--r-ctl)] px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-sm:justify-center max-sm:px-2",
               onStepChange &&
                 "cursor-pointer hover:bg-card disabled:cursor-default disabled:hover:bg-transparent",
               index === currentStep &&

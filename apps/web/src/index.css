@@ -100,7 +100,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    * Compact UI geometry. Keep these values semantic so sidebar, palette,
    * tooltip, and toolbar controls cannot quietly drift apart.
    */
-  --control-radius: 0.5rem;
+  /* Houston's control radius (`--r-ctl`). */
+  --control-radius: 6px;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -169,9 +170,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    default stacks are mirrored in `appearanceFonts.ts`. */
 @theme {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  /* Houston sets machine values in JetBrains Mono; the fallback stack keeps
+     the build working where the face is not installed (no new dependency). */
   --font-mono:
-    ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    "JetBrains Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas,
+    "Liberation Mono", monospace;
 }
 
 @theme inline {
@@ -423,47 +427,23 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @utility dialog-glass {
-  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
-  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
-
-  @variant dark {
-    border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
-    box-shadow:
-      inset 0 1px rgb(255 255 255 / 4%),
-      0 24px 72px -20px rgb(0 0 0 / 90%);
-  }
-
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    background: var(--popover) !important;
-  }
+  /* Houston overlay rung: opaque raised ground, hairline, the deep shadow. The
+     blurred film upstream used is gone; the backdrop below supplies the scrim. */
+  background: var(--popover);
+  border-color: var(--border);
+  box-shadow: var(--shadow-2);
 }
 
 @utility dialog-backdrop {
-  background: color-mix(in srgb, var(--background) 60%, transparent);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-
-  @variant dark {
-    background: color-mix(in srgb, var(--background) 64%, transparent);
-  }
+  background: color-mix(in srgb, #000 45%, transparent);
 }
 
 @utility dropdown-glass {
-  background: color-mix(
-    in srgb,
-    var(--popover) 18%,
-    color-mix(in srgb, var(--popover) var(--glass-opacity), transparent)
-  );
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
-
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    background: var(--popover) !important;
-  }
+  /* Houston raised rung: menus, popovers and tooltips are opaque, bordered and
+     shadowed; they do not blur what is behind them. */
+  background: var(--popover);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
 }
 
 @utility topbar-scroll-fade {
@@ -1112,168 +1092,203 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 :root {
   color-scheme: light;
-  --radius: 0.5rem;
-  --background: var(--color-zinc-25);
-  --app-chrome-background: var(--background);
+  /* Houston's Paper palette. Values are literal copies of the v1 renderer's
+     `ui/src/renderer/src/theme.css` tokens, mapped by role: canvas
+     (`--content-bg`), rail (`--rail-bg`), cards (`--card-bg`), floating tier
+     (`--card-hover`), borders, ink tiers and the accent fill. Keep this block
+     in sync with `[data-theme='paper']` there; the copied feature components
+     read these names, not `--tr-*`. */
+  --radius: 10px; /* Houston `--r-group` */
+  /* Houston's four radius roles, for primitives that must name the role
+     rather than the value. The `--radius-*` ladder above stays the fallback
+     for copied feature components. */
+  --r-badge: 4px;
+  --r-ctl: 6px;
+  --r-group: 10px;
+  --r-dialog: 14px;
+  /* Houston control fills and tracks that have no upstream role. */
+  --field: rgba(0, 0, 0, 0.05);
+  --tog-off: rgba(0, 0, 0, 0.22);
+  /* Shadow ladder: raised (`--shadow-1`) and overlay (`--shadow-2`). */
+  --shadow-1: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --background: #e8e8ea; /* --content-bg */
+  --app-chrome-background: #ececef; /* --rail-bg */
   --toolbar-background: var(--app-chrome-background);
   --toolbar-foreground: var(--foreground);
   --toolbar-border: var(--border);
   --toolbar-control: var(--popover);
   --toolbar-control-foreground: var(--foreground);
-  --toolbar-control-hover: var(--accent);
-  --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
-  --foreground: var(--color-zinc-900);
-  --card: var(--color-white);
-  --card-foreground: var(--color-zinc-900);
-  --popover: var(--color-white);
-  --popover-foreground: var(--color-zinc-900);
-  --primary: oklch(0.488 0.217 264);
-  --primary-foreground: var(--color-white);
-  --secondary: var(--color-zinc-50);
-  --secondary-foreground: var(--color-zinc-800);
-  --muted: var(--color-zinc-50);
-  --muted-foreground: var(--color-zinc-500);
+  --toolbar-control-hover: var(--hover);
+  --surface-raised: #ffffff; /* --card-hover */
+  --foreground: #1d1d1f; /* --text-primary */
+  --card: #fbfbfc; /* --card-bg */
+  --card-foreground: #1d1d1f; /* --text-primary */
+  --popover: #ffffff; /* --raised */
+  --popover-foreground: #1d1d1f; /* --text-primary */
+  --primary: #0a63e0; /* --accent fill */
+  --primary-foreground: #ffffff; /* --on-accent */
+  --secondary: rgba(0, 0, 0, 0.05); /* --field */
+  --secondary-foreground: #424245; /* --text-secondary */
+  --muted: rgba(0, 0, 0, 0.05); /* --field */
+  --muted-foreground: #66666b; /* --text-muted */
   --placeholder: var(--muted-foreground);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
-  /* One step past the accent, so a user turn stands off the near-white canvas. */
-  --message-surface: color-mix(in srgb, var(--color-zinc-200) 55%, var(--color-zinc-100));
+  /* One step past the canvas, so a user turn stands off the sheet. */
+  --message-surface: color-mix(in srgb, #1d1d1f 4%, #fbfbfc); /* --card-bg lift */
   --message-foreground: var(--foreground);
   --message-action: var(--primary);
   --message-action-foreground: var(--primary-foreground);
-  --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
-  --accent: var(--color-zinc-100);
-  --accent-foreground: var(--color-zinc-900);
-  --error: var(--color-red-500);
-  --error-foreground: var(--color-red-700);
+  --message-action-hover: color-mix(in srgb, var(--primary) 85%, black);
+  /* Upstream `--accent` is the neutral hover/selection fill, not Houston's
+     blue brand fill: the collision is resolved by keeping the role and using
+     Houston's `--hover` overlay. */
+  --accent: rgba(0, 0, 0, 0.045); /* --hover */
+  --accent-foreground: #1d1d1f; /* --text-primary */
+  --error: #dc2626; /* --stop */
+  --error-foreground: #dc2626; /* --status-blocked-text */
   --tool-error-icon: var(--error);
-  --error-surface: color-mix(in srgb, var(--error) 8%, transparent);
+  --error-surface: color-mix(in srgb, var(--error) 10%, transparent);
   --destructive: var(--error);
-  --border: var(--color-zinc-200);
-  --input: var(--color-zinc-300);
-  --ring: var(--primary);
+  --border: #d7d7dd; /* --border */
+  --input: #b4b4bc; /* --border-control */
+  --ring: #0a5cd1; /* --accent-ink */
   --destructive-foreground: var(--error-foreground);
-  --info: var(--color-blue-500);
-  --info-foreground: var(--color-blue-700);
+  --info: #0891b2; /* --info */
+  --info-foreground: #0891b2; /* --status-doing-text */
   /* Messages from a guest link, and the sidebar Request status. */
-  --guest: var(--color-fuchsia-500);
-  --guest-foreground: var(--color-fuchsia-600);
+  --guest: #c026d3;
+  --guest-foreground: #a21caf;
   --guest-surface: color-mix(in srgb, var(--guest) 14%, var(--message-surface));
-  --success: var(--color-emerald-500);
-  --success-foreground: var(--color-emerald-700);
-  --warning: var(--color-amber-500);
-  --warning-foreground: var(--color-amber-700);
+  --success: #16a34a; /* --ok */
+  --success-foreground: #16a34a; /* --status-done-text */
+  --warning: #ca8a04; /* --status-todo-text */
+  --warning-foreground: #8a5a00; /* --warn */
   --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
   --update: var(--primary);
   --update-foreground: var(--primary);
-  /* Keep every sidebar primitive on the same light surface hierarchy, including
-     portaled mobile sheets and settings navigation outside the app sidebar. */
-  --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
-  --sidebar-control-surface: var(--color-zinc-100);
-  --sidebar-row-hover: var(--color-zinc-25);
-  --sidebar-row-active: var(--color-white);
-  --sidebar-row-selected: var(--color-white);
-  --sidebar-border: var(--border);
+  /* The rail is Houston's `--rail-bg`, one tonal step above the canvas; row
+     fills are the achromatic hover/selection overlays. */
+  --sidebar: #ececef; /* --rail-bg */
+  --sidebar-foreground: #1d1d1f; /* --text-primary */
+  --sidebar-muted-foreground: #66666b; /* --text-muted */
+  --sidebar-control-surface: #e8e8ea; /* --content-bg */
+  --sidebar-row-hover: rgba(0, 0, 0, 0.045); /* --hover */
+  --sidebar-row-active: rgba(0, 0, 0, 0.09); /* --sel */
+  --sidebar-row-selected: rgba(0, 0, 0, 0.09); /* --sel */
+  --sidebar-border: #d7d7dd; /* --border */
   --sidebar-stage-fade: var(--sidebar);
-  --code-background: color-mix(in srgb, var(--card) 90%, var(--background));
-  --code-foreground: var(--foreground);
-  --terminal-background: var(--background);
-  --terminal-foreground: var(--foreground);
-  --terminal-cursor: rgb(38 56 78);
-  --terminal-selection-background: rgb(37 63 99 / 20%);
+  --code-background: #e3e3e3; /* --tool-code-bg */
+  --code-foreground: #1d1d1f; /* --text-primary */
+  --terminal-background: #e3e3e3; /* --tool-code-bg */
+  --terminal-foreground: #1d1d1f; /* --text-primary */
+  --terminal-cursor: #0a5cd1; /* --accent-ink */
+  --terminal-selection-background: rgb(10 99 224 / 20%);
 
   @variant dark {
     color-scheme: dark;
-    /* The canvas is true black, matching the sidebar. Raised surfaces keep the tone they had
-       over neutral-950, so cards, popovers, and the composer still lift. Borders and hover
-       states provide separation without milky gray fills. */
-    --background: #000;
-    --surface-raised: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.571 0.21 264);
-    --secondary: --alpha(var(--color-white) / 3%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: var(--color-neutral-400);
-    --accent: --alpha(var(--color-white) / 4%);
-    --accent-foreground: var(--color-neutral-100);
-    /* A user turn sits above the composer tone, level with the selected sidebar row. */
-    --message-surface: color-mix(in srgb, var(--color-neutral-950) 92%, var(--color-white));
-    --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-    --error-foreground: var(--color-red-400);
+    /* Houston's Graphite palette: the canvas is the darkest ground, the rail
+       sits one step above it, cards lift above the canvas and menus/popovers
+       take the raised tier. */
+    --background: #0a0a0b; /* --content-bg */
+    --app-chrome-background: #1c1c1f; /* --rail-bg */
+    --surface-raised: #1c1c20; /* --card-hover */
+    --foreground: rgba(255, 255, 255, 0.92); /* --text-primary */
+    --card: #131316; /* --card-bg */
+    --card-foreground: var(--foreground);
+    --popover: #1c1c20; /* --raised */
+    --popover-foreground: var(--foreground);
+    --primary: #2f6fe8; /* --accent fill */
+    --secondary: rgba(255, 255, 255, 0.06); /* --field */
+    --secondary-foreground: var(--foreground);
+    --muted: rgba(255, 255, 255, 0.06); /* --field */
+    --muted-foreground: rgba(255, 255, 255, 0.52); /* --text-muted */
+    --message-surface: color-mix(in srgb, #ffffff 6%, #131316);
+    --accent: rgba(255, 255, 255, 0.05); /* --hover */
+    --accent-foreground: var(--foreground);
+    --error: #ef4444; /* --stop */
+    --error-foreground: #f09595; /* --status-blocked-text */
     --tool-error-icon: #fca5a5;
-    --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
-    --border: --alpha(var(--color-white) / 8%);
-    --input: --alpha(var(--color-white) / 11%);
-    --info-foreground: var(--color-blue-400);
-    --guest-foreground: var(--color-fuchsia-300);
-    --success-foreground: var(--color-emerald-400);
-    --warning-foreground: var(--color-amber-400);
-    --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
-    --update-foreground: var(--color-blue-400);
-    --sidebar: var(--card);
-    --sidebar-control-surface: var(--muted);
-    --sidebar-row-hover: var(--accent);
-    --sidebar-row-active: var(--accent);
-    --sidebar-row-selected: var(--muted);
-    --sidebar-stage-fade: var(--card);
-    --terminal-cursor: rgb(180 203 255);
-    --terminal-selection-background: rgb(180 203 255 / 25%);
+    --error-surface: color-mix(in srgb, var(--error) 14%, transparent);
+    --border: #2a2a31; /* --border */
+    --input: #4a4a52; /* --border-control */
+    --info: #7cb7ff; /* --info */
+    --info-foreground: #7cb7ff; /* --status-doing-text */
+    --guest-foreground: #f0abfc;
+    --success: #4ade80; /* --ok */
+    --success-foreground: #79d79a; /* --status-done-text */
+    --warning: #f59e0b; /* --warn */
+    --warning-foreground: #f0b04f; /* --status-todo-text */
+    --warning-surface: color-mix(in srgb, var(--warning) 14%, transparent);
+    --update: var(--primary);
+    --update-foreground: #64a0ff; /* --accent-ink */
+    --sidebar: #1c1c1f; /* --rail-bg */
+    --sidebar-control-surface: #131316; /* --card-bg */
+    --sidebar-row-hover: rgba(255, 255, 255, 0.05); /* --hover */
+    --sidebar-row-active: rgba(255, 255, 255, 0.09); /* --sel */
+    --sidebar-row-selected: rgba(255, 255, 255, 0.09); /* --sel */
+    --sidebar-border: var(--border);
+    --sidebar-stage-fade: var(--sidebar);
+    --code-background: #000000; /* --tool-code-bg */
+    --code-foreground: var(--foreground);
+    --terminal-background: #000000; /* --tool-code-bg */
+    --terminal-foreground: var(--foreground);
+    --terminal-cursor: #64a0ff; /* --accent-ink */
+    --terminal-selection-background: rgb(47 111 232 / 25%);
+    --field: rgba(255, 255, 255, 0.06);
+    --tog-off: rgba(255, 255, 255, 0.18);
+    --shadow-1: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.6);
   }
 }
 
-/* Keep both sidebar implementations (default and legacy) on the same quiet
-   zinc hierarchy: zinc-50 navigation, zinc-25 hover, and white selected/raised
-   surfaces. */
+/* The sidebar is Houston's rail: one tonal step above the canvas, no second
+   palette. These repeat the root roles so portaled sheets and settings
+   navigation that mount outside `[data-theme]` keep the rail's ink. */
 [data-app-sidebar] {
-  --background: var(--color-zinc-25);
-  --foreground: var(--color-zinc-900);
-  --card: var(--color-white);
-  --card-foreground: var(--color-zinc-900);
-  --accent: var(--color-zinc-100);
-  --accent-foreground: var(--color-zinc-900);
-  --muted: var(--color-zinc-50);
-  --muted-foreground: var(--color-zinc-500);
-  --border: var(--color-zinc-200);
-  --input: var(--color-zinc-300);
-  --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--color-zinc-900);
-  --sidebar-muted-foreground: var(--color-zinc-500);
-  --sidebar-control-surface: var(--color-zinc-100);
-  --sidebar-row-hover: var(--color-zinc-25);
-  --sidebar-row-active: var(--color-white);
-  --sidebar-row-selected: var(--color-white);
-  --sidebar-border: var(--color-zinc-200);
+  --background: #e8e8ea;
+  --foreground: #1d1d1f;
+  --card: #fbfbfc;
+  --card-foreground: #1d1d1f;
+  --accent: rgba(0, 0, 0, 0.045);
+  --accent-foreground: #1d1d1f;
+  --muted: rgba(0, 0, 0, 0.05);
+  --muted-foreground: #66666b;
+  --border: #d7d7dd;
+  --input: #b4b4bc;
+  --sidebar: #ececef;
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-muted-foreground: #66666b;
+  --sidebar-control-surface: #e8e8ea;
+  --sidebar-row-hover: rgba(0, 0, 0, 0.045);
+  --sidebar-row-active: rgba(0, 0, 0, 0.09);
+  --sidebar-row-selected: rgba(0, 0, 0, 0.09);
+  --sidebar-border: #d7d7dd;
   --sidebar-stage-fade: var(--sidebar);
 
   @variant dark {
-    --background: #000;
-    --foreground: #f1f3f7;
-    --card: #000;
+    --background: #0a0a0b;
+    --foreground: rgba(255, 255, 255, 0.92);
+    --card: #131316;
     --card-foreground: var(--foreground);
-    --accent: #191a1d;
-    --accent-foreground: #f7f9ff;
-    --muted: #0a0a0a;
-    --muted-foreground: #a3a3a3;
-    --border: rgb(255 255 255 / 8%);
-    --input: rgb(255 255 255 / 18%);
-    --sidebar: var(--card);
+    --accent: rgba(255, 255, 255, 0.05);
+    --accent-foreground: var(--foreground);
+    --muted: rgba(255, 255, 255, 0.06);
+    --muted-foreground: rgba(255, 255, 255, 0.52);
+    --border: #2a2a31;
+    --input: #4a4a52;
+    --sidebar: #1c1c1f;
     --sidebar-foreground: var(--foreground);
     --sidebar-muted-foreground: var(--muted-foreground);
-    --sidebar-control-surface: var(--muted);
-    --sidebar-row-hover: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
-    --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
-    --sidebar-row-selected: color-mix(in srgb, var(--contrast-foreground) 7%, transparent);
+    --sidebar-control-surface: #131316;
+    --sidebar-row-hover: rgba(255, 255, 255, 0.05);
+    --sidebar-row-active: rgba(255, 255, 255, 0.09);
+    --sidebar-row-selected: rgba(255, 255, 255, 0.09);
     --sidebar-border: var(--border);
-    --sidebar-stage-fade: var(--card);
-    /* Row metadata sits a step below read titles (75% white). */
-    --secondary-label: #8f8f8f;
+    --sidebar-stage-fade: var(--sidebar);
+    /* Row metadata sits a step below read titles. */
+    --secondary-label: rgba(255, 255, 255, 0.52);
   }
 }
 
@@ -1714,6 +1729,8 @@ body {
   /* Reference the theme token (not a literal stack) so the Settings ->
      Appearance runtime override of --font-sans reaches all interface text. */
   font-family: var(--font-sans);
+  /* Houston ships Inter's optical-size axis and asks for it. */
+  font-optical-sizing: auto;
   margin: 0;
   padding: 0;
 }
