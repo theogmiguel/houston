@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
-import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
-import * as NodeURL from "node:url";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
+import * as NodeFS from "node:fs";
 import * as NodeZlib from "node:zlib";
 
 import react from "@vitejs/plugin-react";
@@ -332,12 +332,9 @@ export default defineConfig(() => {
     resolve: {
       tsconfigPaths: true,
       alias: {
-        // fileURLToPath, not pathname: on Windows a checkout path with non-ASCII
-        // characters arrives percent-encoded and prefixed with a drive slash,
-        // which worker bundling cannot resolve.
-        "@betteroffice/fonts-cjk": NodeURL.fileURLToPath(
-          new URL("./src/components/files/office/fonts-cjk.ts", import.meta.url),
-        ),
+        // A URL pathname percent-encodes non-ASCII checkout paths, which the
+        // resolver cannot open on Windows; join the source directory instead.
+        "@betteroffice/fonts-cjk": `${import.meta.dirname}/src/components/files/office/fonts-cjk.ts`,
       },
       dedupe: ["react", "react-dom"],
     },
