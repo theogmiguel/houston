@@ -127,7 +127,7 @@ export const resolveSimlockToken = (
 export const describeGatewayFailure = (cause: unknown, gatewayUrl: string, tokenOwner: string) => {
   if (Cause.isTimeoutError(cause)) return `Could not reach the Simlock gateway at ${gatewayUrl}.`;
   if (!HttpClientError.isHttpClientError(cause))
-    return `The Simlock gateway at ${gatewayUrl} sent an answer T3 could not read.`;
+    return `The Simlock gateway at ${gatewayUrl} sent an answer Houston could not read.`;
   if (cause.reason._tag === "StatusCodeError") {
     const status = cause.reason.response.status;
     return status === 401 || status === 403
@@ -136,7 +136,7 @@ export const describeGatewayFailure = (cause: unknown, gatewayUrl: string, token
   }
   return cause.reason._tag === "TransportError"
     ? `Could not reach the Simlock gateway at ${gatewayUrl}.`
-    : `The Simlock gateway at ${gatewayUrl} sent an answer T3 could not read.`;
+    : `The Simlock gateway at ${gatewayUrl} sent an answer Houston could not read.`;
 };
 
 const decodeIdentity = Schema.decodeUnknownEffect(
