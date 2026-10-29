@@ -8682,5 +8682,10 @@ mod shared_frame_vectors {
             hex(&encode_gap_frame(7, 1u64 << 63, 1u64 << 63)),
             "030000000780000000000000008000000000000000"
         );
+        // Distinct counters: a swap of bytesSeen and dropped changes the hex.
+        assert_eq!(
+            hex(&encode_gap_frame(0x0102_0304, 1, 2)),
+            "030102030400000000000000010000000000000002"
+        );
     }
 }

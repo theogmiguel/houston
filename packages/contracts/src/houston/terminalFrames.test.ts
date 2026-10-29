@@ -15,6 +15,7 @@ const HEX = {
   output: "01ffffffff00000100000000076869",
   stdin: "02ffffffff6869",
   gap: "030000000780000000000000008000000000000000",
+  gapDistinct: "030102030400000000000000010000000000000002",
 };
 
 const ENCODER = new TextEncoder();
@@ -62,6 +63,17 @@ describe("terminalFrames", () => {
     const bytes = encodeGapFrame({ handle: 7, bytesSeen: 2n ** 63n, dropped: 2n ** 63n });
     expect(bytes.length).toBe(21);
     expect(hex(bytes)).toBe(HEX.gap);
+  });
+
+  it("gap fields bytesSeen and dropped sit at their own offsets", () => {
+    const bytes = encodeGapFrame({ handle: 0x01020304, bytesSeen: 1n, dropped: 2n });
+    expect(hex(bytes)).toBe(HEX.gapDistinct);
+    expect(decodeServerFrame(fromHex(HEX.gapDistinct))).toEqual({
+      kind: 3,
+      handle: 0x01020304,
+      bytesSeen: 1n,
+      dropped: 2n,
+    });
   });
 
   it("decodeServerFrame decodes OUTPUT and GAP with bigint fields", () => {
