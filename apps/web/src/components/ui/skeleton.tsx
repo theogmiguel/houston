@@ -5,8 +5,8 @@ import { cn } from "~/lib/utils";
 const skeletonVariants = cva("bg-muted-foreground/15 motion-safe:animate-skeleton", {
   variants: {
     shape: {
-      block: "rounded-sm",
-      card: "rounded-lg",
+      block: "rounded-[var(--r-badge)]",
+      card: "rounded-[var(--r-group)]",
       pill: "rounded-full",
     },
   },

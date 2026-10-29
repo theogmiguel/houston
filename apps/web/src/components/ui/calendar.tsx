@@ -4,7 +4,7 @@ import type * as React from "react";
 import { cn } from "~/lib/utils";
 
 const buttonClassNames =
-  "relative flex size-(--cell-size) text-base sm:text-sm items-center justify-center rounded-lg text-foreground not-in-data-selected:hover:bg-accent disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0";
+  "relative flex size-(--cell-size) text-base sm:text-sm items-center justify-center rounded-[var(--r-ctl)] text-foreground not-in-data-selected:hover:bg-accent disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
 const defaultComponents = {
   Chevron: ({
@@ -58,7 +58,7 @@ export function Calendar({
     ),
     dropdown: "absolute bg-popover inset-0 opacity-0",
     dropdown_root:
-      "relative has-focus:border-ring has-focus:ring-ring/50 has-focus:ring-[3px] has-focus:ring-inset border border-input shadow-xs/5 rounded-lg px-[calc(--spacing(3)-1px)] h-9 sm:h-8 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-me-1",
+      "relative has-focus:border-ring has-focus:ring-ring/50 has-focus:ring-2 has-focus:ring-inset border border-border rounded-[var(--r-ctl)] px-[calc(--spacing(3)-1px)] h-9 sm:h-8 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-me-1",
     dropdowns:
       "w-full flex items-center text-base sm:text-sm justify-center h-(--cell-size) gap-1.5 *:[span]:font-medium",
     hidden: "invisible",

@@ -77,3 +77,6 @@ audits/
 .alchemy/
 .pnpm-store/
 .idea/
+
+# vitest reporter output written beside the package under test
+.vitest/

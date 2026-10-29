@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 
 export function DiscoveryList({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
+    <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-[var(--r-group)] border border-border/70 bg-card">
       {children}
     </div>
   );
