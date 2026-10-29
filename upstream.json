@@ -65,6 +65,7 @@
     ".vercelignore",
     ".env.example"
   ],
+  "added": ["apps/server/src/provider/GrokProviderTeardown.test.ts"],
   "adapted": {
     "apps/web/index.html": "Houston branding",
     "apps/web/public/apple-touch-icon.png": "Houston branding",
