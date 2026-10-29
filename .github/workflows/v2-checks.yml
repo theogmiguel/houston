@@ -253,3 +253,69 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/mcp src/mcpApps
+
+  # Every server test file no area job above runs, so each of the server's
+  # test files runs in exactly one job; new directories land here by default.
+  # Windows reports but does not fail the job yet.
+  server-rest:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Remaining server tests (src, area jobs' directories excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: >-
+          pnpm --filter t3 exec vp test run src/
+          --exclude "src/persistence/**"
+          --exclude "src/provider/**"
+          --exclude "src/orchestration-v2/**"
+          --exclude "src/terminal/**"
+          --exclude "src/git/**"
+          --exclude "src/vcs/**"
+          --exclude "src/pullRequest/**"
+          --exclude "src/sourceControl/**"
+          --exclude "src/checkpointing/**"
+          --exclude "src/workspace/**"
+          --exclude "src/review/**"
+          --exclude "src/usage/**"
+          --exclude "src/mcp/**"
+          --exclude "src/mcpApps/**"
+
+  # Every workspace package's own suite except the server (the jobs above) and
+  # the web renderer. Windows reports but does not fail the job yet.
+  workspace-packages:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Workspace package tests (web and server excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm -r --no-bail --filter "!@t3tools/web" --filter "!t3" test
