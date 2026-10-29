@@ -362,6 +362,7 @@ fn release_build_with_unset_channel_and_live_daemon_json_refuses_via_singleton_g
         .envs(win_essentials())
         .env("CI", "true")
         .env("HOME", home.path())
+        .env("HOUSTON_V1_HOST", "1")
         .output()
         .expect("failed to run houston-tauri");
 
@@ -1024,6 +1025,7 @@ fn live_pid_in_daemon_json_refuses_and_names_the_pid_and_state_dir() {
         .envs(win_essentials())
         .env("CI", "true")
         .env("HOME", home.path())
+        .env("HOUSTON_V1_HOST", "1")
         .args(["--channel", "dev"])
         .output()
         .expect("failed to run houston-tauri");

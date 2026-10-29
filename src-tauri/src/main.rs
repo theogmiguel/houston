@@ -23,6 +23,7 @@ mod system;
 mod test_home;
 mod transfer_open;
 mod tray;
+mod v2_server;
 mod watchdog;
 mod webview_render;
 mod window;
@@ -387,7 +388,13 @@ fn main() {
     let (connection_tx, connection_rx) =
         tokio::sync::watch::channel::<Option<host::ConnectionInfo>>(None);
 
-    let spawn_reason: Option<daemon_host::StaleReason> =
+    // v2 replaces the Rust daemon with the upstream TypeScript server. The daemon
+    // path stays compiled and reachable with HOUSTON_V1_HOST=1 for one release.
+    let v2_host_enabled = std::env::var_os("HOUSTON_V1_HOST").is_none();
+
+    let spawn_reason: Option<daemon_host::StaleReason> = if v2_host_enabled {
+        None
+    } else {
         match tokio_runtime.block_on(daemon_host::precheck(&state_dir)) {
             Ok(daemon_host::BootPrecheck::Attached(handle)) => {
                 let _ = connection_tx.send(Some(host::ConnectionInfo {
@@ -407,7 +414,34 @@ fn main() {
                 tokio_runtime.block_on(refuse_boot(err, &state_dir));
                 std::process::exit(1);
             }
-        };
+        }
+    };
+
+    let v2_base_dir = v2_server::base_dir(&state_dir);
+    let v2_entry = v2_server::resolve_server_entry(
+        std::env::var_os("HOUSTON_V2_SERVER_ENTRY").map(std::path::PathBuf::from),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("houston-tauri: v2 server entry not found: {error}");
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("apps")
+            .join("server")
+            .join("dist")
+            .join("bin.mjs")
+    });
+    let v2_node =
+        v2_server::resolve_node(std::env::var_os("HOUSTON_NODE").map(std::path::PathBuf::from));
+    let v2_host = Arc::new(v2_server::V2Host::new(
+        v2_base_dir.clone(),
+        v2_node,
+        v2_entry,
+    ));
+    eprintln!(
+        "houston-tauri: v2 server state directory {} (log {})",
+        v2_base_dir.display(),
+        v2_server::log_path(&v2_base_dir).display()
+    );
 
     let run_spike = spike_invoke_requested();
     let run_webview_auto = spike_webview::auto_requested();
@@ -439,6 +473,7 @@ fn main() {
         builder = builder.manage(boot_stamps.clone());
     }
     builder = builder.manage(host::ConnectionCell::new(connection_rx, state_dir.clone()));
+    builder = builder.manage(Arc::clone(&v2_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(browser::BrowserRegistry::new());
@@ -460,8 +495,12 @@ fn main() {
     builder = builder.manage(Arc::clone(&tray_host));
     builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
 
-    builder
-        .plugin(
+    // Windows keys the single-instance mutex on the bundle identifier, so a dev
+    // app would refuse to start beside the installed release app. Register it only
+    // where it is channel-scoped (Linux dbus id) or no channel owns the process.
+    let single_instance_enabled = cfg!(target_os = "linux") || owning_channel.is_none();
+    if single_instance_enabled {
+        builder = builder.plugin(
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
                 .callback(move |app, argv, cwd| {
@@ -474,7 +513,9 @@ fn main() {
                     tray::show_main_window(app);
                 })
                 .build(),
-        )
+        );
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         // No `updater:default` permission anywhere: the plugin's own JS commands
         // stay unreachable, and updates run through app_update_install instead.
@@ -488,6 +529,9 @@ fn main() {
             app_log::system_log_debug,
             app_update::app_update_install,
             host::host_config,
+            v2_server::v2_local_environment_bootstrap,
+            v2_server::v2_local_environment_bearer_token,
+            v2_server::v2_server_status,
             fs_allowlist::fs_add_allowed_root,
             fs_allowlist::fs_set_allowed_roots,
             fs::fs_read_directory,
@@ -739,6 +783,7 @@ fn main() {
                 target_channel_label.clone(),
             ));
 
+            if !v2_host_enabled {
             {
                 let app_handle = app.handle().clone();
                 let state_dir = state_dir.clone();
@@ -828,6 +873,60 @@ fn main() {
                     }
                 });
             }
+            }
+
+            let v2_init_script = if v2_host_enabled {
+                let host = Arc::clone(&v2_host);
+                match tokio_runtime.block_on(v2_server::ensure_running(&host)) {
+                    Ok(running) => eprintln!(
+                        "houston-tauri: v2 server ready at {} (pid {}, {})",
+                        running.origin,
+                        running.pid,
+                        if running.attached {
+                            "attached"
+                        } else {
+                            "spawned detached"
+                        }
+                    ),
+                    Err(error) => eprintln!(
+                        "houston-tauri: v2 server failed to start: {error}; the window will \
+                         show no local environment"
+                    ),
+                }
+                let snapshot = host
+                    .bootstrap_list()
+                    .unwrap_or_else(|_| serde_json::json!([]));
+                let status = host.status();
+                let monitor = Arc::clone(&host);
+                tokio_runtime.spawn(v2_server::monitor(monitor));
+                let platform = match std::env::consts::OS {
+                    "windows" => "win32",
+                    "macos" => "darwin",
+                    other => other,
+                };
+                format!(
+                    "window.__HOUSTON_V2_BOOTSTRAP__ = {};\n\
+                     window.__HOUSTON_V2_STATUS__ = {};\n\
+                     window.__HOUSTON_V2_PLATFORM__ = {:?};\n\
+                     window.__HOUSTON_V2_VERSION__ = {:?};\n\
+                     window.__HOUSTON_V2_LOCALE__ = {};\n\
+                     window.__HOUSTON_V2_BRANDING__ = {};\n\
+                     {}",
+                    snapshot,
+                    status,
+                    platform,
+                    env!("CARGO_PKG_VERSION"),
+                    serde_json::Value::Null,
+                    serde_json::json!({
+                        "baseName": "Houston",
+                        "stageLabel": "Dev",
+                        "displayName": "Houston Dev",
+                    }),
+                    include_str!("v2_bridge.js"),
+                )
+            } else {
+                String::new()
+            };
 
             let window_config = app
                 .config()
@@ -859,9 +958,17 @@ fn main() {
                 &monitors,
             );
 
-            let main_window = tauri::WebviewWindowBuilder::from_config(app, &window_config)
-                .expect("tauri.conf.json's window config failed to parse into a WebviewWindowBuilder")
-                .data_directory(webview_data_dir)
+            let mut window_builder =
+                tauri::WebviewWindowBuilder::from_config(app, &window_config)
+                    .expect(
+                        "tauri.conf.json's window config failed to parse into a \
+                         WebviewWindowBuilder",
+                    )
+                    .data_directory(webview_data_dir);
+            if !v2_init_script.is_empty() {
+                window_builder = window_builder.initialization_script(&v2_init_script);
+            }
+            let main_window = window_builder
                 .build()
                 .expect("failed to build the main window");
 

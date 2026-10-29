@@ -180,10 +180,10 @@ else:
     assert state.exists(), "fresh replaced daemon state before builds completed"
 with Path(os.environ["DEV_TEST_LOG"]).open("a") as f:
     f.write(name + " " + " ".join(sys.argv[1:]) + "\\n")
-if name == "bun" and os.environ.get("DEV_TEST_FAIL_BUILD"):
+if name == "npx" and os.environ.get("DEV_TEST_FAIL_BUILD"):
     sys.exit(23)
 '''
-for name in ("mock-bin/bun", "mock-bin/cargo", "mock-bin/rustc", "src-tauri/target/debug/houston-tauri"):
+for name in ("mock-bin/npx", "mock-bin/cargo", "mock-bin/rustc", "src-tauri/target/debug/houston-tauri"):
     path = repo / name
     path.write_text(mock)
     path.chmod(0o755)
@@ -201,10 +201,11 @@ for fails in (False, True):
     assert result.returncode == (23 if fails else 0), result.stdout + result.stderr
     calls = log.read_text().splitlines()
     if fails:
-        assert discovery.exists() and calls == ["bun run build"], calls
+        assert discovery.exists() and calls == ["npx -y pnpm@12.14.0 --filter @t3tools/web build"], calls
     else:
         assert calls == [
-            "bun run build",
+            "npx -y pnpm@12.14.0 --filter @t3tools/web build",
+            "npx -y pnpm@12.14.0 --filter t3 build:bundle",
             "cargo build --bin houston-core --bin houston-supervisor --bin tr-helper",
             "cargo build",
             "houston-tauri --channel dev",

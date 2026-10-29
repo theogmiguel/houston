@@ -36,6 +36,9 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
     process.stdout.on("error", ignoreClosedLauncherPipe);
     process.stderr.on("error", ignoreClosedLauncherPipe);
   });
+  // Houston's Tauri host owns the server's lifetime: it must outlive the window
+  // and is stopped deliberately, so the launcher-loss watch would kill it early.
+  if (process.env.T3CODE_DESKTOP_DETACHED === "1") return yield* run;
   return yield* Effect.raceFirst(
     run,
     awaitLauncherLoss().pipe(
