@@ -51,7 +51,14 @@ export interface GridStoreState {
 
 export const GRID_STORAGE_KEY = "houston:grids:v1";
 
-export function gridsForWorkspace(grids: readonly GridRecord[], workspaceKey: string): GridRecord[] {
+export function workspaceKeyOf(environmentId: string, projectId: string): string {
+  return `${environmentId}:${projectId}`;
+}
+
+export function gridsForWorkspace(
+  grids: readonly GridRecord[],
+  workspaceKey: string,
+): GridRecord[] {
   return grids.filter((grid) => grid.workspaceKey === workspaceKey);
 }
 
@@ -174,11 +181,7 @@ export function createGridRecord(
   };
 }
 
-export function addThreadToGrid(
-  grid: GridRecord,
-  threadId: string,
-  draftId?: string,
-): GridRecord {
+export function addThreadToGrid(grid: GridRecord, threadId: string, draftId?: string): GridRecord {
   const existing = grid.tree === null ? [] : preorderThreads(grid.tree);
   const tree =
     existing.some((leaf) => leaf.threadId === threadId) || grid.tree === null
@@ -186,8 +189,7 @@ export function addThreadToGrid(
         ? threadLeaf(threadId, undefined, draftId)
         : grid.tree
       : appendThread(grid.tree, threadId);
-  const withDraft =
-    draftId === undefined ? tree : replaceThreadDraft(tree, threadId, draftId);
+  const withDraft = draftId === undefined ? tree : replaceThreadDraft(tree, threadId, draftId);
   return { ...withTree(grid, withDraft), focusedThreadId: threadId };
 }
 

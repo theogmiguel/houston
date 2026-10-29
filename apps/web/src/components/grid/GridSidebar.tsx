@@ -1,4 +1,8 @@
-import { scopedThreadKey, scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -10,12 +14,17 @@ import {
   MessageSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
-  SettingsIcon,
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
 
-import { type GridRecord, gridsForWorkspace, useGridStore } from "../../grid/gridStore";
+import { isElectron } from "../../env";
+import {
+  type GridRecord,
+  gridsForWorkspace,
+  useGridStore,
+  workspaceKeyOf,
+} from "../../grid/gridStore";
 import { preorderThreads } from "../../grid/tree";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -24,14 +33,11 @@ import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { toastManager } from "../ui/toast";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
-import { SidebarContent, SidebarFooter, SidebarHeader } from "../ui/sidebar";
+import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { SidebarContent, SidebarHeader } from "../ui/sidebar";
 import { cn } from "../../lib/utils";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
-
-export function workspaceKeyOf(project: Pick<EnvironmentProject, "environmentId" | "id">): string {
-  return `${project.environmentId}:${project.id}`;
-}
 
 export function GridSidebar() {
   const projects = useProjects();
@@ -42,6 +48,7 @@ export function GridSidebar() {
 
   return (
     <>
+      <SidebarChromeHeader isElectron={isElectron} />
       <SidebarHeader className="gap-1 p-2">
         <div className="flex items-center gap-2 px-1.5 py-1">
           <LayoutGridIcon className="size-4 text-muted-foreground" />
@@ -65,9 +72,9 @@ export function GridSidebar() {
         ) : null}
         {projects.map((project) => (
           <WorkspaceGroup
-            key={workspaceKeyOf(project)}
+            key={workspaceKeyOf(project.environmentId, project.id)}
             project={project}
-            grids={gridsForWorkspace(grids, workspaceKeyOf(project))}
+            grids={gridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))}
             threads={threads.filter(
               (thread) =>
                 thread.environmentId === project.environmentId &&
@@ -78,22 +85,14 @@ export function GridSidebar() {
               const gridId = createGrid({
                 environmentId: project.environmentId,
                 projectId: project.id,
-                workspaceKey: workspaceKeyOf(project),
+                workspaceKey: workspaceKeyOf(project.environmentId, project.id),
               });
               void navigate({ to: "/grid/$gridId", params: { gridId } });
             }}
           />
         ))}
       </SidebarContent>
-      <SidebarFooter className="p-2">
-        <Link
-          to="/settings"
-          className="flex h-7 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-        >
-          <SettingsIcon className="size-3.5" />
-          Settings
-        </Link>
-      </SidebarFooter>
+      <SidebarChromeFooter />
     </>
   );
 }
@@ -375,9 +374,7 @@ function ThreadRow({
         onClick={onOpen}
         className={cn(
           "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs hover:bg-sidebar-row-hover",
-          active
-            ? "bg-sidebar-row-selected text-sidebar-foreground"
-            : "text-sidebar-foreground/90",
+          active ? "bg-sidebar-row-selected text-sidebar-foreground" : "text-sidebar-foreground/90",
         )}
         data-thread-key={threadRef === null ? undefined : scopedThreadKey(threadRef)}
         data-thread-id={threadId}
