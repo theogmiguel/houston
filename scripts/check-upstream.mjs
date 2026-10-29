@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Compares Houston's imported paths against an upstream checkout at the commit
-// recorded in upstream.json. A copied file that drifts outside `adapted` fails
-// the check: unadapted files stay byte-identical to upstream, so later upstream
-// fixes arrive as plain diffs.
+// in upstream.json. A copied file that drifts outside `adapted` fails, so later
+// upstream fixes arrive as plain diffs.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
