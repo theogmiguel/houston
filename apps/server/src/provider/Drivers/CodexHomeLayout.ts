@@ -4,6 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import { ProviderDriverKind, type CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as PlatformError from "effect/PlatformError";
@@ -34,8 +35,16 @@ const KNOWN_SHARED_DIRECTORIES = [
 
 // auth.lock guards the shadow home's private auth.json.
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "auth.lock", "models_cache.json"]);
+// The entries the win32 fallback hard-linked; see readHardLinkRecord.
+const HARD_LINK_RECORD_NAME = ".houston-shadow-links.json";
 // Finder maintains metadata separately for each directory, including shadow homes.
-const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp", ".DS_Store"]);
+const SHADOW_LOCAL_ENTRY_NAMES = new Set([
+  "log",
+  "memories",
+  "tmp",
+  ".DS_Store",
+  HARD_LINK_RECORD_NAME,
+]);
 // Shadow homes may create local runtime locks first; replace them with shared links because they guard shared state.
 const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set([
   "mcp-oauth-locks",
@@ -91,6 +100,7 @@ export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShad
       "symlink",
       "stat",
       "junction",
+      "writeFile",
     ]),
     path: Schema.String,
     targetPath: Schema.optional(Schema.String),
@@ -270,6 +280,7 @@ const createWindowsFallbackLink = Effect.fn("CodexHomeLayout.createWindowsFallba
     readonly entryName: string;
     readonly target: string;
     readonly link: string;
+    readonly hardLinked: Set<string>;
   }): Effect.fn.Return<void, CodexShadowHomeError> {
     const context = {
       sharedHomePath: input.sharedHomePath,
@@ -311,6 +322,7 @@ const createWindowsFallbackLink = Effect.fn("CodexHomeLayout.createWindowsFallba
           }),
       }),
     );
+    input.hardLinked.add(input.entryName);
   },
 );
 
@@ -320,6 +332,7 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   readonly sharedHomePath: string;
   readonly effectiveHomePath: string;
   readonly entryName: string;
+  readonly hardLinked: Set<string>;
 }): Effect.fn.Return<void, CodexShadowHomeError, Path.Path> {
   const path = yield* Path.Path;
   const target = path.join(input.sharedHomePath, input.entryName);
@@ -328,6 +341,7 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
     ...input,
     linkPath: link,
   });
+  const recorded = input.hardLinked.delete(input.entryName);
 
   const createLink = input.fileSystem.symlink(target, link).pipe(
     Effect.catchTags({
@@ -348,7 +362,27 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
 
   if (state._tag === "NotSymlink") {
     if (input.platform === "win32" && (yield* isSameFile(link, target))) {
+      if (recorded) input.hardLinked.add(input.entryName);
       return;
+    }
+    // A writer that replaces the shared file by rename leaves the fallback's hard link on the old
+    // file, which a symlink would have followed. Until this setup re-links it, the shadow home
+    // reads the old content. A file the fallback did not record is the user's and still conflicts.
+    if (recorded) {
+      yield* input.fileSystem.remove(link).pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: input.sharedHomePath,
+              effectiveHomePath: input.effectiveHomePath,
+              operation: "remove",
+              path: link,
+              entryName: input.entryName,
+              cause,
+            }),
+        }),
+      );
+      return yield* createLink;
     }
     if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
@@ -448,6 +482,25 @@ const ensureShadowAuthIsPrivate = Effect.fn("CodexHomeLayout.ensureShadowAuthIsP
   },
 );
 
+const HardLinkRecordJson = Schema.fromJsonString(
+  Schema.Struct({ hardLinks: Schema.Array(Schema.String) }),
+);
+const decodeHardLinkRecord = Schema.decodeUnknownOption(HardLinkRecordJson);
+const encodeHardLinkRecord = Schema.encodeSync(HardLinkRecordJson);
+
+// A missing or unreadable record means no entry was recorded, so every differing file takes
+// upstream's conflict path.
+const readHardLinkRecord = (fileSystem: FileSystem.FileSystem, recordPath: string) =>
+  fileSystem.readFileString(recordPath).pipe(
+    Effect.map((contents) =>
+      Option.match(decodeHardLinkRecord(contents), {
+        onNone: (): ReadonlyArray<string> => [],
+        onSome: (record) => record.hardLinks,
+      }),
+    ),
+    Effect.catchTags({ PlatformError: () => Effect.succeed<ReadonlyArray<string>>([]) }),
+  );
+
 export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome")(function* (
   layout: CodexHomeLayout,
 ) {
@@ -523,6 +576,9 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
     { discard: true },
   );
 
+  const recordPath = path.join(effectiveHomePath, HARD_LINK_RECORD_NAME);
+  const previousRecord = (yield* readHardLinkRecord(fileSystem, recordPath)).toSorted();
+  const hardLinked = new Set(previousRecord);
   yield* Effect.forEach(
     entries,
     (entryName) => {
@@ -535,10 +591,31 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
         sharedHomePath: layout.sharedHomePath,
         effectiveHomePath,
         entryName,
+        hardLinked,
       });
     },
     { discard: true },
   );
+  const nextRecord = [...hardLinked].toSorted();
+  if (
+    nextRecord.length !== previousRecord.length ||
+    nextRecord.some((name, index) => name !== previousRecord[index])
+  ) {
+    yield* fileSystem
+      .writeFileString(recordPath, encodeHardLinkRecord({ hardLinks: nextRecord }))
+      .pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: layout.sharedHomePath,
+              effectiveHomePath,
+              operation: "writeFile",
+              path: recordPath,
+              cause,
+            }),
+        }),
+      );
+  }
 
   yield* ensureShadowAuthIsPrivate({
     fileSystem,
