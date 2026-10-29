@@ -1,5 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeURL from "node:url";
 import * as NodeZlib from "node:zlib";
 
 import react from "@vitejs/plugin-react";
@@ -245,6 +247,13 @@ function chunkCycleGuardPlugin(): Plugin {
   };
 }
 
+// The in-app licence manifest resolves SPDX templates from upstream's corpus,
+// which is excluded from the Houston import. Without it the Tauri app's own
+// inventory (src-tauri/resources/third-party-licenses.json) is authoritative.
+function hasUpstreamLicenseCorpus(): boolean {
+  return NodeFS.existsSync(new URL("../../third-party-licenses/spdx", import.meta.url));
+}
+
 // Allow Tailnet hosts for sharing; Tailscale-controlled DNS prevents attacker rebinding.
 const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
   .split(",")
@@ -267,15 +276,16 @@ export default defineConfig(() => {
     plugins: [
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
-      builtDev
+      builtDev || !hasUpstreamLicenseCorpus()
         ? undefined
         : thirdPartyLicensesPlugin({
             bundleName: "web",
             configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+            // Houston has no apps/desktop: the Tauri host replaces it, so its
+            // manifest is not a licence source here.
             packageManifests: [
               { bundle: "web", path: new URL("./package.json", import.meta.url) },
               { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
-              { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
             ],
           }),
       tanstackRouter({ autoCodeSplitting: true }),
@@ -322,10 +332,12 @@ export default defineConfig(() => {
     resolve: {
       tsconfigPaths: true,
       alias: {
-        "@betteroffice/fonts-cjk": new URL(
-          "./src/components/files/office/fonts-cjk.ts",
-          import.meta.url,
-        ).pathname,
+        // fileURLToPath, not pathname: on Windows a checkout path with non-ASCII
+        // characters arrives percent-encoded and prefixed with a drive slash,
+        // which worker bundling cannot resolve.
+        "@betteroffice/fonts-cjk": NodeURL.fileURLToPath(
+          new URL("./src/components/files/office/fonts-cjk.ts", import.meta.url),
+        ),
       },
       dedupe: ["react", "react-dom"],
     },

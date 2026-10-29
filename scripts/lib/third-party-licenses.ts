@@ -69,9 +69,12 @@ interface CustomNoticeConfigEntry {
   readonly bundles?: ReadonlyArray<string>;
   readonly includeInBundles?: ReadonlyArray<string>;
   readonly license: string;
+  // Houston's config carries the notice inline; upstream reads it from a file.
+  readonly licenseText?: string;
   readonly name: string;
   readonly generatedNotices?: ReadonlyArray<GeneratedNoticeConfigEntry>;
   readonly noticeFiles?: ReadonlyArray<string>;
+  readonly repository?: string;
   readonly sourceUrl?: string;
   readonly version?: string;
 }
@@ -223,14 +226,17 @@ function decodeCustomNotices(value: unknown): ReadonlyArray<CustomNoticeConfigEn
     const includeInBundles = readOptionalStringArray(entry, "includeInBundles", context);
     const noticeFile = readOptionalString(entry, "noticeFile", context);
     const noticeFiles = readOptionalStringArray(entry, "noticeFiles", context);
+    const licenseText = readOptionalString(entry, "licenseText", context);
+    const repository = readOptionalString(entry, "repository", context);
     const generatedNotices = decodeGeneratedNotices(entry.generatedNotices, context);
     const noticeSourceCount =
       Number(noticeFile !== undefined) +
       Number(noticeFiles !== undefined) +
+      Number(licenseText !== undefined) +
       Number(generatedNotices !== undefined);
     if (noticeSourceCount !== 1) {
       throw new Error(
-        `${context} must define exactly one of "noticeFile", "noticeFiles", or "generatedNotices".`,
+        `${context} must define exactly one of "noticeFile", "noticeFiles", "licenseText", or "generatedNotices".`,
       );
     }
     return {
@@ -238,8 +244,10 @@ function decodeCustomNotices(value: unknown): ReadonlyArray<CustomNoticeConfigEn
       license: readRequiredString(entry, "license", context),
       ...(noticeFile !== undefined ? { noticeFiles: [noticeFile] } : {}),
       ...(noticeFiles !== undefined ? { noticeFiles } : {}),
+      ...(licenseText !== undefined ? { licenseText } : {}),
       ...(generatedNotices !== undefined ? { generatedNotices } : {}),
       ...(version !== undefined ? { version } : {}),
+      ...(repository !== undefined ? { repository } : {}),
       ...(sourceUrl !== undefined ? { sourceUrl } : {}),
       ...(bundles !== undefined ? { bundles } : {}),
       ...(includeInBundles !== undefined ? { includeInBundles } : {}),
@@ -249,6 +257,14 @@ function decodeCustomNotices(value: unknown): ReadonlyArray<CustomNoticeConfigEn
 
 function decodePackageOverrides(value: unknown): ReadonlyArray<PackageNoticeOverrideConfigEntry> {
   if (value === undefined) return [];
+  // Houston's generator indexes overrides by package name, an object; upstream
+  // lists them as entries. An empty map carries no overrides either way.
+  if (isRecord(value) && !Array.isArray(value)) {
+    if (Object.keys(value).length === 0) return [];
+    throw new Error(
+      'Third-party license config field "packageOverrides" must be an array (or an empty object for the Houston generator).',
+    );
+  }
   if (!Array.isArray(value)) {
     throw new Error('Third-party license config field "packageOverrides" must be an array.');
   }
@@ -906,21 +922,27 @@ async function customEntries(
           ),
       )
       .map(async (notice) => {
-        const noticeText = notice.generatedNotices
-          ? await generatedNoticeText(notice.generatedNotices, configDirectory)
-          : (
-              await Promise.all(
-                notice.noticeFiles!.map(async (noticeFile) => {
-                  const contents = (
-                    await NodeFSP.readFile(NodePath.resolve(configDirectory, noticeFile), "utf8")
-                  ).trim();
-                  if (contents.length === 0) {
-                    throw new Error(`Custom third-party notice "${notice.name}" is empty.`);
-                  }
-                  return contents;
-                }),
-              )
-            ).join("\n\n---\n\n");
+        const noticeText =
+          notice.generatedNotices !== undefined
+            ? await generatedNoticeText(notice.generatedNotices, configDirectory)
+            : notice.licenseText !== undefined
+              ? notice.licenseText.trim()
+              : (
+                  await Promise.all(
+                    notice.noticeFiles!.map(async (noticeFile) => {
+                      const contents = (
+                        await NodeFSP.readFile(
+                          NodePath.resolve(configDirectory, noticeFile),
+                          "utf8",
+                        )
+                      ).trim();
+                      if (contents.length === 0) {
+                        throw new Error(`Custom third-party notice "${notice.name}" is empty.`);
+                      }
+                      return contents;
+                    }),
+                  )
+                ).join("\n\n---\n\n");
         if (noticeText.length === 0) {
           throw new Error(`Custom third-party notice "${notice.name}" is empty.`);
         }
@@ -932,7 +954,7 @@ async function customEntries(
           license: notice.license,
           name: notice.name,
           noticeText,
-          sourceUrl: notice.sourceUrl ?? null,
+          sourceUrl: notice.sourceUrl ?? notice.repository ?? null,
           version:
             readOptionalString(deviceToolVersions, notice.name, "Device tool versions") ??
             notice.version ??
