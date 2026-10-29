@@ -8660,3 +8660,32 @@ mod tests {
         assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
     }
 }
+
+// The TypeScript frame codec (packages/contracts/src/houston/terminalFrames.ts)
+// asserts the same literal vectors; change both together or the sides drift.
+#[cfg(test)]
+mod shared_frame_vectors {
+    use super::*;
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn shared_frame_vectors() {
+        assert_eq!(
+            hex(&encode_output_frame(u32::MAX, (1u64 << 40) + 7, b"hi")),
+            "01ffffffff00000100000000076869"
+        );
+        assert_eq!(hex(&encode_stdin_frame(u32::MAX, b"hi")), "02ffffffff6869");
+        assert_eq!(
+            hex(&encode_gap_frame(7, 1u64 << 63, 1u64 << 63)),
+            "030000000780000000000000008000000000000000"
+        );
+        // Distinct counters: a swap of bytesSeen and dropped changes the hex.
+        assert_eq!(
+            hex(&encode_gap_frame(0x0102_0304, 1, 2)),
+            "030102030400000000000000010000000000000002"
+        );
+    }
+}

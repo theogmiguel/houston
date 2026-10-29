@@ -479,9 +479,9 @@ jobs:
           $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
           "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
-  # The committed third-party inventory is generated from both dependency graphs
-  # at once, so this needs the Rust toolchain (cargo metadata, no build) and the
-  # renderer's node_modules together — a shape none of the three jobs above has.
+  # The committed third-party inventory is generated from every dependency graph
+  # at once: the Rust toolchain (cargo metadata, no build), the renderer's
+  # node_modules and the pnpm workspace's node_modules — no other job has all three.
   licence-inventory:
     runs-on: ubuntu-latest
     steps:
@@ -489,9 +489,18 @@ jobs:
       # No components and no build cache: `cargo metadata` resolves the graph and
       # compiles nothing, so a restore-and-save cycle would cost more than it saves.
       - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - name: Install renderer dependencies
         run: bun install --frozen-lockfile
         working-directory: ui
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
       - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
         run: ./scripts/check-third-party-licenses.sh

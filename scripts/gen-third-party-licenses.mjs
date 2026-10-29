@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,17 +116,22 @@ function cargoPackages(manifest) {
   return out;
 }
 
-// npm: the production closure only. devDependencies build the renderer; they are not
-// in the bundle Vite emits, so they are not in what ships.
-function npmPackages() {
-  const uiRoot = join(ROOT, "ui");
-  const modules = join(uiRoot, "node_modules");
+// npm: production closures only. devDependencies build; they are not in what
+// ships. The walker resolves package symlinks to their real store paths, so
+// transitive dependencies resolve under pnpm's isolated node_modules too.
+function collectNpmClosure(seeds, boundary) {
   const resolvePkg = (name, from) => {
     let dir = from;
     for (;;) {
       const candidate = join(dir, "node_modules", name, "package.json");
-      if (existsSync(candidate)) return candidate;
-      if (dir === uiRoot) return null;
+      if (existsSync(candidate)) {
+        try {
+          return realpathSync(candidate);
+        } catch {
+          return candidate;
+        }
+      }
+      if (dir === boundary) return null;
       const parent = dirname(dir);
       if (parent === dir) return null;
       dir = parent;
@@ -134,8 +139,7 @@ function npmPackages() {
   };
 
   const seen = new Map();
-  const queue = Object.keys(JSON.parse(readFileSync(join(uiRoot, "package.json"), "utf8")).dependencies ?? {})
-    .map((name) => ({ name, from: uiRoot }));
+  const queue = [...seeds];
   while (queue.length) {
     const { name, from } = queue.pop();
     const manifest = resolvePkg(name, from);
@@ -162,7 +166,60 @@ function npmPackages() {
       }),
     );
   }
+  return out;
+}
+
+// npm: the renderer's production closure. devDependencies build the renderer; they are not
+// in the bundle Vite emits, so they are not in what ships.
+function npmPackages() {
+  const uiRoot = join(ROOT, "ui");
+  const modules = join(uiRoot, "node_modules");
+  const seeds = Object.keys(
+    JSON.parse(readFileSync(join(uiRoot, "package.json"), "utf8")).dependencies ?? {},
+  ).map((name) => ({ name, from: uiRoot }));
+
+  const out = collectNpmClosure(seeds, uiRoot);
   if (!out.length) throw new Error(`no npm packages found under ${modules} — run \`cd ui && bun install\` first`);
+  return out;
+}
+
+// npm: the pnpm workspace packages' production closure (packages/*, apps/*).
+// devDependencies build the server; they are not what ships with it.
+function workspaceNpmPackages() {
+  const manifests = [];
+  for (const group of ["packages", "apps"]) {
+    let entries;
+    try {
+      entries = readdirSync(join(ROOT, group), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifest = join(ROOT, group, entry.name, "package.json");
+      if (existsSync(manifest)) manifests.push(manifest);
+    }
+  }
+  if (!manifests.length) return [];
+
+  const internal = new Set();
+  const seeds = [];
+  for (const manifest of manifests) {
+    const p = JSON.parse(readFileSync(manifest, "utf8"));
+    internal.add(p.name);
+    for (const [name, spec] of Object.entries(p.dependencies ?? {})) {
+      // workspace:* names a first-party package, never a third-party licence.
+      if (typeof spec === "string" && spec.startsWith("workspace:")) continue;
+      seeds.push({ name, from: dirname(manifest) });
+    }
+  }
+
+  const out = collectNpmClosure(seeds, ROOT).filter((entry) => !internal.has(entry.name));
+  if (!out.length) {
+    throw new Error(
+      "the pnpm workspace has packages but none of their production dependencies resolved — run `npx -y pnpm@12.14.0 install` first",
+    );
+  }
   return out;
 }
 
@@ -183,6 +240,7 @@ const packages = [
   ...cargoPackages(join(ROOT, "core", "Cargo.toml")),
   ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
   ...npmPackages(),
+  ...workspaceNpmPackages(),
 ];
 
 const deduped = new Map();
