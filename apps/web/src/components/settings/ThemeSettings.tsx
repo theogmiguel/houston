@@ -657,7 +657,7 @@ export function ThemeLibrary({
   const renderWireframe = (mode: ThemeMode, active = false) => (
     <ThemeWireframe
       className={cn(
-        "h-24 rounded-[10px] border-0",
+        "h-24 rounded-lg border-0",
         active ? "ring-2 ring-ring" : "ring-1 ring-border",
       )}
       panes={
@@ -687,7 +687,7 @@ export function ThemeLibrary({
             {renderWireframe(mode, isActive)}
             <span
               className={cn(
-                "flex items-center justify-center text-xs font-medium",
+                "flex items-center justify-center text-[13px] font-medium",
                 isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >

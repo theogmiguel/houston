@@ -459,7 +459,7 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-accent",
+        "@container/settings-row min-h-12 px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-accent",
         children ? "pt-3 pb-1" : "py-2.5",
         className,
       )}

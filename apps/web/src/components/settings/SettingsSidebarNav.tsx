@@ -421,7 +421,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                 aria-selected={isActive}
                                 aria-current={isActive ? "page" : undefined}
                                 isActive={isActive}
-                                className="h-7 gap-2 px-2 text-[13px] font-medium"
+                                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
                                 onClick={() => handleSectionClick(to)}
                               >
                                 <Icon />
@@ -454,7 +454,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
-              className="h-7 gap-2 px-2 text-[13px] font-medium"
+              className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
               onClick={() => void closeAppModal()}
             >
               <ChevronLeftIcon />
