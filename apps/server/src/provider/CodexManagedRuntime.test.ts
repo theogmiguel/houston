@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - checks the host's default Codex directory without writing to it.
+import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -121,16 +123,30 @@ it.live.each(
             assert.equal(runtime.homeLayout.mode, "direct");
           } else {
             assert.include(effective.config.homePath, instanceId);
-            assert.include(effective.config.homePath, "userdata/providers/codex");
+            assert.include(effective.config.homePath, path.join("userdata", "providers", "codex"));
             assert.equal(runtime.homeLayout.mode, "authOverlay");
             assert.equal(
               yield* fs.readLink(path.join(effective.config.homePath, "sessions")),
               path.join(sharedHome, "sessions"),
             );
-            assert.equal(
-              yield* fs.readLink(path.join(effective.config.homePath, "config.toml")),
-              path.join(sharedHome, "config.toml"),
-            );
+            if ((yield* HostProcess.Platform) === "win32" && !symlinksSupported) {
+              // Without symlink privilege the shadow home hard-links a shared file.
+              const [shadowConfig, sharedConfig] = yield* Effect.promise(() =>
+                Promise.all([
+                  NodeFSP.stat(path.join(effective.config.homePath, "config.toml"), {
+                    bigint: true,
+                  }),
+                  NodeFSP.stat(path.join(sharedHome, "config.toml"), { bigint: true }),
+                ]),
+              );
+              assert.strictEqual(shadowConfig.dev, sharedConfig.dev);
+              assert.strictEqual(shadowConfig.ino, sharedConfig.ino);
+            } else {
+              assert.equal(
+                yield* fs.readLink(path.join(effective.config.homePath, "config.toml")),
+                path.join(sharedHome, "config.toml"),
+              );
+            }
             assert.isFalse(yield* fs.exists(path.join(effective.config.homePath, "auth.json")));
           }
           assert.isUndefined(effective.environment.ACCESS_TOKEN);
