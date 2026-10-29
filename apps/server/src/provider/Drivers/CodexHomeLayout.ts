@@ -1,3 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's symlink has no type argument and its stat loses NTFS file ids past 2^53.
+import * as NodeFSP from "node:fs/promises";
+
 import { ProviderDriverKind, type CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -80,7 +83,15 @@ export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShad
   "CodexShadowHomeFileSystemError",
   {
     ...CodexShadowHomeContext,
-    operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
+    operation: Schema.Literals([
+      "readLink",
+      "makeDirectory",
+      "readDirectory",
+      "remove",
+      "symlink",
+      "stat",
+      "junction",
+    ]),
     path: Schema.String,
     targetPath: Schema.optional(Schema.String),
     entryName: Schema.optional(Schema.String),
@@ -129,8 +140,24 @@ export class CodexShadowHomePrivateEntrySymlinkError extends Schema.TaggedError<
   }
 }
 
+export class CodexShadowHomeHardLinkError extends Schema.TaggedError<CodexShadowHomeHardLinkError>()(
+  "CodexShadowHomeHardLinkError",
+  {
+    ...CodexShadowHomeContext,
+    entryName: Schema.String,
+    linkPath: Schema.String,
+    targetPath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Cannot share Codex shadow home file '${this.entryName}': Windows refused a symlink at '${this.linkPath}' and a hard link to '${this.targetPath}' failed. Enable Developer Mode for symlink privilege, or keep the shadow home on the same volume as the shared home.`;
+  }
+}
+
 export const CodexShadowHomeError = Schema.Union([
   CodexShadowHomeFileSystemError,
+  CodexShadowHomeHardLinkError,
   CodexShadowHomePathConflictError,
   CodexShadowHomeEntryConflictError,
   CodexShadowHomePrivateEntrySymlinkError,
@@ -148,6 +175,20 @@ type LinkState =
       readonly _tag: "Symlink";
       readonly target: string;
     };
+
+function hasErrorCode(error: PlatformError.PlatformError, code: string): boolean {
+  const cause = error.reason.cause;
+  return typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+}
+
+// A hard link made by the win32 fallback reads as NotSymlink; it is linked when it is the same file.
+const isSameFile = (left: string, right: string) =>
+  Effect.promise(() =>
+    Promise.all([NodeFSP.stat(left, { bigint: true }), NodeFSP.stat(right, { bigint: true })]).then(
+      ([a, b]) => a.dev === b.dev && a.ino === b.ino,
+      () => false,
+    ),
+  );
 
 function isNotSymlinkError(error: PlatformError.PlatformError): boolean {
   const cause = error.reason.cause;
@@ -219,8 +260,63 @@ const removePrivateSymlink = Effect.fn("CodexHomeLayout.removePrivateSymlink")(f
   }
 });
 
+// Windows without Developer Mode refuses symlinks with EPERM. A junction needs no privilege but
+// targets only a directory, so a shared file becomes a hard link, which must stay on one volume.
+const createWindowsFallbackLink = Effect.fn("CodexHomeLayout.createWindowsFallbackLink")(
+  function* (input: {
+    readonly fileSystem: FileSystem.FileSystem;
+    readonly sharedHomePath: string;
+    readonly effectiveHomePath: string;
+    readonly entryName: string;
+    readonly target: string;
+    readonly link: string;
+  }): Effect.fn.Return<void, CodexShadowHomeError> {
+    const context = {
+      sharedHomePath: input.sharedHomePath,
+      effectiveHomePath: input.effectiveHomePath,
+      entryName: input.entryName,
+    };
+    const info = yield* input.fileSystem.stat(input.target).pipe(
+      Effect.catchTags({
+        PlatformError: (cause) =>
+          new CodexShadowHomeFileSystemError({
+            ...context,
+            operation: "stat",
+            path: input.target,
+            cause,
+          }),
+      }),
+    );
+    if (info.type === "Directory") {
+      return yield* Effect.tryPromise({
+        try: () => NodeFSP.symlink(input.target, input.link, "junction"),
+        catch: (cause) =>
+          new CodexShadowHomeFileSystemError({
+            ...context,
+            operation: "junction",
+            path: input.link,
+            targetPath: input.target,
+            cause,
+          }),
+      });
+    }
+    yield* input.fileSystem.link(input.target, input.link).pipe(
+      Effect.catchTags({
+        PlatformError: (cause) =>
+          new CodexShadowHomeHardLinkError({
+            ...context,
+            linkPath: input.link,
+            targetPath: input.target,
+            cause,
+          }),
+      }),
+    );
+  },
+);
+
 const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (input: {
   readonly fileSystem: FileSystem.FileSystem;
+  readonly platform: NodeJS.Platform;
   readonly sharedHomePath: string;
   readonly effectiveHomePath: string;
   readonly entryName: string;
@@ -236,19 +332,24 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   const createLink = input.fileSystem.symlink(target, link).pipe(
     Effect.catchTags({
       PlatformError: (cause) =>
-        new CodexShadowHomeFileSystemError({
-          sharedHomePath: input.sharedHomePath,
-          effectiveHomePath: input.effectiveHomePath,
-          operation: "symlink",
-          path: link,
-          targetPath: target,
-          entryName: input.entryName,
-          cause,
-        }),
+        input.platform === "win32" && hasErrorCode(cause, "EPERM")
+          ? createWindowsFallbackLink({ ...input, target, link })
+          : new CodexShadowHomeFileSystemError({
+              sharedHomePath: input.sharedHomePath,
+              effectiveHomePath: input.effectiveHomePath,
+              operation: "symlink",
+              path: link,
+              targetPath: target,
+              entryName: input.entryName,
+              cause,
+            }),
     }),
   );
 
   if (state._tag === "NotSymlink") {
+    if (input.platform === "win32" && (yield* isSameFile(link, target))) {
+      return;
+    }
     if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
         sharedHomePath: input.sharedHomePath,
@@ -362,6 +463,7 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
 
   const makeDirectory = (directoryPath: string) =>
     fileSystem.makeDirectory(directoryPath, { recursive: true }).pipe(
@@ -429,6 +531,7 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
       }
       return ensureSymlink({
         fileSystem,
+        platform,
         sharedHomePath: layout.sharedHomePath,
         effectiveHomePath,
         entryName,
