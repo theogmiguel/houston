@@ -124,6 +124,46 @@ depend on it.
 - `AGENTS.md`: Augusto writes the v2 invariants for the server, Theo for the host and renderer,
   when their architecture lands.
 
+### Additions from MonoCode and Capy
+
+Designed on the "Additions" page of the v2 design canvas. Each starts after the parity slices it
+builds on. MonoCode is MIT: code copied from it adds its notice to `NOTICE` and
+`third-party-licenses.config.json` first, like upstream's. Capy is closed source; only its
+behaviours are taken.
+
+New slices:
+
+- **Quick composer** (Theo, after renderer item 5). A system-wide shortcut, Ctrl Shift Space by
+  default and changeable in Settings → Keyboard, opens a small Tauri window that starts a thread in a
+  chosen project and grid on the detached server. It closes only when the server accepts the thread;
+  a refusal keeps the draft. Wayland compositors that refuse global shortcuts are named in Settings,
+  and the tray's "New thread…" opens the same window. Reference: MonoCode `src/features/quick-composer`.
+- **Aside and second opinion** (server: Augusto, after server item 4; renderer: Theo). An aside is a
+  read-only side conversation about a thread in a right-panel tab; it never interrupts the run.
+  A second opinion asks another provider to review one turn and its diff; the result enters the
+  thread only through Send to thread, which queues it as the next message. Each adapter declares
+  whether it offers an isolated read-only run; providers without one are refused by name.
+  Reference: MonoCode `src/features/sessions/model/btw.ts` and `secondOpinion.ts`.
+- **Provider status** (server: Augusto, in provider core; renderer: Theo). Each provider reports one
+  state with its cause — not installed, turned off, signed out, rejected by the provider (with its
+  code), out of usage until a named reset, ready — and the renderer shows the one action that
+  resolves it in Settings, first run, the model picker and the stopped thread.
+
+Folded into existing slices:
+
+- **Usage page** (renderer item 4). Upstream's usage route, banners and thread-details rows are kept
+  as they are and only re-skinned: Houston's column and type, neutral bars that read as room left,
+  amber at 20% and red at 10% with the number recoloured too.
+- **Read means seen** (renderer item 5). A thread's unread mark clears only while its window is
+  visible and focused and its timeline is at the end.
+- **Reviewed files follow the commit** (server item 6 and its renderer). A viewed mark belongs to one
+  head SHA; new commits clear the marks of the files they touch, and comments whose lines moved
+  show as outdated.
+- **Send intents** (server item 5 and the composer). Queue, steer and interrupt each say when the
+  agent reads the message; steer delivery is not shown as adoption.
+- **Reconnect** (host item 2). Exponential backoff with full jitter from 0.5 s to 30 s; a version
+  mismatch or a refused token stops retrying and names the cause.
+
 ## Coordination
 
 - One GitHub issue per slice, label `v2`, assigned to its owner. Assignment is the lock: do not start
