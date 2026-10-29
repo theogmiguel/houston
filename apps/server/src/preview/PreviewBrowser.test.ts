@@ -120,7 +120,9 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
   return { browser, fs, path, baseDir, installRoot, requests };
 });
 
-it.layer(NodeServices.layer)("PreviewBrowser", (it) => {
+// Filesystem mtimes are wall-clock values: a test clock puts "two hours ago" before the Unix
+// epoch, which NTFS clamps to 2106, so the stale-staging check would never fire on Windows.
+it.layer(NodeServices.layer, { excludeTestServices: true })("PreviewBrowser", (it) => {
   it.effect("installs a verified download with its file modes and then reuses it", () =>
     Effect.gen(function* () {
       const { browser, fs, path, installRoot, requests } = yield* makeHarness();
