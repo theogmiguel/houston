@@ -544,8 +544,13 @@ function isMissingGitCwdError(error: GitCommandError): boolean {
   );
 }
 
+// Git 2.56 reports a .git file whose gitdir is gone as an invalid gitfile.
 function isNonRepositoryGitStderr(stderr: string): boolean {
-  return stderr.toLowerCase().includes("not a git repository");
+  const normalized = stderr.toLowerCase();
+  return (
+    normalized.includes("not a git repository") ||
+    normalized.includes("gitfile does not point to a valid repository")
+  );
 }
 function isUnbornHeadStderr(stderr: string): boolean {
   const normalized = stderr.toLowerCase();

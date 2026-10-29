@@ -12,6 +12,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as NodeOS from "node:os";
 
+import { refuseHostedDefault, refuseV1ChannelDir } from "./houston/baseDir.ts";
+
 function logPathHydrationWarning(message: string, error?: unknown): void {
   process.stderr.write(
     `[server] ${message} ${error instanceof Error ? error.message : (error ?? "")}\n`,
@@ -123,7 +125,8 @@ export const expandHomePath = Effect.fn(function* (input: string) {
 export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
-    return join(yield* HostProcess.HomeDirectory, ".t3");
+    yield* refuseHostedDefault;
+    return yield* refuseV1ChannelDir(join(yield* HostProcess.HomeDirectory, ".t3"));
   }
-  return resolve(yield* expandHomePath(raw.trim()));
+  return yield* refuseV1ChannelDir(resolve(yield* expandHomePath(raw.trim())));
 });

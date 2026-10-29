@@ -1,6 +1,10 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's symlink has no type argument and its stat loses NTFS file ids past 2^53.
+import * as NodeFSP from "node:fs/promises";
+
 import { ProviderDriverKind, type CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as PlatformError from "effect/PlatformError";
@@ -31,8 +35,16 @@ const KNOWN_SHARED_DIRECTORIES = [
 
 // auth.lock guards the shadow home's private auth.json.
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "auth.lock", "models_cache.json"]);
+// The entries the win32 fallback hard-linked; see readHardLinkRecord.
+const HARD_LINK_RECORD_NAME = ".houston-shadow-links.json";
 // Finder maintains metadata separately for each directory, including shadow homes.
-const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp", ".DS_Store"]);
+const SHADOW_LOCAL_ENTRY_NAMES = new Set([
+  "log",
+  "memories",
+  "tmp",
+  ".DS_Store",
+  HARD_LINK_RECORD_NAME,
+]);
 // Shadow homes may create local runtime locks first; replace them with shared links because they guard shared state.
 const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set([
   "mcp-oauth-locks",
@@ -80,7 +92,16 @@ export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShad
   "CodexShadowHomeFileSystemError",
   {
     ...CodexShadowHomeContext,
-    operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
+    operation: Schema.Literals([
+      "readLink",
+      "makeDirectory",
+      "readDirectory",
+      "remove",
+      "symlink",
+      "stat",
+      "junction",
+      "writeFile",
+    ]),
     path: Schema.String,
     targetPath: Schema.optional(Schema.String),
     entryName: Schema.optional(Schema.String),
@@ -129,8 +150,24 @@ export class CodexShadowHomePrivateEntrySymlinkError extends Schema.TaggedError<
   }
 }
 
+export class CodexShadowHomeHardLinkError extends Schema.TaggedError<CodexShadowHomeHardLinkError>()(
+  "CodexShadowHomeHardLinkError",
+  {
+    ...CodexShadowHomeContext,
+    entryName: Schema.String,
+    linkPath: Schema.String,
+    targetPath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Cannot share Codex shadow home file '${this.entryName}': Windows refused a symlink at '${this.linkPath}' and a hard link to '${this.targetPath}' failed. Enable Developer Mode for symlink privilege, or keep the shadow home on the same volume as the shared home.`;
+  }
+}
+
 export const CodexShadowHomeError = Schema.Union([
   CodexShadowHomeFileSystemError,
+  CodexShadowHomeHardLinkError,
   CodexShadowHomePathConflictError,
   CodexShadowHomeEntryConflictError,
   CodexShadowHomePrivateEntrySymlinkError,
@@ -148,6 +185,20 @@ type LinkState =
       readonly _tag: "Symlink";
       readonly target: string;
     };
+
+function hasErrorCode(error: PlatformError.PlatformError, code: string): boolean {
+  const cause = error.reason.cause;
+  return typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+}
+
+// A hard link made by the win32 fallback reads as NotSymlink; it is linked when it is the same file.
+const isSameFile = (left: string, right: string) =>
+  Effect.promise(() =>
+    Promise.all([NodeFSP.stat(left, { bigint: true }), NodeFSP.stat(right, { bigint: true })]).then(
+      ([a, b]) => a.dev === b.dev && a.ino === b.ino,
+      () => false,
+    ),
+  );
 
 function isNotSymlinkError(error: PlatformError.PlatformError): boolean {
   const cause = error.reason.cause;
@@ -219,11 +270,69 @@ const removePrivateSymlink = Effect.fn("CodexHomeLayout.removePrivateSymlink")(f
   }
 });
 
+// Windows without Developer Mode refuses symlinks with EPERM. A junction needs no privilege but
+// targets only a directory, so a shared file becomes a hard link, which must stay on one volume.
+const createWindowsFallbackLink = Effect.fn("CodexHomeLayout.createWindowsFallbackLink")(
+  function* (input: {
+    readonly fileSystem: FileSystem.FileSystem;
+    readonly sharedHomePath: string;
+    readonly effectiveHomePath: string;
+    readonly entryName: string;
+    readonly target: string;
+    readonly link: string;
+    readonly hardLinked: Set<string>;
+  }): Effect.fn.Return<void, CodexShadowHomeError> {
+    const context = {
+      sharedHomePath: input.sharedHomePath,
+      effectiveHomePath: input.effectiveHomePath,
+      entryName: input.entryName,
+    };
+    const info = yield* input.fileSystem.stat(input.target).pipe(
+      Effect.catchTags({
+        PlatformError: (cause) =>
+          new CodexShadowHomeFileSystemError({
+            ...context,
+            operation: "stat",
+            path: input.target,
+            cause,
+          }),
+      }),
+    );
+    if (info.type === "Directory") {
+      return yield* Effect.tryPromise({
+        try: () => NodeFSP.symlink(input.target, input.link, "junction"),
+        catch: (cause) =>
+          new CodexShadowHomeFileSystemError({
+            ...context,
+            operation: "junction",
+            path: input.link,
+            targetPath: input.target,
+            cause,
+          }),
+      });
+    }
+    yield* input.fileSystem.link(input.target, input.link).pipe(
+      Effect.catchTags({
+        PlatformError: (cause) =>
+          new CodexShadowHomeHardLinkError({
+            ...context,
+            linkPath: input.link,
+            targetPath: input.target,
+            cause,
+          }),
+      }),
+    );
+    input.hardLinked.add(input.entryName);
+  },
+);
+
 const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (input: {
   readonly fileSystem: FileSystem.FileSystem;
+  readonly platform: NodeJS.Platform;
   readonly sharedHomePath: string;
   readonly effectiveHomePath: string;
   readonly entryName: string;
+  readonly hardLinked: Set<string>;
 }): Effect.fn.Return<void, CodexShadowHomeError, Path.Path> {
   const path = yield* Path.Path;
   const target = path.join(input.sharedHomePath, input.entryName);
@@ -232,23 +341,49 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
     ...input,
     linkPath: link,
   });
+  const recorded = input.hardLinked.delete(input.entryName);
 
   const createLink = input.fileSystem.symlink(target, link).pipe(
     Effect.catchTags({
       PlatformError: (cause) =>
-        new CodexShadowHomeFileSystemError({
-          sharedHomePath: input.sharedHomePath,
-          effectiveHomePath: input.effectiveHomePath,
-          operation: "symlink",
-          path: link,
-          targetPath: target,
-          entryName: input.entryName,
-          cause,
-        }),
+        input.platform === "win32" && hasErrorCode(cause, "EPERM")
+          ? createWindowsFallbackLink({ ...input, target, link })
+          : new CodexShadowHomeFileSystemError({
+              sharedHomePath: input.sharedHomePath,
+              effectiveHomePath: input.effectiveHomePath,
+              operation: "symlink",
+              path: link,
+              targetPath: target,
+              entryName: input.entryName,
+              cause,
+            }),
     }),
   );
 
   if (state._tag === "NotSymlink") {
+    if (input.platform === "win32" && (yield* isSameFile(link, target))) {
+      if (recorded) input.hardLinked.add(input.entryName);
+      return;
+    }
+    // A writer that replaces the shared file by rename leaves the fallback's hard link on the old
+    // file, which a symlink would have followed. Until this setup re-links it, the shadow home
+    // reads the old content. A file the fallback did not record is the user's and still conflicts.
+    if (recorded) {
+      yield* input.fileSystem.remove(link).pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: input.sharedHomePath,
+              effectiveHomePath: input.effectiveHomePath,
+              operation: "remove",
+              path: link,
+              entryName: input.entryName,
+              cause,
+            }),
+        }),
+      );
+      return yield* createLink;
+    }
     if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
         sharedHomePath: input.sharedHomePath,
@@ -347,6 +482,25 @@ const ensureShadowAuthIsPrivate = Effect.fn("CodexHomeLayout.ensureShadowAuthIsP
   },
 );
 
+const HardLinkRecordJson = Schema.fromJsonString(
+  Schema.Struct({ hardLinks: Schema.Array(Schema.String) }),
+);
+const decodeHardLinkRecord = Schema.decodeUnknownOption(HardLinkRecordJson);
+const encodeHardLinkRecord = Schema.encodeSync(HardLinkRecordJson);
+
+// A missing or unreadable record means no entry was recorded, so every differing file takes
+// upstream's conflict path.
+const readHardLinkRecord = (fileSystem: FileSystem.FileSystem, recordPath: string) =>
+  fileSystem.readFileString(recordPath).pipe(
+    Effect.map((contents) =>
+      Option.match(decodeHardLinkRecord(contents), {
+        onNone: (): ReadonlyArray<string> => [],
+        onSome: (record) => record.hardLinks,
+      }),
+    ),
+    Effect.catchTags({ PlatformError: () => Effect.succeed<ReadonlyArray<string>>([]) }),
+  );
+
 export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome")(function* (
   layout: CodexHomeLayout,
 ) {
@@ -362,6 +516,7 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
 
   const makeDirectory = (directoryPath: string) =>
     fileSystem.makeDirectory(directoryPath, { recursive: true }).pipe(
@@ -421,6 +576,9 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
     { discard: true },
   );
 
+  const recordPath = path.join(effectiveHomePath, HARD_LINK_RECORD_NAME);
+  const previousRecord = (yield* readHardLinkRecord(fileSystem, recordPath)).toSorted();
+  const hardLinked = new Set(previousRecord);
   yield* Effect.forEach(
     entries,
     (entryName) => {
@@ -429,13 +587,35 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
       }
       return ensureSymlink({
         fileSystem,
+        platform,
         sharedHomePath: layout.sharedHomePath,
         effectiveHomePath,
         entryName,
+        hardLinked,
       });
     },
     { discard: true },
   );
+  const nextRecord = [...hardLinked].toSorted();
+  if (
+    nextRecord.length !== previousRecord.length ||
+    nextRecord.some((name, index) => name !== previousRecord[index])
+  ) {
+    yield* fileSystem
+      .writeFileString(recordPath, encodeHardLinkRecord({ hardLinks: nextRecord }))
+      .pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: layout.sharedHomePath,
+              effectiveHomePath,
+              operation: "writeFile",
+              path: recordPath,
+              cause,
+            }),
+        }),
+      );
+  }
 
   yield* ensureShadowAuthIsPrivate({
     fileSystem,
