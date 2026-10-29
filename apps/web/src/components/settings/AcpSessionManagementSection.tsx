@@ -454,7 +454,7 @@ export function AcpSessionManagementSection(props: {
       </SettingsRow>
 
       {canConfigureProviders ? (
-        <div className="grid gap-3 border-t border-border/60 px-3 py-3 sm:px-4">
+        <div className="grid gap-3 border-t border-border/60 px-3.5 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-medium text-foreground">Agent providers</p>

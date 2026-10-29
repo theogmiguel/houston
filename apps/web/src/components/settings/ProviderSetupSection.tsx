@@ -308,7 +308,7 @@ function ProviderSetupActions({
       />
 
       {error || queryError ? (
-        <div className="grid gap-2 px-3 py-3 sm:px-4">
+        <div className="grid gap-2 px-3.5 py-3">
           <p role="alert" className="text-destructive [overflow-wrap:anywhere]">
             {error ?? queryError}
           </p>
