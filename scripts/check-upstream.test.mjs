@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,5 +169,32 @@ test("check-upstream names an imported path missing from either side", async () 
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("check-upstream single-file import names drift and accepts it when listed in adapted", async () => {
+  const upstream = fixtureRepo();
+  const drifted = { ...upstream, "tsconfig.base.json": '{"strict":true}\n' };
+  const first = await makeFixture(drifted, upstream);
+  try {
+    const result = await checkUpstream({ repoRoot: first.repo, upstreamDir: first.upstream });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.problems, [
+      "tsconfig.base.json differs from upstream and is not listed in upstream.json adapted",
+    ]);
+  } finally {
+    await rm(first.dir, { recursive: true, force: true });
+  }
+
+  const manifest = JSON.parse(drifted["upstream.json"]);
+  manifest.adapted["tsconfig.base.json"] = "strict mode on";
+  const listed = { ...drifted, "upstream.json": JSON.stringify(manifest) };
+  const second = await makeFixture(listed, upstream);
+  try {
+    const result = await checkUpstream({ repoRoot: second.repo, upstreamDir: second.upstream });
+    assert.deepEqual(result.problems, [], JSON.stringify(result.problems));
+    assert.equal(result.ok, true);
+  } finally {
+    await rm(second.dir, { recursive: true, force: true });
   }
 });
