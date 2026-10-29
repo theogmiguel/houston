@@ -339,12 +339,19 @@ jobs:
         with:
           path: src-tauri/target/ghostty-vt
           key: ghostty-vt-src-tauri-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.conf.json's frontendDist is the upstream web app's dist directory,
+      # which generate_context! requires at compile time.
       - name: Build renderer assets for native compilation
-        working-directory: ui
         run: |
-          bun install --frozen-lockfile
-          bun run build
+          pnpm install --frozen-lockfile
+          pnpm --filter @t3tools/web build
       - name: Stage debug sidecars
         run: |
           bash scripts/stage-helper.sh
@@ -426,14 +433,20 @@ jobs:
             core
             src-tauri
           key: windows-checks
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.conf.json's frontendDist is the upstream web app's dist directory,
+      # which generate_context! requires at compile time.
       - name: Build renderer assets for native compilation
-        working-directory: ui
         run: |
-          bun install --frozen-lockfile
+          pnpm install --frozen-lockfile
+          pnpm --filter @t3tools/web build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run build
-          exit $LASTEXITCODE
       - name: Check core formatting and Clippy
         working-directory: core
         run: |
