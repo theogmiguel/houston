@@ -108,7 +108,7 @@ jobs:
         run: |
           git init "$RUNNER_TEMP/t3code"
           git -C "$RUNNER_TEMP/t3code" remote add origin https://github.com/pingdotgg/t3code.git
-          git -C "$RUNNER_TEMP/t3code" fetch --depth 1 origin 9826dbb9904b2591bfbf60d1317486b59132f56b
+          git -C "$RUNNER_TEMP/t3code" fetch --depth 1 origin 6d450a4284852af137b2f3407fddd89eb76e7644
           git -C "$RUNNER_TEMP/t3code" checkout --detach FETCH_HEAD
       # apps/web is the adapted renderer, gated by its own drift policy.
       - name: check-upstream.mjs (copied files match the pinned commit)
@@ -175,3 +175,30 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/orchestration-v2/Adapters
+
+  # Upstream's terminal PTY service behind the thread drawer, with node-pty
+  # built from its patched source. Windows runs and reports but does not fail
+  # the job until the Windows parity slice lands.
+  server-terminal:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Terminal PTY tests (src/terminal)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/terminal
+
