@@ -80,7 +80,6 @@ export function GridRailRowView({
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
 }): React.JSX.Element {
   const pr = card.pr?.pr ?? null
-  const note = cardMode === 'detailed' ? newestNote(card.agents) : null
   const hasChipRow = properties.includes('tags') && tagDisplay === 'chips' && tags.length > 0
   const openTags = (anchor: HTMLElement): void => openTagPopover({ anchor, gridId, view: 'pick' })
   return (
@@ -114,14 +113,21 @@ export function GridRailRowView({
             <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           </div>
         </div>
-        {properties.includes('checkout') && checkoutLabel && (
-          <div className="hidden min-h-4 items-center pl-[var(--space-6)] group-hover/grid:flex group-focus-within/grid:flex">
-            <GridRailCheckoutLine label={checkoutLabel} pr={properties.includes('pr') ? pr : null} diff={properties.includes('diff') ? card.diff : null} onOpenInspector={() => primary && onOpenInspector(primary.session.id, 'pull-request')} />
-          </div>
-        )}
-        {hasChipRow && <div className="hidden min-h-4 items-center pl-[var(--space-6)] text-[length:var(--tr-text-xs)] group-hover/grid:flex group-focus-within/grid:flex"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
-        {note && <GridRailNoteLine note={note} now={now} onClear={onClearNote} />}
-        {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="pl-[var(--space-6)] text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
+        <GridRailDetailLines
+          card={card}
+          cardMode={cardMode}
+          properties={properties}
+          checkoutLabel={checkoutLabel}
+          pr={pr}
+          primary={primary}
+          tags={tags}
+          hasChipRow={hasChipRow}
+          now={now}
+          onOpenInspector={onOpenInspector}
+          openTags={openTags}
+          onFilterTag={onFilterTag}
+          onClearNote={onClearNote}
+        />
         <GridRailAgentRows
           agents={properties.includes('inline-agents') ? card.agents : []}
           selectedSessionId={selected ? primary?.session.id : undefined}
@@ -133,6 +139,37 @@ export function GridRailRowView({
       {hoverPosition && <GridRailHoverCardHost card={card} tags={tags} position={hoverPosition} visible={hoverVisible} />}
     </Tooltip>
   )
+}
+
+function GridRailDetailLines({
+  card, cardMode, properties, checkoutLabel, pr, primary, tags, hasChipRow, now,
+  onOpenInspector, openTags, onFilterTag, onClearNote,
+}: {
+  card: RailCard
+  cardMode: RailCardMode
+  properties: readonly RailCardProperty[]
+  checkoutLabel: { branch: string | null; text: string } | null
+  pr: NonNullable<RailCard['pr']>['pr'] | null
+  primary?: RailAgentRow
+  tags: readonly TagInfo[]
+  hasChipRow: boolean
+  now: number
+  onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
+  openTags: (anchor: HTMLElement) => void
+  onFilterTag?: (tag: TagInfo) => void
+  onClearNote?: (session: number) => void
+}): React.JSX.Element {
+  const note = cardMode === 'detailed' ? newestNote(card.agents) : null
+  return <>
+    {properties.includes('checkout') && checkoutLabel && (
+      <div className="hidden min-h-4 items-center pl-[var(--space-6)] group-hover/grid:flex group-focus-within/grid:flex">
+        <GridRailCheckoutLine label={checkoutLabel} pr={properties.includes('pr') ? pr : null} diff={properties.includes('diff') ? card.diff : null} onOpenInspector={() => primary && onOpenInspector(primary.session.id, 'pull-request')} />
+      </div>
+    )}
+    {hasChipRow && <div className="hidden min-h-4 items-center pl-[var(--space-6)] text-[length:var(--tr-text-xs)] group-hover/grid:flex group-focus-within/grid:flex"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
+    {note && <GridRailNoteLine note={note} now={now} onClear={onClearNote} />}
+    {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="pl-[var(--space-6)] text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
+  </>
 }
 
 function GridRailUnreadToggle({ card, cardMode, hasUnread, enabled, onToggleUnread }: {

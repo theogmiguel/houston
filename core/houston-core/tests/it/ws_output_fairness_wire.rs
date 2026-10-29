@@ -4,7 +4,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use crate::common::*;
-use crate::ws_input::{argv, attach_msg, spawn, RawWs, Sessions};
+use crate::ws_input::{argv, attach_msg, attach_until_reply, spawn, RawWs, Sessions};
 use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use std::collections::HashSet;
@@ -231,7 +231,10 @@ async fn a_quiet_session_echoes_promptly_while_others_flood_the_same_connection(
             .collect(),
     );
 
-    let ws = connect(addr).await;
+    let mut ws = connect(addr).await;
+    // An attach without replay covers everything up to its reply, so a probe echoed before
+    // the reply is never sent as a frame: the quiet session's reply must land first.
+    attach_until_reply(&mut ws, quiet, 0).await;
     let (mut sink, stream) = ws.split();
     let (pace_tx, pace) = watch::channel(Pace::Fast);
     let (echo_tx, mut echoes) = mpsc::unbounded_channel();
@@ -246,7 +249,7 @@ async fn a_quiet_session_echoes_promptly_while_others_flood_the_same_connection(
         echo_tx,
         Arc::clone(&counters),
     ));
-    for id in std::iter::once(quiet).chain(floods.iter().copied()) {
+    for id in floods.iter().copied() {
         sink.send(attach_msg(id, Some(0))).await.unwrap();
     }
 
