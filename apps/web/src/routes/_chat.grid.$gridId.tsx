@@ -62,10 +62,7 @@ function GridRoute() {
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(
-          scopeThreadRef(
-            environmentId as EnvironmentId,
-            threadId as ThreadId,
-          ),
+          scopeThreadRef(environmentId as EnvironmentId, threadId as ThreadId),
         ),
       });
       return;
@@ -80,13 +77,17 @@ function GridRoute() {
   const createThread = (side: "left" | "right" | "top" | "bottom", besideThreadId: string) => {
     void (async () => {
       const created = await handleNewThread(
-        scopeProjectRef(
-          grid.environmentId as EnvironmentId,
-          grid.projectId as ProjectId,
-        ),
+        scopeProjectRef(grid.environmentId as EnvironmentId, grid.projectId as ProjectId),
         { replace: true },
       );
       if (created === null) return;
+      if (grid.tree !== null && containsThread(grid.tree, created.threadId)) {
+        // The project's empty draft is reused, so "new thread" can hand back a cell
+        // that is already on screen; focus it instead of showing it twice.
+        focusThread(grid.id, created.threadId);
+        void navigate({ to: "/grid/$gridId", params: { gridId: grid.id } });
+        return;
+      }
       if (grid.tree === null) {
         addThread(grid.id, created.threadId, created.draftId);
       } else {

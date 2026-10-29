@@ -10,7 +10,7 @@ import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useQuietThreadShell } from "../../state/entities";
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
 import type { SplitSide, ThreadNode } from "../../grid/tree";
-import { Button, buttonVariants } from "../ui/button";
+import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { cn } from "../../lib/utils";
 import { ThreadOpenProvider } from "./threadOpenContext";
@@ -50,6 +50,9 @@ export function GridThreadCell({
   const setDraftId = useGridStore((store) => store.setDraftId);
   const { archiveThread } = useThreadActions();
 
+  // The draft is promoted by the composer store, not by this cell; this keeps the grid
+  // leaf in step so a sent draft stops rendering as a draft.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted grid leaf with the composer store's promotion.
   useEffect(() => {
     if (draftId !== undefined && draftSession === null && promoted !== null) {
       setDraftId(grid.id, node.threadId, null);
@@ -155,13 +158,13 @@ function SplitMenu({
     <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger
         render={
-          <button
-            type="button"
+          <Button
+            variant="ghost-muted"
+            size="icon-micro"
             aria-label={horizontal ? "Split cell right" : "Split cell down"}
-            className={buttonVariants({ variant: "ghost-muted", size: "icon-micro" })}
           >
             {horizontal ? <ArrowRightIcon /> : <ArrowDownIcon />}
-          </button>
+          </Button>
         }
       />
       <MenuPopup side="bottom" align="end">

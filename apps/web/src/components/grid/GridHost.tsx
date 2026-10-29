@@ -9,6 +9,7 @@ import {
   type ThreadNode,
   clampSplitRatio,
   insertBeside,
+  preorderThreads,
   removeThread,
   setRatio,
   threadLeaf,
@@ -147,7 +148,14 @@ function SplitView({
       style={{ flexDirection: node.dir === "row" ? "row" : "column" }}
     >
       {node.children.map((child, index) => (
-        <div key={index} className="contents">
+        <div
+          key={
+            child.kind === "thread"
+              ? child.id
+              : (preorderThreads(child)[0]?.id ?? `split-${path.join(".")}-${index}`)
+          }
+          className="contents"
+        >
           <div
             className="relative flex min-h-0 min-w-0 overflow-hidden"
             style={
