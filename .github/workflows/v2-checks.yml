@@ -113,3 +113,29 @@ jobs:
           git -C "$RUNNER_TEMP/t3code" checkout --detach FETCH_HEAD
       - name: check-upstream.mjs (copied files match the pinned commit)
         run: node scripts/check-upstream.mjs "$RUNNER_TEMP/t3code"
+
+  # Upstream's terminal PTY service behind the thread drawer, with node-pty
+  # built from its patched source. Windows runs and reports but does not fail
+  # the job until the Windows parity slice lands.
+  server-terminal:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Terminal PTY tests (src/terminal)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/terminal
