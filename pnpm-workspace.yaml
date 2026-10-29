@@ -3,6 +3,7 @@ packages:
   - apps/web
   - oxlint-plugin-t3code
   - packages/*
+  - scripts
 
 # Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11+).
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior

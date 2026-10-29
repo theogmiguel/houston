@@ -66,7 +66,7 @@
   ],
   "adapted": {
     "packages/contracts/package.json": "adds the ./houston/terminalFrames subpath export",
-    "pnpm-workspace.yaml": "trims the workspace to the imported apps and packages and drops patches for packages that are not installed",
+    "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages — evals and infra stay out — and drops patches for packages that are not installed",
     "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream"
   }
 }
