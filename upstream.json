@@ -67,7 +67,14 @@
   ],
   "added": [
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
-    "apps/server/src/provider/GrokProviderTeardown.test.ts"
+    "apps/server/src/provider/GrokProviderTeardown.test.ts",
+    "apps/server/src/houston/analytics.test.ts",
+    "apps/server/src/houston/analytics.ts",
+    "apps/server/src/houston/baseDir.test.ts",
+    "apps/server/src/houston/baseDir.ts",
+    "apps/server/src/houston/entrypoint.test.ts",
+    "apps/server/src/houston/noTelemetry.test.ts",
+    "apps/server/src/houston/noTelemetry.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -196,7 +203,6 @@
     "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages, and drops patches for packages that are not installed",
     "apps/server/src/preview/PreviewBrowser.test.ts": "runs the install test without Effect's test clock; NTFS cannot store the pre-epoch fixture mtime",
     "apps/server/src/preview/ServerBrowserContexts.test.ts": "profile path expectations use node:path so they match the platform separators",
-    "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime",
     "scripts/lib/third-party-licenses.ts": "accepts Houston inline licence text and object override map",
     "apps/server/src/provider/Drivers/CodexHomeLayout.ts": "on win32, a symlink refused with EPERM falls back to a junction for a directory and a hard link for a file, recorded in .houston-shadow-links.json so a shared file replaced by rename is re-linked; Codex accounts work without Developer Mode",
     "apps/server/src/provider/CodexManagedRuntime.test.ts": "on win32 without symlink privilege the shared config.toml is a hard link, so the test compares file identity instead of readLink; the shadow path assertion uses platform separators",
@@ -205,6 +211,9 @@
     "packages/provider-acp/src/server/AcpSessionRuntime.ts": "on win32 an agent started through the shell (a .cmd shim) is not detached: a detached shell has no console, so the agent opens its own and never reads the ACP pipes, and Grok status never reaches ready",
     "apps/server/src/storageCleanup.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
     "apps/server/src/storageCleanup.test.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
-    "apps/server/src/vcs/GitVcsDriverCore.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile"
+    "apps/server/src/vcs/GitVcsDriverCore.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
+    "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home, and every OTLP export is cleared",
+    "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
+    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one"
   }
 }
