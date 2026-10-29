@@ -113,7 +113,7 @@ export function ColorSaturationValuePlane({
       role="group"
       className={cn(
         "relative cursor-crosshair touch-none overflow-hidden bg-[linear-gradient(to_top,#000,transparent),linear-gradient(to_right,#fff,transparent)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-popover",
-        variant === "edge" ? "h-36 rounded-none" : "h-32 rounded-lg",
+        variant === "edge" ? "h-36 rounded-none" : "h-32 rounded-[var(--r-ctl)]",
         className,
       )}
       style={{

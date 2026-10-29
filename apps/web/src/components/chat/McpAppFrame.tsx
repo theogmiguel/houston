@@ -253,7 +253,7 @@ export function McpAppFrame(props: {
       flushSync(() => setDisplayMode("inline"));
       const approved = await requestConfirmDialog(message);
       if (approved === undefined) {
-        throw new McpAppHostRefusal("T3 could not ask for approval here.");
+        throw new McpAppHostRefusal("Houston could not ask for approval here.");
       }
       return approved;
     };

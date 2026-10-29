@@ -322,10 +322,9 @@ export default defineConfig(() => {
     resolve: {
       tsconfigPaths: true,
       alias: {
-        "@betteroffice/fonts-cjk": new URL(
-          "./src/components/files/office/fonts-cjk.ts",
-          import.meta.url,
-        ).pathname,
+        // A URL pathname percent-encodes non-ASCII checkout paths, which the
+        // resolver cannot open on Windows; join the source directory instead.
+        "@betteroffice/fonts-cjk": `${import.meta.dirname}/src/components/files/office/fonts-cjk.ts`,
       },
       dedupe: ["react", "react-dom"],
     },
