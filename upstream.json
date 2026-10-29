@@ -67,7 +67,14 @@
   ],
   "added": [
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
-    "apps/server/src/provider/GrokProviderTeardown.test.ts"
+    "apps/server/src/provider/GrokProviderTeardown.test.ts",
+    "apps/server/src/houston/analytics.test.ts",
+    "apps/server/src/houston/analytics.ts",
+    "apps/server/src/houston/baseDir.test.ts",
+    "apps/server/src/houston/baseDir.ts",
+    "apps/server/src/houston/entrypoint.test.ts",
+    "apps/server/src/houston/noTelemetry.test.ts",
+    "apps/server/src/houston/noTelemetry.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -208,15 +215,5 @@
     "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home, and every OTLP export is cleared",
     "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
     "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one"
-  },
-  "added": [
-    "apps/server/src/houston/analytics.test.ts",
-    "apps/server/src/houston/analytics.ts",
-    "apps/server/src/houston/baseDir.test.ts",
-    "apps/server/src/houston/baseDir.ts",
-    "apps/server/src/houston/entrypoint.test.ts",
-    "apps/server/src/houston/noTelemetry.test.ts",
-    "apps/server/src/houston/noTelemetry.ts"
-  ]
-
+  }
 }
