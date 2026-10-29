@@ -26,6 +26,7 @@ import {
   workspaceKeyOf,
 } from "../../grid/gridStore";
 import { preorderThreads } from "../../grid/tree";
+import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { threadEnvironment } from "../../state/threads";
@@ -35,6 +36,7 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarContent, SidebarHeader } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
@@ -49,7 +51,7 @@ export function GridSidebar() {
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
-      <SidebarHeader className="gap-1 p-2">
+      <SidebarHeader>
         <div className="flex items-center gap-2 px-1.5 py-1">
           <LayoutGridIcon className="size-4 text-muted-foreground" />
           <span className="text-xs font-semibold tracking-wide text-sidebar-foreground uppercase">
@@ -64,7 +66,7 @@ export function GridSidebar() {
           All threads
         </Link>
       </SidebarHeader>
-      <SidebarContent className="gap-1 px-2 pb-2">
+      <SidebarContent>
         {projects.length === 0 ? (
           <p className="px-2 py-3 text-xs text-muted-foreground">
             Open a project to create its first grid.
@@ -110,27 +112,32 @@ function WorkspaceGroup({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   return (
-    <section className="flex flex-col">
+    <section className="mt-1 flex flex-col">
       <div className="group flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setCollapsed((value) => !value)}
-          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium text-sidebar-foreground hover:bg-sidebar-row-hover"
-          title={project.workspaceRoot}
-          aria-expanded={!collapsed}
-        >
-          <ChevronRightIcon
-            className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
-          />
-          <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{project.title}</span>
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setCollapsed((value) => !value)}
+                className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium text-sidebar-foreground hover:bg-sidebar-row-hover"
+                aria-expanded={!collapsed}
+              />
+            }
+          >
+            <ChevronRightIcon
+              className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
+            />
+            <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{project.title}</span>
+          </TooltipTrigger>
+          <TooltipPopup side="right">{project.workspaceRoot}</TooltipPopup>
+        </Tooltip>
         <Button
           variant="ghost-muted"
           size="icon-micro"
           aria-label={`New grid in ${project.title}`}
           onClick={onCreateGrid}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
         >
           <PlusIcon />
         </Button>
@@ -184,42 +191,39 @@ function GridRow({
   return (
     <div className="flex flex-col">
       <div className="group flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setCollapsed((value) => !value)}
-          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-sidebar-foreground hover:bg-sidebar-row-hover"
-          aria-expanded={!collapsed}
-        >
-          <ChevronRightIcon
-            className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
-          />
-          <LayoutGridIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          {renaming ? (
-            <input
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onBlur={() => {
-                renameGrid(grid.id, name);
+        {renaming ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={() => {
+              renameGrid(grid.id, name);
+              setRenaming(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setName(grid.name);
                 setRenaming(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-                if (event.key === "Escape") {
-                  setName(grid.name);
-                  setRenaming(false);
-                }
-              }}
-              className="h-5 min-w-0 flex-1 rounded-sm border border-input bg-background px-1 text-xs text-foreground outline-none focus:border-ring"
+              }
+            }}
+            className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-sidebar-foreground hover:bg-sidebar-row-hover"
+            aria-expanded={!collapsed}
+          >
+            <ChevronRightIcon
+              className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
             />
-          ) : (
-            <>
-              <span className="truncate">{grid.name}</span>
-              <span className="text-2xs text-muted-foreground">{leaves.length}</span>
-            </>
-          )}
-        </button>
+            <LayoutGridIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{grid.name}</span>
+            <span className="text-2xs text-muted-foreground">{leaves.length}</span>
+          </button>
+        )}
         <Menu>
           <MenuTrigger
             render={
@@ -260,8 +264,8 @@ function GridRow({
           {leaves.map((leaf) => (
             <ThreadRow
               key={leaf.id}
-              environmentId={grid.environmentId}
               threadId={leaf.threadId}
+              draftId={leaf.draftId}
               shell={workspaceThreads.find((candidate) => candidate.id === leaf.threadId)}
               active={grid.focusedThreadId === leaf.threadId}
               onOpen={() => openThread(leaf.threadId)}
@@ -343,89 +347,95 @@ function NewThreadItem({ grid }: { grid: GridRecord }) {
 }
 
 function ThreadRow({
-  environmentId,
   threadId,
+  draftId,
   shell,
   active,
   onOpen,
   onRemove,
 }: {
-  environmentId: string;
   threadId: string;
+  draftId: string | undefined;
   shell: EnvironmentThreadShell | undefined;
   active: boolean;
   onOpen: () => void;
   onRemove: () => void;
 }) {
+  const draft = useComposerDraftStore((store) =>
+    draftId === undefined ? null : store.getDraftSession(draftId as DraftId),
+  );
+  const isDraft = shell === undefined && draft !== null;
   const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(shell?.title ?? "Untitled thread");
+  const [name, setName] = useState(shell?.title ?? "New thread");
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   const { archiveThread } = useThreadActions();
   const status = shell === undefined ? null : resolveThreadStatusPill({ thread: shell });
   const threadRef = shell === undefined ? null : scopeThreadRef(shell.environmentId, shell.id);
-  const title = shell?.title ?? "Untitled thread";
+  const title = shell?.title ?? (isDraft ? "New thread" : "Untitled thread");
 
   return (
     <div className="group flex items-center gap-1">
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs hover:bg-sidebar-row-hover",
-          active ? "bg-sidebar-row-selected text-sidebar-foreground" : "text-sidebar-foreground/90",
-        )}
-        data-thread-key={threadRef === null ? undefined : scopedThreadKey(threadRef)}
-        data-thread-id={threadId}
-      >
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            status?.dotClass ?? "bg-muted-foreground/40",
-            status?.pulse && "animate-status-pulse",
-          )}
-          aria-hidden
-        />
-        {renaming ? (
-          <input
-            autoFocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onClick={(event) => event.stopPropagation()}
-            onBlur={() => {
-              setRenaming(false);
-              if (shell === undefined || name.trim() === shell.title) return;
-              void (async () => {
-                const result = await updateThreadMetadata({
-                  environmentId: shell.environmentId,
-                  input: { threadId: shell.id, title: name.trim() },
+      {renaming ? (
+        <input
+          autoFocus
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => {
+            setRenaming(false);
+            if (shell === undefined || name.trim() === shell.title) return;
+            void (async () => {
+              const result = await updateThreadMetadata({
+                environmentId: shell.environmentId,
+                input: { threadId: shell.id, title: name.trim() },
+              });
+              if (result._tag === "Failure") {
+                toastManager.add({
+                  type: "error",
+                  title: "Failed to rename thread",
+                  description: "The server did not accept the new title.",
                 });
-                if (result._tag === "Failure") {
-                  toastManager.add({
-                    type: "error",
-                    title: "Failed to rename thread",
-                    description: "The server did not accept the new title.",
-                  });
-                }
-              })();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setName(title);
-                setRenaming(false);
               }
-            }}
-            className="h-5 min-w-0 flex-1 rounded-sm border border-input bg-background px-1 text-xs text-foreground outline-none focus:border-ring"
+            })();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setName(title);
+              setRenaming(false);
+            }
+          }}
+          className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs hover:bg-sidebar-row-hover",
+            active
+              ? "bg-sidebar-row-selected text-sidebar-foreground"
+              : "text-sidebar-foreground/90",
+          )}
+          data-thread-key={threadRef === null ? undefined : scopedThreadKey(threadRef)}
+          data-thread-id={threadId}
+        >
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              status?.dotClass ?? "bg-muted-foreground/40",
+              status?.pulse && "animate-status-pulse",
+            )}
+            aria-hidden
           />
-        ) : (
           <span className="truncate">{title}</span>
-        )}
-        {shell === undefined ? (
-          <span className="shrink-0 text-2xs text-muted-foreground">missing</span>
-        ) : null}
-      </button>
+          {shell === undefined && !isDraft ? (
+            <span className="shrink-0 text-2xs text-muted-foreground">missing</span>
+          ) : null}
+          {isDraft ? <span className="shrink-0 text-2xs text-muted-foreground">draft</span> : null}
+        </button>
+      )}
       <Menu>
         <MenuTrigger
           render={
