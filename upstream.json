@@ -1,0 +1,9 @@
+{
+  "repo": "pingdotgg/t3code",
+  "commit": "9826dbb9904b2591bfbf60d1317486b59132f56b",
+  "imported": ["packages/contracts", "packages/shared", "tsconfig.base.json", "vite.config.ts"],
+  "excluded": [],
+  "adapted": {
+    "vite.config.ts": "removes the infra/ and scripts/lib/ imports (remote task cache, cached tests) and the lint config, whose plugins are not ported"
+  }
+}
