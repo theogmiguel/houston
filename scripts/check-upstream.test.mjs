@@ -131,6 +131,28 @@ test("check-upstream missing names a file present on only one side", async () =>
   }
 });
 
+test("check-upstream checks an explicit import even when an excluded prefix covers it", async () => {
+  const upstream = fixtureRepo();
+  const manifest = JSON.parse(upstream["upstream.json"]);
+  manifest.excluded = ["packages"];
+  upstream["upstream.json"] = JSON.stringify(manifest);
+  const repo = {
+    ...upstream,
+    "packages/contracts/src/a.ts": "CHANGED\n",
+  };
+  const { dir, repo: repoDir, upstream: upstreamDir } = await makeFixture(repo, upstream);
+  try {
+    const result = await checkUpstream({ repoRoot: repoDir, upstreamDir });
+    assert.equal(result.ok, false);
+    assert.deepEqual(
+      result.problems,
+      ["packages/contracts/src/a.ts differs from upstream and is not listed in upstream.json adapted"],
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("check-upstream names an imported path missing from either side", async () => {
   const upstream = fixtureRepo();
   delete upstream["packages/shared/src/b.ts"];

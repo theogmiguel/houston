@@ -47,7 +47,12 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     `${path} differs from upstream and is not listed in upstream.json adapted`;
 
   for (const imported of config.imported) {
-    if (isExcluded(imported, excluded)) continue;
+    // `excluded` prunes the walk below; an explicitly imported path is
+    // deliberate, so excluded prefixes it sits under do not veto it or its
+    // children.
+    const activeExcluded = excluded.filter(
+      (path) => imported !== path && !imported.startsWith(`${path}/`),
+    );
     const repoPath = join(repoRoot, imported);
     const upstreamPath = join(upstreamDir, imported);
     if (!existsSync(repoPath) && !existsSync(upstreamPath)) {
@@ -88,7 +93,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     );
     for (const [rel, repoFile] of repoFiles) {
       const path = `${imported}/${rel}`;
-      if (isExcluded(path, excluded)) continue;
+      if (isExcluded(path, activeExcluded)) continue;
       const upstreamFile = upstreamFiles.get(rel);
       if (!upstreamFile) {
         problems.push(`${path} exists only in the repo`);
@@ -102,7 +107,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     }
     for (const rel of upstreamFiles.keys()) {
       const path = `${imported}/${rel}`;
-      if (isExcluded(path, excluded)) continue;
+      if (isExcluded(path, activeExcluded)) continue;
       problems.push(`${path} exists only upstream`);
     }
   }

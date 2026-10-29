@@ -39,12 +39,12 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   Houston's tokens, and upstream's ~46 primitives in `components/ui` adopt #368's recipes. Feature
   components inherit the look unchanged. Houston's style guards bind the primitives and the kept
   Houston parts; copied feature components are exempt until a slice adapts them.
-- **Browser: open.** Upstream's preview is richer (element picking for the agent, device toolbar,
-  recording, mini player, cookie import, passkeys, port scanner, file previews), but its desktop
-  engine is Electron's WebContents. Its server engine (headless Chromium over CDP, streamed as a
-  screencast near 30 fps) runs under Tauri on Linux and Windows. Proposal: port the preview on the
-  server engine, keep Houston's native browser until the streamed view is measured for manual
-  browsing, then pick one.
+- **Browser: upstream's.** v2 ports upstream's preview on its server engine: headless Chromium
+  (`chrome-headless-shell`, downloaded with a pinned checksum) driven over CDP and streamed as a
+  JPEG screencast. Houston's native browser and its `browser_*` MCP tools are dropped with v1.
+  Electron-only features (element picker, favicons, cookie import, passkeys) do not come over. The
+  browser slice decides whether agent actions keep Houston's on-screen confirmation, which upstream
+  lacks, and states the Linux runtime libraries and AppArmor profile the download needs.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
 - **Slices merge through mini-PRs** `v2-<slice> → v2`, each with CI and the other maintainer's review.
 - **v1 is frozen to fixes.** After PR #368, `main` takes bug fixes only; new features go to v2.
@@ -98,8 +98,8 @@ Everything in `src-tauri` and `ui/`, in this order:
 2. Server host: bundled runtime; spawn the server detached so it outlives the app, reusing
    `daemon_host.rs`'s spawn path; on Windows also break away from any job object the app runs in
    (`CREATE_BREAKAWAY_FROM_JOB`, with a fallback when the job forbids breakaway); find it through
-   its state-directory lock; health check, restart, logs, reconnect; keychain, tray, updater and
-   native browser kept working against the new server.
+   its state-directory lock; health check, restart, logs, reconnect; keychain, tray and updater
+   kept working against the new server.
 3. Copy upstream's `apps/web` in as the renderer, building inside the Tauri webview.
 4. Re-skin: map upstream's theme variables to Houston's tokens and adapt its primitives to #368's
    recipes (type scale, radius roles, `StatusGlyph`, buttons, rows, menus); review the result with
@@ -107,7 +107,7 @@ Everything in `src-tauri` and `ui/`, in this order:
 5. Houston's sidebar and grid split tree in upstream's app shell: workspaces → grids → several
    threads per grid.
 6. The terminal drawer on Houston's terminal engine.
-7. Browser, once its open decision is taken.
+7. Browser: upstream's preview panel on its server engine.
 8. Renderer side of the Houston-only features, after Augusto's matching server slice.
 
 Until Augusto's `contracts` slice lands, Theo works on items 1–2 and the re-skin, which do not
