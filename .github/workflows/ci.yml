@@ -478,9 +478,8 @@ jobs:
           "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
   # The committed third-party inventory is generated from every dependency graph
-  # at once, so this needs the Rust toolchain (cargo metadata, no build), the
-  # renderer's node_modules and the pnpm workspace's node_modules together — a
-  # shape none of the three jobs above has.
+  # at once: the Rust toolchain (cargo metadata, no build), the renderer's
+  # node_modules and the pnpm workspace's node_modules — no other job has all three.
   licence-inventory:
     runs-on: ubuntu-latest
     steps:
