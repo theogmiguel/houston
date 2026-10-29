@@ -74,7 +74,11 @@
     "apps/server/src/houston/baseDir.ts",
     "apps/server/src/houston/entrypoint.test.ts",
     "apps/server/src/houston/noTelemetry.test.ts",
-    "apps/server/src/houston/noTelemetry.ts"
+    "apps/server/src/houston/noTelemetry.ts",
+    "apps/server/src/houston/providerReadiness.test.ts",
+    "apps/server/src/houston/providerReadiness.families.test.ts",
+    "apps/server/src/houston/providerReadiness.ws.test.ts",
+    "packages/contracts/src/houston/providerReadiness.test.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
