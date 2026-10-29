@@ -1,0 +1,54 @@
+# Houston v2's JavaScript workspace: the server packages ported from upstream,
+# under upstream's layout (packages/*, later apps/*). The renderer stays in ui/
+# on bun, outside this workspace.
+packages:
+  - apps/*
+  - packages/*
+
+# Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11+).
+# true = allowed to run build scripts; false mirrors the pnpm 10 behavior
+# where anything outside onlyBuiltDependencies was silently not built.
+allowBuilds:
+  esbuild: true
+  # Ships N-API prebuilds; its install script only rebuilds from source.
+  "@tsc-rs/typescript": true
+
+# Versions come from upstream's pnpm-workspace.yaml catalog, trimmed to the
+# entries the ported packages and the root use.
+catalog:
+  "@effect/platform-node": 4.0.5
+  "@effect/vitest": 4.0.5
+  "@noble/curves": 1.9.1
+  "@noble/hashes": 1.8.0
+  "@types/node": 24.12.4
+  effect: 4.0.5
+  jose: 6.2.2
+  mdast-util-directive: 3.1.0
+  micromark-extension-directive: 4.0.0
+  micromark-util-character: 2.1.1
+  micromark-util-types: 2.0.2
+  rehype-raw: 7.0.0
+  rehype-sanitize: 6.0.0
+  remark-breaks: 4.0.0
+  remark-gfm: 4.0.1
+  remark-parse: 11.0.0
+  remark-rehype: 11.1.2
+  typescript: npm:@tsc-rs/typescript@0.8.0
+  unified: 11.0.5
+  vite-plus: 1.4.0
+  yaml: ^2.9.0
+
+# @effect/vitest re-exports the vitest API. Upstream's patch points it at
+# vite-plus/test instead, which is the test runner this workspace resolves;
+# the extension declares that dependency and the override drops the vitest
+# peer the patch removes.
+packageExtensions:
+  "@effect/vitest@*":
+    dependencies:
+      vite-plus: "catalog:"
+
+patchedDependencies:
+  "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
+
+overrides:
+  "@effect/vitest>vitest": "-"

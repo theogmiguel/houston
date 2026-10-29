@@ -1,0 +1,15 @@
+{
+  "name": "houston",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "typecheck": "vp run -r --cache --concurrency-limit 4 typecheck",
+    "test": "vp run -r test"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
