@@ -158,9 +158,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Every step runs even after an earlier one fails, so one red package
+      # does not hide the rest of the suite on either OS.
       - name: Provider packages
-        run: pnpm --filter @t3tools/provider-core --filter effect-codex-app-server --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry --filter @t3tools/provider-opencode test
+        run: pnpm --no-bail --filter @t3tools/provider-core --filter effect-codex-app-server --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry --filter @t3tools/provider-opencode test
       - name: Server provider layer (src/provider)
+        if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/provider
       - name: Orchestration adapters (src/orchestration-v2/Adapters)
+        if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/orchestration-v2/Adapters
