@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      (() => {
+        const LIGHT_BACKGROUND = "#ffffff";
+        const DARK_BACKGROUND = "#000000";
+        const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
+        const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
+        const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
+        const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
+        const SPLASH_COLORS = {
+          light: {
+            background: "#ffffff",
+            foreground: "#262626",
+            accent: "#4f46e5",
+          },
+          dark: {
+            background: "#000000",
+            foreground: "#f5f5f5",
+            accent: "#818cf8",
+          },
+        };
+        // These are the runtime defaults used to complete a custom palette
+        // when a stored theme omits a role. Keep them separate from the
+        // unselected splash so a partial custom theme does not flash generic
+        // app colors before React mounts.
+        const DEFAULT_THEME_PALETTES = {
+          light: {
+            background: "oklch(0.982446 0.010114 325.653)",
+            foreground: "oklch(0.325698 0.116116 325.037)",
+            accent: "oklch(0.591646 0.217985 0.584)",
+            chrome: "oklch(0.982446 0.010114 325.653)",
+          },
+          dark: {
+            background: "oklch(0.22813 0.020366 307.469)",
+            foreground: "oklch(0.980735 0.004092 301.426)",
+            accent: "oklch(0.460685 0.185347 4.099)",
+            chrome: "oklch(0.22813 0.020366 307.469)",
+          },
+        };
+        // Keep this small boot-time copy in sync with the built-in palettes so
+        // the selected theme is visible before the app has mounted.
+        const BUILT_IN_THEME_PALETTES = {
+          "t3-chat": {
+            light: {
+              background: "oklch(0.982446 0.010114 325.653)",
+              foreground: "oklch(0.325698 0.116116 325.037)",
+              accent: "oklch(0.591646 0.217985 0.584)",
+              chrome: "oklch(0.982446 0.010114 325.653)",
+            },
+            dark: {
+              background: "oklch(0.22813 0.020366 307.469)",
+              foreground: "oklch(0.980735 0.004092 301.426)",
+              accent: "oklch(0.460685 0.185347 4.099)",
+              chrome: "oklch(0.22813 0.020366 307.469)",
+            },
+          },
+          grove: {
+            light: {
+              background: "oklch(0.972369 0.005497 157.15)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.523295 0.112292 158.089)",
+              chrome: "oklch(0.972369 0.005497 157.15)",
+            },
+            dark: {
+              background: "oklch(0.260865 0.02152 162.75)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.796228 0.133058 157.319)",
+              chrome: "oklch(0.260865 0.02152 162.75)",
+            },
+          },
+          ocean: {
+            light: {
+              background: "oklch(0.974199 0.002856 241.597)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.536684 0.120219 247.01)",
+              chrome: "oklch(0.974199 0.002856 241.597)",
+            },
+            dark: {
+              background: "oklch(0.242641 0.024125 250.573)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.758933 0.105833 241.548)",
+              chrome: "oklch(0.242641 0.024125 250.573)",
+            },
+          },
+          ember: {
+            light: {
+              background: "oklch(0.976527 0.002685 60.725)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.552831 0.129438 44.656)",
+              chrome: "oklch(0.976527 0.002685 60.725)",
+            },
+            dark: {
+              background: "oklch(0.245899 0.019144 42.044)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.762174 0.124117 52.082)",
+              chrome: "oklch(0.245899 0.019144 42.044)",
+            },
+          },
+          iris: {
+            light: {
+              background: "oklch(0.976531 0.003855 303.226)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.525348 0.15373 294.176)",
+              chrome: "oklch(0.976531 0.003855 303.226)",
+            },
+            dark: {
+              background: "oklch(0.225975 0.031062 293.741)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.671712 0.169136 293.929)",
+              chrome: "oklch(0.225975 0.031062 293.741)",
+            },
+          },
+        };
+        const BUILT_IN_THEME_MODES = Object.fromEntries(
+          Object.entries(BUILT_IN_THEME_PALETTES).map(([id, palettes]) => [
+            id,
+            Object.keys(palettes),
+          ]),
+        );
+        const RESERVED_THEME_IDS = [
+          "system",
+          "light",
+          "dark",
+          "t3-chat",
+          "grove",
+          "ocean",
+          "ember",
+          "iris",
+          "t3-chat-dark",
+          "t3-grove",
+          "t3-ocean",
+          "t3-ember",
+          "t3-iris",
+        ];
+        const setThemeColor = (color) => {
+          for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+            meta.setAttribute("content", color);
+          }
+        };
+
+        // The runtime decodes the same literal CSS formats into OKLCH. Keep
+        // contextual colors out: they cannot be resolved from stored data.
+        const SYSTEM_COLOR_KEYWORD =
+          /^(?:accentcolor(?:text)?|active(?:border|caption|text)|appworkspace|background|button(?:border|face|highlight|shadow|text)|canvas(?:text)?|captiontext|field(?:text)?|graytext|highlight(?:text)?|inactive(?:border|caption(?:text)?)|info(?:background|text)|linktext|mark(?:text)?|menu(?:text)?|scrollbar|selecteditem(?:text)?|threed(?:darkshadow|face|highlight|lightshadow|shadow)|visitedtext|window(?:frame|text)?)$/i;
+        const isThemeColor = (value) => {
+          if (typeof value !== "string" || typeof CSS === "undefined") return false;
+          const color = value.trim();
+          if (
+            /^(?:currentcolor|inherit|initial|revert|revert-layer|unset)$/i.test(color) ||
+            SYSTEM_COLOR_KEYWORD.test(color) ||
+            /\bfrom\b|(?:var|env|attr|calc|min|max|clamp)\(/i.test(color)
+          ) {
+            return false;
+          }
+          const isLiteralColor =
+            /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ||
+            /^[a-z]+$/i.test(color) ||
+            /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i.test(color);
+          return isLiteralColor && CSS.supports("color", color);
+        };
+        const isRecord = (value) =>
+          typeof value === "object" && value !== null && !Array.isArray(value);
+        const isThemeId = (value) =>
+          typeof value === "string" && /^[a-z0-9](?:[a-z0-9-]{0,47})$/.test(value);
+        const isThemeLabel = (value) =>
+          typeof value === "string" && value.trim().length > 0 && value.trim().length <= 48;
+        const isThemePreferenceMode = (value) =>
+          value === "light" || value === "dark" || value === "system";
+        const isThemeAppearance = (value) => value === "light" || value === "dark";
+        const isStoredCustomTheme = (value) => {
+          if (
+            !isRecord(value) ||
+            !isThemeId(value.id) ||
+            RESERVED_THEME_IDS.includes(value.id) ||
+            !isThemeLabel(value.label) ||
+            !isThemeAppearance(value.appearance) ||
+            !isRecord(value.colors)
+          ) {
+            return false;
+          }
+          if (value.variants === undefined) return true;
+          if (!isRecord(value.variants)) return false;
+          return Object.entries(value.variants).every(
+            ([appearance, colors]) =>
+              isThemeAppearance(appearance) &&
+              (appearance === value.appearance || isRecord(colors)),
+          );
+        };
+        const findCustomTheme = (themeId) => {
+          if (RESERVED_THEME_IDS.includes(themeId)) return null;
+          try {
+            const parsed = JSON.parse(
+              window.localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY) ?? "null",
+            );
+            if (!Array.isArray(parsed)) return null;
+            return (
+              parsed.find((value) => isStoredCustomTheme(value) && value.id === themeId) ?? null
+            );
+          } catch {
+            return null;
+          }
+        };
+
+        try {
+          const storedTheme = window.localStorage.getItem("t3code:theme");
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const LEGACY_THEME_IDS = {
+            "t3-chat-dark": "t3-chat",
+            "t3-grove": "grove",
+            "t3-ocean": "ocean",
+            "t3-ember": "ember",
+            "t3-iris": "iris",
+          };
+          const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
+          const themeId =
+            storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
+          const legacyMode = isLegacyT3ChatDark ? "dark" : null;
+          const builtInModes = BUILT_IN_THEME_MODES[themeId] ?? null;
+          const customTheme = builtInModes ? null : findCustomTheme(themeId);
+          const themeModes =
+            builtInModes ??
+            (customTheme
+              ? ["light", "dark"].filter(
+                  (mode) => mode === customTheme.appearance || customTheme.variants?.[mode],
+                )
+              : null);
+          const isKnownTheme =
+            storedTheme === "light" ||
+            storedTheme === "dark" ||
+            storedTheme === "system" ||
+            themeModes !== null;
+          const theme = isKnownTheme && storedTheme ? storedTheme : "system";
+          const isThemed = isKnownTheme && themeModes !== null;
+          const baseAppearance = customTheme ? customTheme.appearance : "light";
+          const systemMode = prefersDark ? "dark" : "light";
+          const storedAppearanceMode = window.localStorage.getItem(
+            THEME_APPEARANCE_MODE_STORAGE_KEY,
+          );
+          const storedFollowSystem = window.localStorage.getItem(THEME_FOLLOW_SYSTEM_STORAGE_KEY);
+          const preferenceMode =
+            theme === "light" || theme === "dark" ? theme : (legacyMode ?? baseAppearance);
+          const appearanceMode = isThemePreferenceMode(storedAppearanceMode)
+            ? storedAppearanceMode
+            : storedFollowSystem === "true"
+              ? "system"
+              : storedFollowSystem === "false"
+                ? preferenceMode
+                : theme === "system"
+                  ? "system"
+                  : preferenceMode;
+          // A valid mix half for the wanted appearance takes over: it decides
+          // light vs dark even when the base theme cannot render that mode.
+          // Mirrors the runtime's halves-aware resolveThemeAppearance.
+          const wantedMode = appearanceMode === "system" ? systemMode : appearanceMode;
+          let halfThemeId = null;
+          let halfCustomTheme = null;
+          try {
+            const halvesRaw = JSON.parse(
+              window.localStorage.getItem(THEME_HALVES_STORAGE_KEY) ?? "null",
+            );
+            const candidate = isRecord(halvesRaw) ? halvesRaw[wantedMode] : null;
+            if (typeof candidate === "string") {
+              const halfId = LEGACY_THEME_IDS[candidate] ?? candidate;
+              const halfBuiltIn = BUILT_IN_THEME_MODES[halfId] ?? null;
+              const halfCustom = halfBuiltIn ? null : findCustomTheme(halfId);
+              const halfModes =
+                halfBuiltIn ??
+                (halfCustom
+                  ? ["light", "dark"].filter(
+                      (mode) => mode === halfCustom.appearance || halfCustom.variants?.[mode],
+                    )
+                  : null);
+              if (halfModes && halfModes.includes(wantedMode)) {
+                halfThemeId = halfId;
+                halfCustomTheme = halfCustom;
+              }
+            }
+          } catch {}
+          const themeMode = !isThemed
+            ? null
+            : appearanceMode === "system"
+              ? themeModes.includes(systemMode)
+                ? systemMode
+                : baseAppearance
+              : themeModes.includes(appearanceMode)
+                ? appearanceMode
+                : baseAppearance;
+          const isDark =
+            halfThemeId !== null
+              ? wantedMode === "dark"
+              : isThemed
+                ? themeMode === "dark"
+                : appearanceMode === "system"
+                  ? prefersDark
+                  : appearanceMode === "dark";
+          const effectiveIsThemed = halfThemeId !== null || isThemed;
+          const effectiveThemeId = halfThemeId ?? themeId;
+          const effectiveCustomTheme = halfThemeId !== null ? halfCustomTheme : customTheme;
+          const effectiveThemeMode = halfThemeId !== null ? wantedMode : themeMode;
+          const customColors =
+            effectiveIsThemed && effectiveCustomTheme
+              ? effectiveThemeMode === effectiveCustomTheme.appearance
+                ? effectiveCustomTheme.colors
+                : (effectiveCustomTheme.variants?.[effectiveThemeMode] ??
+                  effectiveCustomTheme.colors)
+              : null;
+          const customDefaults =
+            effectiveCustomTheme && effectiveThemeMode
+              ? DEFAULT_THEME_PALETTES[effectiveThemeMode]
+              : null;
+          // The runtime tolerates individual malformed colors, so fall back
+          // per role rather than dropping the theme.
+          const builtInSplash =
+            effectiveIsThemed && !effectiveCustomTheme && effectiveThemeMode
+              ? (BUILT_IN_THEME_PALETTES[effectiveThemeId]?.[effectiveThemeMode] ?? null)
+              : null;
+          const fallbackSplash = isDark ? SPLASH_COLORS.dark : SPLASH_COLORS.light;
+          const customSplash = customColors
+            ? {
+                background: isThemeColor(customColors.canvas)
+                  ? customColors.canvas
+                  : (customDefaults?.background ?? fallbackSplash.background),
+                foreground: isThemeColor(customColors.text)
+                  ? customColors.text
+                  : (customDefaults?.foreground ?? fallbackSplash.foreground),
+                accent: isThemeColor(customColors.accent)
+                  ? customColors.accent
+                  : (customDefaults?.accent ?? fallbackSplash.accent),
+              }
+            : null;
+          if (effectiveIsThemed) {
+            document.documentElement.dataset.themeId = effectiveCustomTheme
+              ? effectiveCustomTheme.id
+              : effectiveThemeId;
+          } else {
+            delete document.documentElement.dataset.themeId;
+          }
+          // A resolved half is a selection even when the base theme is gone
+          // (deleting the base leaves the mix pointing at a real theme).
+          const hasSelection = halfThemeId !== null || (isKnownTheme && storedTheme !== null);
+          if (hasSelection) {
+            document.documentElement.dataset.themeSelected = "true";
+          } else {
+            delete document.documentElement.dataset.themeSelected;
+          }
+          document.documentElement.classList.toggle("dark", isDark);
+          const chromeColor = customColors
+            ? isThemeColor(customColors.chrome)
+              ? customColors.chrome
+              : (customDefaults?.chrome ?? fallbackSplash.background)
+            : builtInSplash
+              ? builtInSplash.chrome
+              : isDark
+                ? DARK_BACKGROUND
+                : LIGHT_BACKGROUND;
+          document.documentElement.style.backgroundColor = chromeColor;
+          if (hasSelection) {
+            const splashColors = customSplash ?? builtInSplash ?? fallbackSplash;
+            for (const [name, value] of Object.entries(splashColors)) {
+              document.documentElement.style.setProperty(`--boot-${name}`, value);
+            }
+          }
+          setThemeColor(chromeColor);
+        } catch {
+          let prefersDark = true;
+          try {
+            prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch {}
+          delete document.documentElement.dataset.themeId;
+          delete document.documentElement.dataset.themeSelected;
+          document.documentElement.classList.toggle("dark", prefersDark);
+          const fallbackColor = prefersDark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+          document.documentElement.style.backgroundColor = fallbackColor;
+          setThemeColor(fallbackColor);
+        }
+      })();
+    </script>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #ffffff;
+        color: #262626;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
+      }
+
+      html.dark body {
+        background: #000000;
+        color: #f5f5f5;
+      }
+
+      #boot-shell {
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        min-height: 100%;
+        align-items: center;
+        justify-content: center;
+        background: inherit;
+        color: inherit;
+      }
+
+      html[data-theme-selected="true"] #boot-shell {
+        background: var(--boot-background);
+        color: var(--boot-foreground);
+      }
+
+      #boot-shell-card {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 96px;
+        height: 96px;
+      }
+
+      #boot-shell-logo {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+      }
+
+      /* App CSS locks body and #root scrolling once main loads, so the error screen scrolls itself. */
+      #boot-shell:has(> #boot-error) {
+        height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+
+      #boot-error {
+        --boot-error-fg: #262626;
+        --boot-error-bg: #ffffff;
+        --boot-error-line: color-mix(in srgb, currentColor 12%, transparent);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        align-self: flex-start;
+        width: min(400px, calc(100% - 48px));
+        padding: clamp(24px, 22vh, 220px) 0 24px;
+        font-size: 13px;
+        line-height: 20px;
+      }
+
+      html.dark #boot-error {
+        --boot-error-fg: #f5f5f5;
+        --boot-error-bg: #000000;
+      }
+
+      html[data-theme-selected="true"] #boot-error {
+        --boot-error-fg: var(--boot-foreground);
+        --boot-error-bg: var(--boot-background);
+      }
+
+      #boot-error h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 22px;
+      }
+
+      #boot-error p {
+        margin: 4px 0 0;
+        opacity: 0.7;
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+      }
+
+      #boot-error code,
+      #boot-error pre {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+
+      #boot-error a {
+        color: inherit;
+        text-decoration-line: underline;
+        text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+        text-underline-offset: 3px;
+      }
+
+      #boot-error a:hover {
+        text-decoration-color: currentColor;
+      }
+
+      #boot-error button {
+        height: 32px;
+        padding: 0 14px;
+        border: 1px solid var(--boot-error-line);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      #boot-error button[aria-disabled="true"] {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      #boot-error :is(button, a, summary, pre):focus-visible {
+        outline: 2px solid var(--boot-error-fg);
+        outline-offset: 2px;
+      }
+
+      #boot-error-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      #boot-error #boot-error-reload {
+        border-color: var(--boot-error-fg);
+        background: var(--boot-error-fg);
+        color: var(--boot-error-bg);
+      }
+
+      #boot-error-reload:hover {
+        opacity: 0.9;
+      }
+
+      #boot-error #boot-error-update-note {
+        margin-top: 8px;
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      #boot-error details {
+        width: 100%;
+        margin-top: 32px;
+      }
+
+      #boot-error summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 4px;
+        list-style: none;
+        opacity: 0.7;
+        cursor: pointer;
+      }
+
+      #boot-error summary::-webkit-details-marker {
+        display: none;
+      }
+
+      #boot-error summary::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(-45deg);
+      }
+
+      #boot-error details[open] summary::before {
+        transform: rotate(45deg);
+      }
+
+      #boot-error summary:hover,
+      #boot-error details[open] summary {
+        opacity: 1;
+      }
+
+      #boot-error details > :not(summary) {
+        display: grid;
+        gap: 8px;
+        margin-top: 20px;
+      }
+
+      #boot-error details > a {
+        display: block;
+        width: fit-content;
+      }
+
+      #boot-error details p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      #boot-error-command {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 4px 4px 10px;
+        border: 1px solid var(--boot-error-line);
+        border-radius: 6px;
+      }
+
+      #boot-error-command code {
+        flex: 1;
+        min-width: 0;
+        opacity: 0.8;
+      }
+
+      #boot-error .boot-error-icon {
+        display: grid;
+        flex: none;
+        place-items: center;
+        min-width: 24px;
+        height: 24px;
+        padding: 0 4px;
+        border: 0;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 400;
+        opacity: 0.7;
+      }
+
+      #boot-error .boot-error-icon:hover {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+
+      #boot-error-details {
+        max-height: 200px;
+        margin: 0;
+        padding: 10px 12px;
+        overflow: auto;
+        border: 1px solid var(--boot-error-line);
+        border-radius: 6px;
+        font-size: 11px;
+        line-height: 16px;
+        white-space: pre-wrap;
+        opacity: 0.8;
+      }
+
+      #boot-error-report {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      #boot-error-report button {
+        height: 28px;
+        padding: 0 10px;
+      }
+
+      .boot-error-sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    </style>
+    <title>T3 Code (Beta)</title>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot-shell">
+        <div id="boot-shell-card" aria-label="T3 Code splash screen">
+          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/bootstrap.ts"></script>
+  </body>
+</html>
