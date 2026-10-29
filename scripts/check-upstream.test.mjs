@@ -217,6 +217,27 @@ test("check-upstream ignored files that git ignores are not drift", async () => 
   }
 });
 
+test("check-upstream tracked ignored file that drifts is still named", async () => {
+  const upstreamFiles = { ...fixtureRepo(), "packages/contracts/gen.log": "upstream\n" };
+  const repoFiles = {
+    ...upstreamFiles,
+    ".gitignore": "*.log\n",
+    "packages/contracts/gen.log": "houston\n",
+  };
+  const { dir, repo, upstream } = await makeFixture(repoFiles, upstreamFiles);
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["add", "-f", "packages/contracts/gen.log"], { cwd: repo });
+    const result = await checkUpstream({ repoRoot: repo, upstreamDir: upstream });
+    // Tracked files are never ignored, so a force-added file keeps its drift check.
+    assert.deepEqual(result.problems, [
+      "packages/contracts/gen.log differs from upstream and is not listed in upstream.json adapted",
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("check-upstream stale adapted names a key matching no file or equal to upstream", async () => {
   const files = fixtureRepo();
   const manifest = JSON.parse(files["upstream.json"]);
