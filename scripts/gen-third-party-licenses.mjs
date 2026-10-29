@@ -183,22 +183,48 @@ function npmPackages() {
   return out;
 }
 
-// npm: the pnpm workspace packages' production closure (packages/*, apps/*).
-// devDependencies build the server; they are not what ships with it.
+// The workspace members from pnpm-workspace.yaml's `packages:` list. Only the
+// two shapes this file uses are handled: a bare directory ("scripts") and a
+// single-level glob ("packages/*").
+function workspaceManifestGlobs() {
+  const lines = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/);
+  const globs = [];
+  let inList = false;
+  for (const line of lines) {
+    if (/^packages:$/.test(line)) {
+      inList = true;
+    } else if (inList && /^\S/.test(line)) {
+      break;
+    } else if (inList) {
+      const entry = line.match(/^\s+-\s+"?([^"#]+?)"?\s*$/);
+      if (entry) globs.push(entry[1]);
+    }
+  }
+  return globs;
+}
+
+// npm: the pnpm workspace packages' production closure, one importer per
+// pnpm-workspace.yaml member. devDependencies build the server; they are not
+// what ships with it.
 function workspaceNpmPackages() {
   const manifests = [];
-  for (const group of ["packages", "apps"]) {
-    let entries;
-    try {
-      entries = readdirSync(join(ROOT, group), { withFileTypes: true });
-    } catch {
+  for (const glob of workspaceManifestGlobs()) {
+    if (glob.endsWith("/*")) {
+      let entries;
+      try {
+        entries = readdirSync(join(ROOT, glob.slice(0, -2)), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const manifest = join(ROOT, glob.slice(0, -2), entry.name, "package.json");
+        if (existsSync(manifest)) manifests.push(manifest);
+      }
       continue;
     }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const manifest = join(ROOT, group, entry.name, "package.json");
-      if (existsSync(manifest)) manifests.push(manifest);
-    }
+    const manifest = join(ROOT, glob, "package.json");
+    if (existsSync(manifest)) manifests.push(manifest);
   }
   if (!manifests.length) return [];
 
