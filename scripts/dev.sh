@@ -92,10 +92,13 @@ fi
 
 APP="$ROOT/src-tauri/target/debug/houston-tauri"
 
-echo "[dev] building the renderer…"
-(cd "$ROOT/ui" && bun run build)
+echo "[dev] building the v2 web renderer."
+(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @t3tools/web build)
 
-echo "[dev] building the daemon, supervisor and hook helper (debug)…"
+echo "[dev] building the v2 server."
+(cd "$ROOT" && npx -y pnpm@12.14.0 --filter t3 build:bundle)
+
+echo "[dev] building the daemon, supervisor and hook helper (debug)."
 (cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor --bin tr-helper)
 
 HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
