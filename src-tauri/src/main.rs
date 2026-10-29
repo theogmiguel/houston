@@ -495,8 +495,13 @@ fn main() {
     builder = builder.manage(Arc::clone(&tray_host));
     builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
 
-    builder
-        .plugin(
+    // The Windows implementation of the single-instance plugin keys its mutex on
+    // the bundle identifier alone, so it cannot separate channels. Registering it
+    // there would make a dev app refuse to start while the installed release app
+    // runs; Linux uses the channel-scoped dbus id instead.
+    let single_instance_enabled = cfg!(target_os = "linux") || owning_channel.is_none();
+    if single_instance_enabled {
+        builder = builder.plugin(
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
                 .callback(move |app, argv, cwd| {
@@ -509,7 +514,9 @@ fn main() {
                     tray::show_main_window(app);
                 })
                 .build(),
-        )
+        );
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         // No `updater:default` permission anywhere: the plugin's own JS commands
         // stay unreachable, and updates run through app_update_install instead.
