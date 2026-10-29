@@ -1573,6 +1573,38 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
+  // Git 2.56 reworded "not a git repository" for a .git file whose gitdir is gone.
+  it.live.each(["not a git repository", "gitfile does not point to a valid repository"])(
+    "keeps a worktree whose gitdir is gone when Git says %j",
+    (wording) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const git = yield* GitVcsDriver.GitVcsDriver;
+          const { service, fs, worktree } = yield* cleanupFixture().pipe(
+            Effect.provideService(GitVcsDriver.GitVcsDriver, {
+              ...git,
+              execute: (input) =>
+                git.execute(input).pipe(
+                  Effect.map((result) => ({
+                    ...result,
+                    stderr: result.stderr.replace(
+                      /not a git repository|gitfile does not point to a valid repository/i,
+                      wording,
+                    ),
+                  })),
+                ),
+            }),
+          );
+          // Windows Git hides the .git file, and a hidden file cannot be opened for writing.
+          yield* fs.remove(`${worktree}/.git`);
+          yield* fs.writeFileString(`${worktree}/.git`, "gitdir: /missing-git-directory\n");
+          expect((yield* service.runNow).entries[0]).toMatchObject({
+            outcome: "kept",
+            reason: "Repository or branch changed",
+          });
+        }),
+      ),
+  );
   it.live.each([
     ["any-local-files", ".env", "kept"],
     ["uncommitted-changes", ".env", "removed"],
