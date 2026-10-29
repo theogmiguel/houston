@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Path expectations mirror the platform path module.
 import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
 
