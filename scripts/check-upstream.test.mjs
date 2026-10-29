@@ -256,3 +256,51 @@ test("check-upstream stale adapted names a key matching no file or equal to upst
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("check-upstream skip leaves a skipped path unchecked and still checks the rest", async () => {
+  const upstream = fixtureRepo();
+  const repo = {
+    ...upstream,
+    "upstream.json": JSON.stringify({
+      ...JSON.parse(upstream["upstream.json"]),
+      adapted: { "packages/shared/src/b.ts": "reskinned" },
+    }),
+    "packages/shared/src/b.ts": "BRAVO\n",
+    "packages/shared/src/extra.ts": "houston only\n",
+    "packages/contracts/src/a.ts": "ALPHA\n",
+  };
+  const { dir, repo: repoDir, upstream: upstreamDir } = await makeFixture(repo, upstream);
+  try {
+    const result = await checkUpstream({ repoRoot: repoDir, upstreamDir, skip: ["packages/shared"] });
+    assert.equal(result.ok, false);
+    assert.deepEqual(
+      result.problems,
+      ["packages/contracts/src/a.ts differs from upstream and is not listed in upstream.json adapted"],
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("check-upstream skip of a prefix inside an import skips only that subtree", async () => {
+  const upstream = fixtureRepo();
+  const repo = {
+    ...upstream,
+    "packages/contracts/src/a.ts": "ALPHA\n",
+    "packages/contracts/src/keep.ts": "KEEP\n",
+  };
+  const { dir, repo: repoDir, upstream: upstreamDir } = await makeFixture(repo, upstream);
+  try {
+    const result = await checkUpstream({
+      repoRoot: repoDir,
+      upstreamDir,
+      skip: ["packages/contracts/src/a.ts"],
+    });
+    assert.deepEqual(
+      result.problems,
+      ["packages/contracts/src/keep.ts differs from upstream and is not listed in upstream.json adapted"],
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
