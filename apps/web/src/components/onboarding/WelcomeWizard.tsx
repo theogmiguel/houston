@@ -233,11 +233,8 @@ export function WelcomeWizard({
         <WizardHeader
           title="Set up Houston"
           identity={
-            <div className="flex items-baseline gap-1.5" role="img" aria-label="Houston">
-              <HoustonWordmark className="shrink-0 text-sm" aria-hidden />
-              <span className="text-2xl font-medium tracking-tight text-muted-foreground">
-                Code
-              </span>
+            <div role="img" aria-label="Houston">
+              <HoustonWordmark className="text-lg text-muted-foreground" aria-hidden />
             </div>
           }
         >
