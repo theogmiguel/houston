@@ -80,7 +80,7 @@ jobs:
             exit 0
           fi
           base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
-          if git diff --name-only "$base" HEAD | grep -qE '^((packages|apps|patches)/|package\.json$|pnpm-workspace\.yaml$|pnpm-lock\.yaml$|tsconfig\.base\.json$|vite\.config\.ts$|upstream\.json$|scripts/check-upstream\.mjs$|\.github/workflows/v2-checks\.yml$)'; then
+          if git diff --name-only "$base" HEAD | grep -qE '^((packages|apps|patches|scripts|oxlint-plugin-t3code)/|package\.json$|pnpm-workspace\.yaml$|pnpm-lock\.yaml$|tsconfig\.base\.json$|vite\.config\.ts$|upstream\.json$|\.github/workflows/v2-checks\.yml$)'; then
             echo "server=true" >> "$GITHUB_OUTPUT"
           else
             echo "server=false" >> "$GITHUB_OUTPUT"
@@ -102,6 +102,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+      - name: Script tests (check-upstream and the licence generator)
+        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs
       - name: Fetch upstream t3code at the pinned commit
         run: |
           git init "$RUNNER_TEMP/t3code"
