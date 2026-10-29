@@ -295,11 +295,7 @@ export function moveThread(
   return insertBeside(removed, target, node, side);
 }
 
-export function swapThread(
-  tree: LayoutNode | null,
-  a: PaneKey,
-  b: PaneKey,
-): LayoutNode | null {
+export function swapThread(tree: LayoutNode | null, a: PaneKey, b: PaneKey): LayoutNode | null {
   if (!tree || a === b) return tree;
   const nodeA = findThread(tree, a);
   const nodeB = findThread(tree, b);

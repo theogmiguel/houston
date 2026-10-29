@@ -20,7 +20,13 @@ function freshStore(): void {
 function createdGrid(): GridRecord {
   const id = useGridStore
     .getState()
-    .createGrid({ environmentId: "env-1", projectId: "project-1", workspaceKey, id: "g-1", now: "2026-01-01T00:00:00Z" });
+    .createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-1",
+      now: "2026-01-01T00:00:00Z",
+    });
   return gridById(useGridStore.getState().grids, id)!;
 }
 
@@ -124,10 +130,7 @@ describe("grid parsing", () => {
         null,
         "nope",
       ]),
-    ).toEqual([
-      valid,
-      { ...valid, id: "g-2", focusedThreadId: "thread-a" },
-    ]);
+    ).toEqual([valid, { ...valid, id: "g-2", focusedThreadId: "thread-a" }]);
   });
 
   it("returns an empty list for a corrupt document", () => {
