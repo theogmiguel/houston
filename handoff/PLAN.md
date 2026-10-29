@@ -59,7 +59,8 @@ server; Theo owns the Tauri host and the renderer.** Each one reviews the other'
 Everything under the TypeScript sidecar, in this order:
 
 1. `contracts` and the shared packages, plus the server's directory layout. Theo reviews before it
-   merges, since the renderer builds on it.
+   merges, since the renderer builds on it. Includes the binary frame format for terminal bytes
+   (reusing `houston-protocol`'s framing and its bounded buffers).
 2. Persistence: event store, projections, migrations, outbox, command receipts.
 3. Provider core and the Claude adapter. First read the Claude Agent SDK terms and decide SDK versus
    the CLI's stream-json protocol; PR #363 already implements the latter.
@@ -76,11 +77,13 @@ Also Augusto's: the decision on PR #363 (close it, or name what v2 reuses from i
 
 Everything in `src-tauri` and `ui/`, in this order:
 
+0. Fix PR #368's CI and merge it into `main`, then `main` into `v2`.
 1. The `v2-checks` CI workflow. It exists with doc hygiene outside `handoff/` and the licence
    notice gate; each slice adds its own job (server tests, sidecar build), and the `ci.yml` jobs
    for `houston-core` are dropped when the daemon is removed.
-0. Fix PR #368's CI and merge it into `main`, then `main` into `v2`.
-2. Server host: bundled runtime; spawn the server detached so it outlives the app; find it through
+2. Server host: bundled runtime; spawn the server detached so it outlives the app, reusing
+   `daemon_host.rs`'s spawn path; on Windows also break away from any job object the app runs in
+   (`CREATE_BREAKAWAY_FROM_JOB`, with a fallback when the job forbids breakaway); find it through
    its state-directory lock; health check, restart, logs, reconnect; keychain, tray, updater and
    native browser kept working against the new server.
 3. Thread pane mock in `mocks/houston-mocks.html`, then the A/B picks still open in the other
@@ -123,6 +126,10 @@ Until Augusto's `contracts` slice lands, Theo works on items 1–3, which do not
 3. The v2 gate passes at the merge into `v2`.
 
 ## Open decisions
+
+0. Server runtime, decided together: Node or Bun. The drawer's PTY uses `node-pty`, a native
+   addon, and upstream runs its server on Node (`engines.node >=22.16`). Theo recommends Node: it
+   is what upstream and `node-pty` are tested on, at the cost of bundling a Node binary.
 
 1. PR #363 and the Claude adapter's base (Agent SDK or CLI stream-json, given the subscription
    policy): Augusto's call, early in his slice 3.
