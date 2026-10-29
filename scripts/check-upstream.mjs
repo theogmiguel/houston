@@ -56,6 +56,10 @@ function ignoredPaths(repoRoot, base, files) {
 export function checkUpstream({ repoRoot, upstreamDir }) {
   const config = JSON.parse(readFileSync(join(repoRoot, "upstream.json"), "utf8"));
   const adapted = config.adapted ?? {};
+  // Houston-authored additions and removals inside a copied package are listed
+  // here instead of failing as unexpected files.
+  const added = new Set(config.added ?? []);
+  const removed = new Set(config.removed ?? []);
   const excluded = config.excluded ?? [];
   const problems = [];
   let fileCount = 0;
@@ -120,7 +124,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       if (isExcluded(path, activeExcluded)) continue;
       const upstreamFile = upstreamFiles.get(rel);
       if (!upstreamFile) {
-        problems.push(`${path} exists only in the repo`);
+        if (!added.has(path)) problems.push(`${path} exists only in the repo`);
         continue;
       }
       upstreamFiles.delete(rel);
@@ -133,7 +137,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     for (const rel of upstreamFiles.keys()) {
       const path = `${imported}/${rel}`;
       if (isExcluded(path, activeExcluded)) continue;
-      problems.push(`${path} exists only upstream`);
+      if (!removed.has(path)) problems.push(`${path} exists only upstream`);
     }
   }
 
