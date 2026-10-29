@@ -66,16 +66,20 @@ describe("terminalFrames", () => {
 
   it("decodeServerFrame decodes OUTPUT and GAP with bigint fields", () => {
     const output = decodeServerFrame(fromHex(HEX.output));
-    expect(output.kind).toBe(1);
-    expect(output.handle).toBe(0xffffffff);
-    expect(output.offset).toBe(2n ** 40n + 7n);
-    expect([...output.payload]).toEqual([...ENCODER.encode("hi")]);
+    expect(output).toEqual({
+      kind: 1,
+      handle: 0xffffffff,
+      offset: 2n ** 40n + 7n,
+      payload: ENCODER.encode("hi"),
+    });
 
     const gap = decodeServerFrame(fromHex(HEX.gap));
-    expect(gap.kind).toBe(3);
-    expect(gap.handle).toBe(7);
-    expect(gap.bytesSeen).toBe(2n ** 63n);
-    expect(gap.dropped).toBe(2n ** 63n);
+    expect(gap).toEqual({
+      kind: 3,
+      handle: 7,
+      bytesSeen: 2n ** 63n,
+      dropped: 2n ** 63n,
+    });
   });
 
   it("decodeServerFrame rejects a short frame and accepts an empty payload", () => {
@@ -89,10 +93,12 @@ describe("terminalFrames", () => {
 
     const headerOnly = new Uint8Array(13);
     headerOnly[0] = 1;
-    const empty = decodeServerFrame(headerOnly);
-    expect(empty.kind).toBe(1);
-    expect(empty.offset).toBe(0n);
-    expect(empty.payload.length).toBe(0);
+    expect(decodeServerFrame(headerOnly)).toEqual({
+      kind: 1,
+      handle: 0,
+      offset: 0n,
+      payload: new Uint8Array(0),
+    });
   });
 
   it("decodeServerFrame gap length must be exactly 21 bytes", () => {
@@ -106,10 +112,12 @@ describe("terminalFrames", () => {
 
     const exact = new Uint8Array(21);
     exact[0] = 3;
-    const frame = decodeServerFrame(exact);
-    expect(frame.kind).toBe(3);
-    expect(frame.bytesSeen).toBe(0n);
-    expect(frame.dropped).toBe(0n);
+    expect(decodeServerFrame(exact)).toEqual({
+      kind: 3,
+      handle: 0,
+      bytesSeen: 0n,
+      dropped: 0n,
+    });
   });
 
   it("decodeServerFrame unknown kind names the byte and the accepted kinds", () => {
