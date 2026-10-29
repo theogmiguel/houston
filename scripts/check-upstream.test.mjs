@@ -198,3 +198,21 @@ test("check-upstream single-file import names drift and accepts it when listed i
     await rm(second.dir, { recursive: true, force: true });
   }
 });
+
+test("check-upstream ignored files that git ignores are not drift", async () => {
+  const repoFiles = {
+    ...fixtureRepo(),
+    ".gitignore": "*.tsbuildinfo\n",
+    "packages/contracts/tsconfig.tsbuildinfo": "{}\n",
+    "packages/shared/dist/out.js": "built\n",
+  };
+  const { dir, repo, upstream } = await makeFixture(repoFiles, fixtureRepo());
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    const result = await checkUpstream({ repoRoot: repo, upstreamDir: upstream });
+    // The unignored build output is still reported, so the filter is not a blanket skip.
+    assert.deepEqual(result.problems, ["packages/shared/dist/out.js exists only in the repo"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -2,6 +2,7 @@
 // Compares Houston's imported paths against an upstream checkout at the commit
 // in upstream.json. A copied file that drifts outside `adapted` fails, so later
 // upstream fixes arrive as plain diffs.
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -33,6 +34,23 @@ function listFiles(base) {
   };
   visit(base);
   return files;
+}
+
+// Paths under `base` that git ignores (build output such as *.tsbuildinfo).
+// A tracked file is never ignored, so drift in tracked files is still seen.
+// Outside a git work tree nothing is ignored.
+function ignoredPaths(repoRoot, base, files) {
+  const prefix = toPosix(relative(repoRoot, base));
+  const paths = files.map((f) => `${prefix}/${f}`);
+  if (paths.length === 0) return new Set();
+  const result = spawnSync("git", ["check-ignore", "--stdin", "-z"], {
+    cwd: repoRoot,
+    input: paths.join("\0"),
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  if (result.status !== 0 && result.status !== 1) return new Set();
+  return new Set(result.stdout.split("\0").filter(Boolean));
 }
 
 export function checkUpstream({ repoRoot, upstreamDir }) {
@@ -87,6 +105,10 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
     }
 
     const repoFiles = new Map(listFiles(repoPath).map((f) => [toPosix(relative(repoPath, f)), f]));
+    const ignored = ignoredPaths(repoRoot, repoPath, [...repoFiles.keys()]);
+    for (const rel of repoFiles.keys()) {
+      if (ignored.has(`${toPosix(relative(repoRoot, repoPath))}/${rel}`)) repoFiles.delete(rel);
+    }
     const upstreamFiles = new Map(
       listFiles(upstreamPath).map((f) => [toPosix(relative(upstreamPath, f)), f]),
     );
