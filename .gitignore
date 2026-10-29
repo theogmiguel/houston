@@ -48,3 +48,6 @@ __pycache__/
 
 # Local memory-tool configuration.
 .texas-ranger.toml
+
+# vitest reporter output written beside the package under test
+.vitest/
