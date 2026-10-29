@@ -17,6 +17,7 @@ allowBuilds:
 # entries the ported packages and the root use.
 catalog:
   "@effect/platform-node": 4.0.5
+  "@effect/platform-node-shared": 4.0.5
   "@effect/vitest": 4.0.5
   "@noble/curves": 1.9.1
   "@noble/hashes": 1.8.0
@@ -49,6 +50,29 @@ packageExtensions:
 
 patchedDependencies:
   "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
+  "mdast-util-math@3.0.0": patches/mdast-util-math@3.0.0.patch
+  "micromark-extension-gfm-table@2.1.1": patches/micromark-extension-gfm-table@2.1.1.patch
+  "micromark-extension-llm-math@3.1.0": patches/micromark-extension-llm-math@3.1.0.patch
 
 overrides:
   "@effect/vitest>vitest": "-"
+  # Keeps one vite-plus copy and lets the packageExtensions entry above resolve
+  # its "catalog:" spec through the override.
+  vite-plus: "catalog:"
+  # @effect/platform-node's ^4.0.5 range resolves platform-node-shared past the
+  # pinned effect, which the Effect family forbids.
+  "@effect/platform-node-shared": "catalog:"
+  # The math tokenizer shared depends on is upstream's patched fork; pin it and
+  # the packages its patches target.
+  mdast-util-math: 3.0.0
+  micromark-extension-llm-math: 3.1.0
+  micromark-extension-gfm-table: 2.1.1
+  # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
+  "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
+
+peerDependencyRules:
+  allowAny:
+    - typescript
+    - vite
+  allowedVersions:
+    vite: "*"
