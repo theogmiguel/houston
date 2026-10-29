@@ -90,6 +90,9 @@ const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
   Idle: 'text-[var(--text-muted)]'
 }
 
+/** States with nothing happening draw an outlined dot instead of a filled one. */
+const HOLLOW: ReadonlySet<StatusLabelValue> = new Set(['Idle', 'Paused', 'Missing', 'Not seen', 'Off', 'Kept'])
+
 /** Words for work in progress whose dot pulses; reduced motion keeps it still. */
 const PULSING: ReadonlySet<StatusLabelValue> = new Set(['Verifying'])
 
@@ -110,7 +113,7 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
     const text = children ?? status
     return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{typeof text === 'string' ? text.replace(/^./, (letter) => letter.toUpperCase()) : text}</span>
   }
-  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
+  const hollow = HOLLOW.has(status)
   return (
     <span role={variant === 'dot' ? 'img' : undefined} aria-label={typeof children === 'string' ? children : status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
