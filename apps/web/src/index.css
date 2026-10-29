@@ -1119,7 +1119,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --toolbar-border: var(--border);
   --toolbar-control: var(--popover);
   --toolbar-control-foreground: var(--foreground);
-  --toolbar-control-hover: var(--hover);
+  --toolbar-control-hover: var(--accent); /* --hover */
   --surface-raised: #ffffff; /* --card-hover */
   --foreground: #1d1d1f; /* --text-primary */
   --card: #fbfbfc; /* --card-bg */
