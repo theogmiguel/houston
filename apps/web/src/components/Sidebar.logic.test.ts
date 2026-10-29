@@ -14,6 +14,7 @@ import {
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
   resolveProjectStatusIndicator,
+  resolveSidebarStatusGlyphState,
   resolveSidebarSweepKeys,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
@@ -30,6 +31,7 @@ import {
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
+  type ThreadStatusPill,
   type SidebarSection,
   resolveSidebarDropVerb,
   groupSidebarThreadsByProject,
@@ -577,6 +579,32 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+describe("resolveSidebarStatusGlyphState", () => {
+  const pill = (label: ThreadStatusPill["label"]): ThreadStatusPill => ({
+    label,
+    colorClass: "",
+    dotClass: "",
+    pulse: false,
+  });
+
+  it("maps every thread status to one rail glyph", () => {
+    expect(resolveSidebarStatusGlyphState(null)).toBe("idle");
+    for (const label of ["Working", "Connecting", "Waiting"] as const) {
+      expect(resolveSidebarStatusGlyphState(pill(label))).toBe("working");
+    }
+    for (const label of [
+      "Pending Approval",
+      "Awaiting Input",
+      "Guest Request",
+      "Plan Ready",
+    ] as const) {
+      expect(resolveSidebarStatusGlyphState(pill(label))).toBe("needs");
+    }
+    expect(resolveSidebarStatusGlyphState(pill("Completed"))).toBe("done");
+    expect(resolveSidebarStatusGlyphState(pill("Failed"))).toBe("error");
   });
 });
 
