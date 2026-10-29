@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
-import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -2003,19 +2002,6 @@ export function AboutSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="legal" title="Legal">
-        <SettingsRow
-          {...searchableSetting("privacy-policy")}
-          description="How we handle your data, including the anonymous usage data Houston collects."
-          control={
-            <Button
-              render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
-              size="sm"
-              variant="outline"
-            >
-              View policy
-            </Button>
-          }
-        />
         <SettingsRow
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by Houston."

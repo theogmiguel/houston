@@ -904,7 +904,7 @@ export function terminatePosixOwnedProcessTree(input: {
     discover(table);
     const byPid = new Map(table.map((entry) => [entry.pid, entry]));
     const current = input.controller.identity(process.pid);
-    if (current === undefined) throw fail("Cannot identify the current T3 process group");
+    if (current === undefined) throw fail("Cannot identify the current Houston process group");
     const ledgerByPid = new Map(
       [...ledger.values()].map((process) => [process.pid, process] as const),
     );
@@ -1436,15 +1436,19 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           ELECTRON_RUN_AS_NODE: "1",
           T3_ACP_CGROUP_WRAPPER: "1",
         };
+  // A detached win32 shell has no console, so the console program a `.cmd` shim starts opens
+  // its own console and never reads the ACP pipes. taskkill /T still ends the tree by pid.
+  const detached =
+    containedSpawnCommand.shell && (yield* HostProcess.Platform) === "win32"
+      ? false
+      : options.ownDetachedProcessGroup;
   const child = yield* spawner
     .spawn(
       ChildProcess.make(containedSpawnCommand.command, containedSpawnCommand.args, {
         ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
         ...(spawnEnvironment ? { env: spawnEnvironment } : {}),
         extendEnv: options.spawn.extendEnv ?? true,
-        ...(options.ownDetachedProcessGroup === undefined
-          ? {}
-          : { detached: options.ownDetachedProcessGroup }),
+        ...(detached === undefined ? {} : { detached }),
         shell: containedSpawnCommand.shell,
       }),
     )

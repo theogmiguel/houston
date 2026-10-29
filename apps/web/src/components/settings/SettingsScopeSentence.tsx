@@ -75,12 +75,12 @@ export function SettingsScopeSentence() {
     onChange: scope.selectScope,
   };
   return (
-    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-sm text-muted-foreground sm:px-4">
-      <span className="flex min-w-0 items-center gap-1.5">
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[15px] leading-[22px] text-muted-foreground">
+      <span className="flex min-w-0 items-center gap-1">
         <span className="shrink-0">Applying settings for</span>
         <ProjectScopeMenu {...props} />
       </span>
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-center gap-1">
         <span className="shrink-0">
           {scope.search.machine || scope.scope.kind === "checkout" ? "on" : "across"}
         </span>
@@ -139,8 +139,8 @@ function ScopeMenu({
   const trigger = (
     <Trigger
       aria-label={`${ariaLabel}: ${label}`}
-      render={<Button variant="outline" size="sm" />}
-      className="min-w-0 max-w-72"
+      render={<Button variant="ghost" size="sm" />}
+      className="h-auto min-h-0 min-w-0 max-w-72 gap-1 rounded-sm px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-accent sm:text-[15px]"
     >
       {icon}
       <span className="min-w-0 truncate">{label}</span>

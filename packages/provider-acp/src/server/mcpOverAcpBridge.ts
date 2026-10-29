@@ -128,7 +128,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
             () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
           );
           return yield* Effect.fail(
-            new AcpMcpOverAcpError(`T3 Code MCP endpoint responded with HTTP ${response.status}.`),
+            new AcpMcpOverAcpError(`Houston MCP endpoint responded with HTTP ${response.status}.`),
           );
         }
         const payloads = [...(yield* Stream.runCollect(responsePayloads(response, bridgeError)))];
@@ -164,7 +164,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       if (!response.ok && response.status !== 404) {
         return yield* Effect.fail(
           new AcpMcpOverAcpError(
-            `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+            `Houston MCP endpoint rejected disconnect with HTTP ${response.status}.`,
           ),
         );
       }

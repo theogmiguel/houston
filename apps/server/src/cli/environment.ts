@@ -97,7 +97,7 @@ const environmentLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription(
-    "Link another T3 Code environment, so agents here can work there. It shows up there under Settings → Connections, where it can be revoked.",
+    "Link another Houston environment, so agents here can work there. It shows up there under Settings → Connections, where it can be revoked.",
   ),
   Command.withHandler((flags) =>
     runWithPeerLinks(flags, (links) =>
@@ -155,7 +155,7 @@ const environmentUnlinkCommand = Command.make("unlink", {
 );
 
 export const environmentCommand = Command.make("environment").pipe(
-  Command.withDescription("Link other T3 Code environments, so agents here can work there."),
+  Command.withDescription("Link other Houston environments, so agents here can work there."),
   Command.withSubcommands([
     environmentLinkCommand,
     environmentListCommand,

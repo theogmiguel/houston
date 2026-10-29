@@ -7,6 +7,8 @@ import { Command, GlobalFlag } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
+import { withHostedBaseDir } from "../houston/baseDir.ts";
+import { withoutTelemetry } from "../houston/noTelemetry.ts";
 import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
@@ -29,7 +31,11 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   },
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  const config = yield* resolveServerConfig(flags, logLevel, options);
+  const config = withoutTelemetry(
+    yield* withHostedBaseDir(flags, (hostedFlags) =>
+      resolveServerConfig(hostedFlags, logLevel, options),
+    ),
+  );
   const run = runServer.pipe(Effect.provideService(ServerConfig.ServerConfig, config));
   if (config.mode !== "desktop" || config.desktopBootstrapToken === undefined) return yield* run;
   yield* Effect.sync(() => {
@@ -72,13 +78,13 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-  Command.withDescription("Run the T3 Code server."),
+  Command.withDescription("Run the Houston server."),
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
   Command.withDescription(
-    "Run the T3 Code server without opening a browser and print headless pairing details.",
+    "Run the Houston server without opening a browser and print headless pairing details.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

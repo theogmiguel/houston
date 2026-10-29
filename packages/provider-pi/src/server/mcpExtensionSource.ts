@@ -329,7 +329,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       { signal: ctx.signal },
     );
     if (!approved) {
-      return { block: true, reason: \`\${event.toolName} was declined in T3 Code.\` };
+      return { block: true, reason: \`\${event.toolName} was declined in Houston.\` };
     }
   });
 
