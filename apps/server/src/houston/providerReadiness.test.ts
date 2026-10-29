@@ -3,9 +3,9 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type OrchestrationV2ProviderFailure,
-  type ProviderReadiness,
   type ServerProvider,
 } from "@t3tools/contracts";
+import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import { acpRegistryPromptFailure } from "@t3tools/provider-acp-registry/testing";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -13,7 +13,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Logger from "effect/Logger";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as EffectAcpErrors from "effect-acp/errors";
@@ -168,6 +170,17 @@ const makeHarness = Effect.fn("makeHarness")(function* (providers: ReadonlyArray
   return { fake, registry, ledger, readinessOf, readinessAfter };
 });
 
+/** Subscribes to published lists now; each pull takes the next one. */
+const subscribe = Effect.fn("subscribe")(function* (
+  changes: Stream.Stream<ReadonlyArray<ServerProvider>>,
+) {
+  const queue = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
+  yield* Stream.runForEach(changes, (providers) => Queue.offer(queue, providers)).pipe(
+    Effect.forkIn(yield* Effect.scope, { startImmediately: true }),
+  );
+  return Queue.take(queue).pipe(Effect.map((providers) => [providers] as const));
+});
+
 /** Pulls published lists until one satisfies the predicate. */
 const awaitPublished = <E, R>(
   pull: Effect.Effect<ReadonlyArray<ReadonlyArray<ServerProvider>>, E, R>,
@@ -182,7 +195,7 @@ const awaitPublished = <E, R>(
 
 const stateOf = (providers: ReadonlyArray<ServerProvider>) => providers[0]?.readiness?.state;
 
-const withLedger = <A, E>(effect: Effect.Effect<A, E, ReadinessLedger>) =>
+const withLedger = <A, E>(effect: Effect.Effect<A, E, ReadinessLedger | Scope.Scope>) =>
   effect.pipe(Effect.provide(layerReadinessLedger), Effect.scoped);
 
 describe("snapshot precedence", () => {
@@ -631,7 +644,7 @@ describe("a named reset expires on the clock", () => {
         const { registry, readinessAfter, readinessOf } = yield* makeHarness([claude]);
         const now = yield* DateTime.now;
         const resetAt = DateTime.formatIso(DateTime.add(now, { seconds: 2 }));
-        const events = yield* Stream.toPull(registry.streamChanges);
+        const events = yield* subscribe(registry.streamChanges);
 
         yield* readinessAfter(claude, [failed(claude, { ...CLAUDE_USAGE_LIMIT, resetAt }, now)]);
         // Drain the event that published outOfUsage.
@@ -698,7 +711,7 @@ describe("snapshot states take precedence over the ledger", () => {
           code: "subscription_sharing_v2_invalid_user",
         });
 
-        const events = yield* Stream.toPull(registry.streamChanges);
+        const events = yield* subscribe(registry.streamChanges);
         yield* fake.publish([{ ...codex, enabled: false }]);
         const off = yield* awaitPublished(events, (list) => stateOf(list) === "turnedOff");
         assert.deepInclude(off[0]?.readiness, { state: "turnedOff" });
@@ -726,7 +739,7 @@ describe("one log entry per readiness change", () => {
       Effect.gen(function* () {
         const claude = makeProvider("claudeAgent");
         const { registry, readinessAfter } = yield* makeHarness([claude]);
-        const events = yield* Stream.toPull(registry.streamChanges);
+        const events = yield* subscribe(registry.streamChanges);
         const refusal = failure({
           class: "provider_error",
           message: "API Error: 403 Forbidden.",
