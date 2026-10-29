@@ -254,6 +254,32 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/mcp src/mcpApps
 
+  # Upstream's git, pull-request, worktree, checkpoint, review and usage
+  # services behind the orchestrator. Windows reports but does not fail the
+  # job yet.
+  server-git:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Git and project service tests (src/git through src/usage)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/git src/vcs src/pullRequest src/sourceControl src/checkpointing src/workspace src/review src/usage
+
   # Every server test file no area job above runs, so each of the server's
   # test files runs in exactly one job; new directories land here by default.
   # Windows reports but does not fail the job yet.
