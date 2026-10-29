@@ -25,6 +25,10 @@ tracing = "0.1"
 dirs = "5"
 base64 = "0.22"
 sha2 = "0.10"
+# The v2 host derives upstream's rotating desktop-bootstrap credential; both
+# crates already ship through houston-core, so this adds no new download.
+hmac = "0.12"
+keyring = { version = "4.1.6", features = ["v1"] }
 notify = "8"
 tempfile = "3"
 uuid = { version = "1", features = ["v4"] }

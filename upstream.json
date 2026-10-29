@@ -191,6 +191,8 @@
     "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream",
     "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages, and drops patches for packages that are not installed",
     "apps/server/src/preview/PreviewBrowser.test.ts": "runs the install test without Effect's test clock; NTFS cannot store the pre-epoch fixture mtime",
-    "apps/server/src/preview/ServerBrowserContexts.test.ts": "profile path expectations use node:path so they match the platform separators"
+    "apps/server/src/preview/ServerBrowserContexts.test.ts": "profile path expectations use node:path so they match the platform separators",
+    "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime",
+    "scripts/lib/third-party-licenses.ts": "accepts Houston inline licence text and object override map"
   }
 }
