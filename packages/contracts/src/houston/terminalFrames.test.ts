@@ -76,6 +76,57 @@ describe("terminalFrames", () => {
     });
   });
 
+  it("range guard accepts the bounds of handle and offset", () => {
+    const low = encodeOutputFrame({ handle: 0, offset: 0n, payload: new Uint8Array(0) });
+    expect(hex(low)).toBe("0100000000" + "00".repeat(8));
+    const high = encodeOutputFrame({
+      handle: 2 ** 32 - 1,
+      offset: 2n ** 64n - 1n,
+      payload: new Uint8Array(0),
+    });
+    expect(hex(high)).toBe("01ffffffff" + "ff".repeat(8));
+  });
+
+  it("range guard rejects a handle outside [0, 2^32) naming the field and value", () => {
+    const payload = new Uint8Array(0);
+    for (const [handle, shown] of [
+      [2 ** 32, "4294967296"],
+      [-1, "-1"],
+      [1.5, "1.5"],
+    ] as const) {
+      expect(() => encodeOutputFrame({ handle, offset: 0n, payload })).toThrow(
+        new RangeError(
+          `terminal frame handle must be an integer in [0, 4294967295]; got ${shown}`,
+        ),
+      );
+      expect(() => encodeStdinFrame({ handle, payload })).toThrow(RangeError);
+      expect(() => encodeGapFrame({ handle, bytesSeen: 0n, dropped: 0n })).toThrow(RangeError);
+    }
+  });
+
+  it("range guard rejects an offset outside [0, 2^64) naming the field and value", () => {
+    const payload = new Uint8Array(0);
+    expect(() => encodeOutputFrame({ handle: 0, offset: 2n ** 64n, payload })).toThrow(
+      new RangeError(
+        "terminal frame offset must be an integer in [0, 2^64); got 18446744073709551616",
+      ),
+    );
+    expect(() => encodeOutputFrame({ handle: 0, offset: -1n, payload })).toThrow(
+      new RangeError("terminal frame offset must be an integer in [0, 2^64); got -1"),
+    );
+  });
+
+  it("range guard rejects gap counters outside [0, 2^64) naming the field and value", () => {
+    expect(() => encodeGapFrame({ handle: 0, bytesSeen: 2n ** 64n, dropped: 0n })).toThrow(
+      new RangeError(
+        "terminal frame bytesSeen must be an integer in [0, 2^64); got 18446744073709551616",
+      ),
+    );
+    expect(() => encodeGapFrame({ handle: 0, bytesSeen: 0n, dropped: -1n })).toThrow(
+      new RangeError("terminal frame dropped must be an integer in [0, 2^64); got -1"),
+    );
+  });
+
   it("decodeServerFrame decodes OUTPUT and GAP with bigint fields", () => {
     const output = decodeServerFrame(fromHex(HEX.output));
     expect(output).toEqual({
