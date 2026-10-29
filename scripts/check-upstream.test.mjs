@@ -216,3 +216,22 @@ test("check-upstream ignored files that git ignores are not drift", async () => 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("check-upstream stale adapted names a key matching no file or equal to upstream", async () => {
+  const files = fixtureRepo();
+  const manifest = JSON.parse(files["upstream.json"]);
+  manifest.adapted["packages/contracts/src/gone.ts"] = "file was deleted";
+  manifest.adapted["packages/contracts/src/a.ts"] = "no longer differs";
+  const repoFiles = { ...files, "upstream.json": JSON.stringify(manifest) };
+  const { dir, repo, upstream } = await makeFixture(repoFiles, files);
+  try {
+    const result = await checkUpstream({ repoRoot: repo, upstreamDir: upstream });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.problems, [
+      "packages/contracts/src/a.ts is listed in upstream.json adapted but equals upstream",
+      "packages/contracts/src/gone.ts is listed in upstream.json adapted but matches no imported file",
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

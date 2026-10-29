@@ -59,6 +59,8 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
   const excluded = config.excluded ?? [];
   const problems = [];
   let fileCount = 0;
+  // Every imported file compared, with the two paths it was compared at.
+  const compared = new Map();
 
   const differs = (path) =>
     `${path} differs from upstream and is not listed in upstream.json adapted`;
@@ -98,6 +100,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
 
     if (repoStat.isFile()) {
       fileCount += 1;
+      compared.set(imported, [repoPath, upstreamPath]);
       if (!(imported in adapted) && !readFileSync(repoPath).equals(readFileSync(upstreamPath))) {
         problems.push(differs(imported));
       }
@@ -122,6 +125,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       }
       upstreamFiles.delete(rel);
       fileCount += 1;
+      compared.set(path, [repoFile, upstreamFile]);
       if (!(path in adapted) && !readFileSync(repoFile).equals(readFileSync(upstreamFile))) {
         problems.push(differs(path));
       }
@@ -130,6 +134,15 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       const path = `${imported}/${rel}`;
       if (isExcluded(path, activeExcluded)) continue;
       problems.push(`${path} exists only upstream`);
+    }
+  }
+
+  // An adapted entry that no longer adapts anything would hide later drift.
+  for (const key of Object.keys(adapted)) {
+    if (!compared.has(key)) {
+      problems.push(`${key} is listed in upstream.json adapted but matches no imported file`);
+    } else if (readFileSync(compared.get(key)[0]).equals(readFileSync(compared.get(key)[1]))) {
+      problems.push(`${key} is listed in upstream.json adapted but equals upstream`);
     }
   }
 
