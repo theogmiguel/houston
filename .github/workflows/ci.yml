@@ -373,6 +373,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # On v2 the root package.json names pnpm; auto caching would require pnpm here.
+          package-manager-cache: false
       - uses: oven-sh/setup-bun@v2
       - name: Install renderer dependencies
         run: bun install --frozen-lockfile

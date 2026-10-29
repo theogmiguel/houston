@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # handoff/ is working material deleted before v2 merges into main; every other
+  # handoff/ is working material deleted before v2 merges into main, and the paths
+  # upstream.json lists as imported stay byte-identical to upstream; every other
   # Markdown file in the tree keeps the usual hygiene rules.
   doc-hygiene:
     if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
@@ -25,7 +26,17 @@ jobs:
             git rm -r -q --cached handoff
             rm -rf handoff
           fi
-      - name: check-doc-hygiene.sh (outside handoff/)
+      - name: Drop upstream's imported paths from the checked-out tree
+        run: |
+          if [ -f upstream.json ]; then
+            jq -r '.imported[]' upstream.json | while IFS= read -r path; do
+              if [ -e "$path" ]; then
+                git rm -r -q --cached -- "$path"
+                rm -rf -- "$path"
+              fi
+            done
+          fi
+      - name: check-doc-hygiene.sh (outside handoff/ and imported paths)
         run: bash scripts/check-doc-hygiene.sh
 
   # Ported code may only exist alongside its upstream MIT notice, in both the source
