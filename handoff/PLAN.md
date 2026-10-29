@@ -6,9 +6,9 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
 ## Branches
 
 - `v2` is the integration branch and the head of the draft PR. Nobody merges that PR alone.
-- Each slice lives on a short branch `v2/<slice>` (for example `v2/contracts`, `v2/claude-adapter`),
+- Each slice lives on a short branch `v2-<slice>` (for example `v2-contracts`, `v2-claude-adapter`; git cannot hold `v2/...` beside a `v2` branch),
   owned by one person, pushed to `origin` so the other can read it.
-- A finished slice enters `v2` through a PR `v2/<slice> → v2`, merged with a merge commit after CI
+- A finished slice enters `v2` through a PR `v2-<slice> → v2`, merged with a merge commit after CI
   and review. Small direct pushes to `v2` (plan updates, `main` merges) pull first; if the push is
   rejected, pull and merge again. Never rebase or force-push `v2`.
 - `main` is merged into `v2` (never rebased) once per release cut, by the person on integration duty
@@ -16,7 +16,7 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
 
 ## Decisions
 
-- **Copy, then adapt.** Upstream files are copied as they are, with the origin header, and changed
+- **Copy, then adapt.** Upstream files are copied as they are and changed
   only where Houston differs: Electron → Tauri, names, Houston features. Workers adapt; they do not
   retype. A small diff against upstream keeps its later fixes easy to pull.
 - **The server is detached.** Closing the app disconnects the client; threads and their agents keep
@@ -46,7 +46,7 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   server engine, keep Houston's native browser until the streamed view is measured for manual
   browsing, then pick one.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
-- **Slices merge through mini-PRs** `v2/<slice> → v2`, each with CI and the other maintainer's review.
+- **Slices merge through mini-PRs** `v2-<slice> → v2`, each with CI and the other maintainer's review.
 - **v1 is frozen to fixes.** After PR #368, `main` takes bug fixes only; new features go to v2.
   Each `main` change must later be merged into `v2`, which removes the code those changes touch.
 - **PR #368 merges into `main` first**, then `main` into `v2`, so the v2 PR does not carry the
@@ -57,8 +57,9 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
 
 - Commit 0 on `v2` adds T3 Code's MIT notice to `NOTICE` and `third-party-licenses.config.json`,
   pinned at upstream commit `9826dbb9`. No ported code was pushed before it.
-- Every ported file starts with a header naming the upstream path and commit, so upstream fixes can
-  be found later with a diff between pinned commits.
+- `upstream.json` at the root records the upstream commit and the imported and excluded paths.
+  Files carry no per-file header, so an unadapted file stays byte-identical to upstream and later
+  fixes come over as a diff between pinned commits.
 - The Claude Agent SDK ships under Anthropic's own terms, not MIT. Read them before the Claude adapter
   slice decides between the SDK and the CLI's stream-json protocol.
 
@@ -132,7 +133,7 @@ depend on it.
     `node scripts/gen-third-party-licenses.mjs`.
   - `AGENTS.md` and `handoff/`: announce before editing.
 - Workers (opencode panes on DeepSeek 4.1) run on each maintainer's own machine, in their own
-  worktrees. Only `v2/*` branches are shared.
+  worktrees. Only `v2-*` branches are shared.
 
 ## Done for a slice
 

@@ -98,7 +98,7 @@ jobs:
         run: bash scripts/check-menu-descriptions.sh
       # v2 carries handoff/ until it merges; v2-checks.yml runs this check without it.
       - name: check-doc-hygiene.sh (Markdown tree shape, plan cap, no diary content)
-        if: github.head_ref != 'v2' && !startsWith(github.head_ref, 'v2/')
+        if: github.head_ref != 'v2' && !startsWith(github.head_ref, 'v2-')
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh

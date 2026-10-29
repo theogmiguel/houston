@@ -15,7 +15,7 @@ jobs:
   # handoff/ is working material deleted before v2 merges into main; every other
   # Markdown file in the tree keeps the usual hygiene rules.
   doc-hygiene:
-    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -31,7 +31,7 @@ jobs:
   # Ported code may only exist alongside its upstream MIT notice, in both the source
   # tree's NOTICE and the inventory the app ships.
   licence-notice:
-    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2/')
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

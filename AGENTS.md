@@ -7,7 +7,7 @@ client; the daemon and its sessions continue running.
 
 ## Branch `v2`
 
-On `v2` and its `v2/*` slice branches, Houston is being rebuilt: panes become **threads**
+On `v2` and its `v2-*` slice branches, Houston is being rebuilt: panes become **threads**
 (structured conversations) served by a TypeScript sidecar, ported from the upstream project
 named in [NOTICE](NOTICE). `handoff/` holds the decisions and the slice plan; read
 `handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice. Until the v2 invariants
@@ -18,8 +18,8 @@ replace the sections below, these rules take precedence on this branch:
   still bind any change to the existing daemon. A thread may have a shell terminal drawer;
   agent CLIs do not run in terminals.
 - **Copy, then adapt:** upstream files are copied as they are and changed only where
-  Houston differs; do not retype them. Each keeps a header naming the upstream path and
-  commit. Ported code is pushed only with the MIT notice in `NOTICE` and
+  Houston differs; do not retype them. `upstream.json` at the root records the upstream
+  commit and the imported paths; files carry no per-file header. Ported code is pushed only with the MIT notice in `NOTICE` and
   `third-party-licenses.config.json`.
 - **Detached server:** closing the app must not stop the server or its agents.
 - **Renderer:** the upstream web app is the renderer base. Its primitives adopt Houston's
@@ -28,7 +28,7 @@ replace the sections below, these rules take precedence on this branch:
 - **Tests first:** a slice ports its upstream tests before its code and lands only with
   them green.
 - **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
-  rebase or force-push `v2`; slices enter through PRs `v2/<slice> → v2`. Regenerate lockfiles
+  rebase or force-push `v2`; slices enter through PRs `v2-<slice> → v2`. Regenerate lockfiles
   and the licence inventory instead of hand-merging them.
 - `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
   merges into `main`.
