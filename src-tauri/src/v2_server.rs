@@ -143,6 +143,8 @@ pub fn bootstrap_envelope(base_dir: &Path, port: u16, secret: &str, token: &str)
         "desktopBootstrapToken": token,
         "desktopBootstrapSecret": secret,
         "shellEnvironmentPrepared": false,
+        "tailscaleServeEnabled": false,
+        "tailscaleServePort": 443,
     })
 }
 
@@ -254,6 +256,26 @@ fn open_log(base_dir: &Path) -> Result<fs::File, String> {
         .map_err(|e| format!("opening the v2 server log {}: {e}", path.display()))
 }
 
+#[cfg(windows)]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+#[cfg(windows)]
+const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// The server must outlive the window: no console of its own, its own process
+/// group, and a breakaway from any job object the app was started in. A job
+/// that forbids breakaway is handled by the caller's fallback spawn.
+#[cfg(windows)]
+pub fn detached_spawn_flags(breakaway: bool) -> u32 {
+    let mut flags =
+        houston_core::spawn::CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+    if breakaway {
+        flags |= CREATE_BREAKAWAY_FROM_JOB;
+    }
+    flags
+}
+
 fn spawn_node(
     node: &Path,
     entry: &Path,
@@ -291,23 +313,17 @@ fn spawn_node(
     #[cfg(windows)]
     let mut child = {
         use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(
-            houston_core::spawn::CREATE_NO_WINDOW
-                | DETACHED_PROCESS
-                | CREATE_NEW_PROCESS_GROUP
-                | CREATE_BREAKAWAY_FROM_JOB,
-        );
+        cmd.creation_flags(detached_spawn_flags(true));
         match cmd.spawn() {
             Ok(child) => child,
             // A job object that forbids breakaway makes CreateProcess fail with
-            // access denied; detach inside the job instead of refusing to start.
+            // access denied; stay in the job instead of refusing to start, and
+            // say so because the server now shares the app's lifetime.
             Err(first) => {
                 eprintln!(
                     "houston-tauri: v2 server breakaway spawn failed ({first}); retrying \
-                     without CREATE_BREAKAWAY_FROM_JOB"
+                     without CREATE_BREAKAWAY_FROM_JOB. The server will share the app's job \
+                     and may not survive the app closing."
                 );
                 let mut retry = houston_core::spawn::command(node);
                 retry
@@ -318,11 +334,7 @@ fn spawn_node(
                     .stdin(Stdio::piped())
                     .stdout(open_log(base_dir)?)
                     .stderr(open_log(base_dir)?)
-                    .creation_flags(
-                        houston_core::spawn::CREATE_NO_WINDOW
-                            | DETACHED_PROCESS
-                            | CREATE_NEW_PROCESS_GROUP,
-                    );
+                    .creation_flags(detached_spawn_flags(false));
                 retry
                     .spawn()
                     .map_err(|second| format!("spawning the v2 server with {node:?}: {second}"))?
@@ -744,7 +756,36 @@ mod tests {
         assert_eq!(envelope["host"], "127.0.0.1");
         assert_eq!(envelope["desktopBootstrapSecret"], "secret");
         assert_eq!(envelope["desktopBootstrapToken"], "token");
+        assert_eq!(envelope["tailscaleServeEnabled"], false);
+        assert_eq!(envelope["tailscaleServePort"], 443);
         assert!(envelope["t3Home"].as_str().unwrap().ends_with("v2"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_detached_spawn_flags_break_away_from_a_job() {
+        let flags = detached_spawn_flags(true);
+        assert_eq!(flags & CREATE_BREAKAWAY_FROM_JOB, CREATE_BREAKAWAY_FROM_JOB);
+        assert_eq!(flags & DETACHED_PROCESS, DETACHED_PROCESS);
+        assert_eq!(flags & CREATE_NEW_PROCESS_GROUP, CREATE_NEW_PROCESS_GROUP);
+        assert_eq!(
+            flags & houston_core::spawn::CREATE_NO_WINDOW,
+            houston_core::spawn::CREATE_NO_WINDOW
+        );
+        assert_eq!(
+            flags & 0x0000_0010,
+            0,
+            "detached must not ask for a console"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_fallback_spawn_flags_keep_detachment_without_breakaway() {
+        let flags = detached_spawn_flags(false);
+        assert_eq!(flags & CREATE_BREAKAWAY_FROM_JOB, 0);
+        assert_eq!(flags & DETACHED_PROCESS, DETACHED_PROCESS);
+        assert_eq!(flags & CREATE_NEW_PROCESS_GROUP, CREATE_NEW_PROCESS_GROUP);
     }
 
     #[test]
