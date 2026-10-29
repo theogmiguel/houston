@@ -279,14 +279,16 @@ describe("houston server entrypoint", () => {
   it(
     "a hosted start without t3Home exits 64",
     async () => {
-      for (const t3Home of ["", "   ", undefined]) {
-        const root = makeSandbox();
-        const port = await freePort();
-        const server = spawnServer({ env: sandboxEnv(root), envelope: envelope(port, t3Home) });
-        expect(await exitCode(server), `t3Home ${JSON.stringify(t3Home)}`).toBe(64);
-        expect(server.output.join("")).toContain("t3Home");
-        expect(NodeFS.existsSync(NodePath.join(root, ".t3"))).toBe(false);
-      }
+      await Promise.all(
+        ["", "   ", undefined].map(async (t3Home) => {
+          const root = makeSandbox();
+          const port = await freePort();
+          const server = spawnServer({ env: sandboxEnv(root), envelope: envelope(port, t3Home) });
+          expect(await exitCode(server), `t3Home ${JSON.stringify(t3Home)}`).toBe(64);
+          expect(server.output.join("")).toContain("t3Home");
+          expect(NodeFS.existsSync(NodePath.join(root, ".t3"))).toBe(false);
+        }),
+      );
     },
     TEST_TIMEOUT_MS,
   );
@@ -294,29 +296,31 @@ describe("houston server entrypoint", () => {
   it(
     "a hosted override is ignored with one warning",
     async () => {
-      for (const override of ["T3CODE_HOME", "--base-dir", undefined] as const) {
-        const root = makeSandbox();
-        const ignored = NodePath.join(root, "x");
-        const base = NodePath.join(root, ".houston-dev", "v2");
-        const port = await freePort();
-        const server = spawnServer({
-          args: override === "--base-dir" ? ["--base-dir", ignored] : [],
-          env: sandboxEnv(root, override === "T3CODE_HOME" ? { T3CODE_HOME: ignored } : {}),
-          envelope: envelope(port, base),
-        });
-        await waitReady(server, port);
+      await Promise.all(
+        (["T3CODE_HOME", "--base-dir", undefined] as const).map(async (override) => {
+          const root = makeSandbox();
+          const ignored = NodePath.join(root, "x");
+          const base = NodePath.join(root, ".houston-dev", "v2");
+          const port = await freePort();
+          const server = spawnServer({
+            args: override === "--base-dir" ? ["--base-dir", ignored] : [],
+            env: sandboxEnv(root, override === "T3CODE_HOME" ? { T3CODE_HOME: ignored } : {}),
+            envelope: envelope(port, base),
+          });
+          await waitReady(server, port);
 
-        expect((await readRecord(base)).pid).toBe(server.child.pid);
-        expect(NodeFS.existsSync(ignored)).toBe(false);
-        if (override === undefined) {
-          expect(lines(server).filter((line) => line.includes("houston: ignoring"))).toEqual([]);
-        } else {
-          const naming = lines(server).filter((line) => line.includes(override));
-          expect(naming, server.output.join("")).toHaveLength(1);
-          expect(naming[0]).toContain("t3Home");
-        }
-        await shutdown(server);
-      }
+          expect((await readRecord(base)).pid).toBe(server.child.pid);
+          expect(NodeFS.existsSync(ignored)).toBe(false);
+          if (override === undefined) {
+            expect(lines(server).filter((line) => line.includes("houston: ignoring"))).toEqual([]);
+          } else {
+            const naming = lines(server).filter((line) => line.includes(override));
+            expect(naming, server.output.join("")).toHaveLength(1);
+            expect(naming[0]).toContain("t3Home");
+          }
+          await shutdown(server);
+        }),
+      );
     },
     TEST_TIMEOUT_MS,
   );
@@ -324,18 +328,20 @@ describe("houston server entrypoint", () => {
   it(
     "a v1 channel dir exits 64",
     async () => {
-      for (const file of ["daemon.json", "daemon.lock"]) {
-        const root = makeSandbox();
-        const channel = NodePath.join(root, ".houston-dev");
-        NodeFS.mkdirSync(channel, { recursive: true });
-        NodeFS.writeFileSync(NodePath.join(channel, file), "{}\n");
-        const port = await freePort();
+      await Promise.all(
+        ["daemon.json", "daemon.lock"].map(async (file) => {
+          const root = makeSandbox();
+          const channel = NodePath.join(root, ".houston-dev");
+          NodeFS.mkdirSync(channel, { recursive: true });
+          NodeFS.writeFileSync(NodePath.join(channel, file), "{}\n");
+          const port = await freePort();
 
-        const server = spawnServer({ env: sandboxEnv(root), envelope: envelope(port, channel) });
-        expect(await exitCode(server)).toBe(64);
-        expect(server.output.join("")).toContain(file);
-        expect(NodeFS.readdirSync(channel)).toEqual([file]);
-      }
+          const server = spawnServer({ env: sandboxEnv(root), envelope: envelope(port, channel) });
+          expect(await exitCode(server)).toBe(64);
+          expect(server.output.join("")).toContain(file);
+          expect(NodeFS.readdirSync(channel)).toEqual([file]);
+        }),
+      );
     },
     TEST_TIMEOUT_MS,
   );
@@ -369,46 +375,48 @@ describe("houston server entrypoint", () => {
   it(
     "no OTLP request reaches the sink",
     async () => {
-      for (const command of [[], ["start"], ["serve"]]) {
-        const root = makeSandbox();
-        const base = NodePath.join(root, ".houston-dev", "v2");
-        const sink = await startSink();
-        NodeFS.mkdirSync(NodePath.join(base, "userdata"), { recursive: true });
-        NodeFS.writeFileSync(
-          NodePath.join(base, "userdata", "settings.json"),
-          `${JSON.stringify({
-            observability: {
-              otlpTracesUrl: `${sink.url}/settings/v1/traces`,
-              otlpMetricsUrl: `${sink.url}/settings/v1/metrics`,
-              otlpLogsUrl: `${sink.url}/settings/v1/logs`,
-            },
-          })}\n`,
-        );
-        const port = await freePort();
-        const server = spawnServer({
-          args: command,
-          env: sandboxEnv(root, {
-            T3CODE_OTLP_TRACES_URL: `${sink.url}/env/v1/traces`,
-            T3CODE_OTLP_METRICS_URL: `${sink.url}/env/v1/metrics`,
-            T3CODE_OTLP_LOGS_URL: `${sink.url}/env/v1/logs`,
-            T3CODE_OTLP_EXPORT_INTERVAL_MS: "500",
-            OTEL_EXPORTER_OTLP_ENDPOINT: `${sink.url}/otel`,
-            OTEL_METRIC_EXPORT_INTERVAL: "500",
-            OTEL_BSP_SCHEDULE_DELAY: "500",
-          }),
-          envelope: envelope(port, base, {
-            otlpTracesUrl: `${sink.url}/envelope/v1/traces`,
-            otlpMetricsUrl: `${sink.url}/envelope/v1/metrics`,
-            otlpLogsUrl: `${sink.url}/envelope/v1/logs`,
-          }),
-        });
-        await waitReady(server, port);
-        await sleep(3_000);
-        await shutdown(server);
-        await sleep(500);
+      await Promise.all(
+        [[], ["start"], ["serve"]].map(async (command) => {
+          const root = makeSandbox();
+          const base = NodePath.join(root, ".houston-dev", "v2");
+          const sink = await startSink();
+          NodeFS.mkdirSync(NodePath.join(base, "userdata"), { recursive: true });
+          NodeFS.writeFileSync(
+            NodePath.join(base, "userdata", "settings.json"),
+            `${JSON.stringify({
+              observability: {
+                otlpTracesUrl: `${sink.url}/settings/v1/traces`,
+                otlpMetricsUrl: `${sink.url}/settings/v1/metrics`,
+                otlpLogsUrl: `${sink.url}/settings/v1/logs`,
+              },
+            })}\n`,
+          );
+          const port = await freePort();
+          const server = spawnServer({
+            args: command,
+            env: sandboxEnv(root, {
+              T3CODE_OTLP_TRACES_URL: `${sink.url}/env/v1/traces`,
+              T3CODE_OTLP_METRICS_URL: `${sink.url}/env/v1/metrics`,
+              T3CODE_OTLP_LOGS_URL: `${sink.url}/env/v1/logs`,
+              T3CODE_OTLP_EXPORT_INTERVAL_MS: "500",
+              OTEL_EXPORTER_OTLP_ENDPOINT: `${sink.url}/otel`,
+              OTEL_METRIC_EXPORT_INTERVAL: "500",
+              OTEL_BSP_SCHEDULE_DELAY: "500",
+            }),
+            envelope: envelope(port, base, {
+              otlpTracesUrl: `${sink.url}/envelope/v1/traces`,
+              otlpMetricsUrl: `${sink.url}/envelope/v1/metrics`,
+              otlpLogsUrl: `${sink.url}/envelope/v1/logs`,
+            }),
+          });
+          await waitReady(server, port);
+          await sleep(3_000);
+          await shutdown(server);
+          await sleep(500);
 
-        expect(sink.requests, `command ${command.join(" ") || "(default)"}`).toEqual([]);
-      }
+          expect(sink.requests, `command ${command.join(" ") || "(default)"}`).toEqual([]);
+        }),
+      );
     },
     TEST_TIMEOUT_MS,
   );
