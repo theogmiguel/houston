@@ -202,3 +202,29 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/terminal
 
+  # Upstream's orchestration engine: sessions, tasks, queues and scheduling,
+  # the layer that replaces pane_* orchestration. The adapters have their own
+  # job in server-providers; Windows reports but does not fail the job yet.
+  server-orchestration:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Orchestration tests (src/orchestration-v2, Adapters excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/orchestration-v2 --exclude "src/orchestration-v2/Adapters/**"
+
