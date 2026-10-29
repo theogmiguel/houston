@@ -43,16 +43,20 @@ function isAlive(pid: number): boolean {
 }
 
 // The server spawns helpers of its own; kill each tree, never a name or a broadcast pid.
+// On Linux the group outlives a leader that exited first, so it is signalled regardless.
 function killTree(pid: number | undefined): void {
-  if (pid === undefined || pid <= 0 || !isAlive(pid)) return;
+  if (pid === undefined || pid <= 0) return;
   if (IS_WINDOWS) {
+    if (!isAlive(pid)) return;
     NodeChildProcess.spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
     return;
   }
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    process.kill(pid, "SIGKILL");
+  for (const target of [-pid, pid]) {
+    try {
+      process.kill(target, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
   }
 }
 
@@ -161,10 +165,16 @@ function spawnServer(options: {
   readonly args?: ReadonlyArray<string>;
   readonly env: NodeJS.ProcessEnv;
   readonly envelope?: Record<string, unknown>;
+  // false: the host names the envelope's fd through T3CODE_BOOTSTRAP_FD in `env` instead.
+  readonly bootstrapFlag?: boolean;
 }): Server {
   const child = NodeChildProcess.spawn(
     process.execPath,
-    [BIN, ...(options.args ?? []), "--bootstrap-fd", "0"],
+    [
+      BIN,
+      ...(options.args ?? []),
+      ...(options.bootstrapFlag === false ? [] : ["--bootstrap-fd", "0"]),
+    ],
     {
       cwd: SERVER_DIR,
       env: options.env,
@@ -296,27 +306,47 @@ describe("houston server entrypoint", () => {
   it(
     "a hosted override is ignored with one warning",
     async () => {
+      // `warns` names the one ignored source; a blank source is not an override.
+      const rows = [
+        { name: "T3CODE_HOME", home: "x", warns: "T3CODE_HOME" },
+        { name: "--base-dir", baseDir: "x", warns: "--base-dir" },
+        { name: "T3CODE_BOOTSTRAP_FD", home: "x", envFd: true, warns: "T3CODE_HOME" },
+        { name: "alone" },
+        { name: "blank T3CODE_HOME", home: "" },
+        { name: "blank --base-dir", baseDir: "" },
+      ] as const satisfies ReadonlyArray<{
+        readonly name: string;
+        readonly home?: string;
+        readonly baseDir?: string;
+        readonly envFd?: boolean;
+        readonly warns?: string;
+      }>;
       await Promise.all(
-        (["T3CODE_HOME", "--base-dir", undefined] as const).map(async (override) => {
+        rows.map(async (row) => {
           const root = makeSandbox();
-          const ignored = NodePath.join(root, "x");
+          const resolve = (value: string) => (value === "" ? "" : NodePath.join(root, value));
           const base = NodePath.join(root, ".houston-dev", "v2");
           const port = await freePort();
           const server = spawnServer({
-            args: override === "--base-dir" ? ["--base-dir", ignored] : [],
-            env: sandboxEnv(root, override === "T3CODE_HOME" ? { T3CODE_HOME: ignored } : {}),
+            args: "baseDir" in row ? ["--base-dir", resolve(row.baseDir)] : [],
+            env: sandboxEnv(root, {
+              ...("home" in row ? { T3CODE_HOME: resolve(row.home) } : {}),
+              ...("envFd" in row ? { T3CODE_BOOTSTRAP_FD: "0" } : {}),
+            }),
             envelope: envelope(port, base),
+            bootstrapFlag: !("envFd" in row),
           });
           await waitReady(server, port);
 
-          expect((await readRecord(base)).pid).toBe(server.child.pid);
-          expect(NodeFS.existsSync(ignored)).toBe(false);
-          if (override === undefined) {
-            expect(lines(server).filter((line) => line.includes("houston: ignoring"))).toEqual([]);
+          expect((await readRecord(base)).pid, row.name).toBe(server.child.pid);
+          expect(NodeFS.existsSync(NodePath.join(root, "x")), row.name).toBe(false);
+          const warnings = lines(server).filter((line) => line.includes("houston: ignoring"));
+          if ("warns" in row) {
+            expect(warnings, `${row.name}\n${server.output.join("")}`).toHaveLength(1);
+            expect(warnings[0]).toContain(row.warns);
+            expect(warnings[0]).toContain("t3Home");
           } else {
-            const naming = lines(server).filter((line) => line.includes(override));
-            expect(naming, server.output.join("")).toHaveLength(1);
-            expect(naming[0]).toContain("t3Home");
+            expect(warnings, row.name).toEqual([]);
           }
           await shutdown(server);
         }),
