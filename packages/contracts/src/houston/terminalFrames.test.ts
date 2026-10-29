@@ -199,6 +199,47 @@ describe("terminalFrames", () => {
     expect(serverError.kind).toBe(2);
   });
 
+  it("client frame pairs with encodeGapFrame, which is exactly 21 bytes at any counter", () => {
+    const widest = encodeGapFrame({ handle: 2 ** 32 - 1, bytesSeen: 2n ** 64n - 1n, dropped: 0n });
+    expect(widest.length).toBe(21);
+    expect(encodeGapFrame({ handle: 0, bytesSeen: 0n, dropped: 0n }).length).toBe(21);
+  });
+
+  it("client frame decodes a 5-byte STDIN with an empty payload", () => {
+    const headerOnly = new Uint8Array(5);
+    headerOnly[0] = 2;
+    expect(decodeClientFrame(headerOnly)).toEqual({
+      kind: 2,
+      handle: 0,
+      payload: new Uint8Array(0),
+    });
+  });
+
+  it("client frame rejects 4 bytes naming 4 and 5", () => {
+    const short = new Uint8Array(4);
+    short[0] = 2;
+    const error = frameError(() => decodeClientFrame(short));
+    expect(error.message).toBe("STDIN frame is 4 bytes; header needs 5");
+    expect(error.kind).toBe(2);
+    expect(error.actualLength).toBe(4);
+    expect(error.expectedLength).toBe(5);
+  });
+
+  it("client frame rejects the OUTPUT and GAP kinds", () => {
+    const output = new Uint8Array(13);
+    output[0] = 1;
+    expect(frameError(() => decodeClientFrame(output)).message).toBe(
+      "decodeClientFrame accepts client frames only (2 STDIN); got 1 OUTPUT",
+    );
+    const gap = new Uint8Array(21);
+    gap[0] = 3;
+    const error = frameError(() => decodeClientFrame(gap));
+    expect(error.message).toBe(
+      "decodeClientFrame accepts client frames only (2 STDIN); got 3 GAP",
+    );
+    expect(error.kind).toBe(3);
+  });
+
   it("decodeClientFrame decodes STDIN and rejects server frames", () => {
     const payload = ENCODER.encode("hi");
     const decoded = decodeClientFrame(encodeStdinFrame({ handle: 7, payload }));
