@@ -26,7 +26,7 @@ re-run (no Rust diff vs `main`). Before/after captures are still owed on the PR:
 2. **Port T3 Code 1:1.** Read it line by line and write it in Houston: server, provider adapters,
    orchestration, thread UI. Not MonoCode code (MonoCode is UX reference only).
 3. **Architecture:**
-   - **Tauri (Rust)** replaces Electron: window, tray, updater, OS keychain, Houston's native browser,
+   - **Tauri (Rust)** replaces Electron: window, tray, updater, OS keychain,
      renderer watchdog, and a supervisor that starts, health-checks and restarts the server.
    - **Server in TypeScript with Effect**, ported from `t3code/apps/server` and `t3code/packages/*`,
      run as a Tauri sidecar. It owns threads, the event store (SQLite), providers (Claude via
