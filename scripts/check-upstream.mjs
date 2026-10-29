@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // Compares Houston's imported paths against an upstream checkout at the commit
-// recorded in upstream.json. A copied file that drifts outside `adapted` fails
-// the check: unadapted files stay byte-identical to upstream, so later upstream
-// fixes arrive as plain diffs.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+// in upstream.json. A copied file that drifts outside `adapted` fails, so later
+// upstream fixes arrive as plain diffs.
 import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -37,18 +36,21 @@ function listFiles(base) {
   return files;
 }
 
-// Build artifacts that .gitignore already excludes (tsconfig.tsbuildinfo and
-// friends) are not upstream files either; outside a git checkout, where the
-// ignore rules do not exist, everything on disk counts.
-function withoutIgnored(repoRoot, files) {
-  if (!existsSync(join(repoRoot, ".git"))) return files;
-  const listed = spawnSync("git", ["check-ignore", "--stdin", "-z"], {
-    input: files.map((f) => relative(repoRoot, f)).join("\0") + "\0",
+// Paths under `base` that git ignores (build output such as *.tsbuildinfo).
+// A tracked file is never ignored, so drift in tracked files is still seen.
+// Outside a git work tree nothing is ignored.
+function ignoredPaths(repoRoot, base, files) {
+  const prefix = toPosix(relative(repoRoot, base));
+  const paths = files.map((f) => `${prefix}/${f}`);
+  if (paths.length === 0) return new Set();
+  const result = spawnSync("git", ["check-ignore", "--stdin", "-z"], {
     cwd: repoRoot,
+    input: paths.join("\0"),
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
   });
-  if (listed.status !== 0 || !listed.stdout) return files;
-  const ignored = new Set(listed.stdout.toString().split("\0").filter(Boolean));
-  return files.filter((f) => !ignored.has(relative(repoRoot, f)));
+  if (result.status !== 0 && result.status !== 1) return new Set();
+  return new Set(result.stdout.split("\0").filter(Boolean));
 }
 
 export function checkUpstream({ repoRoot, upstreamDir }) {
@@ -57,6 +59,8 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
   const excluded = config.excluded ?? [];
   const problems = [];
   let fileCount = 0;
+  // Every imported file compared, with the two paths it was compared at.
+  const compared = new Map();
 
   const differs = (path) =>
     `${path} differs from upstream and is not listed in upstream.json adapted`;
@@ -96,15 +100,18 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
 
     if (repoStat.isFile()) {
       fileCount += 1;
+      compared.set(imported, [repoPath, upstreamPath]);
       if (!(imported in adapted) && !readFileSync(repoPath).equals(readFileSync(upstreamPath))) {
         problems.push(differs(imported));
       }
       continue;
     }
 
-    const repoFiles = new Map(
-      withoutIgnored(repoRoot, listFiles(repoPath)).map((f) => [toPosix(relative(repoPath, f)), f]),
-    );
+    const repoFiles = new Map(listFiles(repoPath).map((f) => [toPosix(relative(repoPath, f)), f]));
+    const ignored = ignoredPaths(repoRoot, repoPath, [...repoFiles.keys()]);
+    for (const rel of repoFiles.keys()) {
+      if (ignored.has(`${toPosix(relative(repoRoot, repoPath))}/${rel}`)) repoFiles.delete(rel);
+    }
     const upstreamFiles = new Map(
       listFiles(upstreamPath).map((f) => [toPosix(relative(upstreamPath, f)), f]),
     );
@@ -118,6 +125,7 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       }
       upstreamFiles.delete(rel);
       fileCount += 1;
+      compared.set(path, [repoFile, upstreamFile]);
       if (!(path in adapted) && !readFileSync(repoFile).equals(readFileSync(upstreamFile))) {
         problems.push(differs(path));
       }
@@ -126,6 +134,15 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       const path = `${imported}/${rel}`;
       if (isExcluded(path, activeExcluded)) continue;
       problems.push(`${path} exists only upstream`);
+    }
+  }
+
+  // An adapted entry that no longer adapts anything would hide later drift.
+  for (const key of Object.keys(adapted)) {
+    if (!compared.has(key)) {
+      problems.push(`${key} is listed in upstream.json adapted but matches no imported file`);
+    } else if (readFileSync(compared.get(key)[0]).equals(readFileSync(compared.get(key)[1]))) {
+      problems.push(`${key} is listed in upstream.json adapted but equals upstream`);
     }
   }
 
