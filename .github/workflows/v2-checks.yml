@@ -100,10 +100,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Scoped to the packages this gate owns: a workspace-wide `-r` typecheck
-      # fails in apps/server, whose tsconfig includes ../../scripts/lib without
-      # upstream's scripts workspace package. Widen both steps when it is green.
-      - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared typecheck
+      - run: pnpm -r typecheck
       - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
       - name: Fetch upstream t3code at the pinned commit
         run: |
@@ -113,3 +110,27 @@ jobs:
           git -C "$RUNNER_TEMP/t3code" checkout --detach FETCH_HEAD
       - name: check-upstream.mjs (copied files match the pinned commit)
         run: node scripts/check-upstream.mjs "$RUNNER_TEMP/t3code"
+
+  # Upstream's persistence store on both release platforms: the event store,
+  # migrations, projections, outbox and receipts run against a real node:sqlite
+  # database in temp directories.
+  server-persistence:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Persistence tests (src/persistence)
+        run: pnpm --filter t3 exec vp test run src/persistence
