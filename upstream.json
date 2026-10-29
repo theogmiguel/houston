@@ -74,7 +74,8 @@
     "apps/server/src/houston/baseDir.ts",
     "apps/server/src/houston/entrypoint.test.ts",
     "apps/server/src/houston/noTelemetry.test.ts",
-    "apps/server/src/houston/noTelemetry.ts"
+    "apps/server/src/houston/noTelemetry.ts",
+    "apps/server/src/houston/relayTracing.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -214,6 +215,6 @@
     "apps/server/src/vcs/GitVcsDriverCore.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
     "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home, and every OTLP export is cleared",
     "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
-    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one"
+    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one, and no relay-client tracer in place of the OTLP one"
   }
 }

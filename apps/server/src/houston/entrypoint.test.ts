@@ -3,6 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
+import * as NodeHttps from "node:https";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -31,7 +32,7 @@ interface Server {
 const sandboxes: Array<string> = [];
 const servers: Array<Server> = [];
 const pids: Array<number> = [];
-const sinks: Array<NodeHttp.Server> = [];
+const sinks: Array<NodeNet.Server> = [];
 
 function isAlive(pid: number): boolean {
   try {
@@ -124,16 +125,47 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-async function startSink(): Promise<{ readonly url: string; readonly requests: Array<string> }> {
+// Non-secret, self-signed 127.0.0.1 certificate from `outboundHttp.test.ts`, valid until 2126;
+// the relay tracer exports only to an https URL.
+const TEST_KEY = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg3EwCztQysKTvzdcR
+g0LWq+axzUd4tHi9PyMdqh7PlGShRANCAARfQpoLgv/tOsHWCLriDza7Ruaey2b7
+mR/nS6mLu6W7+agkEqDm0mE3F/ngpPjL4Jj0IGadeMcKNKFRSBgiLdfn
+-----END PRIVATE KEY-----
+`;
+const TEST_CERT = `-----BEGIN CERTIFICATE-----
+MIIBsDCCAVagAwIBAgIUWbn2Wt5kTxii1UU57NJMt/wTaUgwCgYIKoZIzj0EAwIw
+JDEiMCAGA1UEAwwZdDNjb2RlIG91dGJvdW5kIGh0dHAgdGVzdDAgFw0yNjEwMTEy
+MjQyMzZaGA8yMTI2MDkxNzIyNDIzNlowJDEiMCAGA1UEAwwZdDNjb2RlIG91dGJv
+dW5kIGh0dHAgdGVzdDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABF9CmguC/+06
+wdYIuuIPNrtG5p7LZvuZH+dLqYu7pbv5qCQSoObSYTcX+eCk+MvgmPQgZp14xwo0
+oVFIGCIt1+ejZDBiMB0GA1UdDgQWBBSsekAc30Q/zdIE/tvVDQKJL5oiCDAfBgNV
+HSMEGDAWgBSsekAc30Q/zdIE/tvVDQKJL5oiCDAPBgNVHRMBAf8EBTADAQH/MA8G
+A1UdEQQIMAaHBH8AAAEwCgYIKoZIzj0EAwIDSAAwRQIgebUrkyP56242EJB7nCV7
+A+Ke/q0rNPya3fjQa9O5B+kCIQC1SfmdNaFcNJ4JINlus4FfrRnfKiADS2MIJR9f
+99BN0A==
+-----END CERTIFICATE-----
+`;
+
+async function startSink(
+  options: { readonly tls?: boolean } = {},
+): Promise<{ readonly url: string; readonly requests: Array<string> }> {
   const requests: Array<string> = [];
-  const sink = NodeHttp.createServer((request, response) => {
+  const handler: NodeHttp.RequestListener = (request, response) => {
     requests.push(`${request.method} ${request.url}`);
     request.resume();
     request.on("end", () => response.writeHead(200).end("{}"));
-  });
+  };
+  const sink = options.tls
+    ? NodeHttps.createServer({ key: TEST_KEY, cert: TEST_CERT }, handler)
+    : NodeHttp.createServer(handler);
   await new Promise<void>((resolve) => sink.listen(0, "127.0.0.1", resolve));
   sinks.push(sink);
-  return { url: `http://127.0.0.1:${(sink.address() as NodeNet.AddressInfo).port}`, requests };
+  const scheme = options.tls ? "https" : "http";
+  return {
+    url: `${scheme}://127.0.0.1:${(sink.address() as NodeNet.AddressInfo).port}`,
+    requests,
+  };
 }
 
 function desktopToken(secret: string): string {
@@ -210,6 +242,21 @@ async function environmentStatus(port: number): Promise<number | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function exchangeCredential(port: number, credential: string): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}/oauth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: credential,
+      subject_token_type: "urn:t3:params:oauth:token-type:environment-bootstrap",
+      requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      client_label: "Houston",
+      client_device_type: "desktop",
+    }).toString(),
+  });
 }
 
 async function waitReady(server: Server, port: number): Promise<void> {
@@ -452,6 +499,40 @@ describe("houston server entrypoint", () => {
   );
 
   it(
+    "no relay trace reaches the sink",
+    async () => {
+      const root = makeSandbox();
+      const base = NodePath.join(root, ".houston-dev", "v2");
+      const sink = await startSink({ tls: true });
+      const caFile = NodePath.join(root, "sink-ca.pem");
+      NodeFS.writeFileSync(caFile, TEST_CERT);
+      const port = await freePort();
+      const hosted = envelope(port, base);
+      const server = spawnServer({
+        env: sandboxEnv(root, {
+          NODE_EXTRA_CA_CERTS: caFile,
+          T3CODE_TELEMETRY_ENABLED: "true",
+          T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: `${sink.url}/v1/traces`,
+          T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: "houston-test",
+          T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: "houston-test-token",
+        }),
+        envelope: hosted,
+      });
+      await waitReady(server, port);
+      // The environment descriptor and the token exchange both run under the relay tracer.
+      await environmentStatus(port);
+      await exchangeCredential(port, desktopToken(hosted.desktopBootstrapSecret));
+      // Past the OTLP tracer's 5-second export interval, then its shutdown flush.
+      await sleep(7_000);
+      await shutdown(server);
+      await sleep(500);
+
+      expect(sink.requests).toEqual([]);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     "a hosted start publishes its runtime record",
     async () => {
       const root = makeSandbox();
@@ -479,19 +560,7 @@ describe("houston server entrypoint", () => {
       const server = spawnServer({ env: sandboxEnv(root), envelope: hosted });
       await waitReady(server, port);
 
-      const exchange = (credential: string) =>
-        fetch(`http://127.0.0.1:${port}/oauth/token`, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-            subject_token: credential,
-            subject_token_type: "urn:t3:params:oauth:token-type:environment-bootstrap",
-            requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
-            client_label: "Houston",
-            client_device_type: "desktop",
-          }).toString(),
-        });
+      const exchange = (credential: string) => exchangeCredential(port, credential);
 
       const accepted = await exchange(desktopToken(hosted.desktopBootstrapSecret));
       const body = (await accepted.json()) as { readonly access_token?: unknown };
