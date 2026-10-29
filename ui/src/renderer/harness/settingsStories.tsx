@@ -601,6 +601,7 @@ export function SettingsWorkspaces({ mergeQueue = false }: { mergeQueue?: boolea
   }, [mergeQueue])
   const client = React.useMemo(() => {
     let enabled = false
+    let agentBrowser = true
     const listeners = new Set<(message: ServerMsg) => void>()
     const typed = new Map<string, Set<(message: ServerMsg) => void>>()
     return new Proxy({
@@ -623,6 +624,10 @@ export function SettingsWorkspaces({ mergeQueue = false }: { mergeQueue?: boolea
         if (message.type === 'generated_titles_set') enabled = message.enabled === true
         if (message.type === 'generated_titles_get' || message.type === 'generated_titles_set') {
           queueMicrotask(() => { for (const listener of listeners) listener({ type: 'generated_titles', enabled }) })
+        }
+        if (message.type === 'agent_browser_set') agentBrowser = message.enabled === true
+        if (message.type === 'agent_browser_get' || message.type === 'agent_browser_set') {
+          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'agent_browser', enabled: agentBrowser }) })
         }
       }
     }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient

@@ -11,6 +11,8 @@ import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
 import { SettingsScope } from '../ui/SettingsScope'
 import { Text } from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
+import type { HoustonClient } from '../../houston/client'
+import { AgentBrowserSetting } from './AgentBrowserSetting'
 import { NumberSetting, Row, SubHead } from './shared'
 
 
@@ -28,6 +30,7 @@ export interface WorkspaceDefaultsSectionProps {
   hostInfo: HostInfo | null
   sessionPolicy: SessionPolicy | null
   onSessionPolicy: (next: SessionPolicy) => void
+  client?: HoustonClient | null
 }
 
 export function WorkspaceDefaultsSection({
@@ -39,7 +42,8 @@ export function WorkspaceDefaultsSection({
   onOpenLinksInPane,
   hostInfo,
   sessionPolicy,
-  onSessionPolicy
+  onSessionPolicy,
+  client = null
 }: WorkspaceDefaultsSectionProps): React.JSX.Element {
   return (
     <>
@@ -178,7 +182,7 @@ export function WorkspaceDefaultsSection({
       <SettingsList>
         <Row
           title="Open links in a browser pane"
-          desc={globalDescription('Links printed in panes open inside Houston instead of your system browser.')}
+          desc={globalDescription('Clicking a link in a terminal pane opens it in a Houston browser tab instead of your system browser. Agents\' browser tools are set separately below.')}
         >
           <Toggle
             on={openLinksInPane}
@@ -186,6 +190,7 @@ export function WorkspaceDefaultsSection({
             aria-label="Open links in a browser pane"
           />
         </Row>
+        <AgentBrowserSetting client={client} />
       </SettingsList>
     </>
   )
