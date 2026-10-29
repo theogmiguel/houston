@@ -22,6 +22,9 @@ replace the sections below, these rules take precedence on this branch:
   commit. Ported code is pushed only with the MIT notice in `NOTICE` and
   `third-party-licenses.config.json`.
 - **Detached server:** closing the app must not stop the server or its agents.
+- **Renderer:** the upstream web app is the renderer base. Its primitives adopt Houston's
+  tokens and recipes and are bound by the style guards; copied feature components are exempt
+  from the feature-`className` rule until a slice adapts them.
 - **Tests first:** a slice ports its upstream tests before its code and lands only with
   them green.
 - **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
