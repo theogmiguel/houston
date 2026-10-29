@@ -34,6 +34,8 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   adapter. Both use libghostty-vt; upstream's wrapper was never run on WebKitGTK.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
 - **Slices merge through mini-PRs** `v2/<slice> → v2`, each with CI and the other maintainer's review.
+- **v1 is frozen to fixes.** After PR #368, `main` takes bug fixes only; new features go to v2.
+  Each `main` change must later be merged into `v2`, which removes the code those changes touch.
 - **PR #368 merges into `main` first**, then `main` into `v2`, so the v2 PR does not carry the
   redesign's diff. #368 is red (`safety-checks`, `windows-checks`, `windows-renderer-checks`); Theo
   fixes it before anything else.
