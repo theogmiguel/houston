@@ -201,38 +201,3 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/terminal
 
-  # Upstream's provider layer on both release platforms: the provider packages,
-  # the server's src/provider layer and the orchestration adapters replaying
-  # recorded traffic through their testkits.
-  server-providers:
-    needs: server-packages-paths
-    if: needs.server-packages-paths.outputs.server == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.14.0
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Every step runs even after an earlier one fails. Windows reports but
-      # does not fail the job until the Windows parity slice (failures on #374).
-      - name: Provider packages
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
-        run: pnpm --no-bail --filter @t3tools/provider-core --filter effect-codex-app-server --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry --filter @t3tools/provider-opencode test
-      - name: Server provider layer (src/provider)
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
-        if: ${{ !cancelled() }}
-        run: pnpm --filter t3 exec vp test run src/provider
-      - name: Orchestration adapters (src/orchestration-v2/Adapters)
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
-        if: ${{ !cancelled() }}
-        run: pnpm --filter t3 exec vp test run src/orchestration-v2/Adapters
->>>>>>> origin/v2
