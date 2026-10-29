@@ -3443,11 +3443,9 @@ impl Daemon {
                 );
             }
         }
-        // Non-running tiles must survive a live handoff too. The recovery
-        // above stays cold-start-only. list_interrupted() still returns an
-        // adopted session whose database row is `sleeping` — a sleeper keeps
-        // its PTY and is transferred like a running one — so the adopted ids
-        // are filtered out and remain live tiles only.
+        // Non-running tiles must survive a handoff too. list_interrupted()
+        // also returns an adopted sleeper, whose row stays `sleeping` while
+        // its PTY is transferred, so the adopted ids are filtered out.
         let mut dead: HashMap<u32, proto::SessionInfo> = db
             .list_interrupted()?
             .into_iter()
