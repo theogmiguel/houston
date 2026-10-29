@@ -59,14 +59,15 @@ const errnoFailure = (method: "symlink" | "link", path: string, code: string) =>
 const withSymlinkRefused = <A, E, R>(
   platform: NodeJS.Platform,
   effect: Effect.Effect<A, E, R>,
-  options?: { readonly linkCode?: string },
+  options?: { readonly linkCode?: string; readonly symlinkCode?: string },
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const linkCode = options?.linkCode;
+    const symlinkCode = options?.symlinkCode ?? "EPERM";
     const refusing: FileSystem.FileSystem = {
       ...fileSystem,
-      symlink: (_target, link) => errnoFailure("symlink", link, "EPERM"),
+      symlink: (_target, link) => errnoFailure("symlink", link, symlinkCode),
       link:
         linkCode === undefined
           ? fileSystem.link
@@ -499,8 +500,7 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
         );
 
-        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
-        yield* fileSystem.remove(shadowConfig);
+        // The fallback never linked this file, so it is the user's own and still conflicts.
         yield* writeTextFile(shadowConfig, 'model = "local"\n');
         const error = yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout)).pipe(
           Effect.flip,
@@ -516,6 +516,59 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           'model = "gpt-5-codex"\n',
         );
       }),
+    );
+
+    it.effect("re-links a fallback file after the shared file is replaced by rename", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const sharedConfig = path.join(sharedHome, "config.toml");
+        const shadowConfig = path.join(shadowHome, "config.toml");
+        yield* writeTextFile(sharedConfig, "a = 1\n");
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+        yield* writeTextFile(`${sharedConfig}.tmp`, "a = 2\n");
+        yield* fileSystem.rename(`${sharedConfig}.tmp`, sharedConfig);
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+
+        const shared = yield* fileIdentity(sharedConfig);
+        const shadow = yield* fileIdentity(shadowConfig);
+        expect(shadow.dev).toBe(shared.dev);
+        expect(shadow.ino).toBe(shared.ino);
+        expect(yield* fileSystem.readFileString(shadowConfig)).toBe("a = 2\n");
+      }),
+    );
+
+    it.effect.each(["EACCES", "EEXIST"])(
+      "keeps a win32 symlink refusal other than EPERM an error (%s)",
+      (code) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const shadowHome = path.join(shadowRoot, "shadow");
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+          );
+
+          const error = yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout), {
+            symlinkCode: code,
+          }).pipe(Effect.flip);
+
+          expect(error).toBeInstanceOf(CodexShadowHomeFileSystemError);
+          expect(error).toMatchObject({
+            operation: "symlink",
+            path: path.join(shadowHome, "sessions"),
+          });
+          expect(yield* fileSystem.exists(path.join(shadowHome, "sessions"))).toBe(false);
+        }),
     );
 
     it.effect("refuses a shared file by name when the win32 hard link fails", () =>
