@@ -68,6 +68,8 @@
   "adapted": {
     "packages/contracts/package.json": "adds the ./houston/terminalFrames subpath export",
     "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages \u2014 evals and infra stay out \u2014 and drops patches for packages that are not installed",
-    "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream"
+    "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream",
+    "apps/server/src/preview/PreviewBrowser.test.ts": "runs the install test without Effect's test clock; NTFS cannot store the pre-epoch fixture mtime",
+    "apps/server/src/preview/ServerBrowserContexts.test.ts": "profile path expectations use node:path so they match the platform separators"
   }
 }
