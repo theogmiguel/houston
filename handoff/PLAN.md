@@ -32,6 +32,19 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   links to the preview) is copied and adapted; inside it, Houston's terminal engine draws and
   carries the bytes (binary frames, bounded buffers, measured on WebKitGTK and Windows), through an
   adapter. Both use libghostty-vt; upstream's wrapper was never run on WebKitGTK.
+- **The renderer is upstream's `apps/web`, copied**, running in Houston's Tauri webview (React and
+  TypeScript, as `ui/` is today; Rust stays the host). From Houston it keeps only the sidebar
+  (workspaces → grids → threads), the grid split tree and the terminal engine. PR #368's design
+  carries over through tokens, not per component: upstream's theme variables in `index.css` map to
+  Houston's tokens, and upstream's ~46 primitives in `components/ui` adopt #368's recipes. Feature
+  components inherit the look unchanged. Houston's style guards bind the primitives and the kept
+  Houston parts; copied feature components are exempt until a slice adapts them.
+- **Browser: open.** Upstream's preview is richer (element picking for the agent, device toolbar,
+  recording, mini player, cookie import, passkeys, port scanner, file previews), but its desktop
+  engine is Electron's WebContents. Its server engine (headless Chromium over CDP, streamed as a
+  screencast near 30 fps) runs under Tauri on Linux and Windows. Proposal: port the preview on the
+  server engine, keep Houston's native browser until the streamed view is measured for manual
+  browsing, then pick one.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
 - **Slices merge through mini-PRs** `v2/<slice> → v2`, each with CI and the other maintainer's review.
 - **v1 is frozen to fixes.** After PR #368, `main` takes bug fixes only; new features go to v2.
@@ -86,16 +99,18 @@ Everything in `src-tauri` and `ui/`, in this order:
    (`CREATE_BREAKAWAY_FROM_JOB`, with a fallback when the job forbids breakaway); find it through
    its state-directory lock; health check, restart, logs, reconnect; keychain, tray, updater and
    native browser kept working against the new server.
-3. Thread pane mock in `mocks/houston-mocks.html`, then the A/B picks still open in the other
-   fragments.
-4. Thread timeline: virtualized list, scroll anchoring and follow, incremental markdown, work groups.
-5. Composer: queue, steer and interrupt intents, approvals, questions, attachments.
-6. Sidebar: workspaces → grids → threads, with grids of several threads.
-7. Settings and the remaining pages (Tasks, Routines, PRs, Usage, Changes) on the new server;
-   the terminal drawer.
+3. Copy upstream's `apps/web` in as the renderer, building inside the Tauri webview.
+4. Re-skin: map upstream's theme variables to Houston's tokens and adapt its primitives to #368's
+   recipes (type scale, radius roles, `StatusGlyph`, buttons, rows, menus); review the result with
+   the `apple-design` skill in both themes.
+5. Houston's sidebar and grid split tree in upstream's app shell: workspaces → grids → several
+   threads per grid.
+6. The terminal drawer on Houston's terminal engine.
+7. Browser, once its open decision is taken.
 8. Renderer side of the Houston-only features, after Augusto's matching server slice.
 
-Until Augusto's `contracts` slice lands, Theo works on items 1–3, which do not depend on it.
+Until Augusto's `contracts` slice lands, Theo works on items 1–2 and the re-skin, which do not
+depend on it.
 
 ### Shared
 
