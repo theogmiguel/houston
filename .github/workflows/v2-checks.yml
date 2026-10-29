@@ -279,3 +279,92 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/git src/vcs src/pullRequest src/sourceControl src/checkpointing src/workspace src/review src/usage
+
+  # Every server test file no area job above runs, so each of the server's
+  # test files runs in exactly one job; new directories land here by default.
+  # Windows reports but does not fail the job yet.
+  server-rest:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Copied from upstream's server job: the preview tests drive a headless Chromium.
+      - name: Resolve Playwright version
+        id: playwright_version
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+      - name: Install Chromium for server browser integration tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+      - name: Install missing Chromium system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/server/node_modules/playwright-core/cli.js install-deps chromium
+          fi
+      - name: Remaining server tests (src and scripts, area jobs' directories excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: >-
+          pnpm --filter t3 exec vp test run src/ scripts/
+          --exclude "src/persistence/**"
+          --exclude "src/provider/**"
+          --exclude "src/orchestration-v2/**"
+          --exclude "src/terminal/**"
+          --exclude "src/git/**"
+          --exclude "src/vcs/**"
+          --exclude "src/pullRequest/**"
+          --exclude "src/sourceControl/**"
+          --exclude "src/checkpointing/**"
+          --exclude "src/workspace/**"
+          --exclude "src/review/**"
+          --exclude "src/usage/**"
+          --exclude "src/mcp/**"
+          --exclude "src/mcpApps/**"
+
+  # Every workspace package's suite but the server, web and scripts (whose
+  # node:test files server-packages runs). --no-sort: a failed package must
+  # not skip its dependents. Windows reports but does not fail the job yet.
+  workspace-packages:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Workspace package tests (web and server excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!t3" --filter "!@t3tools/scripts" test
