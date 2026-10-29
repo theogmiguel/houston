@@ -658,9 +658,7 @@ export function ThemeLibrary({
     <ThemeWireframe
       className={cn(
         "h-24 rounded-[10px] border-0",
-        active
-          ? "shadow-[0_0_0_2px_var(--ring)]"
-          : "shadow-[0_0_0_1px_var(--border)]",
+        active ? "ring-2 ring-ring" : "ring-1 ring-border",
       )}
       panes={
         mode === "system"
