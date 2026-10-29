@@ -533,6 +533,34 @@ describe("houston server entrypoint", () => {
   );
 
   it(
+    "a hosted trace file stays under the base dir",
+    async () => {
+      const root = makeSandbox();
+      const base = NodePath.join(root, ".houston-dev", "v2");
+      const elsewhere = NodePath.join(root, "elsewhere");
+      const port = await freePort();
+      const server = spawnServer({
+        env: sandboxEnv(root, {
+          T3CODE_TRACE_FILE: NodePath.join(elsewhere, "server.trace.ndjson"),
+        }),
+        envelope: envelope(port, base),
+      });
+      await waitReady(server, port);
+      await sleep(1_000);
+      await shutdown(server);
+
+      expect(NodeFS.existsSync(elsewhere)).toBe(false);
+      expect(
+        NodeFS.existsSync(NodePath.join(base, "userdata", "logs", "server.trace.ndjson")),
+      ).toBe(true);
+      const warnings = lines(server).filter((line) => line.includes("T3CODE_TRACE_FILE"));
+      expect(warnings, server.output.join("")).toHaveLength(1);
+      expect(warnings[0]).toContain("houston: ignoring");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     "a hosted start publishes its runtime record",
     async () => {
       const root = makeSandbox();
