@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "third-party-licenses.config.json");
@@ -183,22 +183,72 @@ function npmPackages() {
   return out;
 }
 
-// npm: the pnpm workspace packages' production closure (packages/*, apps/*).
-// devDependencies build the server; they are not what ships with it.
+// A bare directory ("scripts") or a one-level glob ("packages/*"): the only shapes
+// workspaceNpmPackages can resolve. Anything else would silently drop members.
+const SUPPORTED_MEMBER = /^[\w.@-]+(?:\/[\w.@-]+)*(?:\/\*)?$/;
+
+function memberOf(line) {
+  const entry = line.replace(/\s+#.*$/, "").match(/^\s*-\s+(.+?)\s*$/);
+  if (!entry) {
+    throw new Error(`pnpm-workspace.yaml: \`packages:\` entry is not a "- path" line: ${line.trim()}`);
+  }
+  const member = entry[1].replace(/^(["'])(.*)\1$/, "$2");
+  if (!SUPPORTED_MEMBER.test(member)) {
+    throw new Error(
+      `pnpm-workspace.yaml: unsupported workspace member "${member}"; expected a directory such as "scripts" or a one-level glob such as "packages/*"`,
+    );
+  }
+  return member;
+}
+
+// The workspace members from the `packages:` block list of pnpm-workspace.yaml.
+// Comment lines (at any column) and trailing comments are ignored.
+export function parseWorkspaceMembers(text) {
+  const globs = [];
+  let inList = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*(#.*)?$/.test(line)) continue;
+    if (/^packages:\s*(#.*)?$/.test(line)) {
+      inList = true;
+    } else if (/^packages:/.test(line)) {
+      throw new Error(`pnpm-workspace.yaml: \`packages:\` must be a block list, got: ${line.trim()}`);
+    } else if (inList && /^-\s/.test(line)) {
+      globs.push(memberOf(line));
+    } else if (inList && /^\S/.test(line)) {
+      break;
+    } else if (inList) {
+      globs.push(memberOf(line));
+    }
+  }
+  return globs;
+}
+
+function workspaceManifestGlobs() {
+  return parseWorkspaceMembers(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8"));
+}
+
+// npm: the pnpm workspace packages' production closure, one importer per
+// pnpm-workspace.yaml member. devDependencies build the server; they are not
+// what ships with it.
 function workspaceNpmPackages() {
   const manifests = [];
-  for (const group of ["packages", "apps"]) {
-    let entries;
-    try {
-      entries = readdirSync(join(ROOT, group), { withFileTypes: true });
-    } catch {
+  for (const glob of workspaceManifestGlobs()) {
+    if (glob.endsWith("/*")) {
+      let entries;
+      try {
+        entries = readdirSync(join(ROOT, glob.slice(0, -2)), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const manifest = join(ROOT, glob.slice(0, -2), entry.name, "package.json");
+        if (existsSync(manifest)) manifests.push(manifest);
+      }
       continue;
     }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const manifest = join(ROOT, group, entry.name, "package.json");
-      if (existsSync(manifest)) manifests.push(manifest);
-    }
+    const manifest = join(ROOT, glob, "package.json");
+    if (existsSync(manifest)) manifests.push(manifest);
   }
   if (!manifests.length) return [];
 
@@ -235,41 +285,46 @@ function assetPackages() {
   }));
 }
 
-const packages = [
-  ...assetPackages(),
-  ...cargoPackages(join(ROOT, "core", "Cargo.toml")),
-  ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
-  ...npmPackages(),
-  ...workspaceNpmPackages(),
-];
+function main() {
+  const packages = [
+    ...assetPackages(),
+    ...cargoPackages(join(ROOT, "core", "Cargo.toml")),
+    ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
+    ...npmPackages(),
+    ...workspaceNpmPackages(),
+  ];
 
-const deduped = new Map();
-for (const p of packages) {
-  const key = `${p.origin}\u0000${p.name}\u0000${p.version}`;
-  if (!deduped.has(key)) deduped.set(key, p);
+  const deduped = new Map();
+  for (const p of packages) {
+    const key = `${p.origin}\u0000${p.name}\u0000${p.version}`;
+    if (!deduped.has(key)) deduped.set(key, p);
+  }
+
+  const ORDER = { asset: 0, cargo: 1, npm: 2 };
+  const sorted = [...deduped.values()].sort(
+    (a, b) =>
+      ORDER[a.origin] - ORDER[b.origin] ||
+      a.name.localeCompare(b.name, "en") ||
+      String(a.version).localeCompare(String(b.version), "en"),
+  );
+
+  const used = new Set(sorted.flatMap((p) => p.textIds));
+  const doc = {
+    texts: Object.fromEntries([...texts].filter(([id]) => used.has(id)).sort(([a], [b]) => a.localeCompare(b, "en"))),
+    packages: sorted,
+  };
+
+  mkdirSync(dirname(OUT), { recursive: true });
+  writeFileSync(OUT, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+
+  const noLicence = sorted.filter((p) => !p.license);
+  const noText = sorted.filter((p) => !p.textIds.length);
+  process.stderr.write(
+    `gen-third-party-licenses: ${sorted.length} packages, ${Object.keys(doc.texts).length} distinct licence texts\n` +
+      `  no licence field: ${noLicence.length}${noLicence.length ? ` (${noLicence.map((p) => p.name).join(", ")})` : ""}\n` +
+      `  no licence text on disk: ${noText.length}${noText.length ? ` — add a licenseText to packageOverrides if one is owed` : ""}\n`,
+  );
 }
 
-const ORDER = { asset: 0, cargo: 1, npm: 2 };
-const sorted = [...deduped.values()].sort(
-  (a, b) =>
-    ORDER[a.origin] - ORDER[b.origin] ||
-    a.name.localeCompare(b.name, "en") ||
-    String(a.version).localeCompare(String(b.version), "en"),
-);
-
-const used = new Set(sorted.flatMap((p) => p.textIds));
-const doc = {
-  texts: Object.fromEntries([...texts].filter(([id]) => used.has(id)).sort(([a], [b]) => a.localeCompare(b, "en"))),
-  packages: sorted,
-};
-
-mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
-
-const noLicence = sorted.filter((p) => !p.license);
-const noText = sorted.filter((p) => !p.textIds.length);
-process.stderr.write(
-  `gen-third-party-licenses: ${sorted.length} packages, ${Object.keys(doc.texts).length} distinct licence texts\n` +
-    `  no licence field: ${noLicence.length}${noLicence.length ? ` (${noLicence.map((p) => p.name).join(", ")})` : ""}\n` +
-    `  no licence text on disk: ${noText.length}${noText.length ? ` — add a licenseText to packageOverrides if one is owed` : ""}\n`,
-);
+// Importing this file for its parser (the tests do) must not regenerate the inventory.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main();

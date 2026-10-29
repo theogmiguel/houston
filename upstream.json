@@ -16,6 +16,7 @@
     "knip.jsonc",
     "vite.config.ts",
     "scripts/package.json",
+    "scripts/tsconfig.json",
     "scripts/lib/public-config.ts",
     "scripts/lib/cli-external-packages.ts",
     "scripts/lib/third-party-licenses.ts",
@@ -66,7 +67,7 @@
   ],
   "adapted": {
     "packages/contracts/package.json": "adds the ./houston/terminalFrames subpath export",
-    "pnpm-workspace.yaml": "trims the workspace to the imported apps and packages and drops patches for packages that are not installed",
+    "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages \u2014 evals and infra stay out \u2014 and drops patches for packages that are not installed",
     "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream"
   }
 }
