@@ -1016,7 +1016,7 @@ function ManagedCodexSetup({
           {logoutWarning}
         </p>
       ) : null}
-      {callbackFallback ? <div className="px-3 py-3 sm:px-4">{callbackFallback}</div> : null}
+      {callbackFallback ? <div className="px-3.5 py-3">{callbackFallback}</div> : null}
       {error || authQuery.error || installQuery.error || installation?.phase === "failed" ? (
         <p role="alert" className="px-3 py-2 text-xs text-destructive sm:px-4">
           {error ??

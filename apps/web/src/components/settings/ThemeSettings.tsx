@@ -654,9 +654,14 @@ export function ThemeLibrary({
   const wireframeColors = (appearance: ThemeAppearance) =>
     pickColors(appearance === "light" ? lightOwner : darkOwner, appearance);
 
-  const renderWireframe = (mode: ThemeMode) => (
+  const renderWireframe = (mode: ThemeMode, active = false) => (
     <ThemeWireframe
-      className="h-[8.75rem]"
+      className={cn(
+        "h-24 rounded-[10px] border-0",
+        active
+          ? "shadow-[0_0_0_2px_var(--ring)]"
+          : "shadow-[0_0_0_1px_var(--border)]",
+      )}
       panes={
         mode === "system"
           ? [
@@ -676,18 +681,12 @@ export function ThemeLibrary({
           <button
             aria-label={mode === "system" ? "Follow the system appearance" : `Use ${mode} mode`}
             aria-pressed={isActive}
-            className={cn(
-              // The accent ring marks the picked tile; focus is a neutral ring set inside it with a gap.
-              "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-7 focus-visible:outline-foreground/60",
-              isActive
-                ? "border-transparent bg-accent/30 ring-2 ring-inset ring-ring"
-                : "border-border/70 bg-card/60 hover:bg-accent/10",
-            )}
+            className="flex cursor-pointer flex-col items-stretch gap-1.5 p-0 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             key={mode}
             onClick={() => setMode(mode)}
             type="button"
           >
-            {renderWireframe(mode)}
+            {renderWireframe(mode, isActive)}
             <span
               className={cn(
                 "flex items-center justify-center text-xs font-medium",
@@ -827,12 +826,12 @@ export function ThemeLibrary({
 
   return (
     <div className="space-y-3">
-      <h3 className="flex min-h-7 items-center px-3 text-base font-semibold text-foreground sm:px-4">
+      <h3 className="flex items-center px-1 text-[11px] leading-[14px] font-semibold text-muted-foreground">
         {searchableSetting("color-scheme").title}
       </h3>
       {renderModeTiles()}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-5 sm:px-4">
-        <h3 className="text-base font-semibold text-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-2">
+        <h3 className="text-[11px] leading-[14px] font-semibold text-muted-foreground">
           {searchableSetting("theme").title}
         </h3>
         <div className="flex flex-wrap items-center justify-end gap-2">

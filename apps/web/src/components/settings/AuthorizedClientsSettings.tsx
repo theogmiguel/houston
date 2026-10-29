@@ -112,7 +112,7 @@ function AccessScopeSummary({
 
 function endpointRowClassName(isAvailable: boolean) {
   return cn(
-    "relative first:rounded-t-xl last:rounded-b-xl px-3 py-3 sm:px-4",
+    "relative px-3.5 py-3",
     !isAvailable && "bg-muted/15",
   );
 }
