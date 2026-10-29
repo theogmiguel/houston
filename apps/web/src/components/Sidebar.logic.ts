@@ -1192,6 +1192,30 @@ export function resolveProjectStatusIndicator(
   return highestPriorityStatus;
 }
 
+/** The rail's single status vocabulary: one glyph per state, never a second dot. */
+export type SidebarStatusGlyphState = "working" | "needs" | "done" | "error" | "idle";
+
+export function resolveSidebarStatusGlyphState(
+  status: ThreadStatusPill | null,
+): SidebarStatusGlyphState {
+  if (status === null) return "idle";
+  switch (status.label) {
+    case "Working":
+    case "Connecting":
+    case "Waiting":
+      return "working";
+    case "Pending Approval":
+    case "Awaiting Input":
+    case "Guest Request":
+    case "Plan Ready":
+      return "needs";
+    case "Completed":
+      return "done";
+    case "Failed":
+      return "error";
+  }
+}
+
 export function getFallbackThreadIdAfterDelete<
   T extends Pick<Thread, "id" | "projectId" | "createdAt" | "updatedAt"> & ThreadSortInput,
 >(input: {
