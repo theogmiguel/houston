@@ -45,6 +45,8 @@ reviewed as a single draft PR `v2 → main`. Read `HANDOFF.md` first for the dec
   Electron-only features (element picker, favicons, cookie import, passkeys) do not come over. The
   browser slice decides whether agent actions keep Houston's on-screen confirmation, which upstream
   lacks, and states the Linux runtime libraries and AppArmor profile the download needs.
+- **Upstream's features as they are.** v2 takes upstream's orchestration, settings and other
+  features unchanged and adjusts them later; Houston-only features wait until the port is complete.
 - **PR #117 (WSL on `houston-core`) is paused.** WSL returns as a server slice.
 - **Slices merge through mini-PRs** `v2-<slice> → v2`, each with CI and the other maintainer's review.
 - **v1 is frozen to fixes.** After PR #368, `main` takes bug fixes only; new features go to v2.
@@ -83,7 +85,8 @@ Everything under the TypeScript sidecar, in this order:
 6. Git, pull requests, worktrees, checkpoints, usage.
 7. MCP toolkits (the orchestration tools agents call).
 8. Server side of the Houston-only features: Night shift, task sources (GitHub, Notion, Slack),
-   workspace transfer, WSL. Each is decided (port, adapt or drop) when its slice starts.
+   workspace transfer, WSL. Deferred until the port is complete; each is then decided (port, adapt
+   or drop) when its slice starts.
 
 Also Augusto's: the decision on PR #363 (close it, or name what v2 reuses from it).
 
@@ -108,7 +111,7 @@ Everything in `src-tauri` and `ui/`, in this order:
    threads per grid.
 6. The terminal drawer on Houston's terminal engine.
 7. Browser: upstream's preview panel on its server engine.
-8. Renderer side of the Houston-only features, after Augusto's matching server slice.
+8. Renderer side of the Houston-only features: deferred with the server side.
 
 Until Augusto's `contracts` slice lands, Theo works on items 1–2 and the re-skin, which do not
 depend on it.
