@@ -80,7 +80,7 @@ jobs:
             exit 0
           fi
           base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
-          if git diff --name-only "$base" HEAD | grep -qE '^((packages|apps|patches)/|package\.json$|pnpm-workspace\.yaml$|pnpm-lock\.yaml$|tsconfig\.base\.json$|vite\.config\.ts$|upstream\.json$|scripts/check-upstream\.mjs$|\.github/workflows/v2-checks\.yml$)'; then
+          if git diff --name-only "$base" HEAD | grep -qE '^((packages|apps|patches|scripts|oxlint-plugin-t3code)/|package\.json$|pnpm-workspace\.yaml$|pnpm-lock\.yaml$|tsconfig\.base\.json$|vite\.config\.ts$|upstream\.json$|\.github/workflows/v2-checks\.yml$)'; then
             echo "server=true" >> "$GITHUB_OUTPUT"
           else
             echo "server=false" >> "$GITHUB_OUTPUT"
@@ -100,11 +100,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Scoped to the packages this gate owns: a workspace-wide `-r` typecheck
-      # fails in apps/server, whose tsconfig includes ../../scripts/lib without
-      # upstream's scripts workspace package. Widen both steps when it is green.
-      - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared typecheck
+      - run: pnpm -r typecheck
       - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+      - name: Script tests (check-upstream and the licence generator)
+        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs
       - name: Fetch upstream t3code at the pinned commit
         run: |
           git init "$RUNNER_TEMP/t3code"
@@ -113,3 +112,65 @@ jobs:
           git -C "$RUNNER_TEMP/t3code" checkout --detach FETCH_HEAD
       - name: check-upstream.mjs (copied files match the pinned commit)
         run: node scripts/check-upstream.mjs "$RUNNER_TEMP/t3code"
+
+  # Upstream's persistence store on both release platforms: the event store,
+  # migrations, projections, outbox and receipts run against a real node:sqlite
+  # database in temp directories.
+  server-persistence:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Windows runs and reports, but does not fail the job until the
+      # Windows parity slice lands; the known failures are tabled on #373.
+      - name: Persistence tests (src/persistence)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: pnpm --filter t3 exec vp test run src/persistence
+
+  # Upstream's provider layer on both release platforms: the provider packages,
+  # the server's src/provider layer and the orchestration adapters replaying
+  # recorded traffic through their testkits.
+  server-providers:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Every step runs even after an earlier one fails. Windows reports but
+      # does not fail the job until the Windows parity slice (failures on #374).
+      - name: Provider packages
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: pnpm --no-bail --filter @t3tools/provider-core --filter effect-codex-app-server --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry --filter @t3tools/provider-opencode test
+      - name: Server provider layer (src/provider)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/provider
+      - name: Orchestration adapters (src/orchestration-v2/Adapters)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/orchestration-v2/Adapters
