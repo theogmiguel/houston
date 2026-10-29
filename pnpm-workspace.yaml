@@ -1,10 +1,8 @@
 packages:
-  - apps/*
-  - evals
-  - infra/*
+  - apps/server
+  - apps/web
   - oxlint-plugin-t3code
   - packages/*
-  - scripts
 
 # Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11+).
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior
@@ -353,47 +351,18 @@ packageExtensions:
       vite-plus: "catalog:"
 
 patchedDependencies:
-  react-native-image-viewing@0.2.2: patches/react-native-image-viewing@0.2.2.patch
   mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch
   micromark-extension-llm-math@3.1.0: patches/micromark-extension-llm-math@3.1.0.patch
   micromark-extension-gfm-table@2.1.1: patches/micromark-extension-gfm-table@2.1.1.patch
-  alchemy@2.0.0-beta.84: patches/alchemy@2.0.0-beta.84.patch
-  expo-audio@58.0.9: patches/expo-audio@58.0.9.patch
-  expo-video@58.0.11: patches/expo-video@58.0.11.patch
-  expo-network@58.0.3: patches/expo-network@58.0.3.patch
-  "@clerk/expo-native-components@0.4.0": patches/@clerk__expo-native-components@0.4.0.patch
   "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
-  "@expo/metro-config@58.0.14": patches/@expo__metro-config@58.0.14.patch
-  expo-sharing@58.0.19: patches/expo-sharing@58.0.19.patch
-  expo-widgets@58.0.20: patches/expo-widgets@58.0.20.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   "@legendapp/list@3.3.5": patches/@legendapp__list@3.3.5.patch
   # Exports the dependency-light subpaths mobile and the web diff parser import, and keeps
   # measured wrapped-row heights above an edit (fileEditorVirtualization.test.ts).
   "@pierre/diffs@1.6.1": patches/@pierre%2Fdiffs@1.6.1.patch
-  "@react-native-ai/apple@0.12.0": patches/@react-native-ai__apple@0.12.0.patch
-  "@react-native-menu/menu@2.0.0": patches/@react-native-menu__menu@2.0.0.patch
-  "@react-navigation/native-stack@7.21.0": patches/@react-navigation%2Fnative-stack@7.21.0.patch
-  dbus-next@0.10.2: patches/dbus-next@0.10.2.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
-  react-native-gesture-handler@3.3.0: patches/react-native-gesture-handler@3.3.0.patch
-  # Screens v5 stack, split and tab screens leave at once, like legacy screens. Exiting animations
-  # inside one otherwise hold its removal for a later mount, after its stack has moved on.
-  react-native-reanimated@4.7.1: patches/react-native-reanimated@4.7.1.patch
-  react-native-keyboard-controller@1.22.8: patches/react-native-keyboard-controller@1.22.8.patch
-  react-native-pdf-jsi@5.0.0: patches/react-native-pdf-jsi@5.0.0.patch
-  # Android: a nested WebView hands a vertical drag to its scrolling parent at the page's edge.
-  react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
-  "@expo/ui@58.0.20": patches/@expo__ui@58.0.20.patch
-  # Android: a Compose host that requests layout in a mount (a new screen's app bar) is laid out
-  # before that frame is drawn, instead of a frame later.
-  expo-modules-core@58.0.22: patches/expo-modules-core@58.0.22.patch
-  # Android: Maven-resolved gradle plugins (expo-widgets) have no sourceDir; without this
-  # skip, the fingerprint silently drops every Expo native module and OTAs reach stale binaries.
-  "@expo/fingerprint@0.21.5": patches/@expo__fingerprint@0.21.5.patch
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.6": patches/@muse-code__sdk@1.4.6.patch
-  app-builder-lib@26.16.1: patches/app-builder-lib@26.16.1.patch
 
 peerDependencyRules:
   allowAny:
