@@ -3444,13 +3444,14 @@ impl Daemon {
             }
         }
         // Non-running tiles must survive a live handoff too. The recovery
-        // above stays cold-start-only — a handoff's sessions are alive and
-        // keep their live state in the database — so list_interrupted()
-        // cannot return a session this generation adopted; it holds only the
-        // tiles the previous generation already recorded as not running.
+        // above stays cold-start-only. list_interrupted() still returns an
+        // adopted session whose database row is `sleeping` — a sleeper keeps
+        // its PTY and is transferred like a running one — so the adopted ids
+        // are filtered out and remain live tiles only.
         let mut dead: HashMap<u32, proto::SessionInfo> = db
             .list_interrupted()?
             .into_iter()
+            .filter(|i| !adopted_ids.contains(&i.id))
             .map(|i| (i.id, i))
             .collect();
         let mut used: HashSet<String> = dead

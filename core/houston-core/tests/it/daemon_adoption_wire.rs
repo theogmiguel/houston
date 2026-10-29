@@ -482,6 +482,11 @@ async fn handoff_keeps_non_running_sessions_visible() {
                 1,
                 "the adopting generation must not duplicate a dead tile"
             );
+            assert_eq!(
+                sessions.iter().filter(|pane| pane.id == live).count(),
+                1,
+                "the adopting generation must not list the transferred session twice"
+            );
             break;
         }
     }
