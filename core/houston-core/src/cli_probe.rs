@@ -728,10 +728,8 @@ mod tests {
         )
         .unwrap();
 
-        // Warm the PowerShell binary into the FS cache first: a cold start on
-        // a loaded runner can outlast the probe timeout below, so the shim
-        // never reaches Start-Process, the grandchild pid never lands and the
-        // kill is never exercised.
+        // A cold PowerShell start on a loaded runner can outlast the probe
+        // timeout below, so the grandchild pid never lands. Warm it first.
         let _ = crate::spawn::command("powershell.exe")
             .args(["-NoProfile", "-Command", "exit"])
             .status();
