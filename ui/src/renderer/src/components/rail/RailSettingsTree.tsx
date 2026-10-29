@@ -109,7 +109,7 @@ export function SettingsTree({
   );
   return (
     <SettingsRailStack>
-      <NavigationRailItem icon={IconChevronLeft} label="Back to workspaces" trailing={<HintKey size="compact">Esc</HintKey>} onClick={() => { setTreeFilter(null); setSettingsOpen(false); }} />
+      <NavigationRailItem icon={IconChevronLeft} label="Workspaces" trailing={<HintKey size="compact">Esc</HintKey>} onClick={() => { setTreeFilter(null); setSettingsOpen(false); }} />
       <SettingsSearch
           inputRef={filterRef}
           value={treeFilter ?? ""}

@@ -1,6 +1,6 @@
 export const ROW_STATE = {
-  rest: 'bg-transparent text-[var(--text-secondary)] hover:bg-hover-fill',
-  selected: 'bg-selected-fill text-[var(--text-primary)] hover:bg-selected-hover-fill'
+  rest: 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--hover)]',
+  selected: 'bg-[var(--sel)] text-[var(--text-primary)] hover:bg-[var(--sel)]'
 } as const
 
 // Pointer and keyboard share an active index in searchable lists; CSS hover must not paint a second row.

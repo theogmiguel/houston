@@ -236,7 +236,7 @@ export function railEmptyMessage(args: {
   filters: RailPrefs['filters']
   activeTagIds: readonly number[]
 }): string {
-  if (args.workspaceCount === 0) return 'No workspaces yet.'
+  if (args.workspaceCount === 0) return 'No workspaces yet'
   const active = describeActiveFilters(args.filters, args.activeTagIds)
   if (active.length === 0) return 'No grids yet. Create one with New grid.'
   if (args.activeTagIds.length > 0 && active.length === 1) {

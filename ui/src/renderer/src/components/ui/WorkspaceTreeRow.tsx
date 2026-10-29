@@ -17,18 +17,18 @@ export interface WorkspaceTreeRowProps extends Omit<HTMLAttributes<HTMLDivElemen
 export function WorkspaceTreeRow({ children, kind, selected = false, dragging = false, dragged = false, className = '', selectionColor, ...props }: WorkspaceTreeRowProps): React.JSX.Element {
   const tree = kind === 'tree'
   const classes = kind === 'child'
-    ? 'treerow child relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] pl-[var(--space-6)] pr-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full'
+    ? 'treerow child relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] pl-[var(--space-6)] pr-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px]'
     : kind === 'editing'
-      ? 'witem relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] py-0 px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-md)] [font-weight:var(--tr-text-ui-weight)] text-left w-full'
+      ? 'witem relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] py-0 px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-md)] [font-weight:var(--tr-text-ui-weight)] text-left w-full focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px]'
       : tree
-    ? `witem treerow ws relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full group select-none `
-    : `witem relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] py-0 px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full group select-none ${selected ? 'on' : ''}`
+    ? `witem treerow ws relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full group select-none focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px] `
+    : `witem relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] py-0 px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full group select-none focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px] ${selected ? 'on' : ''}`
   const cursor = kind === 'child' || kind === 'editing' ? '' : dragging ? 'cursor-grabbing' : 'cursor-pointer'
   return <div {...props} className={`${classes} ${ROW_STATE[selected || selectionColor ? 'selected' : 'rest']} ${cursor} ${dragged ? 'opacity-[var(--opacity-workspace-row-dragged)]' : ''} ${className}`}>{children}</div>
 }
 
 export function WorkspaceTreeLabel({ children, size = 'ui', heading = false }: { children: ReactNode; size?: 'ui' | 'md'; heading?: boolean }): React.JSX.Element {
-  return <Text size={size} weight={heading ? 'semibold' : undefined} className="min-w-0 truncate">{children}</Text>
+  return <Text size={size} weight={heading ? 'semibold' : undefined} className="min-w-0 flex-1 truncate">{children}</Text>
 }
 
 export function WorkspaceTreeActions({ children }: { children: ReactNode }): React.JSX.Element {
@@ -36,7 +36,7 @@ export function WorkspaceTreeActions({ children }: { children: ReactNode }): Rea
 }
 
 export function WorkspaceTreeAuxButton({ children, selected = false, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode; selected?: boolean }): React.JSX.Element {
-  return <button {...props} type="button" className={`hidden group-hover:inline-flex focus-visible:inline-flex items-center justify-center w-[var(--sz-rail-row-action)] h-[var(--sz-rail-row-action)] flex-none rounded-[var(--tr-radius-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--card-hover)] ${selected ? 'inline-flex' : ''}`} onClick={onClick}>{children}</button>
+  return <button {...props} type="button" className={`hidden group-hover:inline-flex group-focus-within:inline-flex items-center justify-center w-[var(--sz-rail-row-action)] h-[var(--sz-rail-row-action)] flex-none rounded-[var(--tr-radius-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px] ${selected ? 'inline-flex' : ''}`} onClick={onClick}>{children}</button>
 }
 
 export function WorkspaceDropIndicator(): React.JSX.Element {

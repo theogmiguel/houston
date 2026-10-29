@@ -19,8 +19,8 @@ describe('SELECT_CLS — state matrix', () => {
     container.remove()
   })
 
-  it('Filled — lands on the field radius tier (--tr-radius-input, 4px) that text fields share, not a button radius', () => {
-    expect(SELECT_CLS).toMatch(/rounded-\[var\(--tr-radius-input\)\]/)
+  it('Filled — lands on the control radius tier (--tr-radius-button, 6px), not a text-field radius', () => {
+    expect(SELECT_CLS).toMatch(/rounded-\[var\(--tr-radius-button\)\]/)
     expect(SELECT_CLS).not.toMatch(/rounded-md\b/)
     expect(SELECT_CLS).not.toMatch(/rounded-\[6px\]|rounded-\[8px\]/)
   })
@@ -35,8 +35,9 @@ describe('SELECT_CLS — state matrix', () => {
     expect(SELECT_CLS).toMatch(/disabled:cursor-not-allowed/)
   })
 
-  it('Focus — N/A: base.css already gives every <select> a floor (select:focus-visible, ~line 117); redefining it here would stack a second ring for an axis this gap never named as broken.', () => {
-    expect(SELECT_CLS).not.toMatch(/focus-visible|outline/)
+  it('Focus — carries the accent-ink 2px focus-visible ring', () => {
+    expect(SELECT_CLS).toMatch(/focus-visible:outline-2/)
+    expect(SELECT_CLS).toMatch(/focus-visible:outline-\[var\(--accent-ink\)\]/)
   })
 
   it('Hover / Selected / Overflow / Error — N/A: native <select>/<option> chrome (popup, hover row, open-state truncation) is drawn by the OS widget, not by author CSS on the closed control — same reason base.css states option colors instead.', () => {
@@ -54,12 +55,12 @@ describe('SELECT_CLS — state matrix', () => {
     const el = container.querySelector('select')
     expect(el).not.toBeNull()
     expect(el?.className).toBe(SELECT_CLS)
-    expect(SELECT_CLS).toMatch(/bg-\[var\(--content-bg\)\]/)
-    expect(SELECT_CLS).toMatch(/border-\[var\(--border\)\]/)
+    expect(SELECT_CLS).toMatch(/bg-\[var\(--field\)\]/)
+    expect(SELECT_CLS).toMatch(/border-\[var\(--line-strong\)\]/)
     expect(SELECT_CLS).toMatch(/text-\[var\(--text-primary\)\]/)
   })
 
-  it('Height — composes to the shared control-height step (--h-ctl), the same one Segmented\'s track uses', () => {
-    expect(SELECT_CLS).toMatch(/h-\[var\(--h-ctl\)\]/)
+  it('Height — composes to the pill-height step (--h-pill), the same one chip controls use', () => {
+    expect(SELECT_CLS).toMatch(/h-\[var\(--h-pill\)\]/)
   })
 })

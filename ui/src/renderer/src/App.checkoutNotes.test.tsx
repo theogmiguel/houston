@@ -47,8 +47,8 @@ describe('checkout header identity', () => {
     if (!appHarness) throw new Error('renderReadyApp did not return an app harness')
     harness = appHarness
 
-    expect(paneChip(appHarness, 1)?.textContent).toContain('primary · feat/rebalancing')
-    expect(paneChip(appHarness, 2)?.textContent).toContain('primary · feat/rebalancing')
+    expect(paneChip(appHarness, 1)?.textContent).toContain('feat/rebalancing')
+    expect(paneChip(appHarness, 2)?.textContent).toContain('feat/rebalancing')
     act(() => paneChip(appHarness, 1)?.querySelector('button')?.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
     const tooltip = document.body.querySelector('[role="tooltip"]')
     expect(tooltip?.textContent).toContain('primary · feat/rebalancing')
@@ -63,7 +63,7 @@ describe('checkout header identity', () => {
     if (!appHarness) throw new Error('renderReadyApp did not return an app harness')
     harness = appHarness
     deliverControl({ type: 'session_checkout', id: 1, checkout: { root: ROOT, kind: 'primary', branch: 'feat/new-branch', head: null }, checkout_root: ROOT, worktree: null })
-    expect(paneChip(appHarness, 1)?.textContent).toContain('primary · feat/new-branch')
+    expect(paneChip(appHarness, 1)?.textContent).toContain('feat/new-branch')
     expect(paneChip(appHarness, 1)?.textContent).not.toContain('feat/rebalancing')
   })
 })

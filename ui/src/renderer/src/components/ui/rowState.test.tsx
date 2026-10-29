@@ -14,10 +14,18 @@ function recipe(element: Element, state: string): void {
 describe('shared row painting', () => {
   it('renders the same rest and selected recipe across navigation, settings, workspace, chips, files and PRs', () => {
     render(<RowStateSpecimen />)
-    for (const label of ['navigation', 'settings', 'workspace', 'choice', 'file', 'pull request']) {
+    for (const label of ['navigation', 'settings', 'workspace', 'file', 'pull request']) {
       recipe(screen.getByText(`Selected ${label}`).closest('button, [role="button"]')!, ROW_STATE.selected)
       recipe(screen.getByText(`Rest ${label}`).closest('button, [role="button"]')!, ROW_STATE.rest)
     }
+    const selectedChoice = screen.getByText('Selected choice').closest('button')!
+    expect(selectedChoice.className).toContain('bg-selected-fill')
+    expect(selectedChoice.className).toContain('hover:bg-selected-hover-fill')
+    const restChoice = screen.getByText('Rest choice').closest('button')!
+    expect(restChoice.className).toContain('bg-[var(--field)]')
+    expect(restChoice.className).toContain('hover:bg-hover-fill')
+    expect(ROW_STATE.rest).toContain('hover:bg-[var(--hover)]')
+    expect(ROW_STATE.selected).toContain('bg-[var(--sel)]')
     recipe(screen.getByRole('button', { name: 'Pressed toolbar' }), ROW_STATE.selected)
     recipe(screen.getByRole('button', { name: 'Rest toolbar' }), ROW_STATE.rest)
     const tree = screen.getByText('Selected file')
@@ -38,7 +46,7 @@ describe('shared row painting', () => {
     fireEvent.mouseEnter(options[1])
     recipe(options[0], ROW_HIGHLIGHT.rest)
     recipe(options[1], ROW_HIGHLIGHT.selected)
-    expect(options.filter((row) => row.classList.contains('bg-selected-fill'))).toHaveLength(1)
+    expect(options.filter((row) => row.classList.contains('bg-[var(--sel)]'))).toHaveLength(1)
     expect(options[0].getAttribute('aria-selected')).toBe('true')
   })
 

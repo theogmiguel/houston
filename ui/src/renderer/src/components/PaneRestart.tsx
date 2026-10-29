@@ -6,6 +6,7 @@ import { IconHistory, IconRespawn, type IconComponent } from './icons'
 import { PaneFooterNotice } from './ui/PaneFooterNotice'
 import { usePaneOpState } from '../houston/paneOpsContext'
 import { recoveryReason } from './recoveryReason'
+import { useSessionExitCode } from '../sessionExitCodes'
 
 export type RestartMode = 'restart' | 'resume' | 'fresh'
 
@@ -117,6 +118,36 @@ export function isRestoreHusk(info: SessionInfo, live: boolean): boolean {
 
 export function paneDimming(info: SessionInfo, live: boolean, ended: string | null): boolean | 'body' {
   return isRestoreHusk(info, live) ? 'body' : Boolean(ended)
+}
+
+/** An exit with no recovery story: the exit footer and its Restart replace the header's restart. */
+export function isPlainExit(info: SessionInfo, live: boolean): boolean {
+  return !live && info.state === 'exited' && !isRestoreHusk(info, live) && !info.resume_notice
+}
+
+/** The footer under an exited pane's output, with the one action that keeps it on screen. */
+export function ExitedFooter({
+  info,
+  live,
+  client,
+  shellIntegration
+}: {
+  info: SessionInfo
+  live: boolean
+  client: HoustonClient
+  shellIntegration: boolean
+}): React.JSX.Element | null {
+  const exitCode = useSessionExitCode(info.id)
+  if (!isPlainExit(info, live)) return null
+  return (
+    <PaneFooterNotice
+      data-testid="exit-footer"
+      tone={exitCode === 0 ? 'default' : 'danger'}
+      sentence={exitCode == null ? 'The shell exited.' : `The shell exited with code ${exitCode}.`}
+      reason="Output above is kept."
+      primary={{ label: 'Restart', onClick: () => client.respawnSession(info.id, shellIntegration) }}
+    />
+  )
 }
 
 /** The footer a pane shows when its conversation was not resumed; the reason is in a tooltip, never a title. */

@@ -3,8 +3,8 @@ import { Text } from './Text'
 
 export function KeyCap({ children, variant = 'binding' }: { children: ReactNode; variant?: 'binding' | 'hint' }): React.JSX.Element {
   return (
-    <span className={`inline-flex ${variant === 'hint' ? 'w-auto min-w-0 flex-none' : 'min-w-[var(--w-shortcut-keycap)]'} justify-center rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-keycap-inline)] py-[var(--space-keycap-block)]`}>
-      <Text size="small" weight="semibold" tone="muted" center>{children}</Text>
+    <span className={`inline-flex ${variant === 'hint' ? 'w-auto min-w-0 flex-none' : 'min-w-[var(--w-shortcut-keycap)]'} justify-center rounded-[var(--tr-radius-xs)] border border-[var(--line-strong)] bg-transparent px-[var(--space-keycap-inline)] py-[var(--space-keycap-block)]`}>
+      <Text size="caption" weight="medium" tone="muted" leading="normal" center>{children}</Text>
     </span>
   )
 }

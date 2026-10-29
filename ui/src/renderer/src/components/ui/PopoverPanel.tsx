@@ -72,7 +72,7 @@ export function PopoverDescription({ children }: { children: ReactNode }): React
   return <Text size="xs" tone="muted" className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{children}</Text>
 }
 
-export function StatusGlyph({ glyph, role, tone = 'muted' }: { glyph: IconComponent; role: 'small' | 'label'; tone?: DelegationTone }): React.JSX.Element {
+export function DelegationGlyph({ glyph, role, tone = 'muted' }: { glyph: IconComponent; role: 'small' | 'label'; tone?: DelegationTone }): React.JSX.Element {
   return <span style={{ color: `var(${TONE_VAR[tone]})` }}><Icon glyph={glyph} role={role} /></span>
 }
 
@@ -183,8 +183,8 @@ export function CrewButton({
       <Text as="span" data-testid="roster-secondary" size="xs" tone="faint" className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">
         {secondary}
       </Text>
-      <Text className="ml-auto flex-none uppercase" size="caption" weight="label" tone={tone}>
-        {state}
+      <Text className="ml-auto flex-none" size="caption" weight="label" tone={tone}>
+        {state.replace(/^./, (letter) => letter.toUpperCase())}
       </Text>
     </Button>
   )

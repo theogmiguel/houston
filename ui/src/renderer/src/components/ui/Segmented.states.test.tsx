@@ -71,24 +71,22 @@ describe('Segmented — state matrix', () => {
     expect(listBtn?.className).not.toContain('hover:bg-')
   })
 
-  it('Focus — option buttons carry a visible focus ring', () => {
+  it('Focus — option buttons carry the 2px accent-ink focus-visible ring', () => {
     act(() => {
       root.render(<Segmented aria-label="View" options={OPTIONS} value="grid" />)
     })
     const btn = container.querySelector('button[role="radio"]')
-    expect(btn?.className).toContain('focus-visible:shadow-')
+    expect(btn?.className).toContain('focus-visible:outline-[var(--accent-ink)]')
   })
 
-  it('Selected — the chosen option is aria-checked and paints the reference’s NEUTRAL wash, never the accent tint', () => {
+  it('Selected — the chosen option is aria-checked and paints the raised surface, never the accent tint', () => {
     act(() => {
       root.render(<Segmented aria-label="View" options={OPTIONS} value="list" />)
     })
     const buttons = Array.from(container.querySelectorAll('button[role="radio"]'))
     const listBtn = buttons.find((b) => b.textContent === 'List')
     expect(listBtn?.getAttribute('aria-checked')).toBe('true')
-    expect(listBtn?.className).toContain(
-      'bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]'
-    )
+    expect(listBtn?.className).toContain('bg-[var(--raised)]')
     expect(listBtn?.className).toContain('text-[var(--text-primary)]')
     expect(listBtn?.className).toContain('[font-weight:var(--tr-text-small-weight)]')
     expect(listBtn?.className).not.toContain('bg-[var(--accent-muted)]')
@@ -119,26 +117,25 @@ describe('Segmented — state matrix', () => {
     expect(gridBtn?.className).toContain('[font-weight:var(--tr-text-small-weight)]')
   })
 
-  it('Track — the reference’s contour and 4% fill at radius 8, not a pill (carve 0.1.9, re-decided 2026-08-26)', () => {
+  it('Track — the field fill at the control radius, not a pill', () => {
     act(() => {
       root.render(<Segmented aria-label="View" options={OPTIONS} value="list" />)
     })
     const group = container.querySelector('[data-testid="segmented"]')
-    expect(group?.className).toContain('border-[var(--border-control)]')
-    expect(group?.className).toContain('bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]')
+    expect(group?.className).toContain('border-transparent')
+    expect(group?.className).toContain('bg-[var(--field)]')
     expect(group?.className).toContain('rounded-[var(--tr-radius-button)]')
     expect(group?.className).not.toContain('rounded-[var(--tr-radius-pill)]')
   })
 
-  it('Item box — 54×22 minimum at radius 6, the reference’s own numbers', () => {
+  it('Item box — 22px tall at the badge radius with 10px inline padding', () => {
     act(() => {
       root.render(<Segmented aria-label="View" options={OPTIONS} value="list" />)
     })
     const btn = container.querySelector('button[role="radio"]')
-    expect(btn?.className).toContain('min-w-[54px]')
+    expect(btn?.className).toContain('px-[var(--space-2-5)]')
     expect(btn?.className).toContain('h-[var(--h-ctl-mini)]')
-    expect(btn?.className).toContain('px-[10px]')
-    expect(btn?.className).toContain('rounded-[var(--tr-radius-sm)]')
+        expect(btn?.className).toContain('rounded-[var(--tr-radius-xs)]')
     expect(btn?.className).toContain('[font-size:var(--tr-text-small-size)]')
   })
 

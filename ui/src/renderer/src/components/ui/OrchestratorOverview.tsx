@@ -60,10 +60,6 @@ export function OrchestratorAge({ children }: { children: ReactNode }): React.JS
   return <span className="min-w-[26px] text-right text-[length:var(--tr-text-xs)] text-[var(--text-faint)] font-mono group-hover/overview-child:invisible">{children}</span>
 }
 
-export function OrchestratorStatusDot({ children, state }: { children: ReactNode; state?: 'done' | 'failed' }): React.JSX.Element {
-  return <span data-state={state} className="inline-flex flex-none [&[data-state='done']_.agent-dot]:bg-[var(--ok)] [&[data-state='failed']_.agent-dot]:bg-[var(--stop)]">{children}</span>
-}
-
 export function OrchestratorTask({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="text-[length:var(--tr-text-overview-head)] leading-[var(--tr-text-small-leading)] min-h-[var(--h-overview-child-task)] text-[var(--text-secondary)] [overflow-wrap:anywhere]">{children}</div>
 }

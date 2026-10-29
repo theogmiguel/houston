@@ -1,5 +1,4 @@
 import { useContext, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
-import type { AgentStatus } from '../../houston/client'
 import { Text } from './Text'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
@@ -7,8 +6,8 @@ import { FOCUS_RING_ACCENT_ICON_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Tooltip, TooltipContext } from './Tooltip'
 
-export function PaneHeadActions({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="head-actions ml-auto flex items-center gap-px flex-none">{children}</span>
+export function PaneHeadActions({ children, reveal = false }: { children: ReactNode; reveal?: boolean }): React.JSX.Element {
+  return <span className={`head-actions ml-auto flex items-center gap-px flex-none${reveal ? ' pane-head-actions' : ''}`}>{children}</span>
 }
 
 const HEAD_BUTTON_STYLE =
@@ -68,29 +67,6 @@ export function PaneHeadButton({
 /** A label-sized note in a session header, such as the protocol mode or account profile. */
 export function PaneHeadBadge(props: Omit<HTMLAttributes<HTMLSpanElement>, 'className'>): React.JSX.Element {
   return <span {...props} className="inline-flex items-center text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] flex-none whitespace-nowrap cursor-default" />
-}
-
-const STATUS_PULSE = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
-
-function statusDotClass(status: AgentStatus): string {
-  switch (status) {
-    case 'working':
-      return `bg-[var(--info)] ${STATUS_PULSE}`
-    case 'spawning':
-      return `bg-[var(--accent)] ${STATUS_PULSE}`
-    case 'idle':
-      return 'bg-[var(--text-muted)]'
-    case 'needs-input':
-      return 'bg-[var(--warn)]'
-    case 'unavailable':
-      // A border, not a ring: hosts such as the roster strip give .agent-dot a box-shadow halo, which would replace a ring.
-      return 'bg-[var(--card-bg)] border-[1.5px] border-[var(--text-secondary)]'
-  }
-}
-
-/** The 7px agent status dot; only the two indeterminate states pulse. */
-export function PaneStatusDot({ status, ...rest }: { status: AgentStatus } & HTMLAttributes<HTMLSpanElement>): React.JSX.Element {
-  return <span {...rest} className={`agent-dot w-[var(--sz-pane-status-dot)] h-[var(--sz-pane-status-dot)] rounded-full flex-none ${statusDotClass(status)}`} />
 }
 
 export function PaneEngineGlyph({ className = '', ...rest }: HTMLAttributes<HTMLSpanElement>): React.JSX.Element {

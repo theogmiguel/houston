@@ -8,6 +8,7 @@ import { useSessionUpdates } from './useSessionUpdates';
 import type { TransferImportResult } from './houston/generated/TransferImportResult';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
+import { TitlebarNeedsYou } from './components/TitlebarNeedsYou';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
@@ -16,6 +17,7 @@ import type { RelocateState } from "./workspaceRelocate";
 import { useWorkspaceRelocated } from "./useWorkspaceRelocated";
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
 import { finishedUnseenOnStatus, finishedUnseenWithout, pruneFinishedUnseen } from './finishedUnseen';
+import { forgetSessionExitCode, rememberSessionExitCode, resetSessionExitCodes } from './sessionExitCodes';
 import type { NoticeInput } from './notices';
 import { setTaskbarAttentionCount } from './houston/taskbarCount';
 import { focusWaitingRequest, restoreRequestOrigin, useNextRequest, useOperatorInbox, waitingRequests, type RequestNavigation } from './nextRequest';
@@ -1395,6 +1397,7 @@ export function App(): React.JSX.Element {
 
     function handleSessionState(client: HoustonClient, msg: SessionStateMessage): void {
       client.paneOps.respawnSettled(msg.session);
+      rememberSessionExitCode(msg.session, msg.exit_code);
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
@@ -1441,6 +1444,7 @@ export function App(): React.JSX.Element {
         });
         switch (msg.type) {
           case "hello_ok":
+            resetSessionExitCodes();
             client.snapshotAttach = msg.snapshot_attach;
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
@@ -1526,6 +1530,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_removed":
             client.paneOps.sessionRemoved(msg.session);
+            forgetSessionExitCode(msg.session);
             setRemovedSessions((prev) => new Set(prev).add(msg.session));
             setLayouts((prev) => removeSessionFromLayouts(prev, msg.session));
             setSessions((prev) => {
@@ -3754,6 +3759,19 @@ export function App(): React.JSX.Element {
               }
               pinnedWorkspaces={wsPinnedSet}
               notices={appNotices}
+              offlineBanner={conn.kind === "reconnecting" ? (
+                <Suspense fallback={null}>
+                  <ReconnectBanner
+                    since={conn.since}
+                    error={conn.error}
+                    placement="rail"
+                    onRetry={() => {
+                      clearTimeout(retryTimerRef.current);
+                      reconnectRef.current();
+                    }}
+                  />
+                </Suspense>
+              ) : null}
               onTogglePinWorkspace={(path) =>
                 setWsPinned((prev) =>
                   prev.includes(path)
@@ -3865,6 +3883,7 @@ export function App(): React.JSX.Element {
                 )}
               </TitlebarLead>
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
+              <TitlebarNeedsYou sessions={sessions} railHidden={sidebarRail} onFocusPane={focusPane} />
             </div>
             <ToolbarActions>
               <VoiceMicChip
@@ -3937,19 +3956,6 @@ export function App(): React.JSX.Element {
               )}
             </ToolbarActions>
           </AppTitlebar>
-
-          {conn.kind === "reconnecting" && (
-            <Suspense fallback={null}>
-              <ReconnectBanner
-                since={conn.since}
-                error={conn.error}
-                onRetry={() => {
-                  clearTimeout(retryTimerRef.current);
-                  reconnectRef.current();
-                }}
-              />
-            </Suspense>
-          )}
 
           {reviewRequestSignalsFor(conn, desktopNotificationMode, setReviewRequestCount)}
 
@@ -4146,6 +4152,7 @@ export function App(): React.JSX.Element {
                             <div className="relative flex-1 min-w-0 min-h-0">
                               <WorkspaceEmpty
                                 installedAgents={(agentHooks ?? []).filter((provider) => provider.present).map((provider) => provider.provider)}
+                                agentHooks={agentHooks ?? []}
                                 onSpawnAgent={spawnAgentPane}
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}

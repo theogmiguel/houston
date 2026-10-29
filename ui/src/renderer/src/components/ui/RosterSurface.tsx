@@ -4,13 +4,14 @@ import { Button } from './Button'
 import { IconAgent } from '../icons'
 import { Text } from './Text'
 import { BTN_ICO } from './buttonChrome'
+import { StatusGlyph } from './StatusGlyph'
 
 // Children roster: the expanded column, the collapsed strip and their rows.
 // The `children-*` hook classes stay on the markup so tests and the pane
 // header can address the roster; they carry no style.
 
 export function EndedStatusDot(): React.JSX.Element {
-  return <span className="agent-dot w-[var(--sz-status-dot)] h-[var(--sz-status-dot)] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" />
+  return <StatusGlyph state="finished" label="Ended" />
 }
 
 // Below this container width the split shows the strip instead of the column;
@@ -62,7 +63,7 @@ export function RosterList({ children }: { children: ReactNode }): React.JSX.Ele
 
 export function RosterGroupHead({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <div className="children-group [font-size:var(--tr-text-xs)] font-bold [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)] pt-3 px-3.5 pb-1 flex justify-between items-center gap-2">
+    <div className="children-group [font-size:var(--tr-text-xs)] font-bold text-[var(--text-faint)] pt-3 px-3.5 pb-1 flex justify-between items-center gap-2">
       {children}
     </div>
   )

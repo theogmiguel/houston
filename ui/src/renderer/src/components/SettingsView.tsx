@@ -26,6 +26,7 @@ import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
 import { PageFrame, type PageWidth } from './ui/PageFrame'
+import { SettingsPageHeader } from './ui/PageHeader'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { MergeQueueSettingsSection } from './settings/MergeQueueSettingsSection'
@@ -490,9 +491,10 @@ function NotificationsSlot(props: NotificationsSlotProps): React.JSX.Element | n
   )
 }
 
-function settingsPageWidth(section: SettingsSectionId): PageWidth {
-  if (section === 'remote') return 'settingsForm'
-  return SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'
+const SECTIONS_WITH_OWN_TITLE: ReadonlySet<SettingsSectionId> = new Set(['agents-overview', 'agents-clis', 'remote'])
+
+function settingsPageWidth(_section: SettingsSectionId): PageWidth {
+  return 'page'
 }
 
 function agentPageFor(props: Props, section: AgentSetupSection): ReactNode {
@@ -502,6 +504,7 @@ function agentPageFor(props: Props, section: AgentSetupSection): ReactNode {
 
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
+  const sectionDef = SETTINGS_SECTIONS.find((entry) => entry.id === section)
   const terminalLineHeight = props.terminalLineHeight ?? TERMINAL_LINE_HEIGHT_DEFAULT
   const onTerminalLineHeight = props.onTerminalLineHeight ?? NOOP
   const terminalCursorBlink = props.terminalCursorBlink ?? true
@@ -530,6 +533,7 @@ export function SettingsView(props: Props): React.JSX.Element {
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
       <PageFrame width={settingsPageWidth(section)} scroll={false} padding="settings">
+        {!SECTIONS_WITH_OWN_TITLE.has(section) && <SettingsPageHeader heading={sectionDef?.label ?? section} description={sectionDef?.description} />}
         {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : agentPageFor(props, section as AgentSetupSection) ?? <SectionDispatch
           {...props}
           section={section}

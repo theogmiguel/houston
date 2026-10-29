@@ -93,6 +93,7 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Previous / next grid in this workspace | , / . |
 | Open the command palette (after the prefix) | Space |
 | New browser tab / Open Files / Changes / Pull request / Linked pull requests (after the prefix) | B / F / D / P / L |
+
 | Open the Pull Requests screen (after the prefix) | R |
 | Go to the next request waiting on you (after the prefix) | ! |
 | Back to the pane you were on before Next request (after the prefix) | Backspace |
@@ -127,6 +128,8 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Copy selection, force (not remappable) | Ctrl+Shift+C |
 | Paste, accepts screenshots (not remappable) | Ctrl+V / Ctrl+Shift+V / Shift+Insert |
 | Find in the terminal (not remappable) | Ctrl+F |
+
+When the sidebar is hidden, the titlebar keeps a **Show sidebar** button and, if a pane needs your input, a chip counting those panes. Clicking the chip opens the oldest one.
 
 Three chords Houston binds globally — `Ctrl+B`, `Ctrl+K`, `Ctrl+L` — are also readline
 reflexes inside a shell or many CLIs. Inside a focused terminal, the terminal wins: those

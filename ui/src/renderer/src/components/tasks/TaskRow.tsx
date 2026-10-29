@@ -9,6 +9,7 @@ import {
   TaskListRow,
   TaskListTitle,
   TaskLive,
+  TaskPriorityMark,
   TaskStateText,
   TaskTagChip
 } from '../ui/TaskSurface'
@@ -65,7 +66,7 @@ export function TaskRow({
       withWorkspace={showWorkspace}
       onClick={() => onOpen(task.id)}
     >
-      <TaskPriorityGlyph priority={task.priority} />
+      {task.priority === 'none' ? <span aria-hidden="true" /> : <TaskPriorityMark><TaskPriorityGlyph priority={task.priority} /></TaskPriorityMark>}
       <TaskStatusGlyph status={task.status} />
       <TaskKey>{task.key}</TaskKey>
       <TaskListTitle>{task.title}</TaskListTitle>

@@ -39,7 +39,7 @@ describe('PullRequestsScreen', () => {
         onOpenPullRequest={() => {}}
       />,
     )
-    expect(screen.getByTestId('pull-requests-screen').querySelector('[class*="max-w-[760px]"]')).toBeTruthy()
+    expect(screen.getByTestId('pull-requests-screen').querySelector('[class*="max-w-[var(--page-w)]"]')).toBeTruthy()
     const scroll = screen.getByTestId('pull-requests-screen').querySelector('[class*="overflow-y-auto"]')!
     Object.defineProperty(scroll, 'scrollTop', { value: 59, configurable: true })
     fireEvent.scroll(scroll)
@@ -72,7 +72,7 @@ describe('PullRequestsScreen', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('pr-row-42'))
-    expect(screen.getByTestId('pr-row-42').className).toContain('bg-selected-fill')
+    expect(screen.getByTestId('pr-row-42').className).toContain('bg-[var(--sel)]')
     expect(screen.getByTestId('pr-row-42').getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('pr-screen-detail')).toBeTruthy()
     expect(screen.getByTestId('pull-requests-screen')).toBeTruthy()

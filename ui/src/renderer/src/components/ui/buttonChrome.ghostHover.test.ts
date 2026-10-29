@@ -27,17 +27,17 @@ function rule(css: string, selector: string): string {
 describe('BTN_GHOST hover state', () => {
   const components = layerBlock(buttonCss, 'components')
 
-  it('hovering a ghost button fills with --hover-fill and lifts the label to --text-primary', () => {
+  it('hovering a ghost button fills with --hover and lifts the label to --text-primary', () => {
     const hover = rule(components, `.${BTN_GHOST}:hover:not(:disabled)`)
-    expect(hover).toMatch(/background:\s*var\(--hover-fill\)/)
+    expect(hover).toMatch(/background:\s*var\(--hover\)/)
     expect(hover).toMatch(/color:\s*var\(--text-primary\)/)
   })
 
-  it('rests transparent, borderless and muted', () => {
+  it('rests transparent, borderless and secondary', () => {
     const rest = rule(components, `.${BTN_GHOST}`)
     expect(rest).toMatch(/background:\s*transparent/)
     expect(rest).toMatch(/border:\s*none/)
-    expect(rest).toMatch(/color:\s*var\(--text-muted\)/)
+    expect(rest).toMatch(/color:\s*var\(--text-secondary\)/)
   })
 
   it('carries no utility classes, which would outrank the hover rule in the utilities layer', () => {

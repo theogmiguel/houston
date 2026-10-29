@@ -2,12 +2,13 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { variants } from './variants'
 
-export type PageWidth = 'form' | 'wide' | 'settings' | 'settingsWide' | 'settingsForm'
+export type PageWidth = 'page' | 'form' | 'wide' | 'settings' | 'settingsWide' | 'settingsForm'
 
 const frameClasses = variants(
   'grid w-full content-start',
   {
     width: {
+      page: 'max-w-[var(--page-w)]',
       form: PAGE_COLUMN_CLS,
       wide: PAGE_COLUMN_WIDE_CLS,
       settings: 'max-w-[896px]',

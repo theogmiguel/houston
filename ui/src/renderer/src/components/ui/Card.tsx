@@ -2,9 +2,9 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { variants } from './variants'
 import { Text } from './Text'
 
-const cardClasses = variants('border', {
+const cardClasses = variants('border [&_[data-card]]:border-0 [&_[data-card]]:bg-transparent [&_[data-card]]:rounded-none', {
   tone: {
-    default: 'border-[var(--divider)] bg-[var(--card-bg)]',
+    default: 'border-[var(--border)] bg-[var(--card-bg)]',
     inset: 'border-[var(--divider)] bg-[var(--content-bg)]',
     'material-inset': 'border-[var(--material-inset-brd)] bg-[var(--material-inset-bg)]',
     danger: 'border-[var(--danger)] bg-[var(--status-blocked-bg)]',
@@ -17,7 +17,7 @@ const cardClasses = variants('border', {
   borderStyle: { solid: '', dashed: 'border-dashed' },
   disabled: { false: '', true: 'opacity-50' },
   clip: { false: 'overflow-visible', true: 'overflow-hidden' }
-}, { tone: 'default', shape: 'button', padding: 'none', borderStyle: 'solid', disabled: 'false', clip: 'true' })
+}, { tone: 'default', shape: 'card', padding: 'none', borderStyle: 'solid', disabled: 'false', clip: 'true' })
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
@@ -84,7 +84,7 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
   )
 }
 
-function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, borderStyle = 'solid', clip = true, className = '', layout = 'default', ...props }: CardProps): React.JSX.Element {
+function CardBase({ children, tone = 'default', shape = 'card', padding = 'none', disabled = false, borderStyle = 'solid', clip = true, className = '', layout = 'default', ...props }: CardProps): React.JSX.Element {
   const layoutClass = {
     default: '',
     fields: '@container',
@@ -92,7 +92,7 @@ function CardBase({ children, tone = 'default', shape = 'button', padding = 'non
     'sleeping-session': 'mx-auto grid w-full max-w-[70ch] gap-[var(--space-2)] text-center',
     'scrolling-copy': 'max-h-[16rem] overflow-auto whitespace-pre-wrap text-left'
   }[layout]
-  return <div {...props} className={`${cardClasses({ tone, shape, padding, borderStyle, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layoutClass} ${className}`}>{children}</div>
+  return <div data-card="" {...props} className={`${cardClasses({ tone, shape, padding, borderStyle, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layoutClass} ${className}`}>{children}</div>
 }
 
 function CardContent({ children }: CardContentProps): React.JSX.Element {

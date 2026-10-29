@@ -11,14 +11,15 @@ function ReconnectAge({ since }: { since: number }): React.JSX.Element {
   return <>{Math.max(0, Math.round((now - since) / 1000))}s</>
 }
 
-export function ReconnectBanner({ since, error, onRetry }: { since: number; error: string | null; onRetry: () => void }): React.JSX.Element {
+export function ReconnectBanner({ since, error, onRetry, placement = 'floating' }: { since: number; error: string | null; onRetry: () => void; placement?: 'floating' | 'rail' }): React.JSX.Element {
   return (
     <>
     <MascotSurfaceMount mood="call" placement="reconnect" />
     <ConnectionBanner
-      message={<>daemon connection lost — reconnecting… <ReconnectAge since={since} />{error ? ` (${error})` : ''}</>}
+      message={<>Reconnecting to the daemon · <ReconnectAge since={since} />{error ? ` (${error})` : ''}</>}
       actionLabel="Retry now"
       onAction={onRetry}
+      placement={placement}
     /></>
   )
 }

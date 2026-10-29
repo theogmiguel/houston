@@ -4,7 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 
 import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
-import { BadgeCount, BadgeSeparator, WaitingCount, StatusGlyph } from './ui/PopoverPanel'
+import { BadgeCount, BadgeSeparator, WaitingCount, DelegationGlyph } from './ui/PopoverPanel'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './ui/Tooltip'
 import { Button, Caption } from './ui'
@@ -241,7 +241,7 @@ export function HeaderDelegationBadge({
       }}
     >
       {children ?? <>
-      <StatusGlyph glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork} role="label" tone={glyphWarn ? "warn" : "muted"} />
+      <DelegationGlyph glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork} role="label" tone={glyphWarn ? "warn" : "muted"} />
       <BadgeContent kind={kind} info={info} selfName={selfName} />
       </>}
     </Button>

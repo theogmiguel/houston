@@ -73,16 +73,16 @@ describe('components/ui primitives', () => {
     const { rerender } = render(<Button variant="primary">Create</Button>)
     const button = screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement
     expect(button.type).toBe('button')
-    expect(button.className).toContain('bg-[var(--primary-fill)]')
+    expect(button.className).toContain('bg-[var(--accent)]')
     expect(button.className).toContain('h-[var(--h-ctl)]')
 
     rerender(<Button variant="secondary" size="sm">Cancel</Button>)
     const secondary = screen.getByRole('button', { name: 'Cancel' })
     expect(secondary.className).toContain('h-[var(--h-ctl-mini)]')
-    expect(secondary.className).toContain('bg-[var(--hover-fill)]')
-    expect(secondary.className).toContain('text-[var(--text-secondary)]')
-    expect(secondary.className).toContain('hover:enabled:bg-[var(--card-hover)]')
-    expect(secondary.className).toContain('hover:enabled:border-[var(--border-hover)]')
+    expect(secondary.className).toContain('bg-[var(--field)]')
+    expect(secondary.className).toContain('text-[var(--text-primary)]')
+    expect(secondary.className).toContain('hover:enabled:bg-[var(--sel)]')
+    expect(secondary.className).toContain('border-[var(--line-strong)]')
 
     rerender(<Button variant="ghost">Back</Button>)
     expect(screen.getByRole('button', { name: 'Back' }).className).toContain('btn-ghost')

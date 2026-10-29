@@ -39,6 +39,8 @@ const KNOWN_INHERITED_TRAPS: Record<string, Record<string, string>> = {
       "button text color; a converted button nesting a differently-colored child (e.g. a status icon) already carries its own text-* color utility. Removable at #33."
   },
   '.btn': {
+    color:
+      'the resting label ink for the native control; a call site needing different ink sets its own text-* utility on the button, which wins on layer, and descendant text carries its own colour utility.',
     'font-size':
       'same trap and same neutralization as the `button` entry above — a `.btn` carrying wrappable or differently-sized descendant text sets its own text-* utility on that descendant, which wins on layer. Narrower than the element rule it copies: it reaches only buttons that opted in, not every button in the renderer.',
     'font-weight':

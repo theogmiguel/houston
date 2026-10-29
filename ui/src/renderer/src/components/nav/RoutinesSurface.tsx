@@ -137,7 +137,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
   }
 
   if (panel?.mode === 'review-setup') {
-    return <NavSurfaceFrame row><PageFrame width="wide" className="flex-1 min-w-0">
+    return <NavSurfaceFrame row><PageFrame width="page" className="flex-1 min-w-0">
       <PageHeader heading="Set up Weekly review" description={`Review sessions in ${panel.workspace.name}.`} />
       {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
       <WeeklyReviewSetup client={client} workspace={panel.workspace} onCancel={() => { onDismissError(); setPanel(null) }} onCreate={(setup) => {
@@ -151,7 +151,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
   if (panel) {
     return (
       <NavSurfaceFrame row>
-        <PageFrame width="wide" className="flex-1 min-w-0">
+        <PageFrame width="page" className="flex-1 min-w-0">
           <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane. Set up Weekly review and Night shift for the workspaces you choose." />
           {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
           <RoutineEditor
@@ -180,7 +180,7 @@ export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element 
 
   return (
     <NavSurfaceFrame row>
-    <PageFrame width="wide" className="flex-1 min-w-0">
+    <PageFrame width="page" className="flex-1 min-w-0">
       <PageHeader
         heading="Routines"
         description="Prompts that run on a schedule, each in its own pane. Set up Weekly review and Night shift for the workspaces you choose."

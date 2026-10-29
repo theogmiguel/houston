@@ -2,6 +2,7 @@ import { SettingsFooterItem } from './ui/SettingsFooterItem'
 import type { AgentAttention } from '../useAgentAttention'
 import { MascotMount } from '../mascot/MascotMount'
 import type { TagInfo } from "../houston/generated/TagInfo";
+import type { ReactNode } from "react";
 import {
   Suspense,
   lazy,
@@ -108,6 +109,9 @@ import {
   type RailPrefs,
 } from "../railPrefs";
 import { gridStorageKey } from "../layout/tree";
+import { readSessionExitCode } from "../sessionExitCodes";
+import { StatusGlyph, type StatusGlyphState } from "./ui/StatusGlyph";
+import { glyphStateLabel, rollupStatus, sessionGlyphState } from "./ui/railRows";
 import { TagPopoverHost, useTagPopover, type TagGrid } from "./tags/TagPopover";
 
 /** Window event that opens tag management anchored to the rail Options button. */
@@ -217,6 +221,7 @@ function WorkspaceRailGroupRow({
   onNewSession,
   onRenameSubmit,
   onRenameCancel,
+  rollup,
 }: {
   workspace: Workspace;
   count: number;
@@ -240,6 +245,8 @@ function WorkspaceRailGroupRow({
   onNewSession?: (path: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
+  /** Most urgent child status, shown only while the workspace is collapsed. */
+  rollup: StatusGlyphState;
 }): React.JSX.Element {
   if (renaming) {
     return <WorkspaceRenameField w={workspace} i={index} color={color} onRenameSubmit={onRenameSubmit} onRenameCancel={onRenameCancel} />;
@@ -299,8 +306,8 @@ function WorkspaceRailGroupRow({
           </Button>
         )}
         {!hasGrids && <span aria-hidden="true" className="flex-none"><RailChevron collapsed /></span>}
-        <Icon glyph={IconFolder} role="ui" opacity="muted" />
         <WorkspaceTreeLabel heading>{workspace.name}</WorkspaceTreeLabel>
+        {collapsed && rollup !== "idle" && <StatusGlyph state={rollup} label={`Most urgent: ${glyphStateLabel(rollup)}`} />}
         {count > 0 && <RailRowCount count={count} />}
         <EnvironmentBadge path={workspace.path} />
         {pinned && <PinIndicator />}
@@ -441,6 +448,8 @@ interface Props {
   onTogglePinWorkspace: (path: string) => void;
   /** Where reversible rail actions offer Undo. */
   notices?: Pick<NoticeStore, "push" | "dismiss">;
+  /** The connection banner, mounted at the top of the rail while the daemon is away. */
+  offlineBanner?: ReactNode;
   onSshConnect: () => void;
   railClient?: HoustonClient | null;
   checkoutBranches?: ReadonlyMap<number, string>;
@@ -631,14 +640,38 @@ function WorkspaceRenameField({
 }
 
 function RailHead({
+  settings = false,
   onHeadMouseDown,
   onHeadDoubleClick,
   onHideRail,
 }: {
+  settings?: boolean;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
   onHeadDoubleClick?: (e: React.MouseEvent) => void;
   onHideRail?: () => void;
 }): React.JSX.Element {
+  if (settings) {
+    return (
+      <NavigationRailHeader
+        onMouseDown={onHeadMouseDown}
+        onDoubleClick={onHeadDoubleClick}
+        action={onHideRail && (
+          <Tooltip label="Hide sidebar (Ctrl+B)">
+            <Button
+              variant="subtle-icon"
+              aria-label="Hide sidebar"
+              noDrag
+              onClick={onHideRail}
+            >
+              <Icon glyph={IconPanelLeft} role="ui" />
+            </Button>
+          </Tooltip>
+        )}
+      >
+        Settings
+      </NavigationRailHeader>
+    );
+  }
   return (
     <NavigationRailHeader
       logo={logoUrl}
@@ -1136,6 +1169,7 @@ function RailTree({
     }
     if (group.workspace) {
       const workspace = group.workspace;
+      const rollup = rollupStatus(group.cards.flatMap(({ card }) => card.agents.map((agent) => sessionGlyphState(agent.session, readSessionExitCode(agent.session.id)))));
       items.push({
         key: group.key,
         kind: 'group',
@@ -1161,6 +1195,7 @@ function RailTree({
             onNewSession={onNewWorkspaceSession}
             onRenameSubmit={onRenameSubmit}
             onRenameCancel={onRenameCancel}
+            rollup={rollup}
           />
         ),
       });
@@ -1261,6 +1296,7 @@ export function Sidebar({
   pinnedWorkspaces,
   onTogglePinWorkspace,
   notices,
+  offlineBanner,
   onSshConnect,
   railClient,
   checkoutBranches = NO_BRANCHES,
@@ -1907,10 +1943,12 @@ export function Sidebar({
       className={className}
     >
       <RailHead
+        settings={settingsOpen}
         onHeadMouseDown={onHeadMouseDown}
         onHeadDoubleClick={onHeadDoubleClick}
         onHideRail={onHideRail}
       />
+      {offlineBanner}
       <Suspense fallback={null}><GridRailGitSubscription client={railClient ?? null} sessions={sessions} /></Suspense>
       {}
       {!settingsOpen && (

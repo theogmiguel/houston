@@ -1,9 +1,9 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title' | 'row' | 'meta' | 'system'
-export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title' | 'bold'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'prose' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title' | 'row' | 'meta' | 'system'
+export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'prose' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title' | 'bold'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer' | 'quiet' | 'needs' | 'working' | 'done' | 'failed' | 'spawning'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty' | 'heading' | 'copy' | 'check' | 'activity'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'prose' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty' | 'heading' | 'copy' | 'check' | 'activity'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -13,6 +13,7 @@ const SIZE: Record<TextSize, string> = {
   small: '[font-size:var(--tr-text-small-size)]',
   ui: '[font-size:var(--tr-text-ui-size)]',
   body: '[font-size:var(--tr-text-body-size)]',
+  prose: '[font-size:var(--tr-text-prose-size)]',
   subhead: '[font-size:var(--tr-text-subhead-size)]',
   label: '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)]',
   sm: '[font-size:var(--tr-text-sm)]',
@@ -40,6 +41,7 @@ const WEIGHT: Record<TextWeight, string> = {
   heading: '[font-weight:var(--tr-text-heading-weight)]',
   subhead: '[font-weight:var(--tr-text-subhead-weight)]',
   body: '[font-weight:var(--tr-text-body-weight)]',
+  prose: '[font-weight:var(--tr-text-prose-weight)]',
   small: '[font-weight:var(--tr-text-small-weight)]',
   ui: '[font-weight:var(--tr-text-ui-weight)]',
   label: '[font-weight:var(--tr-text-label-weight)]',
@@ -82,6 +84,7 @@ const LEADING: Record<TextLeading, string> = {
   normal: 'leading-[1.5]',
   relaxed: 'leading-[1.6]',
   small: 'leading-[var(--tr-text-small-leading)]',
+  prose: 'leading-[var(--tr-text-prose-leading)]',
   label: 'leading-[var(--tr-text-label-leading)]',
   composer: 'leading-[var(--tr-text-task-leading)]',
   shortcut: 'leading-[var(--tr-text-shortcut-leading)]',

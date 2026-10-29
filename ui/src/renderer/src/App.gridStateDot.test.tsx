@@ -78,10 +78,11 @@ describe("grid-row state dot follows the grid's live sessions", () => {
     expect(dot().dataset.state).toBe('starting')
   })
 
-  it('an unavailable status is explicit and accessible', async () => {
+  it('an unavailable status stays explicit in the row label without inventing a glyph', async () => {
     await boot([makeSession({ id: 1, project_dir: WS, cwd: WS, status: 'unavailable' })])
     expect(dot().dataset.state).toBe('unavailable')
-    expect(dot().getAttribute('aria-label')).toContain('status unavailable')
+    expect(dot().querySelector('[data-status-glyph]')).toBeNull()
+    expect(harness!.container.querySelector('[data-testid="grid-row"]')?.getAttribute('aria-label')).toContain('Unavailable')
   })
 
   it('the dot moves with the hooks-driven status stream, not only the boot snapshot', async () => {

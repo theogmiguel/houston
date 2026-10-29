@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TERMINAL_PALETTES, THEMES } from './theme'
+import { DEFAULT_TERMINAL_PALETTE_FOR_CHROME, TERMINAL_PALETTES, THEMES } from './theme'
 
 const ANSI_CHROMATIC_COLORS = [
   'red', 'green', 'yellow', 'blue', 'magenta', 'cyan',
@@ -30,6 +30,16 @@ describe('terminal palette contrast', () => {
           `${theme}.${color} against ${palette.background}`
         ).toBeGreaterThanOrEqual(3)
       }
+    }
+  })
+
+  it('keeps the Paper Auto prompt (blue) and path (magenta) at least 4.5:1', () => {
+    const palette = TERMINAL_PALETTES[DEFAULT_TERMINAL_PALETTE_FOR_CHROME.paper]
+    for (const [role, color] of [['prompt', 'blue'], ['path', 'magenta']] as const) {
+      expect(
+        contrastRatio(palette[color]!, palette.background!),
+        `Paper Auto ${role} (${color} ${palette[color]}) against ${palette.background}`
+      ).toBeGreaterThanOrEqual(4.5)
     }
   })
 })

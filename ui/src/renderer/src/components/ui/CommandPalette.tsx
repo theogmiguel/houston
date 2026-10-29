@@ -15,8 +15,7 @@ import { KeymapOverridesContext } from '../../layout/keymapOverridesContext'
 import { IconSearch } from '../icons'
 import type { ThemeName } from '../../theme'
 import { Icon } from './Icon'
-import { FOCUS_HALO_CLS } from './shadowChrome'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { materialAttrs } from './material'
 import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './paletteHelpers'
 import { variants } from './variants'
 
@@ -36,10 +35,14 @@ type View = 'list' | 'appearance'
 const AppearancePicker = lazy(() => import('../AppearancePicker').then((module) => ({ default: module.AppearancePicker })))
 
 const palettePanel = variants('w-[min(560px,86vw)] max-h-[70vh] flex flex-col overflow-hidden', {
-  surface: { glass: `rounded-[var(--tr-radius-button)] ${MATERIAL_CLS['overlay-glass']}` }
-}, { surface: 'glass' })
-const paletteRow = variants('flex items-center gap-[var(--space-2)] px-2.5 min-h-[var(--h-row)] cursor-pointer', {
-  state: { selected: 'bg-[var(--accent-muted)]', regular: '', disabled: 'h-auto py-1 cursor-default opacity-60' }
+  surface: { raised: 'rounded-[var(--tr-radius-dialog)] bg-[var(--raised)] shadow-[var(--shadow-float)]' }
+}, { surface: 'raised' })
+const paletteRow = variants('flex items-center gap-[var(--space-2)] mx-[var(--space-1-5)] px-[var(--space-2)] min-h-[var(--h-palette-row)] rounded-[var(--tr-radius-sm)] cursor-pointer', {
+  state: {
+    selected: 'bg-[var(--sel)] text-[var(--text-primary)]',
+    regular: 'text-[var(--text-primary)] hover:bg-[var(--hover)]',
+    disabled: 'h-auto py-1 cursor-default opacity-60'
+  }
 }, { state: 'regular' })
 
 export function CommandPalette({
@@ -168,9 +171,7 @@ export function CommandPalette({
         {cmd.session && <span aria-hidden="true" className="w-3 text-center text-[var(--text-secondary)]">{cmd.session.agent === 'claude' ? '✳' : cmd.session.agent === 'codex' ? '◇' : '•'}</span>}
         <div className="min-w-0 flex-1">
           <div
-            className={`[font-size:var(--tr-text-ui-size)] font-medium truncate ${
-              selected && cmd.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
-            }`}
+            className={`[font-size:var(--tr-text-ui-size)] font-medium truncate text-[var(--text-primary)]`}
           >
             {cmd.title}
           </div>
@@ -196,13 +197,13 @@ export function CommandPalette({
         data-testid="command-palette"
         role="dialog"
         aria-label="Command palette"
-        {...materialAttrs('overlay-glass')}
+        {...materialAttrs('raised')}
         className={`${palettePanel()} [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards]`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {view === 'list' ? (
           <>
-            <div className="flex items-center gap-[var(--space-2)] px-2.5 h-[38px] border-b border-[var(--glass-brd)] flex-none">
+            <div className="flex items-center gap-[var(--space-2)] px-[var(--space-3)] h-[var(--h-palette-input)] border-b border-[var(--border)] flex-none">
               <Icon glyph={IconSearch} role="subhead" />
               <input
                 ref={searchRef}
@@ -212,9 +213,9 @@ export function CommandPalette({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onListKeyDown}
-                className={`flex-1 min-w-0 bg-transparent border-0 outline-none ${FOCUS_HALO_CLS} rounded-[var(--tr-radius-input)] [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]`}
+                className={`flex-1 min-w-0 bg-transparent border-0 outline-none rounded-[var(--tr-radius-input)] [font-size:var(--tr-text-md)] [font-weight:var(--tr-text-body-weight)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px]`}
               />
-              <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] font-mono text-[var(--text-faint)] border border-[var(--glass-brd)] rounded px-1.5 py-0.5">
+              <span className="border border-[var(--line-strong)] rounded-[var(--tr-radius-xs)] px-[var(--space-1)] py-0 text-[var(--text-muted)] [font-size:var(--tr-text-label-size)] font-medium">
                 {escapeShortcut.keyLabel.toUpperCase()}
               </span>
             </div>
@@ -235,7 +236,7 @@ export function CommandPalette({
                   <div key={group}>
                     <div
                       data-testid="command-palette-group"
-                      className="px-2.5 pt-1.5 pb-0.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]"
+                      className="px-[var(--space-3)] pt-[var(--space-2-5)] pb-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]"
                     >
                       {group}
                     </div>
@@ -246,10 +247,10 @@ export function CommandPalette({
                 visibleCommands.map(renderRow)
               )}
             </div>
-            <div className="flex items-center gap-3 border-t border-[var(--glass-brd)] px-2.5 py-[7px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
-              <span><kbd className="font-mono text-[var(--text-secondary)]">↑↓</kbd> Navigate</span>
-              <span><kbd className="font-mono text-[var(--text-secondary)]">Enter</kbd> {visibleCommands.find((command) => command.id === highlightedId)?.session ? 'Focus pane' : 'Run command'}</span>
-              <span><kbd className="font-mono text-[var(--text-secondary)]">Esc</kbd> Close</span>
+            <div className="flex items-center gap-[var(--space-3)] border-t border-[var(--border)] px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+              <span><kbd className="text-[var(--text-muted)]">↑↓</kbd> Navigate</span>
+              <span><kbd className="text-[var(--text-muted)]">Enter</kbd> {visibleCommands.find((command) => command.id === highlightedId)?.session ? 'Focus pane' : 'Run command'}</span>
+              <span><kbd className="text-[var(--text-muted)]">Esc</kbd> Close</span>
             </div>
           </>
         ) : (

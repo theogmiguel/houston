@@ -52,7 +52,7 @@ it('isolates a status event from App and unrelated pane containers', async () =>
   expect(counts.SidebarRowB).toBe(0)
   for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = 0
   deliverControl({ type: 'agent_status', session: 1, status: 'idle' })
-  expect(app.container.querySelector('[data-panekey="1"] .agent-dot')?.className).toContain('text-muted')
+  expect(app.container.querySelector('[data-panekey="1"] .pane-head [data-status-glyph]')).toBeNull()
   expect(counts).toEqual({ App: 0, Sidebar: 0, LayoutView: 0, unrelatedSessionPane: 0, SidebarRowB: 0 })
 })
 
@@ -71,7 +71,7 @@ it('skips duplicate status updates and isolates roster fields while preserving s
   for (const patch of patches) deliverControl(patch)
   expect(sessionRenders.a).toBeGreaterThan(0)
   expect(counts).toEqual({ App: 0, Sidebar: 0, LayoutView: 0, unrelatedSessionPane: 0, SidebarRowB: 0 })
-  expect(app.container.querySelector('[data-panekey="1"] .agent-dot')?.className).toContain('--warn')
+  expect(app.container.querySelector('[data-panekey="1"] .pane-head [data-status-glyph="needs"]')).not.toBeNull()
   expect(app.container.querySelector('[aria-label="Children need input"]')).toBeNull()
   deliverControl({ type: 'session_renamed', session: 1, title: 'Renamed', title_source: 'user' })
   expect(counts.App).toBeGreaterThan(0)

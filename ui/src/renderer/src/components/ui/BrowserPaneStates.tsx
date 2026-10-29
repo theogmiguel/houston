@@ -173,7 +173,7 @@ export function BrowserPaneStageState({
       />
     )
   }
-  if (failMsg === null) return <BrowserCaption>Select element · click to hand it to the focused agent</BrowserCaption>
+  if (failMsg === null) return <Text size="xs" tone="muted">Select element · click to hand it to the focused agent</Text>
   return (
     <BrowserUnreachableState
       host={unreachableHost(url)}

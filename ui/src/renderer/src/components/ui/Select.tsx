@@ -12,7 +12,7 @@ import { anchorPopoverStart } from './popoverMotion'
 
 const TRIGGER_LAYOUT_CLS =
   'inline-flex items-center justify-between gap-[var(--space-2)] ' +
-  'cursor-pointer text-left data-[open]:border-[var(--border-hover)]'
+  'cursor-pointer text-left data-[open]:border-[var(--line-strong)]'
 
 export interface SelectOption {
   value: string

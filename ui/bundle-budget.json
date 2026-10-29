@@ -242,9 +242,30 @@
     "Re-cut against 960,494 bytes (one boot chunk) with 256 bytes of headroom: every mounted",
     "pane's PR watch hook, the rail's merge queue count and the morning notice share one",
     "bounded request queue per connection (`houston/sharedListRequests.ts`), so a page load",
-    "stays inside the daemon's control handler limit; the queue runs at first paint."
+    "stays inside the daemon's control handler limit; the queue runs at first paint.",
+
+    "Re-cut against 961,052 bytes (one boot chunk) after the token pass swapped Plus Jakarta",
+    "for Inter Variable's `opsz.css`: seven subset faces replace four static weight imports",
+    "and the prose text step adds its utilities, a 558-byte net gain. The cap carries its",
+    "usual small headroom rather than the previous exact-fit 48 bytes.",
+
+    "Re-cut against 961,677 bytes (one boot chunk) for the status-glyph pass: the primitive,",
+    "its source mapping and the two-theme specimen add 625 bytes while replacing five local",
+    "dot implementations. Same small headroom.",
+
+    "Re-cut against 963,021 bytes (one boot chunk): the native recipes add the control, row,",
+    "menu, palette, banner and empty-state utilities first paint renders, a 1,344-byte gain",
+    "over the status-glyph pass. Same small headroom.",
+
+    "Re-cut against 962,955 bytes (one boot chunk) for the pane-header pass: the status word,",
+    "the exit-code store and the exited footer add 1,278 bytes of boot-path chrome. Same",
+    "small headroom.",
+    "Re-cut against 970,241 bytes (one boot chunk) for the expanded sidebar and the label",
+    "cleanup: session rows, grid captions, the workspace roll-up and the recovery-husk exit",
+    "rule add 7,286 bytes of first-paint rail and pane chrome. Same small headroom."
   ],
-  "maxBootBytes": 960900,
+  "maxBootBytes": 970550,
+
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

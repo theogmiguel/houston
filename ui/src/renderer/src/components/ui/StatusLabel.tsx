@@ -90,12 +90,15 @@ const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
   Idle: 'text-[var(--text-muted)]'
 }
 
+/** States with nothing happening draw an outlined dot instead of a filled one. */
+const HOLLOW: ReadonlySet<StatusLabelValue> = new Set(['Idle', 'Paused', 'Missing', 'Not seen', 'Off', 'Kept'])
+
 /** Words for work in progress whose dot pulses; reduced motion keeps it still. */
 const PULSING: ReadonlySet<StatusLabelValue> = new Set(['Verifying'])
 
 type PillTone = 'waiting' | 'failed' | 'done' | 'working' | 'unknown'
 
-const PILL_CLASS = 'inline-flex items-center h-[17px] px-2 rounded-[var(--tr-radius-sm)] flex-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase'
+const PILL_CLASS = 'inline-flex items-center h-[17px] px-2 rounded-[var(--tr-radius-sm)] flex-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]'
 const PILL_TONE: Record<PillTone, string> = {
   waiting: 'bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]',
   failed: 'bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)]',
@@ -106,8 +109,11 @@ const PILL_TONE: Record<PillTone, string> = {
 
 export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot' | 'detail'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
   if (variant === 'detail') return <StatusDetail status={status} tone={tone}>{children}</StatusDetail>
-  if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
-  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
+  if (variant === 'pill') {
+    const text = children ?? status
+    return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{typeof text === 'string' ? text.replace(/^./, (letter) => letter.toUpperCase()) : text}</span>
+  }
+  const hollow = HOLLOW.has(status)
   return (
     <span role={variant === 'dot' ? 'img' : undefined} aria-label={typeof children === 'string' ? children : status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span

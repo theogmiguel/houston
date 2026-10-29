@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 export function TerminalSkeleton({ children }: { children: ReactNode }): React.JSX.Element {
   return (
     <div
+      data-testid="terminal-skeleton"
       className="absolute inset-0 z-[calc(var(--z-pane)+1)] flex flex-col justify-center gap-[var(--space-terminal-skeleton-gap)] pt-[var(--space-1-5)] pr-[var(--space-1-5)] pb-[var(--space-1)] pl-[var(--space-3)] bg-[var(--terminal-skeleton-bg)] pointer-events-none"
       aria-hidden="true"
     >
@@ -13,7 +14,7 @@ export function TerminalSkeleton({ children }: { children: ReactNode }): React.J
 
 export function SkeletonCursor({ synced }: { synced: boolean }): React.JSX.Element {
   return (
-    <div className="w-[var(--sz-terminal-skeleton-cursor)] pb-[var(--space-terminal-skeleton-cursor-gap)]">
+    <div data-testid="terminal-skeleton-cursor" className="w-[var(--sz-terminal-skeleton-cursor)] pb-[var(--space-terminal-skeleton-cursor-gap)]">
       <div
         className={`loop-anim h-[var(--h-terminal-skeleton-cursor)] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite] ${
           synced ? 'transition-opacity duration-[var(--animate-t-fast)] ease-linear opacity-0' : 'motion-reduce:opacity-70'

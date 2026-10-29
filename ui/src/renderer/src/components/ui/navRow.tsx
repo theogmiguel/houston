@@ -8,7 +8,7 @@ export function ListRow({ children, ...rest }: { children: ReactNode } & Record<
   return (
     <div
       {...rest}
-      className="group/row relative px-[var(--space-list-row-inline)] py-[var(--space-list-row-block)] [&+&]:border-t [&+&]:border-t-[var(--divider)] hover:bg-[var(--hover-fill)] focus-within:bg-[var(--hover-fill)] block"
+      className="group/row relative px-[var(--space-list-row-inline)] py-[var(--space-list-row-block)] [&+&]:border-t [&+&]:border-t-[var(--divider)] hover:bg-[var(--hover)] focus-within:bg-[var(--hover)] block"
     >
       {children}
     </div>

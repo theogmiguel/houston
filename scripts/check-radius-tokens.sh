@@ -117,5 +117,36 @@ while IFS=$'\t' read -r n file values locations; do
   echo "FAIL: radius-token $file:$locations '$values'; expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>)" >&2
   fail=1
 done <<< "$counts"
-[ "$fail" -eq 0 ] && echo "ok: radius-token passes (unmapped Tailwind steps: ${banned_alt//|/,})"
+
+# The ladder itself: four role values, and every legacy name aliases one. A
+# fifth literal radius is a new rung the design did not approve.
+radius_problems="$(perl -e '
+  my $f = shift;
+  open my $fh, "<", $f or exit 1;
+  local $/ = undef;
+  my $src = <$fh>;
+  close $fh;
+  my %want = (badge => "4px", ctl => "6px", group => "10px", dialog => "14px");
+  my %got;
+  while ($src =~ /--r-(badge|ctl|group|dialog)\s*:\s*([^;]+);/g) { $got{$1} = $2 }
+  for my $role (sort keys %want) {
+    my $value = $got{$role} // "missing";
+    print "--r-$role is \x27$value\x27; expected \x27$want{$role}\x27\n" unless $value eq $want{$role};
+  }
+  my %exempt = map { $_ => 1 } qw(pill surface-circle surface-full);
+  while ($src =~ /--tr-radius-([a-z0-9-]+)\s*:\s*([^;]+);/g) {
+    my ($name, $value) = ($1, $2);
+    next if $exempt{$name};
+    next if $value =~ /^var\(--r-(?:badge|ctl|group|dialog)\)$/;
+    print "--tr-radius-$name is \x27$value\x27; expected a var(--r-badge|ctl|group|dialog) alias\n";
+  }
+' ui/src/renderer/src/theme.css)"
+
+while IFS= read -r problem; do
+  [ -n "$problem" ] || continue
+  echo "FAIL: radius-token $problem" >&2
+  fail=1
+done <<< "$radius_problems"
+
+[ "$fail" -eq 0 ] && echo "ok: radius-token passes (4 roles, unmapped Tailwind steps: ${banned_alt//|/,})"
 exit "$fail"

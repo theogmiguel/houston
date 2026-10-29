@@ -58,7 +58,6 @@ import {
   ChoiceCardSpecimen,
   ActionMenu,
   ActionEmptyState,
-  ActivityDotSpecimen,
   Button,
   BulletListSpecimen,
   AppTitlebarSpecimen,
@@ -232,6 +231,7 @@ import {
   Toggle,
   CheckedStamp,
   STATUS_LABELS,
+  StatusGlyphSpecimen,
   StatusLabel,
   StartupFailureSpecimen,
   StartupSkeletonSpecimen,
@@ -854,7 +854,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <WorkspaceGroupLabelSpecimen />
           <SettingsNavigation><SettingsRailRow kind="section" icon={IconSearch} label="Appearance" sectionId="appearance" selected onClick={noop} /></SettingsNavigation>
           <WorkspaceGroupDivider><div style={{ borderTop: '1px solid var(--border)' }} /></WorkspaceGroupDivider>
-          <SpecimenRow><ActivityDotSpecimen /></SpecimenRow>
+          <SpecimenRow><StatusGlyphSpecimen /></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Empty state frame roles">
@@ -1296,6 +1296,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             </div>
           </SpecimenRow>
           <SpecimenRow>
+            <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} />
             <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} size="compact" />
             <ActionEmptyState surface="shell" className="h-full" headline="No file selected" description="Choose a file to inspect its diff." action={{ label: 'Review', onClick: noop }} size="compact" />
           </SpecimenRow>

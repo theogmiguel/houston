@@ -212,6 +212,17 @@ interface Props {
   onOpenDir: (path: string) => void
 }
 
+function TerminalLoading({ live, synced }: { live: boolean; synced: boolean }): React.JSX.Element {
+  return (
+    <TerminalSkeleton>
+      {live && <SkeletonCursor synced={synced} />}
+      {SKELETON_WIDTHS.map((w, i) => (
+        <SkeletonLine key={i} synced={synced} widthPercent={w} delayMs={i * 60} />
+      ))}
+    </TerminalSkeleton>
+  )
+}
+
 export function TerminalPane({
   client,
   info,
@@ -1636,14 +1647,7 @@ export function TerminalPane({
         </TerminalFindStrip>
       )}
       <TerminalHost hostRef={hostRef} />
-      {!skeletonGone && (
-        <TerminalSkeleton>
-          <SkeletonCursor synced={synced} />
-          {SKELETON_WIDTHS.map((w, i) => (
-            <SkeletonLine key={i} synced={synced} widthPercent={w} delayMs={i * 60} />
-          ))}
-        </TerminalSkeleton>
-      )}
+      {!skeletonGone && <TerminalLoading live={live} synced={synced} />}
       {(dragOver || dropBusy) && (
         <TerminalDropzone>
           {dropBusy ? (

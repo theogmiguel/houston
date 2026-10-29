@@ -1,7 +1,8 @@
 import React from 'react'
 import type { TagInfo } from '../src/houston/generated/TagInfo'
 import { RosterPeekbar, RosterSplit } from '../src/components/ui/RosterSurface'
-import { PaneBranchChip, PaneEngineGlyph, PaneHeadActions, PaneHeadButton, PaneHeadIdentity, PaneNotice, PaneStateChip, PaneStatusDot, PaneSubtitle } from '../src/components/ui/PaneControls'
+import { PaneBranchChip, PaneEngineGlyph, PaneHeadActions, PaneHeadButton, PaneHeadIdentity, PaneNotice, PaneStateChip, PaneSubtitle } from '../src/components/ui/PaneControls'
+import { StatusGlyph } from '../src/components/ui/StatusGlyph'
 import { PaneContextMenu, PaneContextMenuCheck, PaneContextMenuChord, PaneContextMenuGroupLabel, PaneContextMenuHead, PaneContextMenuRow, PaneContextMenuRowLabel, PaneContextMenuSeparator } from '../src/components/ui/PaneContextMenu'
 import { ChildrenColumn, PeekBarButton, PeekBarIconButton, SettledChildButton, SettledChildFooter } from '../src/components/ui/ChildPaneLayout'
 import { KeyCap, KeymapHintGroup, KeymapHintHeading, KeymapHintRow, KeymapHintSurface } from '../src/components/ui/KeymapHint'
@@ -33,7 +34,7 @@ export function UiRoleSpecimen(): React.JSX.Element {
       <div className="grid content-start gap-[var(--space-2)]">
         <TaskDescriptionPreviewSpecimen />
         <PaneHeadIdentity>
-          <PaneStatusDot status="working" /><PaneEngineGlyph><Icon glyph={IconCheck} role="ui" /></PaneEngineGlyph><PaneSubtitle>~/project</PaneSubtitle><PaneBranchChip>main</PaneBranchChip>
+          <StatusGlyph state="working" label="Working" /><PaneEngineGlyph><Icon glyph={IconCheck} role="ui" /></PaneEngineGlyph><PaneSubtitle>~/project</PaneSubtitle><PaneBranchChip>main</PaneBranchChip>
           <PaneHeadActions><PaneStateChip state="exited">ENDED</PaneStateChip><PaneStateChip state="running">Working</PaneStateChip><PaneHeadButton aria-label="Close pane"><Icon glyph={IconClose} role="ui" /></PaneHeadButton><PaneHeadButton tone="accent" aria-label="Resume pane"><Icon glyph={IconCheck} role="ui" /></PaneHeadButton><PaneHeadButton tone="danger" aria-label="Stop pane"><Icon glyph={IconClose} role="ui" /></PaneHeadButton><PaneHeadButton tone="info" aria-label="Working pane"><Icon glyph={IconCheck} role="ui" /></PaneHeadButton></PaneHeadActions>
         </PaneHeadIdentity>
         <PaneNotice>Started a fresh session</PaneNotice>

@@ -55,7 +55,7 @@ describe('WorkspaceEmpty — state matrix', () => {
   it('the action row is the three doors that work', () => {
     const labels = Array.from(container.querySelectorAll('[data-testid="workspace-empty-new-session"], [data-testid="workspace-empty-terminal"], [data-testid="workspace-empty-browser"]')).map((b) => b.textContent?.trim())
     expect(labels).toEqual(['Terminal', 'Browser'])
-    expect(container.textContent).toContain('＋ Add action')
+    expect(container.textContent).toContain('Add action')
   })
 
   it('Terminal and Browser each open ONE pane directly — no composer in between', () => {
@@ -70,6 +70,25 @@ describe('WorkspaceEmpty — state matrix', () => {
     expect(clicks).toEqual(['codex'])
     expect(container.textContent).not.toContain('Antigravity')
     expect(container.querySelector('[data-testid="workspace-empty-new-session"]')).toBeNull()
+  })
+
+  it('names only the hooks-off exception under a launch tile', () => {
+    act(() =>
+      root.render(
+        <WorkspaceEmpty
+          installedAgents={['claude', 'codex']}
+          agentHooks={[
+            { provider: 'claude', path: '', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '2.1.263', trust: null },
+            { provider: 'codex', path: '', scope: 'global', enabled: false, installed: true, error: null, present: true, version: '0.160', trust: null }
+          ]}
+          onSpawnAgent={() => {}}
+          onTerminal={() => {}}
+          onBrowser={() => {}}
+        />
+      )
+    )
+    expect(container.textContent).toContain('No status: hooks off')
+    expect(container.textContent?.match(/No status: hooks off/g)).toHaveLength(1)
   })
 
   it('Thread is gone, not merely disabled', () => {

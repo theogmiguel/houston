@@ -8,7 +8,7 @@ import { Caption } from '../ui/Caption'
 import { StatusNote, type StatusNoteTone } from '../ui/StatusNote'
 import { IconCheck } from '../icons'
 import { SettingsList, Toggle } from '../ui/settingsPrimitives'
-import { SectionHead, Row } from './shared'
+import { Row } from './shared'
 
 const DESKTOP_OPTIONS = [
   { value: 'off', label: 'Off' },
@@ -96,7 +96,6 @@ export function NotificationsSection({
 
   return (
     <>
-      <SectionHead title="Notifications" />
       <div className="grid gap-[var(--space-3)]">
         <SettingsList>
         <Row

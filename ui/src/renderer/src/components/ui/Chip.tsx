@@ -1,4 +1,3 @@
-import { ROW_STATE } from './rowState'
 import { IconClose } from '../icons'
 import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
@@ -57,20 +56,27 @@ function CountContent({ loading, count, emptySetLabel }: Pick<ChipProps, 'loadin
 }
 
 function choiceClass(selected: boolean, isPressable: boolean): string {
-  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] ${isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'} border ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'} [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${ROW_STATE[selected ? 'selected' : 'rest']}`
+  const paint = selected
+    ? 'border-[var(--border-hover)] bg-selected-fill text-[var(--text-primary)] hover:bg-selected-hover-fill'
+    : 'border-transparent bg-[var(--field)] text-[var(--text-secondary)] hover:bg-hover-fill hover:text-[var(--text-primary)]'
+  return `btn min-h-[var(--h-chip)] px-[var(--space-2-5)] ${isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'} border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${paint}`
 }
 
 function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): string {
   const shapeRadius = isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
   const press = isPressable ? 'cursor-pointer active:scale-[0.96]' : ''
-  const paint = isPressable ? `${ROW_STATE[selected ? 'selected' : 'rest']} ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'}` : TONE_CLASS[tone]
-  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${paint} ${press}`
+  const paint = isPressable
+    ? selected
+      ? 'border-[var(--border-hover)] bg-selected-fill text-[var(--text-primary)] hover:bg-selected-hover-fill'
+      : 'border-transparent bg-[var(--field)] text-[var(--text-secondary)] hover:bg-hover-fill hover:text-[var(--text-primary)]'
+    : TONE_CLASS[tone]
+  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-chip)] max-w-full px-[var(--space-2-5)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${paint} ${press}`
 }
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {
   if (variant === 'label') return 'inline-flex flex-none items-center rounded-[var(--tr-radius-input)] border border-[var(--border)] px-[var(--space-1-5)] text-[length:var(--tr-text-label-size)] font-normal text-[var(--text-muted)]'
   const shape = variant === 'choice' ? choiceClass(selected, isPressable) : pillClass(tone, isPressable, selected)
-  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none ${FOCUS_HALO_CLS}`
+  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:[outline-offset:2px]`
 }
 
 export function Chip({

@@ -7,9 +7,12 @@ import type { WorkspaceAction } from '../houston/client'
 import { PaneMenuAgentRow } from './ui/PaneMenu'
 import type { AgentKind } from '../houston/client'
 import type { KeymapOverrides } from '../houston/client'
+import type { AgentHookState } from '../houston/generated/AgentHookState'
+import { Text } from './ui'
 
 export interface WorkspaceEmptyProps {
   installedAgents: AgentKind[]
+  agentHooks?: AgentHookState[]
   onSpawnAgent: (agent: AgentKind) => void
   onTerminal: () => void
   onBrowser: () => void
@@ -22,6 +25,7 @@ export interface WorkspaceEmptyProps {
 
 export function WorkspaceEmpty({
   installedAgents,
+  agentHooks = [],
   onSpawnAgent,
   onTerminal,
   onBrowser,
@@ -75,10 +79,17 @@ export function WorkspaceEmpty({
           Browser
         </Button>
       </EmptyStateActions>
-      <Inline gap="small" wrap className="justify-center">
-        {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'zcode'].includes(agent)).map((agent) => (
-          <div key={agent}><PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} /></div>
-        ))}
+      <Inline gap="small" wrap align="start" className="justify-center">
+        {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'zcode'].includes(agent)).map((agent) => {
+          const hooks = agentHooks.find((state) => state.provider === agent)
+          const hooksOff = hooks !== undefined && (!hooks.enabled || !hooks.installed)
+          return (
+            <div key={agent} className="grid gap-[var(--space-1)]">
+              <PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} />
+              {hooksOff && <Text size="small" tone="warn">No status: hooks off</Text>}
+            </div>
+          )
+        })}
       </Inline>
       <WorkspaceActions actions={actions} keymapOverrides={keymapOverrides} onRun={onRunAction} onSave={onSaveAction} onDelete={onDeleteAction} />
       </Card>

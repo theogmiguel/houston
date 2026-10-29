@@ -76,12 +76,12 @@ describe('hit targets — charter §10 density floor', () => {
     expectExpandedHitArea(retry ?? null, 'h-[var(--h-ctl-mini)]')
   })
 
-  it("FieldSwitch's 17px track hits the floor without growing", () => {
+  it("FieldSwitch's 18px track hits the floor without growing", () => {
     act(() => {
       root.render(<Switch size="field" on={false} label="Orchestration" onChange={() => {}} />)
     })
     const theme = readFileSync(resolve(__dirname, '..', 'theme.css'), 'utf8')
-    expect(theme).toMatch(/--h-switch-track:\s*17px;/)
+    expect(theme).toMatch(/--h-switch-track:\s*18px;/)
     expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[var(--h-switch-track)]')
   })
 

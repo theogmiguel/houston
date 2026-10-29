@@ -55,8 +55,8 @@ export function MarkdownBody({
   ...props
 }: DivProps & { extent: ContentExtent; ref?: Ref<HTMLDivElement> }): React.JSX.Element {
   return (
-    <div ref={ref} className={`overflow-y-auto text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-[1.6] ${extent === 'fill' ? 'flex-1 min-h-0' : extent === 'tall' ? 'h-[var(--h-overlay-dialog-tall)]' : ''} ${className}`}>
-      <Text as="div" size="body" tone="secondary" leading="relaxed" className="[display:contents] [font-weight:var(--tr-text-body-weight)]" {...props} />
+    <div ref={ref} className={`overflow-y-auto text-text-secondary [font-size:var(--tr-text-prose-size)] [font-weight:var(--tr-text-prose-weight)] leading-[var(--tr-text-prose-leading)] ${extent === 'fill' ? 'flex-1 min-h-0' : extent === 'tall' ? 'h-[var(--h-overlay-dialog-tall)]' : ''} ${className}`}>
+      <Text as="div" size="prose" weight="prose" tone="secondary" leading="prose" className="[display:contents]" {...props} />
     </div>
   )
 }
@@ -81,7 +81,7 @@ export function SavedPath({ className = '', ...props }: DivProps): React.JSX.Ele
 }
 
 export function ErrorMessage({ className = '', ...props }: DivProps): React.JSX.Element {
-  return <Text as="div" {...props} size="body" tone="blocked" className={`[font-weight:var(--tr-text-body-weight)] ${className}`} />
+  return <Text as="div" {...props} size="prose" weight="prose" tone="blocked" className={className} />
 }
 
 export function ActionRow({ children }: { children: ReactNode }): React.JSX.Element {
@@ -112,7 +112,7 @@ export function MarkdownHeading({
 }
 
 export function MarkdownParagraph({ children }: { children: ReactNode }): React.JSX.Element {
-  return <Text as="p" size="body" tone="secondary" leading="relaxed" className="my-1.5 [font-weight:var(--tr-text-body-weight)]">{children}</Text>
+  return <Text as="p" size="prose" weight="prose" tone="secondary" leading="prose" className="my-1.5">{children}</Text>
 }
 
 export function MarkdownList({ children }: { children: ReactNode }): React.JSX.Element {
@@ -121,7 +121,7 @@ export function MarkdownList({ children }: { children: ReactNode }): React.JSX.E
 
 export function InlineCode({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <Text as="code" size="body" tone="primary" className="[font-weight:var(--tr-text-body-weight)] bg-[var(--tool-code-bg)] rounded px-[var(--space-inline-separator)] py-px">
+    <Text as="code" size="prose" weight="prose" tone="primary" className="bg-[var(--tool-code-bg)] rounded px-[var(--space-inline-separator)] py-px">
       {children}
     </Text>
   )

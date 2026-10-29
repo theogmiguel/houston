@@ -46,8 +46,10 @@ describe('checkout identity in pane headers', () => {
       workspaces: [makeWorkspace({ path: WS })]
     })
 
-    expect(paneChip(harness, 1)?.textContent).toContain('primary · main')
-    expect(paneChip(harness, 2)?.textContent).toContain('wt/feature · feat/x')
+    expect(paneChip(harness, 1)?.textContent).toContain('main')
+    expect(paneChip(harness, 1)?.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('primary · main')
+    expect(paneChip(harness, 2)?.textContent).toContain('feat/x')
+    expect(paneChip(harness, 2)?.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('wt/feature · feat/x')
   })
 
   it('shows remote host identity and hides an unknown local checkout', async () => {
@@ -60,6 +62,7 @@ describe('checkout identity in pane headers', () => {
     })
 
     expect(paneChip(harness, 1)).toBeNull()
-    expect(paneChip(harness, 2)?.textContent).toContain('remote · buildbox')
+    expect(paneChip(harness, 2)?.textContent).toContain('buildbox')
+    expect(paneChip(harness, 2)?.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('remote · buildbox')
   })
 })

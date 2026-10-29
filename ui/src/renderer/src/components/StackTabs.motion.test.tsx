@@ -67,5 +67,5 @@ it('updates the dot and background attention badge from the store with a stale m
   act(() => store.set((previous) => new Map(previous).set(2, { ...sessions.get(2)!, status: 'needs-input' })))
   expect(container.querySelector('[data-testid="stack-tab-badge"]')).not.toBeNull()
   const background = container.querySelector('[data-testid="stack-tab"][data-active="false"]')!
-  expect(background.querySelector('.agent-dot')?.className).toContain('--warn')
+  expect(background.querySelector('[data-status-glyph="needs"]')).not.toBeNull()
 })

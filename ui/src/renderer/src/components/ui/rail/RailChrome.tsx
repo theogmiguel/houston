@@ -13,7 +13,7 @@ const GRID_FRAME_MIN_HEIGHT = { detailed: 'min-h-9', compact: 'min-h-8' } as con
 
 // Holds an inline grid rename in the card's own frame so the row keeps its footprint.
 export function RailGridRenameFrame({ cardMode, selected, children }: { cardMode: 'detailed' | 'compact'; selected: boolean; children: ReactNode }): React.JSX.Element {
-  return <div data-testid="grid-row-renaming" className={`flex ${GRID_FRAME_MIN_HEIGHT[cardMode]} min-w-0 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] ${selected ? 'bg-selected-fill' : ''}`}>{children}</div>
+  return <div data-testid="grid-row-renaming" className={`flex ${GRID_FRAME_MIN_HEIGHT[cardMode]} min-w-0 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] ${selected ? 'bg-[var(--sel)]' : ''}`}>{children}</div>
 }
 
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
@@ -38,7 +38,7 @@ export function RailOptionsDivider(): React.JSX.Element {
 }
 
 export function RailMenuRow({ children, selected = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean }): React.JSX.Element {
-  return <button {...props} type="button" className={`flex min-h-7 w-full items-center gap-2 rounded-[var(--tr-radius-sm)] px-2 py-1 text-left [font-size:var(--tr-text-base)] text-[var(--text-primary)] hover:bg-hover-fill ${selected ? 'bg-hover-fill' : ''}`}>{children}</button>
+  return <button {...props} type="button" className={`flex min-h-7 w-full items-center gap-2 rounded-[var(--tr-radius-sm)] px-2 py-1 text-left [font-size:var(--tr-text-base)] text-[var(--text-primary)] hover:bg-[var(--hover)] ${selected ? 'bg-[var(--sel)]' : ''}`}>{children}</button>
 }
 
 export function RailMenuValue({ children }: { children: ReactNode }): React.JSX.Element {
@@ -83,7 +83,7 @@ export function RailGroupSegment({ value, onChange }: { value: 'none' | 'status'
 }
 
 export function RailSortOption({ selected, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { selected: boolean; children: ReactNode }): React.JSX.Element {
-  return <button {...props} type="button" role="radio" aria-checked={selected} className={`flex h-[var(--h-ctl)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-input)] px-[var(--space-2)] text-left [font-size:var(--tr-text-label-size)] ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-hover-fill'}`}>{children}</button>
+  return <button {...props} type="button" role="radio" aria-checked={selected} className={`flex h-[var(--h-ctl)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-input)] px-[var(--space-2)] text-left [font-size:var(--tr-text-label-size)] ${selected ? 'bg-[var(--sel)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--hover)]'}`}>{children}</button>
 }
 
 export function RailSortList({ children }: { children: ReactNode }): React.JSX.Element {
@@ -127,11 +127,11 @@ export function RailListViewport({ children, dragging, refused = false, ...props
 
 export function RailWorkspaceGroupRow(props: ComponentProps<typeof WorkspaceTreeRow>): React.JSX.Element {
   const { className = '', selected = false, ...rest } = props
-  return <WorkspaceTreeRow {...rest} selected={selected} className={`font-semibold ${selected ? 'bg-selected-fill' : ''} ${className}`} />
+  return <WorkspaceTreeRow {...rest} selected={selected} className={`font-semibold ${selected ? 'bg-[var(--sel)]' : ''} ${className}`} />
 }
 
 export function RailRowCount({ count }: { count: number }): React.JSX.Element {
-  return <span aria-hidden="true" data-count={count} className="flex-none [font-size:var(--tr-text-label-size)] font-medium text-[var(--text-muted)] after:content-[attr(data-count)]" />
+  return <span aria-hidden="true" data-count={count} className="flex-none [font-size:var(--tr-text-label-size)] font-medium tabular-nums text-[var(--text-muted)] after:content-[attr(data-count)]" />
 }
 
 export function RailPinnedIndicator(): React.JSX.Element {
@@ -159,7 +159,7 @@ export function RailContextMenu({ visible = true, children, ...props }: Componen
 export function RailGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
   // The top padding separates groups; the hover fill covers only the label row.
   return <div className="group sticky top-0 z-[1] w-full pt-[var(--space-1)]">
-    <div className="flex h-[var(--h-row)] w-full items-center rounded-[var(--tr-radius-sm)] px-2 [font-size:var(--tr-text-small-size)] font-semibold leading-4 text-[var(--text-secondary)] hover:bg-hover-fill">{children}</div>
+    <div className="flex h-[var(--h-row)] w-full items-center rounded-[var(--tr-radius-sm)] px-2 [font-size:var(--tr-text-small-size)] font-semibold leading-4 text-[var(--text-secondary)] hover:bg-[var(--hover)]">{children}</div>
   </div>
 }
 

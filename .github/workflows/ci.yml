@@ -114,6 +114,8 @@ jobs:
         run: bash scripts/check-button-recipes.sh
       - name: check-icon-metrics.sh (icon size/stroke come from --tr-icon-* rungs)
         run: bash scripts/check-icon-metrics.sh
+      - name: check-status-glyph.sh (a rounded status image renders StatusGlyph, never a local dot)
+        run: bash scripts/check-status-glyph.sh
       - name: check-shadow-recipes.sh (shadow recipes come from tokens/shadowChrome.ts, never a literal)
         run: bash scripts/check-shadow-recipes.sh
       - name: check-ellipsis.sh (real ellipsis character, never ASCII "...", in user-facing text)
@@ -124,6 +126,8 @@ jobs:
         run: bash scripts/check-empty-state-action.sh
       - name: check-ui-boundary.sh (feature class strings use layout utilities only)
         run: bash scripts/check-ui-boundary.sh
+      - name: check-page-width.sh (every page root uses the one --page-w column)
+        run: bash scripts/check-page-width.sh
       - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
         run: bash scripts/check-copy.sh
       - name: check-ratchets-only-tighten.sh (the complexity ratchet only tightens)

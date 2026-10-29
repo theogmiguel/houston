@@ -66,7 +66,7 @@ const align = (at: number): string => (at <= 0.25 ? '' : at >= 0.75 ? '-translat
 
 function MarkLabels({ marks, row }: { marks: WindowMark[]; row: string }): React.JSX.Element {
   return (
-    <div data-testid={`window-labels-${row}`} className="relative h-[var(--tr-text-label-leading)]">
+    <div data-testid={`window-labels-${row}`} className="relative h-[calc(var(--tr-text-label-size)*var(--tr-text-label-leading))]">
       {marks.map((m, i) => (
         <span key={`${m.kind}-label-${i}`} className={`absolute whitespace-nowrap ${align(m.at)}`} style={{ left: pct(m.at) }}>
           {m.label}

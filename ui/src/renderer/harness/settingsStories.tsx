@@ -435,15 +435,32 @@ export function SettingsAgentSetup({ detail = false, rename = false }: { detail?
   const client = React.useMemo(() => {
     let enabled = false
     const listeners = new Set<(message: ServerMsg) => void>()
+    const kindListeners = new Map<string, Set<(message: ServerMsg) => void>>()
+    const emit = (message: ServerMsg): void => {
+      for (const listener of listeners) listener(message)
+      for (const listener of kindListeners.get(message.type) ?? []) listener(message)
+    }
     return new Proxy({
       subscribeAll(handler: (message: ServerMsg) => void) {
         listeners.add(handler)
         return () => { listeners.delete(handler) }
       },
-      send(message: { type: string; enabled?: boolean }) {
+      subscribe(kind: string, handler: (message: ServerMsg) => void) {
+        const handlers = kindListeners.get(kind) ?? new Set()
+        handlers.add(handler)
+        kindListeners.set(kind, handlers)
+        return () => { handlers.delete(handler) }
+      },
+      send(message: { type: string; enabled?: boolean; workspace?: string }) {
         if (message.type === 'zcode_quota_check_set') enabled = message.enabled === true
         if (message.type === 'zcode_quota_check_get' || message.type === 'zcode_quota_check_set') {
-          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'zcode_quota_check', enabled }) })
+          queueMicrotask(() => emit({ type: 'zcode_quota_check', enabled }))
+        }
+        if (message.type === 'forge_settings_get') {
+          queueMicrotask(() => emit({ type: 'forge_settings', bitbucket_enabled: false, bitbucket_account: null, keyring_error: null }))
+        }
+        if (message.type === 'task_review_settings_get') {
+          queueMicrotask(() => emit({ type: 'task_review_settings', workspace: message.workspace ?? '/repo', reviewer: null, rework_rounds: 1, mode: 'handback', focus: 'bugs' }))
         }
       }
     }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient

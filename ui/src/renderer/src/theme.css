@@ -7,8 +7,8 @@
   --w-settings-number-error: 220px;
   --w-settings-description: 62ch;
   --w-settings-intro: 72ch;
-  --tr-radius-theme-preview: 3px;
-  --tr-radius-palette-swatch: 3px;
+  --tr-radius-theme-preview: var(--r-badge);
+  --tr-radius-palette-swatch: var(--r-badge);
   --space-palette-option-row: 2px;
   --h-palette-option-list: 320px;
   /* Tags */
@@ -100,27 +100,37 @@
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
-  --w-switch-knob: 11px;
+  --w-switch-knob: 14px;
   --space-switch-inset: 2px;
-  --space-switch-travel: 13px;
+  --space-switch-travel: 12px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
-  --rail-bg: #0f0f12;
+  --rail-bg: #1c1c1f;
   --content-bg: #0a0a0b;
   --card-bg: #131316;
   --card-hover: #1c1c20;
   --border: #2a2a31;
   --border-hover: #35353d;
   --border-focus: #6f6f7a;
+  --line-strong: rgba(255, 255, 255, .16);
+  --field: rgba(255, 255, 255, .06);
+  --hover: rgba(255, 255, 255, .05);
+  --sel: rgba(255, 255, 255, .09);
+  --tog-off: rgba(255, 255, 255, .18);
+  --warn-wash: rgba(245, 165, 36, .08);
+  --warn-line: rgba(245, 165, 36, .32);
+  --shadow-float: 0 12px 32px -8px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .08);
+  --shadow-seg-active: 0 1px 2px rgba(0, 0, 0, .2), 0 0 0 1px var(--border);
+  --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-roster-dot: 0 0 0 2px var(--card-bg);
-  --tr-radius-skeleton-line: 3px;
+  --tr-radius-skeleton-line: var(--r-badge);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
   --shadow-1: var(--shadow-md);
   --shadow-2: var(--shadow-lg);
@@ -138,14 +148,18 @@
   --hljs-comment: #6b6b76;
   --hljs-attr: #facc15;
   --hljs-tag: #f87171;
-  --accent: #5c8fff;
-  --accent-ink: #0a0a0b;
-  --text-on-accent: #ffffff;
-  --accent-hover: color-mix(in srgb, #5c8fff 85%, white);
-  --accent-muted: color-mix(in srgb, #5c8fff 15%, transparent);
-  --text-primary: #f4f4f6;
-  --text-secondary: #b4b4bd;
-  --text-muted: #7a7a85;
+  --accent: #2f6fe8;
+  --accent-ink: #64a0ff;
+  --on-accent: #ffffff;
+  --text-on-accent: var(--on-accent);
+  --accent-hover: color-mix(in srgb, #2f6fe8 85%, white);
+  --accent-muted: color-mix(in srgb, #2f6fe8 15%, transparent);
+  --t1: rgba(255, 255, 255, .92);
+  --t2: rgba(255, 255, 255, .66);
+  --t3: rgba(255, 255, 255, .52);
+  --text-primary: var(--t1);
+  --text-secondary: var(--t2);
+  --text-muted: var(--t3);
   --text-faint: color-mix(in srgb, #7a7a85 62%, #0a0a0b);
   --tr-text-shortcut-group-tracking: 0.04em;
   --space-compact-field-block: 5px;
@@ -364,7 +378,7 @@
   --material-shell-custom-worst: #36363a;
   --material-base-custom-worst: #2b2b2f;
   --material-shell-text-muted: var(--text-muted);
-  --material-shell-text-faint: #52525a;
+  --material-shell-text-faint: #5a5a63;
   --material-inset-text-muted: #7e7e88;
   --material-inset-text-faint: #54545c;
   --material-raised-text-muted: #83838d;
@@ -378,24 +392,23 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
-  /* Filled affirmative buttons: a deeper step of the accent so the white label keeps 4.5:1
-     (#3b6fe8 / #fff = 4.54); the accent itself stays for focus, links and selection. */
-  --primary-fill: #3b6fe8;
-  --primary-fill-hover: color-mix(in srgb, #3b6fe8 88%, black);
+  /* White label on the fill: #2f6fe8 is 4.61:1; Paper's #0a63e0 is 5.42:1. */
+  --primary-fill: var(--accent);
+  --primary-fill-hover: var(--accent-hover);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
   --muted: color-mix(in srgb, var(--card-bg) 78%, transparent);
   --popover: var(--elevated-surface);
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  /* Row states measured on the rung grounds (dL* >= 5 against rest): hover 7%, selected 14%,
-     selected+hover 16%. The previous 5% / 10% recipe failed the threshold on Graphite and Paper. */
-  --hover-fill: #ffffff12;
-  --selected-fill: #ffffff24;
-  --selected-hover-fill: #ffffff29;
-  /* Border of a control identified by its edge (number field, segmented track, off switch): a step
-     above --border-hover. Full 3:1 (#616167) read as a bright frame around every control; these
-     controls also carry a fill or a selected segment. --border stays for decorative dividers. */
+  /* Row states take the native recipe's translucent greys: hover 5%, selected 9% in both
+     themes, so selection reads as one quiet wash rather than a second raised surface. */
+  --hover-fill: var(--hover);
+  --selected-fill: var(--sel);
+  --selected-hover-fill: var(--sel);
+  /* Border of a control identified by its edge (the number field): a step above --border-hover.
+     Full 3:1 (#616167) read as a bright frame around every control; this control also carries a
+     fill. --border stays for decorative dividers. */
   --border-control: #4a4a52;
   --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
@@ -450,7 +463,7 @@
   --h-terminal-skeleton-line: 13px;
   --space-terminal-skeleton-gap: 11px;
   --space-terminal-skeleton-cursor-gap: 3px;
-  --tr-radius-terminal-skeleton-line: 3px;
+  --tr-radius-terminal-skeleton-line: var(--r-badge);
   --sz-tag-dot-named: 5px;
   --sz-tag-dot-compact: 6px;
   --sz-tag-swatch-menu: 9px;
@@ -514,8 +527,8 @@
   --w-settings-number-error: 220px;
   --w-settings-description: 62ch;
   --w-settings-intro: 72ch;
-  --tr-radius-theme-preview: 3px;
-  --tr-radius-palette-swatch: 3px;
+  --tr-radius-theme-preview: var(--r-badge);
+  --tr-radius-palette-swatch: var(--r-badge);
   --space-palette-option-row: 2px;
   --h-palette-option-list: 320px;
   /* Tags */
@@ -607,27 +620,37 @@
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
-  --w-switch-knob: 11px;
+  --w-switch-knob: 14px;
   --space-switch-inset: 2px;
-  --space-switch-travel: 13px;
+  --space-switch-travel: 12px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
-  --rail-bg: #f1f1f3;
+  --rail-bg: #ececef;
   --content-bg: #e8e8ea;
   --card-bg: #fbfbfc;
   --card-hover: #ffffff;
   --border: #d7d7dd;
   --border-hover: #c2c2cb;
   --border-focus: #4a4a55;
+  --line-strong: rgba(0, 0, 0, .16);
+  --field: rgba(0, 0, 0, .05);
+  --hover: rgba(0, 0, 0, .045);
+  --sel: rgba(0, 0, 0, .09);
+  --tog-off: rgba(0, 0, 0, .22);
+  --warn-wash: rgba(180, 83, 9, .06);
+  --warn-line: rgba(180, 83, 9, .3);
+  --shadow-float: 0 12px 32px -10px rgba(0, 0, 0, .18), 0 0 0 1px rgba(0, 0, 0, .08);
+  --shadow-seg-active: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 1px var(--border);
+  --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-roster-dot: 0 0 0 2px var(--card-bg);
-  --tr-radius-skeleton-line: 3px;
+  --tr-radius-skeleton-line: var(--r-badge);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
   --shadow-1: var(--shadow-md);
   --shadow-2: var(--shadow-lg);
@@ -644,14 +667,18 @@
   --hljs-comment: #9ca3af;
   --hljs-attr: #ca8a04;
   --hljs-tag: #dc2626;
-  --accent: #1d4ed8;
-  --accent-ink: #ffffff;
-  --text-on-accent: #ffffff;
-  --accent-hover: color-mix(in srgb, #1d4ed8 85%, black);
-  --accent-muted: color-mix(in srgb, #1d4ed8 15%, transparent);
-  --text-primary: #131316;
-  --text-secondary: #4b4b55;
-  --text-muted: #74747f;
+  --accent: #0a63e0;
+  --accent-ink: #0a5cd1;
+  --on-accent: #ffffff;
+  --text-on-accent: var(--on-accent);
+  --accent-hover: color-mix(in srgb, #0a63e0 85%, black);
+  --accent-muted: color-mix(in srgb, #0a63e0 15%, transparent);
+  --t1: #1d1d1f;
+  --t2: #424245;
+  --t3: #66666b;
+  --text-primary: var(--t1);
+  --text-secondary: var(--t2);
+  --text-muted: var(--t3);
   --text-faint: color-mix(in srgb, #74747f 62%, #e8e8ea);
   --tr-text-shortcut-group-tracking: 0.04em;
   --space-compact-field-block: 5px;
@@ -786,7 +813,7 @@
   --task-banner-error-fill: color-mix(in srgb, var(--stop) 9%, transparent);
   --task-queue-meter-fill: color-mix(in srgb, var(--text-primary) 10%, transparent);
   --ok: #16a34a;
-  --warn: #ca8a04;
+  --warn: #8a5a00;
   --stop: #dc2626;
   --online: var(--ok);
   --danger: var(--stop);
@@ -859,7 +886,7 @@
   --glass-saturate: 1.5;
   --glass-rail-shadow: none;
   --glass-topbar-shadow: none;
-  --custom-text-muted: #5d5f63;
+  --custom-text-muted: #57595d;
   --custom-text-faint: #888a8e;
   --glass-bg: rgba(255,255,255,.90);
   --glass: var(--glass-bg);
@@ -884,6 +911,7 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
+  /* White label on the fill: #0a63e0 is 5.42:1. */
   --primary-fill: var(--accent);
   --primary-fill-hover: var(--accent-hover);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
@@ -892,9 +920,9 @@
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --hover-fill: #00000012;
-  --selected-fill: #00000029;
-  --selected-hover-fill: #0000002e;
+  --hover-fill: var(--hover);
+  --selected-fill: var(--sel);
+  --selected-hover-fill: var(--sel);
   --border-control: #b4b4bc;
   --hover-strong: #00000014;
   --selection: var(--selected-fill);
@@ -949,7 +977,7 @@
   --h-terminal-skeleton-line: 13px;
   --space-terminal-skeleton-gap: 11px;
   --space-terminal-skeleton-cursor-gap: 3px;
-  --tr-radius-terminal-skeleton-line: 3px;
+  --tr-radius-terminal-skeleton-line: var(--r-badge);
   --sz-tag-dot-named: 5px;
   --sz-tag-dot-compact: 6px;
   --sz-tag-swatch-menu: 9px;
@@ -1086,13 +1114,13 @@
   --space-empty-pane-body-bottom: 16px;
   --space-footnote-top: 10px;
   --w-switch-track: 30px;
-  --h-switch-track: 17px;
+  --h-switch-track: 18px;
   --h-settings-switch: 20px;
   --h-chip-dismiss: 16px;
   --h-picker-row: 30px;
   --space-switch-thumb-inset: 2px;
-  --sz-switch-thumb: 11px;
-  --space-switch-thumb-shift: 13px;
+  --sz-switch-thumb: 14px;
+  --space-switch-thumb-shift: 12px;
   --h-back-bar: 42px;
   --sz-navigation-row-icon: 34px;
   --space-back-bar-inset: 14px;
@@ -1248,26 +1276,34 @@
 }
 
 :root {
+  /* Four radius roles; every `--tr-radius-*` name below only aliases one, so a
+     feature keeps reading a role token while the ladder stays at four values. */
+  --r-badge: 4px;
+  --r-ctl: 6px;
+  --r-group: 10px;
+  --r-dialog: 14px;
+  --shadow-status-ring: 0 0 0 2.5px color-mix(in srgb, var(--warn) 30%, transparent);
   /* `--tr-*`, not the framework's own `--radius-*`/`--text-*`: this file is
      unlayered, so redefining those names would silently resize every
      `rounded-*`/`text-*` utility instead of only these tokens. */
-  --tr-radius-sm: 6px;
-  --tr-radius-xs: 3px;
-  --tr-radius-shortcut-fixed: 2px;
-  --tr-radius-legend-mark: 2px;
-  --tr-radius-md: 10px;
-  --tr-radius-input: 4px;
-  --tr-radius-button: 8px;
-  --tr-radius-card: 12px;
-  --tr-radius-ssh-panel: 14px;
-  --tr-radius-menu: 10px;
-  --tr-radius-workspace-selection-rail: 3px;
-  --tr-radius-workspace-drop-indicator: 1px;
+  --tr-radius-sm: var(--r-ctl);
+  --tr-radius-xs: var(--r-badge);
+  --tr-radius-shortcut-fixed: var(--r-badge);
+  --tr-radius-legend-mark: var(--r-badge);
+  --tr-radius-md: var(--r-group);
+  --tr-radius-input: var(--r-ctl);
+  --tr-radius-button: var(--r-ctl);
+  --tr-radius-card: var(--r-group);
+  --tr-radius-ssh-panel: var(--r-dialog);
+  --tr-radius-dialog: var(--r-dialog);
+  --tr-radius-menu: var(--r-group);
+  --tr-radius-workspace-selection-rail: var(--r-badge);
+  --tr-radius-workspace-drop-indicator: var(--r-badge);
   --tr-radius-pill: 9999px;
   /* Corner of a file-type badge or thumbnail inside an attachment chip. */
-  --tr-radius-badge: 3px;
-  --tr-radius-surface-small: 5px;
-  --tr-radius-surface-control: 7px;
+  --tr-radius-badge: var(--r-badge);
+  --tr-radius-surface-small: var(--r-ctl);
+  --tr-radius-surface-control: var(--r-ctl);
   --tr-radius-surface-circle: 50%;
   --tr-radius-surface-full: 999px;
   --space-files-subheader: 40px;
@@ -1302,8 +1338,8 @@
   --w-settings-number-error: 220px;
   --w-settings-description: 62ch;
   --w-settings-intro: 72ch;
-  --tr-radius-theme-preview: 3px;
-  --tr-radius-palette-swatch: 3px;
+  --tr-radius-theme-preview: var(--r-badge);
+  --tr-radius-palette-swatch: var(--r-badge);
   --space-palette-option-row: 2px;
   --h-palette-option-list: 320px;
   --space-palette-search-inset: 28px;
@@ -1483,64 +1519,95 @@
   --tr-type-zoom-delta: calc((var(--shell-zoom) - 1) * 15px);
   --tr-text-display-size: calc(44px + var(--tr-type-zoom-delta));
   --tr-text-display-leading: 1.15;
+  /* Empty-screen display moment: a smaller serif cut than the onboarding display step. */
+  --tr-text-empty-title-size: calc(34px + var(--tr-type-zoom-delta));
+  --tr-text-empty-title-leading: 1.1765;
+  --tr-text-empty-title-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
+  --tr-text-empty-title-tracking: -0.01em;
   --tr-text-brand-tracking: -0.025em;
   --tr-text-empty-leading: 1.65;
   --tr-text-display-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
   --tr-text-display-family: var(--f-serif);
-  --tr-text-title-size: calc(30px + var(--tr-type-zoom-delta));
-  --tr-text-title-weight: round(nearest, 700 - 240 * max(0, var(--shell-zoom) - 1), 100);
-  --tr-text-title-tracking: -0.02em;
+  --tr-text-large-title-size: calc(26px + var(--tr-type-zoom-delta));
+  --tr-text-large-title-leading: 1.2308;
+  --tr-text-large-title-weight: round(nearest, 700 - 240 * max(0, var(--shell-zoom) - 1), 100);
+  --tr-text-large-title-tracking: -0.02em;
+  --tr-text-title-size: calc(20px + var(--tr-type-zoom-delta));
+  --tr-text-title-leading: 1.3;
+  --tr-text-title-weight: round(nearest, 650 - 240 * max(0, var(--shell-zoom) - 1), 50);
+  --tr-text-title-tracking: -0.01em;
   --tr-text-heading-size: calc(22px + var(--tr-type-zoom-delta));
   --tr-text-heading-weight: round(nearest, 700 - 240 * max(0, var(--shell-zoom) - 1), 100);
   --tr-text-heading-tracking: -0.014em;
   --tr-text-subhead-size: calc(17px + var(--tr-type-zoom-delta));
   --tr-text-subhead-weight: round(nearest, 600 - 160 * max(0, var(--shell-zoom) - 1), 100);
   --tr-text-subhead-tracking: -0.006em;
-  --tr-text-body-size: calc(15px + var(--tr-type-zoom-delta));
+  --tr-text-headline-size: calc(13px + var(--tr-type-zoom-delta));
+  --tr-text-headline-leading: 1.3846;
+  --tr-text-headline-weight: round(nearest, 600 - 160 * max(0, var(--shell-zoom) - 1), 100);
+  --tr-text-body-size: calc(13px + var(--tr-type-zoom-delta));
   --tr-text-body-weight: 400;
-  --tr-text-body-leading: calc(1.6 - (var(--shell-zoom) - 1) * 0.15);
+  --tr-text-body-leading: 1.3846;
+  /* Long-form reading: markdown, PR bodies and empty-state paragraphs. */
+  --tr-text-prose-size: calc(14px + var(--tr-type-zoom-delta));
+  --tr-text-prose-weight: 400;
+  --tr-text-prose-leading: 1.4286;
   --tr-text-snug-leading: 1.35;
   --tr-text-tight-leading: 1.4;
   --tr-text-field-label-tracking: 0.06em;
   --tr-text-tight-tracking: -0.01em;
   --tr-text-ui-size: calc(13px + var(--tr-type-zoom-delta));
-  --tr-text-ui-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
-  --tr-text-ui-leading: calc(1.5 - (var(--shell-zoom) - 1) * 0.15);
+  --tr-text-ui-weight: 400;
+  --tr-text-ui-leading: 1.3846;
   --tr-text-small-size: calc(12px + var(--tr-type-zoom-delta));
-  --tr-text-small-weight: round(nearest, 500 - 80 * max(0, var(--shell-zoom) - 1), 100);
-  --tr-text-small-leading: calc(1.45 - (var(--shell-zoom) - 1) * 0.15);
+  --tr-text-small-weight: 400;
+  --tr-text-small-leading: 1.3333;
+  --tr-text-callout-size: calc(12px + var(--tr-type-zoom-delta));
+  --tr-text-callout-leading: 1.3333;
+  --tr-text-callout-weight: 400;
   --tr-text-label-size: calc(11px + var(--tr-type-zoom-delta));
-  --tr-text-label-weight: round(nearest, 700 - 240 * max(0, var(--shell-zoom) - 1), 100);
-  --tr-text-label-tracking: 0.1em;
-  --tr-text-label-leading: 14px;
-  --tr-text-label-transform: uppercase;
+  --tr-text-label-weight: round(nearest, 600 - 160 * max(0, var(--shell-zoom) - 1), 100);
+  --tr-text-label-tracking: 0.01em;
+  --tr-text-label-leading: 1.2727;
+  --tr-text-label-transform: none;
+  --tr-text-caption-size: calc(11px + var(--tr-type-zoom-delta));
+  --tr-text-caption-leading: 1.2727;
+  --tr-text-caption-weight: round(nearest, 600 - 160 * max(0, var(--shell-zoom) - 1), 100);
   --tr-text-pane-header-tracking: -0.005em;
   --tr-icon-display-size: 26px;
   --tr-icon-display-stroke: 1.4;
   --tr-icon-title-size: 22px;
-  --tr-icon-title-stroke: 1.8;
+  --tr-icon-title-stroke: 1.6;
   --tr-icon-heading-size: 18px;
-  --tr-icon-heading-stroke: 2;
+  --tr-icon-heading-stroke: 1.6;
   --tr-icon-subhead-size: 16px;
-  --tr-icon-subhead-stroke: 2.2;
-  --tr-icon-body-size: 14px;
-  --tr-icon-body-stroke: 2.4;
-  --tr-icon-ui-size: 13px;
-  --tr-icon-ui-stroke: 2.5;
-  --tr-icon-small-size: 12px;
-  --tr-icon-small-stroke: 2.6;
-  --tr-icon-label-size: 11px;
-  --tr-icon-label-stroke: 2.8;
+  --tr-icon-subhead-stroke: 1.6;
+  --tr-icon-body-size: 15px;
+  --tr-icon-body-stroke: 1.6;
+  --tr-icon-ui-size: 15px;
+  --tr-icon-ui-stroke: 1.6;
+  --tr-icon-small-size: 13px;
+  --tr-icon-small-stroke: 1.7;
+  --tr-icon-label-size: 13px;
+  --tr-icon-label-stroke: 1.7;
+  /* The mark inside the 11px error circle; a glyph in a glyph, not text. */
+  --tr-icon-error-mark-size: 9px;
   --shell-zoom: 1;
   --h-titlebar: 28px;
   --pane-gutter: 8px;
   --h-top: 38px;
+  /* One column for every page: wide enough for a list beside its detail. */
+  --page-w: 960px;
   --h-railhead: 38px;
   --h-tree-group-header: 30px;
   --sz-brand-mark: 32px;
   --sz-titlebar-mark: 18px;
   --h-pane-head: 28px;
+  --h-grid-caption: 26px;
   --h-pill: 26px;
+  --h-chip: 24px;
+  --h-palette-row: 34px;
+  --h-palette-input: 46px;
   --h-ctl: 28px;
   --h-agent-row: 22px;
   --h-segmented-xs: 18px;
@@ -1551,6 +1618,8 @@
   --w-filter-badge-min: 13px;
   --w-context-menu: 244px;
   --w-workspace-refusal: 430px;
+  /* The recent-run date gutter, so every run's description starts on one line. */
+  --w-routine-run-date: 90px;
   --w-empty-state-heading: 20ch;
   --w-empty-state-description: 52ch;
   --w-rail-specimen: 256px;
@@ -1784,7 +1853,7 @@
   --z-tooltip: 1000;
 
   --track-label: 0.08em;
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
   --f-serif: 'Source Serif 4', 'Iowan Old Style', 'Times New Roman', Georgia, serif;
   --f-serif-alt: 'Instrument Serif', 'Times New Roman', Georgia, serif;

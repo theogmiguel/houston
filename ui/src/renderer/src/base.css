@@ -10,7 +10,8 @@ body,
   background: var(--content-bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-weight: 500;
+  font-weight: 400;
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -66,8 +67,8 @@ body {
   button:focus-visible,
   select:focus-visible,
   input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: 2px solid var(--accent-ink);
+    outline-offset: 2px;
   }
 
   aside input {

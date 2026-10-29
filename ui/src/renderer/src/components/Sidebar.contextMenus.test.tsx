@@ -259,7 +259,7 @@ describe('Sidebar context menus — reference anatomy', () => {
 
     it('hides the hover preview while open and does not reopen it on pointer re-entry', async () => {
       render({ onRemoveGrid: noop })
-      await vi.waitFor(() => expect(container.querySelector('[data-card-mode]')).not.toBeNull())
+      await vi.waitFor(() => expect(container.querySelector('[data-testid="grid-caption"]')).not.toBeNull(), { timeout: 5000 })
       vi.useFakeTimers()
       try {
         const row = gridRow()

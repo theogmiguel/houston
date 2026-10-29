@@ -13,7 +13,7 @@ import { engineLabel } from '../engineLabel'
 import { formatAgo } from '../tasks/format'
 import { formatRunTime, nextUpTimeLabel } from './routineFormat'
 import { Toggle } from '../ui/settingsPrimitives'
-import { RoutineDetail } from '../ui/RoutineDetail'
+import { RoutineDetail, RoutineRunRow, RoutineSettingsGroup } from '../ui/RoutineDetail'
 import { HarnessReviewConsent, HarnessSetupFields, type HarnessSetupValue } from './HarnessSurface'
 import { formatWindow, scheduleFields, scheduleLabel, scheduleOf, type HarnessSchedule } from './harnessFormat'
 
@@ -45,10 +45,7 @@ export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateRevie
   const currentReview = state?.reviews.find((review) => review.status === 'running')
   return <>
     <RoutineDetail {...props} heading={grouped ? workspaceLabel : 'Weekly review'} subheading={grouped}
-      description={grouped ? <div className="grid gap-[var(--space-1)]">
-        <Text size="small" tone="muted">Next run: {routine.enabled ? nextUpTimeLabel(routine.next_run_at_ms, now) : 'Paused'}</Text>
-        <Text size="small" tone="muted">Last run: {routine.last_run_at_ms == null ? 'Never' : formatRunTime(routine.last_run_at_ms, now)}</Text>
-      </div> : <ReviewDescription />}
+      description={grouped ? <Text as="p" size="small" tone="muted" flush>Next {routine.enabled ? nextUpTimeLabel(routine.next_run_at_ms, now) : 'Paused'} · Last {lastRunCaption(routine.last_run_at_ms, now)}</Text> : <ReviewDescription />}
       activity={currentReview && <ReviewRunningBanner review={currentReview} workspaceName={workspaceLabel} now={now} onOpenSession={onOpenSession} />}
       settings={<ReviewSettings routine={routine} workspaceName={workspaceLabel} onEdit={props.onEdit} onToggleEnabled={props.onToggleEnabled} onUpdateSchedule={onUpdateReviewSchedule} />}
       history={<WeeklyReviewRuns workspace={workspace} connected={!!client} state={state}
@@ -67,12 +64,13 @@ function WeeklyReviewRuns({ workspace, connected, state, onOpenReport }: {
   return (
     <section className="grid gap-[var(--space-2)]" aria-label="Recent runs">
       <SectionHead title="Recent runs" variant="sentence" tone="muted" />
-      {!connected || !workspace ? <Text tone="muted">Connect to the daemon with a workspace to read review history.</Text> : !state ? <Text role="status" tone="muted">Loading reviews…</Text> : !state.reviews.length ? <Text tone="muted">No reviews yet.</Text> : <Card>
-        {state.reviews.map((review) => <Card.Row key={review.id} heading={reviewRunDate(review.started_at_ms)}
+      {!connected || !workspace ? <Text tone="muted">Connect to the daemon with a workspace to read review history.</Text> : !state ? <Text role="status" tone="muted">Loading reviews…</Text> : !state.reviews.length ? <Text tone="muted">No reviews yet.</Text> : <div className="grid">
+        {state.reviews.map((review) => <RoutineRunRow key={review.id} testId={`review-run-${review.id}`} reportTestId={`review-open-report-${review.id}`}
+          date={reviewRunDate(review.started_at_ms)}
           meta={reviewRunMeta(review)}
-          status={review.status === 'running' ? <StatusLabel status="Running" size="small" /> : review.status === 'failed' ? <StatusLabel status="Failed" size="small" /> : null}
-          action={review.status === 'published' ? <Button variant="muted-link" size="sm" data-testid={`review-open-report-${review.id}`} onClick={() => onOpenReport(review.id)}>Open report</Button> : null} />)}
-      </Card>}
+          status={review.status === 'running' ? <StatusLabel status="Running" size="small" /> : review.status === 'failed' ? <StatusLabel status="Failed" size="small" /> : undefined}
+          onOpenReport={review.status === 'published' ? () => onOpenReport(review.id) : undefined} />)}
+      </div>}
     </section>
   )
 }
@@ -112,7 +110,7 @@ function ReviewSettings({ routine, workspaceName, onEdit, onToggleEnabled, onUpd
     { value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'off', label: 'Only when I run it' }
   ]
   if (schedule === 'custom') options.push({ value: 'custom', label: 'Custom', disabled: true })
-  return <Card layout="fields" shape="card" role="group" aria-label="Routine settings">
+  return <RoutineSettingsGroup>
     <Card.Field label="Schedule">
       <Segmented aria-label="Review schedule" size="xs" value={schedule} options={options} onChange={(value) => { if (value !== 'custom') onUpdateSchedule?.(scheduleFields(value, routine.cadence)) }} />
       <Text size="small" tone="muted">{reviewScheduleDescription(routine)}</Text>
@@ -120,7 +118,7 @@ function ReviewSettings({ routine, workspaceName, onEdit, onToggleEnabled, onUpd
     <Card.Field label="Reads"><Text>Sessions in {workspaceName} since the previous review.</Text></Card.Field>
     <Card.Field label="Runs with"><TaskAgentIcon agent={routine.engine} /><Text>{engineLabel(routine.engine)}</Text>{routine.model && <><Text tone="muted">·</Text><Text size="small" mono tone="muted">{routine.model}</Text></>}<Button variant="muted-link" aria-label="Change review provider and model" onClick={onEdit}>Change</Button></Card.Field>
     <Card.Field label="Enabled"><Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label="Weekly review enabled" /></Card.Field>
-  </Card>
+  </RoutineSettingsGroup>
 }
 
 function ReviewRunningBanner({ review, workspaceName, now, onOpenSession }: {
@@ -141,6 +139,12 @@ function reviewScheduleDescription(routine: Routine): string {
     case 'off': return 'Scheduled runs are off'
     case 'custom': return scheduleLabel(routine)
   }
+}
+
+function lastRunCaption(lastRunAtMs: number | null | undefined, now: number): string {
+  if (lastRunAtMs == null) return 'never'
+  const label = formatRunTime(lastRunAtMs, now)
+  return `${label.charAt(0).toLowerCase()}${label.slice(1)}`
 }
 
 function reviewRunDate(ms: number): string {

@@ -42,7 +42,7 @@ export function KeymapHintRow({ what, children }: { what: string; children: Reac
 
 export function KeyCap({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <Text as="kbd" size="small" tone="primary" mono className="bg-background border border-border rounded-[var(--tr-radius-input)] px-[var(--space-1)]">
+    <Text as="kbd" size="caption" weight="medium" tone="muted" leading="normal" className="border border-[var(--line-strong)] rounded-[var(--tr-radius-xs)] px-[var(--space-keycap-inline)] py-[var(--space-keycap-block)]">
       {children}
     </Text>
   )

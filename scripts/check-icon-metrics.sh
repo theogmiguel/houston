@@ -57,4 +57,33 @@ if [ -n "$counts" ]; then
   exit 1
 fi
 
+# The ladder's two text pairings: 15px at 1.6 beside 13px text, 13px at 1.7
+# beside 11-12px text. A drift here re-inks every glyph in the app at once.
+ladder_problems="$(perl -e '
+  my $f = shift;
+  open my $fh, "<", $f or exit 1;
+  local $/ = undef;
+  my $src = <$fh>;
+  close $fh;
+  my %want = (body => ["15px", "1.6"], ui => ["15px", "1.6"], small => ["13px", "1.7"], label => ["13px", "1.7"]);
+  my (%size, %stroke);
+  while ($src =~ /--tr-icon-([a-z]+)-size\s*:\s*([^;]+);/g) { $size{$1} = $2 }
+  while ($src =~ /--tr-icon-([a-z]+)-stroke\s*:\s*([^;]+);/g) { $stroke{$1} = $2 }
+  for my $role (sort keys %want) {
+    my ($size_want, $stroke_want) = @{$want{$role}};
+    my $size_got = $size{$role} // "missing";
+    my $stroke_got = $stroke{$role} // "missing";
+    print "--tr-icon-$role-size is \x27$size_got\x27; expected \x27$size_want\x27\n" unless $size_got eq $size_want;
+    print "--tr-icon-$role-stroke is \x27$stroke_got\x27; expected \x27$stroke_want\x27\n" unless $stroke_got eq $stroke_want;
+  }
+' ui/src/renderer/src/theme.css)"
+
+if [ -n "$ladder_problems" ]; then
+  echo "FAIL: icon-metric ladder:" >&2
+  while IFS= read -r problem; do
+    [ -n "$problem" ] && echo "  $problem" >&2
+  done <<< "$ladder_problems"
+  exit 1
+fi
+
 echo "ok: no icon-metric violations"
