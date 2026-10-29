@@ -4,6 +4,7 @@
   "imported": ["packages/contracts", "packages/shared", "tsconfig.base.json", "vite.config.ts"],
   "excluded": [],
   "adapted": {
-    "vite.config.ts": "removes the infra/ and scripts/lib/ imports (remote task cache, cached tests) and the lint config, whose plugins are not ported"
+    "vite.config.ts": "removes the infra/ and scripts/lib/ imports (remote task cache, cached tests) and the lint config, whose plugins are not ported",
+    "packages/contracts/package.json": "adds the ./houston/terminalFrames subpath export"
   }
 }
