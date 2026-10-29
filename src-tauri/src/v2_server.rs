@@ -1,10 +1,6 @@
-//! Host for the v2 TypeScript server.
-//!
-//! The server is upstream's `apps/server` (Node). It is spawned detached so it
-//! outlives the window, discovered through the runtime record it publishes in its
-//! state directory, and authenticated with a rotating desktop-bootstrap secret
-//! kept in the OS keychain. The renderer receives a `desktopBridge` shim from
-//! `initialization_script` and talks to the server over loopback HTTP/WebSocket.
+//! Host for the v2 TypeScript server: detached spawn, discovery through its
+//! runtime record, a keychain-held desktop secret, the bearer exchange and the
+//! `desktopBridge` shim upstream's web app expects.
 
 use std::fs;
 use std::io::Write;

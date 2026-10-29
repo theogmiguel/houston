@@ -495,10 +495,9 @@ fn main() {
     builder = builder.manage(Arc::clone(&tray_host));
     builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
 
-    // The Windows implementation of the single-instance plugin keys its mutex on
-    // the bundle identifier alone, so it cannot separate channels. Registering it
-    // there would make a dev app refuse to start while the installed release app
-    // runs; Linux uses the channel-scoped dbus id instead.
+    // Windows keys the single-instance mutex on the bundle identifier, so a dev
+    // app would refuse to start beside the installed release app. Register it only
+    // where it is channel-scoped (Linux dbus id) or no channel owns the process.
     let single_instance_enabled = cfg!(target_os = "linux") || owning_channel.is_none();
     if single_instance_enabled {
         builder = builder.plugin(
