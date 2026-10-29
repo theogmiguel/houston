@@ -78,7 +78,9 @@
     "apps/server/src/houston/providerReadiness.test.ts",
     "apps/server/src/houston/providerReadiness.families.test.ts",
     "apps/server/src/houston/providerReadiness.ws.test.ts",
-    "packages/contracts/src/houston/providerReadiness.test.ts"
+    "packages/contracts/src/houston/providerReadiness.test.ts",
+    "apps/server/src/houston/providerReadiness.ts",
+    "packages/contracts/src/houston/providerReadiness.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -202,7 +204,7 @@
     "apps/web/src/versionSkew.test.ts": "Houston branding and naming",
     "apps/web/src/versionSkew.ts": "Houston branding and naming",
     "apps/web/vite.config.ts": "non-ASCII Windows path handling",
-    "packages/contracts/package.json": "adds the ./houston/terminalFrames subpath export",
+    "packages/contracts/package.json": "exports the Houston provider readiness contract",
     "pnpm-lock.yaml": "generated for Houston's workspace, never copied from upstream",
     "pnpm-workspace.yaml": "pins the workspace list to the imported apps and packages, and drops patches for packages that are not installed",
     "apps/server/src/preview/PreviewBrowser.test.ts": "runs the install test without Effect's test clock; NTFS cannot store the pre-epoch fixture mtime",
@@ -218,6 +220,10 @@
     "apps/server/src/vcs/GitVcsDriverCore.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
     "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home, and every OTLP export is cleared",
     "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
-    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one"
+    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one",
+    "packages/contracts/src/server.ts": "ServerProvider carries Houston provider readiness",
+    "apps/server/src/provider/ProviderRegistry.ts": "published provider lists carry readiness from the Houston readiness ledger",
+    "apps/server/src/orchestration-v2/ProviderEventIngestor.ts": "stored terminal turns report to the Houston readiness ledger",
+    "apps/server/src/provider/ProviderRegistry.test.ts": "published provider lists carry readiness"
   }
 }
