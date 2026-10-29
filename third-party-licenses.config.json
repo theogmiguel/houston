@@ -10,7 +10,7 @@
     },
     {
       "name": "T3 Code",
-      "version": "source at commit 9826dbb9",
+      "version": "source at commit 6d450a42",
       "license": "MIT",
       "repository": "https://github.com/pingdotgg/t3code",
       "note": "Adapted source: portions of the thread server, provider adapters, orchestration and thread interface are ported from this project.",
