@@ -279,3 +279,33 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
         run: pnpm --filter t3 exec vp test run src/git src/vcs src/pullRequest src/sourceControl src/checkpointing src/workspace src/review src/usage
+
+  # Houston's server entrypoint: the base dir rules, no telemetry, and the host
+  # contract against a spawned server, plus the upstream CLI, telemetry and
+  # observability suites around them. Windows reports but does not fail the job yet.
+  server-entrypoint:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Entrypoint tests (src/houston)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/houston
+      - name: CLI, telemetry and observability suites
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter t3 exec vp test run src/cli src/telemetry src/observability src/serverRuntimeState.test.ts src/launcherWatch.test.ts src/os-jank.test.ts
