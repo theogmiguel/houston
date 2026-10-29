@@ -119,7 +119,7 @@ function KeybindingsSearchInput({
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
   return (
-    <InputGroup className="min-w-0 basis-full **:[input]:h-9 sm:basis-0 sm:flex-1 sm:**:[input]:h-8">
+    <InputGroup className="min-w-0 basis-full **:[input]:h-9 sm:w-[260px] sm:basis-auto sm:flex-none sm:**:[input]:h-7">
       <InputGroupAddon>
         <SearchIcon aria-hidden className="size-3.5" />
       </InputGroupAddon>
@@ -1444,9 +1444,10 @@ export function KeybindingsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("keybindings")}
-        headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
+        variant="plain"
+        hideTitle
       >
-        <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
+        <div className="flex flex-wrap items-center gap-2">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
           <Button
             type="button"
@@ -1474,6 +1475,7 @@ export function KeybindingsSettingsPanel() {
             />
             <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
           </Tooltip>
+          {!isElectron ? <BrowserKeybindingNotice /> : null}
         </div>
       </SettingsSection>
 
