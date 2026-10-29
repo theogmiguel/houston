@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { checkUpstream } from "./check-upstream.mjs";
+
+const run = promisify(execFile);
 
 const UPSTREAM_COMMIT = "9826dbb9904b2591bfbf60d1317486b59132f56b";
 
@@ -148,6 +152,26 @@ test("check-upstream checks an explicit import even when an excluded prefix cove
       result.problems,
       ["packages/contracts/src/a.ts differs from upstream and is not listed in upstream.json adapted"],
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("check-upstream accepts a repo-side file that .gitignore excludes", async () => {
+  const { dir, repo, upstream } = await makeFixture(fixtureRepo(), fixtureRepo());
+  await writeFile(
+    join(repo, ".gitignore"),
+    "*.tsbuildinfo\n",
+  );
+  await writeFile(
+    join(repo, "packages/contracts/tsconfig.tsbuildinfo"),
+    '{"version":"5.1"}',
+  );
+  await run("git", ["init", "--quiet"], { cwd: repo });
+  try {
+    const result = await checkUpstream({ repoRoot: repo, upstreamDir: upstream });
+    assert.deepEqual(result.problems, [], JSON.stringify(result.problems));
+    assert.equal(result.ok, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -4,6 +4,7 @@
 // the check: unadapted files stay byte-identical to upstream, so later upstream
 // fixes arrive as plain diffs.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -34,6 +35,20 @@ function listFiles(base) {
   };
   visit(base);
   return files;
+}
+
+// Build artifacts that .gitignore already excludes (tsconfig.tsbuildinfo and
+// friends) are not upstream files either; outside a git checkout, where the
+// ignore rules do not exist, everything on disk counts.
+function withoutIgnored(repoRoot, files) {
+  if (!existsSync(join(repoRoot, ".git"))) return files;
+  const listed = spawnSync("git", ["check-ignore", "--stdin", "-z"], {
+    input: files.map((f) => relative(repoRoot, f)).join("\0") + "\0",
+    cwd: repoRoot,
+  });
+  if (listed.status !== 0 || !listed.stdout) return files;
+  const ignored = new Set(listed.stdout.toString().split("\0").filter(Boolean));
+  return files.filter((f) => !ignored.has(relative(repoRoot, f)));
 }
 
 export function checkUpstream({ repoRoot, upstreamDir }) {
@@ -87,7 +102,9 @@ export function checkUpstream({ repoRoot, upstreamDir }) {
       continue;
     }
 
-    const repoFiles = new Map(listFiles(repoPath).map((f) => [toPosix(relative(repoPath, f)), f]));
+    const repoFiles = new Map(
+      withoutIgnored(repoRoot, listFiles(repoPath)).map((f) => [toPosix(relative(repoPath, f)), f]),
+    );
     const upstreamFiles = new Map(
       listFiles(upstreamPath).map((f) => [toPosix(relative(upstreamPath, f)), f]),
     );
