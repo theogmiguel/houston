@@ -3406,7 +3406,6 @@ impl Daemon {
             .as_ref()
             .map(|v| v.iter().map(|(s, _)| s.info.id).collect())
             .unwrap_or_default();
-        let mut dead: HashMap<u32, proto::SessionInfo> = HashMap::new();
         if adopted.is_none() {
             for ws in db.list_workspaces().unwrap_or_default() {
                 match crate::paths::migrate_legacy_project_dir(Path::new(&ws.path)) {
@@ -3443,45 +3442,47 @@ impl Daemon {
                     "settled {unsettled_plans} task planning session(s) after daemon restart"
                 );
             }
-            dead = db
-                .list_interrupted()?
-                .into_iter()
-                .map(|i| (i.id, i))
-                .collect();
-            let mut used: HashSet<String> = dead
-                .values()
-                .map(|i| i.title.clone())
-                .filter(|t| !t.is_empty())
-                .collect();
-            for info in dead.values_mut() {
-                if info.title.is_empty() {
-                    let name = crate::pane_name::pick_codename(&used);
-                    used.insert(name.clone());
-                    if let Err(e) = db.update_session_title_with_source(
-                        info.id,
-                        &name,
-                        Some(TitleSource::Codename.as_str()),
-                    ) {
+        }
+        // Non-running tiles must survive a live handoff too. The recovery
+        // above stays cold-start-only — a handoff's sessions are alive and
+        // keep their live state in the database — so list_interrupted()
+        // cannot return a session this generation adopted; it holds only the
+        // tiles the previous generation already recorded as not running.
+        let mut dead: HashMap<u32, proto::SessionInfo> = db
+            .list_interrupted()?
+            .into_iter()
+            .map(|i| (i.id, i))
+            .collect();
+        let mut used: HashSet<String> = dead
+            .values()
+            .map(|i| i.title.clone())
+            .filter(|t| !t.is_empty())
+            .collect();
+        for info in dead.values_mut() {
+            if info.title.is_empty() {
+                let name = crate::pane_name::pick_codename(&used);
+                used.insert(name.clone());
+                if let Err(e) = db.update_session_title_with_source(
+                    info.id,
+                    &name,
+                    Some(TitleSource::Codename.as_str()),
+                ) {
+                    tracing::warn!("persisting minted codename for session {}: {e}", info.id);
+                }
+                info.title = name.clone();
+                if info.codename.is_empty() {
+                    if let Err(e) = db.update_session_codename(info.id, &name) {
                         tracing::warn!("persisting minted codename for session {}: {e}", info.id);
                     }
-                    info.title = name.clone();
-                    if info.codename.is_empty() {
-                        if let Err(e) = db.update_session_codename(info.id, &name) {
-                            tracing::warn!(
-                                "persisting minted codename for session {}: {e}",
-                                info.id
-                            );
-                        }
-                        info.codename = name;
-                    }
+                    info.codename = name;
                 }
             }
-            if !dead.is_empty() {
-                tracing::info!(
-                    "restored {} interrupted session(s) from the previous run",
-                    dead.len()
-                );
-            }
+        }
+        if !dead.is_empty() {
+            tracing::info!(
+                "restored {} interrupted session(s) from the previous run",
+                dead.len()
+            );
         }
         let next_id = db.next_session_id()?;
         let scrollback_dir = cfg
