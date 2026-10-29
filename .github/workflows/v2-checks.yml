@@ -295,8 +295,9 @@ jobs:
           --exclude "src/mcp/**"
           --exclude "src/mcpApps/**"
 
-  # Every workspace package's own suite except the server (the jobs above) and
-  # the web renderer. Windows reports but does not fail the job yet.
+  # Every workspace package's suite but the server, web and scripts (whose
+  # node:test files server-packages runs). --no-sort: a failed package must
+  # not skip its dependents. Windows reports but does not fail the job yet.
   workspace-packages:
     needs: server-packages-paths
     if: needs.server-packages-paths.outputs.server == 'true'
@@ -318,4 +319,4 @@ jobs:
       - name: Workspace package tests (web and server excluded)
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
-        run: pnpm -r --no-bail --filter "!@t3tools/web" --filter "!t3" test
+        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!t3" --filter "!@t3tools/scripts" test
