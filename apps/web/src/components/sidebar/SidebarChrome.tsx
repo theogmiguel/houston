@@ -1,12 +1,15 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, LayoutGridIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useGridStore, workspaceKeyOf } from "../../grid/gridStore";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { useProjects } from "../../state/entities";
 import { usePullRequestsSupported } from "../../state/environments";
-import { T3Wordmark } from "../T3Wordmark";
+import { toastManager } from "../ui/toast";
+import { HoustonWordmark } from "../HoustonWordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -117,17 +120,10 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
-      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
-      <span
-        className={cn(
-          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Code
-      </span>
-    </span>
+    <HoustonWordmark
+      aria-label="Houston"
+      className={cn("min-w-0 text-sm", onBackdrop ? "text-white/70" : "text-foreground")}
+    />
   );
 }
 
@@ -164,10 +160,36 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const projects = useProjects();
+  const grids = useGridStore((state) => state.grids);
+  const createGrid = useGridStore((state) => state.createGrid);
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
+  };
+  const handleGridsClick = () => {
+    closeMobileSidebar();
+    const last = grids.at(-1);
+    if (last !== undefined) {
+      void navigate({ to: "/grid/$gridId", params: { gridId: last.id } });
+      return;
+    }
+    const project = projects[0];
+    if (project === undefined) {
+      toastManager.add({
+        type: "info",
+        title: "Open a project to create its first grid",
+        description: "A grid holds threads from one project's workspace.",
+      });
+      return;
+    }
+    const gridId = createGrid({
+      environmentId: project.environmentId,
+      projectId: project.id,
+      workspaceKey: workspaceKeyOf(project.environmentId, project.id),
+    });
+    void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
   const handlePullRequestsClick = () => {
     closeMobileSidebar();
@@ -204,6 +226,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
+          <SidebarUtilityItem icon={<LayoutGridIcon />} label="Grids" onClick={handleGridsClick} />
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
