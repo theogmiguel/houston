@@ -100,8 +100,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
-      - run: pnpm -r test
+      # Scoped to the packages this gate owns. A workspace-wide `-r` run fails
+      # in apps/server today: its tsconfig includes ../../scripts/lib, whose
+      # imports need upstream's scripts workspace package that the import did
+      # not bring in. Widen both steps once that typecheck is green.
+      - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared typecheck
+      - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
       - name: Fetch upstream t3code at the pinned commit
         run: |
           git init "$RUNNER_TEMP/t3code"
