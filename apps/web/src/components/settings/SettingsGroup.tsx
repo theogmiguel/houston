@@ -16,13 +16,13 @@ export function SettingsGroup({
       data-slot="settings-group"
       {...props}
       className={cn(
-        "relative overflow-visible text-foreground",
+        "relative text-foreground",
         variant === "grouped"
-          ? "rounded-xl border border-border/60 bg-card/40 shadow-xs/5"
+          ? "overflow-hidden rounded-lg border border-border bg-card"
           : "space-y-1",
         variant === "grouped" &&
           divided &&
-          "[&>*+*]:border-t [&>*+*]:border-border/50 [&>[data-slot=settings-row]]:rounded-none",
+          "[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']",
         className,
       )}
     />

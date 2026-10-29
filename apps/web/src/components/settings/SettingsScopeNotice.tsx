@@ -150,23 +150,33 @@ export function SettingsScopeNotice({
       </button>
     ));
   };
-  const notice = (
-    <div className="space-y-3">
-      <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
-        {children}
-      </p>
-      <div className="space-y-4">
-        {choiceGroups.map((group) =>
-          group?.displayName ? (
-            <SettingsSection key={group.projectKey} title={group.displayName}>
-              {renderChoices(group)}
-            </SettingsSection>
-          ) : (
-            <SettingsGroup key={group?.projectKey ?? target}>{renderChoices(group)}</SettingsGroup>
-          ),
-        )}
+  const notice =
+    target === "project" && targetId === undefined ? (
+      <div className="space-y-3">
+        <SettingsSection title="Projects">{renderChoices(null)}</SettingsSection>
+        <p role="status" className="px-1 text-xs leading-4 text-muted-foreground">
+          {children}
+        </p>
       </div>
-    </div>
-  );
+    ) : (
+      <div className="space-y-3">
+        <p role="status" className="px-1 text-sm text-muted-foreground">
+          {children}
+        </p>
+        <div className="space-y-4">
+          {choiceGroups.map((group) =>
+            group?.displayName ? (
+              <SettingsSection key={group.projectKey} title={group.displayName}>
+                {renderChoices(group)}
+              </SettingsSection>
+            ) : (
+              <SettingsGroup key={group?.projectKey ?? target}>
+                {renderChoices(group)}
+              </SettingsGroup>
+            ),
+          )}
+        </div>
+      </div>
+    );
   return inline ? notice : <SettingsPageContainer>{notice}</SettingsPageContainer>;
 }

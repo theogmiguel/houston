@@ -53,7 +53,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
           {
             id: "legacy" as const,
             title: "Delete the database from before 0.1.0",
-            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database.\n  Warning: after this, a T3 Code version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
+            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database.\n  Warning: after this, a Houston version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
             recommended: false,
           },
         ]),
@@ -133,7 +133,7 @@ export const doctorCommand = Command.make("doctor", {
   ),
 }).pipe(
   Command.withDescription(
-    "Inspect this T3 Code data directory and repair it. Pauses and restarts the background service as needed.",
+    "Inspect this Houston data directory and repair it. Pauses and restarts the background service as needed.",
   ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {

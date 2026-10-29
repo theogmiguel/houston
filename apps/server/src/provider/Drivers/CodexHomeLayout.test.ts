@@ -1,13 +1,18 @@
+// @effect-diagnostics nodeBuiltinImport:off - fixtures need a junction and bigint file identity, which Effect's FileSystem does not expose.
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import { CodexSettings } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   CodexShadowHomeEntryConflictError,
+  CodexShadowHomeFileSystemError,
   CodexShadowHomePathConflictError,
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
@@ -37,6 +42,48 @@ const writeTextFile = Effect.fn("CodexHomeLayout.test.writeTextFile")(function* 
   yield* fileSystem.makeDirectory(path.dirname(filePath), { recursive: true });
   yield* fileSystem.writeFileString(filePath, contents);
 });
+
+const errnoFailure = (method: "symlink" | "link", path: string, code: string) =>
+  Effect.fail(
+    PlatformError.systemError({
+      _tag: "Unknown",
+      module: "FileSystem",
+      method,
+      pathOrDescriptor: path,
+      syscall: method,
+      cause: Object.assign(new Error(`${code}: operation refused, ${method} '${path}'`), { code }),
+    }),
+  );
+
+// Runs `effect` as on a host that refuses symlinks with EPERM (Windows without Developer Mode).
+const withSymlinkRefused = <A, E, R>(
+  platform: NodeJS.Platform,
+  effect: Effect.Effect<A, E, R>,
+  options?: { readonly linkCode?: string; readonly symlinkCode?: string },
+) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const linkCode = options?.linkCode;
+    const symlinkCode = options?.symlinkCode ?? "EPERM";
+    const refusing: FileSystem.FileSystem = {
+      ...fileSystem,
+      symlink: (_target, link) => errnoFailure("symlink", link, symlinkCode),
+      link:
+        linkCode === undefined
+          ? fileSystem.link
+          : (_existing, link) => errnoFailure("link", link, linkCode),
+    };
+    return yield* effect.pipe(
+      Effect.provideService(FileSystem.FileSystem, refusing),
+      Effect.provideService(HostProcess.Platform, platform),
+    );
+  });
+
+const fileIdentity = (filePath: string) =>
+  Effect.promise(async () => {
+    const stat = await NodeFSP.stat(filePath, { bigint: true });
+    return { dev: stat.dev, ino: stat.ino };
+  });
 
 it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
   describe("resolveCodexHomeLayout", () => {
@@ -362,6 +409,268 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
             `Cannot create Codex shadow home entry 'config.toml' because '${path.join(shadowHome, "config.toml")}' already exists and is not a symlink.`,
           );
         }),
+    );
+    it.effect("links a shared directory with a junction when win32 refuses the symlink", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+        yield* writeTextFile(path.join(sharedHome, "sessions", "rollout.jsonl"), "shared\n");
+
+        expect(yield* fileSystem.readLink(path.join(shadowHome, "sessions"))).toBe(
+          path.join(sharedHome, "sessions"),
+        );
+        expect(
+          yield* fileSystem.readFileString(path.join(shadowHome, "sessions", "rollout.jsonl")),
+        ).toBe("shared\n");
+      }),
+    );
+
+    it.effect("hard-links a shared file when win32 refuses the symlink", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+
+        const shared = yield* fileIdentity(path.join(sharedHome, "config.toml"));
+        const shadow = yield* fileIdentity(path.join(shadowHome, "config.toml"));
+        expect(shadow.dev).toBe(shared.dev);
+        expect(shadow.ino).toBe(shared.ino);
+        expect(yield* fileSystem.readFileString(path.join(shadowHome, "config.toml"))).toBe(
+          'model = "gpt-5-codex"\n',
+        );
+      }),
+    );
+
+    it.effect("repeats a win32 fallback setup without a conflict", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+        yield* writeTextFile(path.join(sharedHome, "sessions", "first.jsonl"), "first\n");
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+        yield* writeTextFile(path.join(sharedHome, "sessions", "second.jsonl"), "second\n");
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+
+        const shared = yield* fileIdentity(path.join(sharedHome, "config.toml"));
+        const shadow = yield* fileIdentity(path.join(shadowHome, "config.toml"));
+        expect(shadow.dev).toBe(shared.dev);
+        expect(shadow.ino).toBe(shared.ino);
+        expect(yield* fileSystem.readLink(path.join(shadowHome, "sessions"))).toBe(
+          path.join(sharedHome, "sessions"),
+        );
+        expect(
+          (yield* fileSystem.readDirectory(path.join(sharedHome, "sessions"))).toSorted(),
+        ).toEqual(["first.jsonl", "second.jsonl"]);
+      }),
+    );
+
+    it.effect("treats a win32 fallback file with another identity as an entry conflict", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const shadowConfig = path.join(shadowHome, "config.toml");
+        yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        // The fallback never linked this file, so it is the user's own and still conflicts.
+        yield* writeTextFile(shadowConfig, 'model = "local"\n');
+        const error = yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout)).pipe(
+          Effect.flip,
+        );
+
+        expect(error).toBeInstanceOf(CodexShadowHomeEntryConflictError);
+        expect(error).toMatchObject({
+          entryName: "config.toml",
+          linkPath: shadowConfig,
+          targetPath: path.join(sharedHome, "config.toml"),
+        });
+        expect(yield* fileSystem.readFileString(path.join(sharedHome, "config.toml"))).toBe(
+          'model = "gpt-5-codex"\n',
+        );
+      }),
+    );
+
+    it.effect("re-links a fallback file after the shared file is replaced by rename", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const sharedConfig = path.join(sharedHome, "config.toml");
+        const shadowConfig = path.join(shadowHome, "config.toml");
+        yield* writeTextFile(sharedConfig, "a = 1\n");
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+        yield* writeTextFile(`${sharedConfig}.tmp`, "a = 2\n");
+        yield* fileSystem.rename(`${sharedConfig}.tmp`, sharedConfig);
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+
+        const shared = yield* fileIdentity(sharedConfig);
+        const shadow = yield* fileIdentity(shadowConfig);
+        expect(shadow.dev).toBe(shared.dev);
+        expect(shadow.ino).toBe(shared.ino);
+        expect(yield* fileSystem.readFileString(shadowConfig)).toBe("a = 2\n");
+      }),
+    );
+
+    it.effect.each(["EACCES", "EEXIST"])(
+      "keeps a win32 symlink refusal other than EPERM an error (%s)",
+      (code) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const shadowHome = path.join(shadowRoot, "shadow");
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+          );
+
+          const error = yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout), {
+            symlinkCode: code,
+          }).pipe(Effect.flip);
+
+          expect(error).toBeInstanceOf(CodexShadowHomeFileSystemError);
+          expect(error).toMatchObject({
+            operation: "symlink",
+            path: path.join(shadowHome, "sessions"),
+          });
+          expect(yield* fileSystem.exists(path.join(shadowHome, "sessions"))).toBe(false);
+        }),
+    );
+
+    it.effect("refuses a shared file by name when the win32 hard link fails", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        const error = yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout), {
+          linkCode: "EXDEV",
+        }).pipe(Effect.flip);
+
+        expect(error.message).toContain("'config.toml'");
+        expect(error.message).toContain(path.join(shadowHome, "config.toml"));
+        expect(error.message).toContain("Developer Mode");
+        expect(error.message).toContain("same volume");
+      }),
+    );
+
+    it.effect("keeps a refused symlink an error off win32", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        const error = yield* withSymlinkRefused("linux", materializeCodexShadowHome(layout)).pipe(
+          Effect.flip,
+        );
+
+        expect(error).toBeInstanceOf(CodexShadowHomeFileSystemError);
+        expect(error).toMatchObject({
+          operation: "symlink",
+          path: path.join(shadowHome, "sessions"),
+        });
+        expect(yield* fileSystem.exists(path.join(shadowHome, "sessions"))).toBe(false);
+      }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
+      "uses symlinks and no fallback when win32 allows them",
+      () =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const shadowHome = path.join(shadowRoot, "shadow");
+          yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+          );
+
+          yield* materializeCodexShadowHome(layout).pipe(
+            Effect.provideService(HostProcess.Platform, "win32"),
+          );
+
+          expect(yield* fileSystem.readLink(path.join(shadowHome, "sessions"))).toBe(
+            path.join(sharedHome, "sessions"),
+          );
+          expect(yield* fileSystem.readLink(path.join(shadowHome, "config.toml"))).toBe(
+            path.join(sharedHome, "config.toml"),
+          );
+        }),
+    );
+
+    it.effect("re-points a stale win32 link without touching the old target", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const staleRoot = yield* makeTempDir("t3code-codex-stale-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const staleSessions = path.join(staleRoot, "sessions");
+        yield* writeTextFile(path.join(staleSessions, "old.jsonl"), "old\n");
+        yield* fileSystem.makeDirectory(shadowHome, { recursive: true });
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(staleSessions, path.join(shadowHome, "sessions"), "junction"),
+        );
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+        );
+
+        yield* withSymlinkRefused("win32", materializeCodexShadowHome(layout));
+
+        expect(yield* fileSystem.readLink(path.join(shadowHome, "sessions"))).toBe(
+          path.join(sharedHome, "sessions"),
+        );
+        expect(yield* fileSystem.readFileString(path.join(staleSessions, "old.jsonl"))).toBe(
+          "old\n",
+        );
+      }),
     );
   });
 });
