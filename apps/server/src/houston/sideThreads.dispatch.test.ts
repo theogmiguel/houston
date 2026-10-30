@@ -24,7 +24,14 @@ import * as Layer from "effect/Layer";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
-import { CLAUDE, type Context, makeHarness, runWith, selection } from "./sideThreads.testkit.ts";
+import {
+  CLAUDE,
+  CODEX,
+  type Context,
+  makeHarness,
+  runWith,
+  selection,
+} from "./sideThreads.testkit.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 
 const READ_ONLY = {
@@ -434,6 +441,38 @@ describe("a second opinion", () => {
             const shell = yield* context.orchestrator.getShellSnapshot();
             assert.isFalse(shell.threads.some((thread) => thread.id === "same-driver"));
             assert.isTrue(shell.threads.some((thread) => thread.id === "other-driver"));
+          }),
+        );
+      }),
+    ),
+  );
+
+  it.effect("a second opinion needs another provider driver, not another instance", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        // Two Claude instances, as with a work and a personal account.
+        const harness = yield* makeHarness("review-needs-another-driver", [
+          CODEX,
+          CLAUDE,
+          { ...CLAUDE, instanceId: "claudeWork" },
+        ]);
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const claudeTurn = yield* sourceWithTurn(context, harness, {
+              threadId: "claude-source",
+              driver: "claudeAgent",
+            });
+            const refused = yield* refusal(
+              requestReview(context, {
+                source: claudeTurn.source,
+                runId: claudeTurn.firstRunId,
+                review: "other-instance",
+                driver: "claudeWork",
+              }),
+            );
+            assert.equal(refused, NEEDS_ANOTHER_PROVIDER);
+            const shell = yield* context.orchestrator.getShellSnapshot();
+            assert.isFalse(shell.threads.some((thread) => thread.id === "other-instance"));
           }),
         );
       }),

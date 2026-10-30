@@ -334,7 +334,7 @@ const layerServerRuntimePolicy = RuntimeLayer.layerRuntimePolicyProvided.pipe(
 );
 
 describe("the server's side-thread policy", () => {
-  it.effect("the server runtime runs a full-access side thread read-only", () =>
+  it.effect("a side thread always resolves read-only through the server runtime", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
       const resolver = yield* RuntimePolicy.RuntimePolicyV2;

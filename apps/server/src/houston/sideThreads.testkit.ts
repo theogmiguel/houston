@@ -66,6 +66,8 @@ export const withoutReadOnlyRun = (
 
 export interface DoubleSpec {
   readonly driver: string;
+  /** The provider instance; the driver's name when absent. */
+  readonly instanceId?: string;
   readonly capabilities: OrchestrationV2ProviderCapabilities;
 }
 
@@ -128,14 +130,14 @@ const makeAdapter = (
   mcpSessions: McpProviderSessions.McpProviderSessions["Service"],
 ): ProviderAdapter.ProviderAdapterV2["Service"] => {
   const driver = ProviderDriverKind.make(spec.driver);
-  const instanceId = ProviderInstanceId.make(spec.driver);
+  const instanceId = ProviderInstanceId.make(spec.instanceId ?? spec.driver);
   const providerThreadFor = (
     threadId: ThreadId,
     providerSessionId: OrchestrationV2ProviderThread["providerSessionId"],
     now: DateTime.Utc,
     forkedFrom: OrchestrationV2ProviderThread["forkedFrom"] = null,
   ): OrchestrationV2ProviderThread => ({
-    id: ProviderThreadId.make(`provider-thread:${spec.driver}:${threadId}`),
+    id: ProviderThreadId.make(`provider-thread:${spec.instanceId ?? spec.driver}:${threadId}`),
     driver,
     providerInstanceId: instanceId,
     providerSessionId,
@@ -356,14 +358,19 @@ export const makeHarness = Effect.fn("sideThreadsHarness")(function* (
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       return ProviderAdapterRegistry.ProviderAdapterRegistryV2.of({
         get: (instanceId) => {
-          const spec = specs.find((candidate) => candidate.driver === instanceId);
+          const spec = specs.find(
+            (candidate) => (candidate.instanceId ?? candidate.driver) === instanceId,
+          );
           return spec === undefined
             ? Effect.fail(
                 new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
               )
-            : Effect.succeed(adapters.get(spec.driver) ?? remember(spec, mcpSessions));
+            : Effect.succeed(adapters.get(instanceId) ?? remember(spec, mcpSessions));
         },
-        list: () => Effect.succeed(specs.map((spec) => ProviderInstanceId.make(spec.driver))),
+        list: () =>
+          Effect.succeed(
+            specs.map((spec) => ProviderInstanceId.make(spec.instanceId ?? spec.driver)),
+          ),
       });
     }),
   );
@@ -373,7 +380,7 @@ export const makeHarness = Effect.fn("sideThreadsHarness")(function* (
     mcpSessions: McpProviderSessions.McpProviderSessions["Service"],
   ) => {
     const adapter = makeAdapter(spec, cwd, script, log, live, mcpSessions);
-    adapters.set(spec.driver, adapter);
+    adapters.set(spec.instanceId ?? spec.driver, adapter);
     return adapter;
   };
   const release = (messageId: string) => finish(live, script, cwd, messageId);
