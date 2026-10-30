@@ -81,7 +81,15 @@
     "apps/server/src/houston/providerReadiness.ws.test.ts",
     "packages/contracts/src/houston/providerReadiness.test.ts",
     "apps/server/src/houston/providerReadiness.ts",
-    "packages/contracts/src/houston/providerReadiness.ts"
+    "packages/contracts/src/houston/providerReadiness.ts",
+    "apps/server/src/houston/messageDelivery.test.ts",
+    "apps/server/src/houston/messageDelivery.dispatch.test.ts",
+    "apps/server/src/houston/messageDelivery.families.test.ts",
+    "apps/server/src/houston/messageDelivery.ws.test.ts",
+    "apps/server/src/houston/messageDelivery.testkit.ts",
+    "packages/contracts/src/houston/messageDelivery.test.ts",
+    "packages/provider-opencode/src/server/houston/steerDelivery.test.ts",
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_claude_steer_lifecycle/claude_transcript.ndjson"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -429,6 +437,7 @@
     "apps/server/src/orchestration-v2/testkit/fixtures/muse_workflow/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
     "apps/server/src/orchestration-v2/testkit/fixtures/simple/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
     "apps/server/src/orchestration-v2/testkit/fixtures/subagent_v2/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
-    "apps/server/src/orchestration-v2/testkit/fixtures/turn_interrupt/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt"
+    "apps/server/src/orchestration-v2/testkit/fixtures/turn_interrupt/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/CommandPolicy.test.ts": "send intents: an explicit steer stays a steer and is refused by name where the provider cannot steer (AD-040)"
   }
 }
