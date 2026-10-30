@@ -452,7 +452,7 @@
     "apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts": "send intents: provides the delivery writer; shares the application event store with /ws clients",
     "apps/server/src/orchestration-v2/testkit/fixtures/index.ts": "send intents: ACP, Cursor and Grok message_steering recordings replay as restart_active (message_steering_restart), since they cannot steer (AD-040)",
     "apps/server/src/orchestration-v2/testkit/CursorReplayFixtures.integration.test.ts": "send intents: the explicit Cursor restart_active replay reads message_steering_restart, where Cursor's steering recording moved (AD-040)",
-    "apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts":"send intents: a steer to a provider that cannot steer is refused by name instead of queued (AD-040)",
+    "apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts": "send intents: a steer to a provider that cannot steer is refused by name instead of queued (AD-040)",
     "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts": "send intents: a root userMessage item with the steered text reports the steer read",
     "packages/provider-opencode/src/server/adapter.ts": "send intents: an assistant reply whose parentID is the steer reports it read"
   }
