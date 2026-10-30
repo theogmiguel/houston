@@ -36,6 +36,7 @@ import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
+import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -169,6 +170,9 @@ export const make = Effect.gen(function* () {
   const houstonTasks = yield* Effect.serviceOption(HoustonTaskStore.HoustonTaskStore);
   const houstonTaskSources = yield* Effect.serviceOption(
     HoustonTaskSourceStore.HoustonTaskSourceStore,
+  );
+  const houstonMergeQueue = yield* Effect.serviceOption(
+    HoustonMergeQueueStore.HoustonMergeQueueStore,
   );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
@@ -522,6 +526,9 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonTasks)) yield* houstonTasks.value.projectRemoved(projectId);
         if (Option.isSome(houstonTaskSources)) {
           yield* houstonTaskSources.value.projectRemoved(projectId);
+        }
+        if (Option.isSome(houstonMergeQueue)) {
+          yield* houstonMergeQueue.value.projectRemoved(projectId);
         }
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
