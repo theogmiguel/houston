@@ -183,3 +183,79 @@ fn exited_roots_keep_passive_panes_and_output_until_explicit_close() {
         );
     }
 }
+
+#[test]
+fn exited_roots_left_by_versions_without_retention_stay_closed_after_upgrade() {
+    if houston_core::host_env::HostEnv::capture()
+        .var("HOUSTON_LEGACY_EXITED_ROOT_FIXTURE")
+        .is_none()
+    {
+        let home = tempfile::tempdir().unwrap();
+        let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
+            .args([
+                "--exact",
+                &common::exact_path(
+                    module_path!(),
+                    "exited_roots_left_by_versions_without_retention_stay_closed_after_upgrade",
+                ),
+                "--nocapture",
+            ])
+            .env("HOUSTON_LEGACY_EXITED_ROOT_FIXTURE", "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let state = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let database = state.path().join("test.db");
+    let db = Db::open(&database).unwrap();
+    // Session 1 was retained by a daemon that keeps exited roots, so its output was
+    // saved. Session 2 exited under a version that dropped exited roots at restart and
+    // deleted their output; its row was never closed.
+    for id in 1..=2 {
+        db.insert_session(&info(id, project.path(), proto::AgentKind::Claude))
+            .unwrap();
+        db.update_session_state(id, proto::SessionState::Exited, Some(0))
+            .unwrap();
+    }
+    let scrollback_dir = state.path().join("scrollback");
+    std::fs::create_dir(&scrollback_dir).unwrap();
+    let mut ring = Scrollback::default();
+    ring.push(b"retained output\r\n");
+    ring.persist(&scrollback_dir.join("1.bin")).unwrap();
+    let boot = || {
+        Daemon::new_with_safe_mode_flags_for_test(
+            DaemonConfig::new(
+                common::TOKEN.into(),
+                database.clone(),
+                crate::common::capture_env(),
+            ),
+            SafeModeFlags {
+                disable_auto_restore: false,
+                disable_swarm_autolaunch: true,
+            },
+        )
+        .unwrap()
+    };
+    let listed_ids = |daemon: &Daemon| {
+        let mut ids: Vec<u32> = daemon.list().iter().map(|s| s.id).collect();
+        ids.sort_unstable();
+        ids
+    };
+    let daemon = boot();
+    assert_eq!(
+        listed_ids(&daemon),
+        vec![1],
+        "an exited root without saved output predates retention and must not reappear"
+    );
+    assert!(db.session_is_closed(2).unwrap());
+    drop(daemon);
+    // A root that exits without output after the upgrade has no saved output either;
+    // the upgrade pass ran once and must not close it.
+    db.insert_session(&info(3, project.path(), proto::AgentKind::Claude))
+        .unwrap();
+    db.update_session_state(3, proto::SessionState::Exited, Some(0))
+        .unwrap();
+    assert_eq!(listed_ids(&boot()), vec![1, 3]);
+}
