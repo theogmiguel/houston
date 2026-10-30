@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/pingdotgg/t3code",
-  "commit": "6d450a4284852af137b2f3407fddd89eb76e7644",
+  "commit": "5b357b3b894e8255ebd3049c8ef826b93c20c9e4",
   "licence": "MIT",
   "imported": [
     "apps/server",
@@ -241,7 +241,8 @@
     "packages/shared/src/relaySigning.ts",
     "packages/shared/src/relaySigning.test.ts",
     "apps/web/src/state/npmRelease.test.ts",
-    "apps/web/src/state/npmRelease.ts"
+    "apps/web/src/state/npmRelease.ts",
+    "packages/client-runtime/src/pullRequestProjectFilter.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -899,6 +900,7 @@
     "packages/shared/src/t3ProjectFile.test.ts": "documentation link points at the Houston repository",
     "packages/shared/src/threadLinks.test.ts": "sample URLs use example.test instead of the T3 domain",
     "apps/web/src/terminal/ghostty/core.test.ts": "sample URLs use example.test instead of the T3 domain",
-    "apps/web/src/terminal/ghostty/surface.test.ts": "sample URLs use example.test instead of the T3 domain"
+    "apps/web/src/terminal/ghostty/surface.test.ts": "sample URLs use example.test instead of the T3 domain",
+    "packages/contracts/src/ipc.ts": "upstream 476590d0a not ported: desktop-only trackpad navigation bridge"
   }
 }

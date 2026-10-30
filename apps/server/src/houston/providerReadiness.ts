@@ -461,6 +461,10 @@ export const decorateProviderRegistry = Effect.fn("decorateProviderRegistry")(fu
         ),
     refreshInstance: (instanceId) =>
       raw.refreshInstance(instanceId).pipe(Effect.flatMap(clearing(() => [instanceId]))),
+    reloadSecretsAndRefresh: (instanceId) =>
+      raw.reloadSecretsAndRefresh(instanceId).pipe(
+        Effect.flatMap(clearing(() => (instanceId === undefined ? "all" : [instanceId]))),
+      ),
     refreshAfterUpdate: (provider, selectedInstanceId) =>
       raw
         .refreshAfterUpdate(provider, selectedInstanceId)
