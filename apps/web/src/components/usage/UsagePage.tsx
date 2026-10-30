@@ -69,7 +69,6 @@ import {
 } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
 import { Skeleton } from "../ui/skeleton";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -80,6 +79,7 @@ import {
   WorkspaceBreadcrumbSeparator,
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
+import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
@@ -519,9 +519,13 @@ export function UsagePage() {
             <div className="flex flex-col gap-1">
               <h1 className="text-large-title font-bold">Usage</h1>
               {showingLimits ? null : (
-                <p className="max-w-[62ch] text-xs leading-4 text-muted-foreground">
-                  {windowLabel}
-                </p>
+                <>
+                  <p className="max-w-[62ch] text-sm leading-5 text-secondary-foreground">
+                    What your Claude Code and Codex sessions on this machine would cost at API
+                    prices. Houston reads their transcripts locally; nothing is sent anywhere.
+                  </p>
+                  <p className="text-xs leading-4 text-muted-foreground">{windowLabel}</p>
+                </>
               )}
             </div>
             {selectedEnvironments.length === 0 ? (
@@ -711,6 +715,29 @@ function UsageOverview({
           {message}
         </p>
       ))}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric
+          loading={loadingPartial}
+          label="API-equivalent cost"
+          value={formatUsd(merged.costUsd)}
+        />
+        <Metric
+          loading={loadingPartial}
+          label="Tokens processed"
+          value={formatTokens(merged.totalTokens)}
+        />
+        <Metric
+          loading={loadingPartial}
+          label="Output tokens"
+          value={formatTokens(merged.outputTokens)}
+        />
+        <Metric
+          loading={loadingPartial}
+          label="Saved by caching"
+          value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+        />
+      </section>
+
       <section className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
@@ -788,10 +815,10 @@ function UsageOverview({
                     />
                     <ProviderMark provider={provider} className="size-4" />
                     <span className="flex min-w-0 items-baseline gap-1.5">
-                      <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
+                      <span className="shrink-0">{PROVIDER_PRESENTATION[provider].label}</span>
                       <span
                         className={cn(
-                          "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
+                          "min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
                           figureClass(providerLoading),
                           awaitingData && "invisible",
                         )}
@@ -831,7 +858,7 @@ function UsageOverview({
 
         <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
           <h2 className="text-headline font-semibold text-foreground">
-            {shownHourly ? "Hourly" : "Daily"} {metric === "tokens" ? "processed tokens" : "cost"}
+            {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
           </h2>
           <UsageProviderChart
             providers={activeProviders}
@@ -845,39 +872,6 @@ function UsageOverview({
             resolution={shownHourly ? "hour" : "day"}
             timeZone={shownWindow.timeZone}
             hour12={hour12}
-          />
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="px-1 text-2xs font-semibold text-muted-foreground">
-          Totals
-        </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          <Metric
-            loading={loadingPartial}
-            label="Processed tokens"
-            value={formatTokens(merged.totalTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Cached input"
-            value={formatTokens(merged.cachedInputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Uncached input"
-            value={formatTokens(merged.uncachedInputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Output"
-            value={formatTokens(merged.outputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Cache savings"
-            value={formatUsd(merged.costQuality.cacheSavingsUsd)}
           />
         </div>
       </section>
@@ -917,9 +911,7 @@ function UsageOverview({
 
       <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="px-1 text-2xs font-semibold text-muted-foreground">
-            Breakdown
-          </h2>
+          <h2 className="px-1 text-2xs font-semibold text-muted-foreground">Breakdown</h2>
           <ToggleGroup
             aria-label="Usage breakdown"
             variant="segmented"
@@ -931,8 +923,8 @@ function UsageOverview({
           >
             {(
               [
-                { value: "model", label: "Model" },
-                { value: "time", label: shownHourly ? "Hour" : "Day" },
+                { value: "model", label: "By model" },
+                { value: "time", label: shownHourly ? "By hour" : "By day" },
               ] as const
             ).map((option) => (
               <Toggle key={option.value} value={option.value}>
@@ -1261,10 +1253,7 @@ function Metric({
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3">
       <span className="text-2xs font-medium text-muted-foreground">{label}</span>
       <span
-        className={cn(
-          "text-stat font-semibold text-foreground tabular-nums",
-          figureClass(loading),
-        )}
+        className={cn("text-stat font-semibold text-foreground tabular-nums", figureClass(loading))}
       >
         {value}
       </span>
