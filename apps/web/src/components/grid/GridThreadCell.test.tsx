@@ -75,6 +75,8 @@ function grid(): GridRecord {
     workspaceKey: "env-1:project-1",
     tree: { kind: "thread", threadId: "thread-a", id: "p1" },
     focusedThreadId: "thread-a",
+    pinnedAt: null,
+    hidden: false,
     createdAt: "2026-01-01T00:00:00Z",
   };
 }

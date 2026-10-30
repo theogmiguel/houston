@@ -11,6 +11,7 @@ import {
   preorderThreads,
   reconcileThreads,
   removeThread,
+  swapThread,
   threadLeaf,
 } from "./tree";
 
@@ -26,6 +27,10 @@ export interface GridRecord {
   workspaceKey: string;
   tree: LayoutNode | null;
   focusedThreadId: string | null;
+  /** Pinned grids sort above their workspace's other grids. */
+  pinnedAt: string | null;
+  /** Hidden grids keep their threads but drop out of the workspace tree. */
+  hidden: boolean;
   createdAt: string;
 }
 
@@ -47,6 +52,11 @@ export interface GridStoreState {
   focusThread: (gridId: string, threadId: string | null) => void;
   setDraftId: (gridId: string, threadId: string, draftId: string | null) => void;
   reconcileGridThreads: (gridId: string, threadIds: string[]) => void;
+  pinGrid: (gridId: string, now?: string) => void;
+  unpinGrid: (gridId: string) => void;
+  setGridHidden: (gridId: string, hidden: boolean) => void;
+  /** Swaps two panes so the dragged thread takes the target's place. */
+  reorderGridThreads: (gridId: string, draggedThreadId: string, targetThreadId: string) => void;
 }
 
 export const GRID_STORAGE_KEY = "houston:grids:v1";
@@ -64,6 +74,21 @@ export function gridsForWorkspace(
 
 export function gridById(grids: readonly GridRecord[], gridId: string): GridRecord | null {
   return grids.find((grid) => grid.id === gridId) ?? null;
+}
+
+/**
+ * A workspace's grids in sidebar order: pinned grids first, each group in the
+ * order the user created them. Status never reorders a grid.
+ */
+export function orderedGridsForWorkspace(
+  grids: readonly GridRecord[],
+  workspaceKey: string,
+): GridRecord[] {
+  return gridsForWorkspace(grids, workspaceKey).toSorted((left, right) => {
+    const pinOrder = (right.pinnedAt !== null ? 1 : 0) - (left.pinnedAt !== null ? 1 : 0);
+    if (pinOrder !== 0) return pinOrder;
+    return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+  });
 }
 
 function nextGridName(grids: readonly GridRecord[], workspaceKey: string): string {
@@ -141,6 +166,8 @@ function parseGrid(value: unknown): GridRecord | null {
       typeof raw.focusedThreadId === "string" && containsThreadId(tree, raw.focusedThreadId)
         ? raw.focusedThreadId
         : defaultFocus(tree),
+    pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
+    hidden: raw.hidden === true,
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
   };
 }
@@ -177,6 +204,8 @@ export function createGridRecord(
     workspaceKey: input.workspaceKey,
     tree: null,
     focusedThreadId: null,
+    pinnedAt: null,
+    hidden: false,
     createdAt: input.now ?? new Date().toISOString(),
   };
 }
@@ -248,6 +277,29 @@ export const useGridStore = create<GridStoreState>()(
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
             withTree(grid, reconcileThreads(grid.tree, threadIds)),
+          ),
+        })),
+      pinGrid: (gridId, now) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => ({
+            ...grid,
+            pinnedAt: grid.pinnedAt ?? now ?? new Date().toISOString(),
+          })),
+        })),
+      unpinGrid: (gridId) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => ({ ...grid, pinnedAt: null })),
+        })),
+      setGridHidden: (gridId, hidden) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => ({ ...grid, hidden })),
+        })),
+      reorderGridThreads: (gridId, draggedThreadId, targetThreadId) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) =>
+            grid.tree === null
+              ? grid
+              : withTree(grid, swapThread(grid.tree, draggedThreadId, targetThreadId)),
           ),
         })),
     }),
