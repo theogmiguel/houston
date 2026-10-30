@@ -85,8 +85,8 @@ Everything under the TypeScript sidecar, in this order:
 6. Git, pull requests, worktrees, checkpoints, usage.
 7. MCP toolkits (the orchestration tools agents call).
 8. Server side of the Houston-only features: Night shift, task sources (GitHub, Notion, Slack),
-   workspace transfer, WSL. Deferred until the port is complete; each is then decided (port, adapt
-   or drop) when its slice starts.
+   workspace transfer, WSL. Deferred until the port is complete; each is then ported onto the v2
+   stack when its slice starts (see "v1 removal").
 
 Also Augusto's: the decision on PR #363 (close it, or name what v2 reuses from it).
 
@@ -123,6 +123,27 @@ depend on it.
 - Integration duty (merging `main` into `v2`) alternates weekly, starting with Theo.
 - `AGENTS.md`: Augusto writes the v2 invariants for the server, Theo for the host and renderer,
   when their architecture lands.
+
+### v1 removal
+
+The daemon (`houston-core`) and Houston's MCP orchestration (`pane_*`, `hs-pane`) leave with v1;
+agents orchestrate through upstream's orchestration-v2. Houston-only features that upstream lacks are
+not deleted: their code moves to the v2 stack. The removal runs in two parts, each split by owner.
+
+1. **What v2 already replaces**, after the server entrypoint and the host land:
+   - Augusto: `core/houston-protocol`, and the PTY, transport, hooks and MCP orchestration in
+     `core/houston-core`, with their tests and the scripts that start the daemon.
+   - Theo: `ui/`, the native browser, `daemon_host.rs`, `houston-supervisor` and the daemon's
+     watchdog in `src-tauri`, with their tests.
+   - Both: the `ci.yml` jobs that build or test them (`core-checks`, `core-integration`,
+     `linux-native-checks`, the v1 renderer and Windows checks), the safety scripts that guard only
+     the daemon, and the `docs/` pages that describe it.
+2. **What upstream lacks:** Night shift, task sources, workspace transfer, the merge queue and WSL.
+   Each is ported to the server (and its renderer side) in its own slice, and its Rust code leaves
+   in the same PR. `core/` is deleted when the last of them has moved.
+
+`AGENTS.md`'s daemon, PTY and MCP invariants are replaced by the v2 invariants in the PR that
+removes what they guard.
 
 ### Additions from MonoCode and Capy
 
