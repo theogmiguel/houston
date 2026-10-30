@@ -359,8 +359,9 @@ describe("houston server entrypoint", () => {
         { name: "--base-dir", baseDir: "x", warns: "--base-dir" },
         { name: "T3CODE_BOOTSTRAP_FD", home: "x", envFd: true, warns: "T3CODE_HOME" },
         { name: "alone" },
-        { name: "blank T3CODE_HOME", home: "" },
-        { name: "blank --base-dir", baseDir: "" },
+        // Whitespace: the config provider reads an empty variable as unset.
+        { name: "blank T3CODE_HOME", home: "   " },
+        { name: "blank --base-dir", baseDir: "   " },
       ] as const satisfies ReadonlyArray<{
         readonly name: string;
         readonly home?: string;
@@ -371,7 +372,8 @@ describe("houston server entrypoint", () => {
       await Promise.all(
         rows.map(async (row) => {
           const root = makeSandbox();
-          const resolve = (value: string) => (value === "" ? "" : NodePath.join(root, value));
+          const resolve = (value: string) =>
+            value.trim() === "" ? value : NodePath.join(root, value);
           const base = NodePath.join(root, ".houston-dev", "v2");
           const port = await freePort();
           const server = spawnServer({
