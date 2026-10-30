@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ModelCapabilities, ProviderDriverKind } from "@t3tools/contracts";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
 
 export type ModelEsque = {
@@ -11,6 +11,8 @@ export type ModelEsque = {
   badge?: "new" | undefined;
   isLegacy?: boolean | undefined;
   isUnavailable?: boolean | undefined;
+  /** The catalog's declared traits, which the picker shows beside the model. */
+  capabilities?: ModelCapabilities | null | undefined;
 };
 
 function escapeRegExp(value: string): string {
