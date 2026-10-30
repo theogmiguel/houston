@@ -30,7 +30,7 @@ const variantColors: Record<ComposerBannerVariant, string> = {
   info: neutralOutline,
   success: neutralOutline,
   warning:
-    "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_28%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--warning)_8%,transparent)]",
+    "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_32%,transparent)] [--chat-composer-attached-tint:var(--warning-surface)]",
 };
 
 function Surface({
