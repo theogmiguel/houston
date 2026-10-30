@@ -11,7 +11,7 @@ import {
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
-  type RunId,
+  RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -1159,6 +1159,46 @@ describe("a side thread's limits", () => {
             }
             const after = yield* projectionOf(context, "aside");
             assert.lengthOf(after.subagents, 0);
+          }),
+        );
+      }),
+    ),
+  );
+
+  it.effect("a command on a missing thread keeps upstream's error", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("side-guard-missing");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const missing = ThreadId.make("missing");
+            const commands: ReadonlyArray<OrchestrationV2Command> = [
+              {
+                type: "checkpoint.rollback",
+                commandId: CommandId.make("rollback:missing"),
+                threadId: missing,
+                scopeId: CheckpointScopeId.make("scope:missing"),
+                checkpointId: CheckpointId.make("checkpoint:missing"),
+              },
+              {
+                type: "thread.fork",
+                createdBy: "user",
+                creationSource: "web",
+                commandId: CommandId.make("fork:missing"),
+                sourceThreadId: missing,
+                targetThreadId: ThreadId.make("fork-target"),
+                sourcePoint: { type: "run", runId: RunId.make("run:missing") },
+              },
+            ];
+            for (const command of commands) {
+              const error = yield* Effect.flip(context.dispatch(command));
+              // The side-thread guard steps aside; the command's own handler reports the thread.
+              assert.notEqual(
+                (error as { readonly _tag: string })._tag,
+                "OrchestratorProjectionError",
+                command.type,
+              );
+            }
           }),
         );
       }),
