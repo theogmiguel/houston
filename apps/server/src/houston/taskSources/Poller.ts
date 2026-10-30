@@ -51,7 +51,7 @@ export class HoustonTaskSourcePoller extends Context.Service<
     /** How many poll loops this poller started; one per server. */
     readonly loopsStarted: Effect.Effect<number>;
   }
->()("t3/houston/taskSources/Poller/HoustonTaskSourcePoller") {}
+>()("houston/houston/taskSources/Poller/HoustonTaskSourcePoller") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

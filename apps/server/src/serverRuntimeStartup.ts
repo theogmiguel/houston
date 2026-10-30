@@ -76,7 +76,7 @@ export class ServerRuntimeStartup extends Context.Service<
       effect: Effect.Effect<A, E>,
     ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
   }
->()("t3/serverRuntimeStartup") {}
+>()("houston/serverRuntimeStartup") {}
 
 interface QueuedCommand {
   readonly run: Effect.Effect<void, never>;

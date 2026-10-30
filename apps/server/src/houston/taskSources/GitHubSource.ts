@@ -26,7 +26,7 @@ const HOST = "github.com";
 
 /** How long one page may take; tests shorten it to prove a stalled answer is named. */
 export const GitHubRequestTimeout = Context.Reference<Duration.Duration>(
-  "t3/houston/taskSources/GitHubSource/GitHubRequestTimeout",
+  "houston/houston/taskSources/GitHubSource/GitHubRequestTimeout",
   { defaultValue: () => Duration.seconds(30) },
 );
 

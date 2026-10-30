@@ -141,7 +141,7 @@ const withTempDirectory = <A, E, R>(
     (root) => Effect.promise(() => NodeFSP.rm(root, { recursive: true, force: true })),
   );
 
-describe("t3 server command safety", () => {
+describe("houston server command safety", () => {
   it.effect("rejects unknown command words without creating a home or project", () =>
     withTempDirectory("t3-cli-unknown-", (root) =>
       Effect.gen(function* () {
@@ -214,7 +214,7 @@ describe("t3 server command safety", () => {
   );
 });
 
-describe("t3 app", () => {
+describe("houston app", () => {
   it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>
     withTempDirectory("t3-app-command-test-", (root) =>
       Effect.gen(function* () {

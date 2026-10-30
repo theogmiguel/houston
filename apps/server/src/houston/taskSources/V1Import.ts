@@ -221,7 +221,7 @@ export class HoustonTaskSourceV1Import extends Context.Service<
     readonly status: Effect.Effect<HoustonTaskSourceImportStatus>;
     readonly run: Effect.Effect<HoustonTaskSourceImportResult, HoustonTaskSourceError>;
   }
->()("t3/houston/taskSources/V1Import/HoustonTaskSourceV1Import") {}
+>()("houston/houston/taskSources/V1Import/HoustonTaskSourceV1Import") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

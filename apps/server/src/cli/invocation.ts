@@ -12,7 +12,7 @@ import packageJson from "../../package.json" with { type: "json" };
 
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
-/** Detection is best-effort; callers must fail closed to a plain `t3` command. */
+/** Detection is best-effort; callers must fail closed to a plain `houston` command. */
 function detectCliRunner(entryPath: string): CliRunner | null {
   const path = entryPath.replaceAll("\\", "/");
   if (path.includes("/_npx/")) {
@@ -34,13 +34,13 @@ function detectCliRunner(entryPath: string): CliRunner | null {
 const InstallManifest = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
-  bin: Schema.optionalKey(Schema.Struct({ t3: Schema.String })),
+  bin: Schema.optionalKey(Schema.Struct({ houston: Schema.String })),
 });
 const decodeInstallManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(InstallManifest));
 
 /**
  * `T3CODE_NPM_LAUNCHER_PATH` is inherited by child shells, so accept it only for this package
- * version to avoid claiming another `t3` invocation is the npm install.
+ * version to avoid claiming another `houston` invocation is the npm install.
  */
 export const resolveEntryPath = Effect.gen(function* () {
   const npmLauncher = (yield* HostProcess.Environment).T3CODE_NPM_LAUNCHER_PATH?.trim();
@@ -52,7 +52,7 @@ export const resolveEntryPath = Effect.gen(function* () {
       .pipe(Effect.flatMap(decodeInstallManifest), Effect.option);
     if (
       Option.isSome(manifest) &&
-      manifest.value.name === "t3" &&
+      manifest.value.name === "houston" &&
       manifest.value.version === packageJson.version
     ) {
       return npmLauncher;
@@ -67,7 +67,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/t3\/(?:dist\/bin\.mjs|bin\/t3\.mjs)$/.exec(entry);
+  const match = /^(.*)\/lib\/node_modules\/houston\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(entry);
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -83,13 +83,13 @@ export const resolveServerInstallation = Effect.gen(function* () {
   )
     return null;
 
-  const packageRoot = path.join(prefix, "lib/node_modules/t3");
+  const packageRoot = path.join(prefix, "lib/node_modules/houston");
   const manifest = yield* fs
     .readFileString(path.join(packageRoot, "package.json"))
     .pipe(Effect.flatMap(decodeInstallManifest));
-  if (manifest.name !== "t3" || !manifest.bin) return null;
-  const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin.t3));
-  const globalBin = yield* fs.realPath(path.join(prefix, "bin/t3"));
+  if (manifest.name !== "houston" || !manifest.bin) return null;
+  const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin.houston));
+  const globalBin = yield* fs.realPath(path.join(prefix, "bin/houston"));
   if (globalBin !== bin || bin !== entry) return null;
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
@@ -97,7 +97,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
 /** The original package spec is unavailable at startup; infer its channel from the version. */
 function suggestedPackageSpec(version: string): string {
   const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "t3" : `t3@${channel}`;
+  return channel === undefined ? "houston" : `houston@${channel}`;
 }
 
 function formatCliCommand(input: {
@@ -107,7 +107,7 @@ function formatCliCommand(input: {
 }): string {
   const runner = detectCliRunner(input.entryPath);
   if (runner === null) {
-    return `t3 ${input.subcommand}`;
+    return `houston ${input.subcommand}`;
   }
   return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
 }
@@ -143,7 +143,7 @@ const resolveInstallLauncher = Effect.gen(function* () {
 });
 
 /**
- * Uses `t3` on PATH, the originating package runner, or this install's absolute launcher path.
+ * Uses `houston` on PATH, the originating package runner, or this install's absolute launcher path.
  * Arguments are quoted for POSIX shells or PowerShell on Windows.
  */
 export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand")(function* (
@@ -154,8 +154,8 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const withArgs = (prefix: string) =>
     [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(subcommand);
-  if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
-  if (yield* isCommandAvailable("t3")) return { command: withArgs(command), launcher: false };
+  if (command !== `houston ${subcommand}`) return { command: withArgs(command), launcher: false };
+  if (yield* isCommandAvailable("houston")) return { command: withArgs(command), launcher: false };
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
@@ -166,7 +166,7 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
 
 /**
  * `sudo` resets PATH on most distributions, which drops a user-installed Node
- * (nvm, fnm, a tarball) and with it `npx` or a global `t3`, so the command
+ * (nvm, fnm, a tarball) and with it `npx` or a global `houston`, so the command
  * carries PATH through unless Node is on root's PATH too. An absolute launcher
  * needs neither.
  */

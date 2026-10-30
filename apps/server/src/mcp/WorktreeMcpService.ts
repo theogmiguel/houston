@@ -35,7 +35,7 @@ export class WorktreeMcpService extends Context.Service<
       scope: McpInvocationScope,
     ) => Effect.Effect<WorktreeMcpStatusResult, WorktreeMcpFailure>;
   }
->()("t3/mcp/WorktreeMcpService") {}
+>()("houston/mcp/WorktreeMcpService") {}
 
 function failure(code: WorktreeMcpFailure["code"], message: string): WorktreeMcpFailure {
   return new WorktreeMcpFailure({ code, message });

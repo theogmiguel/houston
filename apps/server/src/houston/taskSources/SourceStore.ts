@@ -160,7 +160,7 @@ export class HoustonTaskSourceStore extends Context.Service<
     /** Removes a deleted project's settings, poll state and tokens; its tasks keep their links. */
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
->()("t3/houston/taskSources/SourceStore/HoustonTaskSourceStore") {}
+>()("houston/houston/taskSources/SourceStore/HoustonTaskSourceStore") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

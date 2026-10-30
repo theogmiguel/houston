@@ -374,11 +374,11 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       yield* fs.makeDirectory(customBinDir);
       // Chained: the launcher reaches its runtime through a second link.
       yield* fs.symlink(path.join(versionsDir, "1.2.0", "t3"), path.join(baseDir, "alias-t3"));
-      yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "t3"));
-      yield* fs.symlink(path.join(versionsDir, "1.2.5", "t3"), path.join(customBinDir, "t3"));
+      yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "houston"));
+      yield* fs.symlink(path.join(versionsDir, "1.2.5", "t3"), path.join(customBinDir, "houston"));
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "launchers"),
-        `${path.join(customBinDir, "t3")}\n`,
+        `${path.join(customBinDir, "houston")}\n`,
       );
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "service-state.json"),
@@ -409,7 +409,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       // The launcher found on PATH is remembered for a service that cannot see it.
       assert.equal(
         yield* fs.readFileString(path.join(baseDir, "runtime", "launchers")),
-        `${path.join(customBinDir, "t3")}\n${path.join(binDir, "t3")}\n`,
+        `${path.join(customBinDir, "houston")}\n${path.join(binDir, "houston")}\n`,
       );
       assert.deepEqual((yield* fs.readDirectory(versionsDir)).toSorted(), [
         ".staging-abc",
@@ -433,7 +433,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
-      const shim = path.join(baseDir, "t3.cmd");
+      const shim = path.join(baseDir, "houston.cmd");
       yield* fs.writeFileString(
         shim,
         `@echo off\r\n"${path.join(versionsDir, "1.0.0", "t3.exe").toUpperCase()}" %*`,
@@ -490,9 +490,9 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
         // Multicall coreutils (Ubuntu's uutils) refuse to run renamed, so copy Node instead.
         yield* fs.copyFile(process.execPath, entry);
         yield* fs.chmod(entry, 0o755);
-        const link = path.join(baseDir, "t3");
+        const link = path.join(baseDir, "houston");
         yield* fs.symlink(entry, link);
-        // Its argv names only the link, as with `t3 serve` run from PATH. Removing the link after
+        // Its argv names only the link, as with `houston serve` run from PATH. Removing the link after
         // spawning leaves the process's executable as the only reference.
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         yield* spawner.spawn(ChildProcess.make(link, ["-e", "setTimeout(() => {}, 30_000)"]));

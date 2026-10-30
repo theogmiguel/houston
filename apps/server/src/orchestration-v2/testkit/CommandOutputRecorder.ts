@@ -20,7 +20,7 @@ export interface RecordedCommandOutput {
 export class CommandOutputRecorder extends Context.Service<
   CommandOutputRecorder,
   { readonly snapshot: Effect.Effect<ReadonlyMap<TurnItemId, RecordedCommandOutput>> }
->()("t3/orchestration-v2/testkit/CommandOutputRecorder") {}
+>()("houston/orchestration-v2/testkit/CommandOutputRecorder") {}
 
 export const layer: Layer.Layer<
   CommandOutputHub.CommandOutputHub | CommandOutputRecorder,

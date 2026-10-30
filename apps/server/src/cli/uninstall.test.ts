@@ -7,7 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { findOwnedLauncher } from "./uninstall.ts";
 
-it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
+it.layer(NodeServices.layer)("houston uninstall launcher", (it) => {
   it.effect("claims only a launcher that points into this home's runtime tree", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -21,8 +21,8 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "");
       }
-      const ours = path.join(root, "bin/t3");
-      const theirs = path.join(root, "other/bin/t3");
+      const ours = path.join(root, "bin/houston");
+      const theirs = path.join(root, "other/bin/houston");
       yield* fs.makeDirectory(path.dirname(ours), { recursive: true });
       yield* fs.makeDirectory(path.dirname(theirs), { recursive: true });
       yield* fs.symlink(exe, ours);

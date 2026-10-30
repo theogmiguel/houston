@@ -197,7 +197,7 @@ export interface EventSinkV2Shape {
 }
 
 export class EventSinkV2 extends Context.Service<EventSinkV2, EventSinkV2Shape>()(
-  "t3/orchestration-v2/EventSink/EventSinkV2",
+  "houston/orchestration-v2/EventSink/EventSinkV2",
 ) {}
 
 const layerBase: Layer.Layer<

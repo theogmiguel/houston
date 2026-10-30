@@ -10,7 +10,7 @@ import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 const DismissedEnvironmentIds = Schema.Array(Schema.String);
 
-/** Suggests `t3 doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
+/** Suggests `houston doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
 export function DatabaseStorageNotice({
   environments,
 }: {

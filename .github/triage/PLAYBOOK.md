@@ -23,8 +23,8 @@ the server process is currently running, and the exact paths for state, logs, an
 the database.
 
 Its triage CLI version (called "Installed version" in older context files) is only
-the version of the `t3` that ran `t3 triage`. It is often not the build the bug
-happened on: `npx t3 triage` runs whatever `t3` npm resolves, while the user may
+the version of the `houston` that ran `t3 triage`. It is often not the build the bug
+happened on: `npx houston triage` runs whatever `houston` npm resolves, while the user may
 run the desktop app, the background service, or a nightly. The server process line
 gives the local server's version when the server recorded one.
 
@@ -65,7 +65,7 @@ Diagnosis grounded in source beats guessing.
 First establish the shape of the install, because the same symptom points at
 different code depending on it:
 
-- How is Houston running on this machine: `npx t3 serve` in a terminal, the
+- How is Houston running on this machine: `npx houston serve` in a terminal, the
   background service, or the desktop app?
 - Which surface is the user connecting from: the website (app.t3.codes), the
   desktop app against a local server, the desktop app against a remote server,

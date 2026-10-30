@@ -154,7 +154,7 @@ export class ThemeTargetMissingError extends Schema.TaggedError<ThemeTargetMissi
   {},
 ) {
   override get message(): string {
-    return "Provide a theme id or file, or run `t3 theme clear` to remove the theme.";
+    return "Provide a theme id or file, or run `houston theme clear` to remove the theme.";
   }
 }
 

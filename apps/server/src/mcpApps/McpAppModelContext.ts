@@ -36,7 +36,7 @@ export class McpAppModelContext extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<ReadonlyArray<McpAppModelContextEntry>, McpAppModelContextError>;
   }
->()("t3/mcpApps/McpAppModelContext") {}
+>()("houston/mcpApps/McpAppModelContext") {}
 
 export const layer = Layer.effect(
   McpAppModelContext,

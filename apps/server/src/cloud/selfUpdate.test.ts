@@ -134,7 +134,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       const web = yield* makeHarness();
       expect(
         (yield* web.selfUpdate.update({ targetVersion: "latest" }).pipe(Effect.flip)).reason,
-      ).toBe("'latest' is not an exact t3 version.");
+      ).toBe("'latest' is not an exact houston version.");
       const desktop = yield* makeHarness({ mode: "desktop" });
       expect(
         (yield* desktop.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
@@ -282,7 +282,7 @@ it.layer(NodeServices.layer)("pruning runtimes on start", (it) => {
     return { removed, remaining: (yield* fs.readDirectory(versionsDir)).toSorted() };
   });
 
-  // The SSH launcher runs `t3 serve` straight from the pinned runtime, with no boot service.
+  // The SSH launcher runs `houston serve` straight from the pinned runtime, with no boot service.
   it.effect("prunes for a server started from its home's pinned runtime", () =>
     Effect.gen(function* () {
       const { removed, remaining } = yield* pruneOnStart({ executable: "own runtime" });

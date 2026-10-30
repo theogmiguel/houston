@@ -31,7 +31,7 @@ export class T3ProjectFileLoader extends Context.Service<
     /** Never fails; missing/unreadable/invalid files return none, with warnings for invalid files. */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
   }
->()("t3/project/T3ProjectFileLoader") {}
+>()("houston/project/T3ProjectFileLoader") {}
 
 const logT3ProjectFileLoadError = (error: T3ProjectFileLoadError) =>
   Effect.logWarning(error).pipe(

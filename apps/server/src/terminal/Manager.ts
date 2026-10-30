@@ -221,7 +221,7 @@ export class TerminalManager extends Context.Service<
       listener: (event: TerminalMetadataStreamEvent) => Effect.Effect<void>,
     ) => Effect.Effect<() => void>;
   }
->()("t3/terminal/Manager/TerminalManager") {}
+>()("houston/terminal/Manager/TerminalManager") {}
 
 interface TerminalSubprocessInspectResult {
   readonly hasRunningSubprocess: boolean;

@@ -218,7 +218,7 @@ export class McpOAuth extends Context.Service<
       readonly token: AuthMcpTokenRequest;
     }) => Effect.Effect<AuthMcpTokenResult, AuthMcpTokenError>;
   }
->()("t3/auth/McpOAuth") {}
+>()("houston/auth/McpOAuth") {}
 
 const redirectWith = (redirectUri: string, params: Record<string, string | undefined>) => {
   const url = new URL(redirectUri);

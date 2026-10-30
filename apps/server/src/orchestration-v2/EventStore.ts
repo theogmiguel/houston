@@ -73,7 +73,7 @@ export interface EventStoreV2Shape {
 }
 
 export class EventStoreV2 extends Context.Service<EventStoreV2, EventStoreV2Shape>()(
-  "t3/orchestration-v2/EventStore/EventStoreV2",
+  "houston/orchestration-v2/EventStore/EventStoreV2",
 ) {}
 
 const layerBase: Layer.Layer<EventStoreV2, never, OrchestrationEventStore.OrchestrationEventStore> =
