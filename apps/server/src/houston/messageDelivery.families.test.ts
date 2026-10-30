@@ -613,6 +613,54 @@ describe("send intents per provider family", () => {
       }),
   );
 
+  it.effect(
+    "a steer that switches provider instance is refused where the provider cannot steer",
+    () =>
+      Effect.gen(function* () {
+        const options = { driver: "antigravity", capabilities: AcpProviderCapabilitiesV2 };
+        const harness = yield* makeHarness("switch-steer-antigravity", options);
+        const other = yield* makeHarness("switch-steer-antigravity-2", {
+          ...options,
+          instanceId: "antigravity-2",
+        });
+        yield* runWith(
+          harness,
+          ({ startFirst, orchestrator, threadId, settle, deliveries }) =>
+            Effect.gen(function* () {
+              const runId = yield* startFirst;
+              const messageId = MessageId.make("message:switch-steer");
+              const refused = yield* Effect.flip(
+                orchestrator.dispatch({
+                  type: "message.dispatch",
+                  commandId: CommandId.make("switch-steer"),
+                  threadId,
+                  messageId,
+                  text: "steer on the other instance",
+                  attachments: [],
+                  modelSelection: other.modelSelection,
+                  dispatchMode: { type: "steer_active", targetRunId: runId },
+                  createdBy: "user",
+                  creationSource: "web",
+                }),
+              );
+              assert.equal(
+                userFacingDispatchErrorMessage(refused),
+                "Antigravity cannot redirect an active run. Stop it first, then send the message.",
+              );
+              assert.include(JSON.stringify(refused), `"capability":"active_steering"`);
+              yield* settle;
+              const projection = yield* orchestrator.getThreadProjection(threadId);
+              assert.isUndefined(projection.messages.find((message) => message.id === messageId));
+              assert.lengthOf(deliveries(messageId), 0);
+              assert.lengthOf(harness.interrupted, 0);
+              assert.lengthOf(harness.started, 1);
+              assert.lengthOf(other.started, 0);
+            }),
+          { others: [other] },
+        );
+      }),
+  );
+
   it.effect("an interrupt is refused by name on Claude", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness("refuse-claude-interrupt", {
