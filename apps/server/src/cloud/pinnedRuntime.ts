@@ -13,6 +13,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import {
   CLI_RELEASE_CHECKSUMS_FILE,
+  CLI_ARCHIVE_PLATFORM_KEYS,
   cliArchiveFileName,
   cliArchivePlatformKey,
   cliArchiveTarCommand,
@@ -28,7 +29,7 @@ import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./
 const PINNED_RUNTIME_DIR = "runtime";
 const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
 const PINNED_RUNTIME_DOWNLOAD_STALL_TIMEOUT = Duration.minutes(1);
-const PINNED_RUNTIME_ARCHIVE_FILE = "t3-runtime-archive";
+const PINNED_RUNTIME_ARCHIVE_FILE = "houston-runtime-archive";
 // Separate layers share one install lock across this process.
 const pinnedRuntimeInstallLock = Semaphore.makeUnsafe(1);
 
@@ -58,7 +59,7 @@ export function pinnedRuntimePaths(
   const versionDir = path.join(pinnedRuntimeVersionsDir(path, baseDir), version);
   return {
     versionDir,
-    entryPath: path.join(versionDir, platform === "win32" ? "t3.exe" : "t3"),
+    entryPath: path.join(versionDir, platform === "win32" ? "houston.exe" : "houston"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
 }
@@ -174,7 +175,7 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   const platformKey = cliArchivePlatformKey(input.platform, input.arch);
   if (platformKey === undefined) {
     return yield* new PinnedRuntimeInstallError({
-      step: `selecting a t3 release archive for ${input.platform}-${input.arch}`,
+      step: `selecting a houston release archive for ${input.platform}-${input.arch}; supported platforms are ${CLI_ARCHIVE_PLATFORM_KEYS.join(", ")}`,
     });
   }
   const httpClient = input.httpClient;
@@ -187,31 +188,31 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
       yield* fetchReleaseAsset(
         httpClient,
         `${baseUrl}/${CLI_RELEASE_CHECKSUMS_FILE}`,
-        "downloading the t3 release checksums",
+        "downloading the houston release checksums",
       ),
     ),
   );
   const expected = checksums.get(fileName);
   if (expected === undefined) {
     return yield* new PinnedRuntimeInstallError({
-      step: `finding ${fileName} in the t3 release checksums`,
+      step: `finding ${fileName} in the houston release checksums`,
     });
   }
   const archive = yield* fetchReleaseAsset(
     httpClient,
     `${baseUrl}/${fileName}`,
-    "downloading the t3 release archive",
+    "downloading the houston release archive",
     input.onProgress,
   );
   input.onProgress?.({ stage: "verify" });
   const digest = yield* Effect.tryPromise({
     try: () => crypto.subtle.digest("SHA-256", archive),
     catch: (cause) =>
-      new PinnedRuntimeInstallError({ step: "verifying the t3 release archive", cause }),
+      new PinnedRuntimeInstallError({ step: "verifying the houston release archive", cause }),
   });
   if (Hex.encode(new Uint8Array(digest)) !== expected) {
     return yield* new PinnedRuntimeInstallError({
-      step: "verifying the t3 release archive checksum",
+      step: "verifying the houston release archive checksum",
     });
   }
 
@@ -220,12 +221,12 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
     .writeFile(archivePath, archive)
     .pipe(
       Effect.mapError(
-        (cause) => new PinnedRuntimeInstallError({ step: "writing the t3 release archive", cause }),
+        (cause) => new PinnedRuntimeInstallError({ step: "writing the houston release archive", cause }),
       ),
     );
   input.onProgress?.({ stage: "extract" });
-  const extractStep = "extracting the t3 release archive";
-  // Strip the archive's stem directory so the executable lands at <versionDir>/t3.
+  const extractStep = "extracting the houston release archive";
+  // Strip the archive's stem directory so the executable lands at <versionDir>/houston.
   yield* input.runner
     .run({
       command: cliArchiveTarCommand(input.platform, process.env),
@@ -447,7 +448,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
 
 /**
  * Resolved executables rather than command lines: a server started through the `houston` symlink
- * shows up as `houston serve`, possibly from another T3 home that runs this home's runtimes. Windows
+ * shows up as `houston serve`, possibly from another houston home that runs this home's runtimes. Windows
  * has no symlink launcher, and its `houston.cmd` shim runs the absolute path, so command lines do there.
  */
 const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")(function* () {
@@ -461,7 +462,7 @@ const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")
     for (const pid of pids.value) {
       if (!/^\d+$/.test(pid)) continue;
       // Unreadable ones belong to other users or are this user's non-dumpable daemons (systemd
-      // --user, ssh-agent). Neither runs a t3 runtime, and bailing on them would never prune.
+      // --user, ssh-agent). Neither runs a houston runtime, and bailing on them would never prune.
       const executable = yield* fs.readLink(`/proc/${pid}/exe`).pipe(Effect.option);
       if (Option.isSome(executable)) executables.push(executable.value);
     }
@@ -584,7 +585,7 @@ const selectUnusedRuntimes = Effect.fn("cloud.pinned_runtime.select_unused")(fun
       Effect.andThen(fs.rename(versionDir, target)),
       Effect.andThen(Effect.sync(() => pruned.add(target))),
       Effect.catch((cause) =>
-        Effect.logWarning("Could not remove an unused t3 runtime.", { version, cause }),
+        Effect.logWarning("Could not remove an unused houston runtime.", { version, cause }),
       ),
     );
   }
@@ -616,7 +617,7 @@ export const prunePinnedRuntimes = Effect.fn("cloud.pinned_runtime.prune")(funct
         ),
       ),
       Effect.catch((cause) =>
-        Effect.logWarning("Could not remove an unused t3 runtime.", { target, cause }),
+        Effect.logWarning("Could not remove an unused houston runtime.", { target, cause }),
       ),
     );
   }

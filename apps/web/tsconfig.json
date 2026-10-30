@@ -29,7 +29,6 @@
     "src",
     "vite",
     "vite.config.ts",
-    "vercel.ts",
     "test",
     "scripts/verify-built-boot.ts",
     "scripts/warm-dep-cache.ts",

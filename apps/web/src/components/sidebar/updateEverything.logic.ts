@@ -67,8 +67,8 @@ export interface SkippedMachine {
 const RELEASE_ARCHIVE_SELF_UPDATE_SINCE = "0.0.41-nightly.20260914.1700";
 
 /** Skip current and app-hosted servers; the latter update with the app and would relaunch mid-run.
- * Desktop-managed servers use their own feed. `waitForNpm` lists targets that need
- * `houston@<targetVersion>` on npm first. `releaseArchivesPublished` means the version came from the
+ * Desktop-managed servers use their own feed. `waitForPublished` lists targets whose
+ * `houston@<targetVersion>` server release must be published first. `releaseArchivesPublished` means the version came from the
  * desktop feed: its GitHub Release goes public with the CLI archives that boot services download. */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
@@ -77,11 +77,11 @@ export function collectServerUpdateTargets(
 ): {
   readonly targets: ServerUpdateTarget[];
   readonly skipped: SkippedMachine[];
-  readonly waitForNpm: ServerUpdateTarget[];
+  readonly waitForPublished: ServerUpdateTarget[];
 } {
   const targets: ServerUpdateTarget[] = [];
   const skipped: SkippedMachine[] = [];
-  const waitForNpm: ServerUpdateTarget[] = [];
+  const waitForPublished: ServerUpdateTarget[] = [];
   for (const machine of machines) {
     const config = machine.serverConfig;
     if (machine.hostedByThisApp) continue;
@@ -131,10 +131,10 @@ export function collectServerUpdateTargets(
         selfUpdate === "respawn" ||
         compareSemverVersions(serverVersion, RELEASE_ARCHIVE_SELF_UPDATE_SINCE) < 0)
     ) {
-      waitForNpm.push(target);
+      waitForPublished.push(target);
     }
   }
-  return { targets, skipped, waitForNpm };
+  return { targets, skipped, waitForPublished };
 }
 
 function unavailableReason(machine: UpdateEverythingMachine): string | null {

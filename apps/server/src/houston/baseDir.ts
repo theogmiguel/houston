@@ -89,7 +89,7 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
   );
 });
 
-/** A hosted server has no fallback directory: upstream's `~/.t3` belongs to another install. */
+/** A hosted server has no fallback directory: the desktop app's `~/.houston/v2` belongs to another install. */
 export const refuseHostedDefault = Effect.gen(function* () {
   if (!(yield* HostedLaunch)) return;
   return yield* new HoustonLaunchRefusedError({

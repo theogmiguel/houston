@@ -88,7 +88,7 @@ export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on
       keep: [packageJson.version],
     });
     if (removed.length > 0) {
-      yield* Effect.logInfo("Removed unused t3 runtimes.", { versions: removed });
+      yield* Effect.logInfo("Removed unused houston runtimes.", { versions: removed });
     }
     return removed;
   },

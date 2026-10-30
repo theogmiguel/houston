@@ -35,6 +35,11 @@ src-tauri/binaries/
 # (scripts/build-app.ps1 fills it) — build output, never source
 src-tauri/wsl/
 
+# The v2 server executable and its runtime node_modules staged as Tauri resources
+# (scripts/stage-v2-server.mjs fills it) — build output, never source
+src-tauri/v2-server/*
+!src-tauri/v2-server/.gitkeep
+
 # Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
 .playwright-cli/
 output/

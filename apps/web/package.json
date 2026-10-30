@@ -91,7 +91,6 @@
     "@types/react-dom": "catalog:",
     "@types/sql.js": "1.4.11",
     "@types/use-sync-external-store": "^0.0.6",
-    "@vercel/config": "^0.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/browser-playwright": "5.0.5",
     "compression": "^1.8.2",
