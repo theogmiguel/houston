@@ -181,6 +181,67 @@ const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
   { status: 403, headers: { "cache-control": "no-store" } },
 );
 
+// Houston: the only tools a task's planner or reviewer credential may call.
+const HOUSTON_TASK_SUBMIT_TOOLS: ReadonlySet<string> = new Set([
+  "houston_task_plan_submit",
+  "houston_task_review_submit",
+]);
+
+const houstonTaskSubmitDenial = (scope: McpInvocationContext.McpInvocationScope, tool: string) =>
+  `capability_denied: thread ${scope.thread?.threadId ?? "unknown"} plans or reviews a Houston task, so its credential may call only ${[...HOUSTON_TASK_SUBMIT_TOOLS].join(" and ")}, not ${tool}.`;
+
+const parseJsonOrUndefined = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
+
+/** The answer to a submit-only credential's `tools/call` of any other tool, or undefined. */
+const houstonTaskSubmitRefusal = Effect.fn("McpHttpServer.houstonTaskSubmitRefusal")(function* (
+  request: HttpServerRequest.HttpServerRequest,
+  scope: McpInvocationContext.McpInvocationScope,
+) {
+  if (request.method !== "POST") return undefined;
+  const text = yield* request.text.pipe(Effect.orElseSucceed(() => undefined));
+  // An unreadable body reaches no tool; the transport answers it as malformed.
+  if (text === undefined) return undefined;
+  const body = parseJsonOrUndefined(text);
+  const messages: ReadonlyArray<unknown> = Array.isArray(body) ? body : [body];
+  const refused = messages.find(
+    (
+      message,
+    ): message is {
+      readonly id?: unknown;
+      readonly params: { readonly name?: unknown };
+    } => {
+      const call = message as {
+        readonly method?: unknown;
+        readonly params?: { readonly name?: unknown };
+      };
+      return (
+        call?.method === "tools/call" &&
+        !HOUSTON_TASK_SUBMIT_TOOLS.has(String(call.params?.name ?? ""))
+      );
+    },
+  );
+  if (refused === undefined) return undefined;
+  return HttpServerResponse.jsonUnsafe(
+    {
+      jsonrpc: "2.0",
+      id: refused.id ?? null,
+      result: {
+        isError: true,
+        content: [
+          { type: "text", text: houstonTaskSubmitDenial(scope, String(refused.params.name)) },
+        ],
+      },
+    },
+    { status: 200, headers: { "cache-control": "no-store" } },
+  );
+});
+
 const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
@@ -215,6 +276,11 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     if (limited === undefined) return invalidModeLimit;
     const linkedEnvironments = yield* linksEnabled;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
+    // Houston: a planner's or reviewer's credential reaches only its submit, however a tool is registered.
+    if (limited.capabilities.has("houston-task-submit")) {
+      const refusal = yield* houstonTaskSubmitRefusal(request, limited);
+      if (refusal !== undefined) return refusal;
+    }
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         ...limited,
@@ -818,6 +884,38 @@ const withAdvertisedSchemas = Effect.fn("McpHttpServer.withAdvertisedSchemas")(f
   return yield* registration.pipe(Effect.provideService(McpServer.McpServer, advertisingServer));
 });
 
+/** Refuses every other tool to a `houston-task-submit` credential before its handler runs. */
+const withHoustonTaskSubmitScope = Effect.fnUntraced(function* <A, E, R>(
+  registration: Effect.Effect<A, E, R>,
+) {
+  const server = yield* McpServer.McpServer;
+  const scopedServer = McpServer.McpServer.of({
+    ...server,
+    addTool: Effect.fn("McpServer.addTool")(function (options) {
+      if (HOUSTON_TASK_SUBMIT_TOOLS.has(options.tool.name)) return server.addTool(options);
+      return server.addTool({
+        ...options,
+        handle: Effect.fnUntraced(function* (payload) {
+          const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
+          if (Option.isSome(scope) && scope.value.capabilities.has("houston-task-submit")) {
+            return new McpSchema.CallToolResult({
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: houstonTaskSubmitDenial(scope.value, options.tool.name),
+                },
+              ],
+            });
+          }
+          return yield* options.handle(payload);
+        }),
+      });
+    }),
+  });
+  return yield* registration.pipe(Effect.provideService(McpServer.McpServer, scopedServer));
+});
+
 /**
  * `McpServer.toolkit` asks for every service its tools declare when it
  * registers them, but the auth middleware provides `McpInvocationContext` to
@@ -829,7 +927,9 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) => {
   const registration = Layer.effectDiscard(
-    withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+    withHoustonTaskSubmitScope(
+      withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+    ),
   ).pipe(Layer.provide(McpServer.McpServer.layer));
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
   const registered = registration as Layer.Layer<
@@ -844,7 +944,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
-  Layer.effectDiscard(register).pipe(
+  Layer.effectDiscard(withHoustonTaskSubmitScope(register)).pipe(
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 

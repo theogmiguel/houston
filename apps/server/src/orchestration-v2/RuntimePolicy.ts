@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import { hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
+import { HoustonReadOnlyThreads, hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -159,20 +159,26 @@ export function layerWithOverride(
   );
 }
 
-/** Houston: a side thread resolves read-only, or fails on a provider that cannot enforce it. */
+/** Houston: a side thread, or a task's planner or reviewer, resolves read-only, or fails on a
+ * provider that cannot enforce it. */
 export const layerReadOnlySideThreads: Layer.Layer<
   RuntimePolicyV2,
   never,
-  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2
+  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2 | HoustonReadOnlyThreads
 > = Layer.effect(
   RuntimePolicyV2,
   Effect.gen(function* () {
     const base = yield* RuntimePolicyV2;
     const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+    const readOnlyThreads = yield* HoustonReadOnlyThreads;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolveSideThread")(function* (input) {
         const policy = yield* base.resolve(input);
-        if (input.thread.side === undefined) return policy;
+        if (
+          input.thread.side === undefined &&
+          !(yield* readOnlyThreads.isReadOnly(input.thread.id))
+        )
+          return policy;
         const refuse = (cause: unknown) =>
           new RuntimePolicyResolveError({
             projectId: input.thread.projectId,
@@ -185,10 +191,17 @@ export const layerReadOnlySideThreads: Layer.Layer<
         );
         if (!hasReadOnlyRun(capabilities)) {
           return yield* refuse(
-            `Side thread ${input.thread.id} needs a read-only run; ${input.modelSelection.instanceId} declares none.`,
+            `Read-only thread ${input.thread.id} needs a read-only run; ${input.modelSelection.instanceId} declares none.`,
           );
         }
-        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(readOnlyPolicy(policy));
+        const submitTool =
+          input.thread.side === undefined
+            ? yield* readOnlyThreads.submitToolOf(input.thread.id)
+            : undefined;
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          ...readOnlyPolicy(policy),
+          ...(submitTool === undefined ? {} : { houstonTaskSubmitTool: submitTool }),
+        });
       }),
     });
   }),
