@@ -22,8 +22,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { Headers } from "effect/http";
+import { TestClock } from "effect/testing";
 import { RpcMessage, RpcServer } from "effect/rpc";
 
 import * as RpcAuthorization from "../../auth/RpcAuthorization.ts";
@@ -110,6 +112,7 @@ import {
   layerKit,
   makeKit,
   model,
+  NOW,
   reviewTask,
   seedPublished,
   type Kit,
@@ -305,11 +308,17 @@ const failureOf = (value: unknown) => {
   };
 };
 
-const withServer = <A, E, R>(kit: Kit, body: Effect.Effect<A, E, R>) =>
-  body.pipe(
-    Effect.provide(layerUnusedRpcServices.pipe(Layer.provideMerge(layerKit(kit)))),
-    Effect.scoped,
-  ) as Effect.Effect<A, E, never>;
+const layerServer = (kit: Kit) => layerUnusedRpcServices.pipe(Layer.provideMerge(layerKit(kit)));
+
+const withServer = <A, E>(
+  kit: Kit,
+  body: Effect.Effect<A, E, Layer.Success<ReturnType<typeof layerServer>> | Scope.Scope>,
+) =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse(NOW));
+    const context = yield* Layer.build(layerServer(kit));
+    return yield* body.pipe(Effect.provideContext(context));
+  }).pipe(Effect.scoped);
 
 describe("subscriptions", () => {
   it.effect("subscribers get the snapshot then each change", () =>
@@ -323,7 +332,9 @@ describe("subscriptions", () => {
           const listener = yield* makeWsClient(ALL_SCOPES);
           const overviewListener = yield* makeWsClient(ALL_SCOPES);
           const client = yield* makeWsClient(ALL_SCOPES);
-          const subscription = yield* listener.send(WS_METHODS.houstonHarnessSubscribe, { projectId });
+          const subscription = yield* listener.send(WS_METHODS.houstonHarnessSubscribe, {
+            projectId,
+          });
           const first = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
           assert.equal(first.projectId, projectId);
           assert.lengthOf(first.reviews, 0);
@@ -350,7 +361,7 @@ describe("subscriptions", () => {
 
           // Published.
           yield* store.publish(review.id, {
-            endedAt: "2026-10-30T09:10:00.000Z",
+            endedAt: "2026-10-30T08:50:00.000Z",
             windowSince: "2026-10-16T09:00:00.000Z",
             windowUntil: "2026-10-30T09:00:00.000Z",
             threads: 1,
@@ -420,18 +431,42 @@ describe("scopes and projects", () => {
           const methods: ReadonlyArray<
             readonly [string, AuthEnvironmentScope, object, object | null]
           > = [
-            [WS_METHODS.houstonHarnessGet, AuthOrchestrationReadScope, { projectId }, { projectId: unknownProject }],
-            [WS_METHODS.houstonHarnessSubscribe, AuthOrchestrationReadScope, { projectId }, { projectId: unknownProject }],
+            [
+              WS_METHODS.houstonHarnessGet,
+              AuthOrchestrationReadScope,
+              { projectId },
+              { projectId: unknownProject },
+            ],
+            [
+              WS_METHODS.houstonHarnessSubscribe,
+              AuthOrchestrationReadScope,
+              { projectId },
+              { projectId: unknownProject },
+            ],
             [WS_METHODS.houstonHarnessOverview, AuthOrchestrationReadScope, {}, null],
             [WS_METHODS.houstonHarnessSubscribeOverview, AuthOrchestrationReadScope, {}, null],
             [
               WS_METHODS.houstonHarnessSetup,
               AuthSettingsWriteScope,
               { projectId, modelSelection: model("claudeAgent"), schedule: "manual" },
-              { projectId: unknownProject, modelSelection: model("claudeAgent"), schedule: "manual" },
+              {
+                projectId: unknownProject,
+                modelSelection: model("claudeAgent"),
+                schedule: "manual",
+              },
             ],
-            [WS_METHODS.houstonHarnessRunNow, AuthOrchestrationOperateScope, { projectId }, { projectId: unknownProject }],
-            [WS_METHODS.houstonHarnessReport, AuthOrchestrationReadScope, { reviewId }, { reviewId: 999 }],
+            [
+              WS_METHODS.houstonHarnessRunNow,
+              AuthOrchestrationOperateScope,
+              { projectId },
+              { projectId: unknownProject },
+            ],
+            [
+              WS_METHODS.houstonHarnessReport,
+              AuthOrchestrationReadScope,
+              { reviewId },
+              { reviewId: 999 },
+            ],
             [
               WS_METHODS.houstonHarnessDecide,
               AuthOrchestrationOperateScope,
@@ -447,7 +482,9 @@ describe("scopes and projects", () => {
           ];
           assert.lengthOf(methods, 9);
           for (const [method, scope, payload] of methods) {
-            const client = yield* makeWsClient(ALL_SCOPES.filter((candidate) => candidate !== scope));
+            const client = yield* makeWsClient(
+              ALL_SCOPES.filter((candidate) => candidate !== scope),
+            );
             const reply = yield* client.call(method, payload);
             assert.equal(failureOf(reply)?._tag, "EnvironmentAuthorizationError", method);
           }

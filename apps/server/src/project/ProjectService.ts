@@ -36,6 +36,7 @@ import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
+import * as HoustonHarnessStore from "../houston/harnessReview/Store.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -170,6 +171,7 @@ export const make = Effect.gen(function* () {
   const houstonTaskSources = yield* Effect.serviceOption(
     HoustonTaskSourceStore.HoustonTaskSourceStore,
   );
+  const houstonHarness = yield* Effect.serviceOption(HoustonHarnessStore.HoustonHarnessStore);
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
 
@@ -523,6 +525,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonTaskSources)) {
           yield* houstonTaskSources.value.projectRemoved(projectId);
         }
+        if (Option.isSome(houstonHarness)) yield* houstonHarness.value.projectRemoved(projectId);
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);

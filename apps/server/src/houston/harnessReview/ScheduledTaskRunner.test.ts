@@ -8,6 +8,7 @@ import { TestClock } from "effect/testing";
 
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import {
+  awaitRun,
   HoustonHarnessService,
   HoustonHarnessStore,
   createProject,
@@ -30,7 +31,7 @@ const fireDue = (task: ScheduledTask) =>
     assert.isNotNull(task.nextRunAt, `task ${task.id} has a next run`);
     yield* TestClock.setTime(Date.parse(task.nextRunAt!) + 1_000);
     yield* TestClock.adjust("6 seconds");
-    yield* settle;
+    yield* awaitRun(task);
   });
 
 const upsertFrom = (task: ScheduledTask, patch: Partial<ScheduledTask>) =>
@@ -60,14 +61,24 @@ describe("setting up a review", () => {
           const harness = yield* service;
           const scheduled = yield* ScheduledTaskService.ScheduledTaskService;
           const expected = {
-            weekly: { schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [0] }, enabled: true },
+            weekly: {
+              schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [0] },
+              enabled: true,
+            },
             daily: { schedule: { type: "fixed_time", timeOfDay: "09:00" }, enabled: true },
-            manual: { schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [0] }, enabled: false },
+            manual: {
+              schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [0] },
+              enabled: false,
+            },
           } as const;
           for (const schedule of ["weekly", "daily", "manual"] as const) {
             const { projectId } = yield* createProject(`setup-${schedule}`);
             const selection = model("claudeAgent", "claude-sonnet-4-6");
-            const snapshot = yield* harness.setup({ projectId, modelSelection: selection, schedule });
+            const snapshot = yield* harness.setup({
+              projectId,
+              modelSelection: selection,
+              schedule,
+            });
             const task = yield* reviewTask(projectId);
             assert.isDefined(task, schedule);
             assert.equal(task!.title, `Harness review · setup-${schedule}`);
@@ -85,7 +96,10 @@ describe("setting up a review", () => {
           const { tasks } = yield* scheduled.list();
           assert.lengthOf(tasks, 3);
           yield* settle;
-          const rows = yield* (yield* store).listReviews(ProjectId.make("project-setup-manual"), 50);
+          const rows = yield* (yield* store).listReviews(
+            ProjectId.make("project-setup-manual"),
+            50,
+          );
           assert.lengthOf(rows, 0);
           assert.lengthOf(kit.harness.log.started, 0);
         }),
@@ -102,7 +116,11 @@ describe("setting up a review", () => {
           const harness = yield* service;
           const scheduled = yield* ScheduledTaskService.ScheduledTaskService;
           const { projectId } = yield* createProject("once");
-          const input = { projectId, modelSelection: model("claudeAgent"), schedule: "weekly" } as const;
+          const input = {
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "weekly",
+          } as const;
           yield* harness.setup(input);
           const first = yield* reviewTask(projectId);
           const error = yield* Effect.flip(harness.setup(input));
@@ -134,7 +152,11 @@ describe("setting up a review", () => {
           const reviews = yield* store;
           for (const instance of ["claudeAgent", "codex", "opencode", "opencode2"]) {
             const { projectId } = yield* createProject(`accept-${instance}`);
-            yield* harness.setup({ projectId, modelSelection: model(instance), schedule: "manual" });
+            yield* harness.setup({
+              projectId,
+              modelSelection: model(instance),
+              schedule: "manual",
+            });
             const started = yield* harness.runNow({ projectId });
             assert.isAbove(started.reviewId, 0, instance);
             yield* settle;
@@ -152,7 +174,11 @@ describe("setting up a review", () => {
           assert.isUndefined(yield* reviewTask(projectId));
 
           // Set up on Claude, then switched to Antigravity in Scheduled tasks.
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "weekly" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "weekly",
+          });
           const task = yield* reviewTask(projectId);
           yield* upsertFrom(task!, { modelSelection: model("antigravity") });
           const refusedRun = yield* Effect.flip(harness.runNow({ projectId }));
@@ -201,7 +227,14 @@ describe("setting up a review", () => {
           const reviewTurns = kit.harness.log.started.filter(
             (turn) => turn.input.threadId === fired[0]!.threadId,
           );
-          assert.isAbove(reviewTurns.length, 0);
+          assert.isAbove(
+            reviewTurns.length,
+            0,
+            JSON.stringify({
+              review: fired[0],
+              started: kit.harness.log.started.map((turn) => [turn.driver, turn.input.threadId]),
+            }),
+          );
           assert.equal(reviewTurns[0]!.driver, "codex");
           assert.equal(after.lastRunStatus, "succeeded");
           assert.equal(after.runCount, 1);
@@ -254,7 +287,11 @@ describe("setting up a review", () => {
           assert.equal(kindOf(never), "not_found");
           assert.include(messageOf(never), "set up the harness review first");
 
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
           yield* scheduled.delete({ id: (yield* reviewTask(projectId))!.id });
           const deleted = yield* Effect.flip(harness.runNow({ projectId }));
           assert.equal(kindOf(deleted), "not_found");
@@ -304,14 +341,17 @@ describe("setting up a review", () => {
 describe("startup", () => {
   it.effect("the server and the harness install the houston claim and one reactor", () =>
     Effect.gen(function* () {
-      const source = (path: string) =>
-        NodeFS.readFileSync(new URL(path, import.meta.url), "utf8");
+      const source = (path: string) => NodeFS.readFileSync(new URL(path, import.meta.url), "utf8");
       const count = (text: string, needle: string) => text.split(needle).length - 1;
       const server = source("../../server.ts");
       const runtime = source("../../orchestration-v2/runtimeLayer.ts");
       const kitSource = source("./harnessReview.testkit.ts");
       // One reactor: the server composes the harness review layer once, as the kit does.
-      assert.equal(count(server, "layerHarnessReview"), 2, "server.ts imports and provides it once");
+      assert.equal(
+        count(server, "layerHarnessReview"),
+        2,
+        "server.ts imports and provides it once",
+      );
       assert.include(kitSource, "layerHarnessReview");
       // The claim: the scheduled task service gets the Houston runner in the server and the kit.
       assert.include(runtime, "layerHarnessScheduledTaskRunner");
@@ -326,7 +366,11 @@ describe("startup", () => {
         Effect.gen(function* () {
           const harness = yield* service;
           const { projectId } = yield* createProject("startup");
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
           yield* harness.runNow({ projectId });
           yield* settle;
           assert.lengthOf(kit.launches, 0, "the mapped task was claimed, not launched");

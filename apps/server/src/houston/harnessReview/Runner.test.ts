@@ -11,6 +11,7 @@ import { TestClock } from "effect/testing";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 
 import {
+  awaitRun,
   HoustonHarnessService,
   HoustonHarnessStore,
   createProject,
@@ -46,7 +47,11 @@ describe("one review at a time", () => {
           const { projectId } = yield* createProject("busy");
           yield* seedPublished({ projectId, findings: [], endedAt: "2026-10-01T00:00:00.000Z" });
           yield* seedPublished({ projectId, findings: [], endedAt: "2026-10-10T00:00:00.000Z" });
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "weekly" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "weekly",
+          });
           kit.harness.script.hold.add(reviewMessageId(3));
           const running = yield* harness.runNow({ projectId });
           assert.equal(running.reviewId, 3);
@@ -62,7 +67,7 @@ describe("one review at a time", () => {
           const task = (yield* reviewTask(projectId))!;
           yield* TestClock.setTime(Date.parse(task.nextRunAt!) + 1_000);
           yield* TestClock.adjust("6 seconds");
-          yield* settle;
+          yield* awaitRun(task);
           const fired = (yield* reviewTask(projectId))!;
           assert.equal(fired.lastRunStatus, "failed");
           assert.include(fired.lastRunError ?? "", "review 3");
@@ -118,15 +123,27 @@ describe("the run directory", () => {
           const reviews = yield* store;
           const { projectId, root } = yield* createProject("rundir");
           yield* fs.writeFileString(path.join(root, "CLAUDE.md"), "# Project\n");
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
           const first = yield* harness.runNow({ projectId });
           yield* settle;
           const dir = path.join(root, ".houston", "harness", `review-${first.reviewId}`);
-          for (const file of ["inventory.json", "digest.jsonl", "digest-meta.json", "decisions.json"]) {
+          for (const file of [
+            "inventory.json",
+            "digest.jsonl",
+            "digest-meta.json",
+            "decisions.json",
+          ]) {
             assert.isTrue(yield* fs.exists(path.join(dir, file)), file);
           }
           assert.equal((yield* readJson(path.join(dir, "inventory.json"))).v, 1);
-          assert.equal((yield* reviews.getReview(first.reviewId))!.runDir, `.houston/harness/review-${first.reviewId}`);
+          assert.equal(
+            (yield* reviews.getReview(first.reviewId))!.runDir,
+            `.houston/harness/review-${first.reviewId}`,
+          );
           const ignore = path.join(root, ".houston", "harness", ".gitignore");
           assert.equal(yield* fs.readFileString(ignore), "*\n");
 
@@ -225,7 +242,11 @@ describe("the run directory", () => {
             creationSource: "web",
           });
           yield* settle;
-          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
           kit.harness.script.hold.add(reviewMessageId(1));
           const started = yield* harness.runNow({ projectId });
           yield* settle;
@@ -290,12 +311,21 @@ describe("the run directory", () => {
           });
           const started = yield* harness.runNow({ projectId: p.projectId });
           const decisions = yield* readJson(
-            path.join(p.root, ".houston", "harness", `review-${started.reviewId}`, "decisions.json"),
+            path.join(
+              p.root,
+              ".houston",
+              "harness",
+              `review-${started.reviewId}`,
+              "decisions.json",
+            ),
           );
           assert.equal(decisions.schema, 2);
           assert.equal(decisions.minimum_sessions_after_landing, 3);
           const byKey = new Map(
-            (decisions.findings as Array<Record<string, any>>).map((finding) => [finding.key, finding]),
+            (decisions.findings as Array<Record<string, any>>).map((finding) => [
+              finding.key,
+              finding,
+            ]),
           );
           assert.deepEqual([...byKey.keys()].toSorted(), ["denied-push", "slow-tests"]);
           assert.equal(byKey.get("denied-push")!.title, "Denied git push");

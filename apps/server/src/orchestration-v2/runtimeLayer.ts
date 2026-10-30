@@ -56,6 +56,7 @@ import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import { layerHarnessScheduledTaskRunner } from "../houston/harnessReview/layer.ts";
 
 export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationEventStore.layer,
@@ -288,7 +289,16 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
 const layerSecretRequestsProvided = SecretRequests.layer.pipe(
   Layer.provide(layerThreadManagementProvided),
 );
+// Houston: a scheduled task a harness review owns runs that review instead of a fresh thread.
 const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
+  Layer.provideMerge(
+    layerHarnessScheduledTaskRunner.pipe(
+      Layer.provide(
+        Layer.mergeAll(layerOrchestratorProvided, ProjectionStore.layer, ProjectStore.layer),
+      ),
+      Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+    ),
+  ),
   Layer.provide(
     Layer.mergeAll(
       layerThreadLaunchProvided,

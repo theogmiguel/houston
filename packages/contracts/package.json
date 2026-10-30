@@ -42,6 +42,10 @@
     "./houston/taskSources": {
       "types": "./src/houston/taskSources.ts",
       "import": "./src/houston/taskSources.ts"
+    },
+    "./houston/harnessReview": {
+      "types": "./src/houston/harnessReview.ts",
+      "import": "./src/houston/harnessReview.ts"
     }
   },
   "scripts": {

@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -13,7 +14,7 @@ import {
 } from "./rules.ts";
 
 const NOW = Date.parse("2026-10-30T09:00:00.000Z");
-const daysAgo = (days: number) => new Date(NOW - days * DAY_MS).toISOString();
+const daysAgo = (days: number) => DateTime.formatIso(DateTime.makeUnsafe(NOW - days * DAY_MS));
 
 describe("the review window", () => {
   it("the window is a fortnight first then seven to thirty days", () => {
@@ -21,7 +22,12 @@ describe("the review window", () => {
       readonly [string, Parameters<typeof reviewWindow>[1], number, string | null]
     > = [
       ["first review", [], 14, null],
-      ["previous end 2 days ago", [{ status: "published", windowUntil: daysAgo(2) }], 7, daysAgo(2)],
+      [
+        "previous end 2 days ago",
+        [{ status: "published", windowUntil: daysAgo(2) }],
+        7,
+        daysAgo(2),
+      ],
       [
         "previous end 10 days ago",
         [{ status: "published", windowUntil: daysAgo(10) }],
@@ -187,8 +193,10 @@ describe("the findings parser", () => {
     });
     const links = (sessionsAfter: number): ReadonlyMap<string, ReadonlyArray<LinkedTask>> =>
       new Map([["fix-key", [{ task: "HOU-12", taskId: 12, sessionsAfter }]]]);
-    const withVerifications = (items: ReadonlyArray<unknown>, findings: ReadonlyArray<unknown> = []) =>
-      file(findings, { verifications: items });
+    const withVerifications = (
+      items: ReadonlyArray<unknown>,
+      findings: ReadonlyArray<unknown> = [],
+    ) => file(findings, { verifications: items });
 
     expect(refusal(withVerifications([verification({ task: "HOU-99" })]), links(3))).toContain(
       "verifications[0].task",
@@ -208,9 +216,9 @@ describe("the findings parser", () => {
     expect(
       refusal(withVerifications(Array.from({ length: 101 }, () => verification())), links(3)),
     ).toContain("over the 100 cap");
-    expect(
-      refusal(withVerifications([verification()], [finding("fix-key")]), links(3)),
-    ).toContain("both a finding and a gone verification");
+    expect(refusal(withVerifications([verification()], [finding("fix-key")]), links(3))).toContain(
+      "both a finding and a gone verification",
+    );
 
     const small = parseFindings(withVerifications([verification({ sessions_after: 2 })]), links(2));
     if (!small.ok) throw new Error(small.error);
@@ -280,7 +288,10 @@ describe("finding phases", () => {
       reviewId = 4,
       reviewEndedAt = "2026-10-20T00:00:00.000Z",
     ) => ({ reviewId, verdict, reviewEndedAt, evidence: ["verification quote"] });
-    const task = (status: string, createdAt = "2026-10-10T00:00:00.000Z") => ({ status, createdAt });
+    const task = (status: string, createdAt = "2026-10-10T00:00:00.000Z") => ({
+      status,
+      createdAt,
+    });
     const rows: ReadonlyArray<readonly [string, PhaseInput, string, ReadonlyArray<string>?]> = [
       ["dismissed", { ...base, state: "dismissed", task: task("todo") }, "dismissed"],
       ["resolved", { ...base, state: "resolved", task: task("todo") }, "resolved"],

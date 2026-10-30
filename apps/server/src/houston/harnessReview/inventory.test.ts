@@ -47,7 +47,14 @@ describe("the harness inventory", () => {
         ".claude/settings.json": JSON.stringify({
           permissions: { allow: ["Bash(git push:*)"], deny: ["Bash(rm:*)"], ask: ["WebFetch"] },
           hooks: {
-            Stop: [{ hooks: [{ type: "command", command: "a" }, { type: "command", command: "b" }] }],
+            Stop: [
+              {
+                hooks: [
+                  { type: "command", command: "a" },
+                  { type: "command", command: "b" },
+                ],
+              },
+            ],
             PreToolUse: [{ hooks: [{ type: "command", command: "c" }] }],
           },
         }),
@@ -93,12 +100,18 @@ describe("the harness inventory", () => {
         disable_model_invocation: true,
         user_invocable: false,
       });
-      assert.include(skills.find((entry) => entry.name === "review")!, {
-        scope: "repo",
-        disable_model_invocation: false,
-        user_invocable: true,
-      });
-      assert.include(skills.find((entry) => entry.name === "personal")!, { scope: "user" });
+      assert.include(
+        skills.find((entry) => entry.name === "review")!,
+        {
+          scope: "repo",
+          disable_model_invocation: false,
+          user_invocable: true,
+        },
+      );
+      assert.include(
+        skills.find((entry) => entry.name === "personal")!,
+        { scope: "user" },
+      );
 
       const settings = inventory.settings.find((entry) => entry.path === ".claude/settings.json")!;
       assert.deepEqual(settings.allow, ["Bash(git push:*)"]);

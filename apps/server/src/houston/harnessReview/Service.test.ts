@@ -209,8 +209,16 @@ describe("the overview", () => {
           yield* harness.decide({ projectId: p.projectId, key: "dismiss-me", state: "dismissed" });
           yield* harness.decide({ projectId: p.projectId, key: "resolve-me", state: "resolved" });
           // Q has a newer review, and one finding the latest review no longer raised.
-          yield* seedPublished({ projectId: q.projectId, findings: [{ key: "q-gone" }], endedAt: day(3) });
-          yield* seedPublished({ projectId: q.projectId, findings: [{ key: "q-new" }], endedAt: day(4) });
+          yield* seedPublished({
+            projectId: q.projectId,
+            findings: [{ key: "q-gone" }],
+            endedAt: day(3),
+          });
+          yield* seedPublished({
+            projectId: q.projectId,
+            findings: [{ key: "q-new" }],
+            endedAt: day(4),
+          });
 
           const overview = yield* harness.overview({});
           const rowOf = (projectId: ProjectId) =>
@@ -266,8 +274,12 @@ describe("the overview", () => {
           for (let index = 1; index <= 5; index += 1) {
             yield* seedPublished({ projectId, findings: [], endedAt: day(index) });
           }
-          assert.deepEqual(yield* harness.markSeen({ projectId, reviewId: 9 }), { seenReviewId: 5 });
-          assert.deepEqual(yield* harness.markSeen({ projectId, reviewId: 3 }), { seenReviewId: 5 });
+          assert.deepEqual(yield* harness.markSeen({ projectId, reviewId: 9 }), {
+            seenReviewId: 5,
+          });
+          assert.deepEqual(yield* harness.markSeen({ projectId, reviewId: 3 }), {
+            seenReviewId: 5,
+          });
           return projectId;
         }),
       );
@@ -315,15 +327,20 @@ describe("project deletion", () => {
               VALUES (${reviewId}, 'denied-push', ${reviewId}, 'gone', 3, '[]')`;
             yield* sql`INSERT INTO houston_defects (project_id, key, source, title, evidence_json, destination, first_seen_at, last_seen_at, count)
               VALUES (${project.projectId}, 'defect-agent-00000000', 'agent', 'Broken', '[]', 'houston', ${day(2)}, ${day(2)}, 1)`;
-            yield* fs.makeDirectory(path.join(project.root, ".houston", "harness", `review-${reviewId}`), {
-              recursive: true,
-            });
+            yield* fs.makeDirectory(
+              path.join(project.root, ".houston", "harness", `review-${reviewId}`),
+              {
+                recursive: true,
+              },
+            );
           }
           const count = (table: string, projectId: ProjectId) =>
             table === "houston_harness_findings" || table === "houston_harness_verifications"
               ? sql<{ n: number }>`SELECT COUNT(*) AS n FROM ${sql(table)}
                   WHERE review_id IN (SELECT id FROM houston_harness_reviews WHERE project_id = ${projectId})`
-              : sql<{ n: number }>`SELECT COUNT(*) AS n FROM ${sql(table)} WHERE project_id = ${projectId}`;
+              : sql<{
+                  n: number;
+                }>`SELECT COUNT(*) AS n FROM ${sql(table)} WHERE project_id = ${projectId}`;
           const tables = [
             "houston_harness_settings",
             "houston_harness_reviews",
@@ -342,13 +359,19 @@ describe("project deletion", () => {
 
           yield* deleteProject(p.projectId);
           assert.deepEqual(
-            yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM houston_harness_reviews WHERE project_id = ${p.projectId}`,
+            yield* sql<{
+              n: number;
+            }>`SELECT COUNT(*) AS n FROM houston_harness_reviews WHERE project_id = ${p.projectId}`,
             [{ n: 0 }],
           );
-          const orphaned = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM houston_harness_findings
+          const orphaned = yield* sql<{
+            n: number;
+          }>`SELECT COUNT(*) AS n FROM houston_harness_findings
             WHERE review_id NOT IN (SELECT id FROM houston_harness_reviews)`;
           assert.equal(orphaned[0]!.n, 0);
-          const orphanedVerifications = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM houston_harness_verifications
+          const orphanedVerifications = yield* sql<{
+            n: number;
+          }>`SELECT COUNT(*) AS n FROM houston_harness_verifications
             WHERE review_id NOT IN (SELECT id FROM houston_harness_reviews)`;
           assert.equal(orphanedVerifications[0]!.n, 0);
           for (const table of [

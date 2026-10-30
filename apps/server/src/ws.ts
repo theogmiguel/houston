@@ -212,6 +212,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
+import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -1306,6 +1307,7 @@ export const layerWsRpc = (
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
+      const houstonHarness = yield* HoustonHarnessService.HoustonHarnessService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3006,6 +3008,16 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonHarnessGet]: (input) => houstonHarness.get(input),
+        [WS_METHODS.houstonHarnessSubscribe]: (input) => houstonHarness.subscribe(input),
+        [WS_METHODS.houstonHarnessOverview]: (input) => houstonHarness.overview(input),
+        [WS_METHODS.houstonHarnessSubscribeOverview]: (input) =>
+          houstonHarness.subscribeOverview(input),
+        [WS_METHODS.houstonHarnessSetup]: (input) => houstonHarness.setup(input),
+        [WS_METHODS.houstonHarnessRunNow]: (input) => houstonHarness.runNow(input),
+        [WS_METHODS.houstonHarnessReport]: (input) => houstonHarness.report(input),
+        [WS_METHODS.houstonHarnessDecide]: (input) => houstonHarness.decide(input),
+        [WS_METHODS.houstonHarnessMarkSeen]: (input) => houstonHarness.markSeen(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
@@ -3312,10 +3324,7 @@ export const layer = Layer.unwrap(
           yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
-              Layer.merge(
-                RpcAuthorization.layer(session.scopes),
-                rpcInstrumentationLayer,
-              ),
+              Layer.merge(RpcAuthorization.layer(session.scopes), rpcInstrumentationLayer),
             ),
             Effect.forkScoped,
           );

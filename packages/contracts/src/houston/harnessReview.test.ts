@@ -19,7 +19,11 @@ const accepts = (schema: Schema.Top, value: unknown) =>
 describe("harness review schemas", () => {
   it("harness review schemas bound their enumerations", () => {
     const enumerations: ReadonlyArray<readonly [string, Schema.Top, ReadonlyArray<string>]> = [
-      ["review status", HoustonHarnessReviewStatus, ["preparing", "running", "published", "failed"]],
+      [
+        "review status",
+        HoustonHarnessReviewStatus,
+        ["preparing", "running", "published", "failed"],
+      ],
       [
         "phase",
         HoustonHarnessFindingPhase,

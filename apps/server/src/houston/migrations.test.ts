@@ -201,7 +201,7 @@ describe("the task sources migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.slice(-2), [
+          assert.deepEqual(history.slice(1, 3), [
             [2, "TasksBacklog"],
             [3, "TaskSources"],
           ]);
@@ -297,8 +297,10 @@ describe("the harness review migration runs on the Houston track", () => {
   });
 
   const review = (projectId: string, status: string, trigger = "manual") =>
-    Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`INSERT INTO houston_harness_reviews (project_id, trigger, status, run_dir, started_at)
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql`INSERT INTO houston_harness_reviews (project_id, trigger, status, run_dir, started_at)
         VALUES (${projectId}, ${trigger}, ${status}, '.houston/harness/review-x', '2026-10-30T09:00:00.000Z')`,
     );
 
@@ -352,7 +354,12 @@ describe("the harness review migration runs on the Houston track", () => {
           const sql = yield* SqlClient.SqlClient;
           assert.deepEqual(yield* runHoustonMigrations(), []);
           assert.deepEqual(yield* upstreamHistory, upstream);
-          const counts = yield* sql<{ readonly reviews: number; readonly findings: number; readonly decisions: number; readonly defects: number }>`
+          const counts = yield* sql<{
+            readonly reviews: number;
+            readonly findings: number;
+            readonly decisions: number;
+            readonly defects: number;
+          }>`
             SELECT
               (SELECT COUNT(*) FROM houston_harness_reviews) AS reviews,
               (SELECT COUNT(*) FROM houston_harness_findings) AS findings,

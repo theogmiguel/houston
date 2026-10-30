@@ -1,11 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import {
-  CommandId,
-  MessageId,
-  ThreadId,
-  type OrchestrationV2Run,
-} from "@t3tools/contracts";
+import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -128,8 +123,12 @@ describe("publishing a review", () => {
           assert.equal(review.costUsd, 1.25);
           assert.equal(review.threads, 1);
           assert.equal(review.prompts, 1);
-          assert.equal(review.windowUntil, "2026-10-30T09:00:00.000Z");
-          assert.equal(review.windowSince, "2026-10-16T09:00:00.000Z");
+          // A first review reads the fortnight before its start.
+          assert.equal(review.windowUntil, review.startedAt);
+          assert.equal(
+            Date.parse(review.windowUntil!) - Date.parse(review.windowSince!),
+            14 * 86_400_000,
+          );
           assert.equal(review.corrections, 0);
           const dir = path.join(project.root, ".houston", "harness", "review-1");
           const report = yield* fs.readFileString(path.join(dir, "report.md"));
@@ -139,10 +138,10 @@ describe("publishing a review", () => {
           assert.equal(findings.schema, 1);
           assert.lengthOf(findings.findings, 2);
           const snapshot = yield* harness.get({ projectId: project.projectId });
-          assert.deepEqual(
-            snapshot.findings.map((finding) => finding.key).toSorted(),
-            ["finding-0", "finding-1"],
-          );
+          assert.deepEqual(snapshot.findings.map((finding) => finding.key).toSorted(), [
+            "finding-0",
+            "finding-1",
+          ]);
 
           kit.harness.script.replies.set(reviewMessageId(2), `${REPORT}\n${block(2)}`);
           yield* harness.runNow({ projectId: project.projectId });

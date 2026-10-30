@@ -63,6 +63,8 @@ import {
 import { reviewPrompt } from "./rules.ts";
 import { reviewMessageId } from "./Runner.ts";
 
+const decodeDispatch = Schema.decodeUnknownExit(OrchestrationV2RpcSchemas.dispatchCommand.input);
+
 const REVIEW_SEND_REFUSAL =
   "A harness review's result reaches Houston when its run ends; it is not sent to a thread";
 
@@ -106,18 +108,28 @@ describe("starting the review thread", () => {
           kit.harness.script.hold.add(reviewMessageId(1));
           const started = yield* harness.runNow({ projectId: project.projectId });
           yield* settle;
-          const projection = yield* orchestrator.getThreadProjection(ThreadId.make(started.threadId));
-          assert.deepEqual(projection.thread.side, { kind: "harnessReview", reviewId: started.reviewId });
+          const projection = yield* orchestrator.getThreadProjection(
+            ThreadId.make(started.threadId),
+          );
+          assert.deepEqual(projection.thread.side, {
+            kind: "harnessReview",
+            reviewId: started.reviewId,
+          });
           assert.deepEqual(projection.thread.modelSelection, model("claudeAgent"));
           assert.equal(projection.thread.worktreePath, project.root);
           assert.equal(projection.thread.projectId, project.projectId);
           const first = projection.messages.find((message) => message.role === "user");
           assert.equal(
             first?.text,
-            reviewPrompt({ reviewId: started.reviewId, runDir: `.houston/harness/review-${started.reviewId}` }),
+            reviewPrompt({
+              reviewId: started.reviewId,
+              runDir: `.houston/harness/review-${started.reviewId}`,
+            }),
           );
           assert.equal(first?.id, reviewMessageId(started.reviewId));
-          const turn = kit.harness.log.started.find((entry) => entry.input.threadId === started.threadId);
+          const turn = kit.harness.log.started.find(
+            (entry) => entry.input.threadId === started.threadId,
+          );
           assert.isDefined(turn);
           assert.isTrue(turn!.input.message.text.startsWith("What this run sends"));
 
@@ -132,9 +144,7 @@ describe("starting the review thread", () => {
             messageId: "message:client-review",
             text: "What this run sends",
           };
-          const decoded = Schema.decodeUnknownExit(OrchestrationV2RpcSchemas.dispatchCommand.input)(
-            fromClient,
-          );
+          const decoded = decodeDispatch(fromClient);
           assert.equal(decoded._tag, "Failure");
           const missing = yield* Effect.exit(
             orchestrator.getThreadProjection(ThreadId.make("thread:client-review")),
@@ -278,7 +288,9 @@ describe("the review thread runs read-only", () => {
           "claudeAgent",
         ),
       );
-      const claude = makeClaudeObservedReplayHarness(claudeTranscript, (input) => opened.push(input));
+      const claude = makeClaudeObservedReplayHarness(claudeTranscript, (input) =>
+        opened.push(input),
+      );
       const claudeThread = ThreadId.make("thread:claude-review");
       const claudeResult = yield* replayOnReviewThread({
         name: "harness_review_read_only/claude",
@@ -328,30 +340,51 @@ describe("the review thread runs read-only", () => {
           (entry as { readonly label?: string }).label === "turn/start",
       ) as { readonly frame: { readonly params: Record<string, unknown> } };
       assert.equal(turnStart.frame.params.approvalPolicy, "never");
-      assert.deepEqual(turnStart.frame.params.sandboxPolicy, { type: "readOnly", networkAccess: false });
+      assert.deepEqual(turnStart.frame.params.sandboxPolicy, {
+        type: "readOnly",
+        networkAccess: false,
+      });
 
       // OpenCode 1 and 2: the recorded session denies every write and asks nothing.
-      for (const [family, harness, spec] of [
-        ["opencode", OpenCodeOrchestratorReplayHarness, houstonSideReadOnly.opencode],
-        ["opencode2", OpenCode2OrchestratorReplayHarness, houstonSideReadOnly.opencode2],
-      ] as const) {
-        const raw = yield* readFixture(spec.transcriptFile);
-        const transcript = yield* (harness as OrchestratorV2ProviderReplayHarness<
-          ProviderReplayTranscript,
-          unknown
-        >).decodeTranscript(withRuntimeInstructions(raw, spec.modelSelection, "opencode"));
-        const threadId = ThreadId.make(`thread:${family}-review`);
-        const result = yield* replayOnReviewThread({
-          name: `harness_review_read_only/${family}`,
-          harness: harness as OrchestratorV2ProviderReplayHarness<ProviderReplayTranscript, unknown>,
-          transcript,
-          threadId,
-          modelSelection: spec.modelSelection,
-          prompt: spec.prompt,
-          worktreePath: yield* workspace(family),
-        });
-        assert.equal(result.projections.get(threadId)?.runs[0]?.status, "completed", family);
-      }
+      const opencodeSpec = houstonSideReadOnly.opencode;
+      const opencodeTranscript = yield* OpenCodeOrchestratorReplayHarness.decodeTranscript(
+        withRuntimeInstructions(
+          yield* readFixture(opencodeSpec.transcriptFile),
+          opencodeSpec.modelSelection,
+          "opencode",
+        ),
+      );
+      const opencodeThread = ThreadId.make("thread:opencode-review");
+      const opencodeResult = yield* replayOnReviewThread({
+        name: "harness_review_read_only/opencode",
+        harness: OpenCodeOrchestratorReplayHarness,
+        transcript: opencodeTranscript,
+        threadId: opencodeThread,
+        modelSelection: opencodeSpec.modelSelection,
+        prompt: opencodeSpec.prompt,
+        worktreePath: yield* workspace("opencode"),
+      });
+      assert.equal(opencodeResult.projections.get(opencodeThread)?.runs[0]?.status, "completed");
+
+      const opencode2Spec = houstonSideReadOnly.opencode2;
+      const opencode2Transcript = yield* OpenCode2OrchestratorReplayHarness.decodeTranscript(
+        withRuntimeInstructions(
+          yield* readFixture(opencode2Spec.transcriptFile),
+          opencode2Spec.modelSelection,
+          "opencode",
+        ),
+      );
+      const opencode2Thread = ThreadId.make("thread:opencode2-review");
+      const opencode2Result = yield* replayOnReviewThread({
+        name: "harness_review_read_only/opencode2",
+        harness: OpenCode2OrchestratorReplayHarness,
+        transcript: opencode2Transcript,
+        threadId: opencode2Thread,
+        modelSelection: opencode2Spec.modelSelection,
+        prompt: opencode2Spec.prompt,
+        worktreePath: yield* workspace("opencode2"),
+      });
+      assert.equal(opencode2Result.projections.get(opencode2Thread)?.runs[0]?.status, "completed");
 
       // Every read-only family through the orchestrator: the read-only policy and no credential.
       const kit = yield* makeKit("read-only-families");
@@ -373,7 +406,7 @@ describe("the review thread runs read-only", () => {
             );
             assert.isAbove(turns.length, 0, instance);
             for (const turn of turns) {
-              assert.include(turn.input.runtimePolicy, READ_ONLY_POLICY, instance);
+              assert.deepInclude(turn.input.runtimePolicy, READ_ONLY_POLICY, instance);
               assert.isUndefined(turn.mcp, instance);
             }
             assert.notInclude(kit.harness.log.mcpIssued, started.threadId, instance);
@@ -441,7 +474,7 @@ describe("the review thread's write paths", () => {
           for (const command of commands) {
             const error = yield* Effect.flip(orchestrator.dispatch(command));
             assert.match(
-              userFacingDispatchErrorMessage(error),
+              userFacingDispatchErrorMessage(error) ?? "",
               /read-only|only through Send to thread/,
               command.type,
             );
@@ -454,7 +487,7 @@ describe("the review thread's write paths", () => {
               runId,
             }),
           );
-          assert.include(userFacingDispatchErrorMessage(send), REVIEW_SEND_REFUSAL);
+          assert.include(userFacingDispatchErrorMessage(send) ?? "", REVIEW_SEND_REFUSAL);
           const moved = yield* Effect.flip(
             orchestrator.dispatch({
               type: "provider.switch",
@@ -467,7 +500,9 @@ describe("the review thread's write paths", () => {
           const after = yield* orchestrator.getThreadProjection(review);
           assert.equal(after.thread.providerInstanceId, "codex");
           for (const missing of ["review-fork", "review-target"]) {
-            const exit = yield* Effect.exit(orchestrator.getThreadProjection(ThreadId.make(missing)));
+            const exit = yield* Effect.exit(
+              orchestrator.getThreadProjection(ThreadId.make(missing)),
+            );
             assert.equal(exit._tag, "Failure", missing);
           }
 
@@ -511,7 +546,9 @@ describe("the review thread's write paths", () => {
             creationSource: "web",
           });
           yield* settle;
-          const aside = yield* orchestrator.getThreadProjection(ThreadId.make("thread:ordinary-aside"));
+          const aside = yield* orchestrator.getThreadProjection(
+            ThreadId.make("thread:ordinary-aside"),
+          );
           assert.equal(aside.thread.side?.kind, "aside");
         }),
       );

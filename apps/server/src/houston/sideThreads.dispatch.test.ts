@@ -220,7 +220,7 @@ describe("an aside", () => {
             yield* startAside(context, { source, aside: "aside" });
             yield* context.settle;
             const aside = yield* projectionOf(context, "aside");
-            assert.equal(aside.thread.side?.sourceRunId, second.id);
+            assert.deepInclude(aside.thread.side, { sourceRunId: second.id });
             assert.deepEqual(aside.thread.forkedFrom, {
               type: "run",
               threadId: source,
@@ -245,7 +245,7 @@ describe("an aside", () => {
             yield* startAside(context, { source, aside: "aside" });
             yield* context.settle;
             const aside = yield* projectionOf(context, "aside");
-            assert.equal(aside.thread.side?.sourceRunId, firstRunId);
+            assert.deepInclude(aside.thread.side, { sourceRunId: firstRunId });
             assert.isTrue(
               noGit.log.started.some((turn) => turn.input.threadId === "aside"),
               "the aside's first run starts",

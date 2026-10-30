@@ -50,6 +50,7 @@ import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import { HoustonScheduledTaskRunner } from "../houston/harnessReview/ScheduledTaskRunner.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
   redactHeaders,
@@ -407,6 +408,8 @@ export const layer = Layer.effect(
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
     const scheduler = yield* Scheduler.Scheduler;
+    // Houston: a task one of its features owns runs through that feature; absent, none is claimed.
+    const houstonRunner = yield* Effect.serviceOption(HoustonScheduledTaskRunner);
     const webhookPermits = yield* Ref.make<ReadonlyMap<ScheduledTaskId, Semaphore.Semaphore>>(
       new Map(),
     );
@@ -855,37 +858,43 @@ export const layer = Layer.effect(
               }),
             );
 
+        const claimed =
+          Option.isSome(houstonRunner) && (yield* houstonRunner.value.claims(active))
+            ? houstonRunner.value
+            : null;
         // Capture defects and interrupts too so dispatch failures still reach markCompleted.
         const result =
-          active.threadId === null
-            ? yield* Effect.exit(
-                threadLaunch
-                  .launch({
-                    commandId,
-                    projectId: active.projectId,
-                    title: active.title,
-                    modelSelection: active.modelSelection,
-                    runtimeMode: active.runtimeMode,
-                    interactionMode: active.interactionMode,
-                    workspaceStrategy: active.workspaceStrategy,
-                    initialMessage: {
-                      messageId,
-                      scheduledTaskId: active.id,
-                      text: prompt,
-                      attachments: [],
-                    },
-                    createdBy: active.createdBy,
-                    creationSource: active.creationSource,
-                  })
-                  .pipe(Effect.map((launched) => launched.threadId)),
-              )
-            : yield* Effect.exit(
-                // The stored selection only seeds fresh threads. A bound run
-                // follows the thread's current provider, so it passes none.
-                sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
-                  Effect.as(ThreadId.make(active.threadId)),
-                ),
-              );
+          claimed !== null
+            ? yield* Effect.exit(claimed.run(active, trigger))
+            : active.threadId === null
+              ? yield* Effect.exit(
+                  threadLaunch
+                    .launch({
+                      commandId,
+                      projectId: active.projectId,
+                      title: active.title,
+                      modelSelection: active.modelSelection,
+                      runtimeMode: active.runtimeMode,
+                      interactionMode: active.interactionMode,
+                      workspaceStrategy: active.workspaceStrategy,
+                      initialMessage: {
+                        messageId,
+                        scheduledTaskId: active.id,
+                        text: prompt,
+                        attachments: [],
+                      },
+                      createdBy: active.createdBy,
+                      creationSource: active.creationSource,
+                    })
+                    .pipe(Effect.map((launched) => launched.threadId)),
+                )
+              : yield* Effect.exit(
+                  // The stored selection only seeds fresh threads. A bound run
+                  // follows the thread's current provider, so it passes none.
+                  sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
+                    Effect.as(ThreadId.make(active.threadId)),
+                  ),
+                );
 
         const runSucceeded = result._tag === "Success";
         if (webhook !== undefined && runSucceeded) yield* Ref.set(webhook.dispatched, true);
@@ -1810,7 +1819,7 @@ export const layer = Layer.effect(
           if (rejectionSlot !== "allowed") {
             if (rejectionSlot === "first_rejected") yield* log("rate_limited");
             yield* observe("rate_limited");
-            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
+            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
           }
           if (!task.enabled) {
             yield* log("disabled");
@@ -1863,11 +1872,11 @@ export const layer = Layer.effect(
             }
             yield* refundRejectionSlot;
             yield* observe("filtered");
-            return ({
+            return {
               _tag: "accepted" as const,
               deliveryId,
               outcome: "filtered" as const,
-            });
+            };
           }
 
           const runWindow = (yield* Ref.get(webhookRateWindows)).get(task.id);
@@ -1879,7 +1888,7 @@ export const layer = Layer.effect(
             if ((yield* takeRateSlot(task.id, DateTime.toEpochMillis(now))) === "first_rejected")
               yield* log("rate_limited");
             yield* observe("rate_limited");
-            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
+            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
           }
           const reserve = takeRateSlot(task.id, DateTime.toEpochMillis(now)).pipe(
             Effect.flatMap((slot) => (slot === "allowed" ? Effect.void : Effect.fail(slot))),
@@ -1943,7 +1952,7 @@ export const layer = Layer.effect(
             yield* refundRejectionSlot;
             if (deduped.log) yield* log("rate_limited");
             yield* observe(deduped.outcome);
-            return ({ _tag: "rate_limited", outcome: deduped.outcome } as const);
+            return { _tag: "rate_limited", outcome: deduped.outcome } as const;
           }
           if (deduped !== "run") {
             if (deduped !== "coalesced" && deduped !== "coalesced_unlogged")
@@ -1955,8 +1964,7 @@ export const layer = Layer.effect(
                   ? "coalesced"
                   : deduped;
             yield* observe(outcome);
-            if (deduped === "duplicate")
-              return ({ _tag: "accepted", deliveryId, outcome } as const);
+            if (deduped === "duplicate") return { _tag: "accepted", deliveryId, outcome } as const;
             return { _tag: "accepted", deliveryId, outcome } as const;
           }
           const frameId = yield* crypto.randomBytes(6).pipe(
@@ -1975,11 +1983,11 @@ export const layer = Layer.effect(
             });
             yield* releaseReplay(deliveryId);
             yield* observe("prompt_too_long");
-            return ({
+            return {
               _tag: "accepted" as const,
               deliveryId,
               outcome: "prompt_too_long" as const,
-            });
+            };
           }
           // Bound the deliveries one task holds, so steady traffic to a stuck
           // task cannot pile up parked fibers.
@@ -2030,19 +2038,19 @@ export const layer = Layer.effect(
             yield* release;
             if (admitted.log) yield* log("rate_limited");
             yield* observe(admitted.outcome);
-            return ({
+            return {
               _tag: "rate_limited",
               outcome: admitted.outcome,
-            } as const);
+            } as const;
           }
           if (admitted === "duplicate") {
             yield* release;
             yield* observe("duplicate");
-            return ({
+            return {
               _tag: "accepted",
               deliveryId,
               outcome: "duplicate",
-            } as const);
+            } as const;
           }
           yield* observe("accepted");
           const permit = yield* webhookPermit(task.id);

@@ -12,6 +12,7 @@ import {
   type ScheduledTask,
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -46,7 +47,11 @@ import {
   makeHarness,
   withReadOnlyRun,
 } from "../sideThreads.testkit.ts";
-import { layerInstances, layerProjectMetadata, layerWorkspacePaths } from "../tasks/tasks.testkit.ts";
+import {
+  layerInstances,
+  layerProjectMetadata,
+  layerWorkspacePaths,
+} from "../tasks/tasks.testkit.ts";
 import { ClaudeProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { layerHarnessReview, layerHarnessScheduledTaskRunner } from "./layer.ts";
 import * as HarnessReviewReactor from "./Reactor.ts";
@@ -66,7 +71,13 @@ export const OPENCODE2: DoubleSpec = {
 };
 
 /** Claude, Codex, OpenCode 1 and 2 run read-only; Antigravity declares no read-only run. */
-export const ALL_SPECS: ReadonlyArray<DoubleSpec> = [CLAUDE, CODEX, OPENCODE, OPENCODE2, ANTIGRAVITY];
+export const ALL_SPECS: ReadonlyArray<DoubleSpec> = [
+  CLAUDE,
+  CODEX,
+  OPENCODE,
+  OPENCODE2,
+  ANTIGRAVITY,
+];
 
 export const NOW = "2026-10-30T09:00:00.000Z";
 
@@ -114,13 +125,12 @@ export const makeKit = Effect.fn("HarnessReviewKit.make")(function* (
     git: false,
   });
   const launches: Array<Launched> = [];
+  // One layer value per kit: every consumer in a build shares the one database it memoizes.
   const database =
     options.databaseFile === undefined
-      ? Layer.fresh(SqlitePersistence.layerMemory)
-      : Layer.fresh(
-          SqlitePersistence.layerFromPath(options.databaseFile).pipe(
-            Layer.provide(NodeServices.layer),
-          ),
+      ? SqlitePersistence.layerMemory.pipe(Layer.provide(Layer.empty))
+      : SqlitePersistence.layerFromPath(options.databaseFile).pipe(
+          Layer.provide(NodeServices.layer),
         );
   return { name, harness, launches, database, options };
 });
@@ -165,7 +175,7 @@ export const layerKit = (kit: Kit) => {
   const orchestration = layerOrchestration(kit);
   const registry = kit.harness.registry.pipe(Layer.provide(McpProviderSessions.layer));
   const scheduledTasks = ScheduledTaskService.layer.pipe(
-    Layer.provide(layerHarnessScheduledTaskRunner),
+    Layer.provideMerge(layerHarnessScheduledTaskRunner),
     Layer.provide(
       Layer.mergeAll(
         layerThreadLaunch(kit.launches),
@@ -180,10 +190,21 @@ export const layerKit = (kit: Kit) => {
       ),
     ),
   );
-  const harnessReview = (kit.options.reactor === false
-    ? HoustonHarnessService.layer.pipe(Layer.provideMerge(HoustonHarnessRunner.layer))
-    : layerHarnessReview.pipe(Layer.provideMerge(HoustonHarnessRunner.layer))
-  ).pipe(Layer.provideMerge(scheduledTasks));
+  // Without the reactor, nothing settles a review's run: the state a server stopped in.
+  const harnessReview = (
+    kit.options.reactor === false
+      ? Layer.merge(
+          HoustonHarnessService.layer,
+          Layer.succeed(
+            HarnessReviewReactor.HarnessReviewReactor,
+            HarnessReviewReactor.HarnessReviewReactor.of({
+              settleRun: () => Effect.void,
+              recover: Effect.void,
+            }),
+          ),
+        )
+      : layerHarnessReview
+  ).pipe(Layer.provideMerge(HoustonHarnessRunner.layer), Layer.provideMerge(scheduledTasks));
   return harnessReview.pipe(
     Layer.provideMerge(Layer.mergeAll(RuntimeLayer.layerProjectService, ProjectStore.layer)),
     Layer.provideMerge(ProjectionStore.layer),
@@ -248,8 +269,31 @@ export const settle = Effect.gen(function* () {
   for (let round = 0; round < 20; round += 1) yield* Effect.yieldNow;
 });
 
+// @effect-diagnostics-next-line globalTimers:off - real time; the test clock does not move disk writes.
+const realPause = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 25)));
+
+/** Waits, in real time, until a fired task's run has ended; its files are real disk writes. */
+export const awaitRun = Effect.fn("HarnessReviewKit.awaitRun")(function* (task: ScheduledTask) {
+  const scheduled = yield* ScheduledTaskService.ScheduledTaskService;
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    yield* Effect.yieldNow;
+    const { tasks } = yield* scheduled.list();
+    const current = tasks.find((candidate) => candidate.id === task.id);
+    if (
+      current === undefined ||
+      (current.runCount > task.runCount && current.lastRunStatus !== "running")
+    ) {
+      break;
+    }
+    yield* realPause;
+  }
+  yield* settle;
+});
+
 /** The scheduled task a project's review runs as. */
-export const reviewTask = Effect.fn("HarnessReviewKit.reviewTask")(function* (projectId: ProjectId) {
+export const reviewTask = Effect.fn("HarnessReviewKit.reviewTask")(function* (
+  projectId: ProjectId,
+) {
   const store = yield* HoustonHarnessStore.HoustonHarnessStore;
   const scheduled = yield* ScheduledTaskService.ScheduledTaskService;
   const settings = yield* store.settings(projectId);
@@ -300,14 +344,18 @@ export const seedPublished = Effect.fn("HarnessReviewKit.seedPublished")(functio
 
 export type KitServices = Layer.Success<ReturnType<typeof layerKit>>;
 
+/** Pins the test clock at NOW, then builds the kit: its poll loops start from NOW, not 1970. */
 export const runKit = <A, E>(
   kit: Kit,
   body: Effect.Effect<A, E, KitServices | import("effect/Scope").Scope>,
 ) =>
   Effect.gen(function* () {
-    yield* TestClock.setTime(Date.parse(NOW));
-    return yield* body;
-  }).pipe(Effect.provide(layerKit(kit)), Effect.scoped);
+    if (Date.parse(NOW) > (yield* Clock.currentTimeMillis)) {
+      yield* TestClock.setTime(Date.parse(NOW));
+    }
+    const context = yield* Layer.build(layerKit(kit));
+    return yield* body.pipe(Effect.provideContext(context));
+  }).pipe(Effect.scoped);
 
 export { HarnessReviewReactor, HoustonHarnessRunner, HoustonHarnessService, HoustonHarnessStore };
 export type { Harness };

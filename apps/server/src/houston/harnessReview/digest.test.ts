@@ -39,7 +39,10 @@ const thread = (
   projectId: P,
   title: `Thread ${id}`,
   providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-  modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-sonnet-4-6" },
+  modelSelection: {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-sonnet-4-6",
+  },
   lineage: { rootThreadId: ThreadId.make(id), parentThreadId: null, relationshipToParent: null },
   creationSource: "web",
   createdBy: "user",
@@ -292,11 +295,7 @@ const fixture = (): ReadonlyArray<DigestThreadInput> => {
       [run("t-old", 1, "2026-10-01T09:00:00.000Z")],
       [userMessage("t-old", RunId.make("run:t-old:1"), "2026-10-01T09:30:00.000Z", "Old")],
     ),
-    input(
-      thread("t-q", { projectId: Q }),
-      [run("t-q", 1, "2026-10-28T09:00:00.000Z")],
-      [],
-    ),
+    input(thread("t-q", { projectId: Q }), [run("t-q", 1, "2026-10-28T09:00:00.000Z")], []),
   ];
 };
 
@@ -364,7 +363,12 @@ describe("the digest", () => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped({ prefix: "harness-digest-home-" });
-      const before = buildDigest({ projectId: P, window: WINDOW, previousEnd: null, threads: fixture() });
+      const before = buildDigest({
+        projectId: P,
+        window: WINDOW,
+        previousEnd: null,
+        threads: fixture(),
+      });
       for (const [relative, line] of [
         [".claude/projects/p/x.jsonl", { cwd: "/work/p", type: "user", message: "transcript" }],
         [".codex/sessions/2026/r.jsonl", { cwd: "/work/p", payload: "transcript" }],
@@ -454,15 +458,15 @@ describe("the digest", () => {
   it("a digest line and the digest stay within their caps", () => {
     const bigRun = run("t-big", 1, "2026-10-28T10:00:00.000Z");
     const minute = (index: number) =>
-      new Date(Date.parse("2026-10-28T10:00:00.000Z") + index * 60_000).toISOString();
+      DateTime.formatIso(
+        DateTime.makeUnsafe(Date.parse("2026-10-28T10:00:00.000Z") + index * 60_000),
+      );
     const big: OrchestrationV2TurnItem[] = [];
     for (let index = 0; index < 40; index += 1) {
       big.push(userMessage("t-big", bigRun.id, minute(index), `${index}:${"p".repeat(1_990)}`));
     }
     for (let index = 0; index < 4; index += 1) {
-      big.push(
-        command("t-big", bigRun.id, minute(40 + index), `fail-${index}`, { exitCode: 1 }),
-      );
+      big.push(command("t-big", bigRun.id, minute(40 + index), `fail-${index}`, { exitCode: 1 }));
     }
     const one = buildDigest({
       projectId: P,
@@ -484,9 +488,9 @@ describe("the digest", () => {
     const many: DigestThreadInput[] = [];
     for (let index = 0; index < 40; index += 1) {
       const id = `t-${String(index).padStart(2, "0")}`;
-      const started = new Date(
-        Date.parse("2026-10-17T00:00:00.000Z") + index * 3_600_000,
-      ).toISOString();
+      const started = DateTime.formatIso(
+        DateTime.makeUnsafe(Date.parse("2026-10-17T00:00:00.000Z") + index * 3_600_000),
+      );
       const threadRun = run(id, 1, started);
       many.push(
         input(

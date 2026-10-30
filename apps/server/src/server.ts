@@ -119,6 +119,9 @@ import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
+import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
+import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -559,6 +562,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
+  // The harness review service and its one reactor, over the orchestration runtime below.
+  layerHarnessReview.pipe(
+    Layer.provide(HoustonHarnessRunner.layer),
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+  ),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
@@ -577,6 +586,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
   Layer.provideMerge(HoustonTaskSourceStore.layer),
+  Layer.provideMerge(HoustonHarnessStore.layer),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(HoustonTaskStore.layer),
   Layer.provideMerge(layerPersistence),
