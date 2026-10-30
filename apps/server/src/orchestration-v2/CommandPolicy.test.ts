@@ -165,7 +165,7 @@ it.each([
 });
 
 // regression: #26695 an interrupt-restart steer cancels Copilot's background agents
-it("queues a steer for a provider that cannot steer either way", () => {
+it("queues an automatic send for a provider that cannot steer either way", () => {
   const projection = dispatchProjection(
     capabilities((current) => ({
       ...current,
@@ -177,22 +177,21 @@ it("queues a steer for a provider that cannot steer either way", () => {
       },
     })),
   );
-  for (const deliveryIntent of ["auto", "steer"] as const) {
-    assert.deepEqual(
-      CommandPolicy.resolveMessageDispatchIntent(
-        projection,
-        { type: "start_immediately" },
-        deliveryIntent,
-      ),
-      { type: "queue_after_active" },
-    );
-  }
+  assert.deepEqual(
+    CommandPolicy.resolveMessageDispatchIntent(projection, { type: "start_immediately" }, "auto"),
+    { type: "queue_after_active" },
+  );
+  // Houston (AD-040): an explicit steer stays a steer, which dispatch then refuses by name.
+  assert.deepEqual(
+    CommandPolicy.resolveMessageDispatchIntent(projection, { type: "start_immediately" }, "steer"),
+    { type: "steer_active", targetRunId: activeRunId },
+  );
   assert.deepEqual(
     CommandPolicy.resolveMessageDispatchIntent(projection, {
       type: "steer_active",
       targetRunId: activeRunId,
     }),
-    { type: "queue_after_active" },
+    { type: "steer_active", targetRunId: activeRunId },
   );
   assert.deepEqual(
     CommandPolicy.resolveMessageDispatchIntent(
@@ -247,6 +246,45 @@ it.each(["/compact", " /LOGOUT "])("queues a steer sent while %s runs", (text) =
 const layer = it.layer(CommandPolicy.layer);
 
 layer("CommandPolicyV2", (it) => {
+  it.effect("explicit steer without active steering is refused", () =>
+    Effect.gen(function* () {
+      const policy = yield* CommandPolicy.CommandPolicyV2;
+      const acp = capabilities((current) => ({
+        ...current,
+        turns: {
+          ...current.turns,
+          supportsActiveSteering: false,
+          supportsInterrupt: true,
+          supportsSteeringByInterruptRestart: true,
+        },
+      }));
+      const input = {
+        commandId,
+        threadId,
+        providerInstanceId: ProviderInstanceId.make("antigravity"),
+        capabilities: acp,
+      };
+      const refused = yield* policy
+        .decideSteeringExecution({ ...input, forceRestart: false })
+        .pipe(Effect.flip);
+      assert.equal(refused._tag, "CommandPolicyCapabilityUnsupportedError");
+      assert.equal(refused.capability, "active_steering");
+      // An interrupt the user asked for still restarts the turn.
+      assert.equal(
+        yield* policy.decideSteeringExecution({ ...input, forceRestart: true }),
+        "interrupt_restart",
+      );
+      assert.equal(
+        yield* policy.decideSteeringExecution({
+          ...input,
+          capabilities: baseCapabilities,
+          forceRestart: false,
+        }),
+        "active_steering",
+      );
+    }),
+  );
+
   it.effect("falls back to portable context when Cursor cannot fork natively", () =>
     Effect.gen(function* () {
       const policy = yield* CommandPolicy.CommandPolicyV2;
