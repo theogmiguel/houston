@@ -188,6 +188,8 @@ export interface ReadinessLedgerShape {
   readonly report: (input: TurnReport) => Effect.Effect<void>;
   /** A refresh clears turn-derived states, except outOfUsage with a reset still ahead. */
   readonly clear: (instances: "all" | ReadonlyArray<ProviderInstanceId>) => Effect.Effect<void>;
+  /** Forgets every instance not listed, so an id added again starts with no entry. */
+  readonly retain: (instances: ReadonlyArray<ProviderInstanceId>) => Effect.Effect<void>;
   /** Current entries; an outOfUsage entry whose reset has passed is absent. */
   readonly entries: Effect.Effect<ReadonlyMap<ProviderInstanceId, ReadinessLedgerEntry>>;
   readonly changes: Stream.Stream<void>;
@@ -292,6 +294,22 @@ export const layerReadinessLedger = Layer.effect(
       if (changed) yield* publish;
     });
 
+    const retain = Effect.fn("ReadinessLedger.retain")(function* (
+      instances: ReadonlyArray<ProviderInstanceId>,
+    ) {
+      const kept = new Set(instances);
+      const without = <V>(current: ReadonlyMap<ProviderInstanceId, V>) => {
+        const removed = [...current.keys()].filter((instanceId) => !kept.has(instanceId));
+        if (removed.length === 0) return [[] as ReadonlyArray<V>, current] as const;
+        const next = new Map(current);
+        for (const instanceId of removed) next.delete(instanceId);
+        return [removed.map((instanceId) => current.get(instanceId)!), next] as const;
+      };
+      yield* Ref.update(slots, (current) => without(current)[1]);
+      const stale = yield* Ref.modify(expiries, without);
+      yield* Effect.forEach(stale, Fiber.interrupt, { discard: true });
+    });
+
     const entries = Effect.gen(function* () {
       const now = yield* nowMs;
       const result = new Map<ProviderInstanceId, ReadinessLedgerEntry>();
@@ -307,6 +325,7 @@ export const layerReadinessLedger = Layer.effect(
     return ReadinessLedger.of({
       report,
       clear,
+      retain,
       entries,
       get changes() {
         return Stream.fromPubSub(changes);
@@ -410,7 +429,13 @@ export const decorateProviderRegistry = Effect.fn("decorateProviderRegistry")(fu
   const scope = yield* Effect.scope;
   const follow = <A>(stream: Stream.Stream<A>, onItem: (item: A) => Effect.Effect<unknown>) =>
     Stream.runForEach(stream, onItem).pipe(Effect.forkIn(scope, { startImmediately: true }));
-  yield* follow(raw.streamChanges, observe);
+  yield* follow(raw.streamChanges, (providers) => {
+    const listed = providers.map((provider) => provider.instanceId);
+    for (const instanceId of lastPublished.keys()) {
+      if (!listed.includes(instanceId)) lastPublished.delete(instanceId);
+    }
+    return ledger.retain(listed).pipe(Effect.andThen(observe(providers)));
+  });
   yield* follow(ledger.changes, () => raw.getProviders.pipe(Effect.flatMap(observe)));
 
   const clearing =

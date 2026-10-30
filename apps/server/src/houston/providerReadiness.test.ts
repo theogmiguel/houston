@@ -751,6 +751,38 @@ describe("snapshot states take precedence over the ledger", () => {
   );
 });
 
+describe("a removed instance forgets its state", () => {
+  it.effect("an instance re-added under the same id starts ready", () =>
+    withLedger(
+      Effect.gen(function* () {
+        const codex = makeProvider("codex", {}, "codex");
+        const work = makeProvider("codex", {}, "codex_work");
+        const { fake, registry, ledger, readinessAfter } = yield* makeHarness([codex, work]);
+        const refusal = failure({
+          class: "provider_error",
+          message: "ChatGPT could not validate this connection.",
+          code: "subscription_sharing_v2_invalid_user",
+        });
+        assert.deepInclude(yield* readinessAfter(work, [failed(work, refusal)]), {
+          state: "rejected",
+        });
+
+        const events = yield* subscribe(registry.streamChanges);
+        yield* fake.publish([codex]);
+        yield* awaitPublished(events, (list) => list.length === 1);
+        assert.isFalse((yield* ledger.entries).has(work.instanceId));
+
+        yield* fake.publish([codex, work]);
+        const back = yield* awaitPublished(events, (list) => list.length === 2);
+        assert.deepEqual(
+          back.find((provider) => provider.instanceId === work.instanceId)?.readiness,
+          { state: "ready" },
+        );
+      }),
+    ),
+  );
+});
+
 describe("one log entry per readiness change", () => {
   it.effect("logs each change once with its fields and nothing for a repeat", () => {
     const entries: Array<Record<string, unknown>> = [];
