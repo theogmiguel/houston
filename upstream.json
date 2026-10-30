@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/pingdotgg/t3code",
-  "commit": "6d450a4284852af137b2f3407fddd89eb76e7644",
+  "commit": "5b357b3b894e8255ebd3049c8ef826b93c20c9e4",
   "licence": "MIT",
   "imported": [
     "apps/server",
