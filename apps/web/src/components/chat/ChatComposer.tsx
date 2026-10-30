@@ -230,6 +230,8 @@ const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidErro
 import { toastManager } from "../ui/toast";
 import { PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
@@ -370,6 +372,8 @@ export interface ChatComposerProps {
   forceExpandedOnMobile: boolean;
   /** A grid pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
+  /** When the active turn started; the running status in the composer footer. */
+  activeTurnStartedAt?: string | null | undefined;
   projectSelectionRequired: boolean;
 
   phase: SessionPhase;
@@ -522,6 +526,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptHistoryMessages,
     forceExpandedOnMobile,
     paneDensity,
+    activeTurnStartedAt,
     projectSelectionRequired,
     phase,
     canInterrupt,
@@ -1024,7 +1029,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
   const isComposerCollapsedMobile =
-    (isMobileViewport || paneDensity === "compact" || paneDensity === "glance") &&
+    (isMobileViewport || paneDensity === "glance") &&
     !forceExpandedOnMobile &&
     !isComposerFocused &&
     !hasMultilinePrompt &&
@@ -3084,7 +3089,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
+  const composerAttachButton =
+    showComposerAttachAction && paneDensity !== "compact" ? (
     <ComposerAttachButton
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
@@ -3212,9 +3218,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (showProviderUnavailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
-                {paneDensity === "compact" ? (
-                  <div className="flex min-w-0 shrink items-center">{composerControls}</div>
-                ) : null}
                 <ComposerStashBadge
                   count={stashQueue.length}
                   menuOpen={isStashMenuOpen}
@@ -3465,6 +3468,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     pulseKey={stashPulseKey}
                     onToggleMenu={toggleStashMenuStable}
                   />
+                  {phase === "running" && activeTurnStartedAt ? (
+                    <span
+                      role="status"
+                      className="shrink-0 pe-1 text-2xs text-muted-foreground tabular-nums"
+                    >
+                      <span className="text-(--accent-ink)">Running</span> ·{" "}
+                      <span
+                        ref={tickTextContent(
+                          (nowMs) =>
+                            formatDuration(Math.max(1_000, nowMs - Date.parse(activeTurnStartedAt))),
+                          true,
+                        )}
+                      />
+                    </span>
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
