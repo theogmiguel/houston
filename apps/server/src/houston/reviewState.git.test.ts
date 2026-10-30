@@ -778,6 +778,23 @@ describe("an anchor stores the content it was drawn on", () => {
   );
 });
 
+describe("a file over the anchor bound is refused before it is stored", () => {
+  it.effect("an untracked file of 8 MiB and one byte fails and writes no object", () =>
+    withRepo((repo, review) =>
+      Effect.gen(function* () {
+        yield* initRepo(repo, { "a.ts": "a1\n" });
+        yield* write(repo, "big.txt", `${"x".repeat(8 * 1024 * 1024)}\n`);
+        const blob = yield* git(repo, ["hash-object", "--", "big.txt"]);
+        const error = yield* review
+          .anchorLines({ cwd: repo, path: "big.txt", side: "new", startLine: 1, endLine: 1 })
+          .pipe(Effect.flip);
+        assert.equal(error._tag, "GitCommandError");
+        assert.notEqual(yield* gitExit(repo, ["cat-file", "-e", blob]), 0);
+      }),
+    ),
+  );
+});
+
 describe("an anchor outside the file is refused with its line count", () => {
   it.effect(
     "accepts 10-12 of 12 lines and refuses 10-13, end before start and an absent old side",

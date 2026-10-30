@@ -363,6 +363,18 @@ export const make = Effect.gen(function* () {
     let blob: string | null = null;
     if (input.side === "new") {
       if (yield* exists(absolute)) {
+        const size = yield* fileSystem.stat(absolute).pipe(
+          Effect.map((info) => Number(info.size)),
+          Effect.orElseSucceed(() => 0),
+        );
+        if (size > MAX_ANCHORED_FILE_BYTES) {
+          return yield* failure(
+            operation,
+            repository.root,
+            "git hash-object -w",
+            `The file '${input.path}' is larger than ${MAX_ANCHORED_FILE_BYTES} bytes.`,
+          );
+        }
         const written = yield* run(operation, repository.root, [
           "hash-object",
           "-w",
