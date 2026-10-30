@@ -86,24 +86,69 @@ pub fn log_path(base_dir: &Path) -> PathBuf {
     base_dir.join("logs").join("v2-server.log")
 }
 
-/// The dev checkout serves `apps/server/dist/bin.mjs`; a bundled runtime would be
-/// under the app's resources and is not produced yet (see the slice's PR body).
-pub fn resolve_server_entry(override_entry: Option<PathBuf>) -> Result<PathBuf, String> {
-    if let Some(path) = override_entry {
-        return Ok(path);
-    }
-    let dev = Path::new(env!("CARGO_MANIFEST_DIR"))
+/// Where the v2 server comes from. A bundled install ships a single-executable
+/// under the app's resources; a dev checkout runs its JavaScript entry with Node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerEntry {
+    /// The bundled Node single-executable, run directly without a Node runtime.
+    Bundled(PathBuf),
+    /// A JavaScript entry that needs the Node runtime from [`resolve_node`].
+    Node(PathBuf),
+}
+
+/// The resource directory that `tauri.conf.json` bundles `v2-server/` under.
+pub const BUNDLED_SERVER_DIR: &str = "v2-server";
+const BUNDLED_SERVER_NAME: &str = "houston-v2-server";
+
+pub fn bundled_server_executable(resource_dir: &Path) -> PathBuf {
+    resource_dir.join(BUNDLED_SERVER_DIR).join(format!(
+        "{BUNDLED_SERVER_NAME}{}",
+        std::env::consts::EXE_SUFFIX
+    ))
+}
+
+/// The dev checkout's JavaScript entry, also the last-resort fallback in `main.rs`.
+pub fn dev_server_entry() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("apps")
         .join("server")
         .join("dist")
-        .join("bin.mjs");
-    if dev.is_file() {
-        return Ok(dev);
+        .join("bin.mjs")
+}
+
+/// Resolution order: an explicit `HOUSTON_V2_SERVER_ENTRY` (with `HOUSTON_NODE`),
+/// then the bundled executable under the app's resources, then the dev checkout.
+pub fn resolve_server_entry(
+    override_entry: Option<PathBuf>,
+    resource_dir: Option<&Path>,
+) -> Result<ServerEntry, String> {
+    let bundled = resource_dir.map(bundled_server_executable);
+    resolve_server_entry_with(override_entry, bundled.as_deref(), &dev_server_entry())
+}
+
+fn resolve_server_entry_with(
+    override_entry: Option<PathBuf>,
+    bundled: Option<&Path>,
+    dev: &Path,
+) -> Result<ServerEntry, String> {
+    if let Some(path) = override_entry {
+        return Ok(ServerEntry::Node(path));
     }
+    if let Some(path) = bundled.filter(|path| path.is_file()) {
+        return Ok(ServerEntry::Bundled(path.to_path_buf()));
+    }
+    if dev.is_file() {
+        return Ok(ServerEntry::Node(dev.to_path_buf()));
+    }
+    let bundled_location = bundled
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<app resource directory unavailable>".to_string());
     Err(format!(
-        "cannot find the v2 server entry {}: build it with `pnpm --filter houston build:bundle` \
-         or set HOUSTON_V2_SERVER_ENTRY. A bundled runtime is not shipped yet.",
+        "cannot find the v2 server: HOUSTON_V2_SERVER_ENTRY is unset, the bundled executable \
+         {bundled_location} is missing, and the dev checkout entry {} is missing. Set \
+         HOUSTON_V2_SERVER_ENTRY to a server entry (with HOUSTON_NODE pointing at its Node \
+         runtime), or build the dev checkout with `pnpm --filter houston build:bundle`.",
         dev.display()
     ))
 }
@@ -272,20 +317,26 @@ pub fn detached_spawn_flags(breakaway: bool) -> u32 {
     flags
 }
 
-fn spawn_node(
+/// Build a fresh command for either server source. The Windows breakaway retry
+/// needs a new command because a failed `spawn` consumes the previous one.
+fn server_command(
     node: &Path,
-    entry: &Path,
+    entry: &ServerEntry,
     base_dir: &Path,
-    port: u16,
-    payload: &Value,
-) -> Result<Child, String> {
+) -> Result<std::process::Command, String> {
     let log = open_log(base_dir)?;
     let stderr = log
         .try_clone()
         .map_err(|e| format!("cloning the v2 server log handle: {e}"))?;
-    let mut cmd = houston_core::spawn::command(node);
-    cmd.arg(entry)
-        .arg("--bootstrap-fd")
+    let mut cmd = match entry {
+        ServerEntry::Bundled(executable) => houston_core::spawn::command(executable),
+        ServerEntry::Node(entry) => {
+            let mut cmd = houston_core::spawn::command(node);
+            cmd.arg(entry);
+            cmd
+        }
+    };
+    cmd.arg("--bootstrap-fd")
         .arg("0")
         .env("T3CODE_DESKTOP_DETACHED", "1")
         .stdin(Stdio::piped())
@@ -306,9 +357,25 @@ fn spawn_node(
         }
     }
 
+    Ok(cmd)
+}
+
+fn spawn_server(
+    node: &Path,
+    entry: &ServerEntry,
+    base_dir: &Path,
+    port: u16,
+    payload: &Value,
+) -> Result<Child, String> {
+    let program = match entry {
+        ServerEntry::Bundled(executable) => executable,
+        ServerEntry::Node(_) => node,
+    };
+
     #[cfg(windows)]
     let mut child = {
         use std::os::windows::process::CommandExt;
+        let mut cmd = server_command(node, entry, base_dir)?;
         cmd.creation_flags(detached_spawn_flags(true));
         match cmd.spawn() {
             Ok(child) => child,
@@ -321,27 +388,19 @@ fn spawn_node(
                      without CREATE_BREAKAWAY_FROM_JOB. The server will share the app's job \
                      and may not survive the app closing."
                 );
-                let mut retry = houston_core::spawn::command(node);
-                retry
-                    .arg(entry)
-                    .arg("--bootstrap-fd")
-                    .arg("0")
-                    .env("T3CODE_DESKTOP_DETACHED", "1")
-                    .stdin(Stdio::piped())
-                    .stdout(open_log(base_dir)?)
-                    .stderr(open_log(base_dir)?)
-                    .creation_flags(detached_spawn_flags(false));
-                retry
-                    .spawn()
-                    .map_err(|second| format!("spawning the v2 server with {node:?}: {second}"))?
+                let mut retry = server_command(node, entry, base_dir)?;
+                retry.creation_flags(detached_spawn_flags(false));
+                retry.spawn().map_err(|second| {
+                    format!("spawning the v2 server with {program:?}: {second}")
+                })?
             }
         }
     };
 
     #[cfg(not(windows))]
-    let mut child = cmd
+    let mut child = server_command(node, entry, base_dir)?
         .spawn()
-        .map_err(|e| format!("spawning the v2 server with {node:?}: {e}"))?;
+        .map_err(|e| format!("spawning the v2 server with {program:?}: {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
         let line = format!("{payload}\n");
@@ -410,12 +469,12 @@ struct HostState {
 pub struct V2Host {
     base_dir: PathBuf,
     node: PathBuf,
-    entry: PathBuf,
+    entry: ServerEntry,
     state: Mutex<HostState>,
 }
 
 impl V2Host {
-    pub fn new(base_dir: PathBuf, node: PathBuf, entry: PathBuf) -> Self {
+    pub fn new(base_dir: PathBuf, node: PathBuf, entry: ServerEntry) -> Self {
         Self {
             base_dir,
             node,
@@ -590,7 +649,7 @@ pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
     let port = pick_port();
     let token = current_desktop_bootstrap_token(&secret, now_ms());
     let envelope = bootstrap_envelope(&host.base_dir, port, &secret, &token);
-    let mut child = spawn_node(&host.node, &host.entry, &host.base_dir, port, &envelope)?;
+    let mut child = spawn_server(&host.node, &host.entry, &host.base_dir, port, &envelope)?;
     let runtime = wait_for_ready(&host.base_dir, &mut child).await?;
     let running = RunningServer {
         origin: runtime.origin,
@@ -701,6 +760,84 @@ mod tests {
             Decision::Spawn
         );
         assert_eq!(decide(Some(&record(42, "")), true), Decision::Spawn);
+    }
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create the fixture directory");
+        }
+        fs::write(path, b"fixture").expect("write the fixture file");
+    }
+
+    #[test]
+    fn the_bundled_executable_is_named_per_platform() {
+        let executable = bundled_server_executable(Path::new("/app/resources"));
+        assert_eq!(
+            executable,
+            Path::new("/app/resources")
+                .join(BUNDLED_SERVER_DIR)
+                .join(format!(
+                    "{BUNDLED_SERVER_NAME}{}",
+                    std::env::consts::EXE_SUFFIX
+                ))
+        );
+    }
+
+    #[test]
+    fn an_explicit_override_wins_over_bundled_and_dev() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let override_entry = dir.path().join("override.mjs");
+        let bundled = dir.path().join("v2-server/houston-v2-server");
+        let dev = dir.path().join("apps/server/dist/bin.mjs");
+        touch(&override_entry);
+        touch(&bundled);
+        touch(&dev);
+
+        assert_eq!(
+            resolve_server_entry_with(Some(override_entry.clone()), Some(&bundled), &dev),
+            Ok(ServerEntry::Node(override_entry))
+        );
+    }
+
+    #[test]
+    fn the_bundled_executable_wins_over_the_dev_checkout() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bundled = dir.path().join("v2-server/houston-v2-server");
+        let dev = dir.path().join("apps/server/dist/bin.mjs");
+        touch(&bundled);
+        touch(&dev);
+
+        assert_eq!(
+            resolve_server_entry_with(None, Some(&bundled), &dev),
+            Ok(ServerEntry::Bundled(bundled))
+        );
+    }
+
+    #[test]
+    fn the_dev_checkout_is_used_when_no_override_or_bundle_exists() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bundled = dir.path().join("v2-server/houston-v2-server");
+        let dev = dir.path().join("apps/server/dist/bin.mjs");
+        touch(&dev);
+
+        assert_eq!(
+            resolve_server_entry_with(None, Some(&bundled), &dev),
+            Ok(ServerEntry::Node(dev))
+        );
+    }
+
+    #[test]
+    fn a_missing_server_error_lists_every_location_and_env_override() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bundled = dir.path().join("v2-server/houston-v2-server");
+        let dev = dir.path().join("apps/server/dist/bin.mjs");
+
+        let error = resolve_server_entry_with(None, Some(&bundled), &dev)
+            .expect_err("nothing exists, so resolution must fail");
+        assert!(error.contains("HOUSTON_V2_SERVER_ENTRY"), "{error}");
+        assert!(error.contains("HOUSTON_NODE"), "{error}");
+        assert!(error.contains(&bundled.display().to_string()), "{error}");
+        assert!(error.contains(&dev.display().to_string()), "{error}");
     }
 
     #[test]

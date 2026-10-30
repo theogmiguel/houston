@@ -126,7 +126,7 @@ export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
     yield* refuseHostedDefault;
-    return yield* refuseV1ChannelDir(join(yield* HostProcess.HomeDirectory, ".t3"));
+    return yield* refuseV1ChannelDir(join(yield* HostProcess.HomeDirectory, ".houston", "v2"));
   }
   return yield* refuseV1ChannelDir(resolve(yield* expandHomePath(raw.trim())));
 });

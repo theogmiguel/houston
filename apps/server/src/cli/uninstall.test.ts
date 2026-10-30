@@ -14,7 +14,7 @@ it.layer(NodeServices.layer)("houston uninstall launcher", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-" });
       const versionsDir = path.join(root, "runtime/versions");
-      const exe = path.join(versionsDir, "1.0.0/t3");
+      const exe = path.join(versionsDir, "1.0.0/houston");
       const otherExe = path.join(root, "other/runtime/versions/1.0.0/t3");
       const copy = path.join(root, "copy/t3");
       for (const file of [exe, otherExe, copy]) {

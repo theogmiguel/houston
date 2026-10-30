@@ -100,7 +100,7 @@ describe("ssh tunnel scripts", () => {
     }
     assert.include(
       SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
-      "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
+      "HOUSTON_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
     );
   });
 

@@ -62,6 +62,7 @@ BUNDLES = (
     ),
 )
 
+SERVER_ARCHIVE = re.compile(r"^houston-(?P<version>[^/]+)-linux-(?:x64|arm64)\.tar\.gz$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 TAG_RE = re.compile(r"^[0-9A-Za-z._+-]+$")
@@ -162,6 +163,17 @@ def collect(
             raise Refused(
                 f"{path.name} is already in the artifact set; the publish stage generates it and will not ship a second copy"
             )
+        # Server archives and their checksums ride along in the same release, but
+        # latest.json describes desktop updater bundles only.
+        if path.name == "SHA256SUMS":
+            continue
+        server_archive = SERVER_ARCHIVE.match(path.name)
+        if server_archive:
+            if server_archive.group("version") != artifact_version:
+                raise Refused(
+                    f"{path.name} carries version {server_archive.group('version')}, but this release is {version}"
+                )
+            continue
         if path.name.endswith(".sig"):
             sig_names.add(path.name[: -len(".sig")])
             signatures[path.name[: -len(".sig")]] = read_signature(path)
