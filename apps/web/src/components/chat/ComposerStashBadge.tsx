@@ -20,7 +20,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       aria-label={`Stashed prompts: ${props.count}. Open stash.`}
       aria-expanded={props.menuOpen}
       className={cn(
-        "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.25 rounded-(--r-pill) bg-muted px-2 text-xs text-muted-foreground outline-none transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+        "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.25 rounded-(--r-pill) bg-muted px-2 text-xs text-secondary-foreground outline-none transition-colors focus-visible:outline-2 focus-visible:outline-ring",
         props.menuOpen ? "pointer-events-none text-foreground" : "hover:text-foreground",
         // The button keeps its identity (focus, hover) across stashes. Swapping between two
         // identical keyframes restarts the pill's animation instead.
@@ -30,7 +30,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       onPointerDown={(event) => event.preventDefault()}
       onClick={props.onToggleMenu}
     >
-      <BookmarkIcon className="size-3.5" aria-hidden />
+      <BookmarkIcon className="size-3.25" aria-hidden />
       <span>Stash</span>
       <span
         // Remounting the count per stash restarts its CSS pulse; no timer has to end it.
