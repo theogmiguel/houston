@@ -22,7 +22,7 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
-  T3_CHAT_THEME,
+  HOUSTON_CHAT_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -55,7 +55,7 @@ import {
 import { ThemeWireframe } from "./ThemeWireframe";
 
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
-  T3_CHAT_THEME,
+  HOUSTON_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
@@ -656,10 +656,7 @@ export function ThemeLibrary({
 
   const renderWireframe = (mode: ThemeMode, active = false) => (
     <ThemeWireframe
-      className={cn(
-        "h-24 rounded-lg border-0",
-        active ? "ring-2 ring-ring" : "ring-1 ring-border",
-      )}
+      className={cn("h-24 rounded-lg border-0", active ? "ring-2 ring-ring" : "ring-1 ring-border")}
       panes={
         mode === "system"
           ? [
@@ -691,7 +688,7 @@ export function ThemeLibrary({
                 isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              {mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}
+              {mode === "system" ? "System" : mode === "light" ? "Paper" : "Graphite"}
             </span>
           </button>
         );

@@ -26,7 +26,6 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
-import { AdvancedSettings } from "./AdvancedSettings";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -229,7 +228,7 @@ function FontSmoothingRow() {
   );
 }
 
-function WordWrapRow() {
+export function WordWrapRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -337,13 +336,8 @@ export function TypographySection() {
   return (
     <SettingsSection id="typography" title="Typography">
       {showAdvanced ? <FontSettingsGroup /> : <SimpleFontRows />}
-      <WordWrapRow />
-      <AdvancedSettings
-        targetIds={[searchableSetting("separate-fonts").id, searchableSetting("font-smoothing").id]}
-      >
-        <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
-        <FontSmoothingRow />
-      </AdvancedSettings>
+      <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
+      <FontSmoothingRow />
     </SettingsSection>
   );
 }
