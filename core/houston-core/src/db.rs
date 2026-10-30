@@ -290,6 +290,9 @@ fn quarantine_command_history(conn: &Connection) {
     }
 }
 
+/// `settings` key marking that `close_unretained_exited_roots` has run.
+const UNRETAINED_EXITED_ROOTS_CLOSED: &str = "unretained_exited_roots_closed";
+
 const DISCARD_COMMAND_HISTORY: &str = "DROP TABLE IF EXISTS command_history;";
 
 const CREATE_COMMAND_HISTORY: &str = "CREATE TABLE IF NOT EXISTS command_history (
@@ -2459,6 +2462,46 @@ impl Db {
             [],
         )?;
         Ok(n)
+    }
+
+    /// Closes, once per database, Exited root sessions without saved output. Versions that
+    /// did not retain exited roots deleted their output at restart but left the rows Exited,
+    /// so those rows would otherwise return as panes. Returns `None` after the first run.
+    pub fn close_unretained_exited_roots(
+        &self,
+        has_saved_output: impl Fn(u32) -> bool,
+    ) -> Result<Option<usize>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let done = tx
+            .query_row(
+                "SELECT 1 FROM settings WHERE key = ?1",
+                [UNRETAINED_EXITED_ROOTS_CLOSED],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if done {
+            return Ok(None);
+        }
+        let ids = {
+            let mut stmt = tx
+                .prepare("SELECT id FROM sessions WHERE state = 'exited' AND spawned_by IS NULL")?;
+            let ids = stmt
+                .query_map([], |r| r.get::<_, u32>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        let mut closed = 0;
+        for id in ids.into_iter().filter(|id| !has_saved_output(*id)) {
+            closed += tx.execute("UPDATE sessions SET state = 'closed' WHERE id = ?1", [id])?;
+        }
+        tx.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, '1')",
+            [UNRETAINED_EXITED_ROOTS_CLOSED],
+        )?;
+        tx.commit()?;
+        Ok(Some(closed))
     }
 
     pub fn backfill_settled_retention(
