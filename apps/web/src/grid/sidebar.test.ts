@@ -10,6 +10,8 @@ import {
   openPullRequestNumber,
   partitionShelfThreads,
   resolveGridThreadState,
+  runningSubagentsByParentThread,
+  subagentParentKey,
   threadCardsInPaneOrder,
   threadMatchesGridSearch,
   updateThreadSelection,
@@ -71,8 +73,7 @@ function thread(
   } as EnvironmentThreadShell;
 }
 
-function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {
-  return {
+function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {  return {
     id: "g-1",
     name: "Grid 1",
     environmentId: "env-1",
@@ -85,6 +86,22 @@ function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): Gr
     createdAt: "2026-10-29T10:00:00.000Z",
     ...overrides,
   };
+}
+
+function subagentChild(
+  id: string,
+  parentThreadId: string,
+  runtime: Partial<EnvironmentThreadShell["runtime"]> | null = null,
+): EnvironmentThreadShell {
+  return thread({
+    id,
+    lineage: {
+      relationshipToParent: "subagent",
+      parentThreadId: parentThreadId as never,
+      rootThreadId: parentThreadId as never,
+    },
+    runtime: runtime === null ? null : ({ ...runtime, updatedAt: NOW } as never),
+  });
 }
 
 describe("grid thread state", () => {
@@ -178,6 +195,56 @@ describe("grid thread state", () => {
         NOW,
       ),
     ).toBe("idle");
+  });
+});
+
+describe("running subagent count", () => {
+  const parent = thread({ id: "thread-parent" });
+
+  it("counts nothing when no subagent runs", () => {
+    const counts = runningSubagentsByParentThread(
+      [parent, subagentChild("child-a", "thread-parent", { status: "idle" })],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBeUndefined();
+  });
+
+  it("counts the subagents still running when some finished", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-running", "thread-parent", { status: "running" }),
+        subagentChild("child-done", "thread-parent", { status: "completed" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBe(1);
+  });
+
+  it("counts every running subagent of the parent, not its grandchildren", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-a", "thread-parent", { status: "running" }),
+        subagentChild("child-b", "thread-parent", { status: "running" }),
+        subagentChild("grandchild", "child-a", { status: "running" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBe(2);
+    expect(counts.get(subagentParentKey(thread({ id: "child-a" })))).toBe(1);
+  });
+
+  it("counts nothing when every subagent finished", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-a", "thread-parent", { status: "completed" }),
+        subagentChild("child-b", "thread-parent", { status: "interrupted" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBeUndefined();
   });
 });
 

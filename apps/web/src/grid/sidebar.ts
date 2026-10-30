@@ -100,6 +100,36 @@ export interface ShelfThreads {
   readonly closed: EnvironmentThreadShell[];
 }
 
+/** A parent's key for the rail's folded-in subagent counts. */
+export function subagentParentKey(
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "id">,
+): string {
+  return `${thread.environmentId}:${thread.id}`;
+}
+
+/**
+ * Running subagents per parent thread, by `subagentParentKey`. A child folded
+ * under its parent counts while it runs: its own card is not on the rail, so
+ * the parent card carries the number. Finished, archived and deleted children
+ * count nothing.
+ */
+export function runningSubagentsByParentThread(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const thread of threads) {
+    if (!isSidebarSubagentThread(thread)) continue;
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    const parentThreadId = thread.lineage.parentThreadId;
+    if (parentThreadId === null) continue;
+    if (resolveGridThreadState(thread, now) !== "running") continue;
+    const key = subagentParentKey({ environmentId: thread.environmentId, id: parentThreadId });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function wakeTimeMs(thread: EnvironmentThreadShell): number {
   if (thread.snoozedUntil === null) return Number.POSITIVE_INFINITY;
   const ms = Date.parse(thread.snoozedUntil);
