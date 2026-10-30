@@ -3777,6 +3777,8 @@ async fn blocked_metadata_recovery_still_allows_explicit_fresh_and_close() {
 #[tokio::test]
 async fn an_undrained_final_root_hook_is_recovered_after_natural_exit_without_auto_launch() {
     let env = setup().await;
+    // The pane exits under a daemon that has already booted on this database.
+    drop(boot(&env));
     let ws = project(&env, "natural-exit");
     seed_claude(&env, 41, &ws, &ws, None);
     let db = Db::open(&env.db_path()).unwrap();
