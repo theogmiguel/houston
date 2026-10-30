@@ -41,20 +41,20 @@ describe("resolveTriageCommand", () => {
     ).resolves.toBe("& 'C:\\Users\\Jo O''Neil\\.t3\\bin\\houston.cmd' triage");
   });
 
-  it("falls back to npx without a usable desktop launcher", async () => {
+  it("falls back to the installed houston CLI without a usable desktop launcher", async () => {
     using _warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(resolveTriageCommand(undefined)).resolves.toBe("npx houston triage");
-    await expect(resolveTriageCommand({} as DesktopBridge)).resolves.toBe("npx houston triage");
+    await expect(resolveTriageCommand(undefined)).resolves.toBe("houston triage");
+    await expect(resolveTriageCommand({} as DesktopBridge)).resolves.toBe("houston triage");
     await expect(resolveTriageCommand(desktopWith(async () => notOnPath(null)))).resolves.toBe(
-      "npx houston triage",
+      "houston triage",
     );
     const staleWindowsPathEntry = { ...notOnPath(null), supported: true, onPath: true };
     await expect(
       resolveTriageCommand(desktopWith(async () => staleWindowsPathEntry)),
-    ).resolves.toBe("npx houston triage");
+    ).resolves.toBe("houston triage");
     await expect(
       resolveTriageCommand(desktopWith(() => Promise.reject(new Error("ipc closed")))),
-    ).resolves.toBe("npx houston triage");
+    ).resolves.toBe("houston triage");
   });
 });
 

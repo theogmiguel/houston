@@ -229,7 +229,13 @@
     "apps/server/src/houston/taskSources/layer.ts",
     "apps/server/src/houston/taskSources/taskSources.testkit.ts",
     "apps/server/src/houston/taskSources/taskSources.ws.test.ts",
-    "apps/server/src/houston/taskSources/v1TrackerFixture.ts"
+    "apps/server/src/houston/taskSources/v1TrackerFixture.ts",
+    "apps/web/src/state/releasePublication.test.ts",
+    "apps/web/src/state/releasePublication.ts"
+  ],
+  "removed": [
+    "apps/web/src/state/npmRelease.test.ts",
+    "apps/web/src/state/npmRelease.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -823,6 +829,15 @@
     "packages/client-runtime/src/preview/serverBrowserStream.ts": "CLI binary renamed from t3 to houston",
     "packages/contracts/src/peerLink.ts": "CLI binary renamed from t3 to houston",
     "packages/contracts/src/settings.ts": "CLI binary renamed from t3 to houston",
+    "apps/server/scripts/cli.ts": "server executable renamed from t3 to houston",
+    "apps/server/src/device/SshDeviceHost.ts": "device host state moved under ~/.houston/v2",
+    "apps/server/src/device/sshDeviceScript.ts": "device host state moved under ~/.houston/v2",
+    "apps/server/vite.config.ts": "server executable renamed from t3 to houston",
+    "apps/web/src/components/sidebar/useUpdateEverything.ts": "release publication now reads GitHub releases instead of npm",
+    "packages/shared/src/cliRelease.ts": "Houston release repository, archive names and Linux-only platforms",
+    "packages/shared/src/cliRelease.test.ts": "Houston archive name and Linux-only platform assertions",
+    "packages/ssh/src/tunnel.test.ts": "remote runtime variables and executable renamed from t3 to houston",
+    "knip.jsonc": "server archive builder entry",
     "apps/server/src/auth/http.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "apps/server/src/auth/replayMarkers.test.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "apps/server/src/auth/replayMarkers.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",

@@ -543,9 +543,10 @@ function PairingForm({
             <p className="pt-3 text-sm text-muted-foreground">
               Run this on the computer with your code.
             </p>
-            <CommandBlock command="npx houston pair" className="mt-2" />
+            <CommandBlock command="houston pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start Houston first, or run <code className="font-mono">npx houston serve</code>. Add{" "}
+              Start Houston first, or run <code className="font-mono">houston serve</code> (install the CLI from{" "}
+              <a className="underline" href="https://github.com/theogmiguel/houston/releases">GitHub releases</a>). Add{" "}
               <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>
