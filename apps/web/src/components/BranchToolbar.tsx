@@ -323,10 +323,12 @@ const RunContextSelector = memo(function RunContextSelector({
         {...(!isPanel ? composerFloatingLayerProps : {})}
       >
         {availableEnvironments &&
-        ((showEnvironmentPicker && onEnvironmentChange) || addTargets.length > 0) ? (
+        ((showEnvironmentPicker && onEnvironmentChange) ||
+          addTargets.length > 0 ||
+          activeEnvironment !== null) ? (
           <>
             <MenuGroup>
-              <MenuGroupLabel>Run on</MenuGroupLabel>
+              <MenuGroupLabel>Machine</MenuGroupLabel>
               <MenuRadioGroup
                 value={autoEnvironmentLabel ? "auto" : environmentId}
                 onValueChange={(value) =>
@@ -396,7 +398,7 @@ const RunContextSelector = memo(function RunContextSelector({
           </>
         ) : null}
         <MenuGroup>
-          <MenuGroupLabel>Workspace</MenuGroupLabel>
+          <MenuGroupLabel>Where</MenuGroupLabel>
           <MenuRadioGroup
             value={effectiveEnvMode}
             onValueChange={(value) => {
@@ -746,8 +748,19 @@ export const BranchToolbar = memo(function BranchToolbar({
       data-compact={labelsOverflow ? "" : undefined}
       className={cn("gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground")}
     >
+      {!isServerThread ? (
+        <>
+          <span
+            className="inline-flex h-7 min-w-0 max-w-[40%] shrink items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/80 text-xs sm:h-6"
+            data-composer-context-control
+          >
+            <FolderIcon className="size-3 shrink-0" />
+            <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
+          </span>
+        </>
+      ) : null}
       {showGitControls ? (
-        <div className="contents @3xl/composer-surface:hidden">
+        <div className={cn("contents", isServerThread && "@3xl/composer-surface:hidden")}>
           <RunContextSelector
             forceNewWorktree={forceNewWorktree}
             autoEnvironmentLabel={autoEnvironmentLabel}
@@ -770,7 +783,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           />
         </div>
       ) : null}
-      {showGitControls || showEnvironmentIndicator ? (
+      {isServerThread && (showGitControls || showEnvironmentIndicator) ? (
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",

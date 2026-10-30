@@ -62,6 +62,7 @@ export function shouldShowEnvironmentIndicator(input: {
 
 export function shouldShowComposerContextStrip(input: {
   isDraftHeroState: boolean;
+  isDraftThread?: boolean;
   persistInActiveThreads: boolean;
   hasActiveProject: boolean;
   isGitRepo: boolean;
@@ -71,6 +72,7 @@ export function shouldShowComposerContextStrip(input: {
   return (
     input.hasActiveProject &&
     (input.isDraftHeroState ||
+      input.isDraftThread === true ||
       (input.persistInActiveThreads && (input.isGitRepo || input.showEnvironmentIndicator)))
   );
 }
@@ -89,7 +91,7 @@ export function resolveContextStripLabelsCompact(input: {
 }
 
 export function resolveEnvModeLabel(mode: EnvMode): string {
-  return mode === "worktree" ? "New worktree" : "Current checkout";
+  return mode === "worktree" ? "New worktree" : "Local checkout";
 }
 
 export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {

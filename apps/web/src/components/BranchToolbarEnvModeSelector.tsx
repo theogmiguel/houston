@@ -153,7 +153,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         className={showPreviousWorktree ? "w-[min(21rem,calc(100vw-2rem))]" : undefined}
       >
         <SelectGroup>
-          <SelectGroupLabel>Workspace</SelectGroupLabel>
+          <SelectGroupLabel>Where</SelectGroupLabel>
           <SelectItem value="local">
             <span className="inline-flex items-center gap-1.5">
               {activeWorktreePath ? (

@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ContrastIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -170,6 +170,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     }
   };
   const themeLabel = railThemeLabel(appearanceMode);
+  const ThemeIcon =
+    appearanceMode === "dark" ? MoonIcon : appearanceMode === "light" ? SunIcon : MonitorIcon;
   const cycleTheme = () => {
     setAppearanceMode(nextRailThemeMode(appearanceMode));
   };
@@ -199,7 +201,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleSettingsClick}
           />
           <SidebarUtilityItem
-            icon={<ContrastIcon />}
+            icon={<ThemeIcon />}
             label={`Theme: ${themeLabel}`}
             onClick={cycleTheme}
           />

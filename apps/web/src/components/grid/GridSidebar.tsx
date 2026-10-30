@@ -4,11 +4,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  scopedThreadKey,
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -69,7 +65,7 @@ import {
 } from "../../grid/sidebar";
 import { GridShelves } from "./GridShelves";
 import { preorderThreads } from "../../grid/tree";
-import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -1071,7 +1067,6 @@ function GridRow({
   onDragLeave: () => void;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
 }) {
-  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(grid.name);
@@ -1080,7 +1075,7 @@ function GridRow({
   const unpinGrid = useGridStore((store) => store.unpinGrid);
   const setGridHidden = useGridStore((store) => store.setGridHidden);
   const deleteGrid = useGridStore((store) => store.deleteGrid);
-  const handleNewThread = useNewThreadHandler();
+  const openGridDraft = useOpenGridDraft();
   const isDropTarget = dropTarget === `grid:${grid.id}`;
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
@@ -1090,15 +1085,7 @@ function GridRow({
   };
 
   const createThread = () => {
-    void (async () => {
-      const created = await handleNewThread(
-        scopeProjectRef(grid.environmentId as never, grid.projectId as never),
-        { replace: true },
-      );
-      if (created === null) return;
-      useGridStore.getState().addThread(grid.id, created.threadId, created.draftId);
-      void navigate({ to: "/grid/$gridId", params: { gridId: grid.id } });
-    })();
+    void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
   };
 
   return (
@@ -1168,24 +1155,31 @@ function GridRow({
             >
               <HighlightedText text={grid.name} query={query} />
             </span>
-            <span
-              className="inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100"
-              role="button"
-              tabIndex={0}
-              aria-label={`New thread in ${grid.name}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                createThread();
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
-                createThread();
-              }}
-            >
-              <PlusIcon aria-hidden className="size-3" />
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className="inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`New thread in ${grid.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      createThread();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      createThread();
+                    }}
+                  />
+                }
+              >
+                <PlusIcon aria-hidden className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">New thread · T</TooltipPopup>
+            </Tooltip>
           </button>
         )}
         <Menu>
