@@ -14,7 +14,6 @@ import {
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { isMacPlatform } from "../../lib/utils";
 import { Input } from "../ui/input";
 import {
   DEFAULT_CODE_FONT_STACK,
@@ -30,6 +29,7 @@ import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./Setti
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   SettingResetButton,
   SettingsRow,
@@ -202,7 +202,6 @@ function TerminalFontRow() {
 function FontSmoothingRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  if (!isMacPlatform(navigator.platform)) return null;
   return (
     <SettingsRow
       {...searchableSetting("font-smoothing")}
@@ -218,11 +217,20 @@ function FontSmoothingRow() {
         ) : null
       }
       control={
-        <Switch
-          checked={settings.fontSmoothing}
-          onCheckedChange={(checked) => updateSettings({ fontSmoothing: Boolean(checked) })}
+        <ToggleGroup
           aria-label="Font smoothing"
-        />
+          variant="segmented"
+          value={[settings.fontSmoothing ? "antialiased" : "system"]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "system" || value === "antialiased") {
+              updateSettings({ fontSmoothing: value === "antialiased" });
+            }
+          }}
+        >
+          <Toggle value="system">System</Toggle>
+          <Toggle value="antialiased">Antialiased</Toggle>
+        </ToggleGroup>
       }
     />
   );
