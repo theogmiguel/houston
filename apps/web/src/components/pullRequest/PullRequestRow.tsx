@@ -61,7 +61,7 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
   );
 }
 
-const PAGE_ROW_CLASS = "px-3 py-2.5";
+const PAGE_ROW_CLASS = "px-2.5 py-2";
 
 export type PullRequestRowTarget = Pick<
   EnvironmentPullRequestEntry,
@@ -107,7 +107,7 @@ function PullRequestRowImpl({
       data-pull-request-stats-key={statsKey}
       data-pull-request-key={statsKey}
       className={cn(
-        "flex items-center rounded-md [content-visibility:auto] [contain-intrinsic-block-size:56.5px]",
+        "mx-1.5 flex items-center rounded-lg [content-visibility:auto] [contain-intrinsic-block-size:52.5px]",
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
     >
