@@ -1,5 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - lays out a channel directory beside the base dir.
 // The houston.tasks.* methods through the real `/ws` handlers and the real scope table.
-import * as NodeFs from "node:fs";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -80,7 +81,6 @@ import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestRev
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "../../orchestration-v2/PullRequestSyncReactor.ts";
 import * as RemoteOpenTargets from "../../environment/RemoteOpenTargets.ts";
-import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts";
 import * as ReviewService from "../../review/ReviewService.ts";
 import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
@@ -114,7 +114,7 @@ import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonTaskService from "./TaskService.ts";
-import { createProject, layerTasks, type TasksTestOptions } from "./testkit.ts";
+import { createProject, layerTasks, type TasksTestOptions } from "./tasks.testkit.ts";
 import { writeV1Database } from "./v1Fixture.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
@@ -245,17 +245,15 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
 ) {
   const responses = yield* Queue.unbounded<Response>();
   const browser = yield* ServerBrowser.ServerBrowser;
+  // Set once the server exists; a stream sends its next chunk after the client acks one.
+  let ack: (requestId: unknown) => Effect.Effect<void> = () => Effect.void;
   const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
     ...WS_RPC_SERVER_OPTIONS,
     onFromServer: (response) =>
       response._tag === "Chunk"
         ? Effect.forEach(response.values, (value) => Queue.offer(responses, value), {
             discard: true,
-          }).pipe(
-            Effect.andThen(
-              server.write(0, { _tag: "Ack", requestId: response.requestId } as never),
-            ),
-          )
+          }).pipe(Effect.andThen(ack(response.requestId)))
         : response._tag === "Exit" && response.exit._tag === "Success"
           ? Queue.offer(responses, response.exit.value)
           : response._tag === "Exit"
@@ -278,6 +276,7 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
       ),
     ),
   );
+  ack = (requestId) => server.write(0, { _tag: "Ack", requestId } as never);
   let next = 0;
   const send = (tag: string, payload: object) =>
     Effect.gen(function* () {
@@ -319,13 +318,16 @@ const layerServer = (options: TasksTestOptions) =>
 type ServerServices = Layer.Success<ReturnType<typeof layerServer>> | Scope.Scope;
 
 const withServer = <A, E>(
-  body: (dirs: { readonly channel: string; readonly baseDir: string }) => Effect.Effect<A, E, ServerServices>,
+  body: (dirs: {
+    readonly channel: string;
+    readonly baseDir: string;
+  }) => Effect.Effect<A, E, ServerServices>,
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const channel = yield* fs.makeTempDirectoryScoped({ prefix: "houston-tasks-ws-" });
     const baseDir = NodePath.join(channel, "v2");
-    NodeFs.mkdirSync(baseDir);
+    NodeFS.mkdirSync(baseDir);
     return yield* body({ channel, baseDir }).pipe(Effect.provide(layerServer({ baseDir })));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
@@ -416,10 +418,10 @@ describe("subscribe sends a snapshot then one event per write", () => {
         const first = (yield* Queue.take(client.responses)) as HoustonTaskStreamEvent;
         assert.isTrue("snapshot" in first);
         if (!("snapshot" in first)) return;
-        assert.deepEqual(
-          first.snapshot.tasks.map((task) => task.key).toSorted(),
-          ["HOU-1", "HOU-2"],
-        );
+        assert.deepEqual(first.snapshot.tasks.map((task) => task.key).toSorted(), [
+          "HOU-1",
+          "HOU-2",
+        ]);
         assert.isFalse(first.snapshot.tasks.some((task) => "description" in task));
         assert.isNotNull(first.snapshot.tasks.find((task) => task.key === "HOU-2")?.archivedAt);
         assert.strictEqual(first.snapshot.counts.backlog, 1);
@@ -437,7 +439,9 @@ describe("subscribe sends a snapshot then one event per write", () => {
           (yield* Queue.take(client.responses)) as HoustonTaskStreamEvent,
         ];
         assert.deepEqual(
-          events.map((event) => ("changed" in event ? [event.changed.key, event.changed.status] : null)),
+          events.map((event) =>
+            "changed" in event ? [event.changed.key, event.changed.status] : null,
+          ),
           [
             ["HOU-3", "backlog"],
             ["HOU-1", "todo"],
@@ -506,14 +510,26 @@ describe("each method requires its declared scope", () => {
     readonly scope: AuthEnvironmentScope;
     readonly payload: (state: { readonly projectId: string; readonly itemId: number }) => object;
   }> = [
-    { method: WS_METHODS.houstonTasksImportV1Status, scope: AuthOrchestrationReadScope, payload: () => ({}) },
-    { method: WS_METHODS.houstonTasksImportV1Run, scope: AuthSettingsWriteScope, payload: () => ({}) },
+    {
+      method: WS_METHODS.houstonTasksImportV1Status,
+      scope: AuthOrchestrationReadScope,
+      payload: () => ({}),
+    },
+    {
+      method: WS_METHODS.houstonTasksImportV1Run,
+      scope: AuthSettingsWriteScope,
+      payload: () => ({}),
+    },
     {
       method: WS_METHODS.houstonTasksSave,
       scope: AuthOrchestrationOperateScope,
       payload: ({ projectId }) => ({ patch: { title: "scoped", projectId, acceptance: ["a"] } }),
     },
-    { method: WS_METHODS.houstonTasksGet, scope: AuthOrchestrationReadScope, payload: () => ({ id: "HOU-2" }) },
+    {
+      method: WS_METHODS.houstonTasksGet,
+      scope: AuthOrchestrationReadScope,
+      payload: () => ({ id: "HOU-2" }),
+    },
     {
       method: WS_METHODS.houstonTasksComment,
       scope: AuthOrchestrationOperateScope,
@@ -561,7 +577,7 @@ describe("each method requires its declared scope", () => {
         projectId,
         settings: {
           access: "read",
-          startModel: { instanceId: "claude", model: "claude-opus-5-5" },
+          startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
           delivery: "send",
           reviewer: null,
           focus: "bugs",
@@ -581,7 +597,9 @@ describe("each method requires its declared scope", () => {
       Effect.gen(function* () {
         writeV1Database(NodePath.join(channel, "houston.db"), {
           nextNumber: 2,
-          tasks: [{ id: 1, workspace: null, number: 1, title: "from v1", status: "todo", createdAtMs: 0 }],
+          tasks: [
+            { id: 1, workspace: null, number: 1, title: "from v1", status: "todo", createdAtMs: 0 },
+          ],
         });
         const projectId = yield* createProject("scoped");
         const tasks = yield* HoustonTaskService.HoustonTaskService;
@@ -614,7 +632,10 @@ describe("each method requires its declared scope", () => {
           const only = yield* makeWsClient([entry.scope]);
           const id = yield* only.send(entry.method, payload);
           const allowed = yield* Queue.take(only.responses);
-          assert.isNull(failureOf(allowed), `${entry.method}: ${JSON.stringify(failureOf(allowed))}`);
+          assert.isNull(
+            failureOf(allowed),
+            `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+          );
           if (entry.method === WS_METHODS.houstonTasksSubscribe) yield* only.interrupt(id);
         }
       }),
@@ -645,10 +666,10 @@ describe("tasks survive a restart", () => {
         const first = snapshot[0];
         assert.isTrue(first !== undefined && "snapshot" in first);
         if (first !== undefined && "snapshot" in first) {
-          assert.deepEqual(
-            first.snapshot.tasks.map((task) => task.key).toSorted(),
-            ["HOU-1", "HOU-2"],
-          );
+          assert.deepEqual(first.snapshot.tasks.map((task) => task.key).toSorted(), [
+            "HOU-1",
+            "HOU-2",
+          ]);
         }
         assert.strictEqual((yield* tasks.save({ patch: { title: "Third" } })).key, "HOU-3");
       }).pipe(Effect.provide(layerTasks({ databaseFile, baseDir: dir })));

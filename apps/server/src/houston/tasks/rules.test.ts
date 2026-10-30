@@ -103,21 +103,19 @@ describe("every limit names the limit, the actual value and the operation", () =
     },
   ] as const;
 
-  for (const testCase of cases) {
-    it(testCase.name, () => {
-      expect(testCase.accepted()).not.toBeInstanceOf(HoustonTaskError);
-      const error = refusal(testCase.refused());
-      expect(error.kind).toBe("limit");
-      expect(error.limit).toBe(testCase.limit);
-      expect(error.actual).toBe(testCase.actual);
-      expect(error.operation).toBe(
-        testCase.name.startsWith("comment") ? "houston.tasks.comment" : "houston.tasks.save",
-      );
-      expect(error.message).toContain(String(testCase.limit));
-      expect(error.message).toContain(String(testCase.actual));
-      expect(error.message).toContain(error.operation);
-    });
-  }
+  it.each(cases)("$name", (testCase) => {
+    expect(testCase.accepted()).not.toBeInstanceOf(HoustonTaskError);
+    const error = refusal(testCase.refused());
+    expect(error.kind).toBe("limit");
+    expect(error.limit).toBe(testCase.limit);
+    expect(error.actual).toBe(testCase.actual);
+    expect(error.operation).toBe(
+      testCase.name.startsWith("comment") ? "houston.tasks.comment" : "houston.tasks.save",
+    );
+    expect(error.message).toContain(String(testCase.limit));
+    expect(error.message).toContain(String(testCase.actual));
+    expect(error.message).toContain(error.operation);
+  });
 
   it("an empty or blank title is invalid, not a limit", () => {
     expect(refusal(checkTitle("houston.tasks.save", "")).kind).toBe("invalid");
@@ -182,7 +180,12 @@ describe("a blocker cycle is refused", () => {
 });
 
 describe("each task sits in exactly one queue", () => {
-  const OPEN = new Set<HoustonTaskRunState>(["preparing", "running", "waiting_for_input", "validating"]);
+  const OPEN = new Set<HoustonTaskRunState>([
+    "preparing",
+    "running",
+    "waiting_for_input",
+    "validating",
+  ]);
 
   const expected = (input: {
     readonly status: HoustonTaskStatus;
@@ -205,23 +208,21 @@ describe("each task sits in exactly one queue", () => {
   });
 
   const runs: ReadonlyArray<HoustonTaskRunState | null> = [null, ...RUN_STATES];
-  for (const status of STATUSES) {
-    for (const runState of runs) {
-      for (const archived of [false, true]) {
-        for (const ready of [false, true]) {
-          const input = { status, archived, ready, runState };
-          it(`${status}, run ${runState ?? "none"}, archived ${archived}, ready ${ready}`, () => {
-            expect(queueOf(input)).toBe(expected(input));
-          });
-        }
-      }
-    }
-  }
+  const table = STATUSES.flatMap((status) =>
+    runs.flatMap((runState) =>
+      [false, true].flatMap((archived) =>
+        [false, true].map((ready) => ({ status, archived, ready, runState })),
+      ),
+    ),
+  );
+  it.each(table)("$status, run $runState, archived $archived, ready $ready", (input) => {
+    expect(queueOf(input)).toBe(expected(input));
+  });
 
   it("in review with an open review run is working (the strong case)", () => {
-    expect(queueOf({ status: "in_review", archived: false, ready: false, runState: "running" })).toBe(
-      "working",
-    );
+    expect(
+      queueOf({ status: "in_review", archived: false, ready: false, runState: "running" }),
+    ).toBe("working");
     expect(queueOf({ status: "in_review", archived: false, ready: false, runState: null })).toBe(
       "your_turn",
     );
@@ -229,7 +230,12 @@ describe("each task sits in exactly one queue", () => {
 
   it("a waiting run is your turn even in progress; a closed run is ignored", () => {
     expect(
-      queueOf({ status: "in_progress", archived: false, ready: true, runState: "waiting_for_input" }),
+      queueOf({
+        status: "in_progress",
+        archived: false,
+        ready: true,
+        runState: "waiting_for_input",
+      }),
     ).toBe("your_turn");
     expect(
       queueOf({ status: "in_progress", archived: false, ready: true, runState: "interrupted" }),
@@ -345,16 +351,14 @@ describe("a delivery rolls up from its slices only", () => {
     ).toBeNull();
   });
 });
+
 describe("a blocker is finished when done or canceled", () => {
-  for (const status of STATUSES) {
-    for (const archived of [false, true]) {
-      it(`${status}, archived ${archived}`, () => {
-        expect(blockerFinished({ status, archived })).toBe(
-          status === "done" || status === "canceled",
-        );
-      });
-    }
-  }
+  const table = STATUSES.flatMap((status) =>
+    [false, true].map((archived) => ({ status, archived })),
+  );
+  it.each(table)("$status, archived $archived", ({ status, archived }) => {
+    expect(blockerFinished({ status, archived })).toBe(status === "done" || status === "canceled");
+  });
 });
 
 describe("readiness lists every missing condition", () => {
@@ -379,14 +383,12 @@ describe("readiness lists every missing condition", () => {
     { name: "unfinished blocker", patch: { unfinishedBlockers: [4, 5] }, reason: /2 unfinished/ },
   ] as const;
 
-  for (const condition of missing) {
-    it(`missing ${condition.name}`, () => {
-      const result = readiness({ ...ready, ...condition.patch });
-      expect(result.ready).toBe(false);
-      expect(result.reasons).toHaveLength(1);
-      expect(result.reasons[0]).toMatch(condition.reason);
-    });
-  }
+  it.each(missing)("missing $name", (condition) => {
+    const result = readiness({ ...ready, ...condition.patch });
+    expect(result.ready).toBe(false);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(condition.reason);
+  });
 
   it("every missing condition is listed at once", () => {
     const result = readiness({

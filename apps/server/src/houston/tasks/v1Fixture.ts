@@ -1,6 +1,6 @@
 // A Houston 1 database for import tests, with the final `backlog_*` schema of
 // core/houston-core/src/db/tasks.rs (after its column additions) and the `settings` table.
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 
 const V1_SCHEMA = `
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -157,7 +157,7 @@ export const writeV1Database = (
   fixture: V1Fixture,
   options: { readonly wal?: boolean } = {},
 ): void => {
-  const db = new DatabaseSync(file);
+  const db = new NodeSqlite.DatabaseSync(file);
   try {
     db.exec(V1_SCHEMA);
     if (options.wal === true) db.exec("PRAGMA journal_mode = WAL");
@@ -193,7 +193,13 @@ export const writeV1Database = (
        VALUES (?, ?, ?, ?, ?)`,
     );
     for (const row of fixture.acceptance ?? []) {
-      acceptance.run(row.taskId, row.position, row.text, row.checkedAtMs ?? null, row.checkedBy ?? null);
+      acceptance.run(
+        row.taskId,
+        row.position,
+        row.text,
+        row.checkedAtMs ?? null,
+        row.checkedBy ?? null,
+      );
     }
     const comment = db.prepare(
       "INSERT INTO backlog_task_comments (task_id, body, author, created_at) VALUES (?, ?, ?, ?)",

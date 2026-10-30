@@ -17,7 +17,7 @@ import * as Stream from "effect/Stream";
 
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
-import { createProject, deleteProject, layerTasks } from "./testkit.ts";
+import { createProject, deleteProject, layerTasks } from "./tasks.testkit.ts";
 
 const service = HoustonTaskService.HoustonTaskService;
 
@@ -31,8 +31,9 @@ const failureOf = <A, E>(exit: Exit.Exit<A, E>) => {
 const refused = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.exit(effect).pipe(Effect.map(failureOf));
 
-const create = (patch: Parameters<HoustonTaskService.HoustonTaskService["Service"]["save"]>[0]["patch"]) =>
-  Effect.flatMap(service, (tasks) => tasks.save({ patch }));
+const create = (
+  patch: Parameters<HoustonTaskService.HoustonTaskService["Service"]["save"]>[0]["patch"],
+) => Effect.flatMap(service, (tasks) => tasks.save({ patch }));
 
 const rowCounts = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -48,7 +49,8 @@ const rowCounts = Effect.gen(function* () {
   };
 });
 
-const changesOf = (raw: string) => JSON.parse(raw) as Record<string, { old: unknown; new: unknown }>;
+const changesOf = (raw: string) =>
+  JSON.parse(raw) as Record<string, { old: unknown; new: unknown }>;
 
 describe("an update records each changed field", () => {
   it.effect("the current revision applies the patch, adds 1 and records old and new", () =>
@@ -216,13 +218,20 @@ describe("absent, null and a value are distinct in a patch", () => {
         (yield* tasks.get({ id: task.key })).acceptance.map((item) => item.text),
         ["a", "b", "c"],
       );
-      yield* tasks.save({ id: task.key, expectedRevision: renamed.revision, patch: { acceptance: ["z"] } });
+      yield* tasks.save({
+        id: task.key,
+        expectedRevision: renamed.revision,
+        patch: { acceptance: ["z"] },
+      });
       const detail = yield* tasks.get({ id: task.key });
       assert.deepEqual(
         detail.acceptance.map((item) => item.text),
         ["z"],
       );
-      assert.deepEqual(changesOf(detail.history[0]?.changes ?? "{}").acceptance, { old: 3, new: 1 });
+      assert.deepEqual(changesOf(detail.history[0]?.changes ?? "{}").acceptance, {
+        old: 3,
+        new: 1,
+      });
     }).pipe(Effect.provide(layerTasks())),
   );
 
@@ -247,11 +256,19 @@ describe("an unknown parent is refused naming it", () => {
       const parent = yield* create({ title: "Parent" });
       const child = yield* create({ title: "Child", parentId: parent.id });
       const cycle = yield* refused(
-        tasks.save({ id: parent.key, expectedRevision: parent.revision, patch: { parentId: child.id } }),
+        tasks.save({
+          id: parent.key,
+          expectedRevision: parent.revision,
+          patch: { parentId: child.id },
+        }),
       );
       assert.strictEqual(cycle.kind, "cycle");
       const self = yield* refused(
-        tasks.save({ id: parent.key, expectedRevision: parent.revision, patch: { parentId: parent.id } }),
+        tasks.save({
+          id: parent.key,
+          expectedRevision: parent.revision,
+          patch: { parentId: parent.id },
+        }),
       );
       assert.strictEqual(self.kind, "cycle");
     }).pipe(Effect.provide(layerTasks())),
@@ -328,7 +345,9 @@ describe("archiving keeps the status and leaves the queues", () => {
       assert.strictEqual(before.counts.inReview, 1);
       assert.strictEqual(before.counts.yourTurn, 1);
 
-      const stale = yield* refused(tasks.archive({ id: task.key, archived: true, expectedRevision: 9 }));
+      const stale = yield* refused(
+        tasks.archive({ id: task.key, archived: true, expectedRevision: 9 }),
+      );
       assert.strictEqual(stale.kind, "conflict");
 
       const archived = yield* tasks.archive({ id: task.key, archived: true, expectedRevision: 1 });
@@ -431,7 +450,9 @@ describe("counts carry your turn per status and ready", () => {
         yield* create({ title: "working", status: "in_progress" });
         yield* create({ title: "shipped", status: "done" });
         yield* create({ title: "dropped", status: "canceled" });
-        const events = yield* Stream.take(tasks.subscribe({ scope: "all" }), 1).pipe(Stream.runCollect);
+        const events = yield* Stream.take(tasks.subscribe({ scope: "all" }), 1).pipe(
+          Stream.runCollect,
+        );
         const first = events[0];
         assert.isTrue(first !== undefined && "snapshot" in first);
         const snapshot = (first as Extract<HoustonTaskStreamEvent, { snapshot: unknown }>).snapshot;
@@ -448,10 +469,7 @@ describe("counts carry your turn per status and ready", () => {
           canceled: 1,
         });
         assert.strictEqual(snapshot.truncated, false);
-        assert.strictEqual(
-          snapshot.tasks.find((task) => task.title === "ready")?.queue,
-          "up_next",
-        );
+        assert.strictEqual(snapshot.tasks.find((task) => task.title === "ready")?.queue, "up_next");
         assert.strictEqual(
           snapshot.tasks.find((task) => task.title === "working")?.queue,
           "stopped",
@@ -493,12 +511,21 @@ describe("initiatives save, archive and refuse a stale revision", () => {
       assert.strictEqual(edited.name, "Checkout v2");
       assert.strictEqual(edited.externalUrl, "https://tracker.test/checkout");
       const stale = yield* refused(
-        tasks.saveInitiative({ projectId: project, id: saved.id, expectedRevision: 1, name: "Old" }),
+        tasks.saveInitiative({
+          projectId: project,
+          id: saved.id,
+          expectedRevision: 1,
+          name: "Old",
+        }),
       );
       assert.strictEqual(stale.kind, "conflict");
       assert.strictEqual(stale.expected, 1);
       assert.strictEqual(stale.actual, 2);
-      const archived = yield* tasks.archiveInitiative({ id: saved.id, archived: true, expectedRevision: 2 });
+      const archived = yield* tasks.archiveInitiative({
+        id: saved.id,
+        archived: true,
+        expectedRevision: 2,
+      });
       assert.isNotNull(archived.archivedAt);
       const staleArchive = yield* refused(
         tasks.archiveInitiative({ id: saved.id, archived: false, expectedRevision: 2 }),
@@ -577,7 +604,7 @@ describe("settings default and refuse out-of-range values", () => {
       const project = yield* createProject("settings");
       assert.deepEqual(yield* tasks.getSettings({ projectId: project }), {
         access: "write",
-        startModel: { instanceId: "claude", model: "claude-opus-5-5" },
+        startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
         delivery: "send",
         reviewer: null,
         reviewMode: "manual",
@@ -591,7 +618,7 @@ describe("settings default and refuse out-of-range values", () => {
           access: "read",
           startModel: { instanceId: "codex", model: "gpt-6-astra" },
           delivery: "prefill",
-          reviewer: { instanceId: "claude", model: "claude-opus-5-5" },
+          reviewer: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
           focus: "security",
           reworkRounds: 5,
         } as never,

@@ -1,12 +1,14 @@
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - hashes and corrupts v1 files byte for byte.
 // The one-time import of a Houston 1 backlog, against v1 databases built in temporary directories.
-import { createHash } from "node:crypto";
-import * as NodeFs from "node:fs";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { HoustonTaskError, type HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -15,12 +17,12 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskV1Import from "./V1Import.ts";
-import { createProject, layerTasks } from "./testkit.ts";
+import { createProject, layerTasks } from "./tasks.testkit.ts";
 import { type V1Fixture, writeV1Database } from "./v1Fixture.ts";
 
 const T0 = Date.UTC(2026, 0, 2, 3, 4, 5, 678);
 const iso = (ms: number) => new Date(ms).toISOString();
-const WINDOWS = process.platform === "win32";
+const WINDOWS = HostProcess.Platform.defaultValue() === "win32";
 const ROOT = WINDOWS ? "C:\\work\\shop" : "/work/shop";
 // The path v1 recorded: on Windows another case and a trailing separator, as a user typed it.
 const V1_ROOT = WINDOWS ? "c:\\Work\\Shop\\" : "/work/shop";
@@ -40,7 +42,7 @@ const withChannel = <A, E, R>(body: (dirs: Dirs) => Effect.Effect<A, E, R>) =>
     const fs = yield* FileSystem.FileSystem;
     const channel = yield* fs.makeTempDirectoryScoped({ prefix: "houston-v1-import-" });
     const baseDir = NodePath.join(channel, "v2");
-    NodeFs.mkdirSync(baseDir);
+    NodeFS.mkdirSync(baseDir);
     return yield* body({ channel, baseDir, source: NodePath.join(channel, "houston.db") });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
@@ -120,21 +122,17 @@ describe("import status names each state", () => {
   it.effect("unavailable when the base dir is not a hosted v2 directory", () =>
     withChannel((dirs) =>
       Effect.gen(function* () {
-        const unhosted = NodePath.join(dirs.channel, "elsewhere");
-        NodeFs.mkdirSync(unhosted);
+        // A v1 database sits beside the base dir, but the base dir is not named v2.
         writeV1Database(dirs.source, simpleFixture());
-        writeV1Database(NodePath.join(dirs.channel, "elsewhere-houston.db"), simpleFixture());
         assert.deepEqual(yield* (yield* importer).status, { state: "unavailable" });
-      }).pipe(
-        Effect.provide(layerTasks({ baseDir: NodePath.join(dirs.channel, "elsewhere") })),
-      ),
+      }).pipe(Effect.provide(layerTasks({ baseDir: NodePath.join(dirs.channel, "elsewhere") }))),
     ),
   );
 
   it.effect("unavailable when the v1 file has no backlog table", () =>
     withChannel((dirs) =>
       Effect.gen(function* () {
-        const db = new DatabaseSync(dirs.source);
+        const db = new NodeSqlite.DatabaseSync(dirs.source);
         db.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
         db.close();
         assert.deepEqual(yield* (yield* importer).status, { state: "unavailable" });
@@ -372,10 +370,15 @@ describe("an import keeps every key, row and the counter", () => {
       Effect.gen(function* () {
         writeV1Database(dirs.source, {
           nextNumber: 2,
-          tasks: [{ id: 1, workspace: null, number: 9, title: "high", status: "todo", createdAtMs: T0 }],
+          tasks: [
+            { id: 1, workspace: null, number: 9, title: "high", status: "todo", createdAtMs: T0 },
+          ],
         });
         yield* (yield* importer).run;
-        assert.strictEqual((yield* (yield* service).save({ patch: { title: "next" } })).key, "HOU-10");
+        assert.strictEqual(
+          (yield* (yield* service).save({ patch: { title: "next" } })).key,
+          "HOU-10",
+        );
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
     ),
   );
@@ -388,8 +391,22 @@ describe("v1 workspaces map to projects by their root", () => {
         writeV1Database(dirs.source, {
           nextNumber: 3,
           tasks: [
-            { id: 1, workspace: V1_ROOT, number: 1, title: "matched", status: "todo", createdAtMs: T0 },
-            { id: 2, workspace: OTHER, number: 2, title: "unmatched", status: "todo", createdAtMs: T0 },
+            {
+              id: 1,
+              workspace: V1_ROOT,
+              number: 1,
+              title: "matched",
+              status: "todo",
+              createdAtMs: T0,
+            },
+            {
+              id: 2,
+              workspace: OTHER,
+              number: 2,
+              title: "unmatched",
+              status: "todo",
+              createdAtMs: T0,
+            },
           ],
         });
         const project = yield* createProject("shop", ROOT);
@@ -512,7 +529,7 @@ describe("v1 settings follow matched workspaces", () => {
           access: "read",
           startModel: { instanceId: "codex", model: "gpt-6-astra" },
           delivery: "prefill",
-          reviewer: { instanceId: "claude", model: "claude-opus-5-5" },
+          reviewer: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
           reviewMode: "every_push",
           focus: "performance",
           reworkRounds: 3,
@@ -529,40 +546,45 @@ const hashes = (source: string) =>
       const file = `${source}${suffix}`;
       return [
         suffix || "db",
-        NodeFs.existsSync(file)
-          ? createHash("sha256").update(NodeFs.readFileSync(file)).digest("hex")
+        NodeFS.existsSync(file)
+          ? NodeCrypto.createHash("sha256").update(NodeFS.readFileSync(file)).digest("hex")
           : "absent",
       ];
     }),
   );
 
 describe("the v1 database is never written", () => {
-  it.effect("another WAL connection holds an uncheckpointed write; every file hashes the same", () =>
-    withChannel((dirs) =>
-      Effect.gen(function* () {
-        writeV1Database(dirs.source, simpleFixture(), { wal: true });
-        // The running v1 daemon: an open connection with a committed, uncheckpointed write.
-        const daemon = new DatabaseSync(dirs.source);
-        try {
-          daemon.exec("PRAGMA wal_autocheckpoint = 0");
-          daemon
-            .prepare(
-              `INSERT INTO backlog_tasks (id, workspace, number, title, status, created_by,
+  it.effect(
+    "another WAL connection holds an uncheckpointed write; every file hashes the same",
+    () =>
+      withChannel((dirs) =>
+        Effect.gen(function* () {
+          writeV1Database(dirs.source, simpleFixture(), { wal: true });
+          // The running v1 daemon: an open connection with a committed, uncheckpointed write.
+          const daemon = new NodeSqlite.DatabaseSync(dirs.source);
+          try {
+            daemon.exec("PRAGMA wal_autocheckpoint = 0");
+            daemon
+              .prepare(
+                `INSERT INTO backlog_tasks (id, workspace, number, title, status, created_by,
                  created_at, updated_at) VALUES (3, NULL, 3, 'in the wal', 'todo', 'user', ?, ?)`,
-            )
-            .run(T0, T0);
-          daemon.prepare("SELECT COUNT(*) AS n FROM backlog_tasks").get();
-          const before = hashes(dirs.source);
-          assert.notStrictEqual(before["-wal"], "absent");
-          const result = yield* (yield* importer).run;
-          assert.strictEqual(result.imported.tasks, 3);
-          assert.strictEqual((yield* (yield* service).get({ id: "HOU-3" })).task.title, "in the wal");
-          assert.deepEqual(hashes(dirs.source), before);
-        } finally {
-          daemon.close();
-        }
-      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
-    ),
+              )
+              .run(T0, T0);
+            daemon.prepare("SELECT COUNT(*) AS n FROM backlog_tasks").get();
+            const before = hashes(dirs.source);
+            assert.notStrictEqual(before["-wal"], "absent");
+            const result = yield* (yield* importer).run;
+            assert.strictEqual(result.imported.tasks, 3);
+            assert.strictEqual(
+              (yield* (yield* service).get({ id: "HOU-3" })).task.title,
+              "in the wal",
+            );
+            assert.deepEqual(hashes(dirs.source), before);
+          } finally {
+            daemon.close();
+          }
+        }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+      ),
   );
 });
 
@@ -604,36 +626,38 @@ describe("an import into a non-empty backlog is refused", () => {
 });
 
 describe("a failed import stores nothing", () => {
-  it.effect("a v1 file corrupt at its last page is unsupported and every v2 table stays empty", () =>
-    withChannel((dirs) =>
-      Effect.gen(function* () {
-        writeV1Database(dirs.source, {
-          ...simpleFixture(),
-          comments: Array.from({ length: 200 }, (_, index) => ({
-            taskId: 1,
-            body: `comment ${index} ${"x".repeat(200)}`,
-            author: "user",
-            createdAtMs: T0 + index,
-          })),
-        });
-        const pageSize = 4096;
-        const size = NodeFs.statSync(dirs.source).size;
-        const fd = NodeFs.openSync(dirs.source, "r+");
-        NodeFs.writeSync(fd, Buffer.alloc(pageSize, 0xa5), 0, pageSize, size - pageSize);
-        NodeFs.closeSync(fd);
+  it.effect(
+    "a v1 file corrupt at its last page is unsupported and every v2 table stays empty",
+    () =>
+      withChannel((dirs) =>
+        Effect.gen(function* () {
+          writeV1Database(dirs.source, {
+            ...simpleFixture(),
+            comments: Array.from({ length: 200 }, (_, index) => ({
+              taskId: 1,
+              body: `comment ${index} ${"x".repeat(200)}`,
+              author: "user",
+              createdAtMs: T0 + index,
+            })),
+          });
+          const pageSize = 4096;
+          const size = NodeFS.statSync(dirs.source).size;
+          const fd = NodeFS.openSync(dirs.source, "r+");
+          NodeFS.writeSync(fd, Buffer.alloc(pageSize, 0xa5), 0, pageSize, size - pageSize);
+          NodeFS.closeSync(fd);
 
-        const error = failureOf(yield* Effect.exit((yield* importer).run));
-        assert.strictEqual(error.kind, "unsupported");
-        assert.include(error.message, dirs.source);
-        assert.match(error.message, /malformed|corrupt/i);
-        const counts = yield* houstonTableCounts;
-        assert.isTrue(Object.keys(counts).length > 0);
-        assert.isTrue(
-          Object.values(counts).every((count) => count === 0),
-          JSON.stringify(counts),
-        );
-      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
-    ),
+          const error = failureOf(yield* Effect.exit((yield* importer).run));
+          assert.strictEqual(error.kind, "unsupported");
+          assert.include(error.message, dirs.source);
+          assert.match(error.message, /malformed|corrupt/i);
+          const counts = yield* houstonTableCounts;
+          assert.isTrue(Object.keys(counts).length > 0);
+          assert.isTrue(
+            Object.values(counts).every((count) => count === 0),
+            JSON.stringify(counts),
+          );
+        }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+      ),
   );
 
   it.effect("a row that fails to copy rolls the whole import back", () =>
@@ -643,14 +667,24 @@ describe("a failed import stores nothing", () => {
           nextNumber: 3,
           tasks: [
             { id: 1, workspace: null, number: 1, title: "fine", status: "todo", createdAtMs: T0 },
-            { id: 2, workspace: null, number: 2, title: "bad", status: "exploded", createdAtMs: T0 },
+            {
+              id: 2,
+              workspace: null,
+              number: 2,
+              title: "bad",
+              status: "exploded",
+              createdAtMs: T0,
+            },
           ],
         });
         const error = failureOf(yield* Effect.exit((yield* importer).run));
         assert.strictEqual(error.kind, "unsupported");
         assert.include(error.message, "exploded");
         const counts = yield* houstonTableCounts;
-        assert.isTrue(Object.values(counts).every((count) => count === 0), JSON.stringify(counts));
+        assert.isTrue(
+          Object.values(counts).every((count) => count === 0),
+          JSON.stringify(counts),
+        );
         assert.strictEqual((yield* (yield* importer).status).state, "available");
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
     ),

@@ -8,7 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HoustonTaskError } from "@t3tools/contracts/houston/tasks";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
-import { layerTasks } from "./testkit.ts";
+import { layerTasks } from "./tasks.testkit.ts";
 
 const create = (title: string) =>
   Effect.gen(function* () {

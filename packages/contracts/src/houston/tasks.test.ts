@@ -12,6 +12,8 @@ import {
 
 const decodeRef = Schema.decodeUnknownExit(HoustonTaskRef);
 const decodeKey = Schema.decodeUnknownExit(HoustonTaskKey);
+const decodeGet = Schema.decodeExit(HoustonTaskGetInput);
+const decodeScope = Schema.decodeUnknownExit(HoustonTaskSubscribeInput);
 
 describe("task ids decode in every form", () => {
   it("HOU-42, hou-42 and a decimal id decode; HOU-0 and HOU-x do not", () => {
@@ -37,8 +39,7 @@ describe("task ids decode in every form", () => {
   });
 
   it("get and subscribe inputs carry the id and the scope", () => {
-    expect(Schema.decodeUnknownExit(HoustonTaskGetInput)({ id: "hou-3" })._tag).toBe("Success");
-    const decodeScope = Schema.decodeUnknownExit(HoustonTaskSubscribeInput);
+    expect(decodeGet({ id: "hou-3" })._tag).toBe("Success");
     expect(decodeScope({ scope: "all" })._tag).toBe("Success");
     expect(decodeScope({ scope: "unassigned" })._tag).toBe("Success");
     expect(decodeScope({ scope: { projectId: "project-1" } })._tag).toBe("Success");

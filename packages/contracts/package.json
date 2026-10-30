@@ -34,6 +34,10 @@
     "./houston/messageDelivery": {
       "types": "./src/houston/messageDelivery.ts",
       "import": "./src/houston/messageDelivery.ts"
+    },
+    "./houston/tasks": {
+      "types": "./src/houston/tasks.ts",
+      "import": "./src/houston/tasks.ts"
     }
   },
   "scripts": {

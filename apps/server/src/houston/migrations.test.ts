@@ -14,10 +14,10 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { runHoustonMigrations } from "./migrations.ts";
 
 const UPSTREAM_HEAD = Math.max(...migrationManifest.map(([id]) => id));
-const HOUSTON_TRACK = [
+const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
-] as const;
+];
 const TASK_TABLES = [
   "houston_task_acceptance",
   "houston_task_blocks",
@@ -141,10 +141,9 @@ describe("the tasks migration runs on the Houston track", () => {
           const sql = yield* SqlClient.SqlClient;
           assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* taskTables, TASK_TABLES);
-          assert.deepEqual(
-            yield* sql`SELECT id, next_number FROM houston_task_counter`,
-            [{ id: 1, next_number: 1 }],
-          );
+          assert.deepEqual(yield* sql`SELECT id, next_number FROM houston_task_counter`, [
+            { id: 1, next_number: 1 },
+          ]);
           // The counter holds exactly one row.
           const second = yield* Effect.exit(
             sql`INSERT INTO houston_task_counter (id, next_number) VALUES (2, 1)`,
@@ -160,8 +159,11 @@ describe("the tasks migration runs on the Houston track", () => {
           `);
           assert.isTrue(duplicate._tag === "Failure");
           assert.isFalse(
-            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("task")
-              && row.name.toLowerCase().includes("backlog")),
+            (yield* upstreamHistory).some(
+              (row) =>
+                row.name.toLowerCase().includes("task") &&
+                row.name.toLowerCase().includes("backlog"),
+            ),
           );
           return yield* upstreamHistory;
         }).pipe(Effect.provide(openThroughSqlite(file)));

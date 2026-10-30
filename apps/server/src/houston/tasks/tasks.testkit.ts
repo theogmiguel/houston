@@ -1,10 +1,6 @@
 // The Tasks backlog over one database with the real project service, as server.ts provides it.
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import {
-  CommandId,
-  ProjectId,
-  type ProviderInstanceId,
-} from "@t3tools/contracts";
+import { CommandId, ProjectId, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -24,7 +20,7 @@ import * as HoustonTaskStore from "./TaskStore.ts";
 import * as HoustonTaskV1Import from "./V1Import.ts";
 
 /** Instances the settings check treats as configured unless a test names others. */
-export const CONFIGURED_INSTANCES: ReadonlyArray<string> = ["claude", "codex"];
+export const CONFIGURED_INSTANCES: ReadonlyArray<string> = ["claudeAgent", "codex"];
 
 const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
@@ -45,11 +41,7 @@ const layerProjectMetadata = Layer.merge(
 const layerInstances = (configured: ReadonlyArray<string>) =>
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
     getInstance: (instanceId: ProviderInstanceId) =>
-      Effect.succeed(
-        configured.includes(instanceId)
-          ? ({ instanceId } as unknown as ProviderInstanceRegistry.ProviderInstance)
-          : undefined,
-      ),
+      Effect.succeed(configured.includes(instanceId) ? ({ instanceId } as never) : undefined),
   });
 
 export interface TasksTestOptions {
@@ -76,10 +68,7 @@ export const layerTasks = (options: TasksTestOptions = {}) =>
     ),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(
-      ServerConfig.layerTest(
-        process.cwd(),
-        options.baseDir ?? { prefix: "houston-tasks-test-" },
-      ),
+      ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-tasks-test-" }),
     ),
     Layer.provideMerge(NodeServices.layer),
   );

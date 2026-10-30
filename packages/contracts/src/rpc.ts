@@ -165,6 +165,30 @@ import {
   HoustonReviewSetFilesViewedInput,
   ReviewLineAnchor,
 } from "./houston/reviewState.ts";
+import {
+  HoustonTask,
+  HoustonTaskArchiveInput,
+  HoustonTaskCheckInput,
+  HoustonTaskCommentInput,
+  HoustonTaskDetail,
+  HoustonTaskDomain,
+  HoustonTaskDomainSaveInput,
+  HoustonTaskError,
+  HoustonTaskGetInput,
+  HoustonTaskImportInput,
+  HoustonTaskImportResult,
+  HoustonTaskImportStatus,
+  HoustonTaskInitiative,
+  HoustonTaskInitiativeArchiveInput,
+  HoustonTaskInitiativeSaveInput,
+  HoustonTaskInitiativesListInput,
+  HoustonTaskSaveInput,
+  HoustonTaskSettings,
+  HoustonTaskSettingsGetInput,
+  HoustonTaskSettingsSetInput,
+  HoustonTaskStreamEvent,
+  HoustonTaskSubscribeInput,
+} from "./houston/tasks.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -470,6 +494,20 @@ export const WS_METHODS = {
   houstonReviewSetFilesViewed: "houston.review.setFilesViewed",
   houstonReviewAnchorLines: "houston.review.anchorLines",
   houstonReviewMapAnchors: "houston.review.mapAnchors",
+  houstonTasksSubscribe: "houston.tasks.subscribe",
+  houstonTasksGet: "houston.tasks.get",
+  houstonTasksSave: "houston.tasks.save",
+  houstonTasksComment: "houston.tasks.comment",
+  houstonTasksCheck: "houston.tasks.check",
+  houstonTasksArchive: "houston.tasks.archive",
+  houstonTasksInitiativesList: "houston.tasks.initiatives.list",
+  houstonTasksInitiativesSave: "houston.tasks.initiatives.save",
+  houstonTasksInitiativesArchive: "houston.tasks.initiatives.archive",
+  houstonTasksDomainSave: "houston.tasks.domain.save",
+  houstonTasksSettingsGet: "houston.tasks.settings.get",
+  houstonTasksSettingsSet: "houston.tasks.settings.set",
+  houstonTasksImportV1Status: "houston.tasks.importV1.status",
+  houstonTasksImportV1Run: "houston.tasks.importV1.run",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1550,6 +1588,93 @@ const WsHoustonReviewMapAnchorsRpc = Rpc.make(WS_METHODS.houstonReviewMapAnchors
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
+const HoustonTaskRpcError = Schema.Union([HoustonTaskError, EnvironmentAuthorizationError]);
+
+const WsHoustonTasksSubscribeRpc = Rpc.make(WS_METHODS.houstonTasksSubscribe, {
+  payload: HoustonTaskSubscribeInput,
+  success: HoustonTaskStreamEvent,
+  error: HoustonTaskRpcError,
+  stream: true,
+});
+
+const WsHoustonTasksGetRpc = Rpc.make(WS_METHODS.houstonTasksGet, {
+  payload: HoustonTaskGetInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksSaveRpc = Rpc.make(WS_METHODS.houstonTasksSave, {
+  payload: HoustonTaskSaveInput,
+  success: HoustonTask,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksCommentRpc = Rpc.make(WS_METHODS.houstonTasksComment, {
+  payload: HoustonTaskCommentInput,
+  success: HoustonTask,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksCheckRpc = Rpc.make(WS_METHODS.houstonTasksCheck, {
+  payload: HoustonTaskCheckInput,
+  success: HoustonTask,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksArchiveRpc = Rpc.make(WS_METHODS.houstonTasksArchive, {
+  payload: HoustonTaskArchiveInput,
+  success: HoustonTask,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksInitiativesListRpc = Rpc.make(WS_METHODS.houstonTasksInitiativesList, {
+  payload: HoustonTaskInitiativesListInput,
+  success: Schema.Array(HoustonTaskInitiative),
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksInitiativesSaveRpc = Rpc.make(WS_METHODS.houstonTasksInitiativesSave, {
+  payload: HoustonTaskInitiativeSaveInput,
+  success: HoustonTaskInitiative,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksInitiativesArchiveRpc = Rpc.make(WS_METHODS.houstonTasksInitiativesArchive, {
+  payload: HoustonTaskInitiativeArchiveInput,
+  success: HoustonTaskInitiative,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksDomainSaveRpc = Rpc.make(WS_METHODS.houstonTasksDomainSave, {
+  payload: HoustonTaskDomainSaveInput,
+  success: HoustonTaskDomain,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksSettingsGetRpc = Rpc.make(WS_METHODS.houstonTasksSettingsGet, {
+  payload: HoustonTaskSettingsGetInput,
+  success: HoustonTaskSettings,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksSettingsSetRpc = Rpc.make(WS_METHODS.houstonTasksSettingsSet, {
+  payload: HoustonTaskSettingsSetInput,
+  success: HoustonTaskSettings,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksImportV1StatusRpc = Rpc.make(WS_METHODS.houstonTasksImportV1Status, {
+  payload: HoustonTaskImportInput,
+  success: HoustonTaskImportStatus,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksImportV1RunRpc = Rpc.make(WS_METHODS.houstonTasksImportV1Run, {
+  payload: HoustonTaskImportInput,
+  success: HoustonTaskImportResult,
+  error: HoustonTaskRpcError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2130,6 +2255,20 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonReviewSetFilesViewedRpc,
   WsHoustonReviewAnchorLinesRpc,
   WsHoustonReviewMapAnchorsRpc,
+  WsHoustonTasksSubscribeRpc,
+  WsHoustonTasksGetRpc,
+  WsHoustonTasksSaveRpc,
+  WsHoustonTasksCommentRpc,
+  WsHoustonTasksCheckRpc,
+  WsHoustonTasksArchiveRpc,
+  WsHoustonTasksInitiativesListRpc,
+  WsHoustonTasksInitiativesSaveRpc,
+  WsHoustonTasksInitiativesArchiveRpc,
+  WsHoustonTasksDomainSaveRpc,
+  WsHoustonTasksSettingsGetRpc,
+  WsHoustonTasksSettingsSetRpc,
+  WsHoustonTasksImportV1StatusRpc,
+  WsHoustonTasksImportV1RunRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,
