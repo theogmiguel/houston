@@ -32,7 +32,9 @@ export function ComposerContextPermissions(props: {
         }
       >
         <Icon aria-hidden="true" className="size-3" />
-        <ComposerContextLabel>{label}</ComposerContextLabel>
+        <span className="min-w-0 group-data-[narrow]/composer-context:hidden">
+          <ComposerContextLabel>{label}</ComposerContextLabel>
+        </span>
       </TooltipTrigger>
       <TooltipPopup>Permissions{shortcutLabel ? ` · ${shortcutLabel}` : null}</TooltipPopup>
     </Tooltip>

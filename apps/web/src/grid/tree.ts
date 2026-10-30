@@ -274,6 +274,45 @@ export function tidy(tree: LayoutNode | null, shape: TidyShape = "grid"): Layout
   };
 }
 
+/**
+ * Reading-order arrangement from the grid design: the first thread keeps the
+ * leading, tallest slot; 5 and 6 fill the trailing columns at glance size.
+ */
+export function arrangeThreads(tree: LayoutNode | null): LayoutNode | null {
+  const leaves = preorderThreads(tree);
+  if (leaves.length === 0) return null;
+  if (leaves.length === 1) return leaves[0]!;
+  const row = (nodes: LayoutNode[], weights?: number[]): LayoutNode => ({
+    kind: "split",
+    dir: "row",
+    children: nodes,
+    weights: weights ?? evenWeights(nodes.length),
+  });
+  const column = (nodes: LayoutNode[], weights?: number[]): LayoutNode => ({
+    kind: "split",
+    dir: "col",
+    children: nodes,
+    weights: weights ?? evenWeights(nodes.length),
+  });
+  if (leaves.length === 2) return row(leaves);
+  if (leaves.length === 3) {
+    return row([leaves[0]!, column([leaves[1]!, leaves[2]!])], [56, 44]);
+  }
+  if (leaves.length === 4) {
+    return column([row([leaves[0]!, leaves[1]!]), row([leaves[2]!, leaves[3]!])]);
+  }
+  if (leaves.length === 5) {
+    return row(
+      [leaves[0]!, column([row([leaves[1]!, leaves[2]!]), row([leaves[3]!, leaves[4]!])])],
+      [52, 48],
+    );
+  }
+  return column([
+    row([leaves[0]!, leaves[1]!, leaves[2]!]),
+    row([leaves[3]!, leaves[4]!, leaves[5]!]),
+  ]);
+}
+
 export function equalize(tree: LayoutNode): LayoutNode {
   if (tree.kind !== "split") return tree;
   return {

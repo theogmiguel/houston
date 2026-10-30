@@ -25,6 +25,18 @@ export const HOUSTON_TASK_LIMITS = {
   historyPage: 200,
   runsPage: 50,
   reworkRounds: 5,
+  /** UTF-8 bytes in a run's brief, checked before anything is created. */
+  briefBytes: 16_384,
+  /** Implementation runs one task may have live at once. */
+  liveImplementationRuns: 1,
+  reviewFindings: 100,
+  findingPathChars: 512,
+  findingMessageChars: 2_000,
+  /** Review starts one task may make on one head. */
+  reviewAttemptsPerHead: 2,
+  /** An automatic review of a diff at or under both is skipped, recording the numbers. */
+  reviewSkipMaxLines: 30,
+  reviewSkipMaxFiles: 3,
 } as const;
 
 export const HoustonTaskStatus = Schema.Literals([
@@ -510,3 +522,78 @@ export type HoustonTaskSettingsSetInput = typeof HoustonTaskSettingsSetInput.Typ
 
 export const HoustonTaskImportInput = Schema.Struct({});
 export type HoustonTaskImportInput = typeof HoustonTaskImportInput.Type;
+
+export const HoustonTaskStartInput = Schema.Struct({
+  id: HoustonTaskRef,
+  /** Assigns an unassigned task to this project first. */
+  projectId: Schema.optionalKey(ProjectId),
+  /** The project's start model when absent. */
+  modelSelection: Schema.optionalKey(ModelSelection),
+  /** The project's current branch when absent. */
+  baseRef: Schema.optionalKey(Schema.String),
+  overrideReadiness: Schema.optionalKey(Schema.Boolean),
+});
+export type HoustonTaskStartInput = typeof HoustonTaskStartInput.Type;
+
+/** `brief` is present only with `prefill` delivery, for the client to put in the composer. */
+export const HoustonTaskStartResult = Schema.Struct({
+  run: HoustonTaskRun,
+  brief: Schema.optionalKey(Schema.String),
+});
+export type HoustonTaskStartResult = typeof HoustonTaskStartResult.Type;
+
+export const HoustonTaskRunControlInput = Schema.Struct({
+  runId: PositiveInt,
+  action: Schema.Literals(["stop", "resume", "retry"]),
+});
+export type HoustonTaskRunControlInput = typeof HoustonTaskRunControlInput.Type;
+
+export const HoustonTaskHandbackInput = Schema.Struct({
+  id: HoustonTaskRef,
+  summary: Schema.String,
+});
+export type HoustonTaskHandbackInput = typeof HoustonTaskHandbackInput.Type;
+
+export const HoustonTaskPlanStartInput = Schema.Struct({
+  id: HoustonTaskRef,
+  expectedRevision: PositiveInt,
+  modelSelection: ModelSelection,
+});
+export type HoustonTaskPlanStartInput = typeof HoustonTaskPlanStartInput.Type;
+
+export const HoustonTaskPlanAnswerInput = Schema.Struct({
+  id: HoustonTaskRef,
+  expectedRevision: PositiveInt,
+  question: Schema.String,
+  answer: Schema.String,
+});
+export type HoustonTaskPlanAnswerInput = typeof HoustonTaskPlanAnswerInput.Type;
+
+export const HoustonTaskPlanApproveInput = Schema.Struct({
+  id: HoustonTaskRef,
+  expectedRevision: PositiveInt,
+  planRevision: PositiveInt,
+});
+export type HoustonTaskPlanApproveInput = typeof HoustonTaskPlanApproveInput.Type;
+
+/** `runId` names the implementation run to review; the project's reviewer when no model is given. */
+export const HoustonTaskReviewStartInput = Schema.Struct({
+  runId: PositiveInt,
+  modelSelection: Schema.optionalKey(ModelSelection),
+});
+export type HoustonTaskReviewStartInput = typeof HoustonTaskReviewStartInput.Type;
+
+/** What the recorded planner submits; the server checks it is the recorded planner. */
+export const HoustonTaskPlanSubmitInput = Schema.Struct({
+  id: HoustonTaskRef,
+  proposal: HoustonTaskPlanProposal,
+});
+export type HoustonTaskPlanSubmitInput = typeof HoustonTaskPlanSubmitInput.Type;
+
+/** `findings` is checked field by field, so a refusal can name the wrong one. */
+export const HoustonTaskReviewSubmitInput = Schema.Struct({
+  runId: PositiveInt,
+  verdict: Schema.Literals(["pass", "fail"]),
+  findings: Schema.Array(Schema.Unknown),
+});
+export type HoustonTaskReviewSubmitInput = typeof HoustonTaskReviewSubmitInput.Type;

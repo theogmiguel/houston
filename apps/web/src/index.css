@@ -312,7 +312,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-border: var(--contrast-border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--contrast-accent-foreground);
-  --color-accent: var(--accent);
+  --color-accent: var(--accent-surface);
   --color-muted-foreground: var(--contrast-muted-foreground);
   --color-muted: var(--muted);
   --color-placeholder: var(--contrast-placeholder);
@@ -1144,261 +1144,220 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   animation-duration: 0s !important;
 }
 
-:root {
+:root,
+[data-theme="paper"] {
   color-scheme: light;
-  /* Houston's Paper palette: values come from the v2 design boards (`Color`,
-     `TypeLayout`) and are mapped by role onto the token names the copied
-     feature components already consume. The board's own role names are kept
-     as aliases for primitives and later slices. */
-  --radius: 10px; /* Houston `--r-group` */
-  /* Houston's four radius roles, for primitives that must name the role
-     rather than the value. The `--radius-*` ladder above stays the fallback
-     for copied feature components. */
-  --r-badge: 4px;
-  --r-ctl: 6px;
-  --r-group: 10px;
-  --r-dialog: 14px;
-  --r-pill: 999px;
-  /* Houston control fills and tracks that have no upstream role. */
-  --field: rgba(0, 0, 0, 0.05);
-  --tog-off: rgba(0, 0, 0, 0.22);
-  --hover: var(--accent);
-  --sel: rgba(0, 0, 0, 0.09);
-  /* Board roles that primitives consume by name. */
-  --line-strong: rgba(0, 0, 0, 0.16);
+  /* Houston's Paper palette. The design board's role names are canonical and
+     the semantic names copied feature components use alias them, so a value
+     can only drift here, next to the value the board prints. */
+  --rail: #ececef;
+  --content: #f5f5f7;
+  --card: #ffffff;
+  --raised: #ffffff;
+  --term: #ffffff;
+  --code-bg: #f7f7f9;
+  --t1: #1d1d1f;
+  --t2: #424245;
+  --t3: #5b5b60;
+  --border: rgba(0, 0, 0, 0.09);
   --border-hover: rgba(0, 0, 0, 0.16);
+  --line-strong: rgba(0, 0, 0, 0.16);
+  --field: rgba(0, 0, 0, 0.05);
+  --hover: rgba(0, 0, 0, 0.045);
+  --sel: rgba(0, 0, 0, 0.09);
+  --tog-off: rgba(0, 0, 0, 0.22);
+  --accent: #0a63e0;
+  --accent-surface: var(--hover);
   --accent-hover: #0954be;
-  --accent-muted: rgba(10, 99, 224, 0.12);
   --accent-ink: #0a5cd1;
-  --danger-fill: #c0362c;
-  --danger-wash: rgba(192, 54, 44, 0.08);
-  --warn-line: rgba(180, 83, 9, 0.3);
-  --warn-wash: rgba(180, 83, 9, 0.06);
-  --add-bg: rgba(29, 122, 58, 0.09);
-  --del-bg: rgba(192, 54, 44, 0.08);
-  --stop: #c0362c;
-  --stop-ink: #c0362c;
+  --accent-muted: rgba(10, 99, 224, 0.12);
   --ok: #1d7a3a;
-  --ok-ink: #1d7a3a;
   --warn: #b45309;
+  --stop: #c0362c;
+  --info: #0891b2;
+  --ok-ink: #1d7a3a;
+  --stop-ink: #c0362c;
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
+  --danger-fill: #c0362c;
+  --danger-wash: rgba(192, 54, 44, 0.08);
+  --warn-wash: rgba(180, 83, 9, 0.06);
+  --warn-line: rgba(180, 83, 9, 0.3);
+  --add-bg: rgba(29, 122, 58, 0.09);
+  --del-bg: rgba(192, 54, 44, 0.08);
+  --shadow-1: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  /* The pressed segment inside a segmented control. */
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
   --scrim: rgba(0, 0, 0, 0.12);
   --pane: #ffffff;
   --pane-head: #f7f7f9;
   --composer: #ffffff;
   --claude: #c25f3f;
   --codex: #1d1d1f;
-  /* Shadow ladder: raised (`--shadow-1`) and overlay (`--shadow-2`). */
-  --shadow-1: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
-  --shadow-2: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
-  /* The pressed segment inside a segmented control. */
-  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
-  --background: #f5f5f7; /* --content */
-  --app-chrome-background: #ececef; /* --rail */
+
+  --radius: 10px; /* Houston `--r-group` */
+  /* Houston's four radius roles; primitives name the role, not the value. */
+  --r-badge: 4px;
+  --r-ctl: 6px;
+  --r-group: 10px;
+  --r-dialog: 14px;
+  --r-pill: 999px;
+
+  /* Semantic aliases for the copied feature components. */
+  --background: var(--content);
+  --app-chrome-background: var(--rail);
+  --surface-raised: var(--raised);
+  --foreground: var(--t1);
+  --card-foreground: var(--t1);
+  --popover: var(--raised);
+  --popover-foreground: var(--t1);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-foreground: #ffffff;
+  --secondary: var(--field);
+  --secondary-foreground: var(--t2);
+  --muted: var(--field);
+  --muted-foreground: var(--t3);
+  --placeholder: var(--muted-foreground);
+  --secondary-label: var(--muted-foreground);
+  --icon-muted: var(--muted-foreground);
+  /* One step past the card, so a user turn stands off the sheet. */
+  --message-surface: color-mix(in srgb, var(--t1) 4%, var(--card));
+  --message-foreground: var(--foreground);
+  --message-action: var(--primary);
+  --message-action-foreground: var(--primary-foreground);
+  --message-action-hover: var(--primary-hover);
+  /* Upstream utilities treat `accent` as the neutral hover fill; the blue
+     brand value lives on `--accent` for primitives and focus, so the utility
+     points at the overlay role instead. */
+  --accent-foreground: var(--t1);
+  --error: var(--stop);
+  --error-foreground: var(--stop-ink);
+  --tool-error-icon: var(--error);
+  --error-surface: var(--danger-wash);
+  --destructive: var(--error);
+  --input: var(--line-strong);
+  --ring: var(--accent-ink);
+  --destructive-foreground: var(--error-foreground);
+  --info-foreground: var(--info-ink);
+  /* Messages from a guest link, and the sidebar Request status. */
+  --guest: #c026d3;
+  --guest-foreground: #a21caf;
+  --guest-surface: color-mix(in srgb, var(--guest) 14%, var(--message-surface));
+  --success: var(--ok);
+  --success-foreground: var(--ok-ink);
+  --warning: var(--warn);
+  --warning-foreground: var(--warn-ink);
+  --warning-surface: var(--warn-wash);
+  --update: var(--primary);
+  --update-foreground: var(--accent-ink);
   --toolbar-background: var(--app-chrome-background);
   --toolbar-foreground: var(--foreground);
   --toolbar-border: var(--border);
   --toolbar-control: var(--popover);
   --toolbar-control-foreground: var(--foreground);
-  --toolbar-control-hover: var(--accent); /* --hover */
-  --surface-raised: #ffffff; /* --raised */
-  --foreground: #1d1d1f; /* --t1 */
-  --card: #ffffff; /* --card */
-  --card-foreground: #1d1d1f; /* --t1 */
-  --popover: #ffffff; /* --raised */
-  --popover-foreground: #1d1d1f; /* --t1 */
-  --primary: #0a63e0; /* --accent */
-  --primary-hover: #0954be; /* --accent-hover */
-  --primary-foreground: #ffffff;
-  --secondary: rgba(0, 0, 0, 0.05); /* --field */
-  --secondary-foreground: #424245; /* --t2 */
-  --muted: rgba(0, 0, 0, 0.05); /* --field */
-  --muted-foreground: #5b5b60; /* --t3 */
-  --placeholder: var(--muted-foreground);
-  --secondary-label: var(--muted-foreground);
-  --icon-muted: var(--muted-foreground);
-  /* One step past the card, so a user turn stands off the sheet. */
-  --message-surface: color-mix(in srgb, #1d1d1f 4%, #ffffff); /* --card lift */
-  --message-foreground: var(--foreground);
-  --message-action: var(--primary);
-  --message-action-foreground: var(--primary-foreground);
-  --message-action-hover: var(--primary-hover);
-  /* Upstream `--accent` is the neutral hover/selection fill, not Houston's
-     blue brand fill: the collision is resolved by keeping the role and using
-     Houston's `--hover` overlay. */
-  --accent: rgba(0, 0, 0, 0.045); /* --hover */
-  --accent-foreground: #1d1d1f; /* --t1 */
-  --error: #c0362c; /* --stop */
-  --error-foreground: #c0362c; /* --stop-ink */
-  --tool-error-icon: var(--error);
-  --error-surface: color-mix(in srgb, var(--error) 8%, transparent); /* --danger-wash */
-  --destructive: var(--error);
-  --border: rgba(0, 0, 0, 0.09); /* --border */
-  --input: rgba(0, 0, 0, 0.16); /* --line-strong */
-  --ring: #0a5cd1; /* --accent-ink */
-  --destructive-foreground: var(--error-foreground);
-  --info: #0891b2; /* --info */
-  --info-foreground: #155e75; /* --info-ink */
-  /* Messages from a guest link, and the sidebar Request status. */
-  --guest: #c026d3;
-  --guest-foreground: #a21caf;
-  --guest-surface: color-mix(in srgb, var(--guest) 14%, var(--message-surface));
-  --success: #1d7a3a; /* --ok */
-  --success-foreground: #1d7a3a; /* --ok-ink */
-  --warning: #b45309; /* --warn */
-  --warning-foreground: #b45309; /* --warn */
-  --warning-surface: var(--warn-wash);
-  --update: var(--primary);
-  --update-foreground: var(--accent-ink);
+  --toolbar-control-hover: var(--accent-surface);
   /* The rail is Houston's `--rail`, one tonal step above the canvas; row
      fills are the achromatic hover/selection overlays. */
-  --sidebar: #ececef; /* --rail */
-  --sidebar-foreground: #1d1d1f; /* --t1 */
-  --sidebar-muted-foreground: #5b5b60; /* --t3 */
-  --sidebar-control-surface: #f5f5f7; /* --content */
-  --sidebar-row-hover: rgba(0, 0, 0, 0.045); /* --hover */
-  --sidebar-row-active: rgba(0, 0, 0, 0.09); /* --sel */
-  --sidebar-row-selected: rgba(0, 0, 0, 0.09); /* --sel */
-  --sidebar-border: rgba(0, 0, 0, 0.09); /* --border */
+  --sidebar: var(--rail);
+  --sidebar-foreground: var(--t1);
+  --sidebar-muted-foreground: var(--t3);
+  --sidebar-control-surface: var(--content);
+  --sidebar-row-hover: var(--hover);
+  --sidebar-row-active: var(--sel);
+  --sidebar-row-selected: var(--sel);
+  --sidebar-border: var(--border);
   --sidebar-stage-fade: var(--sidebar);
-  --code-background: #f7f7f9; /* --pane-head */
-  --code-foreground: #1d1d1f; /* --t1 */
-  --terminal-background: #ffffff; /* --pane */
-  --terminal-foreground: #1d1d1f; /* --t1 */
-  --terminal-cursor: #0a5cd1; /* --accent-ink */
-  --terminal-selection-background: rgb(10 99 224 / 20%);
+  --code-background: var(--code-bg);
+  --code-foreground: var(--t1);
+  --terminal-background: var(--term);
+  --terminal-foreground: var(--t1);
+  --terminal-cursor: var(--accent-ink);
+  --terminal-selection-background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
 
-  @variant dark {
-    color-scheme: dark;
-    /* Houston's Graphite palette: the rail is above the canvas, cards lift
-       above the canvas and menus/popovers take the raised tier. */
-    --background: #161618; /* --content */
-    --app-chrome-background: #1c1c1f; /* --rail */
-    --surface-raised: #26262a; /* --raised */
-    --foreground: rgba(255, 255, 255, 0.92); /* --t1 */
-    --card: #202023; /* --card */
-    --card-foreground: var(--foreground);
-    --popover: #26262a; /* --raised */
-    --popover-foreground: var(--foreground);
-    --primary: #2f6fe8; /* --accent */
-    --primary-hover: #4f85ec; /* --accent-hover */
-    --secondary: rgba(255, 255, 255, 0.06); /* --field */
-    --secondary-foreground: rgba(255, 255, 255, 0.66); /* --t2 */
-    --muted: rgba(255, 255, 255, 0.06); /* --field */
-    --muted-foreground: rgba(255, 255, 255, 0.52); /* --t3 */
-    --message-surface: color-mix(in srgb, #ffffff 6%, #202023);
-    --accent: rgba(255, 255, 255, 0.05); /* --hover */
-    --accent-foreground: var(--foreground);
-    --error: #ff6b61; /* --stop */
-    --error-foreground: #ff6b61; /* --stop-ink */
-    --tool-error-icon: #ff6b61;
-    --error-surface: color-mix(in srgb, var(--error) 10%, transparent); /* --danger-wash */
-    --border: rgba(255, 255, 255, 0.09); /* --border */
-    --input: rgba(255, 255, 255, 0.16); /* --line-strong */
-    --ring: #64a0ff; /* --accent-ink */
-    --info: #7cb7ff; /* --info */
-    --info-foreground: #7cb7ff; /* --info-ink */
-    --guest-foreground: #f0abfc;
-    --success: #30d158; /* --ok */
-    --success-foreground: #30d158; /* --ok-ink */
-    --warning: #f5a524; /* --warn */
-    --warning-foreground: #f5a524; /* --warn */
-    --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent); /* --warn-wash */
-    --update: var(--primary);
-    --update-foreground: var(--accent-ink);
-    --sidebar: #1c1c1f; /* --rail */
-    --sidebar-control-surface: #202023; /* --card */
-    --sidebar-row-hover: rgba(255, 255, 255, 0.05); /* --hover */
-    --sidebar-row-active: rgba(255, 255, 255, 0.09); /* --sel */
-    --sidebar-row-selected: rgba(255, 255, 255, 0.09); /* --sel */
-    --sidebar-border: var(--border);
-    --sidebar-stage-fade: var(--sidebar);
-    --code-background: #18181b; /* --pane-head */
-    --code-foreground: var(--foreground);
-    --terminal-background: #0f0f11; /* --pane / --term */
-    --terminal-foreground: var(--foreground);
-    --terminal-cursor: #64a0ff; /* --accent-ink */
-    --terminal-selection-background: rgb(47 111 232 / 25%);
-    --field: rgba(255, 255, 255, 0.06);
-    --tog-off: rgba(255, 255, 255, 0.18);
-    --sel: rgba(255, 255, 255, 0.09);
-    --line-strong: rgba(255, 255, 255, 0.16);
-    --border-hover: rgba(255, 255, 255, 0.16);
-    --accent-hover: #4f85ec;
-    --accent-muted: rgba(47, 111, 232, 0.15);
-    --accent-ink: #64a0ff;
-    --danger-fill: #d93a30;
-    --danger-wash: rgba(255, 107, 97, 0.1);
-    --warn-line: rgba(245, 165, 36, 0.32);
-    --warn-wash: rgba(245, 165, 36, 0.08);
-    --add-bg: rgba(48, 209, 88, 0.1);
-    --del-bg: rgba(255, 107, 97, 0.1);
-    --stop: #ff6b61;
-    --stop-ink: #ff6b61;
-    --ok: #30d158;
-    --ok-ink: #30d158;
-    --warn: #f5a524;
-    --warn-ink: #f5a524;
-    --info-ink: #7cb7ff;
-    --scrim: rgba(0, 0, 0, 0.28);
-    --pane: #0f0f11;
-    --pane-head: #18181b;
-    --composer: #18181b;
-    --claude: #d97757;
-    --codex: rgba(255, 255, 255, 0.92);
-    --shadow-1: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
-  }
+.dark,
+[data-theme="graphite"] {
+  color-scheme: dark;
+  /* Houston's Graphite palette: the rail is above the canvas, cards lift
+     above the canvas and menus/popovers take the raised tier. */
+  --rail: #1c1c1f;
+  --content: #161618;
+  --card: #202023;
+  --raised: #26262a;
+  --term: #0f0f11;
+  --code-bg: #18181b;
+  --t1: rgba(255, 255, 255, 0.92);
+  --t2: rgba(255, 255, 255, 0.66);
+  --t3: rgba(255, 255, 255, 0.52);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --field: rgba(255, 255, 255, 0.06);
+  --hover: rgba(255, 255, 255, 0.05);
+  --sel: rgba(255, 255, 255, 0.09);
+  --tog-off: rgba(255, 255, 255, 0.18);
+  --accent: #2f6fe8;
+  --accent-hover: #4f85ec;
+  --accent-ink: #64a0ff;
+  --accent-muted: rgba(47, 111, 232, 0.15);
+  --ok: #30d158;
+  --warn: #f5a524;
+  --stop: #ff6b61;
+  --info: #7cb7ff;
+  --ok-ink: #30d158;
+  --stop-ink: #ff6b61;
+  --warn-ink: #f5a524;
+  --info-ink: #7cb7ff;
+  --danger-fill: #d93a30;
+  --danger-wash: rgba(255, 107, 97, 0.1);
+  --warn-wash: rgba(245, 165, 36, 0.08);
+  --warn-line: rgba(245, 165, 36, 0.32);
+  --add-bg: rgba(48, 209, 88, 0.1);
+  --del-bg: rgba(255, 107, 97, 0.1);
+  --shadow-1: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
+  --scrim: rgba(0, 0, 0, 0.28);
+  --pane: #0f0f11;
+  --pane-head: #18181b;
+  --composer: #18181b;
+  --claude: #d97757;
+  --codex: rgba(255, 255, 255, 0.92);
+  --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
+  --guest-foreground: #f0abfc;
+  --sidebar-control-surface: var(--card);
 }
 
 /* The sidebar is Houston's rail: one tonal step above the canvas, no second
    palette. These repeat the root roles so portaled sheets and settings
    navigation that mount outside `[data-theme]` keep the rail's ink. */
 [data-app-sidebar] {
-  --background: #f5f5f7;
-  --foreground: #1d1d1f;
+  --background: var(--content);
+  --foreground: var(--t1);
   --card: #ffffff;
-  --card-foreground: #1d1d1f;
-  --accent: rgba(0, 0, 0, 0.045);
-  --accent-foreground: #1d1d1f;
-  --muted: rgba(0, 0, 0, 0.05);
-  --muted-foreground: #5b5b60;
+  --card-foreground: var(--t1);
+  --accent-foreground: var(--t1);
+  --muted: var(--field);
+  --muted-foreground: var(--t3);
   --border: rgba(0, 0, 0, 0.09);
-  --input: rgba(0, 0, 0, 0.16);
-  --sidebar: #ececef;
-  --sidebar-foreground: #1d1d1f;
-  --sidebar-muted-foreground: #5b5b60;
-  --sidebar-control-surface: #f5f5f7;
-  --sidebar-row-hover: rgba(0, 0, 0, 0.045);
-  --sidebar-row-active: rgba(0, 0, 0, 0.09);
-  --sidebar-row-selected: rgba(0, 0, 0, 0.09);
-  --sidebar-border: rgba(0, 0, 0, 0.09);
+  --input: var(--line-strong);
+  --sidebar: var(--rail);
+  --sidebar-foreground: var(--t1);
+  --sidebar-muted-foreground: var(--t3);
+  --sidebar-control-surface: var(--content);
+  --sidebar-row-hover: var(--hover);
+  --sidebar-row-active: var(--sel);
+  --sidebar-row-selected: var(--sel);
+  --sidebar-border: var(--border);
   --sidebar-stage-fade: var(--sidebar);
 
   @variant dark {
-    --background: #161618;
-    --foreground: rgba(255, 255, 255, 0.92);
     --card: #202023;
-    --card-foreground: var(--foreground);
-    --accent: rgba(255, 255, 255, 0.05);
-    --accent-foreground: var(--foreground);
-    --muted: rgba(255, 255, 255, 0.06);
-    --muted-foreground: rgba(255, 255, 255, 0.52);
-    --border: rgba(255, 255, 255, 0.09);
-    --input: rgba(255, 255, 255, 0.16);
-    --sidebar: #1c1c1f;
-    --sidebar-foreground: var(--foreground);
-    --sidebar-muted-foreground: var(--muted-foreground);
-    --sidebar-control-surface: #202023;
-    --sidebar-row-hover: rgba(255, 255, 255, 0.05);
-    --sidebar-row-active: rgba(255, 255, 255, 0.09);
-    --sidebar-row-selected: rgba(255, 255, 255, 0.09);
-    --sidebar-border: var(--border);
-    --sidebar-stage-fade: var(--sidebar);
+    --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
-    --secondary-label: rgba(255, 255, 255, 0.66);
+    --secondary-label: var(--t2);
   }
 }
 
@@ -1475,7 +1434,8 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --placeholder: var(--app-theme-placeholder);
   --secondary-label: var(--app-theme-secondary-label);
   --icon-muted: var(--app-theme-icon-muted);
-  --accent: var(--app-theme-accent-surface);
+  --accent: var(--app-theme-accent);
+  --accent-surface: var(--app-theme-accent-surface);
   --accent-foreground: var(--app-theme-accent-surface-foreground);
   --message-surface: var(--app-theme-message-surface);
   --message-foreground: var(--app-theme-message-foreground);
@@ -1690,7 +1650,8 @@ html[data-theme-id] [data-app-sidebar] {
   --foreground: var(--app-theme-text);
   --card: var(--app-theme-surface);
   --card-foreground: var(--app-theme-text);
-  --accent: var(--app-theme-accent-surface);
+  --accent: var(--app-theme-accent);
+  --accent-surface: var(--app-theme-accent-surface);
   --accent-foreground: var(--app-theme-accent-surface-foreground);
   --muted: var(--app-theme-muted);
   --muted-foreground: var(--app-theme-muted-foreground);
@@ -1793,7 +1754,7 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   );
   --contrast-accent-foreground: color-mix(
     in oklab,
-    color-mix(in oklab, var(--accent-foreground) var(--appearance-contrast-base), var(--accent)),
+    color-mix(in oklab, var(--accent-foreground) var(--appearance-contrast-base), var(--accent-surface)),
     var(--appearance-contrast-target) var(--appearance-contrast-boost)
   );
   --contrast-secondary-foreground: color-mix(
@@ -1943,7 +1904,7 @@ code {
   --pele-muted: var(--muted-foreground);
   --pele-line: var(--muted-foreground);
   --pele-surface: var(--secondary);
-  --pele-surface-alt: var(--accent);
+  --pele-surface-alt: var(--accent-surface);
   --pele-border: color-mix(in srgb, var(--foreground) 28%, transparent);
   --pele-accent: var(--primary);
   --pele-critical: var(--destructive);

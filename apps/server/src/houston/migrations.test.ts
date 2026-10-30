@@ -18,6 +18,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
   [3, "TaskSources"],
+  [4, "TaskRunsCursor"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -30,6 +31,7 @@ const TASK_TABLES = [
   "houston_task_initiatives",
   "houston_task_planning",
   "houston_task_runs",
+  "houston_task_runs_cursor",
   "houston_task_settings",
   "houston_tasks",
 ];
@@ -198,7 +200,7 @@ describe("the task sources migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.slice(-2), [
+          assert.deepEqual(history.slice(1, 3), [
             [2, "TasksBacklog"],
             [3, "TaskSources"],
           ]);

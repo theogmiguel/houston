@@ -20,6 +20,8 @@ const ALL_MCP_CAPABILITIES = [
   "worktree",
   "device",
   "pull-requests",
+  // Houston: a task's planner or reviewer, which may call only its submit tool.
+  "houston-task-submit",
 ] as const;
 export type McpCapability = (typeof ALL_MCP_CAPABILITIES)[number];
 
