@@ -189,6 +189,23 @@ import {
   HoustonTaskStreamEvent,
   HoustonTaskSubscribeInput,
 } from "./houston/tasks.ts";
+import {
+  HoustonTaskSourceConflictResolveInput,
+  HoustonTaskSourceCredentialClearInput,
+  HoustonTaskSourceCredentialResult,
+  HoustonTaskSourceCredentialSetInput,
+  HoustonTaskSourceError,
+  HoustonTaskSourceImportInput,
+  HoustonTaskSourceImportResult,
+  HoustonTaskSourceImportStatus,
+  HoustonTaskSourceLink,
+  HoustonTaskSourceLinksGetInput,
+  HoustonTaskSourceProjectInput,
+  HoustonTaskSourceSettings,
+  HoustonTaskSourceSettingsSetInput,
+  HoustonTaskSourceStreamEvent,
+  HoustonTaskSourceSyncResult,
+} from "./houston/taskSources.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -508,6 +525,16 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
+  houstonTaskSourcesSettingsGet: "houston.taskSources.settings.get",
+  houstonTaskSourcesSettingsSet: "houston.taskSources.settings.set",
+  houstonTaskSourcesCredentialSet: "houston.taskSources.credential.set",
+  houstonTaskSourcesCredentialClear: "houston.taskSources.credential.clear",
+  houstonTaskSourcesSyncNow: "houston.taskSources.syncNow",
+  houstonTaskSourcesLinksGet: "houston.taskSources.links.get",
+  houstonTaskSourcesConflictResolve: "houston.taskSources.conflict.resolve",
+  houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
+  houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
+  houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1675,6 +1702,81 @@ const WsHoustonTasksImportV1RunRpc = Rpc.make(WS_METHODS.houstonTasksImportV1Run
   error: HoustonTaskRpcError,
 });
 
+const HoustonTaskSourceRpcError = Schema.Union([
+  HoustonTaskSourceError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonTaskSourcesSettingsGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSettingsGet, {
+  payload: HoustonTaskSourceProjectInput,
+  success: Schema.Array(HoustonTaskSourceSettings),
+  error: HoustonTaskSourceRpcError,
+});
+
+const WsHoustonTaskSourcesSettingsSetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSettingsSet, {
+  payload: HoustonTaskSourceSettingsSetInput,
+  success: HoustonTaskSourceSettings,
+  error: HoustonTaskSourceRpcError,
+});
+
+const WsHoustonTaskSourcesCredentialSetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesCredentialSet, {
+  payload: HoustonTaskSourceCredentialSetInput,
+  success: HoustonTaskSourceCredentialResult,
+  error: HoustonTaskSourceRpcError,
+});
+
+const WsHoustonTaskSourcesCredentialClearRpc = Rpc.make(
+  WS_METHODS.houstonTaskSourcesCredentialClear,
+  {
+    payload: HoustonTaskSourceCredentialClearInput,
+    success: HoustonTaskSourceCredentialResult,
+    error: HoustonTaskSourceRpcError,
+  },
+);
+
+const WsHoustonTaskSourcesSyncNowRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSyncNow, {
+  payload: HoustonTaskSourceProjectInput,
+  success: HoustonTaskSourceSyncResult,
+  error: HoustonTaskSourceRpcError,
+});
+
+const WsHoustonTaskSourcesLinksGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesLinksGet, {
+  payload: HoustonTaskSourceLinksGetInput,
+  success: Schema.Array(HoustonTaskSourceLink),
+  error: HoustonTaskSourceRpcError,
+});
+
+const WsHoustonTaskSourcesConflictResolveRpc = Rpc.make(
+  WS_METHODS.houstonTaskSourcesConflictResolve,
+  {
+    payload: HoustonTaskSourceConflictResolveInput,
+    success: HoustonTaskSourceLink,
+    error: HoustonTaskSourceRpcError,
+  },
+);
+
+const WsHoustonTaskSourcesSubscribeRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSubscribe, {
+  payload: HoustonTaskSourceProjectInput,
+  success: HoustonTaskSourceStreamEvent,
+  error: HoustonTaskSourceRpcError,
+  stream: true,
+});
+
+const WsHoustonTaskSourcesImportV1StatusRpc = Rpc.make(
+  WS_METHODS.houstonTaskSourcesImportV1Status,
+  {
+    payload: HoustonTaskSourceImportInput,
+    success: HoustonTaskSourceImportStatus,
+    error: HoustonTaskSourceRpcError,
+  },
+);
+
+const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSourcesImportV1Run, {
+  payload: HoustonTaskSourceImportInput,
+  success: HoustonTaskSourceImportResult,
+  error: HoustonTaskSourceRpcError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2269,6 +2371,16 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
+  WsHoustonTaskSourcesSettingsGetRpc,
+  WsHoustonTaskSourcesSettingsSetRpc,
+  WsHoustonTaskSourcesCredentialSetRpc,
+  WsHoustonTaskSourcesCredentialClearRpc,
+  WsHoustonTaskSourcesSyncNowRpc,
+  WsHoustonTaskSourcesLinksGetRpc,
+  WsHoustonTaskSourcesConflictResolveRpc,
+  WsHoustonTaskSourcesSubscribeRpc,
+  WsHoustonTaskSourcesImportV1StatusRpc,
+  WsHoustonTaskSourcesImportV1RunRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

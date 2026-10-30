@@ -123,6 +123,11 @@ import * as HoustonTaskProjectSweep from "./houston/tasks/ProjectSweep.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
+import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
+import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
+import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
+import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -629,9 +634,16 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
+  Layer.effectDiscard(HoustonTaskSourceStore.sweep),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+  // The task source poller reads GitHub through its own client and the token from the OS keychain.
+  Layer.provideMerge(
+    layerTaskSources(
+      Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
+    ),
+  ),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(layerServerSettings),
@@ -640,6 +652,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
+  Layer.provideMerge(HoustonTaskSourceStore.layer),
+  Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(HoustonTaskStore.layer),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(

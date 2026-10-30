@@ -105,7 +105,7 @@ import {
   HttpServerRespondable,
   HttpServerResponse,
 } from "effect/http";
-import { RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
+import { RpcGroup, RpcServer } from "effect/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -211,8 +211,11 @@ import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
+import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
+import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
+import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -1305,6 +1308,8 @@ export const layerWsRpc = (
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
+      const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
+      const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3014,6 +3019,21 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksSettingsSet]: (input) => houstonTasks.setSettings(input),
         [WS_METHODS.houstonTasksImportV1Status]: () => houstonTaskImport.status,
         [WS_METHODS.houstonTasksImportV1Run]: () => houstonTaskImport.run,
+        [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
+          houstonTaskSources.getSettings(input),
+        [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>
+          houstonTaskSources.setSettings(input),
+        [WS_METHODS.houstonTaskSourcesCredentialSet]: (input) =>
+          houstonTaskSources.setCredential(input),
+        [WS_METHODS.houstonTaskSourcesCredentialClear]: (input) =>
+          houstonTaskSources.clearCredential(input),
+        [WS_METHODS.houstonTaskSourcesSyncNow]: (input) => houstonTaskSources.syncNow(input),
+        [WS_METHODS.houstonTaskSourcesLinksGet]: (input) => houstonTaskSources.links(input),
+        [WS_METHODS.houstonTaskSourcesConflictResolve]: (input) =>
+          houstonTaskSources.resolve(input),
+        [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
+        [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
+        [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
@@ -3331,7 +3351,7 @@ export const layer = Layer.unwrap(
         }).pipe(
           Effect.provide(
             layerWsRpc(session, clientAnalyticsProps, serverBrowser).pipe(
-              Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provideMerge(HoustonRpcSerialization.layerJsonWithoutEcho),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

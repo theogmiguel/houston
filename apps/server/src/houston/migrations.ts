@@ -198,9 +198,96 @@ const TasksBacklog = Effect.gen(function* () {
   `;
 });
 
+// Task sources: tracker settings per project and provider, poll cursors, links with their
+// three-way snapshot, the write-back outbox and the marker namespace. Tokens live in the OS keychain.
+const TaskSources = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_settings (
+      project_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('github_issues', 'notion')),
+      enabled INTEGER NOT NULL,
+      settings_json TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, provider)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_poll (
+      project_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      cursor_json TEXT NOT NULL,
+      last_sync_at TEXT,
+      last_error TEXT,
+      refresh_after TEXT,
+      PRIMARY KEY (project_id, provider)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_links (
+      task_id INTEGER NOT NULL,
+      project_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('source', 'pull_request')),
+      url TEXT NOT NULL,
+      remote_rev TEXT,
+      body_hash TEXT,
+      fetched_at TEXT,
+      synced_at TEXT,
+      snapshot_json TEXT NOT NULL,
+      sync_state_json TEXT NOT NULL,
+      PRIMARY KEY (task_id, provider, external_id, source)
+    )
+  `;
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_task_source_links_item
+    ON houston_task_source_links(project_id, provider, external_id) WHERE source = 'source'
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_outbox (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      action TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT NOT NULL,
+      last_error TEXT,
+      receipt_json TEXT,
+      UNIQUE (task_id, provider, action, revision)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_identity (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      namespace TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+  // Which projects have an OS keychain entry, so a deleted project's entry can be found.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_credentials (
+      project_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('github_issues', 'notion')),
+      PRIMARY KEY (project_id, provider)
+    )
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
+  [3, "TaskSources", TaskSources],
 ] as const;
 
 const run = Migrator.make({});
