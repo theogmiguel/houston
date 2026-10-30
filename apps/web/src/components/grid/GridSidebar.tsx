@@ -29,6 +29,7 @@ import {
   PlusIcon,
   SearchIcon,
   Undo2Icon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -57,6 +58,8 @@ import {
   openPullRequestNumber,
   partitionShelfThreads,
   resolveGridThreadState,
+  runningSubagentsByParentThread,
+  subagentParentKey,
   threadMatchesGridSearch,
   updateThreadSelection,
   visibleGridThreads,
@@ -456,6 +459,7 @@ export function GridSidebar() {
     projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
   );
   const shelves = partitionShelfThreads(threads, workspaceKeys, nowIso);
+  const runningSubagentsByThread = runningSubagentsByParentThread(threads, nowIso);
   const threadById = new Map<string, EnvironmentThreadShell>(
     threads.map((thread) => [thread.id, thread] as const),
   );
@@ -621,6 +625,7 @@ export function GridSidebar() {
                   openGridId={openGrid?.id ?? null}
                   nowIso={nowIso}
                   selection={selection}
+                  runningSubagents={runningSubagentsByThread}
                   dragging={dragging}
                   dropTarget={dropTarget}
                   onToggle={() =>
@@ -693,6 +698,7 @@ export function GridSidebar() {
                   focused={false}
                   selected={false}
                   dragging={false}
+                  runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
                   workspaceTitle={
                     workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
                     ""
@@ -804,6 +810,7 @@ function WorkspaceGroup({
   openGridId,
   nowIso,
   selection,
+  runningSubagents,
   dragging,
   dropTarget,
   onToggle,
@@ -834,6 +841,7 @@ function WorkspaceGroup({
   openGridId: string | null;
   nowIso: string;
   selection: ThreadSelection;
+  runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
   onToggle: () => void;
@@ -965,6 +973,7 @@ function WorkspaceGroup({
               providerEntries={providerEntries}
               nowIso={nowIso}
               selection={selection}
+              runningSubagents={runningSubagents}
               dragging={dragging}
               dropTarget={dropTarget}
               onOpenThread={onOpenThread}
@@ -1011,6 +1020,7 @@ function GridRow({
   providerEntries,
   nowIso,
   selection,
+  runningSubagents,
   dragging,
   dropTarget,
   onOpenThread,
@@ -1039,6 +1049,7 @@ function GridRow({
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   nowIso: string;
   selection: ThreadSelection;
+  runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
   onOpenThread: (gridId: string, threadId: string) => void;
@@ -1232,6 +1243,7 @@ function GridRow({
                 scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
               )}
               dragging={dragging?.threadId === thread.id}
+              runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
               workspaceTitle={workspaceTitle}
               onOpen={() => onOpenThread(grid.id, thread.id)}
               onSelect={(input) => onSelectThread(thread, input)}
@@ -1341,6 +1353,7 @@ function ThreadCard({
   workspaceTitle,
   timeLabel = null,
   shelf = null,
+  runningSubagents = 0,
   onOpen,
   onSelect,
   onClose,
@@ -1366,6 +1379,7 @@ function ThreadCard({
   workspaceTitle: string;
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
+  runningSubagents?: number;
   onOpen: () => void;
   onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
   onClose: () => void;
@@ -1641,6 +1655,14 @@ function ThreadCard({
           <span className="min-w-0 flex-1 truncate font-mono text-2xs">
             {thread.branch ?? "no branch"}
           </span>
+          {runningSubagents > 0 ? (
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+              <UsersIcon aria-hidden className="size-3 shrink-0" />
+              {runningSubagents === 1
+                ? "1 subagent running"
+                : `${runningSubagents} subagents running`}
+            </span>
+          ) : null}
           {pullRequestNumber !== null ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums">
               <span aria-hidden>#</span>

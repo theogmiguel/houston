@@ -7,6 +7,7 @@ import {
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
+  isSidebarSubagentThread,
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
@@ -79,7 +80,7 @@ export function threadCardsInPaneOrder(
   });
 }
 
-/** Threads that still belong on the rail: not archived, closed or on hold. */
+/** Threads that still belong on the rail: not archived, closed, held or a subagent child. */
 export function visibleGridThreads(
   grid: GridRecord,
   threads: ReadonlyArray<EnvironmentThreadShell>,
@@ -89,6 +90,7 @@ export function visibleGridThreads(
     (thread) =>
       thread.archivedAt === null &&
       thread.settledOverride !== "settled" &&
+      !isSidebarSubagentThread(thread) &&
       !effectiveSnoozed(thread, { now }),
   );
 }
@@ -96,6 +98,36 @@ export function visibleGridThreads(
 export interface ShelfThreads {
   readonly held: EnvironmentThreadShell[];
   readonly closed: EnvironmentThreadShell[];
+}
+
+/** A parent's key for the rail's folded-in subagent counts. */
+export function subagentParentKey(
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "id">,
+): string {
+  return `${thread.environmentId}:${thread.id}`;
+}
+
+/**
+ * Running subagents per parent thread, by `subagentParentKey`. A child folded
+ * under its parent counts while it runs: its own card is not on the rail, so
+ * the parent card carries the number. Finished, archived and deleted children
+ * count nothing.
+ */
+export function runningSubagentsByParentThread(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const thread of threads) {
+    if (!isSidebarSubagentThread(thread)) continue;
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    const parentThreadId = thread.lineage.parentThreadId;
+    if (parentThreadId === null) continue;
+    if (resolveGridThreadState(thread, now) !== "running") continue;
+    const key = subagentParentKey({ environmentId: thread.environmentId, id: parentThreadId });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
 }
 
 function wakeTimeMs(thread: EnvironmentThreadShell): number {
@@ -117,6 +149,7 @@ export function partitionShelfThreads(
   const closed: EnvironmentThreadShell[] = [];
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (isSidebarSubagentThread(thread)) continue;
     if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
     if (effectiveSnoozed(thread, { now })) {
       held.push(thread);
