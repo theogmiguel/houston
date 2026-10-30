@@ -728,6 +728,12 @@ mod tests {
         )
         .unwrap();
 
+        // A cold PowerShell start on a loaded runner can outlast the probe
+        // timeout below, so the grandchild pid never lands. Warm it first.
+        let _ = crate::spawn::command("powershell.exe")
+            .args(["-NoProfile", "-Command", "exit"])
+            .status();
+
         let env = crate::host_env::HostEnv::capture();
         assert_eq!(
             read_version_within(&env, &cli, Duration::from_secs(20)),
