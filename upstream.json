@@ -63,7 +63,15 @@
     "t3.json",
     ".task-cache.json",
     ".vercelignore",
-    ".env.example"
+    ".env.example",
+    "apps/server/src/telemetry/AnalyticsService.test.ts",
+    "apps/server/src/telemetry/DelegatedTaskAnalytics.ts",
+    "apps/server/src/telemetry/FeatureUsage.test.ts",
+    "apps/server/src/telemetry/FeatureUsage.ts",
+    "apps/server/src/telemetry/Identify.test.ts",
+    "apps/server/src/telemetry/Identify.ts",
+    "apps/server/src/telemetry/ProviderDimensions.test.ts",
+    "apps/server/src/telemetry/ProviderDimensions.ts"
   ],
   "added": [
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
@@ -356,6 +364,8 @@
     "apps/server/src/mcp/McpHttpServer.ts": "user-visible product name: Houston instead of T3 Code; tasks backlog: a houston-task-submit credential may call only the two task submit tools",
     "apps/server/src/mcp/McpInvocationContext.ts": "user-visible product name: Houston instead of T3 Code; tasks backlog: the houston-task-submit capability",
     "apps/server/src/mcp/McpSessionRegistry.ts": "tasks backlog: issues a credential that holds only houston-task-submit",
+    "apps/server/src/mcp/toolkits/core.test.ts": "no telemetry: drops the tool analytics cases",
+    "apps/server/src/telemetry/AnalyticsService.ts": "no telemetry: the analytics service records nothing and sends nothing",
     "apps/server/src/mcp/OrchestratorMcpService.test.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/mcp/OrchestratorMcpService.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/mcp/ThreadMetadataMcpService.ts": "user-visible product name: Houston instead of T3 Code",
