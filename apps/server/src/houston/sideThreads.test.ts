@@ -36,7 +36,7 @@ import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import { reviewPrompt } from "./sideThreads.ts";
+import { mayHoldT3Tools, reviewPrompt } from "./sideThreads.ts";
 import { makeHarness, runWith, withoutReadOnlyRun, withReadOnlyRun } from "./sideThreads.testkit.ts";
 
 const NO_DIFF = "No diff is recorded for this turn.";
@@ -365,6 +365,17 @@ describe("the server's side-thread policy", () => {
         }
       }
     }).pipe(Effect.provide(layerServerRuntimePolicy)),
+  );
+});
+
+describe("the T3 tool guard", () => {
+  it.effect("a thread whose read fails gets no T3 tools", () =>
+    Effect.gen(function* () {
+      const side = { kind: "aside", sourceThreadId: "source", sourceRunId: "run:1" } as never;
+      assert.isTrue(yield* mayHoldT3Tools(Effect.succeed({})));
+      assert.isFalse(yield* mayHoldT3Tools(Effect.succeed({ side })));
+      assert.isFalse(yield* mayHoldT3Tools(Effect.fail("projection read failed")));
+    }),
   );
 });
 
