@@ -411,7 +411,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   // A background service exists to be reached from other devices, so it
   // listens on private networks unless `service.env` sets `T3CODE_HOST`.
-  // Clients then learn its LAN address and prefer it over T3 Connect.
+  // Clients then learn its LAN address and prefer it over loopback.
   const privateNetworkOnly =
     Option.isNone(explicitHost) &&
     mode === "web" &&

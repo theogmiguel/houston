@@ -215,7 +215,6 @@ export const layer: Layer.Layer<
       "thread.interaction-mode-updated",
       "thread.model-selection-updated",
       "thread.provider-switched",
-      "thread.guest-share-updated",
     ];
     // Read-state events preserve updatedAt and supersede only each other. Activity events supersede both groups.
     const READ_STATE_THREAD_EVENT_TYPES = ["thread.visited", "thread.marked-unread"];

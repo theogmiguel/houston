@@ -446,7 +446,7 @@ export function useCheckpointDiff(
   return fullThreadTarget === null ? turn : fullThread;
 }
 
-/** Reads one item's detail from somewhere other than the environment, as the guest page does. */
+/** Reads one item's detail from somewhere other than the environment. */
 export type TurnItemDetailSource = (input: {
   readonly threadId: ThreadId;
   readonly itemId: TurnItemId;

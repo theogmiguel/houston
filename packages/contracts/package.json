@@ -15,10 +15,6 @@
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
     },
-    "./relay": {
-      "types": "./src/relay.ts",
-      "import": "./src/relay.ts"
-    },
     "./houston/terminalFrames": {
       "types": "./src/houston/terminalFrames.ts",
       "import": "./src/houston/terminalFrames.ts"
