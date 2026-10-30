@@ -63,8 +63,10 @@ export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationCommandReceipts.layer,
 );
 
-const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
-  Layer.provide(ProjectStore.layer),
+// Houston: side threads resolve read-only on the provider the registry reports.
+export const layerRuntimePolicyProvided = RuntimePolicy.layerReadOnlySideThreads.pipe(
+  Layer.provide(RuntimePolicy.layerFromProjectStore.pipe(Layer.provide(ProjectStore.layer))),
+  Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
 );
 
 const layerEventStoreProvided = EventStore.layerFromOrchestrationEventStore.pipe(

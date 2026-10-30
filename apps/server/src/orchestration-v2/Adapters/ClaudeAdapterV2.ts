@@ -448,6 +448,8 @@ export const ClaudeProviderCapabilitiesV2 = {
   },
   runtimePolicy: {
     enforcement: "native",
+    // Houston: a read-only policy maps to dontAsk with only the read tools (sideThreads families).
+    readOnlyRun: "permissionMode",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
@@ -1458,6 +1460,7 @@ export function makeClaudeQueryOptions(input: {
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
+  readonly strictMcpConfig?: boolean;
   /** The thread's T3 MCP session holds the `device` capability. */
   readonly deviceToolsAvailable?: boolean;
   readonly tools?: ClaudeAgentSdkQueryTools;
@@ -1482,6 +1485,10 @@ export function makeClaudeQueryOptions(input: {
     settings: _launchArgSettings,
     ...extraArgs
   } = input.settings === undefined ? {} : parseCliArgs(input.settings.launchArgs).flags;
+  if (input.strictMcpConfig === true) {
+    delete extraArgs["mcp-config"];
+    delete extraArgs["strict-mcp-config"];
+  }
   // Claude Code overwrites its CLI append text with the SDK's initialize
   // appendSystemPrompt, so launch-argument text has to travel in that value.
   // The CLI puts file text before inline text and trims one trailing newline.
@@ -1570,6 +1577,7 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+    ...(input.strictMcpConfig === true ? { strictMcpConfig: true } : {}),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
@@ -9973,6 +9981,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(mcpOverrides.mcpServers === undefined
               ? {}
               : { mcpServers: mcpOverrides.mcpServers }),
+            // Houston: a read-only run loads no MCP server it was not given here.
+            ...(sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly"
+              ? { strictMcpConfig: true }
+              : {}),
             deviceToolsAvailable: mcpSession?.capabilities?.has("device") === true,
             permissionMode: queryPolicy.permissionMode,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined

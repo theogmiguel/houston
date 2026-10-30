@@ -102,6 +102,11 @@ function existingThreadIdsForCommand(
       return [];
     case "thread.fork":
       return [command.sourceThreadId];
+    case "houston.aside.start":
+    case "houston.second-opinion.request":
+      return [command.sourceThreadId];
+    case "houston.side-thread.send":
+      return [command.sideThreadId];
     case "thread.merge_back":
       return command.sourceThreadId === command.targetThreadId
         ? [command.sourceThreadId]

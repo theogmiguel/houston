@@ -188,6 +188,12 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.fork":
     case "thread.merge_back":
       return [command.sourceThreadId, command.targetThreadId];
+    case "houston.aside.start":
+      return [command.sourceThreadId, command.asideThreadId];
+    case "houston.second-opinion.request":
+      return [command.sourceThreadId, command.reviewThreadId];
+    case "houston.side-thread.send":
+      return [command.sideThreadId];
   }
 }
 

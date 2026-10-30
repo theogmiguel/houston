@@ -17,6 +17,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
@@ -164,6 +165,8 @@ export interface OrchestratorV2ProviderReplayScenario<
 > extends OrchestratorV2Scenario {
   readonly transcript: Transcript;
   readonly runtimePolicyOverride?: RuntimePolicy.RuntimePolicyV2Override;
+  /** Houston: threads the override applies to; every thread when absent. */
+  readonly runtimePolicyOverrideThreadIds?: ReadonlyArray<string>;
 }
 
 export interface OrchestratorV2ProviderReplayHarness<
@@ -199,6 +202,9 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    readonly configureMcp?: boolean;
+    readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -241,6 +247,9 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    readonly configureMcp?: boolean;
+    readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
@@ -259,7 +268,10 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
 }
 
 export function layerWithRegistry<Error>(
-  scenario: Pick<OrchestratorV2ProviderReplayScenario, "name" | "runtimePolicyOverride">,
+  scenario: Pick<
+    OrchestratorV2ProviderReplayScenario,
+    "name" | "runtimePolicyOverride" | "runtimePolicyOverrideThreadIds"
+  >,
   registryLayer: Layer.Layer<
     ProviderAdapterRegistry.ProviderAdapterRegistryV2,
     Error,
@@ -274,6 +286,9 @@ export function layerWithRegistry<Error>(
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    readonly configureMcp?: boolean;
+    readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -288,18 +303,25 @@ export function layerWithRegistry<Error>(
     ServerConfig.ServerConfig,
     makeReplayServerConfig(scenario.name).pipe(Effect.orDie),
   ).pipe(Layer.provide(NodeServices.layer));
-  const layerRuntime =
+  const layerBaseRuntime =
     scenario.runtimePolicyOverride === undefined
       ? RuntimePolicy.layer
-      : RuntimePolicy.layerWithOverride(scenario.runtimePolicyOverride).pipe(
-          Layer.provide(RuntimePolicy.layer),
-        );
+      : RuntimePolicy.layerWithOverride(
+          scenario.runtimePolicyOverride,
+          scenario.runtimePolicyOverrideThreadIds === undefined
+            ? {}
+            : { threadIds: scenario.runtimePolicyOverrideThreadIds },
+        ).pipe(Layer.provide(RuntimePolicy.layer));
   const layerDatabase = options.databaseLayer ?? SqlitePersistence.layerMemory;
   // Share one continuation queue across adapters, orchestrator, and worker through layer memoization.
   const layerContinuationRequests =
     options.runContinuationWorker === true ? ProviderContinuationRequests.layer : Layer.empty;
   const layerProvidedRegistry = registryLayer.pipe(
     Layer.provide(Layer.merge(layerContinuationRequests, McpProviderSessions.layer)),
+  );
+  // Houston: side threads resolve read-only last, so no scenario override reaches them.
+  const layerRuntime = RuntimePolicy.layerReadOnlySideThreads.pipe(
+    Layer.provide(Layer.merge(layerBaseRuntime, layerProvidedRegistry)),
   );
   const layerServerSettings = ServerSettings.layerTest({
     responseStreamingMode: "turn",
@@ -372,7 +394,7 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerEventSinkProvided, layerStores)),
   );
   const layerProviderSessionManagerProvided = ProviderSessionManager.layerWithOptions({
-    configureMcp: false,
+    configureMcp: options.configureMcp === true,
   }).pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -381,7 +403,7 @@ export function layerWithRegistry<Error>(
         layerEventSinkProvided,
         IdAllocator.layer,
         McpProviderSessions.layer,
-        McpSessionRegistryTestkit.layer,
+        options.mcpSessionRegistry ?? McpSessionRegistryTestkit.layer,
         layerProviderEventIngestorProvided,
         layerStores,
       ),
@@ -468,6 +490,8 @@ export function layerWithRegistry<Error>(
     Layer.provide(
       Layer.mergeAll(
         layerCheckpointServiceProvided,
+        // Houston: a second opinion reads its reviewed turn's diff.
+        layerCheckpointStore,
         CommandPolicy.layer,
         layerContextHandoffServiceProvided,
         layerPersistence,
