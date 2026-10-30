@@ -13,7 +13,7 @@ import * as Runtime from "effect/Runtime";
 import { type CliServerFlags, resolveServerConfig } from "../cli/config.ts";
 import { deriveServerPaths } from "../config.ts";
 import { resolveBaseDir } from "../os-jank.ts";
-import { HOUSTON_EXIT_CODE_REFUSED_LAUNCH, HostedLaunch } from "./baseDir.ts";
+import { HOUSTON_EXIT_CODE_REFUSED_LAUNCH, HostedLaunch, isHostedLaunch } from "./baseDir.ts";
 
 const webFlags = (baseDir: Option.Option<string>): CliServerFlags => ({
   mode: Option.some("web"),
@@ -103,6 +103,19 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
         Effect.provideService(HostProcess.HomeDirectory, home),
       );
       expect(byDefault).toBe(path.join(home, ".t3"));
+    }),
+  );
+
+  it.effect("a launch is hosted exactly when a bootstrap envelope is named", () =>
+    Effect.gen(function* () {
+      const flags = webFlags(Option.none());
+      expect(yield* isHostedLaunch(flags).pipe(withEnv({}))).toBe(false);
+      expect(
+        yield* isHostedLaunch({ ...flags, bootstrapFd: Option.some(3) }).pipe(withEnv({})),
+      ).toBe(true);
+      expect(yield* isHostedLaunch(flags).pipe(withEnv({ T3CODE_BOOTSTRAP_FD: "3" }))).toBe(true);
+      // The base dir's name decides nothing.
+      expect(yield* isHostedLaunch(webFlags(Option.some("/x/v2"))).pipe(withEnv({}))).toBe(false);
     }),
   );
 

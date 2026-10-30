@@ -211,6 +211,8 @@ import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
+import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
+import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -1315,6 +1317,8 @@ export const layerWsRpc = (
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
+      const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
+      const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -1603,7 +1607,8 @@ export const layerWsRpc = (
             if (importedThread !== null) {
               return yield* new AcpRegistryOperationError({
                 reason: "session_delete_failed",
-                message: "Delete the imported Houston thread before deleting its native ACP session.",
+                message:
+                  "Delete the imported Houston thread before deleting its native ACP session.",
               });
             }
             yield* manager.deleteSession({
@@ -3008,6 +3013,21 @@ export const layerWsRpc = (
         [WS_METHODS.houstonReviewSetFilesViewed]: (input) => houstonReview.setFilesViewed(input),
         [WS_METHODS.houstonReviewAnchorLines]: (input) => houstonReview.anchorLines(input),
         [WS_METHODS.houstonReviewMapAnchors]: (input) => houstonReview.mapAnchors(input),
+        [WS_METHODS.houstonTasksSubscribe]: (input) => houstonTasks.subscribe(input),
+        [WS_METHODS.houstonTasksGet]: (input) => houstonTasks.get(input),
+        [WS_METHODS.houstonTasksSave]: (input) => houstonTasks.save(input),
+        [WS_METHODS.houstonTasksComment]: (input) => houstonTasks.comment(input),
+        [WS_METHODS.houstonTasksCheck]: (input) => houstonTasks.check(input),
+        [WS_METHODS.houstonTasksArchive]: (input) => houstonTasks.archive(input),
+        [WS_METHODS.houstonTasksInitiativesList]: (input) => houstonTasks.listInitiatives(input),
+        [WS_METHODS.houstonTasksInitiativesSave]: (input) => houstonTasks.saveInitiative(input),
+        [WS_METHODS.houstonTasksInitiativesArchive]: (input) =>
+          houstonTasks.archiveInitiative(input),
+        [WS_METHODS.houstonTasksDomainSave]: (input) => houstonTasks.saveDomain(input),
+        [WS_METHODS.houstonTasksSettingsGet]: (input) => houstonTasks.getSettings(input),
+        [WS_METHODS.houstonTasksSettingsSet]: (input) => houstonTasks.setSettings(input),
+        [WS_METHODS.houstonTasksImportV1Status]: () => houstonTaskImport.status,
+        [WS_METHODS.houstonTasksImportV1Run]: () => houstonTaskImport.run,
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),

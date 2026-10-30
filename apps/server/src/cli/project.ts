@@ -26,6 +26,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerOwnership from "../serverOwnership.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -211,6 +212,8 @@ const layerProjectCliRuntime = RuntimeLayer.layerProjectService.pipe(
   ),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  // Houston: a project removed here unassigns its tasks, as the server's deletion does.
+  Layer.provideMerge(HoustonTaskStore.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 

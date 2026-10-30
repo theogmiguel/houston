@@ -130,6 +130,8 @@ import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 import { ReadinessLedger } from "./providerReadiness.ts";
 import * as HoustonReviewState from "./reviewState.ts";
+import * as HoustonTaskService from "./tasks/TaskService.ts";
+import * as HoustonTaskV1Import from "./tasks/V1Import.ts";
 
 const decodeReadiness = Schema.decodeUnknownSync(ProviderReadiness);
 
@@ -408,6 +410,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonTaskService.HoustonTaskService)({}),
+  Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),
