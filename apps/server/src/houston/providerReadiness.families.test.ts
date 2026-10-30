@@ -9,9 +9,9 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSetupError,
-  type ProviderReadiness,
   type ServerProvider,
 } from "@t3tools/contracts";
+import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
 import { acpRegistryProbeFailure } from "@t3tools/provider-acp-registry/testing";
 import * as OpenCodeRuntime from "@t3tools/provider-opencode/server/OpenCodeRuntime";
@@ -26,12 +26,14 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import { ChildProcessSpawner } from "effect/process";
 import * as EffectAcpErrors from "effect-acp/errors";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { AcpRegistrySettings } from "../../../../packages/provider-acp-registry/src/settings.ts";
 import * as AcpRegistrySupport from "../../../../packages/provider-acp-registry/src/server/AcpRegistrySupport.ts";
 import { checkAcpRegistryProviderStatus } from "../../../../packages/provider-acp-registry/src/server/driver.ts";
+import type { AcpRegistryConfigurationProbe } from "../../../../packages/provider-acp-registry/src/server/probe.ts";
 import { OpenCodeSettings } from "../../../../packages/provider-opencode/src/settings.ts";
 import * as OpenCodeServerOwner from "../../../../packages/provider-opencode/src/server/OpenCodeServerOwner.ts";
 import {
@@ -65,8 +67,6 @@ const readinessOf = (
     } as ServerProvider,
     undefined,
   ).readiness;
-
-// --- Claude: `checkClaudeProviderStatus` with a fake spawner ------------------------------
 
 const encoder = new TextEncoder();
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -123,8 +123,6 @@ const claudeSnapshot = (
     ANTHROPIC_BASE_URL: "",
   });
 
-// --- Codex: `checkCodexProviderStatus` with a fake app-server probe -----------------------
-
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 const codexProbeSnapshot = (
@@ -132,7 +130,14 @@ const codexProbeSnapshot = (
 ): CodexAppServerProviderSnapshot => ({
   version: "1.0.0",
   account,
-  models: [{ slug: "gpt-live-codex", name: "GPT Live Codex", isCustom: false }],
+  models: [
+    {
+      slug: "gpt-live-codex",
+      name: "GPT Live Codex",
+      isCustom: false,
+      capabilities: createModelCapabilities({ optionDescriptors: [] }),
+    },
+  ],
   skills: [],
 });
 
@@ -148,8 +153,6 @@ const codexSignedIn = () =>
       requiresOpenaiAuth: false,
     }),
   );
-
-// --- OpenCode: `checkOpenCodeProviderStatus` with upstream's runtime double ---------------
 
 const decodeOpenCodeSettings = Schema.decodeSync(OpenCodeSettings);
 
@@ -268,8 +271,6 @@ const openCodeSnapshot = (
   }).pipe(Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime), Effect.scoped);
 };
 
-// --- Antigravity: `makeAntigravityProvider` with upstream's harness -----------------------
-
 const decodeAntigravitySettings = Schema.decodeSync(AntigravitySettings);
 
 const ANTIGRAVITY_INITIALIZE = {
@@ -330,8 +331,6 @@ const makeAntigravity = Effect.fn("makeAntigravity")(function* (enabled: boolean
   return { provider, probe, initialize };
 });
 
-// --- ACP registry: `checkAcpRegistryProviderStatus` with a fake catalog ------------------
-
 const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);
 const acpIdentity = {
   instanceId: ProviderInstanceId.make("acpRegistry"),
@@ -360,7 +359,7 @@ const READY_INSPECTION = {
 const acpRegistrySnapshot = (
   enabled: boolean,
   inspection: AcpRegistrySupport.AcpRegistryInspection,
-  probe: Parameters<typeof checkAcpRegistryProviderStatus>[1],
+  probe: AcpRegistryConfigurationProbe,
 ) =>
   checkAcpRegistryProviderStatus(
     {
@@ -397,8 +396,6 @@ const acpRegistryProbed = () =>
 
 const acpRegistryUnused = () => Effect.die("the probe must not run");
 
-// --- Checks -------------------------------------------------------------------------------
-
 describe("a missing CLI is notInstalled for every family", () => {
   it.effect("Claude", () =>
     Effect.gen(function* () {
@@ -410,8 +407,12 @@ describe("a missing CLI is notInstalled for every family", () => {
         message: "Claude Agent CLI (`claude`) was not found on PATH.",
       });
     }).pipe(
-      Effect.provide(layerClaudeSpawner(() => "missing")),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(
+        Layer.merge(
+          NodeServices.layer,
+          layerClaudeSpawner(() => "missing"),
+        ),
+      ),
     ),
   );
 
@@ -503,7 +504,7 @@ describe("a signed-out probe is signedOut for every family", () => {
         state: "signedOut",
         source: "probe",
       });
-    }).pipe(Effect.provide(claudeVersionOnly), Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, claudeVersionOnly))),
   );
 
   it.effect("Codex", () =>
@@ -602,7 +603,7 @@ describe("turning a provider off and on for every family", () => {
       assert.deepEqual(readinessOf("claudeAgent", yield* claudeSnapshot({ enabled: true })), {
         state: "ready",
       });
-    }).pipe(Effect.provide(claudeVersionOnly), Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, claudeVersionOnly))),
   );
 
   it.effect("Codex", () =>
@@ -675,7 +676,7 @@ describe("a healthy probe is ready for every family", () => {
       const snapshot = yield* claudeSnapshot();
       assert.equal(snapshot.status, "ready");
       assert.deepEqual(readinessOf("claudeAgent", snapshot), { state: "ready" });
-    }).pipe(Effect.provide(claudeVersionOnly), Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, claudeVersionOnly))),
   );
 
   it.effect("Codex", () =>

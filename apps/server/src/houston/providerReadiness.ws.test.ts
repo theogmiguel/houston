@@ -9,6 +9,7 @@ import {
   ProviderTurnId,
   RunAttemptId,
   RunId,
+  RpcScopeAuthorization,
   WS_METHODS,
   WsRpcGroup,
   type ModelSelection,
@@ -34,7 +35,6 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 import { Headers, HttpClient, HttpClientResponse } from "effect/http";
 import { RpcMessage, RpcServer } from "effect/rpc";
 
@@ -152,8 +152,6 @@ const CLAUDE = makeProvider("claudeAgent");
 const CODEX = makeProvider("codex");
 const OPENCODE = makeProvider("opencode");
 
-// --- Provider instances: each one's snapshot is a settable value ---------------------------
-
 interface FakeInstance {
   readonly instance: ProviderInstance;
   readonly set: (next: ServerProvider) => Effect.Effect<void>;
@@ -199,8 +197,6 @@ const layerInstances = (instances: ReadonlyArray<FakeInstance>) =>
     }),
   );
 
-// --- The registry as server.ts builds it, and the ingestor it provides --------------------
-
 const layerTestHttpClient = Layer.succeed(
   HttpClient.HttpClient,
   HttpClient.make((request) =>
@@ -242,8 +238,6 @@ const layerRuntime = (instances: ReadonlyArray<FakeInstance>, prefix: string) =>
     Layer.provideMerge(layerRegistry(instances)),
     Layer.provideMerge(layerServerConfig(prefix)),
   );
-
-// --- Ingesting a terminal turn ------------------------------------------------------------
 
 const ingestTerminal = Effect.fn("ingestTerminal")(function* (input: {
   readonly provider: ServerProvider;
@@ -345,7 +339,7 @@ const CLAUDE_USAGE_LIMIT: OrchestrationV2ProviderFailure = {
   message: "Claude usage limit reached. Send the message again once the limit resets.",
   code: "api_error_429",
   retryable: true,
-  resetAt: "2026-10-29T18:00:00.000Z",
+  resetAt: "2099-10-29T18:00:00.000Z",
 };
 const CLAUDE_FORBIDDEN: OrchestrationV2ProviderFailure = {
   class: "provider_error",
@@ -354,10 +348,15 @@ const CLAUDE_FORBIDDEN: OrchestrationV2ProviderFailure = {
   retryable: null,
 };
 
+const CODEX_SIGNED_OUT: OrchestrationV2ProviderFailure = {
+  class: "provider_error",
+  message: "Provider stopped this request.",
+  code: "unauthorized",
+  retryable: null,
+};
+
 const readinessIn = (providers: ReadonlyArray<ServerProvider>, provider: ServerProvider) =>
   providers.find((candidate) => candidate.instanceId === provider.instanceId)?.readiness;
-
-// --- The `/ws` handlers -------------------------------------------------------------------
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
@@ -469,6 +468,10 @@ const layerUnusedRpcServices = Layer.mergeAll(
   }),
   Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
   Layer.mock(ServerBrowser.ServerBrowser)({}),
+  Layer.mock(ModelManifest.ModelManifest)({}),
+  Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
+  // Scope checks have their own tests; these calls run as a fully scoped client.
+  Layer.succeed(RpcScopeAuthorization)((effect) => effect),
 );
 
 const layerConfigSources = Layer.mergeAll(
@@ -560,7 +563,8 @@ const withWs = <A, E>(
   }).pipe(Effect.scoped);
 
 describe("every published provider carries one readiness", () => {
-  it.effect("in server.getConfig and in the first providerStatuses event", () =>
+  // Live clock: the 200 ms status debounce fires on its own.
+  it.live("in server.getConfig and in the first providerStatuses event", () =>
     withWs([CLAUDE, CODEX, OPENCODE], (instances) =>
       Effect.gen(function* () {
         const client = yield* makeWsClient();
@@ -580,7 +584,6 @@ describe("every published provider carries one readiness", () => {
         yield* client.ack("config");
 
         yield* instances[1]!.set({ ...CODEX, enabled: false });
-        yield* TestClock.adjust("1 second");
         const event = (yield* Queue.take(client.responses)) as ServerConfigStreamEvent;
         if (event.type !== "providerStatuses")
           return yield* Effect.die("Expected providerStatuses");
@@ -630,7 +633,7 @@ describe("refresh clears turn-derived states except a named reset", () => {
             instanceId: provider.instanceId,
             driver: provider.driver,
             status: "failed",
-            failure: { ...failure, code: provider === CODEX ? "unauthorized" : failure.code },
+            failure: provider === CODEX ? CODEX_SIGNED_OUT : failure,
             occurredAt: T,
           });
         }
@@ -646,7 +649,7 @@ describe("refresh clears turn-derived states except a named reset", () => {
         } else {
           assert.deepInclude(readiness, {
             state: "outOfUsage",
-            resetsAt: "2026-10-29T18:00:00.000Z",
+            resetsAt: "2099-10-29T18:00:00.000Z",
           });
         }
         // Only the refreshed instance is cleared.
@@ -704,7 +707,8 @@ describe("an unstored failure leaves readiness unchanged", () => {
 });
 
 describe("an ingested usage limit reaches the config stream", () => {
-  it.effect("a subscribed client receives outOfUsage with the failure's reset", () =>
+  // Live clock: the 200 ms status debounce fires on its own.
+  it.live("a subscribed client receives outOfUsage with the failure's reset", () =>
     withWs([CLAUDE, CODEX], () =>
       Effect.gen(function* () {
         const client = yield* makeWsClient();
@@ -714,13 +718,12 @@ describe("an ingested usage limit reaches the config stream", () => {
         yield* client.ack("config");
 
         yield* ingestTerminal({ provider: CLAUDE, failure: CLAUDE_USAGE_LIMIT });
-        yield* TestClock.adjust("1 second");
         const event = (yield* Queue.take(client.responses)) as ServerConfigStreamEvent;
         if (event.type !== "providerStatuses")
           return yield* Effect.die("Expected providerStatuses");
         assert.deepInclude(readinessIn(event.payload.providers, CLAUDE), {
           state: "outOfUsage",
-          resetsAt: "2026-10-29T18:00:00.000Z",
+          resetsAt: "2099-10-29T18:00:00.000Z",
           message: CLAUDE_USAGE_LIMIT.message,
         });
         assert.deepEqual(readinessIn(event.payload.providers, CODEX), { state: "ready" });
@@ -752,14 +755,16 @@ describe("the status cache stores no readiness", () => {
         });
         assert.equal(readinessIn(yield* registry.getProviders, CLAUDE)?.state, "rejected");
         // A probe result that arrives while the rejection is live is persisted.
-        const published = yield* Stream.toPull(
-          registry.streamChanges.pipe(
-            Stream.filter((providers) => providers.some((p) => p.version === "1.0.1")),
-          ),
-        );
+        const published = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
+        yield* Stream.runForEach(registry.streamChanges, (providers) =>
+          Queue.offer(published, providers),
+        ).pipe(Effect.forkIn(yield* Effect.scope, { startImmediately: true }));
         yield* first.set(updated);
-        const [latest] = yield* published;
-        assert.equal(readinessIn(latest!, CLAUDE)?.state, "rejected");
+        let latest = yield* Queue.take(published);
+        while (!latest.some((provider) => provider.version === "1.0.1")) {
+          latest = yield* Queue.take(published);
+        }
+        assert.equal(readinessIn(latest, CLAUDE)?.state, "rejected");
       }).pipe(Effect.provide(Layer.fresh(layerRegistry([first]))), Effect.scoped);
 
       const cached = JSON.parse(yield* fileSystem.readFileString(cacheFile)) as Record<

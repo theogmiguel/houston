@@ -44,6 +44,7 @@ import {
   type ProviderMaintenanceCapabilities,
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import type { ProviderSnapshotSource } from "./builtInProviderCatalog.ts";
+import { decorateProviderRegistry, layerReadinessLedger } from "../houston/providerReadiness.ts";
 
 export type ProviderMaintenanceActionKind = "update";
 
@@ -1002,7 +1003,7 @@ export const layer = Layer.effect(
       return yield* Fiber.join(claim.scan);
     });
 
-    return {
+    return yield* decorateProviderRegistry({
       getProviders: Ref.get(providersRef),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
@@ -1016,6 +1017,6 @@ export const layer = Layer.effect(
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },
-    } satisfies ProviderRegistry["Service"];
+    } satisfies ProviderRegistry["Service"]);
   }),
-);
+).pipe(Layer.provideMerge(layerReadinessLedger));
