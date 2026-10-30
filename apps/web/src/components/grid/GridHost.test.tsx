@@ -14,6 +14,8 @@ function gridWith(tree: LayoutNode | null): GridRecord {
     workspaceKey: "env-1:project-1",
     tree,
     focusedThreadId: "thread-b",
+    pinnedAt: null,
+    hidden: false,
     createdAt: "2026-01-01T00:00:00Z",
   };
 }

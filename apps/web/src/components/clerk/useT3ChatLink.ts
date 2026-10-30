@@ -31,7 +31,7 @@ function reportFailure(title: string, cause: unknown) {
   });
 }
 
-/** Starts and removes the T3 Chat link that raises the T3 Connect tunnel cap. */
+/** Starts and removes the Houston Chat link that raises the Houston Connect tunnel cap. */
 export function useT3ChatLink() {
   const linkState = useManagedRelayT3ChatLink();
   const createLinkRequest = useAtomCommand(createManagedRelayT3ChatLinkRequestCommand, {
@@ -67,7 +67,7 @@ export function useT3ChatLink() {
       setLinkUrl(null);
       linkState.refresh();
     } else if (!isAtomCommandInterrupted(result)) {
-      reportFailure("Could not unlink T3 Chat", squashAtomCommandFailure(result));
+      reportFailure("Could not unlink Houston Chat", squashAtomCommandFailure(result));
     }
     setPending(null);
   };

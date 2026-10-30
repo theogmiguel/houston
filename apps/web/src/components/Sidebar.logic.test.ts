@@ -455,7 +455,7 @@ describe("resolveThreadStatusPill", () => {
     const resumed = { ...blocked, blockedOnThreadWait: false };
     expect(resolveSidebarThreadStatus(resumed)).toBe("working");
     expect(resolveThreadStatusPill({ thread: resumed })).toMatchObject({
-      label: "Working",
+      label: "Running",
       pulse: true,
     });
   });
@@ -531,7 +531,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Completed", pulse: false });
+    ).toMatchObject({ label: "Ready", pulse: false });
   });
 
   it("shows failed, not completed, when the unseen run failed", () => {
@@ -592,18 +592,18 @@ describe("resolveSidebarStatusGlyphState", () => {
 
   it("maps every thread status to one rail glyph", () => {
     expect(resolveSidebarStatusGlyphState(null)).toBe("idle");
-    for (const label of ["Working", "Connecting", "Waiting"] as const) {
+    for (const label of ["Running", "Connecting", "Waiting"] as const) {
       expect(resolveSidebarStatusGlyphState(pill(label))).toBe("working");
     }
     for (const label of [
       "Pending Approval",
-      "Awaiting Input",
+      "Needs you",
       "Guest Request",
       "Plan Ready",
     ] as const) {
       expect(resolveSidebarStatusGlyphState(pill(label))).toBe("needs");
     }
-    expect(resolveSidebarStatusGlyphState(pill("Completed"))).toBe("done");
+    expect(resolveSidebarStatusGlyphState(pill("Ready"))).toBe("done");
     expect(resolveSidebarStatusGlyphState(pill("Failed"))).toBe("error");
   });
 });
@@ -621,13 +621,13 @@ describe("resolveProjectStatusIndicator", () => {
       resolveProjectStatusIndicator([
         waiting,
         {
-          label: "Working",
+          label: "Running",
           colorClass: "text-sky-600",
           dotClass: "bg-sky-500",
           pulse: true,
         },
       ]),
-    ).toMatchObject({ label: "Working" });
+    ).toMatchObject({ label: "Running" });
     expect(
       resolveProjectStatusIndicator([
         {
@@ -1013,14 +1013,14 @@ describe("unseen completion with background work", () => {
       task: { kind: "command" },
       status: "ready",
       receded: false,
-      pill: "Completed",
+      pill: "Ready",
     },
     {
       roster: "dev server watchdog",
       task: { kind: "monitor" },
       status: "ready",
       receded: false,
-      pill: "Completed",
+      pill: "Ready",
     },
     {
       roster: "awaited command",

@@ -73,8 +73,8 @@ export function ConnectCliAuthorizeSurface() {
         title="Connecting your terminal"
         description={
           isSignedIn
-            ? "Redirecting to authorize T3 Connect for your CLI…"
-            : "Sign in to continue authorizing T3 Connect for your CLI."
+            ? "Redirecting to authorize Houston Connect for your CLI…"
+            : "Sign in to continue authorizing Houston Connect for your CLI."
         }
       />
       {isLoaded && !isSignedIn ? (

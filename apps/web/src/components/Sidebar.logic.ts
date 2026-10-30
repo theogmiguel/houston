@@ -618,12 +618,12 @@ export function buildBulkUnpinContextMenuItem(input: {
 
 export interface ThreadStatusPill {
   label:
-    | "Working"
+    | "Running"
     | "Connecting"
-    | "Completed"
+    | "Ready"
     | "Failed"
     | "Pending Approval"
-    | "Awaiting Input"
+    | "Needs you"
     | "Guest Request"
     | "Waiting"
     | "Plan Ready";
@@ -634,14 +634,14 @@ export interface ThreadStatusPill {
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
-  "Awaiting Input": 4,
+  "Needs you": 4,
   "Guest Request": 3.75,
   Failed: 3.5,
-  Working: 3,
+  Running: 3,
   Connecting: 3,
   Waiting: 2.5,
   "Plan Ready": 2,
-  Completed: 1,
+  Ready: 1,
 };
 
 type ThreadStatusInput = Pick<
@@ -1086,7 +1086,7 @@ export function resolveThreadStatusPill(input: {
 
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return {
-      label: "Awaiting Input",
+      label: "Needs you",
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,
@@ -1107,7 +1107,7 @@ export function resolveThreadStatusPill(input: {
     thread.runtime?.status === "waiting"
   ) {
     return {
-      label: "Working",
+      label: "Running",
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
@@ -1164,7 +1164,7 @@ export function resolveThreadStatusPill(input: {
 
   if (hasUnseenCompletion(thread)) {
     return {
-      label: "Completed",
+      label: "Ready",
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
       dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
       pulse: false,
@@ -1200,16 +1200,16 @@ export function resolveSidebarStatusGlyphState(
 ): SidebarStatusGlyphState {
   if (status === null) return "idle";
   switch (status.label) {
-    case "Working":
+    case "Running":
     case "Connecting":
     case "Waiting":
       return "working";
     case "Pending Approval":
-    case "Awaiting Input":
+    case "Needs you":
     case "Guest Request":
     case "Plan Ready":
       return "needs";
-    case "Completed":
+    case "Ready":
       return "done";
     case "Failed":
       return "error";
