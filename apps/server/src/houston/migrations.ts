@@ -355,7 +355,8 @@ const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
-  [4, "MergeQueue", MergeQueue],
+  // 4 is reserved for the Tasks runs migration, TaskRunsCursor.
+  [5, "MergeQueue", MergeQueue],
 ] as const;
 
 const run = Migrator.make({});

@@ -18,7 +18,8 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
   [3, "TaskSources"],
-  [4, "MergeQueue"],
+  // 4 is Tasks runs' `TaskRunsCursor`, which lands on v2 first.
+  [5, "MergeQueue"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -263,10 +264,10 @@ describe("the merge queue migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [4, "MergeQueue"]);
+          assert.deepEqual(history.at(-1), [5, "MergeQueue"]);
           assert.deepEqual(
             history.map(([id]) => id),
-            [1, 2, 3, 4],
+            HOUSTON_TRACK.map(([id]) => id),
           );
           const tables = (yield* sql<{ readonly name: string }>`
             SELECT name FROM sqlite_master
