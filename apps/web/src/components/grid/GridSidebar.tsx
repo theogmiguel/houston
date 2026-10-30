@@ -23,6 +23,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
+  EyeOffIcon,
   GitBranchIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -48,6 +49,7 @@ import {
   workspaceKeyOf,
 } from "../../grid/gridStore";
 import {
+  attentionCardsForGrids,
   attentionNavigationDirection,
   clearThreadSelection,
   gridThreadStateLabel,
@@ -210,16 +212,13 @@ export function GridSidebar() {
       ),
   );
 
+  // Hidden grids still answer Ctrl .: their threads keep their grid and pane.
   const allCards: AttentionCard[] = projects.flatMap((project) =>
-    orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
-      .filter((grid) => !grid.hidden)
-      .flatMap((grid) =>
-        visibleGridThreads(grid, threads, nowIso).map((thread) => ({
-          gridId: grid.id,
-          threadId: thread.id,
-          state: resolveGridThreadState(thread, nowIso),
-        })),
-      ),
+    attentionCardsForGrids(
+      orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id)),
+      threads,
+      nowIso,
+    ),
   );
 
   const currentFocus =
@@ -574,6 +573,7 @@ export function GridSidebar() {
               const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
               const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey);
               const visibleGrids = workspaceGrids.filter((grid) => !grid.hidden);
+              const hiddenGrids = workspaceGrids.filter((grid) => grid.hidden);
               const workspaceMatches =
                 query.length > 0 &&
                 project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
@@ -616,6 +616,7 @@ export function GridSidebar() {
                   collapsed={collapsed}
                   query={query}
                   grids={renderedGrids}
+                  hiddenGrids={hiddenGrids}
                   providerEntries={providerEntries}
                   openGridId={openGrid?.id ?? null}
                   nowIso={nowIso}
@@ -653,6 +654,7 @@ export function GridSidebar() {
                   readDragged={readDragged}
                   onRenameThread={renameThread}
                   onSetAutoClose={setAutoClose}
+                  onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
                 />
               );
             })}
@@ -797,6 +799,7 @@ function WorkspaceGroup({
   collapsed,
   query,
   grids,
+  hiddenGrids,
   providerEntries,
   openGridId,
   nowIso,
@@ -820,11 +823,13 @@ function WorkspaceGroup({
   readDragged,
   onRenameThread,
   onSetAutoClose,
+  onShowGrid,
 }: {
   project: EnvironmentProject;
   collapsed: boolean;
   query: string;
   grids: ReadonlyArray<{ grid: GridRecord; threads: EnvironmentThreadShell[] }>;
+  hiddenGrids: ReadonlyArray<GridRecord>;
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   openGridId: string | null;
   nowIso: string;
@@ -854,6 +859,7 @@ function WorkspaceGroup({
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  onShowGrid: (gridId: string) => void;
 }) {
   const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
   const isDropTarget = dropTarget === `workspace:${workspaceKey}`;
@@ -904,6 +910,38 @@ function WorkspaceGroup({
             <PlusIcon />
           </Button>
         </span>
+        {hiddenGrids.length > 0 ? (
+          <Menu>
+            <MenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Workspace actions for ${project.title}`}
+                  className="absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100"
+                >
+                  <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                </button>
+              }
+            />
+            <MenuPopup side="bottom" align="end">
+              <MenuSub>
+                <MenuSubTrigger>
+                  Show hidden grids ({hiddenGrids.length})
+                  <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
+                </MenuSubTrigger>
+                <MenuSubPopup>
+                  {hiddenGrids.map((hiddenGrid) => (
+                    <MenuItem key={hiddenGrid.id} onClick={() => onShowGrid(hiddenGrid.id)}>
+                      <EyeOffIcon aria-hidden className="size-3.5" />
+                      <span className="min-w-0 flex-1 truncate">{hiddenGrid.name}</span>
+                      <span className="text-2xs text-secondary-label">Show</span>
+                    </MenuItem>
+                  ))}
+                </MenuSubPopup>
+              </MenuSub>
+            </MenuPopup>
+          </Menu>
+        ) : null}
       </div>
       {collapsed ? null : (
         <div className="flex flex-col gap-px">

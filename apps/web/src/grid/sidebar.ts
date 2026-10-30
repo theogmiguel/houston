@@ -173,6 +173,21 @@ export interface AttentionCard {
   readonly state: GridThreadState;
 }
 
+/** Attention cards in rail order. Hidden grids stay reachable with Ctrl . */
+export function attentionCardsForGrids(
+  grids: ReadonlyArray<GridRecord>,
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): AttentionCard[] {
+  return grids.flatMap((grid) =>
+    visibleGridThreads(grid, threads, now).map((thread) => ({
+      gridId: grid.id,
+      threadId: thread.id,
+      state: resolveGridThreadState(thread, now),
+    })),
+  );
+}
+
 export interface AttentionNavigationEvent {
   readonly key: string;
   readonly code?: string | undefined;

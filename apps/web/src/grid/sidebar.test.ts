@@ -2,6 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attentionCardsForGrids,
   attentionNavigationDirection,
   type AttentionCard,
   clearThreadSelection,
@@ -340,6 +341,20 @@ describe("attention navigation", () => {
     expect(nextAttentionCard(cards, { gridId: "g-2", threadId: "idle" }, -1)?.threadId).toBe(
       "needs",
     );
+  });
+
+  it("keeps a hidden grid's threads reachable with Ctrl .", () => {
+    const hidden = grid(
+      { kind: "thread", threadId: "thread-b", id: "p1" },
+      { hidden: true },
+    );
+    const cards = attentionCardsForGrids(
+      [hidden],
+      [thread({ id: "thread-b", hasPendingApprovals: true })],
+      NOW,
+    );
+    expect(cards).toEqual([{ gridId: "g-1", threadId: "thread-b", state: "needs" }]);
+    expect(nextAttentionCard(cards, null, 1)?.threadId).toBe("thread-b");
   });
 
   it("returns null when no card needs attention", () => {
