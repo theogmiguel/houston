@@ -96,7 +96,7 @@ echo "[dev] building the v2 web renderer."
 (cd "$ROOT" && npx -y pnpm@12.14.0 --filter @t3tools/web build)
 
 echo "[dev] building the v2 server."
-(cd "$ROOT" && npx -y pnpm@12.14.0 --filter t3 build:bundle)
+(cd "$ROOT" && npx -y pnpm@12.14.0 --filter houston build:bundle)
 
 echo "[dev] building the daemon, supervisor and hook helper (debug)."
 (cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor --bin tr-helper)
