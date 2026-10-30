@@ -15,6 +15,7 @@ import {
   type PullRequestCheckStatus,
   type PullRequestChecks,
   type PullRequestDetail,
+  type PullRequestRef,
   type PullRequestReportStateInput,
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
@@ -28,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -117,6 +119,8 @@ export const makeRepos = (prefix = "houston-mq-", repository = REPOSITORY): Repo
   return { root, repository, bare, checkout };
 };
 
+let clones = 0;
+
 /** Commits `files` on `branch` (from `from`, default main) in a scratch clone and pushes it. */
 export const pushBranch = (
   repos: Repos,
@@ -124,7 +128,8 @@ export const pushBranch = (
   files: Readonly<Record<string, string>>,
   options: { readonly from?: string; readonly message?: string } = {},
 ): string => {
-  const work = NodePath.join(repos.root, `work-${Math.random().toString(16).slice(2)}`);
+  clones += 1;
+  const work = NodePath.join(repos.root, `work-${clones}`);
   git(repos.root, ["clone", "--quiet", repos.bare, work]);
   const from = options.from ?? "main";
   if (tryGit(work, ["rev-parse", "--verify", `origin/${branch}`]) !== null) {
@@ -242,7 +247,9 @@ export const pullUrl = (number: number, repository = REPOSITORY) =>
 
 const headOf = (github: FakeGitHub, pull: FakePull) =>
   pull.headSha ??
-  (github.repos === null ? "0".repeat(40) : (remoteHead(github.repos, pull.headRef) ?? "0".repeat(40)));
+  (github.repos === null
+    ? "0".repeat(40)
+    : (remoteHead(github.repos, pull.headRef) ?? "0".repeat(40)));
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -326,6 +333,8 @@ const answerRest = (github: FakeGitHub, method: string, path: string, body: unkn
   return notFound();
 };
 
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
 const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
   enabled: false,
   token: () => Effect.succeedNone,
@@ -356,7 +365,7 @@ export const layerGitHubRestFake = (fakes: Fakes) => {
         const url = new URL(request.url);
         const body =
           request.body._tag === "Uint8Array"
-            ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
+            ? decodeJson(new TextDecoder().decode(request.body.body))
             : undefined;
         const github = route(fakes, restRepository(url.pathname, body));
         github.requests.push({ via: "rest", method: request.method, path: url.pathname, body });
@@ -380,7 +389,10 @@ export const layerPullRequestFake = (fakes: Fakes) =>
     PullRequestService.PullRequestService,
     Effect.gen(function* () {
       const changes = yield* PubSub.unbounded<ThreadPullRequestKey>();
-      const lookup = (operation: string, ref: { readonly repository: string; readonly number: number }) =>
+      const lookup = (
+        operation: string,
+        ref: { readonly repository: string; readonly number: number },
+      ) =>
         find(route(fakes, ref.repository), operation, ref.number).pipe(
           Effect.map((pull) => ({ pull, github: route(fakes, ref.repository) })),
         );
@@ -419,7 +431,7 @@ export const layerPullRequestFake = (fakes: Fakes) =>
           required: check.required ?? false,
         }));
       return PullRequestService.PullRequestService.of({
-        detail: (ref) =>
+        detail: (ref: PullRequestRef) =>
           lookup("detail", ref).pipe(
             Effect.map(
               ({ pull, github }) =>
@@ -443,7 +455,7 @@ export const layerPullRequestFake = (fakes: Fakes) =>
                 }) as unknown as PullRequestDetail,
             ),
           ),
-        activity: (ref) =>
+        activity: (ref: PullRequestRef) =>
           lookup("activity", ref).pipe(
             Effect.map(
               ({ pull }) =>
@@ -465,14 +477,14 @@ export const layerPullRequestFake = (fakes: Fakes) =>
                 }) as unknown as PullRequestActivity,
             ),
           ),
-        checks: (ref) =>
+        checks: (ref: PullRequestRef) =>
           lookup("checks", ref).pipe(
             Effect.map(
               ({ pull }) =>
                 ({ state: pull.state, checks: checksOf(pull) }) as unknown as PullRequestChecks,
             ),
           ),
-        reportState: (input) =>
+        reportState: (input: PullRequestReportStateInput) =>
           Effect.suspend(() => {
             route(fakes, input.reference.repository).reported.push(input);
             return PubSub.publish(changes, {
@@ -637,8 +649,6 @@ export const writesOf = (github: FakeGitHub) =>
   github.requests.filter((request) => request.via === "rest" && request.method !== "POST");
 
 export const mergesOf = (github: FakeGitHub) =>
-  github.requests.filter(
-    (request) => request.method === "PUT" && request.path.endsWith("/merge"),
-  );
+  github.requests.filter((request) => request.method === "PUT" && request.path.endsWith("/merge"));
 
 export const pushesOf = (log: GitLog) => log.calls.filter((args) => args.includes("push"));

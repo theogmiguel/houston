@@ -37,17 +37,19 @@ const withQueue = <A, E>(
   gitLog: GitLog = makeGitLog(),
 ) => body.pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ github, gitLog, loops: false }))));
 
-const refusal = <A>(effect: Effect.Effect<A, HoustonMergeQueueError>) =>
-  Effect.flip(effect) as Effect.Effect<HoustonMergeQueueError>;
+const refusal = <A, R>(effect: Effect.Effect<A, HoustonMergeQueueError, R>) => Effect.flip(effect);
 
 const mergeBodies = (github: FakeGitHub) =>
-  mergesOf(github).map((request) => ({
+  mergesOf(github).map((request): Record<string, unknown> => ({
     path: request.path,
     ...(request.body as Record<string, unknown>),
   }));
 
 /** Verifies #N with the policy off, so it waits as Ready for the user's Merge. */
-const verified = (projectId: Parameters<HoustonMergeQueueService["Service"]["get"]>[0]["projectId"], number: number) =>
+const verified = (
+  projectId: Parameters<HoustonMergeQueueService["Service"]["get"]>[0]["projectId"],
+  number: number,
+) =>
   Effect.gen(function* () {
     const queue = yield* HoustonMergeQueueService;
     const runner = yield* HoustonMergeQueueRunner;
@@ -153,14 +155,18 @@ describe("only the entry that goes next merges, at the commit the user saw", () 
         assert.include(notNext.message, "PR #2 is number 2 in line");
 
         const older = "0".repeat(40);
-        const moved = yield* refusal(queue.mergeHead({ projectId, number: 1, expectedHeadSha: older }));
+        const moved = yield* refusal(
+          queue.mergeHead({ projectId, number: 1, expectedHeadSha: older }),
+        );
         assert.strictEqual(moved.kind, "conflict");
         assert.include(
           moved.message,
           `head moved from ${older} to ${one.headSha}; refusing to merge an unseen commit`,
         );
 
-        const shape = yield* refusal(queue.mergeHead({ projectId, number: 1, expectedHeadSha: "abc" }));
+        const shape = yield* refusal(
+          queue.mergeHead({ projectId, number: 1, expectedHeadSha: "abc" }),
+        );
         assert.strictEqual(shape.kind, "invalid");
         assert.include(shape.message, "abc");
 
@@ -177,43 +183,49 @@ describe("a verified head is pushed with a lease and merged at exactly that comm
     [{ merge: true, squash: true, rebase: true }, "squash"],
     [{ merge: true, squash: false, rebase: true }, "merge"],
   ] as const) {
-    it.live(`a verified head is pushed with a lease and merged at exactly that commit: ${expected}`, () => {
-      const github = makeGitHub(makeRepos());
-      github.mergeMethods = { ...methods };
-      const gitLog = makeGitLog();
-      return withQueue(
-        github,
-        Effect.gen(function* () {
-          const queue = yield* HoustonMergeQueueService;
-          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
-          const entry = yield* verified(projectId, 7);
-          const head = entry.headSha;
-          const verifiedSha = entry.verification!.verifiedSha;
-          assert.notStrictEqual(verifiedSha, head);
-          github.requests.length = 0;
+    it.live(
+      `a verified head is pushed with a lease and merged at exactly that commit: ${expected}`,
+      () => {
+        const github = makeGitHub(makeRepos());
+        github.mergeMethods = { ...methods };
+        const gitLog = makeGitLog();
+        return withQueue(
+          github,
+          Effect.gen(function* () {
+            const queue = yield* HoustonMergeQueueService;
+            const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+            const entry = yield* verified(projectId, 7);
+            const head = entry.headSha;
+            const verifiedSha = entry.verification!.verifiedSha;
+            assert.notStrictEqual(verifiedSha, head);
+            github.requests.length = 0;
 
-          const result = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: head });
-          assert.strictEqual(result.outcome, "merged", result.message);
-          assert.deepEqual(pushesOf(gitLog), [
-            [
-              "push",
-              "--porcelain",
-              `--force-with-lease=refs/heads/houston/7:${head}`,
-              "origin",
-              `${verifiedSha}:refs/heads/houston/7`,
-            ],
-          ]);
-          // GitHub reported the pushed commit before the gates were read on it and the merge sent.
-          const order = github.requests.map((request) => `${request.method} ${request.path}`);
-          assert.include(order, "GET detail/7");
-          assert.isBelow(order.indexOf("GET detail/7"), order.indexOf("PUT /repos/o/r/pulls/7/merge"));
-          assert.deepEqual(mergeBodies(github), [
-            { path: "/repos/o/r/pulls/7/merge", sha: verifiedSha, merge_method: expected },
-          ]);
-        }),
-        gitLog,
-      );
-    });
+            const result = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: head });
+            assert.strictEqual(result.outcome, "merged", result.message);
+            assert.deepEqual(pushesOf(gitLog), [
+              [
+                "push",
+                "--porcelain",
+                `--force-with-lease=refs/heads/houston/7:${head}`,
+                "origin",
+                `${verifiedSha}:refs/heads/houston/7`,
+              ],
+            ]);
+            // GitHub reported the pushed commit before the gates were read on it and the merge sent.
+            const order = github.requests.map((request) => `${request.method} ${request.path}`);
+            assert.include(order, "GET detail/7");
+            assert.isBelow(
+              order.indexOf("GET detail/7"),
+              order.indexOf("PUT /repos/o/r/pulls/7/merge"),
+            );
+            assert.deepEqual(mergeBodies(github), [
+              { path: "/repos/o/r/pulls/7/merge", sha: verifiedSha, merge_method: expected },
+            ]);
+          }),
+          gitLog,
+        );
+      },
+    );
   }
 });
 
@@ -229,7 +241,11 @@ describe("a moved base or an unseen push merges nothing", () => {
         const projectId = yield* queueScenario(github, [7], { command: "git --version" });
         const entry = yield* verified(projectId, 7);
         pushBranch(github.repos!, "main", { "later.txt": "later\n" });
-        const result = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: entry.headSha });
+        const result = yield* queue.mergeHead({
+          projectId,
+          number: 7,
+          expectedHeadSha: entry.headSha,
+        });
         assert.strictEqual(result.outcome, "waiting");
         assert.include(result.message, "verifies again on the new base");
         assert.isNull(entryOf(yield* queue.get({ projectId }), 7).verification);
@@ -259,7 +275,7 @@ describe("a moved base or an unseen push merges nothing", () => {
           .mergeHead({ projectId, number: 7, expectedHeadSha: entry.headSha })
           .pipe(Effect.forkChild);
         for (let step = 0; step < 400 && fiber.pollUnsafe() === undefined; step += 1) {
-          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 20)));
+          yield* TestClock.withLive(Effect.sleep("20 millis"));
           yield* TestClock.adjust("5 seconds");
         }
         const result = yield* Fiber.join(fiber);
@@ -274,31 +290,34 @@ describe("a moved base or an unseen push merges nothing", () => {
     );
   });
 
-  it.live("a moved base or an unseen push merges nothing: without a command the head merges", () => {
-    const github = makeGitHub(makeRepos());
-    const gitLog = makeGitLog();
-    return withQueue(
-      github,
-      Effect.gen(function* () {
-        const queue = yield* HoustonMergeQueueService;
-        const projectId = yield* queueScenario(github, [7], { mainMoves: false });
-        const head = entryOf(yield* queue.get({ projectId }), 7).headSha;
-        github.requests.length = 0;
-        const result = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: head });
-        assert.strictEqual(result.outcome, "merged", result.message);
-        assert.include(
-          github.requests.map((request) => request.path),
-          "detail/7",
-        );
-        assert.deepEqual(
-          mergeBodies(github).map((body) => body.sha),
-          [head],
-        );
-        assert.deepEqual(pushesOf(gitLog), []);
-      }),
-      gitLog,
-    );
-  });
+  it.live(
+    "a moved base or an unseen push merges nothing: without a command the head merges",
+    () => {
+      const github = makeGitHub(makeRepos());
+      const gitLog = makeGitLog();
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const projectId = yield* queueScenario(github, [7], { mainMoves: false });
+          const head = entryOf(yield* queue.get({ projectId }), 7).headSha;
+          github.requests.length = 0;
+          const result = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: head });
+          assert.strictEqual(result.outcome, "merged", result.message);
+          assert.include(
+            github.requests.map((request) => request.path),
+            "detail/7",
+          );
+          assert.deepEqual(
+            mergeBodies(github).map((body) => body.sha),
+            [head],
+          );
+          assert.deepEqual(pushesOf(gitLog), []);
+        }),
+        gitLog,
+      );
+    },
+  );
 });
 
 describe("a pushed commit merges only once its checks are green", () => {
@@ -312,7 +331,11 @@ describe("a pushed commit merges only once its checks are green", () => {
         const entry = yield* verified(projectId, 7);
         const pull = github.pulls.get(7)!;
         pull.checks = [{ name: "build", status: "pending", required: true }];
-        const first = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: entry.headSha });
+        const first = yield* queue.mergeHead({
+          projectId,
+          number: 7,
+          expectedHeadSha: entry.headSha,
+        });
         assert.strictEqual(first.outcome, "waiting");
         assert.deepEqual(mergesOf(github), []);
         const pushed = remoteHead(github.repos!, "houston/7")!;
@@ -396,7 +419,9 @@ describe("the merge queue has no push but the lease and no unpinned merge", () =
       const directory = import.meta.dirname;
       const sources = NodeFS.readdirSync(directory, { recursive: true })
         .map(String)
-        .filter((file) => file.endsWith(".ts") && !file.includes(".test.") && !file.includes("testkit"));
+        .filter(
+          (file) => file.endsWith(".ts") && !file.includes(".test.") && !file.includes("testkit"),
+        );
       assert.isNotEmpty(sources);
       // Every git argument list that names `push`, wherever it starts.
       const pushSites: Array<{ readonly file: string; readonly args: string }> = [];
@@ -477,7 +502,13 @@ describe("a queue merge is logged, reported and moves the next entry up", () => 
           );
           assert.strictEqual(merge.length, 1);
           assert.deepEqual(
-            [merge[0]!.refName, merge[0]!.oldSha, merge[0]!.newSha, merge[0]!.headSha, merge[0]!.method],
+            [
+              merge[0]!.refName,
+              merge[0]!.oldSha,
+              merge[0]!.newSha,
+              merge[0]!.headSha,
+              merge[0]!.method,
+            ],
             ["main", baseBefore, baseAfter, entry.verification!.verifiedSha, "squash"],
           );
           assert.deepEqual(

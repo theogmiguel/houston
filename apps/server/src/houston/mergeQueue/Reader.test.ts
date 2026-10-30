@@ -4,7 +4,6 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
-import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
 
 import {
@@ -20,8 +19,8 @@ import { HoustonMergeQueueReader } from "./Reader.ts";
 import { HoustonMergeQueueService } from "./Service.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
 
-const realSleep = (ms: number) =>
-  Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+// Real time while the test clock holds the reader's minute.
+const realSleep = (ms: number) => TestClock.withLive(Effect.sleep(`${ms} millis`));
 
 describe("queued pull requests are re-read each minute and leave when merged or closed", () => {
   it.effect("queued pull requests are re-read each minute and leave when merged or closed", () => {
@@ -74,7 +73,7 @@ describe("queued pull requests are re-read each minute and leave when merged or 
         3,
       );
       // Nothing changed on GitHub, so nothing was published.
-      assert.strictEqual(yield* Queue.size(events), 0);
+      assert.strictEqual(yield* PubSub.remaining(events), 0);
 
       // #12 merged and #14 closed outside the queue.
       const head12 = remoteHead(repos, "houston/12")!;
@@ -95,11 +94,13 @@ describe("queued pull requests are re-read each minute and leave when merged or 
         headRef: "houston/12",
         baseRef: "main",
       });
-      assert.isAbove(yield* Queue.size(events), 0);
+      assert.isAbove(yield* PubSub.remaining(events), 0);
 
       // The idle project's queue was never read.
       assert.isTrue(
-        github.requests.every((request) => /\/(12|13|14)$/.test(request.path) || request.path.endsWith("/graphql")),
+        github.requests.every(
+          (request) => /\/(12|13|14)$/.test(request.path) || request.path.endsWith("/graphql"),
+        ),
       );
     }).pipe(
       Effect.scoped,

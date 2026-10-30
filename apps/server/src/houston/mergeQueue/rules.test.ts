@@ -93,7 +93,9 @@ describe("enqueue checks refuse a full queue, unknown dependencies and cycles", 
     const full = Array.from({ length: 32 }, (_, index) => row(index + 1));
     const refusal = checkEnqueue(full, "web", 33, null);
     expect(refusal?.kind).toBe("limit");
-    expect(refusal?.message).toContain("holds 32 entries and its limit is 32; refusing to enqueue PR #33");
+    expect(refusal?.message).toContain(
+      "holds 32 entries and its limit is 32; refusing to enqueue PR #33",
+    );
     expect(refusal?.limit).toBe(32);
     expect(refusal?.actual).toBe(32);
     // Re-enqueueing a queued pull request keeps its place, even at the limit.
@@ -157,22 +159,43 @@ describe("gates fail closed on a missing or failed read", () => {
 });
 
 describe("mergeable passes only an open green approved clean pull request", () => {
-  const checks = (...entries: ReadonlyArray<readonly [string, Facts["checks"][number]["status"]]>) =>
-    entries.map(([name, status]) => ({ name, status, required: false }));
+  const checks = (
+    ...entries: ReadonlyArray<readonly [string, Facts["checks"][number]["status"]]>
+  ) => entries.map(([name, status]) => ({ name, status, required: false }));
   const CASES: ReadonlyArray<readonly [string, Partial<Facts>, string]> = [
-    ["a failing check", { checks: checks(["build", "failure"]) }, "PR #7 has 1 failing check: build"],
-    ["a pending check", { checks: checks(["test", "pending"]) }, "PR #7 is waiting on 1 check: test"],
-    ["a cancelled check", { checks: checks(["lint", "cancelled"]) }, "PR #7 has 1 failing check: lint"],
+    [
+      "a failing check",
+      { checks: checks(["build", "failure"]) },
+      "PR #7 has 1 failing check: build",
+    ],
+    [
+      "a pending check",
+      { checks: checks(["test", "pending"]) },
+      "PR #7 is waiting on 1 check: test",
+    ],
+    [
+      "a cancelled check",
+      { checks: checks(["lint", "cancelled"]) },
+      "PR #7 has 1 failing check: lint",
+    ],
     [
       "an action-required check",
       { checks: checks(["deploy", "action-required"]) },
       "PR #7 has 1 failing check: deploy",
     ],
     ["a draft", { isDraft: true }, "PR #7 is a draft"],
-    ["changes requested", { reviewDecision: "changes-requested" }, "changes were requested on PR #7"],
+    [
+      "changes requested",
+      { reviewDecision: "changes-requested" },
+      "changes were requested on PR #7",
+    ],
     ["review required", { reviewDecision: "review-required" }, "PR #7 needs an approving review"],
     ["behind", { mergeState: "BEHIND" }, "PR #7 is behind main"],
-    ["unstable with every check green", { mergeState: "UNSTABLE" }, "GitHub reports PR #7 unstable"],
+    [
+      "unstable with every check green",
+      { mergeState: "UNSTABLE" },
+      "GitHub reports PR #7 unstable",
+    ],
     // The first blocking fact in the stated order wins.
     [
       "a draft with a failing check",
@@ -181,7 +204,11 @@ describe("mergeable passes only an open green approved clean pull request", () =
     ],
     [
       "a failing check with changes requested and behind",
-      { checks: checks(["build", "failure"]), reviewDecision: "changes-requested", mergeState: "BEHIND" },
+      {
+        checks: checks(["build", "failure"]),
+        reviewDecision: "changes-requested",
+        mergeState: "BEHIND",
+      },
       "PR #7 has 1 failing check: build",
     ],
   ];
@@ -201,7 +228,9 @@ describe("mergeable passes only an open green approved clean pull request", () =
 
 describe("a base-only refusal waits for the verification's rebase", () => {
   it("a base-only refusal waits for the verification's rebase", () => {
-    const conflicting = row(7, { facts: facts({ mergeState: "DIRTY", mergeability: "conflicting" }) });
+    const conflicting = row(7, {
+      facts: facts({ mergeState: "DIRTY", mergeability: "conflicting" }),
+    });
     const withCommand = lineOf([conflicting], context({ commandSet: true }));
     const gate = entry(withCommand, 7).gates.find((value) => value.kind === "mergeable")!;
     expect(gate.state).toBe("pending");
@@ -215,9 +244,9 @@ describe("a base-only refusal waits for the verification's rebase", () => {
 
     const withoutCommand = lineOf([conflicting]);
     expect(entry(withoutCommand, 7).status).toBe("blocked");
-    expect(
-      entry(withoutCommand, 7).gates.find((value) => value.kind === "mergeable")!.state,
-    ).toBe("failed");
+    expect(entry(withoutCommand, 7).gates.find((value) => value.kind === "mergeable")!.state).toBe(
+      "failed",
+    );
     expect(nextUp(withoutCommand)).toBeUndefined();
 
     const alsoFailing = row(7, {
@@ -248,7 +277,9 @@ describe("review threads pass only with none unresolved and none unread", () => 
       state: "failed",
       reason: "PR #7 has 3 unresolved review threads",
     });
-    const truncated = threads(row(7, { facts: facts({ unresolvedThreads: 0, threadsTruncated: true }) }));
+    const truncated = threads(
+      row(7, { facts: facts({ unresolvedThreads: 0, threadsTruncated: true }) }),
+    );
     expect(truncated.state).toBe("failed");
     expect(truncated.reason).toContain(
       "has more review threads than Houston reads; check them on GitHub",
@@ -369,9 +400,15 @@ describe("settings are bounded and the policy needs a command", () => {
 
   it("settings are bounded and the policy needs a command", () => {
     const trimmed = checkSettings(input({ verificationCommand: "  pnpm test  " }), 0);
-    expect(trimmed).toEqual({ verificationCommand: "pnpm test", timeLimitMinutes: 30, mergeWhenVerified: false });
+    expect(trimmed).toEqual({
+      verificationCommand: "pnpm test",
+      timeLimitMinutes: 30,
+      mergeWhenVerified: false,
+    });
 
-    expect("kind" in checkSettings(input({ verificationCommand: "x".repeat(1_024) }), 0)).toBe(false);
+    expect("kind" in checkSettings(input({ verificationCommand: "x".repeat(1_024) }), 0)).toBe(
+      false,
+    );
     const long = checkSettings(input({ verificationCommand: "x".repeat(1_025) }), 0);
     expect(long).toMatchObject({ kind: "limit", limit: 1_024, actual: 1_025 });
     expect((long as { message: string }).message).toContain("1,024");
@@ -392,7 +429,9 @@ describe("settings are bounded and the policy needs a command", () => {
 
     const policy = checkSettings(input({ mergeWhenVerified: true, verificationCommand: "  " }), 0);
     expect(policy).toMatchObject({ kind: "invalid" });
-    expect((policy as { message: string }).message).toContain("Settings ▸ Workspaces ▸ Merge queue");
+    expect((policy as { message: string }).message).toContain(
+      "Settings ▸ Workspaces ▸ Merge queue",
+    );
 
     const stale = checkSettings(input({ expectedRevision: 2 }), 3);
     expect(stale).toMatchObject({ kind: "conflict", expected: 2, actual: 3 });

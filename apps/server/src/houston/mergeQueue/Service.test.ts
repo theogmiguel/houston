@@ -34,8 +34,7 @@ const withQueue = <A, E>(
   options: MergeQueueTestOptions = {},
 ) => body.pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ loops: false, ...options }))));
 
-const failure = <A>(effect: Effect.Effect<A, HoustonMergeQueueError>) =>
-  Effect.flip(effect) as Effect.Effect<HoustonMergeQueueError>;
+const failure = <A, R>(effect: Effect.Effect<A, HoustonMergeQueueError, R>) => Effect.flip(effect);
 
 /** A project whose checkout has a GitHub origin and open pull requests on pushed branches. */
 const githubProject = (name: string, github: FakeGitHub, numbers: ReadonlyArray<number>) =>
@@ -64,7 +63,9 @@ describe("enqueue reads fresh and appends at the tail", () => {
         const entry = yield* queue.enqueue({ projectId, pullRequest: pullUrl(12), dependsOn: 14 });
         // One fresh read: detail, activity and checks through PullRequestService, and one facts query.
         assert.deepEqual(
-          github.requests.map((request) => `${request.via} ${request.method} ${request.path}`).sort(),
+          github.requests
+            .map((request) => `${request.via} ${request.method} ${request.path}`)
+            .sort(),
           [
             "pullRequestService GET activity/12",
             "pullRequestService GET checks/12",
@@ -137,8 +138,20 @@ describe("enqueue refuses what cannot join, by name", () => {
             "invalid",
             ["PR #9 is closed; only an open pull request joins the merge queue"],
           ],
-          ["a URL in another repository", projectId, pullUrl(3, "other/repo"), "invalid", ["other/repo", "o/r"]],
-          ["GitHub answers from another repository", projectId, 4, "invalid", ["other/repo", "o/r"]],
+          [
+            "a URL in another repository",
+            projectId,
+            pullUrl(3, "other/repo"),
+            "invalid",
+            ["other/repo", "o/r"],
+          ],
+          [
+            "GitHub answers from another repository",
+            projectId,
+            4,
+            "invalid",
+            ["other/repo", "o/r"],
+          ],
           ["a fork's branch", projectId, 5, "invalid", ["someone/r"]],
           ["no head branch", projectId, 6, "invalid", ["PR #6 has no head branch"]],
           [
@@ -170,18 +183,20 @@ describe("entry refusals send no GitHub request", () => {
       Effect.gen(function* () {
         const queue = yield* HoustonMergeQueueService;
         const numbers = Array.from({ length: 32 }, (_, index) => index + 1);
-        const projectId = yield* githubProject("full", github, [...numbers, 33]);
-        for (const number of numbers) {
-          yield* queue.enqueue({
-            projectId,
-            pullRequest: number,
-            ...(number === 12 ? { dependsOn: 14 } : {}),
-          });
+        // Heads GitHub reports without branches on the remote: nothing here pushes or verifies.
+        for (const number of [...numbers, 33]) {
+          openPull(github, number, { headSha: number.toString(16).padStart(40, "0") });
         }
+        const projectId = yield* createProject("full", github.repos!.checkout);
+        for (const number of numbers) yield* queue.enqueue({ projectId, pullRequest: number });
+        yield* queue.enqueue({ projectId, pullRequest: 12, dependsOn: 14 });
         github.requests.length = 0;
         const limit = yield* failure(queue.enqueue({ projectId, pullRequest: 33 }));
         assert.strictEqual(limit.kind, "limit");
-        assert.include(limit.message, "holds 32 entries and its limit is 32; refusing to enqueue PR #33");
+        assert.include(
+          limit.message,
+          "holds 32 entries and its limit is 32; refusing to enqueue PR #33",
+        );
         const self = yield* failure(queue.enqueue({ projectId, pullRequest: 7, dependsOn: 7 }));
         assert.strictEqual(self.kind, "invalid");
         const unknown = yield* failure(queue.enqueue({ projectId, pullRequest: 7, dependsOn: 99 }));
@@ -316,14 +331,15 @@ describe("the reviewer gate reads the slice's newest review run", () => {
 
         for (const number of [1, 2, 3]) yield* queue.enqueue({ projectId, pullRequest: number });
         const gate = (number: number) =>
-          queue.get({ projectId }).pipe(
-            Effect.map(
-              (snapshot) =>
+          queue
+            .get({ projectId })
+            .pipe(
+              Effect.map((snapshot) =>
                 snapshot.entries
                   .find((entry) => entry.number === number)!
                   .gates.find((value) => value.kind === "reviewer")!,
-            ),
-          );
+              ),
+            );
         assert.strictEqual((yield* gate(1)).state, "passed");
         const running = yield* gate(2);
         assert.strictEqual(running.state, "failed");
@@ -370,7 +386,9 @@ describe("a changed command discards the verifications it passed", () => {
             at: "2026-10-30T10:00:00.000Z",
           });
         }
-        const verified = (yield* queue.get({ projectId })).entries.map((entry) => entry.verification);
+        const verified = (yield* queue.get({ projectId })).entries.map(
+          (entry) => entry.verification,
+        );
         assert.isTrue(verified.every((value) => value !== null));
 
         // The same command with another time limit keeps them.
@@ -383,7 +401,11 @@ describe("a changed command discards the verifications it passed", () => {
         );
         assert.strictEqual(stale.kind, "conflict");
 
-        yield* queue.setSettings({ ...settings, verificationCommand: "pnpm check", expectedRevision: 2 });
+        yield* queue.setSettings({
+          ...settings,
+          verificationCommand: "pnpm check",
+          expectedRevision: 2,
+        });
         const after = yield* queue.get({ projectId });
         assert.deepEqual(
           after.entries.map((entry) => entry.verification),

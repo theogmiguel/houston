@@ -31,8 +31,7 @@ import { HoustonMergeQueueRunner } from "./Runner.ts";
 import { HoustonMergeQueueService } from "./Service.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
 
-const realSleep = (ms: number) =>
-  Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+const realSleep = (ms: number) => Effect.sleep(`${ms} millis`);
 const quoted = (path: string) => `"${path}"`;
 const WINDOWS = process.platform === "win32";
 /** A command that leaves `marker` behind, then waits until `release` exists. */
@@ -51,43 +50,46 @@ const merged = (github: FakeGitHub) =>
   mergesOf(github).map((request) => Number(/pulls\/(\d+)\/merge/.exec(request.path)![1]));
 
 describe("an unresolved review thread lets the next entry merge and goes first once resolved", () => {
-  it.live("an unresolved review thread lets the next entry merge and goes first once resolved", () => {
-    const github = makeGitHub(makeRepos());
-    return withQueue(
-      github,
-      Effect.gen(function* () {
-        const queue = yield* HoustonMergeQueueService;
-        const runner = yield* HoustonMergeQueueRunner;
-        const reader = yield* HoustonMergeQueueReader;
-        const projectId = yield* queueScenario(github, [1, 2], {
-          command: "git --version",
-          mergeWhenVerified: true,
-        });
-        github.pulls.get(1)!.unresolvedThreads = 1;
-        yield* reader.readProject(projectId);
-        const blocked = yield* queue.get({ projectId });
-        assert.deepEqual(
-          { position: entryOf(blocked, 1).position, status: entryOf(blocked, 1).status },
-          { position: 1, status: "blocked" },
-        );
-        assert.strictEqual(entryOf(blocked, 2).status, "waitingForSlot");
+  it.live(
+    "an unresolved review thread lets the next entry merge and goes first once resolved",
+    () => {
+      const github = makeGitHub(makeRepos());
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const runner = yield* HoustonMergeQueueRunner;
+          const reader = yield* HoustonMergeQueueReader;
+          const projectId = yield* queueScenario(github, [1, 2], {
+            command: "git --version",
+            mergeWhenVerified: true,
+          });
+          github.pulls.get(1)!.unresolvedThreads = 1;
+          yield* reader.readProject(projectId);
+          const blocked = yield* queue.get({ projectId });
+          assert.deepEqual(
+            { position: entryOf(blocked, 1).position, status: entryOf(blocked, 1).status },
+            { position: 1, status: "blocked" },
+          );
+          assert.strictEqual(entryOf(blocked, 2).status, "waitingForSlot");
 
-        yield* runner.pass;
-        assert.deepEqual(merged(github), [2]);
-        const after = yield* queue.get({ projectId });
-        assert.deepEqual(
-          after.entries.map((entry) => [entry.number, entry.position, entry.status]),
-          [[1, 1, "blocked"]],
-        );
+          yield* runner.pass;
+          assert.deepEqual(merged(github), [2]);
+          const after = yield* queue.get({ projectId });
+          assert.deepEqual(
+            after.entries.map((entry) => [entry.number, entry.position, entry.status]),
+            [[1, 1, "blocked"]],
+          );
 
-        github.pulls.get(1)!.unresolvedThreads = 0;
-        yield* reader.readProject(projectId);
-        yield* runner.pass;
-        assert.deepEqual(merged(github), [2, 1]);
-        assert.deepEqual((yield* queue.get({ projectId })).entries, []);
-      }),
-    );
-  });
+          github.pulls.get(1)!.unresolvedThreads = 0;
+          yield* reader.readProject(projectId);
+          yield* runner.pass;
+          assert.deepEqual(merged(github), [2, 1]);
+          assert.deepEqual((yield* queue.get({ projectId })).entries, []);
+        }),
+      );
+    },
+  );
 });
 
 describe("one slot serialises verification across projects", () => {
@@ -121,7 +123,10 @@ describe("one slot serialises verification across projects", () => {
 
       // B's step finds the slot taken: it waits and its command has not started.
       yield* runner.step(projectB);
-      assert.strictEqual(entryOf(yield* queue.get({ projectId: projectB }), 1).status, "waitingForSlot");
+      assert.strictEqual(
+        entryOf(yield* queue.get({ projectId: projectB }), 1).status,
+        "waitingForSlot",
+      );
       assert.isFalse(NodeFS.existsSync(startedB));
 
       // A's command fails; the slot frees and B verifies on its next step.
@@ -167,71 +172,81 @@ describe("a parked entry re-enters when its head moves", () => {
 
 describe("a pause stops verification, push and merge and keeps the entry in line", () => {
   for (const scope of ["project", "global"] as const) {
-    it.live(`a pause stops verification, push and merge and keeps the entry in line: ${scope}`, () => {
-      const github = makeGitHub(makeRepos());
-      const gitLog = makeGitLog();
-      return withQueue(
-        github,
-        Effect.gen(function* () {
-          const queue = yield* HoustonMergeQueueService;
-          const runner = yield* HoustonMergeQueueRunner;
-          const store = yield* HoustonMergeQueueStore;
-          const marker = NodePath.join(github.repos!.root, "verified-2");
-          const projectId = yield* queueScenario(github, [1, 2], {
-            command: `git rev-parse HEAD >> ${quoted(marker)}`,
-          });
-          // #1 verifies while the queue runs; the policy is off, so it waits for Merge.
-          yield* runner.step(projectId);
-          const verified = entryOf(yield* queue.get({ projectId }), 1);
-          assert.isNotNull(verified.verification);
-          const lines = () =>
-            NodeFS.existsSync(marker) ? NodeFS.readFileSync(marker, "utf8").trim().split("\n").length : 0;
-          const ranBefore = lines();
+    it.live(
+      `a pause stops verification, push and merge and keeps the entry in line: ${scope}`,
+      () => {
+        const github = makeGitHub(makeRepos());
+        const gitLog = makeGitLog();
+        return withQueue(
+          github,
+          Effect.gen(function* () {
+            const queue = yield* HoustonMergeQueueService;
+            const runner = yield* HoustonMergeQueueRunner;
+            const store = yield* HoustonMergeQueueStore;
+            const marker = NodePath.join(github.repos!.root, "verified-2");
+            const projectId = yield* queueScenario(github, [1, 2], {
+              command: `git rev-parse HEAD >> ${quoted(marker)}`,
+            });
+            // #1 verifies while the queue runs; the policy is off, so it waits for Merge.
+            yield* runner.step(projectId);
+            const verified = entryOf(yield* queue.get({ projectId }), 1);
+            assert.isNotNull(verified.verification);
+            const lines = () =>
+              NodeFS.existsSync(marker)
+                ? NodeFS.readFileSync(marker, "utf8").trim().split("\n").length
+                : 0;
+            const ranBefore = lines();
 
-          const pause = (paused: boolean) =>
-            queue.pause(scope === "project" ? { projectId, paused } : { paused });
-          const paused = yield* pause(true);
-          assert.include(paused.message, "paused");
-          yield* queue.setSettings({
-            projectId,
-            mergeWhenVerified: true,
-            verificationCommand: `git rev-parse HEAD >> ${quoted(marker)}`,
-            timeLimitMinutes: 30,
-            expectedRevision: 1,
-          });
-          // Dequeue #1's verification holder so #2 would need one: no verification starts either.
-          const pushesBefore = pushesOf(gitLog).length;
-          yield* runner.pass;
-          assert.strictEqual(lines(), ranBefore);
-          assert.deepEqual(mergesOf(github), []);
-          assert.strictEqual(pushesOf(gitLog).length, pushesBefore);
-          const refused = (yield* Effect.flip(
-            queue.mergeHead({ projectId, number: 1, expectedHeadSha: verified.headSha }),
-          )) as HoustonMergeQueueError;
-          assert.strictEqual(refused.kind, "paused");
-          assert.include(
-            refused.message,
-            scope === "project" ? "the merge queue of scenario is paused" : "every merge queue is paused",
-          );
-          const held = yield* queue.get({ projectId });
-          assert.deepEqual(
-            held.entries.map((entry) => [entry.number, entry.position]),
-            [
-              [1, 1],
-              [2, 2],
-            ],
-          );
-          assert.strictEqual(entryOf(held, 1).status, "paused");
-          assert.deepEqual(entryOf(held, 1).verification, verified.verification);
-          assert.deepEqual((yield* store.rows(projectId)).map((row) => row.verification !== null), [true, false]);
+            const pause = (paused: boolean) =>
+              queue.pause(scope === "project" ? { projectId, paused } : { paused });
+            const paused = yield* pause(true);
+            assert.include(paused.message, "paused");
+            yield* queue.setSettings({
+              projectId,
+              mergeWhenVerified: true,
+              verificationCommand: `git rev-parse HEAD >> ${quoted(marker)}`,
+              timeLimitMinutes: 30,
+              expectedRevision: 1,
+            });
+            // Dequeue #1's verification holder so #2 would need one: no verification starts either.
+            const pushesBefore = pushesOf(gitLog).length;
+            yield* runner.pass;
+            assert.strictEqual(lines(), ranBefore);
+            assert.deepEqual(mergesOf(github), []);
+            assert.strictEqual(pushesOf(gitLog).length, pushesBefore);
+            const refused = (yield* Effect.flip(
+              queue.mergeHead({ projectId, number: 1, expectedHeadSha: verified.headSha }),
+            )) as HoustonMergeQueueError;
+            assert.strictEqual(refused.kind, "paused");
+            assert.include(
+              refused.message,
+              scope === "project"
+                ? "the merge queue of scenario is paused"
+                : "every merge queue is paused",
+            );
+            const held = yield* queue.get({ projectId });
+            assert.deepEqual(
+              held.entries.map((entry) => [entry.number, entry.position]),
+              [
+                [1, 1],
+                [2, 2],
+              ],
+            );
+            assert.strictEqual(entryOf(held, 1).status, "paused");
+            assert.deepEqual(entryOf(held, 1).verification, verified.verification);
+            assert.deepEqual(
+              (yield* store.rows(projectId)).map((row) => row.verification !== null),
+              [true, false],
+            );
 
-          yield* pause(false);
-          yield* runner.pass;
-          assert.deepEqual(merged(github).slice(0, 1), [1]);
-        }),
-        gitLog,
-      );
-    });
+            yield* pause(false);
+            yield* runner.pass;
+            assert.deepEqual(merged(github).slice(0, 1), [1]);
+          }),
+          gitLog,
+        );
+      },
+    );
   }
 });
 
@@ -273,22 +288,31 @@ describe("merge when verified lands unattended only while on", () => {
     );
   });
 
-  it.live("merge when verified lands unattended only while on: the user's merge is attended", () => {
-    const github = makeGitHub(makeRepos());
-    return withQueue(
-      github,
-      Effect.gen(function* () {
-        const queue = yield* HoustonMergeQueueService;
-        const runner = yield* HoustonMergeQueueRunner;
-        const projectId = yield* queueScenario(github, [1], { command: "git --version" });
-        yield* runner.pass;
-        const ready = entryOf(yield* queue.get({ projectId }), 1);
-        const result = yield* queue.mergeHead({ projectId, number: 1, expectedHeadSha: ready.headSha });
-        assert.strictEqual(result.outcome, "merged");
-        assert.isFalse((yield* queue.get({ projectId })).log.find((row) => row.kind === "merge")?.unattended);
-      }),
-    );
-  });
+  it.live(
+    "merge when verified lands unattended only while on: the user's merge is attended",
+    () => {
+      const github = makeGitHub(makeRepos());
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const runner = yield* HoustonMergeQueueRunner;
+          const projectId = yield* queueScenario(github, [1], { command: "git --version" });
+          yield* runner.pass;
+          const ready = entryOf(yield* queue.get({ projectId }), 1);
+          const result = yield* queue.mergeHead({
+            projectId,
+            number: 1,
+            expectedHeadSha: ready.headSha,
+          });
+          assert.strictEqual(result.outcome, "merged");
+          assert.isFalse(
+            (yield* queue.get({ projectId })).log.find((row) => row.kind === "merge")?.unattended,
+          );
+        }),
+      );
+    },
+  );
 });
 
 describe("the server and the harness start one runner and one slot", () => {
@@ -331,7 +355,9 @@ describe("the memory floor does not hold an ordinary verification", () => {
       Effect.gen(function* () {
         const queue = yield* HoustonMergeQueueService;
         const runner = yield* HoustonMergeQueueRunner;
-        const projectId: ProjectId = yield* queueScenario(github, [1], { command: "git --version" });
+        const projectId: ProjectId = yield* queueScenario(github, [1], {
+          command: "git --version",
+        });
         yield* runner.pass;
         assert.isNotNull(entryOf(yield* queue.get({ projectId }), 1).verification);
       }),

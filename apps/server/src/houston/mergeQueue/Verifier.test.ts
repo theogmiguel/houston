@@ -31,11 +31,14 @@ import {
 } from "./Verifier.ts";
 
 const WINDOWS = process.platform === "win32";
-const realSleep = (ms: number) =>
-  Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+// Real time: on the test clock through its live clock, in a live test directly.
+const realSleep = (ms: number) => TestClock.withLive(Effect.sleep(`${ms} millis`));
+const liveSleep = (ms: number) => Effect.sleep(`${ms} millis`);
 
 const withVerifier = <A, E>(
-  body: (verifier: HoustonMergeVerifier["Service"]) => Effect.Effect<A, E, HoustonBuildSlot>,
+  body: (
+    verifier: HoustonMergeVerifier["Service"],
+  ) => Effect.Effect<A, E, HoustonBuildSlot | ServerConfig.ServerConfig>,
 ) =>
   Effect.gen(function* () {
     const verifier = yield* HoustonMergeVerifier;
@@ -43,13 +46,20 @@ const withVerifier = <A, E>(
   }).pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ loops: false }))));
 
 /** A branch `houston/7` off main, then main moves on, so the rebase makes a new commit. */
-const branchBehindMain = (repos: Repos, files: Readonly<Record<string, string>> = { "a.txt": "a\n" }) => {
+const branchBehindMain = (
+  repos: Repos,
+  files: Readonly<Record<string, string>> = { "a.txt": "a\n" },
+) => {
   const head = pushBranch(repos, "houston/7", files);
   pushBranch(repos, "main", { "b.txt": "b\n" }, { message: "main moves" });
   return head;
 };
 
-const request = (repos: Repos, scratch: string, patch: Partial<VerifyRequest> = {}): VerifyRequest => ({
+const request = (
+  repos: Repos,
+  scratch: string,
+  patch: Partial<VerifyRequest> = {},
+): VerifyRequest => ({
   repo: repos.checkout,
   remote: "origin",
   baseRef: "main",
@@ -223,7 +233,11 @@ describe("a scratch path inside the checkout or a managed worktree is refused", 
         assert.isNull(
           (() => {
             try {
-              return git(repos.checkout, ["rev-parse", "--verify", "refs/houston/merge-queue/origin/main"]);
+              return git(repos.checkout, [
+                "rev-parse",
+                "--verify",
+                "refs/houston/merge-queue/origin/main",
+              ]);
             } catch {
               return null;
             }
@@ -247,8 +261,9 @@ describe("the command runs below normal priority in the scratch worktree", () =>
           ? `cd > ${quoted(where)} && powershell -NoProfile -Command "[System.Diagnostics.Process]::GetCurrentProcess().PriorityClass" > ${quoted(priority)}`
           : `pwd -P > ${quoted(where)} && nice > ${quoted(priority)}`;
         passed(yield* verifier.verify(request(repos, scratch, { command })));
+        // The scratch worktree is gone by now; the base dir is already a real path.
         assert.strictEqual(
-          NodeFS.realpathSync(NodeFS.readFileSync(where, "utf8").trim()).toLowerCase(),
+          NodeFS.readFileSync(where, "utf8").trim().toLowerCase(),
           scratch.toLowerCase(),
         );
         assert.strictEqual(
@@ -291,9 +306,7 @@ describe("a command past its limit times out and its children are gone", () => {
         const fiber = yield* slot
           .withSlot(
             "project-timeout #7",
-            verifier.verify(
-              request(repos, scratchOf(verifier), { command, timeLimitMinutes: 1 }),
-            ),
+            verifier.verify(request(repos, scratchOf(verifier), { command, timeLimitMinutes: 1 })),
           )
           .pipe(Effect.forkChild);
         for (let waited = 0; waited < 600; waited += 1) {
@@ -348,13 +361,13 @@ describe("the kill refuses a pid that is not an integer above 1", () => {
             detached: true,
           });
       for (let waited = 0; waited < 600 && !NodeFS.existsSync(childPid); waited += 1) {
-        yield* realSleep(50);
+        yield* liveSleep(50);
       }
-      yield* realSleep(200);
+      yield* liveSleep(200);
       const pids = [parent.pid!, Number(NodeFS.readFileSync(childPid, "utf8").trim())];
       assert.isTrue(pids.every(alive));
       assert.isNull(killProcessTree(parent.pid!));
-      for (let waited = 0; waited < 100 && pids.some(alive); waited += 1) yield* realSleep(50);
+      for (let waited = 0; waited < 100 && pids.some(alive); waited += 1) yield* liveSleep(50);
       assert.deepEqual(pids.filter(alive), []);
     }),
   );
@@ -371,7 +384,7 @@ describe("a conflict or a git failure is recorded and the scratch worktree remov
         const scratch = scratchOf(verifier);
         const conflict = yield* verifier.verify(request(repos, scratch));
         assert.strictEqual(conflict._tag, "Conflict", JSON.stringify(conflict));
-        assert.deepEqual([...(conflict as { files: Array<string> }).files].sort(), [
+        assert.deepEqual([...(conflict._tag === "Conflict" ? conflict.files : [])].sort(), [
           "README.md",
           "two.txt",
         ]);

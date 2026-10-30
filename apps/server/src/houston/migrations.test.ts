@@ -297,8 +297,9 @@ describe("the merge queue migration runs on the Houston track", () => {
           }
           yield* sql`INSERT INTO houston_merge_queue_global (id, paused) VALUES (1, 0)`;
           assert.isTrue(
-            (yield* Effect.exit(sql`INSERT INTO houston_merge_queue_global (id, paused) VALUES (2, 0)`))
-              ._tag === "Failure",
+            (yield* Effect.exit(
+              sql`INSERT INTO houston_merge_queue_global (id, paused) VALUES (2, 0)`,
+            ))._tag === "Failure",
           );
           const settings = yield* sql<Record<string, unknown>>`
             INSERT INTO houston_merge_queue_settings (project_id) VALUES ('p') RETURNING *

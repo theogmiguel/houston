@@ -21,7 +21,11 @@ const ENUMERATIONS: ReadonlyArray<readonly [string, Schema.Top, ReadonlyArray<st
     HoustonMergeQueueStatus,
     ["ready", "waitingForSlot", "verifying", "blocked", "paused", "watching", "fixing", "parked"],
   ],
-  ["gate kind", HoustonMergeQueueGateKind, ["mergeable", "reviewThreads", "reviewer", "verification"]],
+  [
+    "gate kind",
+    HoustonMergeQueueGateKind,
+    ["mergeable", "reviewThreads", "reviewer", "verification"],
+  ],
   ["gate state", HoustonMergeQueueGateState, ["passed", "failed", "pending", "notApplicable"]],
   [
     "failure kind",
@@ -29,7 +33,11 @@ const ENUMERATIONS: ReadonlyArray<readonly [string, Schema.Top, ReadonlyArray<st
     ["conflict", "failed", "timedOut", "refused", "checksFailed", "ejected"],
   ],
   ["hand-off", HoustonMergeQueueHandOff, ["houston", "autoMerge", "mergeQueue"]],
-  ["log kind", HoustonMergeQueueLogKind, ["push", "merge", "park", "restack", "retarget", "hand_off"]],
+  [
+    "log kind",
+    HoustonMergeQueueLogKind,
+    ["push", "merge", "park", "restack", "retarget", "hand_off"],
+  ],
 ];
 
 const settings = (patch: Record<string, unknown> = {}) => ({
@@ -66,24 +74,33 @@ describe("merge queue schemas bound their fields and enumerations", () => {
   it("settings refuse a command over 1,024 bytes and a limit outside 1-240", () => {
     expect(accepts(HoustonMergeQueueSettingsSetInput, settings())).toBe(true);
     expect(
-      accepts(HoustonMergeQueueSettingsSetInput, settings({ verificationCommand: "x".repeat(1_024) })),
+      accepts(
+        HoustonMergeQueueSettingsSetInput,
+        settings({ verificationCommand: "x".repeat(1_024) }),
+      ),
     ).toBe(true);
     expect(
-      accepts(HoustonMergeQueueSettingsSetInput, settings({ verificationCommand: "x".repeat(1_025) })),
+      accepts(
+        HoustonMergeQueueSettingsSetInput,
+        settings({ verificationCommand: "x".repeat(1_025) }),
+      ),
     ).toBe(false);
     // Bytes, not characters: 342 three-byte characters are 1,026 bytes.
     expect(
-      accepts(HoustonMergeQueueSettingsSetInput, settings({ verificationCommand: "€".repeat(342) })),
+      accepts(
+        HoustonMergeQueueSettingsSetInput,
+        settings({ verificationCommand: "€".repeat(342) }),
+      ),
     ).toBe(false);
     for (const minutes of [1, 30, 240]) {
-      expect(accepts(HoustonMergeQueueSettingsSetInput, settings({ timeLimitMinutes: minutes }))).toBe(
-        true,
-      );
+      expect(
+        accepts(HoustonMergeQueueSettingsSetInput, settings({ timeLimitMinutes: minutes })),
+      ).toBe(true);
     }
     for (const minutes of [0, 241, 1.5, -1]) {
-      expect(accepts(HoustonMergeQueueSettingsSetInput, settings({ timeLimitMinutes: minutes }))).toBe(
-        false,
-      );
+      expect(
+        accepts(HoustonMergeQueueSettingsSetInput, settings({ timeLimitMinutes: minutes })),
+      ).toBe(false);
     }
   });
 });

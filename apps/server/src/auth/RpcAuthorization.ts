@@ -197,6 +197,15 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonTaskSourcesSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTaskSourcesImportV1Status]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTaskSourcesImportV1Run]: AuthSettingsWriteScope,
+  [WS_METHODS.houstonMergeQueueGet]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueSubscribeSummary]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueEnqueue]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueDequeue]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueMergeHead]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueSettingsSet]: AuthSettingsWriteScope,
+  // One project's pause; pausing every queue needs AuthSettingsWriteScope (below).
+  [WS_METHODS.houstonMergeQueuePause]: AuthOrchestrationOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,
@@ -285,6 +294,10 @@ const requiredScopesForRpcCall = (
     ];
   }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
+  if (method === WS_METHODS.houstonMergeQueuePause) {
+    const projectId = (payload as { readonly projectId?: unknown } | null)?.projectId;
+    return [projectId === undefined ? AuthSettingsWriteScope : AuthOrchestrationOperateScope];
+  }
   if (method === WS_METHODS.projectsMutate) {
     return requiredScopesForProjectMutation(decodeProjectMutation(payload));
   }

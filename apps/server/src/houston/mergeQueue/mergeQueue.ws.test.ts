@@ -334,8 +334,15 @@ const layerServer = (options: MergeQueueTestOptions) =>
     Layer.provideMerge(layerMergeQueueTest({ loops: false, ...options })),
   );
 
-const withServer = <A, E>(body: Effect.Effect<A, E, ServerServices>, options: MergeQueueTestOptions) =>
-  body.pipe(Effect.provide(layerServer(options)), Effect.scoped, Effect.provide(NodeServices.layer));
+const withServer = <A, E>(
+  body: Effect.Effect<A, E, ServerServices>,
+  options: MergeQueueTestOptions,
+) =>
+  body.pipe(
+    Effect.provide(layerServer(options)),
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+  );
 
 /** A project whose pull requests are open on the fake and pushed to the bare remote. */
 const project = (name: string, github: FakeGitHub, numbers: ReadonlyArray<number>) =>
@@ -466,7 +473,11 @@ describe("each method requires its declared scope and a known project", () => {
           readonly payload: object;
           readonly stream?: boolean;
         }> = [
-          { method: WS_METHODS.houstonMergeQueueGet, scope: AuthOrchestrationReadScope, payload: { projectId } },
+          {
+            method: WS_METHODS.houstonMergeQueueGet,
+            scope: AuthOrchestrationReadScope,
+            payload: { projectId },
+          },
           {
             method: WS_METHODS.houstonMergeQueueSubscribe,
             scope: AuthOrchestrationReadScope,
@@ -530,7 +541,10 @@ describe("each method requires its declared scope and a known project", () => {
           [WS_METHODS.houstonMergeQueueSubscribe, { projectId: unknown }],
           [WS_METHODS.houstonMergeQueueEnqueue, { projectId: unknown, pullRequest: 1 }],
           [WS_METHODS.houstonMergeQueueDequeue, { projectId: unknown, number: 1 }],
-          [WS_METHODS.houstonMergeQueueMergeHead, { projectId: unknown, number: 1, expectedHeadSha: head }],
+          [
+            WS_METHODS.houstonMergeQueueMergeHead,
+            { projectId: unknown, number: 1, expectedHeadSha: head },
+          ],
           [WS_METHODS.houstonMergeQueueSettingsSet, { projectId: unknown, ...SETTINGS }],
           [WS_METHODS.houstonMergeQueuePause, { projectId: unknown, paused: true }],
         ] as const) {
