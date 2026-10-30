@@ -183,7 +183,7 @@ const make = Effect.gen(function* () {
       return yield* refuse(
         "limit",
         operation,
-        `the token is ${size} bytes, over the limit of ${HOUSTON_TASK_SOURCE_LIMITS.tokenBytes} bytes`,
+        `the Notion integration token is ${size} bytes, over the limit of ${HOUSTON_TASK_SOURCE_LIMITS.tokenBytes} bytes`,
         { limit: HOUSTON_TASK_SOURCE_LIMITS.tokenBytes, actual: size },
       );
     }

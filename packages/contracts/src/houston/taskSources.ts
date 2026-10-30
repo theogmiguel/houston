@@ -14,7 +14,8 @@ export const HOUSTON_TASK_SOURCE_LIMITS = {
   propertyIdBytes: 200,
   /** Characters of a refused value a refusal quotes. */
   quotedChars: 120,
-  tokenBytes: 4_096,
+  /** Windows Credential Manager holds about 2,560 bytes per secret; one bound on every platform. */
+  tokenBytes: 2_048,
 } as const;
 
 export const HoustonTaskSourceProvider = Schema.Literals(["github_issues", "notion"]);

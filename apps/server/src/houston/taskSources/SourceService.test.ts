@@ -289,17 +289,31 @@ describe("a notion token goes to the keychain only", () => {
         const fits = yield* sources.setCredential({
           projectId,
           provider: "notion",
-          token: Redacted.make("x".repeat(4_096)),
+          token: Redacted.make("x".repeat(2_048)),
         });
         assert.isTrue(fits.hasCredential);
+        // Windows Credential Manager holds about 2,560 bytes per secret: one bound everywhere.
         const over = yield* failure(
           sources.setCredential({
             projectId,
             provider: "notion",
-            token: Redacted.make("x".repeat(4_097)),
+            token: Redacted.make("x".repeat(2_049)),
           }),
         );
-        assert.deepInclude(over, { kind: "limit", limit: 4_096, actual: 4_097 });
+        assert.deepInclude(over, {
+          kind: "limit",
+          limit: 2_048,
+          actual: 2_049,
+          operation: "houston.taskSources.credential.set",
+        });
+        assert.include(over.message, "houston.taskSources.credential.set");
+        assert.include(over.message, "2049 bytes");
+        assert.include(over.message, "2048 bytes");
+        assert.include(over.message, "Notion integration token");
+        assert.strictEqual(
+          keychain.entries.get(`${service}\u0000integration-token`),
+          "x".repeat(2_048),
+        );
         const github = yield* failure(
           sources.setCredential({
             projectId,
