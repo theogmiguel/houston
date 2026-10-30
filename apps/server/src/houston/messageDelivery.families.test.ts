@@ -5,19 +5,26 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
+  ProjectId,
   ProviderDriverKind,
+  ProviderInstanceId,
   type OrchestrationV2DomainEvent,
   type ProviderReplayTranscript,
 } from "@t3tools/contracts";
 import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
 import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { materializeReplayTranscriptWorkspace } from "@t3tools/provider-testing/replayTranscript";
 
 import { AcpRegistryOrchestratorReplayHarness } from "../orchestration-v2/Adapters/AcpRegistryAdapterV2.testkit.ts";
 import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { ClaudeOrchestratorReplayHarness } from "../orchestration-v2/Adapters/ClaudeAdapterV2.testkit.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { CodexOrchestratorReplayHarness } from "../orchestration-v2/Adapters/CodexAdapterV2.testkit.ts";
 import { OpenCode2OrchestratorReplayHarness } from "../orchestration-v2/Adapters/OpenCode2AdapterV2.testkit.ts";
 import type { OrchestratorV2ScenarioResult } from "../orchestration-v2/testkit/OrchestratorScenario.ts";
@@ -38,6 +45,21 @@ import {
 } from "../orchestration-v2/testkit/ProviderReplayFixtures.ts";
 import type { OrchestratorV2ProviderReplayHarness } from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { latest, makeHarness, runWith, type DoubleOptions } from "./messageDelivery.testkit.ts";
+
+// The thread service an agent's MCP `thread send` goes through, over the harness's orchestrator.
+const threadManagementLayer = ThreadManagementService.layer.pipe(
+  Layer.provide(
+    ServerSettings.layerTest({
+      providerInstances: {
+        [ProviderInstanceId.make("antigravity")]: {
+          driver: ProviderDriverKind.make("antigravity"),
+          enabled: true,
+        },
+      },
+    }).pipe(Layer.orDie),
+  ),
+  Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))),
+);
 
 const variantOf = (fixtureName: string, driver: string): ProviderOrchestratorReplayVariant => {
   const variant = findReplayFixture(fixtureName)?.providers.find(
@@ -523,6 +545,46 @@ describe("send intents per provider family", () => {
         }),
       );
     }),
+  );
+
+  it.effect(
+    "an automatic thread send keeps upstream's resolution where the provider cannot steer",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("auto-thread-send-antigravity", {
+          driver: "antigravity",
+          capabilities: AcpProviderCapabilitiesV2,
+        });
+        yield* runWith(harness, ({ startFirst, settle, deliveries, threadId, runningTurn }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const turn = yield* runningTurn;
+            const messageId = MessageId.make("message:auto-thread-send");
+            // An agent's MCP `thread send` with no mode sends `auto`.
+            const threads = yield* ThreadManagementService.ThreadManagementService;
+            yield* threads.sendToThread({
+              projectId: ProjectId.make("project:message-delivery"),
+              commandId: CommandId.make("auto-thread-send"),
+              threadId,
+              messageId,
+              text: "agent follow-up",
+              attachments: [],
+              mode: "auto",
+              createdBy: "agent",
+              creationSource: "mcp",
+            });
+            yield* settle;
+            // Upstream interrupts the turn and restarts it with the message; nothing is refused.
+            assert.deepEqual(harness.interrupted, [turn.id]);
+            assert.lengthOf(harness.steered, 0);
+            assert.equal(harness.started.at(-1)?.message.messageId, messageId);
+            assert.equal(harness.started.at(-1)?.runId, runId);
+            const history = deliveries(messageId);
+            assert.deepInclude(history[0], { intent: "interrupt", route: "ownTurn" });
+            assertReadAtTurnStart(history, "auto thread send");
+          }).pipe(Effect.provide(threadManagementLayer)),
+        );
+      }),
   );
 
   it.effect("an interrupt is refused by name on Claude", () =>
