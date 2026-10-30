@@ -168,6 +168,8 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { acceptedDelivery, nextDelivery } from "../houston/messageDelivery.ts";
+import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -626,6 +628,59 @@ function mayStartSubagentFollowup(
     return false;
   if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
   return command.createdBy === "user" || command.creationSource === "mcp";
+}
+
+// Houston: a queued message's delivery, kept on the message until its run starts. A rerouted
+// steer's follow-up keeps the record the steer had; notifications and completions carry none.
+function queuedMessageDelivery(
+  projection: Pick<OrchestrationV2ThreadProjection, "turnItems">,
+  command: {
+    readonly messageId: OrchestrationV2ConversationMessage["id"];
+    readonly notification?: unknown;
+  },
+  delegatedCompletion: unknown,
+  input: {
+    readonly requestedIntent: MessageDelivery["intent"];
+    readonly steerRerouted: "turnEnded" | "turnBusy" | undefined;
+    readonly now: DateTime.Utc;
+  },
+): { readonly delivery?: MessageDelivery } {
+  const existing = projection.turnItems.find(
+    (item) => item.type === "user_message" && item.messageId === command.messageId,
+  );
+  if (existing?.type === "user_message" && existing.delivery !== undefined) {
+    return { delivery: existing.delivery };
+  }
+  if (command.notification !== undefined || delegatedCompletion !== undefined) return {};
+  const rerouted =
+    input.steerRerouted ?? (input.requestedIntent === "steer" ? "turnBusy" : undefined);
+  return {
+    delivery: acceptedDelivery({
+      intent: input.requestedIntent,
+      route: "ownTurn",
+      ...(rerouted === undefined ? {} : { rerouted }),
+      at: input.now,
+    }),
+  };
+}
+
+// Houston: a steer's follow-up turn keeps the steer's delivery record; a steer that arrives
+// after its turn ended starts one, rerouted.
+function turnStartDelivery(
+  projection: Pick<OrchestrationV2ThreadProjection, "turnItems">,
+  messageId: OrchestrationV2ConversationMessage["id"],
+  rerouted: "turnEnded" | "turnBusy" | undefined,
+  now: DateTime.Utc,
+): { readonly delivery?: MessageDelivery } {
+  const existing = projection.turnItems.find(
+    (item) => item.type === "user_message" && item.messageId === messageId,
+  );
+  if (existing?.type === "user_message" && existing.delivery !== undefined) {
+    return { delivery: existing.delivery };
+  }
+  return rerouted === undefined
+    ? {}
+    : { delivery: acceptedDelivery({ intent: "steer", route: "ownTurn", rerouted, at: now }) };
 }
 
 function isBlockingRun(run: OrchestrationV2Run): boolean {
@@ -1592,6 +1647,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           candidate.runId === queuedRun.id &&
           candidate.messageId === queuedRun.userMessageId,
       );
+      // Houston: the queued message's delivery moves onto its item when the run starts.
+      const queuedDelivery = queuedMessage?.delivery;
       const storedProviderThread = projection.providerThreads.find(
         (candidate) => candidate.id === providerThreadId,
       );
@@ -1939,6 +1996,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }),
         providerThreadId: queuedProviderThread.id,
         inputIntent: "queued_turn",
+        ...(queuedDelivery === undefined ? {} : { delivery: queuedDelivery }),
         status: "completed",
         startedAt: now,
         completedAt: now,
@@ -4490,6 +4548,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         readonly providerTurnId: typeof providerTurn.id | null;
         readonly providerThreadId: OrchestrationV2ProviderThread["id"];
         readonly providerInstanceId: ProviderInstanceId;
+        readonly delivery: MessageDelivery;
       }) {
         const message: OrchestrationV2ConversationMessage = {
           createdBy: input.createdBy,
@@ -4542,6 +4601,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             input.command.type === "queued-message.promote-to-steer"
               ? "promoted_queued_to_steer"
               : "steer",
+          delivery: messageInput.delivery,
           text: input.text,
           attachments: input.attachments,
           ...(input.context ? { context: input.context } : {}),
@@ -4610,6 +4670,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerTurnId: providerTurn.id,
         providerThreadId: providerThread.id,
         providerInstanceId: targetRun.providerInstanceId,
+        delivery: acceptedDelivery({
+          intent: "steer",
+          route: "activeTurn",
+          ...(input.command.type === "queued-message.promote-to-steer"
+            ? { promotedFrom: "queue" as const }
+            : {}),
+          at: now,
+        }),
       });
       yield* Ref.update(input.effects, (existing) => [
         ...existing,
@@ -5001,6 +5069,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerTurnId: null,
       providerThreadId: restartProviderThread.id,
       providerInstanceId: input.modelSelection.instanceId,
+      // A selection that must apply now restarts a steer; the message then starts the new attempt.
+      delivery: acceptedDelivery({
+        intent: input.forceRestart ? "interrupt" : "steer",
+        route: "ownTurn",
+        at: now,
+      }),
     });
     const interruptedAttemptId = targetRun.activeAttemptId;
     if (interruptedAttemptId === null) {
@@ -5249,6 +5323,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.dispatchMode,
       command.deliveryIntent,
     );
+    // Houston: the intent the sender chose, kept on the message's delivery record.
+    const requestedIntent =
+      command.deliveryIntent === "steer" ||
+      (command.deliveryIntent === undefined && command.dispatchMode.type === "steer_active")
+        ? ("steer" as const)
+        : command.deliveryIntent === "restart" ||
+            (command.deliveryIntent === undefined && command.dispatchMode.type === "restart_active")
+          ? ("interrupt" as const)
+          : ("queue" as const);
+    let steerRerouted: "turnEnded" | "turnBusy" | undefined =
+      requestedIntent === "steer" && dispatchMode.type === "queue_after_active"
+        ? "turnBusy"
+        : undefined;
     if (dispatchMode.type === "steer_active") {
       const targetRunId = dispatchMode.targetRunId;
       const target = projection.runs.find((run) => run.id === targetRunId);
@@ -5266,6 +5353,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             turn.status === "completed"))
       ) {
         dispatchMode = { type: "start_immediately" };
+        if (requestedIntent === "steer") steerRerouted = "turnEnded";
       }
     }
     // Stop leaves the run reading as running until its provider stops. A plain
@@ -5742,6 +5830,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         updatedAt: now,
         ...(delegatedCompletion === undefined ? {} : { delegatedCompletion }),
         ...(command.notification === undefined ? {} : { notification: command.notification }),
+        ...queuedMessageDelivery(projection, command, delegatedCompletion, {
+          requestedIntent,
+          steerRerouted,
+          now,
+        }),
       };
       const emitEvent = emit(events, command);
       if (targetProviderThread === undefined) {
@@ -6115,6 +6208,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         type: "user_message",
         messageId: command.messageId,
         inputIntent: "turn_start",
+        ...turnStartDelivery(projection, command.messageId, steerRerouted, now),
         text: dispatchText,
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
@@ -6804,6 +6898,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       type: "user_message",
       messageId: command.messageId,
       inputIntent: "turn_start",
+      ...turnStartDelivery(projection, command.messageId, steerRerouted, now),
       text: dispatchText,
       ...(command.context ? { context: command.context } : {}),
       attachments: command.attachments,
@@ -9317,6 +9412,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...queuedRootNode,
           status: "cancelled",
           completedAt: now,
+        },
+      });
+    }
+    // Houston: the queued message records that it was dropped.
+    if (queuedMessage?.delivery !== undefined) {
+      yield* emitEvent({
+        type: "message.updated",
+        threadId: command.threadId,
+        runId: queuedRun.id,
+        ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+        providerInstanceId: queuedRun.providerInstanceId,
+        occurredAt: now,
+        payload: {
+          ...queuedMessage,
+          delivery: nextDelivery(queuedMessage.delivery, { type: "cancelled", at: now }),
+          updatedAt: now,
         },
       });
     }

@@ -5,38 +5,19 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   AuthSessionId,
   EnvironmentId,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  ProviderTurnId,
-  RunAttemptId,
-  RunId,
   RpcScopeAuthorization,
-  WS_METHODS,
   WsRpcGroup,
-  type ModelSelection,
-  type OrchestrationV2AppThread,
-  type OrchestrationV2ProviderFailure,
-  type ServerConfig as ServerConfigPayload,
-  type ServerConfigStreamEvent,
-  type ServerProvider,
 } from "@t3tools/contracts";
-import { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
-import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
-import * as Ref from "effect/Ref";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { Headers, HttpClient, HttpClientResponse } from "effect/http";
+import { Headers } from "effect/http";
 import { RpcMessage, RpcServer } from "effect/rpc";
 
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
@@ -53,10 +34,7 @@ import * as DirectEndpoints from "../environment/DirectEndpoints.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as EnvironmentTheme from "../environmentTheme.ts";
-import * as EventSink from "../orchestration-v2/EventSink.ts";
-import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as HostResources from "../resourceTelemetry/HostResources.ts";
@@ -78,16 +56,13 @@ import * as ProcessResourceMonitor from "../diagnostics/ProcessResourceMonitor.t
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
-import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
-import * as ProviderEventIngestor from "../orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderMaintenanceRunner from "../provider/providerMaintenanceRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
-import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "../orchestration-v2/PullRequestSyncReactor.ts";
@@ -114,7 +89,6 @@ import * as SourceControlSignIn from "../sourceControl/SourceControlSignIn.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
-import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
@@ -129,6 +103,11 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
+import { MessageId, ORCHESTRATION_V2_WS_METHODS } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+
 import { latest, makeHarness, runWith } from "./messageDelivery.testkit.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
@@ -241,6 +220,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ServerBrowser.ServerBrowser)({}),
   Layer.mock(ModelManifest.ModelManifest)({}),
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
+  Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+  Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
   // Scope checks have their own tests; these calls run as a fully scoped client.
   Layer.succeed(RpcScopeAuthorization)((effect) => effect),
 );
@@ -294,9 +275,11 @@ const makeWsClient = Effect.fn("makeWsClient")(function* () {
   return { responses, request, ack, interrupt };
 });
 
-
 /** Every user_message item carried by a value, at any depth. */
-const userMessageItems = (value: unknown, messageId: string): ReadonlyArray<Record<string, unknown>> => {
+const userMessageItems = (
+  value: unknown,
+  messageId: string,
+): ReadonlyArray<Record<string, unknown>> => {
   const found: Array<Record<string, unknown>> = [];
   const seen = new Set<unknown>();
   const visit = (node: unknown) => {
@@ -342,6 +325,28 @@ const deliveryEvents = (value: unknown, messageId: string) => {
   return events as ReadonlyArray<{ readonly state: string; readonly evidence: string | null }>;
 };
 
+/** The thread reads `/ws` makes through ThreadManagement, served by the double's runtime. */
+const threadReads = Effect.map(
+  Orchestrator.OrchestratorV2,
+  (orchestrator) =>
+    ({
+      ensureLegacyTranscript: () => Effect.void,
+      getThreadShell: orchestrator.getThreadShell,
+      getThreadSnapshot: orchestrator.getThreadSnapshot,
+      getThreadSnapshotWindow: orchestrator.getThreadSnapshotWindow,
+      readShellSnapshot: orchestrator.readShellSnapshot,
+      getThreadEventSequence: orchestrator.getThreadEventSequence,
+      streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
+      getTurnItem: orchestrator.getTurnItem,
+      getThreadRecords: orchestrator.getThreadRecords,
+    }) as unknown as ThreadManagement.ThreadManagementService["Service"],
+);
+
+const withThreadReads = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(threadReads, (reads) =>
+    effect.pipe(Effect.provideService(ThreadManagement.ThreadManagementService, reads)),
+  );
+
 const withWs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.provide(
@@ -363,39 +368,46 @@ describe("deliveries reach the renderer's thread reads", () => {
       Effect.gen(function* () {
         const harness = yield* makeHarness("ws-subscription", { steerAdopts: true });
         yield* runWith(harness, ({ send, startFirst, settle, threadId, deliveries }) =>
-          Effect.gen(function* () {
-            const runId = yield* startFirst;
-            const client = yield* makeWsClient();
-            yield* client.request("thread", ORCHESTRATION_V2_WS_METHODS.subscribeThread, {
-              threadId,
-            });
-            const received: Array<unknown> = [];
-            const drain = Effect.gen(function* () {
-              for (;;) {
-                const next = yield* Queue.poll(client.responses);
-                if (Option.isNone(next)) return;
-                received.push(next.value);
-                yield* client.ack("thread");
-              }
-            });
-            yield* Effect.yieldNow;
-            yield* drain;
-            const messageId = MessageId.make("message:ws-steer");
-            yield* send(messageId, "steer over ws", { type: "steer_active", targetRunId: runId });
-            yield* settle;
-            for (let round = 0; round < 20; round += 1) {
+          withThreadReads(
+            Effect.gen(function* () {
+              const runId = yield* startFirst;
+              const client = yield* makeWsClient();
+              yield* client.request("thread", ORCHESTRATION_V2_WS_METHODS.subscribeThread, {
+                threadId,
+              });
+              const received: Array<unknown> = [];
+              const drain = Effect.gen(function* () {
+                for (;;) {
+                  const next = yield* Queue.poll(client.responses);
+                  if (Option.isNone(next)) return;
+                  received.push(next.value);
+                  yield* client.ack("thread");
+                }
+              });
               yield* Effect.yieldNow;
               yield* drain;
-            }
-            const states = received.flatMap((value) => deliveryEvents(value, messageId));
-            assert.deepEqual(
-              states.map((delivery) => delivery.state),
-              ["accepted", "delivered", "adopted"],
-              JSON.stringify(states),
-            );
-            assert.equal(latest(deliveries(messageId) as never)?.state, "adopted");
-            yield* client.interrupt("thread");
-          }),
+              const messageId = MessageId.make("message:ws-steer");
+              yield* send(messageId, "steer over ws", { type: "steer_active", targetRunId: runId });
+              yield* settle;
+              for (let round = 0; round < 20; round += 1) {
+                yield* Effect.yieldNow;
+                yield* drain;
+              }
+              for (const value of received) {
+                const failed = (value as { readonly failed?: Exit.Exit<unknown, unknown> }).failed;
+                if (failed !== undefined && Exit.isFailure(failed))
+                  assert.fail(Cause.pretty(failed.cause));
+              }
+              const states = received.flatMap((value) => deliveryEvents(value, messageId));
+              assert.deepEqual(
+                states.map((delivery) => delivery.state),
+                ["accepted", "delivered", "adopted"],
+                JSON.stringify(states),
+              );
+              assert.equal(latest(deliveries(messageId))?.state, "adopted");
+              yield* client.interrupt("thread");
+            }),
+          ),
         );
       }),
     ),
@@ -428,20 +440,26 @@ describe("deliveries reach the renderer's thread reads", () => {
         yield* runWith(
           second,
           ({ threadId }) =>
-            Effect.gen(function* () {
-              const client = yield* makeWsClient();
-              yield* client.request("projection", ORCHESTRATION_V2_WS_METHODS.getThreadProjection, {
-                threadId,
-              });
-              const projection = yield* Queue.take(client.responses);
-              const items = userMessageItems(projection, messageId);
-              assert.isAbove(items.length, 0, JSON.stringify(projection).slice(0, 2_000));
-              assert.deepInclude(items[0]?.delivery as object, {
-                intent: "steer",
-                state: "adopted",
-                evidence: "codex.userMessage",
-              });
-            }),
+            withThreadReads(
+              Effect.gen(function* () {
+                const client = yield* makeWsClient();
+                yield* client.request(
+                  "projection",
+                  ORCHESTRATION_V2_WS_METHODS.getThreadProjection,
+                  {
+                    threadId,
+                  },
+                );
+                const projection = yield* Queue.take(client.responses);
+                const items = userMessageItems(projection, messageId);
+                assert.isAbove(items.length, 0, JSON.stringify(projection).slice(0, 2_000));
+                assert.deepInclude(items[0]?.delivery as object, {
+                  intent: "steer",
+                  state: "adopted",
+                  evidence: "codex.userMessage",
+                });
+              }),
+            ),
           { databasePath, createThread: false },
         );
       }),

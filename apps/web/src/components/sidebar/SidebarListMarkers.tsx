@@ -107,6 +107,34 @@ export function SidebarDragBoundary(props: {
   );
 }
 
+/**
+ * A shelf header for lists that are not dnd-kit sortable, such as the grid
+ * rail. It keeps the same label, count and chevron as the thread sidebar.
+ */
+export function SidebarShelfHeader(props: {
+  shelf: "snoozed" | "settled";
+  label: string;
+  count: number;
+  dragging?: boolean;
+  isDropTarget?: boolean;
+  toggle: { expanded: boolean; onToggle: () => void };
+}) {
+  return (
+    <CollapsibleSectionHeader
+      role="treeitem"
+      tabIndex={-1}
+      data-sidebar-row={`shelf:${props.shelf}`}
+      data-testid={`grid-${props.shelf}-shelf-toggle`}
+      onClick={props.toggle.onToggle}
+      expanded={props.toggle.expanded}
+      tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
+      accessory={<span className="font-normal tabular-nums">{props.count}</span>}
+    >
+      {props.label}
+    </CollapsibleSectionHeader>
+  );
+}
+
 export function SidebarSectionHeader(props: {
   marker: "working-header" | "snoozed-header" | "settled-header";
   label: string;

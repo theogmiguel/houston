@@ -2,11 +2,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attentionCardsForGrids,
   attentionNavigationDirection,
   type AttentionCard,
   clearThreadSelection,
   nextAttentionCard,
   openPullRequestNumber,
+  partitionShelfThreads,
   resolveGridThreadState,
   threadCardsInPaneOrder,
   threadMatchesGridSearch,
@@ -138,6 +140,29 @@ describe("grid thread state", () => {
         NOW,
       ),
     ).toBe("back");
+  });
+
+  it("marks a reopened thread as Back until it is opened", () => {
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T10:00:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("back");
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T11:45:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("idle");
   });
 
   it("shows a read thread as idle so the card shows its age", () => {
@@ -318,13 +343,23 @@ describe("attention navigation", () => {
     );
   });
 
+  it("keeps a hidden grid's threads reachable with Ctrl .", () => {
+    const hidden = grid(
+      { kind: "thread", threadId: "thread-b", id: "p1" },
+      { hidden: true },
+    );
+    const cards = attentionCardsForGrids(
+      [hidden],
+      [thread({ id: "thread-b", hasPendingApprovals: true })],
+      NOW,
+    );
+    expect(cards).toEqual([{ gridId: "g-1", threadId: "thread-b", state: "needs" }]);
+    expect(nextAttentionCard(cards, null, 1)?.threadId).toBe("thread-b");
+  });
+
   it("returns null when no card needs attention", () => {
     expect(
-      nextAttentionCard(
-        [{ gridId: "g-1", threadId: "idle", state: "idle" }],
-        null,
-        1,
-      ),
+      nextAttentionCard([{ gridId: "g-1", threadId: "idle", state: "idle" }], null, 1),
     ).toBeNull();
   });
 });
@@ -351,5 +386,54 @@ describe("grid search and pull requests", () => {
         branchPullRequest: null,
       }),
     ).toBe(412);
+  });
+});
+
+describe("grid shelves", () => {
+  const workspaceKeys = new Set(["env-1:project-1"]);
+
+  it("sorts held threads by wake time and closed threads newest first", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({
+          id: "held-late",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T15:00:00.000Z",
+        }),
+        thread({
+          id: "closed-old",
+          settledOverride: "settled",
+          settledAt: "2026-10-28T10:00:00.000Z",
+        }),
+        thread({
+          id: "held-soon",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T13:00:00.000Z",
+        }),
+        thread({
+          id: "closed-new",
+          settledOverride: "settled",
+          settledAt: "2026-10-29T11:00:00.000Z",
+        }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held-soon", "held-late"]);
+    expect(shelves.closed.map((entry) => entry.id)).toEqual(["closed-new", "closed-old"]);
+  });
+
+  it("leaves out archived threads and other workspaces", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
+        thread({ id: "archived", archivedAt: "2026-10-29T11:00:00.000Z" }),
+        thread({ id: "other", projectId: "project-2" as never }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
+    expect(shelves.closed).toEqual([]);
   });
 });
