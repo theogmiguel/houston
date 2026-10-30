@@ -96,10 +96,8 @@ const replay = <T extends ProviderReplayTranscript, E>(input: {
       : {}),
   });
 
-/**
- * Every delivery recorded for the user message whose text includes `text`: on the message
- * while it is queued, then on its user_message item.
- */
+// Every delivery recorded for the user message whose text includes `text`: on the message
+// while it is queued, then on its user_message item.
 const deliveriesOf = (result: OrchestratorV2ScenarioResult, text: string) => {
   const records = result.domainEvents.flatMap((event: OrchestrationV2DomainEvent) =>
     event.type === "turn-item.updated" &&
@@ -231,6 +229,34 @@ describe("send intents per provider family", () => {
       const foreign = deliveriesOf(foreignOnly, MESSAGE_STEERING_STEER_PROMPT);
       assert.isTrue(foreign.some((delivery) => delivery.state === "delivered"));
       assert.isFalse(foreign.some((delivery) => delivery.state === "adopted"));
+
+      // The steer's own `queued` frame without its `started`: queued is not read.
+      const queuedOnly = yield* replay({
+        fixtureName: "houston_claude_steer_lifecycle",
+        variant: composedClaudeVariant,
+        harness: ClaudeOrchestratorReplayHarness,
+        buildInput: findReplayFixture("message_steering")!.buildInput,
+        transformTranscript: (transcript) => ({
+          ...transcript,
+          entries: transcript.entries.filter((entry) => {
+            const frame = entry.type === "emit_inbound" ? entry.frame : undefined;
+            const lifecycle = frame as {
+              readonly command_uuid?: unknown;
+              readonly state?: unknown;
+            };
+            return !(
+              lifecycle?.command_uuid === COMPOSED_STEER_UUID && lifecycle.state === "started"
+            );
+          }),
+        }),
+        ownAssertions: true,
+      });
+      const queued = deliveriesOf(queuedOnly, MESSAGE_STEERING_STEER_PROMPT);
+      assert.isTrue(queued.some((delivery) => delivery.state === "delivered"));
+      assert.isFalse(
+        queued.some((delivery) => delivery.state === "adopted"),
+        JSON.stringify(queued),
+      );
     }),
   );
 
