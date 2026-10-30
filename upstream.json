@@ -89,7 +89,12 @@
     "apps/server/src/houston/messageDelivery.testkit.ts",
     "packages/contracts/src/houston/messageDelivery.test.ts",
     "packages/provider-opencode/src/server/houston/steerDelivery.test.ts",
-    "apps/server/src/orchestration-v2/testkit/fixtures/houston_claude_steer_lifecycle/claude_transcript.ndjson"
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_claude_steer_lifecycle/claude_transcript.ndjson",
+    "packages/contracts/src/houston/reviewState.test.ts",
+    "apps/server/src/houston/reviewState.test.ts",
+    "apps/server/src/houston/reviewState.git.test.ts",
+    "apps/server/src/houston/reviewState.ws.test.ts",
+    "apps/server/src/houston/migrations.test.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
