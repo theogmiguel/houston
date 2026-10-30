@@ -163,7 +163,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   headingId="thread-details-workspace-heading"
                   title="Workspace"
                   separated={false}
-                  showHeading={false}
                 >
                   <div className="flex flex-col">
                     {show.environment ? (
@@ -211,8 +210,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {props.gitCwd && (show.branch || show.git) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
-                  title="Version Control"
-                  showHeading={false}
+                  title="Version control"
                   separated={density === "full"}
                 >
                   <div className="flex flex-col">
