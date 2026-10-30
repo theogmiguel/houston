@@ -11,6 +11,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
@@ -62,6 +63,7 @@ import {
   type ThreadSelection,
 } from "../../grid/sidebar";
 import { GridShelves } from "./GridShelves";
+import { preorderThreads } from "../../grid/tree";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
@@ -168,6 +170,7 @@ export function GridSidebar() {
   const projects = useProjects();
   const threads = useQuietThreadShells();
   const grids = useGridStore((store) => store.grids);
+  const threadOrigins = useGridStore((store) => store.threadOrigins);
   const createGrid = useGridStore((store) => store.createGrid);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
@@ -457,6 +460,44 @@ export function GridSidebar() {
   const threadById = new Map<string, EnvironmentThreadShell>(
     threads.map((thread) => [thread.id, thread] as const),
   );
+
+  // A held or closed thread leaves its pane but keeps its slot for the return.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the grid store in step with thread lifecycle from the server
+  useEffect(() => {
+    for (const grid of grids) {
+      if (grid.tree === null) continue;
+      for (const leaf of preorderThreads(grid.tree)) {
+        const thread = threads.find((candidate) => candidate.id === leaf.threadId);
+        if (thread === undefined || thread.archivedAt !== null || thread.deletedAt !== null) {
+          continue;
+        }
+        const shelved =
+          thread.settledOverride === "settled" || effectiveSnoozed(thread, { now: nowIso });
+        if (!shelved) continue;
+        const store = useGridStore.getState();
+        if (store.threadOrigins[leaf.threadId] !== undefined) continue;
+        store.detachThreadForShelf(leaf.threadId);
+      }
+    }
+  }, [grids, threads, nowIso]);
+
+  // A woken or reopened thread returns to the grid and slot it left.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the grid store in step with a wake or reopen from the server
+  useEffect(() => {
+    for (const threadId of Object.keys(threadOrigins)) {
+      const thread = threadById.get(threadId);
+      if (thread === undefined || thread.archivedAt !== null || thread.deletedAt !== null) {
+        continue;
+      }
+      if (thread.settledOverride === "settled") continue;
+      if (effectiveSnoozed(thread, { now: nowIso })) continue;
+      useGridStore.getState().returnThreadToOrigin({
+        threadId,
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+      });
+    }
+  }, [threadById, threadOrigins, nowIso]);
 
   const query = search.trim();
   const searchMatchThreads = projects.flatMap((project) =>

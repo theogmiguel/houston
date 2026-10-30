@@ -141,6 +141,29 @@ describe("grid thread state", () => {
     ).toBe("back");
   });
 
+  it("marks a reopened thread as Back until it is opened", () => {
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T10:00:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("back");
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T11:45:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("idle");
+  });
+
   it("shows a read thread as idle so the card shows its age", () => {
     expect(
       resolveGridThreadState(

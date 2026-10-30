@@ -36,7 +36,9 @@ export function resolveGridThreadState(
     case "idle":
       break;
   }
-  const wokeAt = threadWokeAt(thread, { now });
+  // A reopened thread uses the same Back mark as a woken one: its unsettle
+  // time is the last thing the user has not seen.
+  const wokeAt = threadWokeAt(thread, { now }) ?? thread.unsettledAt;
   return isThreadWokeUnseen({
     wokeAt,
     settled: thread.settledOverride === "settled",
