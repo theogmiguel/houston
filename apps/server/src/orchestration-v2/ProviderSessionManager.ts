@@ -53,7 +53,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { mayHoldT3Tools } from "../houston/sideThreads.ts";
+import { HoustonReadOnlyThreads, mayHoldT3Tools } from "../houston/sideThreads.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -324,6 +324,7 @@ export const layerWithOptions = (
   | CommandOutputHub.CommandOutputHub
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
+  | HoustonReadOnlyThreads
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
   | McpSessionRegistry.McpSessionRegistry
@@ -346,6 +347,7 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const houstonReadOnlyThreads = yield* HoustonReadOnlyThreads;
       const agentScope = yield* AgentScope;
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
@@ -468,6 +470,8 @@ export const layerWithOptions = (
                   Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
                   Effect.orElseSucceed(() => false),
                 );
+                // Houston: a task's planner or reviewer keeps a credential only to submit.
+                const submitOnly = yield* houstonReadOnlyThreads.isReadOnly(threadId);
                 const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
@@ -487,6 +491,7 @@ export const layerWithOptions = (
                     resolved !== undefined &&
                     resolved.thread.threadId === threadId &&
                     resolved.thread.providerInstanceId === providerInstanceId &&
+                    resolved.capabilities.has("houston-task-submit") === submitOnly &&
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     // A credential issued while the lineage read failed is replaced once it works.
@@ -503,6 +508,7 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                   subagent,
+                  ...(submitOnly ? { houstonTaskSubmitOnly: true } : {}),
                 });
                 yield* mcpSessions.set(credential.config);
                 reserveMcpCredential(threadId, credential.config.providerSessionId);

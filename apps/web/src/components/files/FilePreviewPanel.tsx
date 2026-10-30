@@ -1331,6 +1331,33 @@ export default function FilePreviewPanel({
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        {showExplorer ? (
+          <FileExplorerPane resizable={Boolean(previewPath)}>
+            <FileBrowserPanel
+              key={`${environmentId}:${hostFolderPath ?? cwd}`}
+              environmentId={environmentId}
+              cwd={hostFolderPath ?? cwd}
+              projectName={hostFolderPath ?? projectName}
+              hostFolder={hostFolderPath !== null}
+              selectedPath={
+                hostFolderPath === null
+                  ? relativePath
+                  : trailChildOf(hostFolderPath, breadcrumbTrail ?? hostFolderPath)
+              }
+              selectedPathRevealId={revealRequestId}
+              onOpenFile={onOpenFile}
+              workspaceMutationId={workspaceMutationId}
+              {...(previewPath && !isMedia && !isPdf
+                ? {
+                    onRefreshSelectedFile: () => {
+                      if (!isDocument) file.refresh();
+                      setFileRefreshRevision((value) => value + 1);
+                    },
+                  }
+                : {})}
+            />
+          </FileExplorerPane>
+        ) : null}
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
@@ -1513,33 +1540,6 @@ export default function FilePreviewPanel({
             )
           ) : null}
         </div>
-        {showExplorer ? (
-          <FileExplorerPane resizable={Boolean(previewPath)}>
-            <FileBrowserPanel
-              key={`${environmentId}:${hostFolderPath ?? cwd}`}
-              environmentId={environmentId}
-              cwd={hostFolderPath ?? cwd}
-              projectName={hostFolderPath ?? projectName}
-              hostFolder={hostFolderPath !== null}
-              selectedPath={
-                hostFolderPath === null
-                  ? relativePath
-                  : trailChildOf(hostFolderPath, breadcrumbTrail ?? hostFolderPath)
-              }
-              selectedPathRevealId={revealRequestId}
-              onOpenFile={onOpenFile}
-              workspaceMutationId={workspaceMutationId}
-              {...(previewPath && !isMedia && !isPdf
-                ? {
-                    onRefreshSelectedFile: () => {
-                      if (!isDocument) file.refresh();
-                      setFileRefreshRevision((value) => value + 1);
-                    },
-                  }
-                : {})}
-            />
-          </FileExplorerPane>
-        ) : null}
       </div>
     </div>
   );

@@ -131,6 +131,66 @@ describe("grid records", () => {
     ]);
   });
 
+  it("follows the presets as an untouched grid fills instead of narrow columns", () => {
+    freshStore();
+    createdGrid();
+    for (const threadId of ["thread-a", "thread-b", "thread-c", "thread-d", "thread-e"]) {
+      useGridStore.getState().addThread("g-1", threadId);
+    }
+    const tree = gridById(useGridStore.getState().grids, "g-1")!.tree!;
+    expect(preorderLeaves(tree)).toEqual([
+      "thread-a",
+      "thread-b",
+      "thread-c",
+      "thread-d",
+      "thread-e",
+    ]);
+    expect(tree.kind).toBe("split");
+    if (tree.kind !== "split") return;
+    expect(tree.dir).toBe("row");
+    expect(tree.children).toHaveLength(2);
+    expect(tree.weights[0]).toBeCloseTo(37.5);
+  });
+
+  it("keeps a manual split and can return it to the automatic arrangement", () => {
+    freshStore();
+    createdGrid();
+    for (const threadId of ["thread-a", "thread-b", "thread-c"]) {
+      useGridStore.getState().addThread("g-1", threadId);
+    }
+    const manual: GridRecord["tree"] = {
+      kind: "split",
+      dir: "col",
+      children: [
+        gridById(useGridStore.getState().grids, "g-1")!.tree!,
+        { kind: "thread", threadId: "thread-d", id: "p4" },
+      ],
+      weights: [60, 40],
+    };
+    useGridStore.getState().setTree("g-1", manual);
+    useGridStore.getState().addThread("g-1", "thread-e");
+    const kept = gridById(useGridStore.getState().grids, "g-1")!.tree!;
+    expect(kept.kind === "split" && kept.children).toHaveLength(3);
+    expect(preorderLeaves(kept)).toEqual([
+      "thread-a",
+      "thread-b",
+      "thread-c",
+      "thread-d",
+      "thread-e",
+    ]);
+
+    useGridStore.getState().autoArrangeGrid("g-1");
+    const auto = gridById(useGridStore.getState().grids, "g-1")!.tree!;
+    expect(auto.kind === "split" && auto.children).toHaveLength(2);
+    expect(preorderLeaves(auto)).toEqual([
+      "thread-a",
+      "thread-b",
+      "thread-c",
+      "thread-d",
+      "thread-e",
+    ]);
+  });
+
   it("addThreadToGrid does not duplicate an existing thread", () => {
     const base = createGridRecord([], {
       environmentId: "env-1",

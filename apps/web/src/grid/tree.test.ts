@@ -8,6 +8,8 @@ import {
   computeRects,
   evenGrid,
   findThread,
+  gridPreset,
+  isGridPreset,
   MIN_PANE_PX,
   moveThread,
   preorderLeaves,
@@ -127,6 +129,62 @@ describe("computeRects", () => {
     expect(splitters[0]!.dir).toBe("row");
   });
 });
+
+describe("gridPreset", () => {
+  it("keeps the first thread in the leading, full-height slot for three and five", () => {
+    for (const count of [3, 5]) {
+      const ids = ["a", "b", "c", "d", "e"].slice(0, count);
+      const { leaves } = computeRects(gridPreset(ids)!);
+      const first = leaves.find((leaf) => leaf.node.threadId === "a")!;
+      for (const leaf of leaves) {
+        if (leaf.node.threadId !== "a") {
+          expect(leaf.rect.h).toBeLessThan(first.rect.h);
+        }
+      }
+      expect(first.rect.h).toBeCloseTo(100);
+    }
+  });
+
+  it("lays out one to six threads in reading order", () => {
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    for (let count = 1; count <= 6; count += 1) {
+      expect(preorderLeaves(gridPreset(ids.slice(0, count))!)).toEqual(ids.slice(0, count));
+    }
+  });
+
+  it("uses the preset shapes from the grid board", () => {
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    expect(normalizeWeights(gridPreset(ids.slice(0, 3))!)).toEqual([
+      [55.56, 44.44],
+      [50, 50],
+    ]);
+    expect(normalizeWeights(gridPreset(ids.slice(0, 5))!)).toEqual([
+      [37.5, 62.5],
+      [50, 50],
+      [50, 50],
+      [50, 50],
+    ]);
+  });
+
+  it("recognizes its own arrangements but not a dragged split", () => {
+    const ids = ["a", "b", "c"];
+    const preset = gridPreset(ids)!;
+    expect(isGridPreset(preset, ids)).toBe(true);
+    const dragged = setRatio(preset, [], 0, 0.3);
+    expect(isGridPreset(dragged, ids)).toBe(false);
+  });
+});
+
+function normalizeWeights(tree: LayoutNode): number[][] {
+  const rows: number[][] = [];
+  const walk = (node: LayoutNode): void => {
+    if (node.kind !== "split") return;
+    rows.push(node.weights.map((weight) => Number(weight.toFixed(2))));
+    for (const child of node.children) walk(child);
+  };
+  walk(tree);
+  return rows;
+}
 
 describe("evenGrid / tidy / findThread", () => {
   it("chunks rows by a bounded column count", () => {

@@ -209,6 +209,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
@@ -1304,6 +1305,7 @@ export const layerWsRpc = (
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
+      const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -2991,6 +2993,13 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksSettingsSet]: (input) => houstonTasks.setSettings(input),
         [WS_METHODS.houstonTasksImportV1Status]: () => houstonTaskImport.status,
         [WS_METHODS.houstonTasksImportV1Run]: () => houstonTaskImport.run,
+        [WS_METHODS.houstonTasksStart]: (input) => houstonTaskRuns.start(input),
+        [WS_METHODS.houstonTasksRunControl]: (input) => houstonTaskRuns.runControl(input),
+        [WS_METHODS.houstonTasksHandback]: (input) => houstonTaskRuns.handback(input),
+        [WS_METHODS.houstonTasksPlanStart]: (input) => houstonTaskRuns.planStart(input),
+        [WS_METHODS.houstonTasksPlanAnswer]: (input) => houstonTaskRuns.planAnswer(input),
+        [WS_METHODS.houstonTasksPlanApprove]: (input) => houstonTaskRuns.planApprove(input),
+        [WS_METHODS.houstonTasksReviewStart]: (input) => houstonTaskRuns.reviewStart(input),
         [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
           houstonTaskSources.getSettings(input),
         [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>

@@ -4,20 +4,23 @@ The approved design for the v2 renderer. Each board is a self-contained HTML fil
 markup and `<style>` hold the exact values (sizes, spacing, colors, type).
 
 - `boards/*.dc.html` - the boards. `{{theme}}` is `graphite` (dark) or `paper` (light). Boards
-  with other `{{...}}` placeholders (`GridFlow`, the `Grid*` frames) are templates and only render
-  fully in the design canvas; read their markup and CSS instead.
+  with other `{{...}}` placeholders (`GridFlow`, the `Grid*` frames, `Primitives`) are templates;
+  `boards/support.js` is a small stand-in for the design canvas runtime that fills them in, so they
+  render with the command below once the theme is substituted.
 - `shell.css`, `pages.css` - the shared shell and page CSS the boards are built from.
 - `boards/canvas.json` - which page each board sits on.
 - `read-board.py` - prints a board with one CSS declaration and one tag per line. Several boards
   have lines of tens of KB that stall line-oriented tools; read them through this script:
   `python3 handoff/design/read-board.py handoff/design/boards/ScreenThread.dc.html --css | sed -n 1,120p`.
 
-Render a board for a visual check (headless Chrome, either theme):
+Render a board for a visual check (headless Chrome, either theme). The rendered copy sits next to
+the boards so `./support.js` and the shared CSS resolve:
 
 ```
-sed 's/{{theme}}/graphite/g' handoff/design/boards/ScreenThread.dc.html > .agent-tmp/board.html
+sed 's/{{theme}}/graphite/g' handoff/design/boards/ScreenThread.dc.html > handoff/design/boards/.render.html
 google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
-  --screenshot=.agent-tmp/board.png "file://$PWD/.agent-tmp/board.html"
+  --virtual-time-budget=3000 --screenshot=.agent-tmp/board.png "file://$PWD/handoff/design/boards/.render.html"
+rm handoff/design/boards/.render.html
 ```
 
 ## Board to renderer area
