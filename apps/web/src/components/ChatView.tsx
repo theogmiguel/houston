@@ -354,6 +354,9 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
+import { ChangedFilesBar } from "./chat/ChangedFilesBar";
+import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { PaneDensity } from "../grid/density";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
@@ -391,6 +394,8 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** Rendered as one cell of a grid instead of the whole route. */
       embedded?: boolean;
+      /** The grid pane's density; omitted on the thread route. */
+      paneDensity?: PaneDensity;
       routeKind: "server";
       draftId?: never;
     }
@@ -402,6 +407,8 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** Rendered as one cell of a grid instead of the whole route. */
       embedded?: boolean;
+      /** The grid pane's density; omitted on the thread route. */
+      paneDensity?: PaneDensity;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -417,6 +424,7 @@ export default function ChatView(props: ChatViewProps) {
     embedded = false,
     reserveTitleBarControlInset = !embedded,
     forceExpandedMobileComposer = false,
+    paneDensity,
   } = props;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1577,6 +1585,9 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadDetailRef);
+  const [dismissedChangeRuns, setDismissedChangeRuns] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const availableRevertTurnCounts = deriveAvailableRevertTurnCounts(serverProjection);
   // A paged history window cannot identify the first loaded run as the thread start.
   const threadStartCheckpointReady =
@@ -2730,6 +2741,34 @@ export default function ChatView(props: ChatViewProps) {
       composerDraftTarget,
       setThreadError,
     });
+  const latestTurnDiff = turnDiffSummaries.at(-1) ?? null;
+  const latestTurnUserMessage =
+    latestTurnDiff === null
+      ? null
+      : (timelineMessages.findLast(
+          (message) => message.role === "user" && message.runId === latestTurnDiff.runId,
+        ) ?? null);
+  const changedFilesBar =
+    latestTurnDiff === null ||
+    latestTurnDiff.status !== "ready" ||
+    dismissedChangeRuns.has(latestTurnDiff.runId) ||
+    checkpointFileTotals(latestTurnDiff).count === 0 ? null : (
+      <ChangedFilesBar
+        summary={latestTurnDiff}
+        onReview={() => onOpenTurnDiffStable(latestTurnDiff.runId)}
+        onUndo={
+          latestTurnUserMessage === null
+            ? undefined
+            : () =>
+                onRevertTimelineTurnStable(
+                  latestTurnDiff.checkpointTurnCount,
+                  latestTurnUserMessage.id,
+                )
+        }
+        onKeep={() => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId))}
+        disabled={isRevertingCheckpoint || phase === "running"}
+      />
+    );
   const onCompactContext = () => {
     if (compactDisabled) return;
     void sendStandaloneCommand("/compact", "Failed to compact context.");
@@ -3272,6 +3311,7 @@ export default function ChatView(props: ChatViewProps) {
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
                 activeThreadKey={activeThreadKey}
+                timelineDensity={paneDensity}
                 syncing={threadSyncPhase !== null}
                 detailLoading={threadDetailLoading}
                 citationRequest={citationRequest}
@@ -3412,6 +3452,7 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {changedFilesBar}
                     <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                       <ComposerSurface.Host
                         inert={queuedRunEdit.isSaving}
@@ -3458,6 +3499,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
                               promptHistoryMessages={timelineMessages}
+                              paneDensity={paneDensity}
                               forceExpandedOnMobile={
                                 forceExpandedMobileComposer && isDraftHeroState
                               }

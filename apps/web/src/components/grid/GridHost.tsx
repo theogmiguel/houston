@@ -9,6 +9,7 @@ import {
   type ThreadNode,
   clampSplitRatio,
   insertBeside,
+  MIN_PANE_PX,
   preorderThreads,
   removeThread,
   setRatio,
@@ -22,6 +23,8 @@ export interface GridCellRenderProps {
   onClose: () => void;
   onSplit: (side: SplitSide, threadId: string) => void;
 }
+
+const GUTTER_PX = 6;
 
 export interface GridHostProps {
   grid: GridRecord;
@@ -132,7 +135,7 @@ function SplitView({
     const drag = dragRef.current;
     if (drag === null) return;
     const deltaPx = clientCoord - drag.startCoord;
-    const span = drag.spanPx - (node.children.length - 1) * 4;
+    const span = drag.spanPx - (node.children.length - 1) * GUTTER_PX;
     if (span <= 0) return;
     const ratio = clampSplitRatio((drag.startWeight + (deltaPx / span) * 100) / drag.pairSum, span);
     onTreeChange(setRatio(node, path, index, ratio));
@@ -162,6 +165,8 @@ function SplitView({
               {
                 flexGrow: node.weights[index] ?? 1,
                 flexBasis: 0,
+                minWidth: node.dir === "row" ? MIN_PANE_PX : undefined,
+                minHeight: node.dir === "row" ? undefined : MIN_PANE_PX,
               } satisfies CSSProperties
             }
           >
@@ -180,9 +185,10 @@ function SplitView({
               aria-label="Resize grid cells"
               tabIndex={0}
               className={cn(
-                "group relative z-10 shrink-0 bg-border/70 outline-none transition-colors hover:bg-primary/40 focus-visible:bg-primary/60",
-                node.dir === "row" ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
+                "group relative z-10 shrink-0 bg-transparent outline-none",
+                node.dir === "row" ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize",
               )}
+              onDoubleClick={() => onTreeChange(setRatio(node, path, index, 0.5))}
               onPointerDown={(event) => {
                 const container = containerRef.current;
                 if (container === null) return;
@@ -228,7 +234,17 @@ function SplitView({
                   setRatio(node, path, index, clampSplitRatio(current + delta, Math.max(span, 1))),
                 );
               }}
-            />
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute bg-transparent transition-colors group-hover:bg-(--line-strong) group-focus-visible:bg-(--accent-ink)",
+                  node.dir === "row"
+                    ? "inset-y-0 left-1/2 w-px -translate-x-1/2"
+                    : "inset-x-0 top-1/2 h-px -translate-y-1/2",
+                )}
+              />
+            </div>
           ) : null}
         </div>
       ))}

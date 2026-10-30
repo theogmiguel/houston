@@ -1,19 +1,21 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import ChatView from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useQuietThreadShell } from "../../state/entities";
+import { paneDensityLayout } from "../../grid/density";
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
-import type { SplitSide, ThreadNode } from "../../grid/tree";
+import { type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { cn } from "../../lib/utils";
 import { ThreadOpenProvider } from "./threadOpenContext";
+import { usePaneDensity } from "./usePaneDensity";
 
 export function GridThreadCell({
   node,
@@ -62,61 +64,93 @@ export function GridThreadCell({
   const status = shell === null ? null : resolveThreadStatusPill({ thread: shell });
   const title = shell?.title ?? (draftSession === null ? "Untitled thread" : "New thread");
   const showDraft = draftId !== undefined && draftSession !== null;
+  const threadCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
+  const { ref, density, width } = usePaneDensity(threadCount);
+  const layout = paneDensityLayout(density, width);
 
   return (
     <section
+      ref={ref}
       data-grid-cell=""
+      data-density={density}
       data-thread-id={node.threadId}
       data-focused={focused ? "true" : "false"}
       onPointerDownCapture={onFocus}
       onFocusCapture={onFocus}
+      style={
+        {
+          "--chat-content-max-width":
+            layout.timelineMaxWidth === null
+              ? "100%"
+              : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
+          ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
+        } as CSSProperties
+      }
       className={cn(
         "relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
         focused ? "ring-1 ring-primary/40 ring-inset" : "ring-1 ring-border/60 ring-inset",
+        density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
+        density === "compact" && "[&_[data-thread-find-text]]:line-clamp-5",
+        density === "glance" &&
+          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden",
       )}
     >
-      <header className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/60 bg-card/60 px-2">
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            status?.dotClass ?? "bg-muted-foreground/40",
-            status?.pulse && "animate-status-pulse",
-          )}
-          aria-hidden
-        />
-        <span className="truncate text-xs font-medium text-foreground">{title}</span>
-        {status === null ? null : (
-          <span className="truncate text-2xs text-muted-foreground">{status.label}</span>
-        )}
-        <span className="flex-1" />
-        {availableThreads.length > 0 || onNewThread !== undefined ? (
-          <>
-            <SplitMenu
-              side="right"
-              availableThreads={availableThreads}
-              onPick={(pickedThreadId) => onSplit("right", pickedThreadId)}
-              onNewThread={onNewThread === undefined ? undefined : () => onNewThread("right")}
-            />
-            <SplitMenu
-              side="bottom"
-              availableThreads={availableThreads}
-              onPick={(pickedThreadId) => onSplit("bottom", pickedThreadId)}
-              onNewThread={onNewThread === undefined ? undefined : () => onNewThread("bottom")}
-            />
-          </>
-        ) : null}
-        <Button
-          variant="ghost-muted"
-          size="icon-micro"
-          aria-label="Archive thread"
-          onClick={() => void archiveThread(threadRef, {})}
-        >
-          <ArchiveIcon />
-        </Button>
-        <Button variant="ghost-muted" size="icon-micro" aria-label="Close cell" onClick={onClose}>
-          <XIcon />
-        </Button>
-      </header>
+      {layout.showHeader ? (
+        <header className="group flex h-[30px] shrink-0 items-center gap-1.5 border-b border-border/60 bg-card/60 px-2">
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              status?.dotClass ?? "bg-muted-foreground/40",
+              status?.pulse && "animate-status-pulse",
+            )}
+            aria-hidden
+          />
+          <span className="truncate text-xs font-medium text-foreground">{title}</span>
+          {layout.showBranch && shell?.branch ? (
+            <span className="truncate font-mono text-2xs text-muted-foreground">
+              {shell.branch}
+            </span>
+          ) : null}
+          {layout.showStatusLabel && status !== null ? (
+            <span className="truncate text-2xs text-muted-foreground">{status.label}</span>
+          ) : null}
+          <span className="flex-1" />
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            {availableThreads.length > 0 || onNewThread !== undefined ? (
+              <>
+                <SplitMenu
+                  side="right"
+                  availableThreads={availableThreads}
+                  onPick={(pickedThreadId) => onSplit("right", pickedThreadId)}
+                  onNewThread={onNewThread === undefined ? undefined : () => onNewThread("right")}
+                />
+                <SplitMenu
+                  side="bottom"
+                  availableThreads={availableThreads}
+                  onPick={(pickedThreadId) => onSplit("bottom", pickedThreadId)}
+                  onNewThread={onNewThread === undefined ? undefined : () => onNewThread("bottom")}
+                />
+              </>
+            ) : null}
+            <Button
+              variant="ghost-muted"
+              size="icon-micro"
+              aria-label="Archive thread"
+              onClick={() => void archiveThread(threadRef, {})}
+            >
+              <ArchiveIcon />
+            </Button>
+            <Button
+              variant="ghost-muted"
+              size="icon-micro"
+              aria-label="Close cell"
+              onClick={onClose}
+            >
+              <XIcon />
+            </Button>
+          </div>
+        </header>
+      ) : null}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ThreadOpenProvider open={onOpenThread}>
           {showDraft ? (
@@ -125,6 +159,7 @@ export function GridThreadCell({
               draftId={draftId}
               environmentId={environmentId}
               threadId={threadId}
+              paneDensity={density}
               routeKind="draft"
             />
           ) : (
@@ -132,6 +167,7 @@ export function GridThreadCell({
               embedded
               environmentId={environmentId}
               threadId={threadId}
+              paneDensity={density}
               routeKind="server"
             />
           )}
