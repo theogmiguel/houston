@@ -179,9 +179,9 @@ function ConfiguredConnectOnboardingDialog() {
     if (!ok) return;
     toastManager.add({
       type: "success",
-      title: "T3 Connect enabled",
+      title: "Houston Connect enabled",
       description: exposeEnvironment
-        ? "This environment is available to your other devices through T3 Connect."
+        ? "This environment is available to your other devices through Houston Connect."
         : "This environment publishes agent activity to your mobile clients.",
     });
     setStep("devices");
@@ -205,7 +205,7 @@ function ConfiguredConnectOnboardingDialog() {
     >
       <WizardPopup>
         <WizardHeader
-          title="Set up T3 Connect"
+          title="Set up Houston Connect"
           description={
             <>
               Mesh your devices together. Publish this environment and connect the rest, all in one
@@ -327,7 +327,7 @@ function PublishStep({
       <div className="rounded-lg border">
         <OnboardingToggleRow
           title="Publish this environment"
-          description="Make this environment available to your other devices through T3 Connect."
+          description="Make this environment available to your other devices through Houston Connect."
           checked={exposeEnvironment}
           disabled={disabled}
           onCheckedChange={onExposeEnvironmentChange}

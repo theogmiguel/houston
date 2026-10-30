@@ -53,7 +53,8 @@ const ACP_SIGNED_OUT: ReadonlySet<string> = new Set(["-32000"]);
 // no HTTP status and the ACP family no account refusal, so those states are refused by name.
 const FAMILY_CODES: Readonly<Record<string, FamilyCodes>> = {
   claudeAgent: {
-    signedOut: new Set(["api_error_401"]),
+    // The adapter stamps `authentication_failed` on its own sign-out message.
+    signedOut: new Set(["authentication_failed", "api_error_401"]),
     rejected: (failure) => failure.code === "api_error_402" || failure.code === "api_error_403",
     usageLimit: true,
   },
@@ -187,6 +188,8 @@ export interface ReadinessLedgerShape {
   readonly report: (input: TurnReport) => Effect.Effect<void>;
   /** A refresh clears turn-derived states, except outOfUsage with a reset still ahead. */
   readonly clear: (instances: "all" | ReadonlyArray<ProviderInstanceId>) => Effect.Effect<void>;
+  /** Forgets every instance not listed, so an id added again starts with no entry. */
+  readonly retain: (instances: ReadonlyArray<ProviderInstanceId>) => Effect.Effect<void>;
   /** Current entries; an outOfUsage entry whose reset has passed is absent. */
   readonly entries: Effect.Effect<ReadonlyMap<ProviderInstanceId, ReadinessLedgerEntry>>;
   readonly changes: Stream.Stream<void>;
@@ -291,6 +294,22 @@ export const layerReadinessLedger = Layer.effect(
       if (changed) yield* publish;
     });
 
+    const retain = Effect.fn("ReadinessLedger.retain")(function* (
+      instances: ReadonlyArray<ProviderInstanceId>,
+    ) {
+      const kept = new Set(instances);
+      const without = <V>(current: ReadonlyMap<ProviderInstanceId, V>) => {
+        const removed = [...current.keys()].filter((instanceId) => !kept.has(instanceId));
+        if (removed.length === 0) return [[] as ReadonlyArray<V>, current] as const;
+        const next = new Map(current);
+        for (const instanceId of removed) next.delete(instanceId);
+        return [removed.map((instanceId) => current.get(instanceId)!), next] as const;
+      };
+      yield* Ref.update(slots, (current) => without(current)[1]);
+      const stale = yield* Ref.modify(expiries, without);
+      yield* Effect.forEach(stale, Fiber.interrupt, { discard: true });
+    });
+
     const entries = Effect.gen(function* () {
       const now = yield* nowMs;
       const result = new Map<ProviderInstanceId, ReadinessLedgerEntry>();
@@ -306,6 +325,7 @@ export const layerReadinessLedger = Layer.effect(
     return ReadinessLedger.of({
       report,
       clear,
+      retain,
       entries,
       get changes() {
         return Stream.fromPubSub(changes);
@@ -314,36 +334,33 @@ export const layerReadinessLedger = Layer.effect(
   }),
 );
 
-/** Reports a terminal turn the ingestor stored; an unstored failure changes nothing. */
+/**
+ * Reports a terminal turn the ingestor stored. A completion usually stores nothing, so one
+ * is reported unless a write guard (stale run, non-owner) could have refused it.
+ */
 export const reportTurnTerminal = Effect.fn("reportTurnTerminal")(function* (
   ledger: Option.Option<ReadinessLedgerShape>,
   input: {
     readonly providerInstanceId: ProviderInstanceId;
     readonly event: ProviderAdapter.ProviderAdapterV2Event;
+    readonly writeIfRunCurrent?: unknown;
+    readonly writeIfProviderThreadOwner?: unknown;
   },
   storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
 ) {
   if (Option.isNone(ledger) || input.event.type !== "turn.terminal") return;
   const { event } = input;
-  if (event.status === "failed") {
-    // The failure item is stamped before the write, so a late older completion loses to it.
-    const stored = storedEvents.at(-1);
-    if (stored === undefined) return;
-    yield* ledger.value.report({
-      instanceId: input.providerInstanceId,
-      driver: event.driver,
-      status: "failed",
-      failure: event.failure,
-      occurredAt: stored.event.occurredAt,
-    });
-    return;
-  }
+  const guarded =
+    input.writeIfRunCurrent !== undefined || input.writeIfProviderThreadOwner !== undefined;
+  // Stamped before the write, so a late older completion loses to a newer failure.
+  const stored = storedEvents.at(-1);
+  if (stored === undefined && (event.status === "failed" || guarded)) return;
   yield* ledger.value.report({
     instanceId: input.providerInstanceId,
     driver: event.driver,
     status: event.status,
-    failure: null,
-    occurredAt: yield* DateTime.now,
+    failure: event.status === "failed" ? event.failure : null,
+    occurredAt: stored === undefined ? yield* DateTime.now : stored.event.occurredAt,
   });
 });
 
@@ -412,7 +429,13 @@ export const decorateProviderRegistry = Effect.fn("decorateProviderRegistry")(fu
   const scope = yield* Effect.scope;
   const follow = <A>(stream: Stream.Stream<A>, onItem: (item: A) => Effect.Effect<unknown>) =>
     Stream.runForEach(stream, onItem).pipe(Effect.forkIn(scope, { startImmediately: true }));
-  yield* follow(raw.streamChanges, observe);
+  yield* follow(raw.streamChanges, (providers) => {
+    const listed = providers.map((provider) => provider.instanceId);
+    for (const instanceId of lastPublished.keys()) {
+      if (!listed.includes(instanceId)) lastPublished.delete(instanceId);
+    }
+    return ledger.retain(listed).pipe(Effect.andThen(observe(providers)));
+  });
   yield* follow(ledger.changes, () => raw.getProviders.pipe(Effect.flatMap(observe)));
 
   const clearing =

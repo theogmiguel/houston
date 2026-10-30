@@ -225,7 +225,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to un-settle thread",
+          title: "Failed to reopen thread",
           description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
@@ -527,7 +527,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const threadStatusLine = activeThreadSnoozed ? (
     <ThreadStatusLine
       icon={<AlarmClockIcon />}
-      label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+      label={snoozeWake && snoozeWake !== "now" ? `On hold, ${snoozeWake} left` : "On hold"}
       clockMinute={nowMinute}
       actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
       actionDisabled={!canOperateThread || isUnsnoozing}
@@ -538,14 +538,14 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       icon={<CheckCircle2Icon />}
       label={settledAt ? `Settled ${formatRelativeTimeLabel(settledAt)}` : "Settled"}
       clockMinute={nowMinute}
-      actionLabel={isUnsettling ? "Un-settling..." : "Un-settle"}
+      actionLabel={isUnsettling ? "Reopening..." : "Reopen"}
       actionDisabled={!canOperateThread || isUnsettling}
       onAction={() => void handleUnsettleActiveThreadStable()}
     />
   ) : activeThreadWokeVisible ? (
     <ThreadStatusLine
       icon={<AlarmClockIcon />}
-      label="Woke from snooze"
+      label="Back from hold"
       actionLabel="Dismiss"
       onAction={acknowledgeActiveThreadWokeStable}
     />
@@ -571,7 +571,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         return;
       }
       if (settleAndAdvance(activeThreadRef)) return;
-      void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to settle thread"));
+      void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to close thread"));
     },
     "thread.pin": () => {
       if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;

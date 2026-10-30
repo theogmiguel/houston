@@ -77,7 +77,7 @@ export class ThreadSettlementUnsupportedError extends Schema.TaggedError<ThreadS
   },
 ) {
   override get message(): string {
-    return "This environment's server does not support settling yet. Update the server to use Settle.";
+    return "This environment's server does not support closing threads yet. Update the server to use Close.";
   }
 }
 
@@ -89,7 +89,7 @@ export class ThreadSnoozeUnsupportedError extends Schema.TaggedError<ThreadSnooz
   },
 ) {
   override get message(): string {
-    return "This environment's server does not support snoozing yet. Update the server to use Snooze.";
+    return "This environment's server does not support holding threads yet. Update the server to use Hold.";
   }
 }
 
@@ -101,7 +101,7 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedError<ThreadSnoozeBlo
   },
 ) {
   override get message(): string {
-    return "This thread is waiting on you. Respond to the pending request before snoozing it.";
+    return "This thread is waiting on you. Respond to the pending request before holding it.";
   }
 }
 
@@ -122,7 +122,7 @@ export class ThreadAutoSettleOptOutUnsupportedError extends Schema.TaggedError<T
   },
 ) {
   override get message(): string {
-    return "This environment's server does not support turning auto-settle off per thread yet. Update the server to use it.";
+    return "This environment's server does not support turning auto-close off per thread yet. Update the server to use it.";
   }
 }
 
@@ -754,10 +754,10 @@ export function useThreadActions() {
       markThreadVisited(scopedThreadKey(target), wokeAt);
     }
     showThreadUndoNotice({
-      action: "Settled",
+      action: "Closed",
       claim: action,
       undo: () => runUndoPlan(target, undoPlan),
-      failureTitle: "Failed to undo settle",
+      failureTitle: "Failed to undo close",
     });
     return result;
   };
@@ -867,10 +867,10 @@ export function useThreadActions() {
       return result;
     }
     showThreadUndoNotice({
-      action: "Snoozed",
+      action: "On hold",
       claim: action,
       undo: () => runUndoPlan(target, ThreadUndo.planThreadUndo("snooze")),
-      failureTitle: "Failed to wake thread",
+      failureTitle: "Failed to bring thread back",
     });
     return result;
   };

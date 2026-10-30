@@ -9228,10 +9228,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     code: "compaction_failed",
                   })
                 : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+            // Houston: a distinct code lets provider readiness mark the instance signed out;
+            // a failure with an HTTP status keeps its api_error_<status> code.
+            const signedOut =
+              context.authenticationFailureMessage !== undefined &&
+              (message.subtype !== "success" || message.api_error_status == null) &&
+              resultFailure?.message ===
+                makeProviderFailure({ message: context.authenticationFailureMessage }).message;
             const terminalFailure =
               resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
-                : resultFailure;
+                : signedOut && resultFailure !== null
+                  ? { ...resultFailure, code: "authentication_failed" }
+                  : resultFailure;
             yield* finalizeActiveTurn({
               context,
               status: interrupted

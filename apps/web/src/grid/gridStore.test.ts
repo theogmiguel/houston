@@ -5,6 +5,7 @@ import {
   createGridRecord,
   gridById,
   gridsForWorkspace,
+  orderedGridsForWorkspace,
   parseGrids,
   type GridRecord,
   useGridStore,
@@ -92,6 +93,44 @@ describe("grid records", () => {
     ).toBeUndefined();
   });
 
+  it("pins a grid above its workspace and hides it without touching its threads", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().pinGrid("g-2", "2026-01-03T00:00:00Z");
+    expect(
+      orderedGridsForWorkspace(useGridStore.getState().grids, workspaceKey).map((grid) => grid.id),
+    ).toEqual(["g-2", "g-1"]);
+    useGridStore.getState().unpinGrid("g-2");
+    expect(
+      orderedGridsForWorkspace(useGridStore.getState().grids, workspaceKey).map((grid) => grid.id),
+    ).toEqual(["g-1", "g-2"]);
+
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().setGridHidden("g-1", true);
+    const hidden = gridById(useGridStore.getState().grids, "g-1")!;
+    expect(hidden.hidden).toBe(true);
+    expect(preorderLeaves(hidden.tree)).toEqual(["thread-a"]);
+  });
+
+  it("reorders threads by swapping their panes", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-1", "thread-b");
+    useGridStore.getState().reorderGridThreads("g-1", "thread-b", "thread-a");
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-b",
+      "thread-a",
+    ]);
+  });
+
   it("addThreadToGrid does not duplicate an existing thread", () => {
     const base = createGridRecord([], {
       environmentId: "env-1",
@@ -115,6 +154,8 @@ describe("grid parsing", () => {
     workspaceKey,
     tree: { kind: "thread", threadId: "thread-a", id: "p1" },
     focusedThreadId: "thread-a",
+    pinnedAt: null,
+    hidden: false,
     createdAt: "2026-01-01T00:00:00Z",
   };
 

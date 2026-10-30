@@ -103,8 +103,8 @@ function CustomSnoozeDialog() {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Custom snooze</DialogTitle>
-            <DialogDescription>Choose when snoozed threads return to your inbox.</DialogDescription>
+            <DialogTitle>Custom hold</DialogTitle>
+            <DialogDescription>Choose when held threads return to the sidebar.</DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className="flex flex-col gap-4">
@@ -143,7 +143,7 @@ function CustomSnoozeDialog() {
                           })}
                           <CalendarIcon className="size-4 text-muted-foreground" />
                         </PopoverTrigger>
-                        <PopoverPopup align="start" aria-label="Choose snooze date">
+                        <PopoverPopup align="start" aria-label="Choose hold date">
                           <Calendar
                             mode="single"
                             required
@@ -188,7 +188,7 @@ function CustomSnoozeDialog() {
                         setError(null);
                       }}
                     >
-                      <Label htmlFor={`${id}-amount`}>Snooze for</Label>
+                      <Label htmlFor={`${id}-amount`}>Hold for</Label>
                       <NumberFieldGroup>
                         <NumberFieldDecrement aria-label="Decrease duration" />
                         <NumberFieldInput required />
@@ -240,12 +240,12 @@ function CustomSnoozeDialog() {
               }}
             >
               <Settings2Icon />
-              Edit snooze options
+              Edit hold options
             </Button>
             <Button type="button" variant="outline" onClick={() => finish(null)}>
               Cancel
             </Button>
-            <Button type="submit">Snooze</Button>
+            <Button type="submit">Hold</Button>
           </DialogFooter>
         </form>
       </DialogPopup>
