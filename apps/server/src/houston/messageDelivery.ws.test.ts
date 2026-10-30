@@ -109,6 +109,7 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
 import { latest, makeHarness, runWith } from "./messageDelivery.testkit.ts";
+import * as HoustonReviewState from "./reviewState.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
@@ -156,6 +157,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
+  Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),

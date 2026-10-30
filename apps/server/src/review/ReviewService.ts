@@ -29,6 +29,11 @@ export class ReviewService extends Context.Service<
     readonly getDiffFileContents: (
       input: ReviewDiffFileContentsInput,
     ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffPreviewError>;
+    /** Fails unless `cwd` is inside the configured workspace root or a known workspace. */
+    readonly assertWorkspaceBoundCwd: (
+      operation: string,
+      cwd: string,
+    ) => Effect.Effect<void, VcsRepositoryDetectionError>;
   }
 >()("t3/review/ReviewService") {}
 
@@ -61,7 +66,7 @@ export const make = Effect.gen(function* () {
   };
 
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
-    operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
+    operation: string,
     cwd: string,
   ) {
     const [candidate, workspaceRoot] = yield* Effect.all([
@@ -81,7 +86,9 @@ export const make = Effect.gen(function* () {
       detail:
         operation === "ReviewService.getDiffPreview"
           ? "Review diff preview cwd must stay within the configured workspace root."
-          : "Review diff file contents cwd must stay within the configured workspace root.",
+          : operation === "ReviewService.getDiffFileContents"
+            ? "Review diff file contents cwd must stay within the configured workspace root."
+            : "Review cwd must stay within the configured workspace root.",
     });
   });
 
@@ -122,6 +129,7 @@ export const make = Effect.gen(function* () {
   return ReviewService.of({
     getDiffPreview,
     getDiffFileContents,
+    assertWorkspaceBoundCwd,
   });
 });
 
