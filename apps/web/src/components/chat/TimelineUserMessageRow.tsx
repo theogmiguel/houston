@@ -344,7 +344,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   // Images or videos sent without words show as media, not as a bubble around them.
   const mediaOnly =
     !folded &&
-    userMessage.attribution !== "guest" &&
     resolvedContext.text.trim() === "" &&
     userAudio.length === 0 &&
     unchippedFiles.length === 0 &&
