@@ -705,6 +705,30 @@ describe("a merged linked pull request completes the task", () => {
       }),
     TIMEOUT,
   );
+
+  it.effect(
+    "merged leaves an in-progress task in progress",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("merged-in-progress");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const task = yield* context.readyTask("Still working");
+            const run = yield* startAndPrepare(context, task);
+            yield* waitForRunState(context, task, "waiting_for_input");
+            assert.strictEqual((yield* detailOf(context, task)).task.status, "in_progress");
+            const threadId = yield* threadOf(run);
+            yield* linkPullRequest(context, threadId, 3);
+            yield* syncPullRequest(context, threadId, 3, "merged");
+            yield* context.settle;
+            const detail = yield* detailOf(context, task);
+            assert.strictEqual(detail.task.status, "in_progress");
+            assert.notInclude(historyActions(detail), "houston:pr-merged");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
 });
 
 /** A delivery with an initiative, ready to plan. */
