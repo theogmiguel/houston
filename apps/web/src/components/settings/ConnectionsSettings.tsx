@@ -33,7 +33,6 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
-import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
@@ -108,7 +107,6 @@ import {
 } from "../ServerUpdateAction";
 import {
   sortDesktopPairingLinks,
-  summarizeAuthorizedClients,
   sortDesktopClientSessions,
   toDesktopPairingLinkRecord,
   toDesktopClientSessionRecord,
@@ -1118,14 +1116,10 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           </SettingsSection>
 
           {canReadAccess || canWriteAccess ? (
-            <FoldedSettingsSection
+            <SettingsSection
               id="authorized-clients"
               title="Authorized clients"
-              summary={summarizeAuthorizedClients(
-                desktopClientSessions,
-                visibleDesktopPairingLinks,
-              )}
-              control={
+              headerAction={
                 canWriteAccess ? (
                   <AuthorizedClientsHeaderAction
                     delegatableScopes={currentSessionScopes ?? []}
@@ -1157,7 +1151,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                   </p>
                 )}
               </ScrollArea>
-            </FoldedSettingsSection>
+            </SettingsSection>
           ) : null}
           <AlertDialog
             open={pendingDesktopServerExposureMode !== null && canManageLocalBackend}
