@@ -275,6 +275,31 @@ describe("send intents per provider family", () => {
         deliveredAt,
       );
       assert.lengthOf(deliveriesOf(result, MESSAGE_STEERING_INITIAL_PROMPT), 0);
+
+      // Without the steered text's own userMessage item, the initial prompt's item adopts nothing.
+      const withoutSteeredItem = yield* replay({
+        fixtureName: "message_steering",
+        variant: variantOf("message_steering", "codex"),
+        harness: CodexOrchestratorReplayHarness,
+        transformTranscript: (transcript) => ({
+          ...transcript,
+          entries: transcript.entries.filter(
+            (entry) =>
+              !(
+                entry.type === "emit_inbound" &&
+                JSON.stringify(entry.frame).includes('"type":"userMessage"') &&
+                JSON.stringify(entry.frame).includes(MESSAGE_STEERING_STEER_PROMPT)
+              ),
+          ),
+        }),
+        ownAssertions: true,
+      });
+      const unread = deliveriesOf(withoutSteeredItem, MESSAGE_STEERING_STEER_PROMPT);
+      assert.isTrue(unread.some((delivery) => delivery.state === "delivered"));
+      assert.isFalse(
+        unread.some((delivery) => delivery.state === "adopted"),
+        JSON.stringify(unread),
+      );
     }),
   );
 
