@@ -394,22 +394,42 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
   return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? "dark" : null;
 }
 
-export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
-  if (appearance === "dark") {
-    return (standardDarkThemeColors ??= decodeThemeColors(T3_CODE_DARK_THEME_COLORS));
-  }
-  return (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
-}
-
-// index.css paints the light bubble a step darker than the shared palette mobile uses.
-const STANDARD_WEB_PAINTED_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
-  light: { messageSurface: "#ebebed" },
-  dark: { canvas: "#000000", messageSurface: "#1e1e1e" },
+// index.css paints Houston's Paper and Graphite roles over the shared palette,
+// so a theme editor preview and the page agree before a custom theme applies.
+const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
+  light: {
+    canvas: "#f5f5f7",
+    chrome: "#ececef",
+    toolbar: "#ececef",
+    surface: "#ffffff",
+    surfaceRaised: "#ffffff",
+    surfaceOverlay: "#ffffff",
+    messageSurface: "#f6f6f6",
+    terminalBackground: "#ffffff",
+  },
+  dark: {
+    canvas: "#161618",
+    chrome: "#1c1c1f",
+    toolbar: "#1c1c1f",
+    surface: "#202023",
+    surfaceRaised: "#26262a",
+    surfaceOverlay: "#26262a",
+    messageSurface: "#2d2d30",
+    terminalBackground: "#0f0f11",
+  },
 };
+
+export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
+  const base =
+    appearance === "dark"
+      ? (standardDarkThemeColors ??= decodeThemeColors(T3_CODE_DARK_THEME_COLORS))
+      : (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
+  return { ...base, ...STANDARD_WEB_THEME_COLORS[appearance] };
+}
 
 /** The standard theme as index.css paints it, for solves that measure the page. */
 export function getStandardPaintedThemeColors(appearance: ThemeAppearance): ThemeColors {
-  return { ...getStandardThemeColors(appearance), ...STANDARD_WEB_PAINTED_COLORS[appearance] };
+  return getStandardThemeColors(appearance);
 }
 
 type ThemeRgbColor = {
@@ -1170,7 +1190,20 @@ export function updateThemeColorFamily(
   }
 }
 
-const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES;
+const HOUSTON_THEME_LABELS: Readonly<Record<string, string>> = {
+  [T3_CHAT_THEME_ID]: "Houston Chat",
+};
+
+/** User-visible names are Houston's; stored ids stay upstream's so preferences survive. */
+function withHoustonLabel(theme: ThemeDefinition): ThemeDefinition {
+  const label = HOUSTON_THEME_LABELS[theme.id];
+  return label === undefined ? theme : { ...theme, label };
+}
+
+export const HOUSTON_CHAT_THEME: ThemeDefinition = withHoustonLabel(T3_CHAT_THEME);
+
+const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> =
+  BUILT_IN_THEMES.map(withHoustonLabel);
 
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {
   const themeId = themeIdFromPreference(theme);

@@ -72,6 +72,7 @@ import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -769,21 +770,6 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="notifications" title="Notifications">
-        <NotificationSettings />
-        <SettingsRow
-          {...searchableSetting("in-app-notifications")}
-          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label="In-app notifications"
-            />
-          }
-        />
-      </SettingsSection>
-
       <SettingsSection id="sidebar" title="Sidebar">
         <SettingsRow
           {...searchableSetting("project-grouping")}
@@ -883,6 +869,21 @@ export function GeneralSettingsPanel() {
                 updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
               }
               aria-label="Running section"
+            />
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="notifications" title="Notifications">
+        <NotificationSettings />
+        <SettingsRow
+          {...searchableSetting("in-app-notifications")}
+          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+          control={
+            <Switch
+              checked={settings.inAppNotificationsEnabled}
+              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
+              aria-label="In-app notifications"
             />
           }
         />
@@ -1139,33 +1140,31 @@ export function ChatSettingsPanel() {
             </Select>
           }
         />
-        <AdvancedSettings targetIds={[searchableSetting("skills-in-slash-menu").id]}>
-          <SettingsRow
-            {...searchableSetting("skills-in-slash-menu")}
-            description="Also include skills in the / command menu. Skills always appear when you type $."
-            resetAction={
-              settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
-                <SettingResetButton
-                  label="skills in slash menu"
-                  onClick={() =>
-                    updateSettings({
-                      showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.showSkillsInSlashMenu}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
+        <SettingsRow
+          {...searchableSetting("skills-in-slash-menu")}
+          description="Also include skills in the / command menu. Skills always appear when you type $."
+          resetAction={
+            settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+              <SettingResetButton
+                label="skills in slash menu"
+                onClick={() =>
+                  updateSettings({
+                    showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+                  })
                 }
-                aria-label="Show skills in slash menu"
               />
-            }
-          />
-        </AdvancedSettings>
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showSkillsInSlashMenu}
+              onCheckedChange={(checked) =>
+                updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
+              }
+              aria-label="Show skills in slash menu"
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="follow-ups" title="Follow-ups">
@@ -1190,24 +1189,20 @@ export function ChatSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.followUpBehavior}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Follow-up behavior"
+              variant="segmented"
+              value={[settings.followUpBehavior]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "queue" || value === "steer") {
                   updateSettings({ followUpBehavior: value });
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="queue">Queue</SelectItem>
-                <SelectItem value="steer">Steer</SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="queue">Queue</Toggle>
+              <Toggle value="steer">Steer</Toggle>
+            </ToggleGroup>
           }
         />
       </SettingsSection>

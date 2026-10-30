@@ -22,7 +22,7 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
-  T3_CHAT_THEME,
+  HOUSTON_CHAT_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -55,12 +55,32 @@ import {
 import { ThemeWireframe } from "./ThemeWireframe";
 
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
-  T3_CHAT_THEME,
+  HOUSTON_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
 ];
+
+export function themeLibraryCount(
+  customThemes: ReadonlyArray<ThemeDefinition>,
+  environmentThemes: ReadonlyArray<ThemeDefinition>,
+): number {
+  const builtInIds = new Set([
+    ...STANDARD_THEME_CARDS.map((theme) => theme.id),
+    ...MAINTAINER_THEMES.map((theme) => theme.id),
+  ]);
+  const extraEnvironmentThemes = environmentThemes.filter(
+    (theme) =>
+      !builtInIds.has(theme.id) && !customThemes.some((customTheme) => customTheme.id === theme.id),
+  );
+  return (
+    STANDARD_THEME_CARDS.length +
+    MAINTAINER_THEMES.length +
+    extraEnvironmentThemes.length +
+    customThemes.length
+  );
+}
 
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {
   if (themes.length === 0) return [];
@@ -506,6 +526,7 @@ export function ThemeLibrary({
   onImportOpenChange,
   themeHalves,
   setThemeHalf,
+  view = "full",
 }: {
   theme: string;
   setTheme: (theme: string) => boolean;
@@ -518,6 +539,7 @@ export function ThemeLibrary({
   onImportOpenChange: (open: boolean) => void;
   themeHalves: ThemeHalves | null;
   setThemeHalf: (appearance: ThemeAppearance, themeId: string | null) => boolean;
+  view?: "full" | "tiles" | "library";
 }) {
   const openThemeEditor = useThemeEditorStore((store) => store.openThemeEditor);
   const environmentThemes = useEnvironmentThemeDefinitions();
@@ -656,10 +678,7 @@ export function ThemeLibrary({
 
   const renderWireframe = (mode: ThemeMode, active = false) => (
     <ThemeWireframe
-      className={cn(
-        "h-24 rounded-lg border-0",
-        active ? "ring-2 ring-ring" : "ring-1 ring-border",
-      )}
+      className={cn("h-24 rounded-lg border-0", active ? "ring-2 ring-ring" : "ring-1 ring-border")}
       panes={
         mode === "system"
           ? [
@@ -691,7 +710,7 @@ export function ThemeLibrary({
                 isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              {mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}
+              {mode === "system" ? "System" : mode === "light" ? "Paper" : "Graphite"}
             </span>
           </button>
         );
@@ -824,156 +843,164 @@ export function ThemeLibrary({
 
   return (
     <div className="space-y-3">
-      <h3 className="flex items-center px-1 text-[11px] leading-[14px] font-semibold text-muted-foreground">
-        {searchableSetting("color-scheme").title}
-      </h3>
-      {renderModeTiles()}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-2">
-        <h3 className="text-[11px] leading-[14px] font-semibold text-muted-foreground">
-          {searchableSetting("theme").title}
-        </h3>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() =>
-              openThemeEditor({
-                editingThemeId: null,
-                seedThemeId: activeThemeForAppearance?.id ?? null,
-                seedName: null,
-                initialAppearance,
-              })
-            }
-          >
-            <PaintbrushIcon />
-            Create theme
-          </Button>
-          <Button size="xs" variant="outline" onClick={() => onImportOpenChange(true)}>
-            <PlusIcon />
-            Add theme
-          </Button>
-        </div>
-      </div>
-      {renderPairGrid()}
-      <ThemeImportDialog
-        onImportedMany={(importedThemes, { updated }) => {
-          if (updated) refreshTheme();
-          const verb = updated ? "updated" : "added";
-          toastManager.add(
-            stackedThreadToast({
-              type: "success",
-              title:
-                importedThemes.length === 1
-                  ? `${importedThemes[0]!.label} ${verb}`
-                  : `${importedThemes.length} themes ${verb}`,
-              description: importedThemes.map((imported) => imported.label).join(", "),
-            }),
-          );
-        }}
-        onImported={(importedTheme) => {
-          const modes = getThemeModes(importedTheme);
-          if (modes.length === 1) {
-            assignHalf(modes[0]!, importedTheme.id);
-            toastManager.add(
-              stackedThreadToast({
-                type: "success",
-                title: `${importedTheme.label} added`,
-                description: `It’s now your ${modes[0]!} theme.`,
-              }),
-            );
-            return true;
-          }
-          if (!persistTheme(importedTheme.id)) return false;
-          toastManager.add(
-            stackedThreadToast({
-              type: "success",
-              title: `${importedTheme.label} added`,
-              description: "It’s now active.",
-            }),
-          );
-          return true;
-        }}
-        onOpenChange={onImportOpenChange}
-        open={isImportOpen}
-      />
-      <AlertDialog open={isThemeRemovalOpen} onOpenChange={setIsThemeRemovalOpen}>
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {canRemoveCollection
-                ? `Remove themes from “${removeDialogCollectionLabel}”?`
-                : `Remove “${removeDialogTheme?.label}”?`}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {canRemoveCollection
-                ? "Select the variants you want to remove. You can restore them by importing the extension again."
-                : "You can bring it back anytime by importing its JSON file."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {canRemoveCollection ? (
-            <div className="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 sm:grid-cols-2">
-              {removeDialogCollectionThemes.map((customTheme) => {
-                const checked = themeIdsToRemoveSet.has(customTheme.id);
-                const card = getThemeCardDefinition(customTheme);
-                const checkboxId = `remove-theme-${customTheme.id}`;
-                return (
-                  <label
-                    className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-muted/40"
-                    htmlFor={checkboxId}
-                    key={customTheme.id}
-                  >
-                    <span className="absolute right-2 top-2 inline-grid size-5 grid-cols-1 sm:size-4">
-                      <input
-                        checked={checked}
-                        className="col-start-1 row-start-1 size-full appearance-none rounded-sm border border-input bg-background outline-none checked:border-primary checked:bg-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring checked:focus-visible:inset-ring-3 checked:focus-visible:inset-ring-background dark:not-checked:bg-input/32 forced-colors:appearance-auto"
-                        id={checkboxId}
-                        name="themes-to-remove"
-                        type="checkbox"
-                        onChange={(event) => {
-                          const shouldRemove = event.currentTarget.checked;
-                          setThemeIdsToRemove((current) =>
-                            shouldRemove
-                              ? [...current, customTheme.id]
-                              : current.filter((themeId) => themeId !== customTheme.id),
-                          );
-                        }}
-                      />
-                      <CheckIcon className="pointer-events-none col-start-1 row-start-1 size-3.5 shrink-0 self-center justify-self-center stroke-primary-foreground opacity-0 group-has-checked:opacity-100 sm:size-3" />
-                    </span>
-                    <span className="flex min-h-12 items-center justify-center gap-1">
-                      {card.previews.map((preview) => (
-                        <span
-                          className="flex size-11 shrink-0 items-center justify-center"
-                          key={preview.mode}
-                        >
-                          <span className="flex scale-75">
-                            <ThemePreviewCircle colors={preview.colors} mode={preview.mode} />
-                          </span>
-                        </span>
-                      ))}
-                    </span>
-                    <p className="max-w-full truncate text-center text-base font-medium text-foreground sm:text-sm">
-                      {customTheme.label}
-                    </p>
-                  </label>
-                );
-              })}
+      {view !== "library" ? (
+        <>
+          <h3 className="flex items-center px-1 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+            {searchableSetting("color-scheme").title}
+          </h3>
+          {renderModeTiles()}
+        </>
+      ) : null}
+      {view === "tiles" ? null : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-2">
+            <h3 className="text-[11px] leading-[14px] font-semibold text-muted-foreground">
+              {searchableSetting("theme").title}
+            </h3>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() =>
+                  openThemeEditor({
+                    editingThemeId: null,
+                    seedThemeId: activeThemeForAppearance?.id ?? null,
+                    seedName: null,
+                    initialAppearance,
+                  })
+                }
+              >
+                <PaintbrushIcon />
+                Create theme
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => onImportOpenChange(true)}>
+                <PlusIcon />
+                Add theme
+              </Button>
             </div>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            <Button
-              disabled={themeIdsToRemove.length === 0}
-              variant="destructive"
-              onClick={handleConfirmRemoveTheme}
-            >
-              {canRemoveCollection
-                ? `Remove selected${themeIdsToRemove.length > 0 ? ` (${themeIdsToRemove.length})` : ""}`
-                : "Remove theme"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
+          </div>
+          {renderPairGrid()}
+          <ThemeImportDialog
+            onImportedMany={(importedThemes, { updated }) => {
+              if (updated) refreshTheme();
+              const verb = updated ? "updated" : "added";
+              toastManager.add(
+                stackedThreadToast({
+                  type: "success",
+                  title:
+                    importedThemes.length === 1
+                      ? `${importedThemes[0]!.label} ${verb}`
+                      : `${importedThemes.length} themes ${verb}`,
+                  description: importedThemes.map((imported) => imported.label).join(", "),
+                }),
+              );
+            }}
+            onImported={(importedTheme) => {
+              const modes = getThemeModes(importedTheme);
+              if (modes.length === 1) {
+                assignHalf(modes[0]!, importedTheme.id);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "success",
+                    title: `${importedTheme.label} added`,
+                    description: `It’s now your ${modes[0]!} theme.`,
+                  }),
+                );
+                return true;
+              }
+              if (!persistTheme(importedTheme.id)) return false;
+              toastManager.add(
+                stackedThreadToast({
+                  type: "success",
+                  title: `${importedTheme.label} added`,
+                  description: "It’s now active.",
+                }),
+              );
+              return true;
+            }}
+            onOpenChange={onImportOpenChange}
+            open={isImportOpen}
+          />
+          <AlertDialog open={isThemeRemovalOpen} onOpenChange={setIsThemeRemovalOpen}>
+            <AlertDialogPopup>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {canRemoveCollection
+                    ? `Remove themes from “${removeDialogCollectionLabel}”?`
+                    : `Remove “${removeDialogTheme?.label}”?`}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {canRemoveCollection
+                    ? "Select the variants you want to remove. You can restore them by importing the extension again."
+                    : "You can bring it back anytime by importing its JSON file."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {canRemoveCollection ? (
+                <div className="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto px-6 pb-6 sm:grid-cols-2">
+                  {removeDialogCollectionThemes.map((customTheme) => {
+                    const checked = themeIdsToRemoveSet.has(customTheme.id);
+                    const card = getThemeCardDefinition(customTheme);
+                    const checkboxId = `remove-theme-${customTheme.id}`;
+                    return (
+                      <label
+                        className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-muted/40"
+                        htmlFor={checkboxId}
+                        key={customTheme.id}
+                      >
+                        <span className="absolute right-2 top-2 inline-grid size-5 grid-cols-1 sm:size-4">
+                          <input
+                            checked={checked}
+                            className="col-start-1 row-start-1 size-full appearance-none rounded-sm border border-input bg-background outline-none checked:border-primary checked:bg-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring checked:focus-visible:inset-ring-3 checked:focus-visible:inset-ring-background dark:not-checked:bg-input/32 forced-colors:appearance-auto"
+                            id={checkboxId}
+                            name="themes-to-remove"
+                            type="checkbox"
+                            onChange={(event) => {
+                              const shouldRemove = event.currentTarget.checked;
+                              setThemeIdsToRemove((current) =>
+                                shouldRemove
+                                  ? [...current, customTheme.id]
+                                  : current.filter((themeId) => themeId !== customTheme.id),
+                              );
+                            }}
+                          />
+                          <CheckIcon className="pointer-events-none col-start-1 row-start-1 size-3.5 shrink-0 self-center justify-self-center stroke-primary-foreground opacity-0 group-has-checked:opacity-100 sm:size-3" />
+                        </span>
+                        <span className="flex min-h-12 items-center justify-center gap-1">
+                          {card.previews.map((preview) => (
+                            <span
+                              className="flex size-11 shrink-0 items-center justify-center"
+                              key={preview.mode}
+                            >
+                              <span className="flex scale-75">
+                                <ThemePreviewCircle colors={preview.colors} mode={preview.mode} />
+                              </span>
+                            </span>
+                          ))}
+                        </span>
+                        <p className="max-w-full truncate text-center text-base font-medium text-foreground sm:text-sm">
+                          {customTheme.label}
+                        </p>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <AlertDialogFooter>
+                <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+                <Button
+                  disabled={themeIdsToRemove.length === 0}
+                  variant="destructive"
+                  onClick={handleConfirmRemoveTheme}
+                >
+                  {canRemoveCollection
+                    ? `Remove selected${themeIdsToRemove.length > 0 ? ` (${themeIdsToRemove.length})` : ""}`
+                    : "Remove theme"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogPopup>
+          </AlertDialog>
+        </>
+      )}
     </div>
   );
 }
