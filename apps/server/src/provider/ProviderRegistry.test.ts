@@ -841,7 +841,7 @@ it.layer(
         checkedAt: "2026-10-03T00:02:00.000Z",
         status: "ready",
         version: "1.0.0",
-        message: "Pi is available, but T3 Code could not refresh its models and commands.",
+        message: "Pi is available, but Houston could not refresh its models and commands.",
       } satisfies ServerProvider;
 
       it("retains Pi inventories during incomplete probes without restoring removed custom models", () => {
@@ -1912,16 +1912,15 @@ it.layer(
 
         yield* Effect.gen(function* () {
           const registry = yield* ProviderRegistry.ProviderRegistry;
+          // Houston: every published provider carries its readiness.
+          const expected = {
+            ...withBundledCompatibility(cachedProvider),
+            readiness: { state: "ready" as const },
+          };
 
-          assert.deepStrictEqual(yield* registry.getProviders, [
-            withBundledCompatibility(cachedProvider),
-          ]);
-          assert.deepStrictEqual(yield* registry.refresh(codexDriver), [
-            withBundledCompatibility(cachedProvider),
-          ]);
-          assert.deepStrictEqual(yield* registry.refreshInstance(codexInstanceId), [
-            withBundledCompatibility(cachedProvider),
-          ]);
+          assert.deepStrictEqual(yield* registry.getProviders, [expected]);
+          assert.deepStrictEqual(yield* registry.refresh(codexDriver), [expected]);
+          assert.deepStrictEqual(yield* registry.refreshInstance(codexInstanceId), [expected]);
         }).pipe(Effect.provide(runtimeServices));
       }),
     );

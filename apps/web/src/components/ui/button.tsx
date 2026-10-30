@@ -6,7 +6,7 @@ import type * as React from "react";
 import { cn } from "~/lib/utils";
 
 const buttonVariants = cva(
-  "[--control-icon-color:currentColor] [&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-base outline-none transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 sm:text-sm [&_svg:not([class*='text-'])]:text-[var(--control-icon-color)] [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "[--control-icon-color:currentColor] [&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-[13px] outline-none transition-[background-color,color] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-[0.45] aria-disabled:cursor-not-allowed aria-disabled:opacity-[0.45] [&_svg:not([class*='text-'])]:text-[var(--control-icon-color)] [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -15,40 +15,39 @@ const buttonVariants = cva(
     variants: {
       size: {
         compact:
-          "h-7 gap-1 rounded-[var(--r-ctl)] px-[calc(--spacing(2)-1px)] text-xs [&_svg:not([class*='size-'])]:size-3.5",
-        default: "h-9 px-[calc(--spacing(3)-1px)] sm:h-8",
-        icon: "size-9 sm:size-8",
-        "icon-lg": "size-10 sm:size-9",
-        "icon-micro":
-          "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
+          "h-7 gap-1 rounded-[var(--r-ctl)] px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        default: "h-7 px-3",
+        icon: "size-7",
+        "icon-lg": "size-9",
+        "icon-micro": "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-tiny": "size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8 sm:size-7",
+        "icon-sm": "size-[22px] rounded-[var(--r-ctl)] [&_svg:not([class*='size-'])]:size-3.5",
         "icon-xl":
           "size-11 sm:size-10 [&_svg:not([class*='size-'])]:size-5 sm:[&_svg:not([class*='size-'])]:size-4.5",
         "icon-xs":
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-10 px-[calc(--spacing(3.5)-1px)] sm:h-9",
+        lg: "h-9 px-3.5",
         micro:
-          "h-5 gap-1 rounded-[var(--r-badge)] px-[calc(--spacing(1.5)-1px)] text-[11px] sm:text-[11px] [&_svg:not([class*='size-'])]:size-3 sm:[&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] sm:h-7",
+          "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":
-          "min-h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)] whitespace-normal sm:min-h-7",
-        xl: "h-11 px-[calc(--spacing(4)-1px)] text-lg sm:h-10 sm:text-base [&_svg:not([class*='size-'])]:size-5 sm:[&_svg:not([class*='size-'])]:size-4.5",
-        xs: "h-7 gap-1 px-[calc(--spacing(2)-1px)] text-sm sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
+          "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
+        xl: "h-10 px-4 text-base [&_svg:not([class*='size-'])]:size-5",
+        xs: "h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--primary)_90%,var(--foreground))]",
+          "border-transparent bg-primary text-primary-foreground [:hover,[data-pressed]]:bg-[var(--primary-hover)]",
         destructive:
-          "border-transparent bg-destructive text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--destructive)_90%,var(--foreground))]",
+          "border-transparent bg-destructive text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--destructive)_90%,black)]",
         "destructive-outline":
-          "border-border bg-card text-destructive-foreground [:hover,[data-pressed]]:border-destructive/32 [:hover,[data-pressed]]:bg-destructive/4",
+          "border-border bg-transparent text-destructive-foreground [:hover,[data-pressed]]:border-destructive/32 [:hover,[data-pressed]]:bg-error-surface",
         ghost:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-secondary-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
         "ghost-muted":
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
         "ghost-destructive":
-          "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-destructive",
+          "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-error-surface [:hover,[data-pressed]]:bg-error-surface [:hover,[data-pressed]]:text-destructive",
         glass:
           "surface-glass [--control-icon-color:var(--contrast-muted-foreground)] rounded-full border-border/60 text-foreground shadow-sm before:rounded-full [:hover,[data-pressed]]:border-border",
         link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
@@ -57,10 +56,10 @@ const buttonVariants = cva(
         "media-navigation":
           "[--control-icon-color:currentColor] absolute top-1/2 z-20 -translate-y-1/2 border-transparent text-white/90 [:hover,[data-pressed]]:bg-white/10 [:hover,[data-pressed]]:text-white focus-visible:ring-white focus-visible:ring-offset-transparent",
         outline:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-border bg-card text-foreground [:hover,[data-pressed]]:bg-accent",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-border bg-card text-foreground [:hover,[data-pressed]]:border-[var(--border-hover)] [:hover,[data-pressed]]:bg-[var(--surface-raised)]",
         overlay: "border-transparent bg-black/70 text-white/65 [:hover,[data-pressed]]:bg-black/90",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground [:active,[data-pressed]]:bg-secondary/80 [:hover,[data-pressed]]:bg-secondary/90",
+          "border-border bg-card text-foreground [:active,[data-pressed]]:bg-secondary [:hover,[data-pressed]]:border-[var(--border-hover)] [:hover,[data-pressed]]:bg-[var(--surface-raised)]",
         "warning-outline":
           "border-warning/32 bg-warning-surface text-warning-foreground shadow-xs/5 [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
       },

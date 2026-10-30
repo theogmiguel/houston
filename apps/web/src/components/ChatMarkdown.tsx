@@ -376,9 +376,15 @@ const GITHUB_ALERT_PRESENTATIONS: Record<
   },
 };
 
+function rewriteFileUriHref(href: string): string | null {
+  // Browsers parse some scheme-like text (`d:alert(1)`) as a `file:` URL on
+  // Windows, so only destinations authored as file URLs are rewritten.
+  return /^file:/i.test(href) ? rewriteMarkdownFileUriHref(href) : null;
+}
+
 function normalizeMarkdownLinkHrefKey(href: string): string {
   const normalizedHref = normalizeMarkdownLinkDestination(href);
-  const rewrittenHref = rewriteMarkdownFileUriHref(normalizedHref) ?? normalizedHref;
+  const rewrittenHref = rewriteFileUriHref(normalizedHref) ?? normalizedHref;
   return WINDOWS_DRIVE_PATH_REGEX.test(rewrittenHref)
     ? rewrittenHref.replaceAll("\\", "/")
     : rewrittenHref;
@@ -644,7 +650,7 @@ function useChatMarkdownState({
     if (parseComposerContextHref(href)) return href;
     if (parseThreadLinkHref(href)) return href;
     if (isWindowsDrivePathHref(href)) return href;
-    return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
+    return rewriteFileUriHref(href) ?? defaultUrlTransform(href);
   };
   const handleCopy = (event: ReactClipboardEvent<HTMLElement>) => {
     const selection = window.getSelection();
@@ -1661,7 +1667,7 @@ function ChatMarkdown({
       className={cn(
         "chat-markdown w-full min-w-0 [overflow-wrap:anywhere] [word-break:break-word]",
         !inline &&
-          "text-sm leading-relaxed text-foreground/[calc(90%+var(--appearance-contrast-boost)/10)]",
+          "text-prose leading-normal text-foreground/[calc(90%+var(--appearance-contrast-boost)/10)]",
         className,
       )}
       data-streaming={componentState.isStreaming ? "" : undefined}

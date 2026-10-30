@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AcpRegistryUrlAuthAction } from "./acpRegistry.ts";
+import { ProviderReadiness } from "./houston/providerReadiness.ts";
 import {
   type EnvironmentMachineKind,
   ExecutionEnvironmentDescriptor,
@@ -264,6 +265,8 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  // Houston: derived on publish from the snapshot and turn failures; never cached.
+  readiness: Schema.optionalKey(ProviderReadiness),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

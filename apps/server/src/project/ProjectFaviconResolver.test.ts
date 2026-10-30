@@ -81,12 +81,12 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
       }).pipe(Effect.provide(TestClock.layer())),
     );
 
-    it.effect("prefers a t3.json iconPath over well-known files", () =>
+    it.effect("prefers a houston.json iconPath over well-known files", () =>
       Effect.gen(function* () {
         const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
-        yield* writeTextFile(cwd, "t3.json", '{ "iconPath": "brand/mark.svg" }');
+        yield* writeTextFile(cwd, "houston.json", '{ "iconPath": "brand/mark.svg" }');
         yield* writeTextFile(cwd, "brand/mark.svg", "<svg>mark</svg>");
         yield* writeTextFile(cwd, "favicon.svg", "<svg>favicon</svg>");
 
@@ -140,11 +140,11 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
       }),
     );
 
-    it.effect("ignores invalid t3.json files", () =>
+    it.effect("ignores invalid houston.json files", () =>
       Effect.gen(function* () {
         const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
         const cwd = yield* makeTempDir;
-        yield* writeTextFile(cwd, "t3.json", "{ not json");
+        yield* writeTextFile(cwd, "houston.json", "{ not json");
         yield* writeTextFile(cwd, "favicon.svg", "<svg>favicon</svg>");
 
         const resolved = yield* resolver.resolvePath(cwd);
@@ -154,13 +154,13 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
       }),
     );
 
-    it.effect("does not resolve a t3.json iconPath outside the workspace root", () =>
+    it.effect("does not resolve a houston.json iconPath outside the workspace root", () =>
       Effect.gen(function* () {
         const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
         const parent = yield* makeTempDir;
         const cwd = `${parent}/app`;
         yield* writeTextFile(parent, "secret.svg", "<svg>secret</svg>");
-        yield* writeTextFile(cwd, "t3.json", '{ "iconPath": "../secret.svg" }');
+        yield* writeTextFile(cwd, "houston.json", '{ "iconPath": "../secret.svg" }');
 
         const resolved = yield* resolver.resolvePath(cwd);
 

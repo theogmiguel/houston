@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -8,9 +9,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArchiveIcon,
-  ChevronRightIcon,
-  FolderIcon,
-  LayoutGridIcon,
+  ChevronDownIcon,
   MessageSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -19,6 +18,7 @@ import {
 import { useState } from "react";
 
 import { isElectron } from "../../env";
+import { openCommandPalette } from "../../commandPaletteBus";
 import {
   type GridRecord,
   gridsForWorkspace,
@@ -28,71 +28,94 @@ import {
 import { preorderThreads } from "../../grid/tree";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { cn } from "../../lib/utils";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { toastManager } from "../ui/toast";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { SidebarRailNav, SidebarRailSearchButton } from "../sidebar/SidebarRailNav";
+import { SidebarRowTime, threadTimeTimestamp } from "../sidebar/SidebarRowTime";
+import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+import {
+  EMPTY_PROVIDER_ENTRIES,
+  sidebarProviderEntriesAtom,
+} from "../sidebar/sidebarProviderEntries";
+import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { SidebarContent, SidebarHeader } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { cn } from "../../lib/utils";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
-import { resolveThreadStatusPill } from "../Sidebar.logic";
+import { resolveProjectStatusIndicator, resolveThreadStatusPill } from "../Sidebar.logic";
 
 export function GridSidebar() {
   const projects = useProjects();
   const threads = useQuietThreadShells();
   const grids = useGridStore((store) => store.grids);
   const createGrid = useGridStore((store) => store.createGrid);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
+  const newThreadShortcutLabel = shortcutLabelForCommand(keybindings, "chat.new");
   const navigate = useNavigate();
+  const handleNewThread = () => {
+    if (projects.length === 0) {
+      openCommandPalette({ open: "add-project" });
+      return;
+    }
+    openCommandPalette({ open: "new-thread-in" });
+  };
 
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-1.5 py-1">
-          <LayoutGridIcon className="size-4 text-muted-foreground" />
-          <span className="text-xs font-semibold tracking-wide text-sidebar-foreground uppercase">
-            Grids
-          </span>
-        </div>
-        <Link
-          to="/"
-          className="flex h-7 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-        >
-          <MessageSquareIcon className="size-3.5" />
-          All threads
-        </Link>
+        <SidebarRailNav
+          search={<SidebarRailSearchButton />}
+          onNewThread={handleNewThread}
+          newThreadDisabled={projects.length === 0}
+          newThreadShortcutLabel={newThreadShortcutLabel}
+        />
       </SidebarHeader>
       <SidebarContent>
-        {projects.length === 0 ? (
-          <p className="px-2 py-3 text-xs text-muted-foreground">
-            Open a project to create its first grid.
-          </p>
-        ) : null}
-        {projects.map((project) => (
-          <WorkspaceGroup
-            key={workspaceKeyOf(project.environmentId, project.id)}
-            project={project}
-            grids={gridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))}
-            threads={threads.filter(
-              (thread) =>
-                thread.environmentId === project.environmentId &&
-                thread.projectId === project.id &&
-                thread.archivedAt === null,
-            )}
-            onCreateGrid={() => {
-              const gridId = createGrid({
-                environmentId: project.environmentId,
-                projectId: project.id,
-                workspaceKey: workspaceKeyOf(project.environmentId, project.id),
-              });
-              void navigate({ to: "/grid/$gridId", params: { gridId } });
-            }}
-          />
-        ))}
+        <div className="flex flex-col gap-px px-2 pb-2">
+          <Link
+            to="/"
+            className="flex h-7 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          >
+            <MessageSquareIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
+            All threads
+          </Link>
+          {projects.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-secondary-label">
+              Open a project to create its first grid.
+            </p>
+          ) : null}
+          {projects.map((project) => (
+            <WorkspaceGroup
+              key={workspaceKeyOf(project.environmentId, project.id)}
+              project={project}
+              grids={gridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))}
+              threads={threads.filter(
+                (thread) =>
+                  thread.environmentId === project.environmentId &&
+                  thread.projectId === project.id &&
+                  thread.archivedAt === null,
+              )}
+              providerEntriesByEnvironment={providerEntriesByEnvironment}
+              onCreateGrid={() => {
+                const gridId = createGrid({
+                  environmentId: project.environmentId,
+                  projectId: project.id,
+                  workspaceKey: workspaceKeyOf(project.environmentId, project.id),
+                });
+                void navigate({ to: "/grid/$gridId", params: { gridId } });
+              }}
+            />
+          ))}
+        </div>
       </SidebarContent>
       <SidebarChromeFooter />
     </>
@@ -103,59 +126,83 @@ function WorkspaceGroup({
   project,
   grids,
   threads,
+  providerEntriesByEnvironment,
   onCreateGrid,
 }: {
   project: EnvironmentProject;
   grids: GridRecord[];
   threads: ReadonlyArray<EnvironmentThreadShell>;
+  providerEntriesByEnvironment: ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>;
   onCreateGrid: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const rollup = resolveProjectStatusIndicator(
+    threads.map((thread) => resolveThreadStatusPill({ thread })),
+  );
+  const providerEntries =
+    providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
   return (
-    <section className="mt-1 flex flex-col">
-      <div className="group flex items-center gap-1">
+    <section className="group/workspace mt-1 flex flex-col gap-px">
+      <div className="relative flex items-center">
         <Tooltip>
           <TooltipTrigger
             render={
               <button
                 type="button"
                 onClick={() => setCollapsed((value) => !value)}
-                className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium text-sidebar-foreground hover:bg-sidebar-row-hover"
+                className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 aria-expanded={!collapsed}
               />
             }
           >
-            <ChevronRightIcon
-              className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 text-secondary-label transition-transform",
+                collapsed && "-rotate-90",
+              )}
             />
-            <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{project.title}</span>
+            <span className="min-w-0 flex-1 truncate">{project.title}</span>
+            {collapsed && rollup !== null ? (
+              <SidebarThreadStatusGlyph status={rollup} label={`A thread: ${rollup.label}`} />
+            ) : (
+              <span className="shrink-0 text-xs text-secondary-label tabular-nums group-hover/workspace:invisible">
+                {threads.length}
+              </span>
+            )}
           </TooltipTrigger>
           <TooltipPopup side="right">{project.workspaceRoot}</TooltipPopup>
         </Tooltip>
-        <Button
-          variant="ghost-muted"
-          size="icon-micro"
-          aria-label={`New grid in ${project.title}`}
-          onClick={onCreateGrid}
-        >
-          <PlusIcon />
-        </Button>
+        <span className="absolute inset-y-0 right-1 flex items-center opacity-0 group-hover/workspace:opacity-100 focus-within:opacity-100">
+          <Button
+            variant="ghost-muted"
+            size="icon-micro"
+            aria-label={`New grid in ${project.title}`}
+            onClick={onCreateGrid}
+          >
+            <PlusIcon />
+          </Button>
+        </span>
       </div>
       {collapsed ? null : (
-        <div className="ml-3 flex flex-col gap-0.5 border-l border-sidebar-border/60 pl-2">
+        <div className="flex flex-col gap-px">
           {grids.length === 0 ? (
             <button
               type="button"
               onClick={onCreateGrid}
-              className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+              className="flex h-7 items-center gap-2 rounded-(--control-radius) px-2 pl-6.5 text-left text-sm text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             >
-              <PlusIcon className="size-3.5" />
+              <PlusIcon aria-hidden className="size-[15px]" />
               New grid
             </button>
           ) : null}
           {grids.map((grid) => (
-            <GridRow key={grid.id} grid={grid} workspaceThreads={threads} />
+            <GridRow
+              key={grid.id}
+              grid={grid}
+              workspaceThreads={threads}
+              providerEntries={providerEntries}
+            />
           ))}
         </div>
       )}
@@ -166,9 +213,11 @@ function WorkspaceGroup({
 function GridRow({
   grid,
   workspaceThreads,
+  providerEntries,
 }: {
   grid: GridRecord;
   workspaceThreads: ReadonlyArray<EnvironmentThreadShell>;
+  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
 }) {
   const navigate = useNavigate();
   const renameGrid = useGridStore((store) => store.renameGrid);
@@ -182,6 +231,10 @@ function GridRow({
   const leaves = preorderThreads(grid.tree);
   const leafIds = new Set(leaves.map((leaf) => leaf.threadId));
   const available = workspaceThreads.filter((thread) => !leafIds.has(thread.id));
+  const branch =
+    leaves
+      .map((leaf) => workspaceThreads.find((thread) => thread.id === leaf.threadId)?.branch)
+      .find((candidate) => candidate != null) ?? null;
 
   const openThread = (threadId: string) => {
     focusThread(grid.id, threadId);
@@ -189,8 +242,8 @@ function GridRow({
   };
 
   return (
-    <div className="flex flex-col">
-      <div className="group flex items-center gap-1">
+    <div className="group/grid relative flex flex-col gap-px">
+      <div className="relative flex items-center gap-1">
         {renaming ? (
           <input
             autoFocus
@@ -207,21 +260,23 @@ function GridRow({
                 setRenaming(false);
               }
             }}
-            className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring"
+            className="h-6 min-w-0 flex-1 rounded-(--control-radius) border border-input bg-background px-1.5 text-2xs font-semibold text-foreground outline-none focus:border-ring"
           />
         ) : (
           <button
             type="button"
             onClick={() => setCollapsed((value) => !value)}
-            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-sidebar-foreground hover:bg-sidebar-row-hover"
+            className="flex h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-(--control-radius) pl-6.5 pr-6 text-left text-2xs font-semibold text-secondary-label outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             aria-expanded={!collapsed}
           >
-            <ChevronRightIcon
-              className={cn("size-3 shrink-0 text-muted-foreground", !collapsed && "rotate-90")}
+            <ChevronDownIcon
+              aria-hidden
+              className={cn("size-3 shrink-0 transition-transform", collapsed && "-rotate-90")}
             />
-            <LayoutGridIcon className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{grid.name}</span>
-            <span className="text-2xs text-muted-foreground">{leaves.length}</span>
+            <span className="min-w-0 truncate font-mono text-2xs font-normal transition-opacity group-hover/grid:opacity-0">
+              {branch ?? `${leaves.length} ${leaves.length === 1 ? "thread" : "threads"}`}
+            </span>
           </button>
         )}
         <Menu>
@@ -230,9 +285,9 @@ function GridRow({
               <button
                 type="button"
                 aria-label={`Grid actions for ${grid.name}`}
-                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-row-hover hover:text-sidebar-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                className="absolute right-0 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-sidebar-row-hover hover:text-sidebar-foreground group-hover/grid:opacity-100 focus-visible:opacity-100"
               >
-                <MoreHorizontalIcon className="size-3.5" />
+                <MoreHorizontalIcon aria-hidden className="size-3.5" />
               </button>
             }
           />
@@ -260,13 +315,14 @@ function GridRow({
         </Menu>
       </div>
       {collapsed ? null : (
-        <div className="ml-3 flex flex-col gap-0.5 border-l border-sidebar-border/60 pl-2">
+        <div className="flex flex-col gap-px">
           {leaves.map((leaf) => (
             <ThreadRow
               key={leaf.id}
               threadId={leaf.threadId}
               draftId={leaf.draftId}
               shell={workspaceThreads.find((candidate) => candidate.id === leaf.threadId)}
+              providerEntries={providerEntries}
               active={grid.focusedThreadId === leaf.threadId}
               onOpen={() => openThread(leaf.threadId)}
               onRemove={() => removeThreadFromGrid(grid.id, leaf.threadId)}
@@ -277,9 +333,9 @@ function GridRow({
               render={
                 <button
                   type="button"
-                  className="flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  className="flex h-6 items-center gap-1.5 rounded-(--control-radius) pl-6.5 pr-1 text-left text-2xs text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                 >
-                  <PlusIcon className="size-3" />
+                  <PlusIcon aria-hidden className="size-3" />
                   Add thread
                 </button>
               }
@@ -350,6 +406,7 @@ function ThreadRow({
   threadId,
   draftId,
   shell,
+  providerEntries,
   active,
   onOpen,
   onRemove,
@@ -357,6 +414,7 @@ function ThreadRow({
   threadId: string;
   draftId: string | undefined;
   shell: EnvironmentThreadShell | undefined;
+  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   active: boolean;
   onOpen: () => void;
   onRemove: () => void;
@@ -374,9 +432,15 @@ function ThreadRow({
   const status = shell === undefined ? null : resolveThreadStatusPill({ thread: shell });
   const threadRef = shell === undefined ? null : scopeThreadRef(shell.environmentId, shell.id);
   const title = shell?.title ?? (isDraft ? "New thread" : "Untitled thread");
-
+  const meta = shell === undefined ? (isDraft ? "draft" : "missing") : null;
+  const needsAttention =
+    status !== null &&
+    (status.label === "Pending Approval" ||
+      status.label === "Awaiting Input" ||
+      status.label === "Guest Request" ||
+      status.label === "Plan Ready");
   return (
-    <div className="group flex items-center gap-1">
+    <div className="group/sess relative flex h-7 items-center">
       {renaming ? (
         <input
           autoFocus
@@ -406,34 +470,39 @@ function ThreadRow({
               setRenaming(false);
             }
           }}
-          className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring"
+          className="h-7 min-w-0 flex-1 rounded-(--control-radius) border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
         />
       ) : (
         <button
           type="button"
           onClick={onOpen}
           className={cn(
-            "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs hover:bg-sidebar-row-hover",
+            "flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--control-radius) pl-6.5 pr-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
             active
               ? "bg-sidebar-row-selected text-sidebar-foreground"
-              : "text-sidebar-foreground/90",
+              : needsAttention
+                ? "font-medium text-sidebar-foreground hover:bg-sidebar-row-hover"
+                : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
           )}
           data-thread-key={threadRef === null ? undefined : scopedThreadKey(threadRef)}
           data-thread-id={threadId}
         >
-          <span
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              status?.dotClass ?? "bg-muted-foreground/40",
-              status?.pulse && "animate-status-pulse",
+          <span className="inline-grid size-3.5 shrink-0 place-items-center text-secondary-label">
+            {shell !== undefined ? (
+              <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} />
+            ) : (
+              <span className="size-3 rounded-full border border-sidebar-border" aria-hidden />
             )}
-            aria-hidden
-          />
-          <span className="truncate">{title}</span>
-          {shell === undefined && !isDraft ? (
-            <span className="shrink-0 text-2xs text-muted-foreground">missing</span>
-          ) : null}
-          {isDraft ? <span className="shrink-0 text-2xs text-muted-foreground">draft</span> : null}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+          <SidebarThreadStatusGlyph status={status} />
+          <span className="w-[26px] shrink-0 text-right group-hover/sess:opacity-0">
+            {meta !== null ? (
+              <span className="text-2xs text-secondary-label">{meta}</span>
+            ) : (
+              <SidebarRowTime timestamp={shell === undefined ? null : threadTimeTimestamp(shell)} />
+            )}
+          </span>
         </button>
       )}
       <Menu>
@@ -442,7 +511,7 @@ function ThreadRow({
             <button
               type="button"
               aria-label={`Thread actions for ${title}`}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-row-hover hover:text-sidebar-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              className="absolute right-1 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-sidebar-row-hover hover:text-sidebar-foreground group-hover/sess:opacity-100 focus-visible:opacity-100"
             >
               <MoreHorizontalIcon className="size-3.5" />
             </button>

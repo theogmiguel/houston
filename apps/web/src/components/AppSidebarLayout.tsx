@@ -376,6 +376,9 @@ function SidebarControl() {
       ref={appShellCommandsRef}
       className={cn(
         "pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
+        // The open rail owns the hide control in its brand row; the titlebar
+        // toggle returns once the rail is collapsed.
+        isSidebarVisible && "md:hidden",
         isMobile && mobileSheetMounted && "hidden",
       )}
       data-sidebar-control=""
