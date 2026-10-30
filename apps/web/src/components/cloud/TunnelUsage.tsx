@@ -16,11 +16,11 @@ export function tunnelUpgradeCopy(upgrade: Exclude<ManagedTunnelUpgrade, null>):
   const { pro, premier } = T3CHAT_PLAN_TUNNEL_LIMITS;
   switch (upgrade) {
     case "link":
-      return `Link T3 Chat Pro for up to ${pro} tunnels, or Premier for up to ${premier}.`;
+      return `Link Houston Chat Pro for up to ${pro} tunnels, or Premier for up to ${premier}.`;
     case "pro":
-      return `Upgrade to T3 Chat Pro for up to ${pro} tunnels, or Premier for up to ${premier}.`;
+      return `Upgrade to Houston Chat Pro for up to ${pro} tunnels, or Premier for up to ${premier}.`;
     case "premier":
-      return `Upgrade to T3 Chat Premier for up to ${premier} tunnels.`;
+      return `Upgrade to Houston Chat Premier for up to ${premier} tunnels.`;
   }
 }
 
@@ -48,7 +48,7 @@ export function TunnelUsageMeter({
       </div>
       <div
         role="meter"
-        aria-label="T3 Connect tunnels in use"
+        aria-label="Houston Connect tunnels in use"
         aria-valuemin={0}
         aria-valuemax={limit}
         aria-valuenow={used}
@@ -87,14 +87,14 @@ export function TunnelLimitAlert({
   const action =
     upgrade === "link" && onLinkT3Chat ? (
       <Button size="sm" onClick={onLinkT3Chat}>
-        Link T3 Chat
+        Link Houston Chat
       </Button>
     ) : upgrade === "pro" || upgrade === "premier" ? (
       <Button
         size="sm"
         render={<a href={T3CHAT_SUBSCRIPTION_URL} target="_blank" rel="noopener noreferrer" />}
       >
-        Upgrade on T3 Chat
+        Upgrade on Houston Chat
       </Button>
     ) : onManageTunnels ? (
       <Button size="sm" variant="outline" onClick={onManageTunnels}>
@@ -107,9 +107,9 @@ export function TunnelLimitAlert({
       <AlertTitle>You&apos;re out of tunnels (they cost us money).</AlertTitle>
       <AlertDescription>
         {upgrade === "link"
-          ? "Switch to Tailscale or get more tunnels by linking your T3 Chat sub (sorry!)"
+          ? "Switch to Tailscale or get more tunnels by linking your Houston Chat sub (sorry!)"
           : upgrade
-            ? "Switch to Tailscale or get more tunnels by upgrading your T3 Chat sub (sorry!)"
+            ? "Switch to Tailscale or get more tunnels by upgrading your Houston Chat sub (sorry!)"
             : "Switch to Tailscale or deregister an environment you no longer use (sorry!)"}
       </AlertDescription>
       {action ? <AlertAction>{action}</AlertAction> : null}

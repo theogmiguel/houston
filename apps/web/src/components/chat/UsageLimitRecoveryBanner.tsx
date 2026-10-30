@@ -59,7 +59,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
     if (action === "snooze" && !snoozed && Date.parse(resetAt) <= Date.now()) {
       toastManager.add({
         type: "error",
-        title: "Could not snooze thread",
+        title: "Could not hold thread",
         description: "The reset time has passed. Retry the thread manually.",
       });
       // The deadline timer can lag after a throttled tab or sleep; disable now.
@@ -76,7 +76,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
     } catch (cause) {
       toastManager.add({
         type: "error",
-        title: action === "resume" ? "Could not change auto-resume" : "Could not snooze thread",
+        title: action === "resume" ? "Could not change auto-resume" : "Could not hold thread",
         description: cause instanceof Error ? cause.message : "An error occurred.",
       });
     }
@@ -94,7 +94,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
         disabled={pending || (!snoozed && resetPassed)}
         onClick={() => void toggle("snooze")}
       >
-        {pending ? "Saving..." : snoozed ? "Wake now" : "Snooze until reset"}
+        {pending ? "Saving..." : snoozed ? "Bring back now" : "Hold until reset"}
       </Button>
     </>
   );

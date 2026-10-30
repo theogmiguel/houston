@@ -126,24 +126,24 @@ export function buildThreadActionMenuItems(
     ...(state.supports.pinning
       ? [
           state.isPinned
-            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
-            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
+            ? { id: "unpin" as const, label: "Unpin grid", icon: "pin-off" }
+            : { id: "pin" as const, label: "Pin grid", icon: "pin" },
         ]
       : []),
     ...(state.supports.settlement
       ? [
           state.isSettled
-            ? { id: "unsettle" as const, label: "Un-settle thread", icon: "circle-check" }
-            : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
+            ? { id: "unsettle" as const, label: "Reopen thread", icon: "circle-check" }
+            : { id: "settle" as const, label: "Close thread", icon: "circle-check" },
         ]
       : []),
     ...(state.supports.snooze
       ? [
           state.isSnoozed
-            ? { id: "unsnooze" as const, label: "Wake thread", icon: "clock" }
+            ? { id: "unsnooze" as const, label: "Bring thread back", icon: "clock" }
             : {
                 id: "snooze" as const,
-                label: "Snooze",
+                label: "Hold",
                 icon: "clock",
                 disabled: !state.canSnoozeNow,
                 children: [
@@ -200,7 +200,7 @@ export function buildThreadActionMenuItems(
       ? [
           {
             id: "auto-settle" as const,
-            label: "Auto-settle behavior",
+            label: "Auto-close behavior",
             icon: "timer",
             children: [
               {

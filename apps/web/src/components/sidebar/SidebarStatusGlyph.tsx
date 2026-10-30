@@ -5,10 +5,10 @@ import {
 } from "../Sidebar.logic";
 
 const GLYPH_LABEL: Record<Exclude<SidebarStatusGlyphState, "idle">, string> = {
-  working: "Working",
+  working: "Running",
   needs: "Needs you",
-  done: "Finished",
-  error: "Error",
+  done: "Ready",
+  error: "Failed",
 };
 
 /**
