@@ -1,6 +1,6 @@
-// Task runs over the real orchestrator, thread launcher and effect worker, with the provider
-// doubles of sideThreads.testkit.ts and a real temporary git repository. No CLI and no network:
-// the launcher's git double runs real `git worktree` commands in that repository.
+// @effect-diagnostics nodeBuiltinImport:off - drives a real temporary git repository.
+// Task runs over the real orchestrator, launcher and effect worker with sideThreads.testkit.ts's
+// provider doubles; no CLI and no network, and the git double runs real `git worktree` commands.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import type {
   HoustonTask,
+  HoustonTaskError,
   HoustonTaskPatch,
   HoustonTaskSettingsInput,
 } from "@t3tools/contracts/houston/tasks";
@@ -24,10 +25,11 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import { TestClock } from "effect/testing";
 
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as EffectWorker from "../../orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
@@ -149,6 +151,28 @@ const layerLaunchServices = (harness: RunsHarness) =>
     }),
   );
 
+// Upstream's test credential, with the capabilities the real registry gives each request.
+const layerScopedMcpRegistry = Layer.effect(
+  McpSessionRegistry.McpSessionRegistry,
+  Effect.gen(function* () {
+    const base = yield* McpSessionRegistry.McpSessionRegistry;
+    return McpSessionRegistry.McpSessionRegistry.of({
+      ...base,
+      issue: (request) =>
+        Effect.map(base.issue(request), (issued) => ({
+          config: {
+            ...issued.config,
+            capabilities: new Set(
+              request.houstonTaskSubmitOnly === true
+                ? ["houston-task-submit"]
+                : ["orchestration", "worktree", "pull-requests", ...(request.capabilities ?? [])],
+            ),
+          },
+        })),
+    });
+  }),
+).pipe(Layer.provide(McpSessionRegistryTestkit.layer));
+
 export interface RunsOptions {
   /** A database file that survives a restart; in memory when absent. */
   readonly databaseFile?: string;
@@ -167,9 +191,12 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
   const orchestration = ProviderReplayHarness.layerWithRegistry(
     { name: `tasks-${harness.name}` },
     harness.doubles.registry,
-    options.restarted === true
-      ? { databaseLayer: database, recoverOnStartup: true, configureMcp: true }
-      : { databaseLayer: database, runEffectWorker: false, configureMcp: true },
+    {
+      databaseLayer: database,
+      configureMcp: true,
+      mcpSessionRegistry: layerScopedMcpRegistry,
+      ...(options.restarted === true ? { recoverOnStartup: true } : { runEffectWorker: false }),
+    },
   ).pipe(Layer.provide(HoustonTaskRuns.layerReadOnlyThreads.pipe(Layer.provide(database))));
   const tasks = layerTasks({ databaseLayer: database });
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
@@ -211,14 +238,19 @@ export interface RunsContext {
   readonly runs: HoustonTaskRuns.HoustonTaskRuns["Service"];
   readonly orchestrator: Orchestrator.OrchestratorV2["Service"];
   /** Drains the effect worker, moves the clock and lets task runs follow the threads. */
-  readonly settle: Effect.Effect<void, unknown>;
-  /** Settles until `check` holds; fails naming `label` after a bounded number of rounds. */
-  readonly until: (label: string, check: Effect.Effect<boolean, unknown>) => Effect.Effect<void, unknown>;
+  readonly settle: Effect.Effect<void>;
+  /** Settles until `check` holds; dies naming `label` after a bounded number of rounds. */
+  readonly until: <E>(label: string, check: Effect.Effect<boolean, E>) => Effect.Effect<void, E>;
   /** A `todo` task that is ready: it has the project and one acceptance item. */
-  readonly readyTask: (title: string, patch?: HoustonTaskPatch) => Effect.Effect<HoustonTask, unknown>;
-  readonly setSettings: (settings: Partial<HoustonTaskSettingsInput>) => Effect.Effect<void, unknown>;
+  readonly readyTask: (
+    title: string,
+    patch?: HoustonTaskPatch,
+  ) => Effect.Effect<HoustonTask, HoustonTaskError>;
+  readonly setSettings: (
+    settings: Partial<HoustonTaskSettingsInput>,
+  ) => Effect.Effect<void, HoustonTaskError>;
   /** Sends a user message to a thread, as the composer would. */
-  readonly send: (threadId: ThreadId, messageId: string, text: string) => Effect.Effect<void, unknown>;
+  readonly send: (threadId: ThreadId, messageId: string, text: string) => Effect.Effect<void>;
 }
 
 let sentMessages = 0;
@@ -244,8 +276,8 @@ export const runWith = <A, E, R>(
         yield* TestClock.adjust("1 minute");
         yield* runs.catchUp;
       }
-    });
-    const until: RunsContext["until"] = (label, check) =>
+    }).pipe(Effect.orDie);
+    const until: RunsContext["until"] = <E>(label: string, check: Effect.Effect<boolean, E>) =>
       Effect.gen(function* () {
         for (let round = 0; round < 60; round += 1) {
           if (yield* check) return;
@@ -285,7 +317,7 @@ export const runWith = <A, E, R>(
           createdBy: "user",
           creationSource: "web",
         })
-        .pipe(Effect.asVoid);
+        .pipe(Effect.asVoid, Effect.orDie);
     return yield* body({
       harness,
       projectId,
@@ -302,6 +334,6 @@ export const runWith = <A, E, R>(
 
 /** The thread a task run runs as; fails when it has none. */
 export const threadOf = (run: { readonly threadId: ThreadId | null }) =>
-  Option.fromNullishOr(run.threadId).pipe(
-    Effect.mapError(() => new Error("the run has no thread")),
-  );
+  run.threadId === null
+    ? Effect.die(new Error("the run has no thread"))
+    : Effect.succeed(run.threadId);

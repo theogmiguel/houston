@@ -1,0 +1,252 @@
+// A task's planner or reviewer keeps a T3 MCP credential only to submit: the credential reaches
+// the two submit tools and nothing else, and its read-only run loads no user MCP server.
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
+import {
+  EnvironmentId,
+  OrchestratorMcpFailure,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
+import { HttpServer } from "effect/http";
+import * as NetAddress from "effect/net/NetAddress";
+
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import * as McpToolAccessTestkit from "../../mcp/McpToolAccess.testkit.ts";
+import * as OrchestratorMcpService from "../../mcp/OrchestratorMcpService.ts";
+import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
+import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
+import { makeClaudeQueryOptions } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
+import { ClaudeSettings } from "@t3tools/contracts";
+
+const environmentId = EnvironmentId.make("environment-task-threads");
+const planner = ThreadId.make("task-plan-1");
+
+const scopeOf = (
+  capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
+): McpInvocationContext.McpInvocationScope => ({
+  environmentId,
+  requestNamespace: "provider-session-task-threads",
+  thread: {
+    threadId: planner,
+    providerSessionId: "provider-session-task-threads",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
+  client: undefined,
+  capabilities,
+  issuedAt: 1,
+});
+
+const client = McpSchema.McpServerClient.of({
+  clientId: 1,
+  clientCapabilities: {},
+  clientInfo: { name: "task-threads", version: "1.0.0" },
+  protocolVersion: "2025-06-18",
+  initializePayload: {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "task-threads", version: "1.0.0" },
+  },
+  getClient: Effect.die("unused"),
+});
+
+// Upstream's write, delegate and read tools beside a stand-in for Houston's plan submit.
+const PlanSubmit = Tool.make("houston_task_plan_submit", {
+  description: "Stands in for the planner's submit.",
+  success: Schema.Struct({ ok: Schema.Boolean }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+});
+const MixedToolkit = Toolkit.make(
+  OrchestratorToolkit.tools.delegate_task,
+  OrchestratorToolkit.tools.t3_thread_send,
+  OrchestratorToolkit.tools.t3_thread_read,
+  ProjectToolkit.tools.t3_project_update,
+  PlanSubmit,
+);
+
+const layerMixedTools = (calls: Array<string>) => {
+  const record = (name: string) =>
+    McpToolAccess.reads(() =>
+      Effect.sync(() => calls.push(name)).pipe(
+        Effect.andThen(
+          Effect.fail(new OrchestratorMcpFailure({ code: "thread_not_found", message: "Recorded." })),
+        ),
+      ),
+    );
+  return McpHttpServer.toolkitRegistration(
+    MixedToolkit,
+    McpToolAccess.toLayer(MixedToolkit, {
+      delegate_task: record("delegate_task"),
+      t3_thread_send: record("t3_thread_send"),
+      t3_thread_read: record("t3_thread_read"),
+      t3_project_update: record("t3_project_update"),
+      houston_task_plan_submit: McpToolAccess.reads(() =>
+        Effect.sync(() => calls.push("houston_task_plan_submit")).pipe(Effect.as({ ok: true })),
+      ),
+    }),
+  ).pipe(
+    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provide(
+      Layer.mergeAll(
+        McpToolAccessTestkit.liveThreadsLayer,
+        Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
+        Layer.mock(ProjectService.ProjectService)({}),
+        NodeServices.layer,
+      ),
+    ),
+  );
+};
+
+const callAs =
+  (scope: McpInvocationContext.McpInvocationScope) =>
+  (name: string, args: Record<string, unknown>) =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      return yield* server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    });
+
+const textOf = (result: unknown) =>
+  ((result as McpSchema.CallToolResult).content ?? [])
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n");
+
+const OTHER_TOOLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+  ["delegate_task", { task: "Write the code", target: {} }],
+  ["t3_thread_send", { threadId: "thread-other", message: "go" }],
+  ["t3_thread_read", { threadId: "thread-other" }],
+  ["t3_project_update", { projectId: "project-1", title: "Renamed" }],
+];
+
+describe("a planner's credential reaches only the submit tools", () => {
+  it.effect("every other T3 tool is refused before it runs; the submit runs", () => {
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      const call = callAs(scopeOf(new Set(["houston-task-submit"])));
+      for (const [name, args] of OTHER_TOOLS) {
+        const result = yield* call(name, args);
+        assert.isTrue((result as McpSchema.CallToolResult).isError, `${name} is refused`);
+        assert.include(textOf(result), "capability_denied", name);
+      }
+      assert.deepEqual(calls, [], "no refused tool reached its handler");
+      const submitted = yield* call("houston_task_plan_submit", {});
+      assert.isFalse((submitted as McpSchema.CallToolResult).isError ?? false);
+      assert.deepEqual(calls, ["houston_task_plan_submit"]);
+    }).pipe(Effect.provide(layerMixedTools(calls)));
+  });
+
+  it.effect("a thread credential without the scope still reaches every tool", () => {
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      const call = callAs(scopeOf(new Set(["orchestration", "worktree", "pull-requests"])));
+      for (const [name, args] of OTHER_TOOLS) yield* call(name, args);
+      assert.deepEqual(
+        calls,
+        OTHER_TOOLS.map(([name]) => name),
+      );
+    }).pipe(Effect.provide(layerMixedTools(calls)));
+  });
+});
+
+const fakeHttpServer = HttpServer.HttpServer.of({
+  address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 43124),
+  serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+});
+
+describe("a planner is issued a submit-only credential", () => {
+  it.effect("the credential holds the submit scope and no orchestration, worktree or PR scope", () =>
+    Effect.gen(function* () {
+      const registry = yield* McpSessionRegistry.__testing.make();
+      const issued = yield* registry.issue({
+        threadId: planner,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        houstonTaskSubmitOnly: true,
+      });
+      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+      const resolved = yield* registry.resolve(token);
+      assert.deepEqual([...(resolved?.capabilities ?? [])], ["houston-task-submit"]);
+      assert.deepEqual([...(issued.config.capabilities ?? [])], ["houston-task-submit"]);
+    }).pipe(
+      Effect.provideService(HttpServer.HttpServer, fakeHttpServer),
+      Effect.provideService(
+        ServerEnvironment.ServerEnvironment,
+        ServerEnvironment.ServerEnvironment.of({
+          getEnvironmentId: Effect.succeed(environmentId),
+          getDescriptor: Effect.die("unused"),
+        }),
+      ),
+      Effect.provide(NodeServices.layer),
+    ),
+  );
+});
+
+const READ_ONLY_POLICY = {
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  cwd: "/work",
+  approvalPolicy: "never",
+  sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false },
+} as const;
+
+const SESSION = {
+  environmentId,
+  threadId: planner,
+  providerSessionId: "provider-session-task-threads",
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  endpoint: "http://127.0.0.1:43124/mcp",
+  authorizationHeader: "Bearer planner-token",
+  browserToolsAvailable: false,
+};
+
+describe("a planner's run loads no user MCP server", () => {
+  it("Codex: the configured servers are replaced by Houston's server alone", () => {
+    const params = codexThreadRuntimeParams({
+      mcpSession: SESSION,
+      runtimePolicy: READ_ONLY_POLICY,
+    });
+    assert.deepEqual(Object.keys(params.config.mcp_servers as object), ["t3-code"]);
+    const houston = (params.config.mcp_servers as Record<string, Record<string, unknown>>)["t3-code"];
+    assert.strictEqual(houston?.url, SESSION.endpoint);
+    assert.deepEqual(houston?.http_headers, { Authorization: SESSION.authorizationHeader });
+    assert.isFalse(Object.keys(params.config).some((key) => key.startsWith("mcp_servers.")));
+  });
+
+  it("Claude: strict MCP config with Houston's server only, and launch arguments add none", () => {
+    const options = makeClaudeQueryOptions({
+      modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-sonnet-4-6" },
+      nativeThreadId: "native:task-plan",
+      resume: false,
+      cwd: "/work",
+      settings: Schema.decodeSync(ClaudeSettings)({
+        launchArgs: "--mcp-config /home/user/mcp.json",
+      }),
+      permissionMode: "dontAsk",
+      mcpServers: {
+        "t3-code": {
+          type: "http",
+          url: SESSION.endpoint,
+          headers: { Authorization: SESSION.authorizationHeader },
+        },
+      },
+      strictMcpConfig: true,
+    });
+    assert.isTrue(options.strictMcpConfig);
+    assert.deepEqual(Object.keys(options.mcpServers ?? {}), ["t3-code"]);
+    assert.isUndefined(options.extraArgs?.["mcp-config"]);
+  });
+});

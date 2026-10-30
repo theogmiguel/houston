@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - inspects a real temporary git repository.
 // Task runs as threads: Start, run state, handback, stop, resume, retry, merged pull requests,
 // planning and review, over the real orchestrator and launcher (taskRuns.testkit.ts).
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -139,6 +140,8 @@ const syncPullRequest = (
     stack: null,
   });
 
+/** Reports `headSha` pushed to the linked pull request, as the watch reactor does: the watch is
+ * started first, and each sync names the watch it updates. */
 const pushHead = (
   context: RunsContext,
   threadId: ThreadId,
@@ -146,25 +149,40 @@ const pushHead = (
   headSha: string,
   wakes = 0,
 ) =>
-  context.orchestrator.dispatch({
-    type: "thread.pull-request-watch.sync",
-    commandId: CommandId.make(`watch:${threadId}:${(syncs += 1)}`),
-    threadId,
-    host: "github.com",
-    repository: "houston/tasks",
-    number,
-    startedAt: "2026-10-30T00:00:00.000Z",
-    watch: {
-      startedAt: "2026-10-30T00:00:00.000Z",
-      headSha,
-      failedChecks: [],
-      passed: false,
-      passedChecks: [],
-      remarksThrough: "2026-10-30T00:00:00.000Z",
-      remarkIds: [],
-      conflicting: false,
-      wakes,
-    },
+  Effect.gen(function* () {
+    yield* context.orchestrator.dispatch({
+      type: "thread.pull-request.watch",
+      commandId: CommandId.make(`watch-start:${threadId}:${(syncs += 1)}`),
+      threadId,
+      host: "github.com",
+      repository: "houston/tasks",
+      number,
+      watching: true,
+    });
+    const projection = yield* projectionOf(context, threadId);
+    const watch = projection.thread.pullRequests?.find((link) => link.number === number)?.watch;
+    assert.isDefined(watch, `pull request ${number} is watched`);
+    const startedAt = watch?.startedAt ?? "";
+    yield* context.orchestrator.dispatch({
+      type: "thread.pull-request-watch.sync",
+      commandId: CommandId.make(`watch:${threadId}:${(syncs += 1)}`),
+      threadId,
+      host: "github.com",
+      repository: "houston/tasks",
+      number,
+      startedAt,
+      watch: {
+        startedAt,
+        headSha,
+        failedChecks: [],
+        passed: false,
+        passedChecks: [],
+        remarksThrough: startedAt,
+        remarkIds: [],
+        conflicting: false,
+        wakes,
+      },
+    });
   });
 
 const runCount = Effect.gen(function* () {
@@ -788,6 +806,45 @@ describe("only the recorded planner submits a plan", () => {
             const denied = yield* context.runs.agentWriteRefusal(planner);
             assert.strictEqual(denied?.code, "capability_denied");
             assert.isUndefined(yield* context.runs.agentWriteRefusal(ThreadId.make("other")));
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+});
+
+describe("a planner's and a reviewer's credential is scoped to their submit", () => {
+  it.effect(
+    "planner and reviewer turns hold only the submit scope; the implementer holds the usual one",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("submit-scope");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { task } = yield* plannableTask(context, "Scoped planner");
+            const planned = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            yield* context.settle;
+            const scopeOf = (threadId: ThreadId | null | undefined) => {
+              const turn = harness.doubles.log.started.find(
+                (started) => started.input.threadId === threadId,
+              );
+              assert.isDefined(turn?.mcp, `thread ${threadId} holds a T3 MCP credential`);
+              return [...(turn?.mcp?.capabilities ?? [])];
+            };
+            assert.deepEqual(scopeOf(planned.planning?.threadId), ["houston-task-submit"]);
+
+            yield* context.setSettings({ reviewer: selection("codex"), reviewMode: "manual" });
+            const { run } = yield* handedBack(context, "Scoped reviewer");
+            assert.notInclude(scopeOf(run.threadId), "houston-task-submit");
+            const reviewed = yield* context.runs.reviewStart({ runId: run.id });
+            yield* context.settle;
+            assert.deepEqual(scopeOf(newestRun(reviewed, "review").threadId), [
+              "houston-task-submit",
+            ]);
           }),
         );
       }),

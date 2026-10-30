@@ -3,7 +3,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, ProjectId, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as PlatformError from "effect/PlatformError";
+import type { MigrationError } from "effect/sql/Migrator";
 import type * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -55,7 +58,10 @@ export interface TasksTestOptions {
   /** Whether a host launched the server; true by default when `baseDir` is given. */
   readonly hosted?: boolean;
   /** A database another layer shares, such as the orchestration runtime's; wins over the others. */
-  readonly databaseLayer?: Layer.Layer<SqlClient.SqlClient, unknown>;
+  readonly databaseLayer?: Layer.Layer<
+    SqlClient.SqlClient,
+    MigrationError | PlatformError.PlatformError | SqlError
+  >;
 }
 
 export const layerTasks = (options: TasksTestOptions = {}) =>
