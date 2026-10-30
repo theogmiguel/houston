@@ -11,9 +11,11 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 export function LabsSettingsPanel() {
   return (
     <SettingsPageContainer>
-      <SettingsSection id="beta" title="Beta">
+      <SettingsSection id="labs-sidebar" title="Sidebar">
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
+      </SettingsSection>
+      <SettingsSection id="labs-environments" title="Environments">
         <LinkedEnvironmentsRow />
         <SimlockHostsRow />
       </SettingsSection>

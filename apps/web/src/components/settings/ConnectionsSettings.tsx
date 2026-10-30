@@ -123,9 +123,7 @@ import {
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
-import {
-  SavedBackendListRow,
-} from "./SavedEnvironmentRows";
+import { SavedBackendListRow } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -1012,9 +1010,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         <>
           <SettingsSection
             {...searchableSetting("connections-environment")}
-            title={
-              primaryEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
-            }
+            title="This machine"
             icon={
               <EnvironmentMachineIcon
                 aria-hidden
@@ -1102,9 +1098,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                 {renderWslRow()}
               </>
             ) : canManageLocalBackend ? (
-              <>
-                {renderDisabledNetworkAccessRow()}
-              </>
+              <>{renderDisabledNetworkAccessRow()}</>
             ) : null}
             {primaryEnvironment ? (
               <details className="group px-3 sm:px-4">
@@ -1448,7 +1442,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   return (
     <SettingsPageContainer>
       {desktopBridge ? (
-        <SettingsSection id="this-app" title="This app">
+        <SettingsSection id="this-app" title="Local environment">
           <LocalEnvironmentSetting />
         </SettingsSection>
       ) : null}

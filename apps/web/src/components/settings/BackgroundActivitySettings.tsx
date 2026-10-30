@@ -372,6 +372,52 @@ function BackgroundActivityAdvancedDialog({
   );
 }
 
+export function GitFetchIntervalRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
+  const automaticGitFetchIntervalSeconds = durationToSeconds(
+    resolvedBackgroundActivity.automaticGitFetchInterval,
+  );
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["backgroundActivity"]}
+      {...searchableSetting("git-fetch-interval")}
+      description="Refresh remote branch status in the background."
+      control={
+        <div className="flex shrink-0 items-center gap-2">
+          <NumberField
+            value={automaticGitFetchIntervalSeconds}
+            min={0}
+            step={5}
+            size="sm"
+            className="w-32"
+            onValueChange={(value) =>
+              updateSettings(
+                backgroundActivityOverrideSettings(
+                  settings.backgroundActivity,
+                  resolvedBackgroundActivity,
+                  {
+                    automaticGitFetchInterval: Duration.seconds(normalizeIntervalSeconds(value)),
+                  },
+                ),
+              )
+            }
+          >
+            <NumberFieldGroup>
+              <NumberFieldDecrement aria-label="Decrease Git fetch interval" />
+              <NumberFieldInput aria-label="Git fetch interval in seconds" />
+              <NumberFieldIncrement aria-label="Increase Git fetch interval" />
+            </NumberFieldGroup>
+          </NumberField>
+          <span className="text-xs text-muted-foreground">seconds</span>
+        </div>
+      }
+    />
+  );
+}
+
 export function BackgroundActivitySettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();

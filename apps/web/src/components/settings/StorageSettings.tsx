@@ -4,7 +4,7 @@ import type {
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
@@ -690,7 +690,7 @@ export function WorktreeCleanupSection() {
 }
 
 /** Retention for logs and captures, and the manual cleanup run, which covers worktrees too. */
-export function StorageCleanupSections() {
+export function StorageCleanupSections({ extraRows }: { readonly extraRows?: ReactNode } = {}) {
   const { scope, connectedEnvironments, targets } = useSettingsScope();
   const scopedSettings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -714,7 +714,7 @@ export function StorageCleanupSections() {
     return (
       <>
         {databaseStorageNotice}
-        <SettingsSection id="storage-artifacts" title="Artifacts and logs" variant="plain">
+        <SettingsSection id="storage-artifacts" title="Storage" variant="plain">
           <StorageCleanupScopeNotice />
         </SettingsSection>
       </>
@@ -724,7 +724,7 @@ export function StorageCleanupSections() {
   return (
     <>
       {databaseStorageNotice}
-      <SettingsSection id="storage-artifacts" title="Artifacts and logs">
+      <SettingsSection id="storage-artifacts" title="Storage">
         <SettingsRow
           title="Delete old browser artifacts"
           status={ruleStatus("browserArtifactsAfterDays")}
@@ -751,6 +751,7 @@ export function StorageCleanupSections() {
             />
           }
         />
+        {extraRows}
       </SettingsSection>
       <CleanupSection />
     </>

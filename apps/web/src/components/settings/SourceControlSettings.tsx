@@ -230,12 +230,7 @@ function DiscoveryItemRow({
   if (seenSearchTargetId !== searchTargetId) setSeenSearchTargetId(searchTargetId);
 
   return (
-    <div
-      className={cn(
-        "transition-colors hover:bg-accent",
-        isVcsNotReady(item) && "opacity-80",
-      )}
-    >
+    <div className={cn("transition-colors hover:bg-accent", isVcsNotReady(item) && "opacity-80")}>
       <div className="px-3.5 py-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1">
@@ -466,7 +461,6 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <ProjectDefaultsSettings category="source-control" />
       {environmentId === null ? (
         <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
           <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -498,11 +492,7 @@ export function SourceControlSettingsPanel() {
           {result.sourceControlProviders.length > 0 ? (
             <SettingsSection
               id={hasVersionControlSystems ? undefined : searchableSetting("source-control").id}
-              title={
-                hasVersionControlSystems
-                  ? "Source control providers"
-                  : `Source control providers${environmentSuffix}`
-              }
+              title={hasVersionControlSystems ? "Accounts" : `Accounts${environmentSuffix}`}
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
@@ -521,6 +511,7 @@ export function SourceControlSettingsPanel() {
         />
       )}
 
+      <ProjectDefaultsSettings category="source-control" />
       <SourceControlWritingSettingsSection />
     </SettingsPageContainer>
   );

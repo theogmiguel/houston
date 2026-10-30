@@ -393,24 +393,6 @@ export function SnapShotSettings() {
           {settings.snapShotEnabled && captureAvailable ? (
             <>
               <SettingsRow
-                {...searchableSetting("snap-shot-accessibility")}
-                description="Include text and controls when the app makes them available."
-                status={snapShotAccessibilityUnavailableMessage(state)}
-                control={
-                  <Switch
-                    checked={
-                      !snapShotAccessibilityUnavailableMessage(state) &&
-                      settings.snapShotIncludeAccessibility
-                    }
-                    disabled={
-                      !captureAvailable || Boolean(snapShotAccessibilityUnavailableMessage(state))
-                    }
-                    aria-label="Include app text in snapshots"
-                    onCheckedChange={(checked) => void saveIncludeAccessibility(checked)}
-                  />
-                }
-              />
-              <SettingsRow
                 {...searchableSetting("snap-shot-shortcut")}
                 description={
                   state?.linuxBackend === "picker"
@@ -470,6 +452,33 @@ export function SnapShotSettings() {
                   )
                 }
               />
+              <SettingsRow
+                {...searchableSetting("snap-shot-accessibility")}
+                description="Include text and controls when the app makes them available."
+                status={snapShotAccessibilityUnavailableMessage(state)}
+                control={
+                  <Switch
+                    checked={
+                      !snapShotAccessibilityUnavailableMessage(state) &&
+                      settings.snapShotIncludeAccessibility
+                    }
+                    disabled={
+                      !captureAvailable || Boolean(snapShotAccessibilityUnavailableMessage(state))
+                    }
+                    aria-label="Include app text in snapshots"
+                    onCheckedChange={(checked) => void saveIncludeAccessibility(checked)}
+                  />
+                }
+              />
+            </>
+          ) : null}
+        </SettingsUnavailableGroup>
+      </SettingsSection>
+
+      <SettingsSection id="snap-shot-feedback" title="Feedback">
+        <SettingsUnavailableGroup message={unavailableMessage}>
+          {settings.snapShotEnabled && captureAvailable ? (
+            <>
               <SettingsRow
                 {...searchableSetting("snap-shot-sound")}
                 description="Choose the sound played when capture starts."
@@ -560,6 +569,7 @@ export function SnapShotSettings() {
           ) : null}
         </SettingsUnavailableGroup>
       </SettingsSection>
+
       {wizard && state ? (
         <SnapShotSetupDialog
           state={state}

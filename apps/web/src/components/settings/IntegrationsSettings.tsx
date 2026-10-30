@@ -94,6 +94,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   getClientSettings,
@@ -111,7 +112,6 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { AdvancedSettings } from "./AdvancedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
@@ -507,30 +507,24 @@ function BrowserAppearanceSetting({ disabled }: { readonly disabled: boolean }) 
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Default browser appearance"
+          variant="segmented"
+          value={[appearance]}
           disabled={disabled}
-          value={appearance}
-          onValueChange={(value) => {
+          onValueChange={(next) => {
+            const value = next[0];
             if (value === "system" || value === "light" || value === "dark") {
               updateSettings({ browserDefaultAppearance: value });
             }
           }}
         >
-          <SelectTrigger
-            size="sm"
-            className="w-full sm:w-40"
-            aria-label="Default browser appearance"
-          >
-            <SelectValue>{APPEARANCE_LABELS[appearance]}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {Object.entries(APPEARANCE_LABELS).map(([value, label]) => (
-              <SelectItem hideIndicator key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {Object.entries(APPEARANCE_LABELS).map(([value, label]) => (
+            <Toggle key={value} value={value}>
+              {label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
@@ -593,31 +587,24 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Browser recording frame rate"
+          variant="segmented"
+          value={[String(frameRate)]}
           disabled={disabled}
-          value={String(frameRate)}
-          onValueChange={(value) => {
-            const next = BROWSER_RECORDING_FRAME_RATES.find((rate) => String(rate) === value);
-            if (next !== undefined) {
-              updateSettings({ browserRecordingFrameRate: next });
+          onValueChange={(next) => {
+            const value = BROWSER_RECORDING_FRAME_RATES.find((rate) => String(rate) === next[0]);
+            if (value !== undefined) {
+              updateSettings({ browserRecordingFrameRate: value });
             }
           }}
         >
-          <SelectTrigger
-            size="sm"
-            className="w-full sm:w-40"
-            aria-label="Browser recording frame rate"
-          >
-            <SelectValue>{frameRate} fps</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
-              <SelectItem hideIndicator key={rate} value={String(rate)}>
-                {rate} fps
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
+            <Toggle key={rate} value={String(rate)}>
+              {rate} fps
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
@@ -645,26 +632,24 @@ function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) 
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Open links in"
+          variant="segmented"
+          value={[linkTarget]}
           disabled={disabled}
-          value={linkTarget}
-          onValueChange={(value) => {
+          onValueChange={(next) => {
+            const value = next[0];
             if (value === "system" || value === "app") {
               updateSettings({ browserLinkTarget: value });
             }
           }}
         >
-          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Open links in">
-            <SelectValue>{LINK_TARGET_LABELS[linkTarget]}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {(Object.keys(LINK_TARGET_LABELS) as ReadonlyArray<BrowserLinkTarget>).map((target) => (
-              <SelectItem hideIndicator key={target} value={target}>
-                {LINK_TARGET_LABELS[target]}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {(Object.keys(LINK_TARGET_LABELS) as ReadonlyArray<BrowserLinkTarget>).map((target) => (
+            <Toggle key={target} value={target}>
+              {LINK_TARGET_LABELS[target]}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
@@ -1552,31 +1537,30 @@ export function BrowserSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="browser-agent-access" title="Agent access">
-        <AgentBrowserAccessSetting />
-      </SettingsSection>
-      <SettingsSection id="browser" title="Browsing">
+      <SettingsSection id="browser-links" title="Links">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
-          <BrowserProfilesSetting disabled={desktopOnly} />
           <BrowserLinkTargetSetting disabled={desktopOnly} />
-          <BrowserAutoShowFloatingPreviewSetting disabled={desktopOnly} />
         </SettingsUnavailableGroup>
         {/* Not desktop-only: web clients search from server-run browser tabs too. */}
         <BrowserSearchEngineSetting />
-        <AdvancedSettings
-          targetIds={[
-            searchableSetting("browser-default-viewport").id,
-            searchableSetting("browser-default-zoom").id,
-            searchableSetting("browser-default-appearance").id,
-          ]}
-        >
-          <SettingsUnavailableGroup message={desktopOnlyMessage}>
-            <BrowserViewportSetting disabled={desktopOnly} />
-            <BrowserZoomSetting disabled={desktopOnly} />
-            <BrowserAppearanceSetting disabled={desktopOnly} />
-          </SettingsUnavailableGroup>
-        </AdvancedSettings>
       </SettingsSection>
+
+      <SettingsSection id="browser-agent-access" title="Agents">
+        <AgentBrowserAccessSetting />
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserAutoShowFloatingPreviewSetting disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
+      </SettingsSection>
+
+      <SettingsSection id="browser" title="New tabs">
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserProfilesSetting disabled={desktopOnly} />
+          <BrowserViewportSetting disabled={desktopOnly} />
+          <BrowserZoomSetting disabled={desktopOnly} />
+          <BrowserAppearanceSetting disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
+      </SettingsSection>
+
       <SettingsSection id="browser-recordings" title="Recordings">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
           <BrowserRecordingFrameRateSetting disabled={desktopOnly} />

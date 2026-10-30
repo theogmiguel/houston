@@ -93,8 +93,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
-import { AdvancedSettings } from "./AdvancedSettings";
+import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
 import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
@@ -1282,26 +1281,20 @@ export function DiffsSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.diffLayout}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Diff layout"
+              variant="segmented"
+              value={[settings.diffLayout]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "stacked" || value === "split") {
                   updateSettings({ diffLayout: value });
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Diff layout">
-                <SelectValue>{DIFF_LAYOUT_LABELS[settings.diffLayout]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="stacked">
-                  {DIFF_LAYOUT_LABELS.stacked}
-                </SelectItem>
-                <SelectItem hideIndicator value="split">
-                  {DIFF_LAYOUT_LABELS.split}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="stacked">{DIFF_LAYOUT_LABELS.stacked}</Toggle>
+              <Toggle value="split">{DIFF_LAYOUT_LABELS.split}</Toggle>
+            </ToggleGroup>
           }
         />
         <SettingsRow
@@ -1345,36 +1338,27 @@ export function DiffsSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.diffFilesCollapsed ? "collapsed" : "expanded"}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Default diff file state"
+              variant="segmented"
+              value={[settings.diffFilesCollapsed ? "collapsed" : "expanded"]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "expanded" || value === "collapsed") {
                   updateSettings({ diffFilesCollapsed: value === "collapsed" });
                 }
               }}
             >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-40"
-                aria-label="Default diff file state"
-              >
-                <SelectValue>{settings.diffFilesCollapsed ? "Collapsed" : "Expanded"}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="expanded">
-                  Expanded
-                </SelectItem>
-                <SelectItem hideIndicator value="collapsed">
-                  Collapsed
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="expanded">Expanded</Toggle>
+              <Toggle value="collapsed">Collapsed</Toggle>
+            </ToggleGroup>
           }
         />
         <DiffColorsSettingsRow />
       </SettingsSection>
 
       <SettingsSection id="pull-requests" title="Pull requests">
+        <PullRequestLinksOpenInAppSetting />
         <SettingsRow
           {...searchableSetting("proactive-panels")}
           description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
@@ -1400,7 +1384,6 @@ export function DiffsSettingsPanel() {
             />
           }
         />
-        <PullRequestLinksOpenInAppSetting />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -1528,48 +1511,91 @@ export function ThreadsSettingsPanel() {
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
 
+  const extraNewThreadRows = (
+    <>
+      <SettingsRow
+        serverScoped
+        settingKeys={["addProjectBaseDirectory"]}
+        {...searchableSetting("add-project-starts-in")}
+        description='Leave empty to use "~/" when the Add Project browser opens.'
+        resetAction={
+          settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+            <SettingResetButton
+              label="add project base directory"
+              onClick={() =>
+                updateSettings({
+                  addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <DraftInput
+            size="sm"
+            className="w-full sm:w-72"
+            value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
+            onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+            placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
+            spellCheck={false}
+            aria-label="Add project base directory"
+          />
+        }
+      />
+      <SettingsRow
+        serverScoped
+        settingKeys={["responseStreamingMode"]}
+        {...searchableSetting("response-streaming")}
+        description={
+          mixedResponseStreamingMode
+            ? "The selected targets use different streaming modes."
+            : RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]
+        }
+        resetAction={
+          settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
+            <SettingResetButton
+              label="response streaming"
+              onClick={() =>
+                updateSettings({
+                  responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <Select
+            value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
+            onValueChange={(value) => {
+              if (value === "turn" || value === "paragraph") {
+                updateSettings({ responseStreamingMode: value });
+              }
+            }}
+          >
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Response streaming">
+              <SelectValue>
+                {(value: ResponseStreamingMode | null) =>
+                  value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="turn">
+                {RESPONSE_STREAMING_MODE_LABELS.turn}
+              </SelectItem>
+              <SelectItem hideIndicator value="paragraph">
+                {RESPONSE_STREAMING_MODE_LABELS.paragraph}
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+    </>
+  );
+
   return (
     <SettingsPageContainer>
-      <SettingsSection id="new-projects" title="New projects">
-        <SettingsRow
-          serverScoped
-          settingKeys={["addProjectBaseDirectory"]}
-          {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
-              spellCheck={false}
-              aria-label="Add project base directory"
-            />
-          }
-        />
-      </SettingsSection>
-
-      <ProjectDefaultsSettings category="general" />
-
-      {!isProjectScope ? (
-        <SettingsSection id="snooze" title="Hold">
-          <SnoozePresetsRow />
-        </SettingsSection>
-      ) : null}
+      <ProjectDefaultsSettings category="general" extraRows={extraNewThreadRows} />
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow
@@ -1604,6 +1630,7 @@ export function ThreadsSettingsPanel() {
             />
           }
         />
+        {!isProjectScope ? <SnoozePresetsRow /> : null}
       </SettingsSection>
 
       {hasServerTargets ? (
@@ -1808,62 +1835,7 @@ export function ThreadsSettingsPanel() {
             )
           }
         />
-        <AdvancedSettings
-          targetIds={[
-            searchableSetting("thread-title-instructions").id,
-            searchableSetting("response-streaming").id,
-          ]}
-        >
-          <ThreadTitleInstructionsSettings />
-          <SettingsRow
-            serverScoped
-            settingKeys={["responseStreamingMode"]}
-            {...searchableSetting("response-streaming")}
-            description={
-              mixedResponseStreamingMode
-                ? "The selected targets use different streaming modes."
-                : RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]
-            }
-            resetAction={
-              settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
-                <SettingResetButton
-                  label="response streaming"
-                  onClick={() =>
-                    updateSettings({
-                      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
-                onValueChange={(value) => {
-                  if (value === "turn" || value === "paragraph") {
-                    updateSettings({ responseStreamingMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Response streaming">
-                  <SelectValue>
-                    {(value: ResponseStreamingMode | null) =>
-                      value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="turn">
-                    {RESPONSE_STREAMING_MODE_LABELS.turn}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="paragraph">
-                    {RESPONSE_STREAMING_MODE_LABELS.paragraph}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-        </AdvancedSettings>
+        <ThreadTitleInstructionsSettings />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -1950,31 +1922,35 @@ export function MaintenanceSettingsPanel() {
 
       <SettingsSection id="background" title="Background activity">
         <BackgroundActivitySettingsRow />
+        <GitFetchIntervalRow />
       </SettingsSection>
 
-      <StorageCleanupSections />
-
-      <SettingsSection id="diagnostics-section" title="Diagnostics">
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          description={
-            isEnvironmentScope
-              ? "Inspect processes, resource use, and logs on this environment."
-              : "Inspect processes, resource use, and logs on one environment at a time."
-          }
-          control={
-            <Button
-              render={
-                <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
-              }
-              size="sm"
-              variant="outline"
-            >
-              View diagnostics
-            </Button>
-          }
-        />
-      </SettingsSection>
+      <StorageCleanupSections
+        extraRows={
+          <SettingsRow
+            {...searchableSetting("diagnostics")}
+            description={
+              isEnvironmentScope
+                ? "Inspect processes, resource use, and logs on this environment."
+                : "Inspect processes, resource use, and logs on one environment at a time."
+            }
+            control={
+              <Button
+                render={
+                  <Link
+                    to="/settings/diagnostics"
+                    search={{ machine: environmentId ?? undefined }}
+                  />
+                }
+                size="sm"
+                variant="outline"
+              >
+                View diagnostics
+              </Button>
+            }
+          />
+        }
+      />
     </SettingsPageContainer>
   );
 }

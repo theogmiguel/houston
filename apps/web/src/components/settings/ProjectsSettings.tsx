@@ -4,12 +4,13 @@ import { LayersIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { SettingsScopeNotice } from "./SettingsScopeNotice";
-import { SettingsPageContainer } from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
 
 export function ProjectsSettings() {
   const { search: value, scope, selectScope } = useSettingsScope();
+  const groups = useSettingsProjectGroups();
   const unavailable =
     scope.kind === "unavailable" ? (
       <SettingsPageContainer>
@@ -46,9 +47,35 @@ export function ProjectsSettings() {
       ) : unavailable ? (
         unavailable
       ) : (
-        <SettingsScopeNotice target="project">
-          Choose a project to manage its name, icon, checkouts and actions.
-        </SettingsScopeNotice>
+        <SettingsPageContainer>
+          <SettingsSection id="projects" title="Projects">
+            {groups.map((group) => (
+              <SettingsRow
+                key={group.projectKey}
+                title={group.displayName}
+                description={group.memberProjects
+                  .map((member) => member.workspaceRoot)
+                  .filter(Boolean)
+                  .join(" · ")}
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      selectScope({
+                        project: group.projectKey,
+                        machine: undefined,
+                        checkout: undefined,
+                      })
+                    }
+                  >
+                    Open
+                  </Button>
+                }
+              />
+            ))}
+          </SettingsSection>
+        </SettingsPageContainer>
       )}
     </div>
   );
