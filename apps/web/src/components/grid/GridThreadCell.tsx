@@ -112,7 +112,7 @@ export function GridThreadCell({
         focused ? "ring-1 ring-primary/40 ring-inset" : "ring-1 ring-border/60 ring-inset",
         density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
         density === "compact" &&
-          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden",
+          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]]:flex [&_[data-chat-composer-surface]]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
         density === "glance" &&
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}

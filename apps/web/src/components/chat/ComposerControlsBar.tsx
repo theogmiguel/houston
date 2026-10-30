@@ -6,6 +6,7 @@ import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
+  ComposerPermissionsPicker,
   ComposerPermissionsSection,
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -294,7 +295,7 @@ export function ComposerControlsBar(props: {
       {...(compactPane
         ? {
             menuAccessory: (
-              <ComposerPermissionsSection
+              <ComposerPermissionsPicker
                 runtimeMode={compatibleRuntimeMode}
                 runtimeModeOptions={compatibleRuntimeModeOptions}
                 onRuntimeModeChange={handleRuntimeModeChange}
