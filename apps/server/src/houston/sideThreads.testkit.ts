@@ -100,6 +100,8 @@ export interface Script {
   readonly hold: Set<string>;
   /** The assistant text a message's turn ends with; `answer: <text>` by default. */
   readonly replies: Map<string, string>;
+  /** An assistant message a message's turn writes before its reply. */
+  readonly commentary: Map<string, string>;
   /** Message ids whose turn ends with no assistant text. */
   readonly silent: Set<string>;
   /** Work a message's turn does in the workspace before it ends. */
@@ -274,30 +276,34 @@ const finish = (live: Map<string, LiveTurn>, script: Script, cwd: string, messag
     if (!script.silent.has(messageId)) {
       const now = yield* DateTime.now;
       const text = script.replies.get(messageId) ?? `answer: ${entry.input.message.text}`;
-      yield* Queue.offer(entry.events, {
-        type: "turn_item.updated",
-        driver: entry.driver,
-        turnItem: {
-          id: TurnItemId.make(`assistant:${messageId}`),
-          threadId: entry.input.threadId,
-          runId: entry.input.runId,
-          nodeId: entry.input.rootNodeId,
-          providerThreadId: entry.turn.providerThreadId,
-          providerTurnId: entry.turn.id,
-          nativeItemRef: null,
-          parentItemId: null,
-          ordinal: 0,
-          status: "completed",
-          title: null,
-          startedAt: now,
-          completedAt: now,
-          updatedAt: now,
-          type: "assistant_message",
-          messageId: MessageId.make(`assistant:${messageId}`),
-          text,
-          streaming: false,
-        },
-      });
+      const commentary = script.commentary.get(messageId);
+      const assistantMessage = (suffix: string, ordinal: number, body: string) =>
+        Queue.offer(entry.events, {
+          type: "turn_item.updated",
+          driver: entry.driver,
+          turnItem: {
+            id: TurnItemId.make(`assistant:${messageId}${suffix}`),
+            threadId: entry.input.threadId,
+            runId: entry.input.runId,
+            nodeId: entry.input.rootNodeId,
+            providerThreadId: entry.turn.providerThreadId,
+            providerTurnId: entry.turn.id,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal,
+            status: "completed",
+            title: null,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            type: "assistant_message",
+            messageId: MessageId.make(`assistant:${messageId}${suffix}`),
+            text: body,
+            streaming: false,
+          },
+        });
+      if (commentary !== undefined) yield* assistantMessage(":commentary", 0, commentary);
+      yield* assistantMessage("", commentary === undefined ? 0 : 1, text);
     }
     yield* end(entry, "completed");
     live.delete(messageId);
@@ -347,6 +353,7 @@ export const makeHarness = Effect.fn("sideThreadsHarness")(function* (
   const script: Script = {
     hold: new Set(),
     replies: new Map(),
+    commentary: new Map(),
     silent: new Set(),
     edits: new Map(),
   };

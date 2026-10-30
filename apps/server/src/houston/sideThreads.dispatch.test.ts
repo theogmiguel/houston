@@ -699,6 +699,54 @@ describe("Send to thread", () => {
     ),
   );
 
+  it.effect("send to thread queues the review as the next message from the run's last answer", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("send-last-answer");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            // The reviewed run writes commentary, then its report.
+            harness.script.commentary.set("message:source:1", "Reading parse.ts first.");
+            const { source, firstRunId } = yield* sourceWithTurn(context, harness, {
+              threadId: "source",
+              driver: "codex",
+              reply: "Report: split keeps empty tokens now.",
+            });
+            yield* requestReview(context, {
+              source,
+              runId: firstRunId,
+              review: "review",
+              driver: "claudeAgent",
+            });
+            const reviewProjection = yield* projectionOf(context, "review");
+            const reviewMessageId = reviewProjection.runs[0]!.userMessageId;
+            const prompt = reviewProjection.messages.find(
+              (message) => message.id === reviewMessageId,
+            )?.text;
+            assert.include(prompt, "Report: split keeps empty tokens now.");
+            assert.notInclude(prompt, "Reading parse.ts first.");
+
+            // The review writes commentary, then the review itself.
+            harness.script.commentary.set(reviewMessageId, "Let me read the diff.");
+            harness.script.replies.set(reviewMessageId, "Review: the change is right.");
+            yield* context.settle;
+            const reviewRun = (yield* projectionOf(context, "review")).runs[0]!;
+            assert.equal(reviewRun.status, "completed");
+            yield* sendToThread(context, "review", reviewRun.id, "send:last");
+            const sent = sideMessage(
+              yield* context.orchestrator.getThreadProjection(source),
+              reviewRun.id,
+            );
+            assert.equal(
+              sent[0]?.text,
+              "Second opinion from Claude on turn 1:\n\nReview: the change is right.",
+            );
+          }),
+        );
+      }),
+    ),
+  );
+
   it.effect("a review is sent once", () =>
     Effect.scoped(
       Effect.gen(function* () {
