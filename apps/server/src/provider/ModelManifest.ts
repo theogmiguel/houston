@@ -177,7 +177,7 @@ export class ModelManifest extends Context.Service<
     /** Process-shared fetches must survive the triggering instance's teardown. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
->()("t3/provider/ModelManifest") {}
+>()("houston/provider/ModelManifest") {}
 
 const BundledOnlyModelManifest: ModelManifest["Service"] = {
   current: Effect.succeed(BUNDLED_MODEL_MANIFEST),

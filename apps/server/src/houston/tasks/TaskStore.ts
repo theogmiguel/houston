@@ -43,7 +43,7 @@ import {
 
 /** Runs right after a snapshot's rows are read; tests hold it to commit a write mid-snapshot. */
 export const SnapshotReadHook = Context.Reference<Effect.Effect<void>>(
-  "t3/houston/tasks/SnapshotReadHook",
+  "houston/houston/tasks/SnapshotReadHook",
   { defaultValue: () => Effect.void },
 );
 
@@ -302,7 +302,7 @@ export class HoustonTaskStore extends Context.Service<
     /** Unassigns a deleted project's tasks and interrupts their open runs. */
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
->()("t3/houston/tasks/TaskStore/HoustonTaskStore") {}
+>()("houston/houston/tasks/TaskStore/HoustonTaskStore") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

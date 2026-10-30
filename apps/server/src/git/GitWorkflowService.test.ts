@@ -29,7 +29,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
         yield* driver.execute({ operation: "test.setupRepo", cwd, args });
       }
       const found = yield* Effect.forEach(
-        ["main", "feature/topic", "alias", "mirrored", "t3/renamed", "feature/*"],
+        ["main", "feature/topic", "alias", "mirrored", "houston/renamed", "feature/*"],
         (refName) => workflow.hasRefNamed({ cwd, refName }),
       );
       assert.deepEqual(found, [true, true, true, true, false, false]);

@@ -26,7 +26,7 @@ const GIT_ENV = {
   LC_ALL: "C",
 } satisfies NodeJS.ProcessEnv;
 
-/** Starts in-app triage sessions: the same files `t3 triage` writes, plus a source clone. */
+/** Starts in-app triage sessions: the same files `houston triage` writes, plus a source clone. */
 export class TriageService extends Context.Service<
   TriageService,
   {
@@ -34,7 +34,7 @@ export class TriageService extends Context.Service<
       input: ServerPrepareTriageInput,
     ) => Effect.Effect<ServerPrepareTriageResult, ServerPrepareTriageError>;
   }
->()("t3/triage/TriageService") {}
+>()("houston/triage/TriageService") {}
 
 const describeClient = (client: AuthClientPresentationMetadata) =>
   [

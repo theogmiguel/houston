@@ -132,7 +132,7 @@ Write-Host '[dev] building the v2 web renderer...'
 Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@t3tools/web', 'build')
 
 Write-Host '[dev] building the v2 server...'
-Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', 't3', 'build:bundle')
+Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', 'houston', 'build:bundle')
 
 Write-Host '[dev] building the daemon and hook helper (debug)...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'core') -FilePath 'cargo' -ArgumentList @('build', '--bin', 'houston-core', '--bin', 'tr-helper')

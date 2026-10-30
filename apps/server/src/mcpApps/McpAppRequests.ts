@@ -43,7 +43,7 @@ export class McpAppRequests extends Context.Service<
       input: McpAppUpdateModelContextInput,
     ) => Effect.Effect<void, McpAppRequestError>;
   }
->()("t3/mcpApps/McpAppRequests") {}
+>()("houston/mcpApps/McpAppRequests") {}
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const utf8 = new TextEncoder();

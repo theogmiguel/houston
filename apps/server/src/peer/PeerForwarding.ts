@@ -78,7 +78,7 @@ export class PeerForwarding extends Context.Service<
       scope: Scope,
     ) => Effect.Effect<OrchestratorMcpEnvironmentLinksResult, OrchestratorMcpFailure>;
   }
->()("t3/peer/PeerForwarding") {}
+>()("houston/peer/PeerForwarding") {}
 
 /** What an agent hears when it names another machine while the beta is off here. */
 export const linkedEnvironmentsOff = new OrchestratorMcpFailure({
