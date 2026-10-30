@@ -246,6 +246,128 @@ describe("absent, null and a value are distinct in a patch", () => {
   );
 });
 
+describe("an update to a project that does not exist changes nothing", () => {
+  it.effect("a changed projectId naming no project is invalid; the row and history stay", () =>
+    Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("update-target");
+      for (const start of [null, project]) {
+        const task = yield* create({ title: `from ${start ?? "none"}`, projectId: start });
+        const before = yield* tasks.get({ id: task.key });
+        const error = yield* refused(
+          tasks.save({
+            id: task.key,
+            expectedRevision: task.revision,
+            patch: { projectId: ProjectId.make("project-missing") },
+          }),
+        );
+        assert.strictEqual(error.kind, "invalid");
+        assert.include(error.message, "project-missing");
+        assert.deepEqual(yield* tasks.get({ id: task.key }), before);
+      }
+    }).pipe(Effect.provide(layerTasks())),
+  );
+});
+
+/** A delivery with two slices; `before` runs after the delivery exists and before its domain row. */
+const deliveryWithSlices = (
+  project: ProjectId,
+  status: HoustonTask["status"],
+  before: (
+    delivery: HoustonTask,
+  ) => Effect.Effect<unknown, HoustonTaskError, HoustonTaskService.HoustonTaskService>,
+) =>
+  Effect.gen(function* () {
+    const tasks = yield* service;
+    const created = yield* create({ title: "Delivery", projectId: project, status });
+    yield* before(created);
+    const delivery = (yield* tasks.get({ id: created.key })).task;
+    yield* tasks.saveDomain({
+      id: delivery.key,
+      expectedRevision: delivery.revision,
+      kind: "delivery",
+    });
+    const slices: Array<HoustonTask> = [];
+    for (const title of ["Slice 1", "Slice 2"]) {
+      const slice = yield* create({ title, projectId: project, parentId: delivery.id });
+      yield* tasks.saveDomain({ id: slice.key, expectedRevision: slice.revision, kind: "slice" });
+      slices.push(slice);
+    }
+    return { key: delivery.key, slices };
+  });
+
+const finishSlices = (slices: ReadonlyArray<HoustonTask>) =>
+  Effect.gen(function* () {
+    const tasks = yield* service;
+    for (const slice of slices) {
+      const current = (yield* tasks.get({ id: slice.key })).task;
+      yield* tasks.save({
+        id: slice.key,
+        expectedRevision: current.revision,
+        patch: { status: "done" },
+      });
+    }
+  });
+
+const setStatus = (key: string, status: HoustonTask["status"], actor?: string) =>
+  Effect.gen(function* () {
+    const tasks = yield* service;
+    const current = (yield* tasks.get({ id: key })).task;
+    return yield* tasks.save(
+      { id: key, expectedRevision: current.revision, patch: { status } },
+      actor,
+    );
+  });
+
+describe("a user's status on a delivery stops its rollup", () => {
+  it.effect(
+    "set by the user after the delivery exists, the status stays when every slice is done",
+    () =>
+      Effect.gen(function* () {
+        const tasks = yield* service;
+        const project = yield* createProject("override-user");
+        const { key, slices } = yield* deliveryWithSlices(project, "backlog", () => Effect.void);
+        yield* setStatus(key, "in_progress");
+        yield* finishSlices(slices);
+        assert.strictEqual((yield* tasks.get({ id: key })).task.status, "in_progress");
+      }).pipe(Effect.provide(layerTasks())),
+  );
+
+  it.effect("set by an agent, the delivery still rolls up to done", () =>
+    Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("override-agent");
+      const { key, slices } = yield* deliveryWithSlices(project, "backlog", () => Effect.void);
+      yield* setStatus(key, "in_progress", "agent:thread-1");
+      yield* finishSlices(slices);
+      assert.strictEqual((yield* tasks.get({ id: key })).task.status, "done");
+    }).pipe(Effect.provide(layerTasks())),
+  );
+
+  it.effect("set by the user before the task became a delivery, the status stays", () =>
+    Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("override-before");
+      // The user moved it and back: still backlog, but the user chose its status.
+      const { key, slices } = yield* deliveryWithSlices(project, "backlog", (delivery) =>
+        Effect.andThen(setStatus(delivery.key, "todo"), setStatus(delivery.key, "backlog")),
+      );
+      yield* finishSlices(slices);
+      assert.strictEqual((yield* tasks.get({ id: key })).task.status, "backlog");
+    }).pipe(Effect.provide(layerTasks())),
+  );
+
+  it.effect("a delivery never set by the user rolls up to done", () =>
+    Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("override-none");
+      const { key, slices } = yield* deliveryWithSlices(project, "backlog", () => Effect.void);
+      yield* finishSlices(slices);
+      assert.strictEqual((yield* tasks.get({ id: key })).task.status, "done");
+    }).pipe(Effect.provide(layerTasks())),
+  );
+});
+
 describe("an unknown parent is refused naming it", () => {
   it.effect("not_found names the parent id; a cycle through the parent is refused", () =>
     Effect.gen(function* () {

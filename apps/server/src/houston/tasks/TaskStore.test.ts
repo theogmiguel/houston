@@ -8,7 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HoustonTaskError } from "@t3tools/contracts/houston/tasks";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
-import { layerTasks } from "./tasks.testkit.ts";
+import { createProject, layerTasks } from "./tasks.testkit.ts";
 
 const create = (title: string) =>
   Effect.gen(function* () {
@@ -61,6 +61,38 @@ describe("keys come from the global counter and are never reused", () => {
         numbers.map((row) => row.number),
         [43],
       );
+    }).pipe(Effect.provide(layerTasks())),
+  );
+});
+
+describe("readiness names an initiative of another project", () => {
+  it.effect("a task moved to Q whose initiative belongs to P lists the reason", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonTaskService.HoustonTaskService;
+      const store = yield* HoustonTaskStore.HoustonTaskStore;
+      const p = yield* createProject("readiness-p");
+      const q = yield* createProject("readiness-q");
+      const initiative = yield* service.saveInitiative({ projectId: p, name: "Launch" });
+      const task = yield* service.save({
+        patch: { title: "moved", projectId: p, acceptance: ["it works"] },
+      });
+      yield* service.saveDomain({
+        id: task.key,
+        expectedRevision: task.revision,
+        kind: "delivery",
+        initiativeId: initiative.id,
+      });
+      const inP = yield* service.get({ id: task.key });
+      assert.deepEqual(inP.domain.readiness.reasons, []);
+      yield* service.save({
+        id: task.key,
+        expectedRevision: inP.task.revision,
+        patch: { projectId: q },
+      });
+      const reason = "the task's initiative is archived or belongs to another project";
+      assert.deepEqual((yield* service.get({ id: task.key })).domain.readiness.reasons, [reason]);
+      const [summary] = (yield* store.summaries({ scope: { projectId: q } })).summaries;
+      assert.strictEqual(summary?.ready, false);
     }).pipe(Effect.provide(layerTasks())),
   );
 });
