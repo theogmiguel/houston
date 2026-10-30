@@ -7,6 +7,7 @@ import {
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
+  isSidebarSubagentThread,
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
@@ -79,7 +80,7 @@ export function threadCardsInPaneOrder(
   });
 }
 
-/** Threads that still belong on the rail: not archived, closed or on hold. */
+/** Threads that still belong on the rail: not archived, closed, held or a subagent child. */
 export function visibleGridThreads(
   grid: GridRecord,
   threads: ReadonlyArray<EnvironmentThreadShell>,
@@ -89,6 +90,7 @@ export function visibleGridThreads(
     (thread) =>
       thread.archivedAt === null &&
       thread.settledOverride !== "settled" &&
+      !isSidebarSubagentThread(thread) &&
       !effectiveSnoozed(thread, { now }),
   );
 }
@@ -117,6 +119,7 @@ export function partitionShelfThreads(
   const closed: EnvironmentThreadShell[] = [];
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (isSidebarSubagentThread(thread)) continue;
     if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
     if (effectiveSnoozed(thread, { now })) {
       held.push(thread);

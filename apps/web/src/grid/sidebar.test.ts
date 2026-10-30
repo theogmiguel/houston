@@ -238,6 +238,32 @@ describe("grid tree order", () => {
       "thread-open",
     ]);
   });
+
+  it("drops a subagent child thread from the rail", () => {
+    const order = grid({
+      kind: "split",
+      dir: "row",
+      weights: [50, 50],
+      children: [
+        { kind: "thread", threadId: "thread-parent", id: "p1" },
+        { kind: "thread", threadId: "thread-child", id: "p2" },
+      ],
+    });
+    const threads = [
+      thread({ id: "thread-parent" }),
+      thread({
+        id: "thread-child",
+        lineage: {
+          relationshipToParent: "subagent",
+          parentThreadId: "thread-parent" as never,
+          rootThreadId: "thread-parent" as never,
+        },
+      }),
+    ];
+    expect(visibleGridThreads(order, threads, NOW).map((entry) => entry.id)).toEqual([
+      "thread-parent",
+    ]);
+  });
 });
 
 describe("grid thread selection", () => {
@@ -429,6 +455,38 @@ describe("grid shelves", () => {
         thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
         thread({ id: "archived", archivedAt: "2026-10-29T11:00:00.000Z" }),
         thread({ id: "other", projectId: "project-2" as never }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
+    expect(shelves.closed).toEqual([]);
+  });
+
+  it("leaves a subagent child thread off the shelves", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
+        thread({
+          id: "held-child",
+          snoozedUntil: "2026-10-29T13:00:00.000Z",
+          snoozedAt: "2026-10-29T11:00:00.000Z",
+          lineage: {
+            relationshipToParent: "subagent",
+            parentThreadId: "held" as never,
+            rootThreadId: "held" as never,
+          },
+        }),
+        thread({
+          id: "closed-child",
+          settledOverride: "settled",
+          settledAt: "2026-10-29T11:00:00.000Z",
+          lineage: {
+            relationshipToParent: "subagent",
+            parentThreadId: "held" as never,
+            rootThreadId: "held" as never,
+          },
+        }),
       ],
       workspaceKeys,
       NOW,
