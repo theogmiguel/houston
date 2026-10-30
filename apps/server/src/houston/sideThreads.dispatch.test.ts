@@ -1189,13 +1189,46 @@ describe("a side thread's limits", () => {
                 targetThreadId: ThreadId.make("fork-target"),
                 sourcePoint: { type: "run", runId: RunId.make("run:missing") },
               },
+              {
+                type: "thread.merge_back",
+                commandId: CommandId.make("merge-back:missing"),
+                sourceThreadId: missing,
+                targetThreadId: ThreadId.make("merge-target"),
+                sourcePoint: { type: "latest_stable" },
+                createdBy: "user",
+                creationSource: "web",
+              },
+              {
+                type: "delegated_task.request",
+                commandId: CommandId.make("delegate:missing"),
+                parentThreadId: missing,
+                parentRunId: RunId.make("run:missing"),
+                parentNodeId: NodeId.make("node:missing"),
+                task: "Edit the parser",
+                modelSelection: selection("codex"),
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                createdBy: "agent",
+                creationSource: "mcp",
+              },
+              {
+                type: "thread.model-selection.set",
+                commandId: CommandId.make("model:missing"),
+                threadId: missing,
+                modelSelection: selection("codex"),
+              },
             ];
             for (const command of commands) {
               const error = yield* Effect.flip(context.dispatch(command));
-              // The side-thread guard steps aside; the command's own handler reports the thread.
-              assert.notEqual(
+              // Upstream's handlers report a missing thread with this error; the guard does too.
+              assert.equal(
                 (error as { readonly _tag: string })._tag,
                 "OrchestratorProjectionError",
+                command.type,
+              );
+              assert.equal(
+                (error as { readonly message: string }).message,
+                "Failed to load orchestration projection for thread missing.",
                 command.type,
               );
             }
