@@ -94,6 +94,11 @@ function GridRoute() {
   const availableThreads = workspaceThreads
     .filter((thread) => !visibleThreadIds.has(thread.id))
     .map((thread) => ({ threadId: thread.id, title: thread.title }));
+  const soloLeaves = grid.tree === null ? [] : preorderThreads(grid.tree);
+  const soloThread =
+    soloLeaves.length === 1
+      ? (workspaceThreads.find((thread) => thread.id === soloLeaves[0]!.threadId) ?? null)
+      : null;
 
   const openThread = (environmentId: string, threadId: string) => {
     if (
@@ -133,7 +138,22 @@ function GridRoute() {
         reserveNativeControls={isElectron || isTauriHost()}
         className="border-b border-border"
       >
-        <span className="truncate text-xs font-medium text-muted-foreground">{grid.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="shrink-0">Houston</span>
+          <span aria-hidden>/</span>
+          <span className="truncate">{grid.name}</span>
+          {soloThread === null ? null : (
+            <>
+              <span aria-hidden>/</span>
+              <span className="truncate font-medium text-foreground">{soloThread.title}</span>
+              {soloThread.branch ? (
+                <span className="hidden truncate font-mono text-muted-foreground sm:inline">
+                  {soloThread.branch}
+                </span>
+              ) : null}
+            </>
+          )}
+        </span>
         <span className="flex-1" />
         <GridTopBarControls grid={grid} />
       </WorkspacePageHeader>

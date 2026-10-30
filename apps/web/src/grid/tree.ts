@@ -214,28 +214,90 @@ export function insertThreadAt(
   return appendThread(tree, threadId);
 }
 
-export function evenGrid(ids: string[]): LayoutNode | null {
+function rowOf(ids: readonly string[], weights?: number[]): LayoutNode {
+  if (ids.length === 1) return threadLeaf(ids[0]!);
+  return {
+    kind: "split",
+    dir: "row",
+    children: ids.map((id) => threadLeaf(id)),
+    weights: weights ?? evenWeights(ids.length),
+  };
+}
+
+function columnOf(children: LayoutNode[], weights?: number[]): LayoutNode {
+  return {
+    kind: "split",
+    dir: "col",
+    children,
+    weights: weights ?? evenWeights(children.length),
+  };
+}
+
+/**
+ * The automatic arrangement for a grid of one to six threads. The first thread
+ * keeps the leading, tallest slot because it is usually the one that started the
+ * work; a seventh thread gets a new grid instead of a pane below the 240px floor.
+ */
+export function gridPreset(ids: readonly string[]): LayoutNode | null {
+  const [first, second, third, fourth, fifth, sixth] = ids;
+  switch (ids.length) {
+    case 0:
+      return null;
+    case 1:
+      return threadLeaf(first!);
+    case 2:
+      return rowOf([first!, second!]);
+    case 3:
+      return {
+        kind: "split",
+        dir: "row",
+        children: [threadLeaf(first!), columnOf([threadLeaf(second!), threadLeaf(third!)])],
+        weights: [100 * (1.25 / 2.25), 100 * (1 / 2.25)],
+      };
+    case 4:
+      return columnOf([rowOf([first!, second!]), rowOf([third!, fourth!])]);
+    case 5:
+      return {
+        kind: "split",
+        dir: "row",
+        children: [
+          threadLeaf(first!),
+          columnOf([rowOf([second!, third!]), rowOf([fourth!, fifth!])]),
+        ],
+        weights: [100 * (1.2 / 3.2), 100 * (2 / 3.2)],
+      };
+    case 6:
+      return columnOf([rowOf([first!, second!, third!]), rowOf([fourth!, fifth!, sixth!])]);
+    default:
+      return evenGrid(ids);
+  }
+}
+
+/**
+ * An even chunked grid for more threads than a preset holds. Kept as the
+ * fallback for callers that build grids outside the six-thread limit.
+ */
+export function evenGrid(ids: readonly string[]): LayoutNode | null {
   if (ids.length === 0) return null;
   if (ids.length === 1) return threadLeaf(ids[0]!);
   const perRow = ids.length <= 4 ? 2 : 3;
   const rows: string[][] = [];
   for (let i = 0; i < ids.length; i += perRow) rows.push(ids.slice(i, i + perRow));
-  const rowNode = (row: string[]): LayoutNode =>
-    row.length === 1
-      ? threadLeaf(row[0]!)
-      : {
-          kind: "split",
-          dir: "row",
-          children: row.map((id) => threadLeaf(id)),
-          weights: evenWeights(row.length),
-        };
-  if (rows.length === 1) return rowNode(rows[0]!);
-  return {
-    kind: "split",
-    dir: "col",
-    children: rows.map(rowNode),
-    weights: evenWeights(rows.length),
-  };
+  if (rows.length === 1) return rowOf(rows[0]!);
+  return columnOf(rows.map((row) => rowOf(row)));
+}
+
+function treeShape(node: LayoutNode | null): string {
+  if (node === null) return "empty";
+  if (node.kind === "thread") return `t(${node.threadId})`;
+  const weights = node.weights.map((weight) => weight.toFixed(2)).join(",");
+  return `${node.dir}(${node.children.map(treeShape).join("|")};${weights})`;
+}
+
+/** True when the tree is still the automatic arrangement for these threads. */
+export function isGridPreset(tree: LayoutNode | null, ids: readonly string[]): boolean {
+  const expected = gridPreset(ids);
+  return expected !== null && treeShape(tree) === treeShape(expected);
 }
 
 export function tidyColumns(n: number): number {
@@ -275,42 +337,11 @@ export function tidy(tree: LayoutNode | null, shape: TidyShape = "grid"): Layout
 }
 
 /**
- * Reading-order arrangement from the grid design: the first thread keeps the
- * leading, tallest slot; 5 and 6 fill the trailing columns at glance size.
+ * Reading-order arrangement for the Grid layout menu. It reuses the same
+ * preset shapes that fill an untouched grid, so there is one arrangement rule.
  */
 export function arrangeThreads(tree: LayoutNode | null): LayoutNode | null {
-  const leaves = preorderThreads(tree);
-  if (leaves.length === 0) return null;
-  if (leaves.length === 1) return leaves[0]!;
-  const row = (nodes: LayoutNode[], weights?: number[]): LayoutNode => ({
-    kind: "split",
-    dir: "row",
-    children: nodes,
-    weights: weights ?? evenWeights(nodes.length),
-  });
-  const column = (nodes: LayoutNode[], weights?: number[]): LayoutNode => ({
-    kind: "split",
-    dir: "col",
-    children: nodes,
-    weights: weights ?? evenWeights(nodes.length),
-  });
-  if (leaves.length === 2) return row(leaves);
-  if (leaves.length === 3) {
-    return row([leaves[0]!, column([leaves[1]!, leaves[2]!])], [56, 44]);
-  }
-  if (leaves.length === 4) {
-    return column([row([leaves[0]!, leaves[1]!]), row([leaves[2]!, leaves[3]!])]);
-  }
-  if (leaves.length === 5) {
-    return row(
-      [leaves[0]!, column([row([leaves[1]!, leaves[2]!]), row([leaves[3]!, leaves[4]!])])],
-      [52, 48],
-    );
-  }
-  return column([
-    row([leaves[0]!, leaves[1]!, leaves[2]!]),
-    row([leaves[3]!, leaves[4]!, leaves[5]!]),
-  ]);
+  return gridPreset(preorderThreads(tree).map((leaf) => leaf.threadId));
 }
 
 export function equalize(tree: LayoutNode): LayoutNode {
@@ -335,14 +366,17 @@ export function adjacentThreadKey(
 }
 
 export function reconcileThreads(tree: LayoutNode | null, threadIds: string[]): LayoutNode | null {
+  const previousIds = tree === null ? [] : preorderThreads(tree).map((leaf) => leaf.threadId);
+  const auto = tree !== null && isGridPreset(tree, previousIds);
   const alive = new Set(threadIds);
-  let next = tree ? prune(tree, alive) : null;
-  if (!next) return evenGrid(threadIds);
+  const next = tree ? prune(tree, alive) : null;
+  if (!next || auto) return gridPreset(threadIds);
   const present = new Set(preorderLeaves(next));
+  let appended = next;
   for (const threadId of threadIds) {
-    if (!present.has(threadId)) next = appendThread(next, threadId);
+    if (!present.has(threadId)) appended = appendThread(appended, threadId);
   }
-  return next;
+  return appended;
 }
 
 export function insertBeside(

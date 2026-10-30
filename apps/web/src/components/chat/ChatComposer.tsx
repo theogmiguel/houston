@@ -230,6 +230,8 @@ const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidErro
 import { toastManager } from "../ui/toast";
 import { PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
@@ -240,6 +242,7 @@ import {
   type Thread,
   type ThreadShell,
 } from "../../types";
+import type { PaneDensity } from "../../grid/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
 import type {
@@ -367,6 +370,10 @@ export interface ChatComposerProps {
   activeThreadShell: ThreadShell | null;
   promptHistoryMessages: ReadonlyArray<ChatMessage>;
   forceExpandedOnMobile: boolean;
+  /** A grid pane's density; glance keeps the composer on one line until focused. */
+  paneDensity?: PaneDensity | undefined;
+  /** When the active turn started; the running status in the composer footer. */
+  activeTurnStartedAt?: string | null | undefined;
   projectSelectionRequired: boolean;
 
   phase: SessionPhase;
@@ -518,6 +525,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread,
     promptHistoryMessages,
     forceExpandedOnMobile,
+    paneDensity,
+    activeTurnStartedAt,
     projectSelectionRequired,
     phase,
     canInterrupt,
@@ -1020,7 +1029,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
   const isComposerCollapsedMobile =
-    isMobileViewport &&
+    (isMobileViewport || paneDensity === "glance") &&
     !forceExpandedOnMobile &&
     !isComposerFocused &&
     !hasMultilinePrompt &&
@@ -2311,6 +2320,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       toggleInteractionMode={toggleInteractionMode}
       handleRuntimeModeChange={handleRuntimeModeChange}
       composerControlsCollapsed={composerControlsCollapsed}
+      paneDensity={paneDensity}
       effortDisplay={settings.effortDisplay}
       permissionsShownInStrip={props.permissionsShownInStrip}
       composerControlsHidden={composerControlsHidden}
@@ -3079,7 +3089,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
+  const composerAttachButton =
+    showComposerAttachAction && paneDensity !== "compact" ? (
     <ComposerAttachButton
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
@@ -3216,7 +3227,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-64"
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full disabled:opacity-64",
+                    showResumeAction || prompt.trim() || composerSendState.hasSendableContent
+                      ? "bg-foreground text-(--pane) hover:bg-foreground/90"
+                      : "bg-(--sel) text-muted-foreground",
+                  )}
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
                   onPointerDown={(event) => event.preventDefault()}
@@ -3452,6 +3468,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     pulseKey={stashPulseKey}
                     onToggleMenu={toggleStashMenuStable}
                   />
+                  {phase === "running" && activeTurnStartedAt ? (
+                    <span
+                      role="status"
+                      className="shrink-0 pe-1 text-2xs text-muted-foreground tabular-nums"
+                    >
+                      <span className="text-(--accent-ink)">Running</span> ·{" "}
+                      <span
+                        ref={tickTextContent(
+                          (nowMs) =>
+                            formatDuration(Math.max(1_000, nowMs - Date.parse(activeTurnStartedAt))),
+                          true,
+                        )}
+                      />
+                    </span>
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
@@ -3514,7 +3545,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
             )}
             {showInlineRestingControls ? (
-              <div className="h-8">
+              <div className="h-8" data-chat-composer-resting-row={paneDensity ?? "default"}>
                 <div
                   ref={setInlineRestingControlsHost}
                   className="absolute bottom-2 inset-x-4 min-w-0"

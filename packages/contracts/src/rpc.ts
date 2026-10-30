@@ -217,6 +217,23 @@ import {
   HoustonTaskSourceStreamEvent,
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
+import {
+  HoustonMergeQueueEmptyResult,
+  HoustonMergeQueueEnqueueInput,
+  HoustonMergeQueueEntry,
+  HoustonMergeQueueEntryInput,
+  HoustonMergeQueueError,
+  HoustonMergeQueueMergeHeadInput,
+  HoustonMergeQueueMergeHeadResult,
+  HoustonMergeQueueMessageResult,
+  HoustonMergeQueuePauseInput,
+  HoustonMergeQueueProjectInput,
+  HoustonMergeQueueSettings,
+  HoustonMergeQueueSettingsSetInput,
+  HoustonMergeQueueSnapshot,
+  HoustonMergeQueueSummary,
+  HoustonMergeQueueSummaryInput,
+} from "./houston/mergeQueue.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -545,6 +562,14 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
+  houstonMergeQueueGet: "houston.mergeQueue.get",
+  houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
+  houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
+  houstonMergeQueueEnqueue: "houston.mergeQueue.enqueue",
+  houstonMergeQueueDequeue: "houston.mergeQueue.dequeue",
+  houstonMergeQueueMergeHead: "houston.mergeQueue.mergeHead",
+  houstonMergeQueueSettingsSet: "houston.mergeQueue.settings.set",
+  houstonMergeQueuePause: "houston.mergeQueue.pause",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1820,6 +1845,64 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
+const HoustonMergeQueueRpcError = Schema.Union([
+  HoustonMergeQueueError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonMergeQueueGetRpc = Rpc.make(WS_METHODS.houstonMergeQueueGet, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueSnapshot,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueSubscribeRpc = Rpc.make(WS_METHODS.houstonMergeQueueSubscribe, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueSnapshot,
+  error: HoustonMergeQueueRpcError,
+  stream: true,
+});
+
+const WsHoustonMergeQueueSubscribeSummaryRpc = Rpc.make(
+  WS_METHODS.houstonMergeQueueSubscribeSummary,
+  {
+    payload: HoustonMergeQueueSummaryInput,
+    success: HoustonMergeQueueSummary,
+    error: HoustonMergeQueueRpcError,
+    stream: true,
+  },
+);
+
+const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
+  payload: HoustonMergeQueueEnqueueInput,
+  success: HoustonMergeQueueEntry,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueDequeueRpc = Rpc.make(WS_METHODS.houstonMergeQueueDequeue, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueEmptyResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueMergeHeadRpc = Rpc.make(WS_METHODS.houstonMergeQueueMergeHead, {
+  payload: HoustonMergeQueueMergeHeadInput,
+  success: HoustonMergeQueueMergeHeadResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueSettingsSetRpc = Rpc.make(WS_METHODS.houstonMergeQueueSettingsSet, {
+  payload: HoustonMergeQueueSettingsSetInput,
+  success: HoustonMergeQueueSettings,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueuePauseRpc = Rpc.make(WS_METHODS.houstonMergeQueuePause, {
+  payload: HoustonMergeQueuePauseInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2429,6 +2512,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
+  WsHoustonMergeQueueGetRpc,
+  WsHoustonMergeQueueSubscribeRpc,
+  WsHoustonMergeQueueSubscribeSummaryRpc,
+  WsHoustonMergeQueueEnqueueRpc,
+  WsHoustonMergeQueueDequeueRpc,
+  WsHoustonMergeQueueMergeHeadRpc,
+  WsHoustonMergeQueueSettingsSetRpc,
+  WsHoustonMergeQueuePauseRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

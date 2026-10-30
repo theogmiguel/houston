@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
@@ -23,7 +24,19 @@ import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { ThemeLibrary } from "./ThemeSettings";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { themeLibraryCount, ThemeLibrary } from "./ThemeSettings";
+import { useEnvironmentThemeDefinitions } from "../../hooks/useEnvironmentTheme";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -32,8 +45,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { AdvancedSettings } from "./AdvancedSettings";
-import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
-import { TypographySection } from "./TypographySettings";
+import { TypographySection, WordWrapRow } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
@@ -83,6 +95,9 @@ const EFFORT_DISPLAY_LABELS: Record<EffortDisplay, string> = {
   bars: "Bars",
 };
 
+// The board shows animations as a single switch; 150ms keeps the default motion short.
+const PANEL_ANIMATIONS_ON_MS = 150;
+
 export function AppearanceSettingsPanel() {
   const {
     appearanceMode,
@@ -95,7 +110,10 @@ export function AppearanceSettingsPanel() {
     themeHalves,
   } = useTheme();
   const customThemes = useCustomThemes();
+  const environmentThemes = useEnvironmentThemeDefinitions();
+  const themeCount = themeLibraryCount(customThemes, environmentThemes);
   const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
+  const [isCustomThemesOpen, setIsCustomThemesOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const environmentStageLabel = useEnvironmentStageLabel();
@@ -143,11 +161,12 @@ export function AppearanceSettingsPanel() {
             theme={theme}
             themeHalves={themeHalves}
             onImportOpenChange={setIsImportThemeOpen}
+            view="tiles"
           />
         </div>
       </SettingsSection>
 
-      <SettingsSection id="appearance-interface" title="Interface">
+      <SettingsSection id="appearance-interface" title="Theme">
         <SettingsRow
           {...searchableSetting("setting-appearance-contrast")}
           description="Adjust the contrast of colors and borders across the interface."
@@ -165,12 +184,12 @@ export function AppearanceSettingsPanel() {
           }
           control={
             <div className="flex w-full items-center gap-3 sm:w-52">
-              <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
-                htmlFor="appearance-contrast"
+              <span
+                aria-hidden="true"
+                className="min-w-6 text-right font-mono text-xs tabular-nums text-muted-foreground"
               >
-                {settings.appearanceContrast}%
-              </output>
+                {settings.appearanceContrast - 100}
+              </span>
               <input
                 aria-label="Contrast"
                 className="settings-slider min-w-0 flex-1"
@@ -196,6 +215,81 @@ export function AppearanceSettingsPanel() {
           }
         />
 
+        <SettingsRow
+          {...searchableSetting("panel-animations")}
+          description="Animate panels and menus as they open and close."
+          control={
+            <Switch
+              checked={settings.panelAnimationDurationMs > 0}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  panelAnimationDurationMs: checked ? PANEL_ANIMATIONS_ON_MS : 0,
+                })
+              }
+              aria-label="Panel animations"
+            />
+          }
+          resetAction={
+            settings.panelAnimationDurationMs !==
+            DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs ? (
+              <SettingResetButton
+                label="panel animations"
+                onClick={() =>
+                  updateSettings({
+                    panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+                  })
+                }
+              />
+            ) : null
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("environment-identification")}
+          description={
+            environmentStageVariant
+              ? "Choose how Dev and Nightly environments are identified."
+              : "Show Dev or Nightly artwork in the sidebar header."
+          }
+          resetAction={
+            settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+              <SettingResetButton
+                label="environment identification"
+                onClick={() =>
+                  updateSettings({
+                    environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.environmentIdentificationMode}
+              onValueChange={(value) => {
+                const option = environmentIdentificationOptionList.find(
+                  ([optionValue]) => optionValue === value,
+                );
+                if (option) updateSettings({ environmentIdentificationMode: option[0] });
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Environment identification"
+              >
+                <SelectValue>{environmentIdentificationLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {environmentIdentificationOptionList.map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
         <SettingsRow
           {...searchableSetting("setting-glass-opacity")}
           description="Higher values make menus, dialogs, and the composer more solid."
@@ -241,7 +335,93 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
+        <SettingsRow
+          {...searchableSetting("theme")}
+          title="Custom themes"
+          description="Choose a built-in theme, or create and import your own."
+          control={
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Custom themes: ${themeCount} available`}
+              onClick={() => setIsCustomThemesOpen(true)}
+            >
+              {themeCount} themes
+              <ChevronRightIcon aria-hidden className="size-3.5" />
+            </Button>
+          }
+        />
+      </SettingsSection>
 
+      <Dialog open={isCustomThemesOpen} onOpenChange={setIsCustomThemesOpen}>
+        <DialogPopup className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Custom themes</DialogTitle>
+            <DialogDescription>
+              Choose a built-in theme, or create and import your own.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="max-h-[70vh] overflow-y-auto">
+            <ThemeLibrary
+              appearanceMode={appearanceMode}
+              customThemes={customThemes}
+              initialAppearance={resolvedTheme}
+              refreshTheme={refreshTheme}
+              isImportOpen={isImportThemeOpen}
+              setAppearanceMode={setAppearanceMode}
+              setTheme={setTheme}
+              setThemeHalf={setThemeHalf}
+              theme={theme}
+              themeHalves={themeHalves}
+              onImportOpenChange={setIsImportThemeOpen}
+              view="library"
+            />
+            <SettingsRow
+              {...searchableSetting("panel-animations")}
+              title="Panel animation duration"
+              description="How long panels take to open and close."
+              control={
+                <div className="flex items-center gap-3">
+                  <output
+                    className="min-w-16 text-right font-mono text-xs tabular-nums text-muted-foreground"
+                    htmlFor="panel-animation-duration"
+                  >
+                    {settings.panelAnimationDurationMs} ms
+                  </output>
+                  <input
+                    aria-label="Panel animation duration"
+                    className="settings-slider w-40"
+                    id="panel-animation-duration"
+                    max={MAX_PANEL_ANIMATION_DURATION_MS}
+                    min={MIN_PANEL_ANIMATION_DURATION_MS}
+                    onChange={(event) => {
+                      const panelAnimationDurationMs = Number(event.currentTarget.value);
+                      if (
+                        Number.isInteger(panelAnimationDurationMs) &&
+                        panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
+                        panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
+                      ) {
+                        updateSettings({ panelAnimationDurationMs });
+                      }
+                    }}
+                    step={25}
+                    style={panelAnimationDurationSliderStyle}
+                    type="range"
+                    value={settings.panelAnimationDurationMs}
+                  />
+                </div>
+              }
+            />
+          </DialogPanel>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Done</DialogClose>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+
+      <TypographySection />
+
+      <SettingsSection id="appearance-chat" title="Chat">
         <SettingsRow
           {...searchableSetting("chat-width")}
           description="Set how wide messages and the composer can grow on large screens."
@@ -308,6 +488,7 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
+        <WordWrapRow />
         <SettingsRow
           {...searchableSetting("math-rendering")}
           description="Typeset LaTeX math, such as $x^2$ or \[x^2\], in messages and Markdown previews. The composer keeps TeX source editable."
@@ -333,112 +514,7 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
-        <AdvancedSettings
-          targetIds={[
-            searchableSetting("panel-animations").id,
-            searchableSetting("environment-identification").id,
-            // Environment identification's search result lands on this section.
-            "appearance-interface",
-            searchableSetting("composer-context").id,
-          ]}
-        >
-          <SettingsRow
-            {...searchableSetting("panel-animations")}
-            description="Set how fast panels open and close."
-            control={
-              <div className="grid w-full grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 sm:w-auto sm:grid-cols-[7rem_13rem] sm:gap-4">
-                <PanelAnimationsPreview durationMs={settings.panelAnimationDurationMs} />
-                <div className="flex w-full items-center gap-3">
-                  <output
-                    className="min-w-16 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
-                    htmlFor="panel-animation-duration"
-                  >
-                    {settings.panelAnimationDurationMs} ms
-                  </output>
-                  <input
-                    aria-label="Panel animation duration"
-                    className="settings-slider min-w-0 flex-1"
-                    id="panel-animation-duration"
-                    max={MAX_PANEL_ANIMATION_DURATION_MS}
-                    min={MIN_PANEL_ANIMATION_DURATION_MS}
-                    onChange={(event) => {
-                      const panelAnimationDurationMs = Number(event.currentTarget.value);
-                      if (
-                        Number.isInteger(panelAnimationDurationMs) &&
-                        panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
-                        panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
-                      ) {
-                        updateSettings({ panelAnimationDurationMs });
-                      }
-                    }}
-                    step={25}
-                    style={panelAnimationDurationSliderStyle}
-                    type="range"
-                    value={settings.panelAnimationDurationMs}
-                  />
-                </div>
-              </div>
-            }
-            resetAction={
-              settings.panelAnimationDurationMs !==
-              DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs ? (
-                <SettingResetButton
-                  label="panel animations"
-                  onClick={() =>
-                    updateSettings({
-                      panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
-                    })
-                  }
-                />
-              ) : null
-            }
-          />
-          <SettingsRow
-            {...searchableSetting("environment-identification")}
-            description={
-              environmentStageVariant
-                ? "Choose how Dev and Nightly environments are identified."
-                : "Show Dev or Nightly artwork in the sidebar header."
-            }
-            resetAction={
-              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
-                <SettingResetButton
-                  label="environment identification"
-                  onClick={() =>
-                    updateSettings({
-                      environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.environmentIdentificationMode}
-                onValueChange={(value) => {
-                  const option = environmentIdentificationOptionList.find(
-                    ([optionValue]) => optionValue === value,
-                  );
-                  if (option) updateSettings({ environmentIdentificationMode: option[0] });
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-40"
-                  aria-label="Environment identification"
-                >
-                  <SelectValue>{environmentIdentificationLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {environmentIdentificationOptionList.map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
+        <AdvancedSettings targetIds={[searchableSetting("composer-context").id]}>
           <SettingsRow
             {...searchableSetting("composer-context")}
             description="Keep branch and worktree controls below the composer after a thread starts."
@@ -468,8 +544,6 @@ export function AppearanceSettingsPanel() {
           />
         </AdvancedSettings>
       </SettingsSection>
-
-      <TypographySection />
     </SettingsPageContainer>
   );
 }

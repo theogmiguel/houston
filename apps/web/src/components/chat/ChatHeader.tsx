@@ -28,7 +28,6 @@ import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -286,7 +285,6 @@ export const ChatHeader = memo(function ChatHeader({
           <>
             <WorkspaceBreadcrumbItem className="shrink font-normal text-secondary-foreground">
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted-foreground">
-                <ProjectFavicon project={activeProject} className="size-3.5" />
                 <WorkspaceBreadcrumbText className="max-w-40">
                   {activeProjectName}
                 </WorkspaceBreadcrumbText>

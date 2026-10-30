@@ -1202,6 +1202,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --r-ctl: 6px;
   --r-group: 10px;
   --r-dialog: 14px;
+  --r-composer: 12px;
   --r-pill: 999px;
 
   /* Semantic aliases for the copied feature components. */

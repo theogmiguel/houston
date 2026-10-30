@@ -120,6 +120,8 @@ import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
+import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -576,6 +578,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
   ),
 ).pipe(
+  // The merge queue reads through the PR page's own service and GitHub client.
+  Layer.provideMerge(
+    layerMergeQueue(Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService)),
+  ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
   // The task source poller reads GitHub through its own client and the token from the OS keychain.
@@ -592,7 +598,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(HoustonTaskSourceStore.layer),
+  Layer.provideMerge(Layer.merge(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),

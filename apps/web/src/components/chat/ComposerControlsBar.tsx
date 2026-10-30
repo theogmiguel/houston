@@ -6,6 +6,7 @@ import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
+  ComposerPermissionsPicker,
   ComposerPermissionsSection,
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -64,6 +65,7 @@ export function ComposerControlsBar(props: {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   composerControlsCollapsed: boolean;
   composerControlsHidden: boolean;
+  paneDensity: ChatComposerProps["paneDensity"];
   restingHiddenBlockCount: number;
   iconOnlyBlockCount: number;
   showProviderUnavailable: boolean;
@@ -112,6 +114,7 @@ export function ComposerControlsBar(props: {
     handleRuntimeModeChange,
     composerControlsCollapsed,
     composerControlsHidden,
+    paneDensity,
     restingHiddenBlockCount: measuredHiddenBlockCount,
     iconOnlyBlockCount,
     showProviderUnavailable,
@@ -211,7 +214,8 @@ export function ComposerControlsBar(props: {
     hidden: composerControlsHidden || traitsBlockHidden,
     extraMenuOwnsModeShortcut: effortOwnsModeShortcut,
   });
-  const restingBlockDefs = [
+  const compactPane = paneDensity === "compact";
+  const restingBlockDefs = compactPane ? [] : [
     ...(providerTraitsPicker
       ? [
           {
@@ -288,8 +292,20 @@ export function ComposerControlsBar(props: {
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
       onOpenProviderSetup={onOpenProviderSetup}
+      {...(compactPane
+        ? {
+            menuAccessory: (
+              <ComposerPermissionsPicker
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          }
+        : {})}
     />
   );
+  const overflowHidden = compactPane || hiddenRestingBlockIds.length === 0;
   return showProviderUnavailable ? (
     <ComposerControl
       type="button"
@@ -334,11 +350,11 @@ export function ComposerControlsBar(props: {
         })}
         <div
           data-resting-controls-overflow
-          aria-hidden={hiddenRestingBlockIds.length === 0 || undefined}
-          inert={hiddenRestingBlockIds.length === 0 || undefined}
+          aria-hidden={overflowHidden || undefined}
+          inert={overflowHidden || undefined}
           className={cn(
             "min-w-0 shrink-0",
-            hiddenRestingBlockIds.length === 0 && "pointer-events-none invisible absolute",
+            overflowHidden && "pointer-events-none invisible absolute",
           )}
         >
           <CompactComposerControlsMenu
@@ -346,7 +362,7 @@ export function ComposerControlsBar(props: {
             runtimeMode={compatibleRuntimeMode}
             runtimeModeOptions={compatibleRuntimeModeOptions}
             size={composerControlsCollapsed ? "xs" : "sm"}
-            hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
+            hidden={composerControlsHidden || overflowHidden}
             showInteractionModeToggle={planModeUiEnabled && hiddenRestingBlockIds.includes("mode")}
             traitsMenuContent={
               hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined

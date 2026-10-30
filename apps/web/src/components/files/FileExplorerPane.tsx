@@ -19,10 +19,10 @@ export function FileExplorerPane({
   const [maxWidth, setMaxWidth] = useState(MAX_WIDTH);
   const { width, setWidth, handlers } = useResizableWidth({
     storageKey: "t3code.fileExplorerWidth",
-    defaultWidth: 256,
+    defaultWidth: 232,
     minWidth: MIN_WIDTH,
     maxWidth,
-    edge: "left",
+    edge: "right",
   });
 
   return (
@@ -40,7 +40,7 @@ export function FileExplorerPane({
       aria-label="File explorer"
       className={cn(
         "relative flex min-h-0 min-w-0 shrink-0 bg-background",
-        resizable ? "border-l border-border/60" : "flex-1",
+        resizable ? "border-r border-border" : "flex-1",
       )}
       style={
         resizable
@@ -54,6 +54,7 @@ export function FileExplorerPane({
       {resizable ? (
         <RightPanelResizeHandle
           handlers={handlers}
+          className="-left-auto -right-1"
           label="Resize file explorer"
           tabIndex={0}
           aria-valuenow={width}
@@ -64,10 +65,10 @@ export function FileExplorerPane({
             let nextWidth: number;
             switch (event.key) {
               case "ArrowLeft":
-                nextWidth = width + 16;
+                nextWidth = width - 16;
                 break;
               case "ArrowRight":
-                nextWidth = width - 16;
+                nextWidth = width + 16;
                 break;
               case "Home":
                 nextWidth = MIN_WIDTH;
