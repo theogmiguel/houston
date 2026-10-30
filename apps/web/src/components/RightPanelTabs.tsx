@@ -1242,10 +1242,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
           ownsDesktopTitleBar && "drag-region",
-          ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
+          ownsDesktopTitleBar &&
+            "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
+        data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
       >
         <ScrollArea
           radius="none"

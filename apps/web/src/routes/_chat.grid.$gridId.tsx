@@ -5,6 +5,8 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { GridHost } from "../components/grid/GridHost";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { SidebarInset } from "../components/ui/sidebar";
+import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { isElectron } from "../env";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useGrid, useGridStore } from "../grid/gridStore";
 import { containsThread, insertBeside, preorderThreads, threadLeaf } from "../grid/tree";
@@ -108,6 +110,11 @@ function GridRoute() {
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
+      {isElectron ? (
+        <WorkspacePageHeader electron reserveNativeControls className="border-b border-border">
+          <span className="truncate text-xs font-medium text-muted-foreground">{grid.name}</span>
+        </WorkspacePageHeader>
+      ) : null}
       <GridHost
         grid={grid}
         onTreeChange={(tree) => setTree(grid.id, tree)}
