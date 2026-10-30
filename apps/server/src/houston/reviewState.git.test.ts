@@ -275,23 +275,24 @@ describe("a commit dismisses only the files it changes", () => {
   );
 });
 
-describe("committing what was viewed keeps it viewed", () => {
+describe("committing what was viewed dismisses it", () => {
   it.effect("a commit of exactly the marked uncommitted content", () =>
     withRepo((repo, review) =>
       Effect.gen(function* () {
-        yield* initRepo(repo, { "a.ts": "a1\n" });
+        yield* initRepo(repo, { "a.ts": "a1\n", "b.ts": "b1\n" });
         yield* write(repo, "a.ts", "a2\n");
-        yield* tick(review, repo, "a.ts");
+        yield* tick(review, repo, "a.ts", "b.ts");
+        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "viewed", "b.ts": "viewed" });
         yield* commitAll(repo, "commit what was read");
         const result = yield* review.filesViewed({ cwd: repo });
-        assert.deepEqual(states(result), { "a.ts": "viewed" });
+        assert.deepEqual(states(result), { "a.ts": "dismissed", "b.ts": "viewed" });
         assert.notEqual(result.headSha, result.files[0]?.headSha);
       }),
     ),
   );
 });
 
-describe("a change undone by a later commit keeps the mark", () => {
+describe("a change undone by a later commit dismisses the mark", () => {
   it.effect("change then restore", () =>
     withRepo((repo, review) =>
       Effect.gen(function* () {
@@ -302,7 +303,43 @@ describe("a change undone by a later commit keeps the mark", () => {
         assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed" });
         yield* write(repo, "a.ts", "a1\n");
         yield* commitAll(repo, "restore");
+        assert.equal(yield* git(repo, ["diff", "--name-only", "HEAD~2", "HEAD"]), "");
+        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed" });
+      }),
+    ),
+  );
+});
+
+describe("a commit that leaves a file alone keeps its uncommitted mark", () => {
+  it.effect("a.ts marked with an uncommitted edit, a commit of b.ts only", () =>
+    withRepo((repo, review) =>
+      Effect.gen(function* () {
+        yield* initRepo(repo, { "a.ts": "a1\n", "b.ts": "b1\n" });
+        yield* write(repo, "a.ts", "a2\n");
+        yield* tick(review, repo, "a.ts");
+        yield* write(repo, "b.ts", "b2\n");
+        yield* git(repo, ["commit", "-q", "-m", "b only", "--", "b.ts"]);
         assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "viewed" });
+        yield* write(repo, "a.ts", "a1\n");
+        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed" });
+      }),
+    ),
+  );
+});
+
+describe("a mode-only commit dismisses the mark", () => {
+  it.effect("chmod +x committed on a.ts", () =>
+    withRepo((repo, review) =>
+      Effect.gen(function* () {
+        yield* initRepo(repo, { "a.ts": "a1\n", "b.ts": "b1\n" });
+        yield* tick(review, repo, "a.ts", "b.ts");
+        yield* git(repo, ["update-index", "--chmod=+x", "a.ts"]);
+        yield* git(repo, ["commit", "-q", "-m", "a.ts executable"]);
+        assert.equal(yield* git(repo, ["diff", "--name-only", "HEAD~1", "HEAD"]), "a.ts");
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "dismissed",
+          "b.ts": "viewed",
+        });
       }),
     ),
   );
@@ -347,20 +384,25 @@ describe("a deleted file is dismissed", () => {
 });
 
 describe("a file viewed as deleted is dismissed when it returns", () => {
-  it.effect("viewed while absent, dismissed once it exists, viewed when gone again", () =>
-    withRepo((repo, review) =>
-      Effect.gen(function* () {
-        yield* initRepo(repo, { "a.ts": "a1\n" });
-        yield* tick(review, repo, "gone.ts");
-        assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "viewed" });
-        yield* write(repo, "gone.ts", "back\n");
-        assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "dismissed" });
-        yield* commitAll(repo, "add gone");
-        assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "dismissed" });
-        yield* remove(repo, "gone.ts");
-        assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "viewed" });
-      }),
-    ),
+  it.effect(
+    "viewed while absent, dismissed once it exists, viewed when the uncommitted file goes, dismissed for good once a commit adds it",
+    () =>
+      withRepo((repo, review) =>
+        Effect.gen(function* () {
+          yield* initRepo(repo, { "a.ts": "a1\n" });
+          yield* tick(review, repo, "gone.ts");
+          assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "viewed" });
+          yield* write(repo, "gone.ts", "back\n");
+          assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "dismissed" });
+          yield* remove(repo, "gone.ts");
+          assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "viewed" });
+          yield* write(repo, "gone.ts", "back\n");
+          yield* commitAll(repo, "add gone");
+          assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "dismissed" });
+          yield* remove(repo, "gone.ts");
+          assert.deepEqual(yield* viewedStates(review, repo), { "gone.ts": "dismissed" });
+        }),
+      ),
   );
 });
 

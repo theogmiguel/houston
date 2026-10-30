@@ -1,4 +1,5 @@
-// Viewed marks and comment anchors for the local Changes review, judged by content.
+// Viewed marks and comment anchors for the local Changes review. A mark clears when a commit since
+// it touches the file, or when the content differs; anchors map by content.
 import { GitCommandError, type ReviewDiffPreviewError } from "@t3tools/contracts";
 import {
   HoustonReviewAnchorRangeError,
@@ -278,6 +279,55 @@ export const make = Effect.gen(function* () {
     return null;
   });
 
+  // Paths a commit between `fromSha` and `HEAD` touched, mode changes included; null once `fromSha`
+  // is no longer an ancestor of `HEAD` (rebase, reset, force-push, pruned).
+  const touchedSince = Effect.fn("HoustonReviewState.touchedSince")(function* (
+    operation: Operation,
+    root: string,
+    fromSha: string,
+  ) {
+    const ancestor = yield* run(
+      operation,
+      root,
+      ["merge-base", "--is-ancestor", "--end-of-options", fromSha, "HEAD"],
+      { allowNonZeroExit: true },
+    );
+    if (ancestor.exitCode !== 0) return null;
+    // The net diff sees what a merge brought in; the log sees a change a later commit undid.
+    const net = yield* run(operation, root, [
+      "diff",
+      "--name-only",
+      "--no-renames",
+      "-z",
+      "--end-of-options",
+      fromSha,
+      "HEAD",
+    ]);
+    const each = yield* run(operation, root, [
+      "log",
+      "--name-only",
+      "--no-renames",
+      "--format=",
+      "-z",
+      "--end-of-options",
+      `${fromSha}..HEAD`,
+    ]);
+    if (net.stdoutTruncated || each.stdoutTruncated) {
+      return yield* failure(
+        operation,
+        root,
+        "git log --name-only",
+        `The files changed since ${fromSha} exceed ${MAX_ANCHORED_FILE_BYTES} bytes of output.`,
+      );
+    }
+    return new Set(
+      `${net.stdout}\0${each.stdout}`
+        .split("\0")
+        .map((file) => file.replace(/^\n+/, ""))
+        .filter((file) => file.length > 0),
+    );
+  });
+
   // Serialize presses so a slower tick cannot overwrite a later untick. The key is the request's
   // cwd: the scope (worktree root and ref) is only known after git answers.
   const pressGates = new Map<string, { readonly gate: Semaphore.Semaphore; pending: number }>();
@@ -314,12 +364,30 @@ export const make = Effect.gen(function* () {
       repository.root,
       page.files.map((mark) => mark.path),
     );
+    // A commit that touched the file since its mark clears it; content decides otherwise.
+    const touched = new Map<string, ReadonlySet<string> | null>();
+    if (repository.headSha !== null) {
+      for (const mark of page.files) {
+        if (mark.headSha === null || touched.has(mark.headSha)) continue;
+        touched.set(
+          mark.headSha,
+          mark.headSha === repository.headSha
+            ? new Set()
+            : yield* touchedSince(operation, repository.root, mark.headSha),
+        );
+      }
+    }
+    const rootRelative = (file: string) =>
+      path.relative(repository.root, path.resolve(repository.root, file)).split(path.sep).join("/");
     return {
       headSha: repository.headSha,
       refName: repository.refName,
       files: page.files.map((mark, index) => ({
         path: mark.path,
-        state: judgeMark(mark.blob, current[index]!),
+        state:
+          mark.headSha !== null && touched.get(mark.headSha)?.has(rootRelative(mark.path))
+            ? "dismissed"
+            : judgeMark(mark.blob, current[index]!),
         headSha: mark.headSha,
       })),
       truncated: page.truncated,
