@@ -78,6 +78,11 @@ export const contains = (cwd: string, descendant: string, ancestor: string) =>
 export const addDetachedWorktree = (repo: string, path: string, commit: string) =>
   git(repo, ["worktree", "add", "-q", "--detach", path, commit]);
 
+/** Removes the worktree at `path` and its registration, even when its folder is gone; every other
+ * worktree of the repository, stale or not, stays registered. */
+export const removeWorktree = (repo: string, path: string) =>
+  git(repo, ["worktree", "remove", "--force", path]);
+
 /** Recreates a removed worktree on `branch`, local or pushed; on `freshBranch` from `base` once
  * `base` contains the branch's changes. Returns the branch the worktree is on. */
 export const recreateWorktree = Effect.fn("HoustonTaskGit.recreateWorktree")(function* (input: {
@@ -87,8 +92,9 @@ export const recreateWorktree = Effect.fn("HoustonTaskGit.recreateWorktree")(fun
   readonly base: string;
   readonly freshBranch: string;
 }) {
-  // A worktree whose folder was deleted is still registered until pruned.
-  yield* git(input.repo, ["worktree", "prune"]);
+  // A worktree whose folder was deleted is still registered; drop that registration only. When the
+  // path is not registered there is nothing to drop, and `worktree add` reports any real problem.
+  yield* removeWorktree(input.repo, input.path).pipe(Effect.ignore);
   const local = yield* resolveCommit(input.repo, `refs/heads/${input.branch}`);
   const pushed =
     local === null ? yield* resolveCommit(input.repo, `refs/remotes/origin/${input.branch}`) : null;

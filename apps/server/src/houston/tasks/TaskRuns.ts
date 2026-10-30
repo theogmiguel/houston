@@ -1019,6 +1019,8 @@ const make = Effect.gen(function* () {
         return { result: reviewed, touched: [review.task_id] };
       }),
     );
+    // A submit after the reviewer's turn ended frees the tree now; otherwise when the turn ends.
+    yield* releaseReviewTree((yield* runById(review.id)) as RunRow);
     const row = yield* taskOf(review.task_id);
     if (input.verdict === "fail" && implementation !== undefined && row.project_id !== null) {
       const settings = yield* settingsOf(operation, row.project_id);
@@ -1424,19 +1426,52 @@ const make = Effect.gen(function* () {
     );
   });
 
+  /** Removes a review's own tree once the review has ended and its thread no longer runs in it;
+   * a review that reused the implementer's clean worktree leaves that worktree alone. */
+  const releaseReviewTree = Effect.fn("HoustonTaskRuns.releaseReviewTree")(function* (
+    review: RunRow,
+  ) {
+    const tree = review.worktree_path;
+    if (review.kind !== "review" || OPEN_RUN_STATES.has(review.state)) return;
+    if (tree === null || !tree.endsWith(`-review-${review.attempt}`)) return;
+    if (review.thread_id !== null) {
+      const projection = yield* orchestrator
+        .getThreadProjection(review.thread_id as ThreadId)
+        .pipe(Effect.option);
+      const latest = Option.isSome(projection) ? projection.value.runs.at(-1) : undefined;
+      if (latest !== undefined && LIVE_THREAD_RUN.has(latest.status)) return;
+    }
+    const row = yield* taskOf(review.task_id);
+    if (row.project_id === null) return;
+    const root = yield* workspaceRoot("houston.tasks.review", row.project_id).pipe(Effect.option);
+    if (Option.isNone(root)) return;
+    yield* TaskGit.removeWorktree(root.value, tree).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Houston could not remove a review tree", { tree, cause: error.message }),
+      ),
+    );
+  });
+
+  const releaseEndedReviews = (threadId: string) =>
+    runsOfThread(threadId).pipe(
+      Effect.flatMap((rows) => Effect.forEach(rows, releaseReviewTree, { discard: true })),
+    );
+
   const loseThread = Effect.fn("HoustonTaskRuns.loseThread")(function* (
     threadId: string,
     reason: string,
   ) {
     yield* settlePlanning(threadId, "cancelled");
     const open = (yield* runsOfThread(threadId)).filter((row) => OPEN_RUN_STATES.has(row.state));
-    if (open.length === 0) return;
-    yield* store.write(
-      Effect.gen(function* () {
-        for (const row of open) yield* setRunState(row.id, "interrupted", reason);
-        return { result: undefined, touched: open.map((row) => row.task_id) };
-      }),
-    );
+    if (open.length > 0) {
+      yield* store.write(
+        Effect.gen(function* () {
+          for (const row of open) yield* setRunState(row.id, "interrupted", reason);
+          return { result: undefined, touched: open.map((row) => row.task_id) };
+        }),
+      );
+    }
+    yield* releaseEndedReviews(threadId);
   });
 
   const recordWorkspace = (threadId: string, worktreePath: string | null, branch: string | null) =>
@@ -1536,7 +1571,9 @@ const make = Effect.gen(function* () {
     switch (event.type) {
       case "run.created":
       case "run.updated":
-        return followRun(event.threadId, event.payload);
+        return followRun(event.threadId, event.payload).pipe(
+          Effect.andThen(releaseEndedReviews(event.threadId)),
+        );
       case "thread.deleted":
         return loseThread(event.threadId, "thread deleted");
       case "thread.archived":

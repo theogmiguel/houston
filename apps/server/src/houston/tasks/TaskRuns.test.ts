@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - inspects a real temporary git repository.
 // Task runs as threads: Start, run state, handback, stop, resume, retry, merged pull requests,
 // planning and review, over the real orchestrator and launcher (taskRuns.testkit.ts).
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -600,6 +600,84 @@ describe("resume recovers a removed worktree", () => {
       TIMEOUT,
     );
   }
+});
+
+const registers = (repo: string, path: string) => {
+  const wanted = path.replaceAll("\\", "/").toLowerCase();
+  return worktreeList(repo).some(
+    (line) => line.slice("worktree ".length).replaceAll("\\", "/").toLowerCase() === wanted,
+  );
+};
+
+describe("task worktree cleanup touches only the task's own trees", () => {
+  it.effect(
+    "resume drops the task's stale registration and keeps an unrelated one",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("scoped-prune");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const task = yield* context.readyTask("Scoped prune");
+            const first = yield* startAndPrepare(context, task);
+            yield* waitForRunState(context, task, "waiting_for_input");
+            const worktree = first.worktreePath ?? "";
+            yield* context.runs.runControl({ runId: first.id, action: "stop" });
+            const unrelated = join(harness.root, "unrelated");
+            git(harness.repo, "worktree", "add", "-q", "-b", "unrelated", unrelated);
+            // Both folders deleted by hand: git still registers both worktrees.
+            rmSync(unrelated, { recursive: true, force: true });
+            rmSync(worktree, { recursive: true, force: true });
+            assert.isTrue(registers(harness.repo, unrelated));
+
+            const resumed = yield* context.runs.runControl({ runId: first.id, action: "resume" });
+            assert.strictEqual(resumed.worktreePath, worktree);
+            assert.isTrue(existsSync(join(worktree, "README.md")));
+            assert.isTrue(
+              registers(harness.repo, unrelated),
+              "the unrelated registration survives",
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "a separate review tree is removed when its review ends",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("review-tree");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            yield* context.setSettings({ reviewer: selection("codex"), reviewMode: "manual" });
+            const { task, run } = yield* handedBack(context, "Review tree");
+            const worktree = run.worktreePath ?? "";
+            // An uncommitted change makes the review read a tree of its own at the head.
+            writeFileSync(join(worktree, "uncommitted.ts"), "draft\n");
+            yield* context.runs.handback({ id: task.key, summary: "ready" });
+            const started = yield* context.runs.reviewStart({ runId: run.id });
+            const review = newestRun(started, "review");
+            const reviewTree = review.worktreePath ?? "";
+            assert.notStrictEqual(reviewTree, worktree);
+            assert.isTrue(existsSync(reviewTree));
+            yield* context.settle;
+            yield* context.runs.reviewSubmit(yield* threadOf(review), {
+              runId: review.id,
+              verdict: "pass",
+              findings: [],
+            });
+            yield* context.settle;
+            assert.isFalse(existsSync(reviewTree), "the review tree is gone");
+            assert.isFalse(registers(harness.repo, reviewTree));
+            assert.isTrue(
+              existsSync(join(worktree, "uncommitted.ts")),
+              "the implementer's tree stays",
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
 });
 
 describe("a lost thread interrupts the run and a live one restores it", () => {
