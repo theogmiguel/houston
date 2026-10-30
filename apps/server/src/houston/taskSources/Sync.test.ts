@@ -2,12 +2,14 @@
 import { assert, describe, it } from "@effect/vitest";
 import type { ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
+import { HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import { HoustonTaskSourcePoller } from "./Poller.ts";
 import type { RemoteRecord } from "./rules.ts";
 import { HoustonTaskSourceService } from "./SourceService.ts";
@@ -796,6 +798,87 @@ describe("a resolution applies at the expected revisions only", () => {
         yield* approve;
         yield* resolve("description", { custom: "Agreed body" });
         assert.isNull(yield* approved());
+      }),
+    ),
+  );
+});
+
+describe("a local resolution enqueues its write-back atomically", () => {
+  it.effect("a local resolution enqueues its write-back atomically", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        github.respond = (_url, request) =>
+          request.method === "POST"
+            ? new Response(JSON.stringify({ id: 1 }), { status: 201 })
+            : new Response("[]", { status: 200 });
+        const projectId = yield* createProject("local-writeback");
+        yield* enableGithub(projectId);
+        const sync = yield* HoustonTaskSourceSync;
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        const sql = yield* SqlClient.SqlClient;
+        const drain = (yield* HoustonTaskSourceOutboxDrain).drain;
+        const outbox = () =>
+          sql<{
+            readonly action: string;
+            readonly revision: number;
+            readonly payload_json: string;
+            readonly receipt_json: string | null;
+          }>`SELECT action, revision, payload_json, receipt_json FROM houston_task_source_outbox ORDER BY id`;
+
+        // An imported delivery the user moved on; its status write-back is sent.
+        const imported = yield* sync.apply(projectId, "github_issues", record({}, milestone()));
+        const id = imported.taskId as number;
+        const task = (yield* tasks.get({ id: String(id) })).task;
+        const moved = yield* tasks.save({
+          id: task.key,
+          expectedRevision: task.revision,
+          patch: { status: "in_progress" },
+        });
+        yield* drain;
+        const sent = yield* outbox();
+        assert.deepEqual(
+          sent.map((row) => [row.action, row.revision, row.receipt_json === null]),
+          [["status", moved.revision, false]],
+        );
+
+        // The tracker closes the issue meanwhile: a status conflict.
+        yield* sync.apply(projectId, "github_issues", record({ status: "done" }, milestone()));
+        const link = yield* linkOf(id);
+        assert.deepEqual(
+          link.snapshot.conflicts.map((conflict) => conflict.field),
+          ["status"],
+        );
+        const resolveLocal = sync.resolve({
+          taskId: moved.key,
+          expectedTaskRevision: moved.revision,
+          provider: "github_issues",
+          externalId: link.externalId,
+          field: "status",
+          expectedLinkRevision: link.snapshot.revision,
+          resolution: "local",
+        });
+
+        // A failure after the enqueue, while the link is written, rolls both back.
+        yield* sql`
+          CREATE TEMP TRIGGER fail_link_write AFTER UPDATE ON houston_task_source_links
+          BEGIN SELECT RAISE(ABORT, 'injected failure'); END
+        `;
+        const failed = yield* Effect.exit(resolveLocal);
+        assert.isTrue(Exit.isFailure(failed));
+        assert.deepEqual(yield* outbox(), sent);
+        assert.deepEqual(
+          (yield* linkOf(id)).snapshot.conflicts.map((conflict) => conflict.field),
+          ["status"],
+        );
+
+        // Without the failure the resolution and the status write-back of the live value commit.
+        yield* sql`DROP TRIGGER fail_link_write`;
+        yield* resolveLocal;
+        assert.deepEqual((yield* linkOf(id)).snapshot.conflicts, []);
+        const [row] = yield* outbox();
+        assert.strictEqual(row?.action, "status");
+        assert.isNull(row?.receipt_json);
+        assert.deepInclude(JSON.parse(row?.payload_json ?? "{}"), { status: "in_progress" });
       }),
     ),
   );

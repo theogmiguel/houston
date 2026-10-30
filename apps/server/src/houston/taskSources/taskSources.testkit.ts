@@ -39,9 +39,12 @@ import * as HoustonTaskSourceStore from "./SourceStore.ts";
 export const GITHUB_SETTINGS_TOKEN = "ghp_settings_token_for_tests";
 
 export interface GithubFakeRequest {
+  readonly method: string;
   readonly url: string;
   readonly authorization: string | undefined;
   readonly ifNoneMatch: string | undefined;
+  /** The JSON body of a write. */
+  readonly body: unknown;
 }
 
 /** Answers requests to https://api.github.com in process; `"stall"` never answers. */
@@ -82,9 +85,14 @@ export const layerGitHubFake = (fake: GithubFake) => {
     HttpClient.HttpClient,
     HttpClient.make((request) => {
       const entry: GithubFakeRequest = {
+        method: request.method,
         url: request.url,
         authorization: request.headers.authorization,
         ifNoneMatch: request.headers["if-none-match"],
+        body:
+          request.body._tag === "Uint8Array"
+            ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
+            : undefined,
       };
       fake.requests.push(entry);
       const answer = fake.respond(new URL(request.url), entry);
