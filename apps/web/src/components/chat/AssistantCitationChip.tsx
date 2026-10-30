@@ -4,7 +4,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRightIcon, PencilIcon, QuoteIcon } from "lucide-react";
+import { ArrowUpRightIcon, PencilIcon, QuoteIcon, XIcon } from "lucide-react";
 import {
   useEffect,
   useEffectEvent,
@@ -35,10 +35,12 @@ import { observeResize } from "~/lib/observeResize";
 export function AssistantCitationChip({
   citation,
   composer = false,
+  onRemove,
   commentEditor,
 }: {
   citation: AssistantCitation;
   composer?: boolean;
+  onRemove?: () => void;
   commentEditor?: {
     open: boolean;
     sourceAnchor?: AssistantCitationSourceAnchor | undefined;
@@ -243,6 +245,15 @@ export function AssistantCitationChip({
             </PopoverPopup>
           ) : null}
         </Popover>
+      ) : null}
+      {onRemove ? (
+        <ContextChipAction
+          aria-label="Remove citation"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={onRemove}
+        >
+          <XIcon aria-hidden="true" />
+        </ContextChipAction>
       ) : null}
     </ContextChip>
   );
