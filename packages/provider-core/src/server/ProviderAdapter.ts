@@ -52,6 +52,10 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
+  /** Houston: the one T3 tool a read-only task planner or reviewer may call. */
+  houstonTaskSubmitTool: Schema.optional(
+    Schema.Literals(["houston_task_plan_submit", "houston_task_review_submit"]),
+  ),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 

@@ -321,7 +321,7 @@ type TurnTerminal =
 type Rule = Permission.Rule;
 type RulesPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode" | "sandboxPolicy"
+  "runtimeMode" | "interactionMode" | "sandboxPolicy" | "houstonTaskSubmitTool"
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
@@ -389,7 +389,19 @@ export const sessionRules = (
   mcpServerName: string | null,
 ): ReadonlyArray<Rule> =>
   isReadOnly(policy)
-    ? READ_ONLY_RULES
+    ? [
+        ...READ_ONLY_RULES,
+        // Houston: a task planner or reviewer may call its own submit, and no other T3 tool.
+        ...(policy.houstonTaskSubmitTool === undefined || mcpServerName === null
+          ? []
+          : [
+              {
+                action: `${mcpServerName}_${policy.houstonTaskSubmitTool}`,
+                resource: "*",
+                effect: "allow" as const,
+              },
+            ]),
+      ]
     : [
         ...(policy.runtimeMode === "full-access"
           ? [rule("*", "allow")]

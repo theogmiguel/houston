@@ -24,7 +24,7 @@ describe("settingInheritanceLayers", () => {
       ["Project", "Inherits", false],
       ["Laptop", "Inherits", false],
       ["houston.json", "New worktree", true],
-      ["Default", "Current checkout", false],
+      ["Default", "Local checkout", false],
     ]);
     const settings = { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: "local" as const };
     const fromEnvironment = settingInheritanceLayers(
@@ -39,9 +39,9 @@ describe("settingInheritanceLayers", () => {
     );
     expect(fromEnvironment.map((layer) => [layer.value, layer.effective])).toEqual([
       ["Inherits", false],
-      ["Current checkout", true],
+      ["Local checkout", true],
       ["Inherits", false],
-      ["Current checkout", false],
+      ["Local checkout", false],
     ]);
   });
 });

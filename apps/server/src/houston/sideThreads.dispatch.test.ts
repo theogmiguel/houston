@@ -23,6 +23,7 @@ import * as Layer from "effect/Layer";
 
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
+import { layerNoReadOnlyThreads } from "./sideThreads.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import {
   CLAUDE,
@@ -1055,6 +1056,7 @@ describe("a side thread's limits", () => {
                   Layer.provide(RuntimePolicy.layer),
                   Layer.provide(harness.registry),
                   Layer.provide(McpProviderSessions.layer),
+                  Layer.provide(layerNoReadOnlyThreads),
                 ),
               ),
             );

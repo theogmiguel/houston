@@ -127,7 +127,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-background shadow-xs shadow-foreground/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-foreground/90 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
+              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-(--pane) shadow-xs shadow-foreground/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-foreground/90 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
               "size-8 sm:size-7",
             )}
             {...pointerFocusProps}
@@ -302,7 +302,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       className={cn(
         "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-7 sm:w-7 [&_svg]:pointer-events-none",
         hasSendableContent
-          ? "bg-foreground text-background enabled:shadow-foreground/24 hover:bg-foreground/90 disabled:bg-foreground/12 disabled:text-muted-foreground"
+          ? "bg-foreground text-(--pane) enabled:shadow-foreground/24 hover:bg-foreground/90 disabled:bg-foreground/12 disabled:text-muted-foreground"
           : "bg-(--sel) text-muted-foreground disabled:bg-foreground/12 disabled:text-muted-foreground",
       )}
       {...pointerFocusProps}

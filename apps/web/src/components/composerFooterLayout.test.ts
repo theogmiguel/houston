@@ -1,45 +1,27 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveContextStripLabelsCompact } from "./BranchToolbar.logic";
 import {
-  resolveRestingComposerControlsLayout,
-  resolveRestingComposerControlsNaturalWidth,
-} from "./composerFooterLayout";
+  resolveContextStripLabelsCompact,
+  resolveContextStripLabelsNarrow,
+} from "./BranchToolbar.logic";
+import { resolveRestingComposerControlsLayout } from "./composerFooterLayout";
 
-describe("context strip labels and resting composer controls", () => {
-  const stripWidth = 724;
-  const labelWidth = 327;
-  const chromeWidth = 125;
-  const measurement = {
-    gap: 4,
-    naturalFixedWidth: 96.3828125 + 5 + 4,
-    minimumFixedWidth: 52 + 5 + 4,
-    blockWidths: [130.6953125, 119.671875],
-    overflowWidth: 28,
-  };
-  const naturalWidth = resolveRestingComposerControlsNaturalWidth(measurement);
-
-  function hostWidth(compact: boolean): number {
-    return stripWidth - chromeWidth - (compact ? 0 : labelWidth);
-  }
-
-  it("keeps the labels compact when the full controls only fit beside compact labels", () => {
-    const layout = resolveRestingComposerControlsLayout({
-      ...measurement,
-      hostWidth: hostWidth(true),
-    });
-    expect(layout).toEqual({ hiddenCount: 0, visible: true });
-
-    const compact = resolveContextStripLabelsCompact({
-      compact: true,
-      neededWidth: chromeWidth + labelWidth + naturalWidth,
-      availableWidth: stripWidth,
-    });
-    expect(compact).toBe(true);
-
+describe("context strip labels", () => {
+  it("keeps labels above the icon-only floor and collapses below it", () => {
     expect(
-      resolveRestingComposerControlsLayout({ ...measurement, hostWidth: hostWidth(compact) }),
-    ).toEqual(layout);
+      resolveContextStripLabelsCompact({ compact: false, neededWidth: 1200, availableWidth: 724 }),
+    ).toBe(false);
+    expect(
+      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 220 }),
+    ).toBe(false);
+    expect(
+      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 219 }),
+    ).toBe(true);
+  });
+
+  it("uses the short labels below 520px", () => {
+    expect(resolveContextStripLabelsNarrow(520)).toBe(false);
+    expect(resolveContextStripLabelsNarrow(519)).toBe(true);
   });
 });
 

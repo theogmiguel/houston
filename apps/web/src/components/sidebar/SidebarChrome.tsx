@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ContrastIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -9,8 +9,6 @@ import { cn } from "../../lib/utils";
 import { HoustonWordmark } from "../HoustonWordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
-  SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
@@ -42,10 +40,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const backdropVariant = resolveSidebarStageBackdropVariant(
-    stageLabel,
-    environmentIdentificationMode,
-  );
   const pillLabel =
     environmentIdentificationMode === "pill"
       ? resolveEnvironmentIdentificationPillLabel(stageLabel)
@@ -59,9 +53,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         isElectron && "drag-region",
       )}
     >
-      {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
-      <div className="relative z-10 flex h-8 min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        <SidebarBrand onBackdrop={backdropVariant !== null} />
+      <div className="relative z-10 flex h-9 min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        <SidebarBrand />
         {pillLabel ? (
           <div className="ml-1 flex h-7 shrink-0 items-center">
             <Badge data-environment-identification="pill" size="sm" variant="secondary">
@@ -96,32 +89,30 @@ export function SidebarBrandWidthProbe({
       ref={observeWidth}
     >
       <div className="ml-[calc(var(--workspace-controls-left)-0.75rem)] flex">
-        <SidebarBrandMark onBackdrop={false} />
+        <SidebarBrandMark />
       </div>
     </div>
   );
 }
 
-function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+function SidebarBrand() {
   return (
     <Link
       aria-label="Go to threads"
-      className={cn(
-        "relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset",
-        onBackdrop ? "text-white" : "text-foreground",
-      )}
+      className="relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset"
       to="/"
     >
-      <SidebarBrandMark onBackdrop={onBackdrop} />
+      <SidebarBrandMark />
     </Link>
   );
 }
 
-function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
+function SidebarBrandMark() {
   return (
     <HoustonWordmark
       aria-label="Houston"
-      className={cn("min-w-0 truncate text-sm", onBackdrop ? "text-white/70" : "text-foreground")}
+      className="min-w-0 gap-2 truncate text-sm text-foreground"
+      markClassName="size-[18px]"
     />
   );
 }
@@ -170,6 +161,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     }
   };
   const themeLabel = railThemeLabel(appearanceMode);
+  const ThemeIcon =
+    appearanceMode === "dark" ? MoonIcon : appearanceMode === "light" ? SunIcon : MonitorIcon;
   const cycleTheme = () => {
     setAppearanceMode(nextRailThemeMode(appearanceMode));
   };
@@ -199,7 +192,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleSettingsClick}
           />
           <SidebarUtilityItem
-            icon={<ContrastIcon />}
+            icon={<ThemeIcon />}
             label={`Theme: ${themeLabel}`}
             onClick={cycleTheme}
           />
