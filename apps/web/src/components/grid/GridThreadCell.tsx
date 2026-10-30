@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import ChatView from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
+import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useQuietThreadShell } from "../../state/entities";
@@ -13,6 +14,7 @@ import type { SplitSide, ThreadNode } from "../../grid/tree";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { cn } from "../../lib/utils";
+import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { ThreadOpenProvider } from "./threadOpenContext";
 
 export function GridThreadCell({
@@ -48,6 +50,7 @@ export function GridThreadCell({
     draftId === undefined ? null : store.getPromotedDraftRedirect(draftId),
   );
   const setDraftId = useGridStore((store) => store.setDraftId);
+  const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
   const { archiveThread } = useThreadActions();
 
   // The draft is promoted by the composer store, not by this cell; this keeps the grid
@@ -60,8 +63,26 @@ export function GridThreadCell({
   }, [draftId, draftSession, grid.id, node.threadId, promoted, setDraftId]);
 
   const status = shell === null ? null : resolveThreadStatusPill({ thread: shell });
-  const title = shell?.title ?? (draftSession === null ? "Untitled thread" : "New thread");
+  const title = draftId !== undefined ? "New thread" : (shell?.title ?? "Untitled thread");
   const showDraft = draftId !== undefined && draftSession !== null;
+  const discardDraft = () => {
+    if (draftId !== undefined) clearDraftThread(draftId);
+    onClose();
+  };
+  const discardDraftStable = useStableCallback(discardDraft);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window Escape listener discards this draft pane before the composer consumes the key
+  useEffect(() => {
+    if (draftId === undefined) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      discardDraftStable();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [draftId, discardDraftStable]);
 
   return (
     <section
@@ -105,15 +126,22 @@ export function GridThreadCell({
             />
           </>
         ) : null}
+        {draftId === undefined ? (
+          <Button
+            variant="ghost-muted"
+            size="icon-micro"
+            aria-label="Archive thread"
+            onClick={() => void archiveThread(threadRef, {})}
+          >
+            <ArchiveIcon />
+          </Button>
+        ) : null}
         <Button
           variant="ghost-muted"
           size="icon-micro"
-          aria-label="Archive thread"
-          onClick={() => void archiveThread(threadRef, {})}
+          aria-label="Close cell"
+          onClick={discardDraft}
         >
-          <ArchiveIcon />
-        </Button>
-        <Button variant="ghost-muted" size="icon-micro" aria-label="Close cell" onClick={onClose}>
           <XIcon />
         </Button>
       </header>
