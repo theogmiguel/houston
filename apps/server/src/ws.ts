@@ -240,8 +240,6 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
-import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
@@ -703,7 +701,7 @@ function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) 
  */
 function readClientOwners(
   request: HttpServerRequest.HttpServerRequest,
-): ReadonlyArray<TelemetryOwner> {
+): ReadonlyArray<AnalyticsService.TelemetryOwner> {
   const url = HttpServerRequest.toURL(request);
   if (Option.isNone(url)) {
     return [];
@@ -1253,23 +1251,11 @@ export const layerWsRpc = (
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
       const originProps = clientAnalyticsProps;
-      const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
-        const usage = commandFeatureUsage(command);
-        return Effect.all(
-          [
-            command.type === "message.dispatch"
-              ? analytics.record("client.turn.requested", originProps)
-              : Effect.void,
-            usage === undefined
-              ? Effect.void
-              : analytics.record("feature.used", {
-                  ...usage,
-                  ...(originProps.surface === undefined ? {} : { surface: originProps.surface }),
-                }),
-          ],
-          { discard: true },
+      const recordClientCommandAnalytics = (command: OrchestrationV2Command) =>
+        (command.type === "message.dispatch"
+          ? analytics.record("client.turn.requested", originProps)
+          : Effect.void
         ).pipe(Effect.ignore);
-      };
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -3355,21 +3341,7 @@ export const layer = Layer.unwrap(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
-                RpcAuthorization.layer(session.scopes, (method, payload) => {
-                  // Anonymous product signal: the feature and its enum variant,
-                  // credited to the connecting client's surface only.
-                  const usage = featureUsage(method, payload);
-                  return usage === undefined
-                    ? Effect.void
-                    : analytics
-                        .record("feature.used", {
-                          ...usage,
-                          ...(clientAnalyticsProps.surface === undefined
-                            ? {}
-                            : { surface: clientAnalyticsProps.surface }),
-                        })
-                        .pipe(Effect.ignore);
-                }),
+                RpcAuthorization.layer(session.scopes),
                 rpcInstrumentationLayer,
               ),
             ),
