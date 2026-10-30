@@ -18,6 +18,7 @@ import {
 import type {
   HoustonTask,
   HoustonTaskDetail,
+  HoustonTaskRun,
   HoustonTaskStreamEvent,
 } from "@t3tools/contracts/houston/tasks";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
@@ -113,6 +114,7 @@ import * as WorkspaceFileSystem from "../../workspace/WorkspaceFileSystem.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as HoustonReviewState from "../reviewState.ts";
+import * as HoustonTaskRuns from "./TaskRuns.ts";
 import * as HoustonTaskService from "./TaskService.ts";
 import { createProject, layerTasks, type TasksTestOptions } from "./tasks.testkit.ts";
 import { writeV1Database } from "./v1Fixture.ts";
@@ -312,8 +314,52 @@ const failureOf = (value: unknown) => {
   };
 };
 
+// Runs launch threads, which TaskRuns.test.ts proves; here a double answers so the scope table is
+// what the handlers' wiring meets.
+const DOUBLE_RUN: HoustonTaskRun = {
+  id: 1,
+  taskId: 2,
+  attempt: 1,
+  kind: "implementation",
+  state: "running",
+  provider: "claudeAgent",
+  reviewer: null,
+  threadId: null,
+  runId: null,
+  worktreePath: null,
+  branch: null,
+  baseCommit: null,
+  initialRevision: 1,
+  summary: null,
+  reason: null,
+  startedAt: "2026-10-30T00:00:00.000Z",
+  endedAt: null,
+  prUrl: null,
+  review: null,
+};
+
+const layerRunsDouble = Layer.effect(
+  HoustonTaskRuns.HoustonTaskRuns,
+  Effect.gen(function* () {
+    const tasks = yield* HoustonTaskService.HoustonTaskService;
+    const detail = (input: { readonly id?: string }) => tasks.get({ id: input.id ?? "HOU-2" });
+    return HoustonTaskRuns.HoustonTaskRuns.of({
+      start: () => Effect.succeed({ run: DOUBLE_RUN }),
+      runControl: () => Effect.succeed(DOUBLE_RUN),
+      handback: () => Effect.succeed(DOUBLE_RUN),
+      planStart: detail,
+      planAnswer: detail,
+      planApprove: detail,
+      reviewStart: () => detail({}),
+    } as never);
+  }),
+);
+
 const layerServer = (options: TasksTestOptions) =>
-  layerUnusedRpcServices.pipe(Layer.provideMerge(layerTasks(options)));
+  layerUnusedRpcServices.pipe(
+    Layer.provideMerge(layerRunsDouble),
+    Layer.provideMerge(layerTasks(options)),
+  );
 
 type ServerServices = Layer.Success<ReturnType<typeof layerServer>> | Scope.Scope;
 
@@ -589,6 +635,45 @@ describe("each method requires its declared scope", () => {
       method: WS_METHODS.houstonTasksSubscribe,
       scope: AuthOrchestrationReadScope,
       payload: () => ({ scope: "all" }),
+    },
+    {
+      method: WS_METHODS.houstonTasksStart,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ id: "HOU-2", overrideReadiness: true }),
+    },
+    {
+      method: WS_METHODS.houstonTasksRunControl,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ runId: 1, action: "stop" }),
+    },
+    {
+      method: WS_METHODS.houstonTasksHandback,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ id: "HOU-2", summary: "scoped handback" }),
+    },
+    {
+      method: WS_METHODS.houstonTasksPlanStart,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({
+        id: "HOU-2",
+        expectedRevision: 1,
+        modelSelection: { instanceId: "codex", model: "gpt-5.1-codex" },
+      }),
+    },
+    {
+      method: WS_METHODS.houstonTasksPlanAnswer,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ id: "HOU-2", expectedRevision: 1, question: "q", answer: "a" }),
+    },
+    {
+      method: WS_METHODS.houstonTasksPlanApprove,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ id: "HOU-2", expectedRevision: 1, planRevision: 1 }),
+    },
+    {
+      method: WS_METHODS.houstonTasksReviewStart,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ runId: 1 }),
     },
   ];
 
