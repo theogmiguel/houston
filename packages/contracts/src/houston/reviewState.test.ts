@@ -45,8 +45,9 @@ describe("set input bounds", () => {
 
 describe("map input bounds", () => {
   it("accepts 200 anchors and refuses 201", () => {
-    expect(decodeMap({ cwd: "/repo", anchors: Array(200).fill(anchor) })._tag).toBe("Success");
-    expect(decodeMap({ cwd: "/repo", anchors: Array(201).fill(anchor) })._tag).toBe("Failure");
+    const anchors = (count: number) => Array.from({ length: count }, () => ({ ...anchor }));
+    expect(decodeMap({ cwd: "/repo", anchors: anchors(200) })._tag).toBe("Success");
+    expect(decodeMap({ cwd: "/repo", anchors: anchors(201) })._tag).toBe("Failure");
   });
 
   it("refuses an anchor whose end is before its start", () => {
@@ -59,9 +60,9 @@ describe("map input bounds", () => {
 describe("review comment records with and without an anchor", () => {
   const record = {
     version: 1,
-    kind: "review-comment",
     contextId: "review-1",
     label: "src/a.ts:10-12",
+    kind: "review-comment",
     sectionId: "branch-range",
     sectionTitle: "Changes",
     filePath: "src/a.ts",

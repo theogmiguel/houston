@@ -6,11 +6,13 @@ import type {
   HoustonReviewFilesViewedResult,
   ReviewLineAnchor,
 } from "@t3tools/contracts/houston/reviewState";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import type * as Scope from "effect/Scope";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
@@ -25,8 +27,8 @@ import { HoustonReviewState, layer as layerHoustonReviewState } from "./reviewSt
 
 type Review = HoustonReviewState["Service"];
 
-/** Delays every `git hash-object` so a slow tick can be overtaken by a later press. */
-const layerSlowHashing = (delay: Duration.Input) =>
+/** Runs `hold` before every `git hash-object`, so a tick can be overtaken by a later press. */
+const layerHeldHashing = (hold: Effect.Effect<void>) =>
   Layer.effect(
     GitVcsDriver.GitVcsDriver,
     Effect.gen(function* () {
@@ -35,7 +37,7 @@ const layerSlowHashing = (delay: Duration.Input) =>
         ...real,
         execute: (input) =>
           input.args.includes("hash-object")
-            ? Effect.sleep(delay).pipe(Effect.andThen(real.execute(input)))
+            ? hold.pipe(Effect.andThen(real.execute(input)))
             : real.execute(input),
       });
     }),
@@ -44,10 +46,10 @@ const layerSlowHashing = (delay: Duration.Input) =>
 const layerReview = (input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
-  readonly slowHashing?: Duration.Input;
+  readonly holdHashing?: Effect.Effect<void>;
 }) => {
   const git =
-    input.slowHashing === undefined ? GitVcsDriver.layer : layerSlowHashing(input.slowHashing);
+    input.holdHashing === undefined ? GitVcsDriver.layer : layerHeldHashing(input.holdHashing);
   return layerHoustonReviewState.pipe(
     Layer.provideMerge(ReviewService.layer),
     Layer.provideMerge(KnownWorkspaces.layer),
@@ -121,7 +123,11 @@ const configure = (cwd: string) =>
     yield* git(cwd, ["config", "commit.gpgsign", "false"]);
   });
 
-const initRepo = (cwd: string, files: Readonly<Record<string, string>>, options = { commit: true }) =>
+const initRepo = (
+  cwd: string,
+  files: Readonly<Record<string, string>>,
+  options = { commit: true },
+) =>
   Effect.gen(function* () {
     yield* git(cwd, ["init", "-q", "-b", "main"]);
     yield* configure(cwd);
@@ -136,8 +142,11 @@ const LINES_20 = text(numbered(20));
 
 /** A fresh repository as the configured workspace root, and the service over it. */
 const withRepo = <A, E>(
-  body: (repo: string, review: Review) => Effect.Effect<A, E, any>,
-  options: { readonly slowHashing?: Duration.Input; readonly repository?: boolean } = {},
+  body: (
+    repo: string,
+    review: Review,
+  ) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof layerReview>> | Scope.Scope>,
+  options: { readonly holdHashing?: Effect.Effect<void> } = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -151,11 +160,11 @@ const withRepo = <A, E>(
         layerReview({
           workspaceRoot: repo,
           baseDir,
-          ...(options.slowHashing === undefined ? {} : { slowHashing: options.slowHashing }),
+          ...(options.holdHashing === undefined ? {} : { holdHashing: options.holdHashing }),
         }),
       ),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)) as Effect.Effect<A, E>;
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 const tick = (review: Review, cwd: string, ...paths: ReadonlyArray<string>) =>
   review.setFilesViewed({ cwd, files: paths.map((path) => ({ path, viewed: true })) });
@@ -257,7 +266,10 @@ describe("a commit dismisses only the files it changes", () => {
         yield* tick(review, repo, "a.ts", "b.ts");
         yield* write(repo, "a.ts", "a2\n");
         yield* commitAll(repo, "change a");
-        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed", "b.ts": "viewed" });
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "dismissed",
+          "b.ts": "viewed",
+        });
       }),
     ),
   );
@@ -325,7 +337,10 @@ describe("a deleted file is dismissed", () => {
         yield* tick(review, repo, "a.ts", "b.ts");
         yield* remove(repo, "a.ts");
         if (commit) yield* commitAll(repo, "delete a");
-        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed", "b.ts": "viewed" });
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "dismissed",
+          "b.ts": "viewed",
+        });
       }),
     ),
   );
@@ -359,7 +374,10 @@ describe("rewritten history is judged by content", () => {
         yield* tick(review, repo, "a.ts", "b.ts");
         yield* write(repo, "b.ts", "b2\n");
         yield* git(repo, ["commit", "-q", "-a", "--amend", "--no-edit"]);
-        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "viewed", "b.ts": "dismissed" });
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "viewed",
+          "b.ts": "dismissed",
+        });
       }),
     ),
   );
@@ -377,7 +395,10 @@ describe("rewritten history is judged by content", () => {
         yield* commitAll(repo, "main changes a");
         yield* git(repo, ["switch", "-q", "feature"]);
         yield* git(repo, ["rebase", "-q", "main"]);
-        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed", "b.ts": "viewed" });
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "dismissed",
+          "b.ts": "viewed",
+        });
       }),
     ),
   );
@@ -402,7 +423,10 @@ describe("rewritten history is judged by content", () => {
 
         yield* git(repo, ["fetch", "-q", "origin"]);
         yield* git(repo, ["reset", "-q", "--hard", "origin/main"]);
-        assert.deepEqual(yield* viewedStates(review, repo), { "a.ts": "dismissed", "b.ts": "viewed" });
+        assert.deepEqual(yield* viewedStates(review, repo), {
+          "a.ts": "dismissed",
+          "b.ts": "viewed",
+        });
       }),
     ),
   );
@@ -509,26 +533,39 @@ describe("an untick deletes the mark", () => {
 });
 
 describe("presses on one scope apply in arrival order", () => {
-  it.live("tick then untick leaves the path absent; untick then tick leaves it viewed", () =>
-    withRepo(
+  it.live("tick then untick leaves the path absent; untick then tick leaves it viewed", () => {
+    // Each pair holds the tick's hashing until the untick has finished. A press waiting its turn
+    // signals nothing, so the bound is how the ordered (passing) case moves on.
+    let untickDone = Deferred.makeUnsafe<void>();
+    const holdHashing = Effect.suspend(() => Deferred.await(untickDone)).pipe(
+      Effect.timeout(Duration.seconds(2)),
+      Effect.ignore,
+    );
+    const untickThenSignal = (review: Review, repo: string, file: string) =>
+      untick(review, repo, file).pipe(
+        Effect.ensuring(Effect.suspend(() => Deferred.succeed(untickDone, undefined))),
+      );
+    return withRepo(
       (repo, review) =>
         Effect.gen(function* () {
           yield* initRepo(repo, { "a.ts": "a1\n", "b.ts": "b1\n" });
-          // The tick hashes slowly; without ordering, the untick would land first.
-          yield* Effect.all([tick(review, repo, "a.ts"), untick(review, repo, "a.ts")], {
+          yield* Effect.all([tick(review, repo, "a.ts"), untickThenSignal(review, repo, "a.ts")], {
             concurrency: "unbounded",
           });
           assert.deepEqual(yield* viewedStates(review, repo), {});
 
+          untickDone = Deferred.makeUnsafe<void>();
+          yield* untickThenSignal(review, repo, "b.ts");
           yield* tick(review, repo, "b.ts");
-          yield* Effect.all([untick(review, repo, "b.ts"), tick(review, repo, "b.ts")], {
+          untickDone = Deferred.makeUnsafe<void>();
+          yield* Effect.all([untickThenSignal(review, repo, "b.ts"), tick(review, repo, "b.ts")], {
             concurrency: "unbounded",
           });
           assert.deepEqual(yield* viewedStates(review, repo), { "b.ts": "viewed" });
         }),
-      { slowHashing: Duration.millis(400) },
-    ),
-  );
+      { holdHashing },
+    );
+  });
 });
 
 describe("a scope reports at most 500 marks", () => {
@@ -536,8 +573,9 @@ describe("a scope reports at most 500 marks", () => {
     withRepo((repo, review) =>
       Effect.gen(function* () {
         yield* initRepo(repo, { "a.ts": "a1\n" });
-        const paths = Array.from({ length: 501 }, (_, index) =>
-          `gone/${String(index).padStart(3, "0")}.ts`,
+        const paths = Array.from(
+          { length: 501 },
+          (_, index) => `gone/${String(index).padStart(3, "0")}.ts`,
         );
         yield* tick(review, repo, ...paths.slice(0, 500));
         const full = yield* review.filesViewed({ cwd: repo });
@@ -699,59 +737,64 @@ describe("an anchor stores the content it was drawn on", () => {
 });
 
 describe("an anchor outside the file is refused with its line count", () => {
-  it.effect("accepts 10-12 of 12 lines and refuses 10-13, end before start and an absent old side", () =>
-    withRepo((repo, review) =>
-      Effect.gen(function* () {
-        yield* initRepo(repo, { "a.ts": text(numbered(12)) });
-        const anchor = (input: {
-          readonly path?: string;
-          readonly side?: "new" | "old";
-          readonly startLine: number;
-          readonly endLine: number;
-        }) =>
-          review.anchorLines({
-            cwd: repo,
-            path: input.path ?? "a.ts",
-            side: input.side ?? "new",
-            startLine: input.startLine,
-            endLine: input.endLine,
-            baseRef: "main",
+  it.effect(
+    "accepts 10-12 of 12 lines and refuses 10-13, end before start and an absent old side",
+    () =>
+      withRepo((repo, review) =>
+        Effect.gen(function* () {
+          yield* initRepo(repo, { "a.ts": text(numbered(12)) });
+          const anchor = (input: {
+            readonly path?: string;
+            readonly side?: "new" | "old";
+            readonly startLine: number;
+            readonly endLine: number;
+          }) =>
+            review.anchorLines({
+              cwd: repo,
+              path: input.path ?? "a.ts",
+              side: input.side ?? "new",
+              startLine: input.startLine,
+              endLine: input.endLine,
+              baseRef: "main",
+            });
+          const accepted = yield* anchor({ startLine: 10, endLine: 12 });
+          assert.equal(accepted.endLine, 12);
+
+          const tooLong = yield* anchor({ startLine: 10, endLine: 13 }).pipe(Effect.flip);
+          assert.deepInclude(tooLong, {
+            _tag: "HoustonReviewAnchorRangeError",
+            path: "a.ts",
+            side: "new",
+            startLine: 10,
+            endLine: 13,
+            lineCount: 12,
           });
-        const accepted = yield* anchor({ startLine: 10, endLine: 12 });
-        assert.equal(accepted.endLine, 12);
 
-        const tooLong = yield* anchor({ startLine: 10, endLine: 13 }).pipe(Effect.flip);
-        assert.deepInclude(tooLong, {
-          _tag: "HoustonReviewAnchorRangeError",
-          path: "a.ts",
-          side: "new",
-          startLine: 10,
-          endLine: 13,
-          lineCount: 12,
-        });
+          const reversed = yield* anchor({ startLine: 12, endLine: 10 }).pipe(Effect.flip);
+          assert.deepInclude(reversed, {
+            _tag: "HoustonReviewAnchorRangeError",
+            startLine: 12,
+            endLine: 10,
+            lineCount: 12,
+          });
 
-        const reversed = yield* anchor({ startLine: 12, endLine: 10 }).pipe(Effect.flip);
-        assert.deepInclude(reversed, {
-          _tag: "HoustonReviewAnchorRangeError",
-          startLine: 12,
-          endLine: 10,
-          lineCount: 12,
-        });
-
-        yield* git(repo, ["switch", "-q", "-c", "feature"]);
-        yield* write(repo, "new.ts", text(numbered(5)));
-        yield* commitAll(repo, "add new.ts");
-        const absent = yield* anchor({ path: "new.ts", side: "old", startLine: 1, endLine: 1 }).pipe(
-          Effect.flip,
-        );
-        assert.deepInclude(absent, {
-          _tag: "HoustonReviewAnchorRangeError",
-          path: "new.ts",
-          side: "old",
-          lineCount: 0,
-        });
-      }),
-    ),
+          yield* git(repo, ["switch", "-q", "-c", "feature"]);
+          yield* write(repo, "new.ts", text(numbered(5)));
+          yield* commitAll(repo, "add new.ts");
+          const absent = yield* anchor({
+            path: "new.ts",
+            side: "old",
+            startLine: 1,
+            endLine: 1,
+          }).pipe(Effect.flip);
+          assert.deepInclude(absent, {
+            _tag: "HoustonReviewAnchorRangeError",
+            path: "new.ts",
+            side: "old",
+            lineCount: 0,
+          });
+        }),
+      ),
   );
 });
 

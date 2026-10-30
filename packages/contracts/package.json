@@ -26,6 +26,10 @@
     "./houston/providerReadiness": {
       "types": "./src/houston/providerReadiness.ts",
       "import": "./src/houston/providerReadiness.ts"
+    },
+    "./houston/reviewState": {
+      "types": "./src/houston/reviewState.ts",
+      "import": "./src/houston/reviewState.ts"
     }
   },
   "scripts": {

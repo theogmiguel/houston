@@ -22,6 +22,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { Headers } from "effect/http";
@@ -233,7 +234,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
 const layerReview = (input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
-  readonly database: Layer.Layer<SqlClient.SqlClient, unknown>;
+  /** A database file that outlives the layer; in memory when absent. */
+  readonly databaseFile?: string;
 }) =>
   HoustonReviewState.layer.pipe(
     Layer.provideMerge(ReviewService.layer),
@@ -256,13 +258,20 @@ const layerReview = (input: {
         ServerSecretStore.layer,
       ),
     ),
-    Layer.provideMerge(input.database),
+    Layer.provideMerge(
+      input.databaseFile === undefined
+        ? Layer.fresh(SqlitePersistence.layerMemory)
+        : Layer.fresh(SqlitePersistence.layerFromPath(input.databaseFile)).pipe(
+            Layer.provide(NodeServices.layer),
+          ),
+    ),
     Layer.provideMerge(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
     Layer.provideMerge(NodeServices.layer),
   );
 
 const failureOf = (value: unknown) => {
-  const exit = (value as { readonly failed?: Exit.Exit<unknown, unknown> }).failed;
+  // A void success arrives as undefined.
+  const exit = (value as { readonly failed?: Exit.Exit<unknown, unknown> } | undefined)?.failed;
   if (exit === undefined || !Exit.isFailure(exit)) return null;
   return Cause.squash(exit.cause) as { readonly _tag?: string; readonly operation?: string };
 };
@@ -353,9 +362,16 @@ const looseObjectCount = (repo: string) =>
     Effect.map((output) => Number(/^count: (\d+)$/m.exec(output)?.[1] ?? "0")),
   );
 
+const layerServer = (input: Parameters<typeof layerReview>[0]) =>
+  layerUnusedRpcServices.pipe(Layer.provideMerge(layerReview(input)));
+
+type ServerServices = Layer.Success<ReturnType<typeof layerServer>> | Scope.Scope;
+
 const withServer = <A, E>(
-  body: (dirs: { readonly repo: string; readonly outside: string }) => Effect.Effect<A, E, any>,
-  database?: (dir: string) => Layer.Layer<SqlClient.SqlClient, unknown>,
+  body: (dirs: {
+    readonly repo: string;
+    readonly outside: string;
+  }) => Effect.Effect<A, E, ServerServices>,
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -363,19 +379,9 @@ const withServer = <A, E>(
     const outside = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-ws-outside-" });
     const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-ws-base-" });
     return yield* body({ repo, outside }).pipe(
-      Effect.provide(
-        layerUnusedRpcServices.pipe(
-          Layer.provideMerge(
-            layerReview({
-              workspaceRoot: repo,
-              baseDir,
-              database: database?.(baseDir) ?? Layer.fresh(SqlitePersistence.layerMemory),
-            }),
-          ),
-        ),
-      ),
+      Effect.provide(layerServer({ workspaceRoot: repo, baseDir })),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)) as Effect.Effect<A, E>;
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 const anchorPayload = (cwd: string) => ({
   cwd,
@@ -476,7 +482,10 @@ describe("every method refuses a cwd outside the workspaces", () => {
         const client = yield* makeWsClient([AuthFilesystemReadScope, AuthSourceControlWriteScope]);
         const calls = [
           [WS_METHODS.houstonReviewFilesViewed, { cwd: outside }],
-          [WS_METHODS.houstonReviewSetFilesViewed, { cwd: outside, files: [{ path: "a.ts", viewed: true }] }],
+          [
+            WS_METHODS.houstonReviewSetFilesViewed,
+            { cwd: outside, files: [{ path: "a.ts", viewed: true }] },
+          ],
           [WS_METHODS.houstonReviewAnchorLines, anchorPayload(outside)],
           [WS_METHODS.houstonReviewMapAnchors, { cwd: outside, anchors: [anchor] }],
         ] as const;
@@ -496,26 +505,23 @@ describe("marks survive a restart", () => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const dataDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-ws-data-" });
-      const database = () =>
-        Layer.fresh(SqlitePersistence.layerFromPath(path.join(dataDir, "state.sqlite"))).pipe(
-          Layer.provide(NodeServices.layer),
-        );
+      const databaseFile = path.join(dataDir, "state.sqlite");
       const repo = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-ws-restart-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-ws-base-" });
-      const run = <A, E>(body: Effect.Effect<A, E, any>) =>
+      // Each run builds and closes its own server layer over the same database file.
+      const run = <A, E>(body: Effect.Effect<A, E, ServerServices>) =>
         body.pipe(
-          Effect.provide(
-            layerUnusedRpcServices.pipe(
-              Layer.provideMerge(layerReview({ workspaceRoot: repo, baseDir, database: database() })),
-            ),
-          ),
+          Effect.provide(layerServer({ workspaceRoot: repo, baseDir, databaseFile })),
           Effect.scoped,
-        ) as Effect.Effect<A, E>;
+        );
 
       yield* run(
         Effect.gen(function* () {
           yield* initRepo(repo);
-          const client = yield* makeWsClient([AuthFilesystemReadScope, AuthSourceControlWriteScope]);
+          const client = yield* makeWsClient([
+            AuthFilesystemReadScope,
+            AuthSourceControlWriteScope,
+          ]);
           const set = yield* client.call(WS_METHODS.houstonReviewSetFilesViewed, {
             cwd: repo,
             files: [{ path: "a.ts", viewed: true }],
@@ -531,8 +537,11 @@ describe("marks survive a restart", () => {
         }),
       );
       assert.deepEqual(
-        (after as { readonly files: ReadonlyArray<{ readonly path: string; readonly state: string }> })
-          .files.map((file) => [file.path, file.state]),
+        (
+          after as {
+            readonly files: ReadonlyArray<{ readonly path: string; readonly state: string }>;
+          }
+        ).files.map((file) => [file.path, file.state]),
         [["a.ts", "viewed"]],
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
