@@ -50,6 +50,7 @@ import {
   type RefObject,
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { XIcon } from "lucide-react";
 
 import {
   clampCollapsedComposerCursor,
@@ -110,7 +111,7 @@ import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
-import { ContextChip } from "./ContextChip";
+import { ContextChip, ContextChipAction } from "./ContextChip";
 import {
   ComposerContextActionsContext,
   ComposerContextReferenceChip,
@@ -415,15 +416,17 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
 
   const removeOnCancel = commentTarget?.removeOnCancel;
   const onRemove = () => {
-    if (!editor.isEditable || !removeOnCancel) return;
+    if (!editor.isEditable) return;
     const pos = nodePos();
     if (pos === null) return;
     const { doc } = editor.state;
     const current = doc.nodeAt(pos);
     if (!current) return;
     const end = pos + current.nodeSize;
-    const from = removeOnCancel.before && doc.textBetween(pos - 1, pos) === " " ? pos - 1 : pos;
-    const to = removeOnCancel.after && doc.textBetween(end, end + 1) === " " ? end + 1 : end;
+    const beforeSpace = doc.textBetween(pos - 1, pos) === " ";
+    const afterSpace = doc.textBetween(end, end + 1) === " ";
+    const from = beforeSpace && !afterSpace ? pos - 1 : pos;
+    const to = afterSpace ? end + 1 : end;
     editor.chain().focus().deleteRange({ from, to }).run();
   };
 
@@ -463,6 +466,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
       <AssistantCitationChip
         citation={citation}
         composer
+        onRemove={onRemove}
         commentEditor={{
           open: commentTarget !== null,
           sourceAnchor: commentTarget?.sourceAnchor,
@@ -510,14 +514,44 @@ const ComposerContextReferenceExtension = Node.create({
   },
 });
 
-function ComposerContextReferenceNodeView({ node }: NodeViewProps) {
+function ComposerContextReferenceNodeView({ node, editor, getPos }: NodeViewProps) {
+  const label = (node.attrs.label as string) ?? "";
+  const remove = () => {
+    if (!editor.isEditable) return;
+    const pos = getPos();
+    if (typeof pos !== "number") return;
+    const { doc } = editor.state;
+    const current = doc.nodeAt(pos);
+    if (!current) return;
+    const end = pos + current.nodeSize;
+    const beforeSpace = doc.textBetween(pos - 1, pos) === " ";
+    const afterSpace = doc.textBetween(end, end + 1) === " ";
+    const from = beforeSpace && !afterSpace ? pos - 1 : pos;
+    const to = afterSpace ? end + 1 : end;
+    editor.chain().focus().deleteRange({ from, to }).run();
+  };
   return (
-    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
-      <ComposerContextReferenceChip
-        kind={(node.attrs.kind as string) ?? ""}
-        contextId={(node.attrs.contextId as string) ?? ""}
-        label={(node.attrs.label as string) ?? ""}
-      />
+    <NodeViewWrapper
+      as="span"
+      className={CHIP_NODE_SELECTION_CLASS_NAME}
+      data-composer-context-chip="true"
+    >
+      <span className="inline-flex h-6 max-w-full items-center gap-0.5 rounded-(--r-ctl) bg-(--field) ps-2 pe-1 text-xs text-secondary-foreground">
+        <ComposerContextReferenceChip
+          kind={(node.attrs.kind as string) ?? ""}
+          contextId={(node.attrs.contextId as string) ?? ""}
+          label={label}
+        />
+        {editor.isEditable ? (
+          <ContextChipAction
+            aria-label={`Remove context: ${label}`}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={remove}
+          >
+            <XIcon aria-hidden="true" />
+          </ContextChipAction>
+        ) : null}
+      </span>
     </NodeViewWrapper>
   );
 }

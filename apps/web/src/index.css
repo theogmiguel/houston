@@ -700,14 +700,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @layer base {
   ::highlight(t3-assistant-citation) {
+    color: var(--foreground);
     background-color: color-mix(
       in oklab,
-      var(--primary) calc(var(--assistant-citation-highlight-opacity) * 100%),
+      var(--accent-muted) calc(var(--assistant-citation-highlight-opacity) * 100%),
       transparent
     );
   }
   ::highlight(t3-assistant-citation-comment) {
-    background-color: color-mix(in oklab, var(--primary) 45%, transparent);
+    color: var(--foreground);
+    background-color: var(--accent-muted);
   }
   :root {
     /* Keep the original Houston artwork palettes as the defaults. Built-in
@@ -2561,6 +2563,35 @@ code {
   text-decoration: none;
   user-select: none;
   pointer-events: none;
+}
+
+/* Composer chips follow the board's removable chip: a 24px field-filled pill with
+   the context kind's icon and a 12px secondary label. */
+.composer-tiptap [data-slot="context-chip"] {
+  height: 24px;
+  max-width: 100%;
+  gap: 4px;
+  border-radius: var(--r-ctl);
+  background: var(--field);
+  padding: 0 6px 0 8px;
+  color: var(--secondary-foreground);
+  font-size: 12px;
+  line-height: normal;
+}
+
+.composer-tiptap [data-slot="context-chip"] > svg:first-child,
+.composer-tiptap [data-assistant-citation-chip] a > svg {
+  color: var(--accent-ink);
+}
+
+/* The context reference node owns the chip surface so its remove button sits inside it. */
+.composer-tiptap [data-composer-context-chip] [data-slot="context-chip"] {
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
 }
 
 /* Selected chips (node selection from arrowing into or clicking a chip). */
