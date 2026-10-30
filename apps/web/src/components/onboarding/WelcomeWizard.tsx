@@ -34,7 +34,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { completeOnboarding } from "../../onboarding/firstRun";
 import {
   groupOnboardingProjects,
@@ -415,20 +414,7 @@ function ConnectionStep({
           {skippedLabels.length === 1 ? "it" : "them"} up later from Settings.
         </p>
       ) : null}
-      <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-          Houston collects anonymous usage data to help us improve it. To read more about how your
-          data is used and how to opt out, see our{" "}
-          <a
-            className="underline underline-offset-2 hover:text-foreground"
-            href={PRIVACY_POLICY_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            privacy policy
-          </a>
-          .
-        </p>
+      <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
         <Button
           className="shrink-0 self-end"
           ref={continueRef}
@@ -543,9 +529,10 @@ function PairingForm({
             <p className="pt-3 text-sm text-muted-foreground">
               Run this on the computer with your code.
             </p>
-            <CommandBlock command="npx houston pair" className="mt-2" />
+            <CommandBlock command="houston pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start Houston first, or run <code className="font-mono">npx houston serve</code>. Add{" "}
+              Start Houston first, or run <code className="font-mono">houston serve</code> (install the CLI from{" "}
+              <a className="underline" href="https://github.com/theogmiguel/houston/releases">GitHub releases</a>). Add{" "}
               <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>

@@ -417,18 +417,17 @@ fn main() {
         }
     };
 
+    let context = tauri::generate_context!();
+    let v2_resource_dir =
+        tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default()).ok();
     let v2_base_dir = v2_server::base_dir(&state_dir);
     let v2_entry = v2_server::resolve_server_entry(
         std::env::var_os("HOUSTON_V2_SERVER_ENTRY").map(std::path::PathBuf::from),
+        v2_resource_dir.as_deref(),
     )
     .unwrap_or_else(|error| {
         eprintln!("houston-tauri: v2 server entry not found: {error}");
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("apps")
-            .join("server")
-            .join("dist")
-            .join("bin.mjs")
+        v2_server::ServerEntry::Node(v2_server::dev_server_entry())
     });
     let v2_node =
         v2_server::resolve_node(std::env::var_os("HOUSTON_NODE").map(std::path::PathBuf::from));
@@ -458,9 +457,7 @@ fn main() {
     #[cfg(feature = "bench")]
     let bench_fired = Arc::new(AtomicBool::new(false));
 
-    let context = tauri::generate_context!();
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
-
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
     #[cfg(windows)]

@@ -9,7 +9,7 @@ import { AsyncResult } from "effect/reactivity";
 import { APP_VERSION } from "~/branding";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
 import { useEnvironments } from "~/state/environments";
-import { npmReleaseAtom } from "~/state/npmRelease";
+import { releaseAtom } from "~/state/releasePublication";
 import { downloadLocalUpdate, installLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { UpdateEverythingDialog } from "../sidebar/UpdateEverythingDialog";
 import {
@@ -39,8 +39,8 @@ export function UpdateTrackSwitchDialog({
   readonly channel: DesktopUpdateChannel;
   readonly onClose: () => void;
 }) {
-  // npm dist-tags match the desktop channel names.
-  const release = useAtomValue(npmReleaseAtom(channel));
+  // Desktop channel names map to stable and nightly GitHub release tracks.
+  const release = useAtomValue(releaseAtom(channel));
   if (AsyncResult.isSuccess(release) && release.value !== null) {
     return <SwitchPlan release={{ channel, ...release.value }} onClose={onClose} />;
   }
@@ -52,7 +52,7 @@ export function UpdateTrackSwitchDialog({
           <AlertDialogTitle>Switch to {label}</AlertDialogTitle>
           <AlertDialogDescription>
             {AsyncResult.isFailure(release) || AsyncResult.isSuccess(release)
-              ? `Could not find the latest ${label} release on npm. Try again later.`
+              ? `Could not find the latest ${label} release on GitHub. Try again later.`
               : "Checking releases…"}
           </AlertDialogDescription>
         </AlertDialogHeader>

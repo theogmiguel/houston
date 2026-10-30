@@ -143,6 +143,26 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: ui
 
+      # The embedded v2 server is built with the Node version its SEA build pins
+      # in package.json engines.node, not the runner's default.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install the server workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build and stage the bundled v2 server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pnpm --filter houston build:exe
+          if ($LASTEXITCODE) { throw "build:exe failed with exit code $LASTEXITCODE" }
+          node scripts/stage-v2-server.mjs
+          if ($LASTEXITCODE) { throw "stage-v2-server.mjs failed with exit code $LASTEXITCODE" }
+
       - name: Compile native application without WSL packaging resources
         shell: pwsh
         run: ./scripts/build-app.ps1 -DeferWslStaging
@@ -162,7 +182,7 @@ jobs:
       - name: Archive native binaries for the installer job
         shell: pwsh
         run: |
-          tar -cf windows-native.tar src-tauri/target/release/houston.exe src-tauri/target/release/houston-core.exe src-tauri/target/release/tr-helper.exe src-tauri/binaries
+          tar -cf windows-native.tar src-tauri/target/release/houston.exe src-tauri/target/release/houston-core.exe src-tauri/target/release/tr-helper.exe src-tauri/binaries src-tauri/v2-server
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           git rev-parse HEAD | Set-Content -NoNewline windows-native-sha.txt
       - uses: actions/upload-artifact@v7
@@ -371,6 +391,15 @@ jobs:
         env:
           HOUSTON_WSL_LINUX_BIN_DIR: ${{ runner.temp }}/wsl-linux
         run: ./scripts/stage-wsl.ps1
+
+      - name: Assert the bundled v2 server was staged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $server = Join-Path (Get-Location) 'src-tauri/v2-server/houston-v2-server.exe'
+          if (-not (Test-Path $server)) {
+            throw "$server missing -- the compile job did not stage the v2 server"
+          }
 
       - name: Bundle the NSIS installer
         shell: pwsh

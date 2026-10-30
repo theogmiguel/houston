@@ -1,6 +1,6 @@
 {
   "bundle": {
-    "resources": ["resources/third-party-licenses.json", "wsl/"],
+    "resources": ["resources/third-party-licenses.json", "wsl/", "v2-server/"],
     "fileAssociations": [
       {
         "ext": ["houston-transfer"],
