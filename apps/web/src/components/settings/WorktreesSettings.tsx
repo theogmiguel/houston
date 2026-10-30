@@ -1,6 +1,6 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 
-import { BranchNamingSettings } from "./BranchNamingSettings";
+import { BranchNamingAdvancedSettings, WorktreeBranchNamingRow } from "./BranchNamingSettings";
 import { WorktreeSubmodulesRow } from "./ProjectDefaultsSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -22,7 +22,8 @@ function StartFromRemoteRow() {
       serverScoped
       settingKeys={["newWorktreesStartFromOrigin"]}
       {...searchableSetting("start-from-origin")}
-      description="Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing."
+      title="Start from remote"
+      description="Branch from the remote base instead of the local one."
       resetAction={
         settings.newWorktreesStartFromOrigin !==
         DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
@@ -43,7 +44,7 @@ function StartFromRemoteRow() {
           onCheckedChange={(checked) =>
             updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
           }
-          aria-label="Start new worktrees from remote by default"
+          aria-label="Start from remote"
         />
       }
     />
@@ -58,11 +59,14 @@ export function WorktreesSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="worktree-creation" title="New worktrees">
         {!isProjectScope && <WorktreesDirectoryRow />}
-        <BranchNamingSettings />
+        <WorktreeBranchNamingRow />
         <StartFromRemoteRow />
         <WorktreeSubmodulesRow />
       </SettingsSection>
       <WorktreeCleanupSection />
+      <SettingsSection id="worktree-advanced" title="Branch naming">
+        <BranchNamingAdvancedSettings />
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }

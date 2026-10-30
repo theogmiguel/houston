@@ -477,21 +477,9 @@ export function SourceControlSettingsPanel() {
         </>
       ) : hasDiscoveryItems ? (
         <>
-          {hasVersionControlSystems ? (
-            <SettingsSection
-              id={searchableSetting("source-control").id}
-              title={`Version Control${environmentSuffix}`}
-              headerAction={scanButton}
-            >
-              {result.versionControlSystems.map((item) => (
-                <DiscoveryItemRow key={`vcs:${item.kind}`} item={item} />
-              ))}
-            </SettingsSection>
-          ) : null}
-
           {result.sourceControlProviders.length > 0 ? (
             <SettingsSection
-              id={hasVersionControlSystems ? undefined : searchableSetting("source-control").id}
+              id={searchableSetting("source-control").id}
               title={hasVersionControlSystems ? "Accounts" : `Accounts${environmentSuffix}`}
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
@@ -513,6 +501,17 @@ export function SourceControlSettingsPanel() {
 
       <ProjectDefaultsSettings category="source-control" />
       <SourceControlWritingSettingsSection />
+      {hasVersionControlSystems ? (
+        <SettingsSection
+          id="source-control-version-control"
+          title={`Version Control${environmentSuffix}`}
+          headerAction={scanButton}
+        >
+          {result.versionControlSystems.map((item) => (
+            <DiscoveryItemRow key={`vcs:${item.kind}`} item={item} />
+          ))}
+        </SettingsSection>
+      ) : null}
     </SettingsPageContainer>
   );
 }

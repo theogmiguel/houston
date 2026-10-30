@@ -1,5 +1,5 @@
 import { SessionPermissions } from "./SessionPermissions";
-import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import {
@@ -13,7 +13,6 @@ import {
   type DesktopServerExposureState,
   type DesktopWslState,
   type EnvironmentId,
-  resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -25,14 +24,12 @@ import * as Cause from "effect/Cause";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import {
   applyWslEnableSelection,
-  isWslSettingsRowVisible,
-  missingTailscaleEndpointDescription,
   resolveLocalVersionStatusLabel,
 } from "./ConnectionsSettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
-import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
+import { EnvironmentIconChangeControl } from "./EnvironmentIconPicker";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
@@ -60,12 +57,10 @@ import {
 } from "../ui/alert-dialog";
 import { Spinner } from "../ui/spinner";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
-import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
   revokeOtherServerClientSessions,
   revokeServerClientSession,
@@ -117,7 +112,7 @@ import {
 import {
   AdvertisedEndpointListRow,
   AuthorizedClientsHeaderAction,
-  NetworkAccessDescription,
+  PairDeviceSection,
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
@@ -261,7 +256,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const primaryServerUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(primaryEnvironmentId),
   );
-  const [isAdvertisedEndpointListExpanded, setIsAdvertisedEndpointListExpanded] = useState(false);
   const defaultAdvertisedEndpointKey = useUiStateStore(
     (state) => state.defaultAdvertisedEndpointKey,
   );
@@ -289,7 +283,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   );
   const desktopWslState = desktopWsl.data;
   const desktopWslError = desktopWslMutationError ?? desktopWsl.error;
-  const isLoadingWslState = desktopWsl.isPending && desktopWsl.data === null;
   const desktopServerExposureState = desktopNetworkAccess.data?.serverExposureState ?? null;
   const desktopAdvertisedEndpoints =
     desktopNetworkAccess.data?.advertisedEndpoints ?? EMPTY_ADVERTISED_ENDPOINTS;
@@ -613,33 +606,21 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     setDefaultAdvertisedEndpointKey(endpointDefaultPreferenceKey(endpoint));
   };
 
-  const renderNetworkAccessToggle = () => (
-    <Switch
-      checked={desktopServerExposureState?.mode === "network-accessible"}
-      disabled={!desktopServerExposureState || isUpdatingDesktopServerExposure}
-      onCheckedChange={(checked) => {
-        setPendingDesktopServerExposureMode(checked ? "network-accessible" : "local-only");
-      }}
-      aria-label="Enable network access"
-    />
-  );
   const renderEndpointRows = () =>
-    isAdvertisedEndpointListExpanded
-      ? visibleDesktopNetworkAdvertisedEndpoints.map((endpoint) => {
-          const endpointKey = endpointDefaultPreferenceKey(endpoint);
-          return (
-            <AdvertisedEndpointListRow
-              key={endpoint.id}
-              endpoint={endpoint}
-              isDefault={endpointKey === defaultDesktopAdvertisedEndpointKey}
-              onSetDefault={handleSetDefaultAdvertisedEndpoint}
-              onSetupTailscaleServe={handleStartTailscaleServeSetup}
-              onDisableTailscaleServe={handleStartTailscaleServeDisable}
-              isUpdatingTailscaleServe={isUpdatingTailscaleServe}
-            />
-          );
-        })
-      : null;
+    visibleDesktopNetworkAdvertisedEndpoints.map((endpoint) => {
+      const endpointKey = endpointDefaultPreferenceKey(endpoint);
+      return (
+        <AdvertisedEndpointListRow
+          key={endpoint.id}
+          endpoint={endpoint}
+          isDefault={endpointKey === defaultDesktopAdvertisedEndpointKey}
+          onSetDefault={handleSetDefaultAdvertisedEndpoint}
+          onSetupTailscaleServe={handleStartTailscaleServeSetup}
+          onDisableTailscaleServe={handleStartTailscaleServeDisable}
+          isUpdatingTailscaleServe={isUpdatingTailscaleServe}
+        />
+      );
+    });
   const applyWslSettingChange = async (apply: () => Promise<DesktopWslState>) => {
     if (
       !desktopBridge ||
@@ -667,11 +648,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       refreshDesktopWslState();
     }
     setIsUpdatingWslBackend(false);
-  };
-
-  const loadWslState = () => {
-    setDesktopWslMutationError(null);
-    refreshDesktopWslState();
   };
 
   const hasWslRegistrationToLose = environments.some((environment) =>
@@ -750,167 +726,13 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     void applyWslSettingChange(() => desktopBridge.setWslOnly(change.nextValue));
   };
 
-  const renderWslRow = () => {
-    if (!desktopWslState) {
-      if (
-        isWslSettingsRowVisible({ state: null, error: desktopWslError }) &&
-        canManageLocalBackend
-      ) {
-        return (
-          <SettingsRow
-            {...searchableSetting("wsl-backend")}
-            description="Couldn't load the WSL backend state."
-            status={<span className="block text-destructive">{desktopWslError}</span>}
-            control={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={loadWslState}
-                disabled={isLoadingWslState}
-              >
-                {isLoadingWslState ? "Retrying…" : "Retry"}
-              </Button>
-            }
-          />
-        );
-      }
-      return null;
-    }
-    if (!isWslSettingsRowVisible({ state: desktopWslState, error: desktopWslError })) {
-      return null;
-    }
-    if (!desktopWslState.available) {
-      return (
-        <SettingsRow
-          {...searchableSetting("wsl-backend")}
-          description="WSL is unavailable, so Windows is running instead. Turn WSL off to clear this preference."
-          status={
-            desktopWslError ? (
-              <span className="block text-destructive">{desktopWslError}</span>
-            ) : null
-          }
-          control={
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isUpdatingWslBackend}
-              onClick={() => handleSelectWslMode(BACKEND_VALUE_WSL_OFF)}
-            >
-              Switch to Windows
-            </Button>
-          }
-        />
-      );
-    }
-    const defaultDistroName =
-      desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
-    const selectValue = !desktopWslState.enabled
-      ? BACKEND_VALUE_WSL_OFF
-      : (desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL);
-    const selectLabel =
-      selectValue === BACKEND_VALUE_WSL_OFF
-        ? "Off"
-        : selectValue === BACKEND_VALUE_DEFAULT_WSL
-          ? "Default distro"
-          : selectValue;
-    return (
-      <>
-        <SettingsRow
-          {...searchableSetting("wsl-backend")}
-          description="Run the selected WSL distro alongside Windows. Projects remain on their current filesystem."
-          status={
-            desktopWslError ? (
-              <span className="block text-destructive">{desktopWslError}</span>
-            ) : desktopWslState.preflightError ? (
-              <span className="block text-destructive">
-                WSL backend couldn't start: {desktopWslState.preflightError}
-              </span>
-            ) : null
-          }
-          control={
-            <Select
-              value={selectValue}
-              onValueChange={(value) => {
-                if (typeof value !== "string") return;
-                handleSelectWslMode(value);
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-56"
-                aria-label="WSL backend"
-                disabled={isUpdatingWslBackend}
-              >
-                <SelectValue>{selectLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value={BACKEND_VALUE_WSL_OFF}>
-                  Off
-                </SelectItem>
-                {desktopWslState.distros.length === 0 ? (
-                  <SelectItem hideIndicator value={BACKEND_VALUE_DEFAULT_WSL}>
-                    Default distro
-                  </SelectItem>
-                ) : (
-                  desktopWslState.distros.map((distro) => (
-                    <SelectItem hideIndicator key={distro.name} value={distro.name}>
-                      {distro.name}
-                      {distro.isDefault ? " (default)" : ""}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        {desktopWslState.enabled ? (
-          <SettingsRow
-            title="WSL only"
-            description="Run only the WSL backend. Houston restarts when this changes."
-            className="bg-muted/20 pl-7 sm:pl-8"
-            control={
-              <Switch
-                checked={desktopWslState.wslOnly}
-                disabled={isUpdatingWslBackend}
-                onCheckedChange={(checked) => handleToggleWslOnly(checked)}
-                aria-label="Run WSL only"
-              />
-            }
-          />
-        ) : null}
-      </>
-    );
-  };
-
-  const renderTailscaleRow = () => (
-    <SettingsRow
-      title={searchableSetting("tailscale-https").title}
-      description={
-        tailscaleHttpsEndpoint
-          ? tailscaleHttpsEndpoint.status === "available"
-            ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : missingTailscaleEndpointDescription(desktopServerExposureState)
-      }
-      control={
-        tailscaleHttpsEndpoint ? (
-          <Switch
-            checked={tailscaleHttpsEndpoint.status === "available"}
-            disabled={isUpdatingTailscaleServe}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
-                return;
-              }
-              handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
-            }}
-            aria-label="Enable Tailscale HTTPS"
-          />
-        ) : null
-      }
-    />
-  );
-  const renderAuthorizedClients = () => (
+  const renderAuthorizedClients = ({
+    showPairingLinks = true,
+    showClientSessions = true,
+  }: {
+    showPairingLinks?: boolean;
+    showClientSessions?: boolean;
+  } = {}) => (
     <>
       {desktopAccessManagementError ? (
         <div className={ITEM_ROW_CLASSNAME}>
@@ -930,75 +752,190 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         onRevokePairingLink={handleRevokeDesktopPairingLink}
         onRevokeClientSession={handleRevokeDesktopClientSession}
         canRevoke={canWriteAccess}
+        showPairingLinks={showPairingLinks}
+        showClientSessions={showClientSessions}
       />
     </>
   );
+  const handleToggleWslBackend = (checked: boolean) => {
+    if (!desktopBridge || !desktopWslState) return;
+    if (!checked) {
+      handleSelectWslMode(BACKEND_VALUE_WSL_OFF);
+      return;
+    }
+    if (desktopWslState.enabled) return;
+    const defaultDistroName =
+      desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
+    handleSelectWslMode(desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL);
+  };
+  const renderEnvironmentIconRow = () =>
+    primaryEnvironmentId !== null ? (
+      <SettingsRow
+        title="Environment icon"
+        description="Shown beside threads from this machine on other devices."
+        control={
+          <EnvironmentIconChangeControl
+            environmentId={primaryEnvironmentId}
+            serverConfig={primaryServerConfig}
+          />
+        }
+      />
+    ) : null;
   const renderNetworkAccessRow = () => (
     <SettingsRow
       title={searchableSetting("network-access").title}
-      description={
-        isLocalBackendNetworkAccessible ? (
-          <NetworkAccessDescription
-            endpoint={defaultDesktopNetworkAdvertisedEndpoint}
-            hiddenEndpointCount={Math.max(visibleDesktopNetworkAdvertisedEndpoints.length - 1, 0)}
-            expanded={isAdvertisedEndpointListExpanded}
-            onToggleExpanded={() => setIsAdvertisedEndpointListExpanded((expanded) => !expanded)}
-            fallback={
-              desktopServerExposureState?.endpointUrl
-                ? `Reachable at ${desktopServerExposureState.endpointUrl}`
-                : desktopServerExposureState?.advertisedHost
-                  ? `Exposed on all interfaces. Pairing links use ${desktopServerExposureState.advertisedHost}.`
-                  : "Exposed on all interfaces."
-            }
-          />
-        ) : desktopServerExposureState ? (
-          "Limited to this machine."
-        ) : (
-          "Loading…"
-        )
-      }
+      description="Off: the server listens on 127.0.0.1 only. On: other devices on your network can pair with it."
       status={
         desktopServerExposureError ? (
           <span className="block text-destructive">{desktopServerExposureError}</span>
         ) : null
       }
-      control={renderNetworkAccessToggle()}
+      control={
+        <Switch
+          checked={
+            desktopBridge
+              ? desktopServerExposureState?.mode === "network-accessible"
+              : currentAuthPolicy === "remote-reachable"
+          }
+          disabled={
+            !desktopBridge || !desktopServerExposureState || isUpdatingDesktopServerExposure
+          }
+          onCheckedChange={(checked) => {
+            setPendingDesktopServerExposureMode(checked ? "network-accessible" : "local-only");
+          }}
+          aria-label="Network access"
+        />
+      }
     />
   );
-  const renderDisabledNetworkAccessRow = () => (
+  const renderTailscaleRow = () => (
     <SettingsRow
-      title={searchableSetting("network-access").title}
-      description={
-        desktopBridge
-          ? "This connection cannot view or change network exposure."
-          : currentAuthPolicy === "remote-reachable"
-            ? "Remote access is already configured. Change network exposure where the server starts."
-            : currentAuthPolicy === "loopback-browser"
-              ? "Only this machine can connect. Restart with a non-loopback host for remote pairing."
-              : "Network exposure information is unavailable."
+      title="Tailscale HTTPS"
+      description="Serve over your tailnet with a Tailscale certificate."
+      status={
+        desktopServerExposureError ? (
+          <span className="block text-destructive">{desktopServerExposureError}</span>
+        ) : null
       }
       control={
-        !desktopBridge &&
-        (currentAuthPolicy === "remote-reachable" || currentAuthPolicy === "loopback-browser") ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="inline-flex">
-                  <Switch
-                    checked={isLocalBackendNetworkAccessible}
-                    disabled
-                    aria-label="Enable network access"
-                  />
-                </span>
-              }
-            />
-            <TooltipPopup side="top">
-              Network exposure changes restart the backend and must be controlled where the server
-              process is launched.
-            </TooltipPopup>
-          </Tooltip>
-        ) : undefined
+        <Switch
+          checked={tailscaleHttpsEndpoint?.status === "available"}
+          disabled={!desktopBridge || !tailscaleHttpsEndpoint || isUpdatingTailscaleServe}
+          onCheckedChange={(checked) => {
+            if (!tailscaleHttpsEndpoint) return;
+            if (checked) {
+              handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
+              return;
+            }
+            handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
+          }}
+          aria-label="Tailscale HTTPS"
+        />
       }
+    />
+  );
+  const renderWslBackendRow = () => {
+    const enabled = desktopWslState?.enabled ?? false;
+    const status = desktopWslError ? (
+      <span className="block text-destructive">{desktopWslError}</span>
+    ) : desktopWslState?.preflightError ? (
+      <span className="block text-destructive">
+        WSL backend couldn't start: {desktopWslState.preflightError}
+      </span>
+    ) : null;
+    return (
+      <SettingsRow
+        title="WSL backend"
+        description="Run threads for WSL projects inside the distro."
+        status={status}
+        control={
+          <Switch
+            checked={enabled}
+            disabled={
+              !desktopBridge || !canManageLocalBackend || !desktopWslState || isUpdatingWslBackend
+            }
+            onCheckedChange={handleToggleWslBackend}
+            aria-label="WSL backend"
+          />
+        }
+      />
+    );
+  };
+  const renderWslDetailRows = () => {
+    if (!desktopWslState || !desktopWslState.enabled) return null;
+    const defaultDistroName =
+      desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
+    const selectValue = desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL;
+    const selectLabel =
+      selectValue === BACKEND_VALUE_DEFAULT_WSL
+        ? "Default distro"
+        : (desktopWslState.distro ?? "Default distro");
+    return (
+      <>
+        <SettingsRow
+          title="WSL distro"
+          description="The distro Houston runs WSL projects in."
+          control={
+            <Select
+              value={selectValue}
+              onValueChange={(value) => {
+                if (typeof value !== "string") return;
+                handleSelectWslMode(value);
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-56"
+                aria-label="WSL distro"
+                disabled={isUpdatingWslBackend}
+              >
+                <SelectValue>{selectLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {desktopWslState.distros.length === 0 ? (
+                  <SelectItem hideIndicator value={BACKEND_VALUE_DEFAULT_WSL}>
+                    Default distro
+                  </SelectItem>
+                ) : (
+                  desktopWslState.distros.map((distro) => (
+                    <SelectItem hideIndicator key={distro.name} value={distro.name}>
+                      {distro.name}
+                      {distro.isDefault ? " (default)" : ""}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          title="WSL only"
+          description="Run only the WSL backend. Houston restarts when this changes."
+          control={
+            <Switch
+              checked={desktopWslState.wslOnly}
+              disabled={isUpdatingWslBackend}
+              onCheckedChange={(checked) => handleToggleWslOnly(checked)}
+              aria-label="Run WSL only"
+            />
+          }
+        />
+      </>
+    );
+  };
+  const latestPairingCredentialLink =
+    visibleDesktopPairingLinks.find((link) => createdPairingCredentials.has(link.id)) ?? null;
+  const renderPairDeviceSection = () => (
+    <PairDeviceSection
+      pairingLink={latestPairingCredentialLink}
+      credential={
+        latestPairingCredentialLink
+          ? createdPairingCredentials.get(latestPairingCredentialLink.id)
+          : undefined
+      }
+      endpointUrl={desktopServerExposureState?.endpointUrl}
+      endpoints={visibleDesktopAdvertisedEndpoints}
+      defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
     />
   );
 
@@ -1006,45 +943,12 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     <>
       {primaryEnvironmentId !== null ? (
         <>
-          <SettingsSection
-            {...searchableSetting("connections-environment")}
-            title="This machine"
-            icon={
-              <EnvironmentMachineIcon
-                aria-hidden
-                kind={
-                  primaryServerConfig
-                    ? resolveEnvironmentMachineKind(primaryServerConfig)
-                    : "desktop"
-                }
-                className="size-4"
-              />
-            }
-            headerAction={
-              primaryEnvironmentId !== null ? (
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="ghost-muted"
-                        size="icon-xs"
-                        aria-label="More actions for this machine"
-                      />
-                    }
-                  >
-                    <EllipsisIcon className="size-3.5" />
-                  </MenuTrigger>
-                  <MenuPopup align="end">
-                    <EnvironmentIconMenu
-                      environmentId={primaryEnvironmentId}
-                      serverConfig={primaryServerConfig}
-                    />
-                  </MenuPopup>
-                </Menu>
-              ) : null
-            }
-          >
+          <SettingsSection {...searchableSetting("connections-environment")} title="This machine">
+            {renderEnvironmentIconRow()}
+            {renderNetworkAccessRow()}
+            {renderTailscaleRow()}
+            {renderWslBackendRow()}
+            {renderEndpointRows()}
             {canManageLocalBackend ? (
               <SettingsRow
                 title="Version"
@@ -1088,16 +992,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                 }
               />
             ) : null}
-            {canManageLocalBackend && desktopBridge ? (
-              <>
-                {renderNetworkAccessRow()}
-                {renderEndpointRows()}
-                {renderTailscaleRow()}
-                {renderWslRow()}
-              </>
-            ) : canManageLocalBackend ? (
-              <>{renderDisabledNetworkAccessRow()}</>
-            ) : null}
+            {renderWslDetailRows()}
             {primaryEnvironment ? (
               <details className="group px-3 sm:px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -1115,12 +1010,54 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             ) : null}
           </SettingsSection>
 
+          {renderPairDeviceSection()}
+
           {canReadAccess || canWriteAccess ? (
-            <SettingsSection
-              id="authorized-clients"
-              title="Authorized clients"
-              headerAction={
-                canWriteAccess ? (
+            <SettingsSection id="authorized-clients" title="Authorized clients">
+              <ScrollArea
+                scrollFade
+                chainVerticalScroll
+                className="max-h-[22.5rem]"
+                data-testid="authorized-clients-scroll-area"
+              >
+                {canReadAccess ? (
+                  <>
+                    {renderAuthorizedClients({ showPairingLinks: false })}
+                    {visibleDesktopPairingLinks.length > 0 ? (
+                      <PairingClientsList
+                        endpointUrl={desktopServerExposureState?.endpointUrl}
+                        endpoints={visibleDesktopAdvertisedEndpoints}
+                        defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
+                        isLoading={isLoadingDesktopAccessManagement}
+                        pairingLinks={visibleDesktopPairingLinks}
+                        createdPairingCredentials={createdPairingCredentials}
+                        clientSessions={[]}
+                        revokingPairingLinkId={revokingDesktopPairingLinkId}
+                        revokingClientSessionId={revokingDesktopClientSessionId}
+                        onRevokePairingLink={handleRevokeDesktopPairingLink}
+                        onRevokeClientSession={handleRevokeDesktopClientSession}
+                        canRevoke={canWriteAccess}
+                        showClientSessions={false}
+                      />
+                    ) : null}
+                    {visibleDesktopPairingLinks.length === 0 &&
+                    desktopClientSessions.length === 0 &&
+                    !isLoadingDesktopAccessManagement ? (
+                      <div className={ITEM_ROW_CLASSNAME}>
+                        <p className="text-xs text-muted-foreground/60">
+                          No authorized clients yet.
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="px-4 py-3 text-xs text-muted-foreground">
+                    This connection can create access links but cannot view authorized clients.
+                  </p>
+                )}
+              </ScrollArea>
+              {canWriteAccess ? (
+                <div className="flex items-center justify-end border-t border-border px-3.5 py-2.5">
                   <AuthorizedClientsHeaderAction
                     delegatableScopes={currentSessionScopes ?? []}
                     onPairingLinkCreated={handlePairingLinkCreated}
@@ -1134,23 +1071,8 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                     isRevokingOtherClients={isRevokingOtherDesktopClients}
                     onRevokeOtherClients={handleRevokeOtherDesktopClients}
                   />
-                ) : undefined
-              }
-            >
-              <ScrollArea
-                scrollFade
-                chainVerticalScroll
-                className="max-h-[22.5rem]"
-                data-testid="authorized-clients-scroll-area"
-              >
-                {canReadAccess ? (
-                  renderAuthorizedClients()
-                ) : (
-                  <p className="px-4 py-3 text-xs text-muted-foreground">
-                    This connection can create access links but cannot view authorized clients.
-                  </p>
-                )}
-              </ScrollArea>
+                </div>
+              ) : null}
             </SettingsSection>
           ) : null}
           <AlertDialog
@@ -1435,11 +1357,9 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
   return (
     <SettingsPageContainer>
-      {desktopBridge ? (
-        <SettingsSection id="this-app" title="Local environment">
-          <LocalEnvironmentSetting />
-        </SettingsSection>
-      ) : null}
+      <SettingsSection id="this-app" title="Local environment">
+        <LocalEnvironmentSetting />
+      </SettingsSection>
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"

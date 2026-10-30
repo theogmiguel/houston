@@ -279,7 +279,7 @@ const viewportSelectValue = (viewport: PreviewViewportSetting): string => {
 /** Inline options lack an items map; bare SelectValue would display the stored fill token. */
 const viewportSelectLabel = (viewport: PreviewViewportSetting): string => {
   const value = viewportSelectValue(viewport);
-  if (value === FILL_VALUE) return "Fill panel";
+  if (value === FILL_VALUE) return "Fill";
   if (value === RESPONSIVE_VALUE) return "Responsive";
   return PREVIEW_VIEWPORT_PRESETS.find((preset) => preset.id === value)?.label ?? "Responsive";
 };
@@ -370,7 +370,7 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
               <SelectValue>{viewportSelectLabel(viewport)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value={FILL_VALUE}>Fill panel</SelectItem>
+              <SelectItem value={FILL_VALUE}>Fill</SelectItem>
               <SelectItem value={RESPONSIVE_VALUE}>Responsive</SelectItem>
               <SelectGroup>
                 <SelectGroupLabel>Standard</SelectGroupLabel>
@@ -497,7 +497,7 @@ function BrowserAppearanceSetting({ disabled }: { readonly disabled: boolean }) 
   return (
     <SettingsRow
       {...searchableSetting("browser-default-appearance")}
-      description="The color scheme pages are told to prefer. System follows your OS setting."
+      description="The color scheme pages are told to prefer. System follows your system setting."
       resetAction={
         !disabled && appearance !== DEFAULT_PREVIEW_APPEARANCE ? (
           <SettingResetButton
@@ -611,8 +611,8 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
 }
 
 const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
-  system: "Your default browser",
   app: "Houston",
+  system: "Default browser",
 };
 
 function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) {
@@ -911,6 +911,33 @@ function DeviceIntegrationControls({
   return (
     <>
       <SettingsRow
+        {...searchableSetting("agent-device-access")}
+        serverScoped
+        settingKeys={["enableAgentDeviceAccess"]}
+        description="Let agents install builds on and drive the devices below."
+        control={
+          <>
+            {pending === "agent" ? <AgentDeviceSetupStatus state={state} pending compact /> : null}
+            <ScopedSwitch
+              settingKeys={["enableAgentDeviceAccess"]}
+              checked={agentAccessEnabled}
+              disabled={
+                !canConfigure ||
+                connectedEnvironments.length === 0 ||
+                (!projectScope && (!loaded || !anyHubEnabled || busy)) ||
+                pending !== null
+              }
+              aria-label="Agent device access"
+              onCheckedChange={(checked) =>
+                projectScope
+                  ? updateSettings({ enableAgentDeviceAccess: Boolean(checked) })
+                  : void update("agent", { agentAccessEnabled: Boolean(checked) })
+              }
+            />
+          </>
+        }
+      />
+      <SettingsRow
         {...searchableSetting("device-hub")}
         serverScoped
         settingKeys={["enableDeviceSupport"]}
@@ -944,42 +971,6 @@ function DeviceIntegrationControls({
                   enabled: Boolean(checked),
                   ...(checked ? {} : { agentAccessEnabled: false }),
                 })
-              }
-            />
-          </>
-        }
-      />
-      <SettingsRow
-        {...searchableSetting("agent-device-access")}
-        serverScoped
-        settingKeys={["enableAgentDeviceAccess"]}
-        description={
-          <>
-            New agent sessions can open and drive these devices. agent-device:{" "}
-            <DeviceToolVersions
-              action={versionActions("agent")}
-              kind="agent"
-              tools={state.hosts.find((host) => host.kind === "local")?.tools}
-            />
-          </>
-        }
-        control={
-          <>
-            {pending === "agent" ? <AgentDeviceSetupStatus state={state} pending compact /> : null}
-            <ScopedSwitch
-              settingKeys={["enableAgentDeviceAccess"]}
-              checked={agentAccessEnabled}
-              disabled={
-                !canConfigure ||
-                connectedEnvironments.length === 0 ||
-                (!projectScope && (!loaded || !anyHubEnabled || busy)) ||
-                pending !== null
-              }
-              aria-label="Agent device access"
-              onCheckedChange={(checked) =>
-                projectScope
-                  ? updateSettings({ enableAgentDeviceAccess: Boolean(checked) })
-                  : void update("agent", { agentAccessEnabled: Boolean(checked) })
               }
             />
           </>
@@ -1064,6 +1055,50 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
           }
           aria-label="Auto-show floating preview"
         />
+      }
+    />
+  );
+}
+
+function BrowserDefaultProfileSetting({ disabled }: { readonly disabled: boolean }) {
+  const userProfiles = useClientSettings((settings) => settings.browserProfiles);
+  const defaultProfileId = useClientSettings((settings) => settings.browserDefaultProfileId);
+  const settingsHydrated = useClientSettingsHydrated();
+  const updateSettings = useUpdatePrimarySettings();
+  const profiles = resolveBrowserProfiles(userProfiles).filter(
+    (profile) => profile.kind !== "incognito",
+  );
+  const resolvedDefaultId =
+    findBrowserProfile(profiles, defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID;
+
+  return (
+    <SettingsRow
+      {...searchableSetting("browser-default-profile")}
+      title="Default browser profile"
+      description="Profiles keep separate cookies and storage."
+      control={
+        <Select
+          disabled={disabled || !settingsHydrated}
+          value={resolvedDefaultId}
+          onValueChange={(value) => {
+            if (settingsHydrated && value !== null) {
+              updateSettings({ browserDefaultProfileId: value });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Default browser profile">
+            <SelectValue>
+              {profiles.find((profile) => profile.id === resolvedDefaultId)?.name ?? "Default"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {profiles.map((profile) => (
+              <SelectItem hideIndicator key={profile.id} value={profile.id}>
+                {profile.name}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
       }
     />
   );
@@ -1554,10 +1589,11 @@ export function BrowserSettingsPanel() {
 
       <SettingsSection id="browser" title="New tabs">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
-          <BrowserProfilesSetting disabled={desktopOnly} />
+          <BrowserDefaultProfileSetting disabled={desktopOnly} />
           <BrowserViewportSetting disabled={desktopOnly} />
           <BrowserZoomSetting disabled={desktopOnly} />
           <BrowserAppearanceSetting disabled={desktopOnly} />
+          <BrowserProfilesSetting disabled={desktopOnly} />
         </SettingsUnavailableGroup>
       </SettingsSection>
 

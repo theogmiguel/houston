@@ -203,6 +203,7 @@ export function SettingsSection({
   titleAction,
   headerAction,
   variant = "grouped",
+  footer,
   children,
   className,
   ...sectionProps
@@ -212,6 +213,7 @@ export function SettingsSection({
   icon?: ReactNode;
   titleAction?: ReactNode;
   headerAction?: ReactNode;
+  footer?: ReactNode;
   variant?: "grouped" | "plain";
   children: ReactNode;
 }) {
@@ -227,10 +229,7 @@ export function SettingsSection({
       {hideTitle ? (
         <h2 className="sr-only">{title}</h2>
       ) : (
-        <div
-          data-settings-scroll-target
-          className="flex items-center justify-between gap-4 px-1"
-        >
+        <div data-settings-scroll-target className="flex items-center justify-between gap-4 px-1">
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex items-center gap-2 text-[11px] leading-[14px] font-semibold text-muted-foreground">
               {icon}
@@ -244,6 +243,7 @@ export function SettingsSection({
       <SettingsGroup data-settings-scroll-target={hideTitle ? "" : undefined} variant={variant}>
         {children}
       </SettingsGroup>
+      {footer}
     </section>
   );
 }
@@ -478,9 +478,7 @@ export function SettingsRow({
             </span>
           </div>
           {description ? (
-            <p className="max-w-[56ch] text-xs leading-4 text-muted-foreground">
-              {description}
-            </p>
+            <p className="max-w-[56ch] text-xs leading-4 text-muted-foreground">{description}</p>
           ) : null}
           {renderedStatus ? (
             <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>

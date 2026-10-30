@@ -19,7 +19,69 @@ const MODES = {
   custom: "Custom instructions",
 } satisfies Record<BranchNamingMode, string>;
 
-export function BranchNamingSettings() {
+function parseBranchTemplate(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.endsWith("/{slug}")) return trimmed.slice(0, -"/{slug}".length);
+  if (trimmed.endsWith("{slug}")) return trimmed.slice(0, -"{slug}".length).replace(/\/$/u, "");
+  return trimmed.replace(/\{slug\}/gu, "").replace(/\/$/u, "");
+}
+
+function formatBranchTemplate(prefix: string): string {
+  return prefix === "" ? "{slug}" : `${prefix}/{slug}`;
+}
+
+/** The board's single Worktree branch naming field, backed by the branch prefix setting. */
+export function WorktreeBranchNamingRow() {
+  const settings = useScopedSettings();
+  const { targets } = useSettingsScope();
+  const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
+  const edited = useRef(false);
+  const updateSettings = useUpdateScopedSettings();
+  const prefixMixed = useScopedSettingsMixed(["branchNamePrefix"]);
+
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["branchNamePrefix"]}
+      {...searchableSetting("worktree-branch-naming")}
+      title="Worktree branch naming"
+      description="How a new worktree's branch is named."
+      resetAction={
+        prefixMixed || settings.branchNamePrefix !== DEFAULT_SERVER_SETTINGS.branchNamePrefix ? (
+          <SettingResetButton
+            label="worktree branch naming"
+            onClick={() =>
+              updateSettings({ branchNamePrefix: DEFAULT_SERVER_SETTINGS.branchNamePrefix })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Input
+          key={`${scopeKey}:${prefixMixed}:${settings.branchNamePrefix}`}
+          className="w-full sm:w-[190px]"
+          aria-label="Worktree branch naming"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={prefixMixed ? "Mixed" : "houston/{slug}"}
+          defaultValue={prefixMixed ? "" : formatBranchTemplate(settings.branchNamePrefix)}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onBlur={(event) => {
+            const value = parseBranchTemplate(event.target.value);
+            if (edited.current && (prefixMixed || value !== settings.branchNamePrefix))
+              updateSettings({ branchNamePrefix: value });
+            edited.current = false;
+          }}
+        />
+      }
+    />
+  );
+}
+
+/** Upstream's mode, prefix and instructions rows, kept after the board's single field. */
+export function BranchNamingAdvancedSettings() {
   const settings = useScopedSettings();
   const { targets } = useSettingsScope();
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
@@ -35,7 +97,7 @@ export function BranchNamingSettings() {
       <SettingsRow
         serverScoped
         settingKeys={["branchNamingMode"]}
-        {...searchableSetting("worktree-branch-naming")}
+        title="Branch naming mode"
         description="Choose how new worktree branches are named from your first message."
         status={
           !modeMixed && settings.branchNamingMode === "semantic"
@@ -61,7 +123,7 @@ export function BranchNamingSettings() {
               }
             }}
           >
-            <SelectTrigger size="sm" aria-label="Worktree branch naming">
+            <SelectTrigger size="sm" aria-label="Branch naming mode">
               <SelectValue>
                 {(value: BranchNamingMode | null) => (value === null ? "Mixed" : MODES[value])}
               </SelectValue>
@@ -81,7 +143,7 @@ export function BranchNamingSettings() {
           serverScoped
           settingKeys={["branchNamePrefix"]}
           title="Branch prefix"
-          description="For example, t3 or t3/ produces t3/add-search. Leave empty for no prefix."
+          description="For example, houston or houston/ produces houston/add-search. Leave empty for no prefix."
           resetAction={
             prefixMixed ||
             settings.branchNamePrefix !== DEFAULT_SERVER_SETTINGS.branchNamePrefix ? (
