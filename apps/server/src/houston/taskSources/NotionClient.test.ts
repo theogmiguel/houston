@@ -24,7 +24,7 @@ const NOW = "2026-10-20T00:00:00.000Z";
 const START: NotionCursor = { lastEditedTime: "2026-10-01T00:00:00.000Z", continuation: null };
 
 /** The failure message of a request expected to fail. */
-const failureText = <A>(effect: Effect.Effect<A, string>) =>
+const failureText = <A, R>(effect: Effect.Effect<A, string, R>) =>
   effect.pipe(Effect.match({ onFailure: (message) => message, onSuccess: () => "no failure" }));
 
 const withClient = <A, E>(
@@ -468,7 +468,9 @@ describe("notion write-back edits existing pages only", () => {
         assert.include(notAnId, "../databases");
         assert.lengthOf(writes(fake), 0);
         assert.isFalse(
-          fake.requests.some((request) => request.method === "POST" && request.path === "/v1/pages"),
+          fake.requests.some(
+            (request) => request.method === "POST" && request.path === "/v1/pages",
+          ),
         );
       }),
     ),

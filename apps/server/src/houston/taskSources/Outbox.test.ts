@@ -9,6 +9,7 @@ import { assert, describe, it } from "@effect/vitest";
 import type { ProjectId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { HoustonTask } from "@t3tools/contracts/houston/tasks";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -75,10 +76,7 @@ interface FakeIssue {
 }
 
 /** A repository's issues and comments as GitHub keeps them; answers reads and writes. */
-const serveRepository = (
-  fake: GithubFake,
-  options: { readonly failWrites?: number } = {},
-) => {
+const serveRepository = (fake: GithubFake, options: { readonly failWrites?: number } = {}) => {
   const issues: Array<FakeIssue> = [];
   const comments = new Map<number, Array<{ readonly body: string }>>();
   const json = (status: number, body: unknown) =>
@@ -332,7 +330,11 @@ describe("one outbox row per task, provider, action and revision", () => {
         });
         yield* setStatus(plain.id, "in_progress");
         const loose = yield* tasks.save({ projectId: null, patch: { title: "Loose" } });
-        yield* tasks.saveDomain({ id: loose.key, expectedRevision: loose.revision, kind: "delivery" });
+        yield* tasks.saveDomain({
+          id: loose.key,
+          expectedRevision: loose.revision,
+          kind: "delivery",
+        });
         yield* setStatus(loose.id, "in_progress");
         assert.lengthOf(yield* outboxRows, 1);
 
@@ -580,7 +582,14 @@ describe("a delivery issue closes only when every slice is done", () => {
         const f = yield* slice(retried, "F");
         yield* setStatus(e.id, "done");
         yield* setStatus(f.id, "done");
-        assert.isTrue((yield* outboxRows).some((row) => row.action === "delivery_close" && row.task_id === retried.id && row.receipt_json === null));
+        assert.isTrue(
+          (yield* outboxRows).some(
+            (row) =>
+              row.action === "delivery_close" &&
+              row.task_id === retried.id &&
+              row.receipt_json === null,
+          ),
+        );
         yield* setStatus(e.id, "in_progress");
         yield* drain;
         assert.lengthOf(closes(), 2);
@@ -691,13 +700,13 @@ describe("two slices hand back to notion with distinct identities", () => {
         assert.isTrue(writes.every((request) => request.path !== "/v1/pages"));
         assert.isTrue(
           writes.every(
-            (request) => request.path === `/v1/pages/${pageId(1)}` || request.path === "/v1/comments",
+            (request) =>
+              request.path === `/v1/pages/${pageId(1)}` || request.path === "/v1/comments",
           ),
         );
         const statuses = writes.filter(
           (request) =>
-            request.method === "PATCH" &&
-            JSON.stringify(request.body).includes('"St%3Aa"'),
+            request.method === "PATCH" && JSON.stringify(request.body).includes('"St%3Aa"'),
         );
         assert.isNotEmpty(statuses);
         assert.deepEqual(statuses.at(-1)?.body, {
@@ -705,7 +714,10 @@ describe("two slices hand back to notion with distinct identities", () => {
         });
         const urls = writes
           .filter((request) => JSON.stringify(request.body).includes('"pr"'))
-          .map((request) => (request.body as { properties: { pr: { url: string } } }).properties.pr.url);
+          .map(
+            (request) =>
+              (request.body as { properties: { pr: { url: string } } }).properties.pr.url,
+          );
         assert.deepEqual(urls, [PR_A, PR_B]);
         const posted = comments.map((comment) =>
           (comment as { rich_text: Array<{ text: { content: string } }> }).rich_text
@@ -717,7 +729,9 @@ describe("two slices hand back to notion with distinct identities", () => {
         assert.isTrue(posted[1]?.startsWith("Slice B: Same summary"));
         const markers = posted.map((text) => /houston-handback:[0-9a-f]{24}$/.exec(text)?.[0]);
         assert.notStrictEqual(markers[0], markers[1]);
-        assert.isTrue(notion.requests.every((request) => request.authorization === `Bearer ${NOTION_TOKEN}`));
+        assert.isTrue(
+          notion.requests.every((request) => request.authorization === `Bearer ${NOTION_TOKEN}`),
+        );
         assert.isTrue((yield* outboxRows).every((row) => row.receipt_json !== null));
         assert.deepEqual(
           (yield* sourceLinks(a.id)).map((link) => [link.provider, link.source, link.externalId]),
@@ -742,11 +756,16 @@ describe("the outbox drains in bounded batches with backoff", () => {
         const pending = (yield* outboxRows).filter((row) => row.receipt_json === null);
         assert.lengthOf(pending, 30);
         yield* TestClock.adjust(Duration.seconds(19));
-        assert.lengthOf((yield* outboxRows).filter((row) => row.receipt_json === null), 30);
+        assert.lengthOf(
+          (yield* outboxRows).filter((row) => row.receipt_json === null),
+          30,
+        );
         yield* TestClock.adjust(Duration.seconds(1));
         const afterOne = yield* outboxRows;
         assert.deepEqual(
-          afterOne.filter((row) => row.receipt_json !== null && row.action === "status").map((row) => row.id),
+          afterOne
+            .filter((row) => row.receipt_json !== null && row.action === "status")
+            .map((row) => row.id),
           pending.slice(0, 25).map((row) => row.id),
         );
         yield* TestClock.adjust(Duration.seconds(20));
@@ -766,7 +785,7 @@ describe("the outbox drains in bounded batches with backoff", () => {
         yield* setStatus(shipped.id, "in_progress");
         serveRepository(github, { failWrites: 502 }).issues.push(...repository.issues);
         const plusSeconds = (iso: string, seconds: number) =>
-          new Date(Date.parse(iso) + seconds * 1_000).toISOString();
+          DateTime.formatIso(DateTime.add(DateTime.makeUnsafe(iso), { seconds }));
         const statusRow = Effect.map(outboxRows, (rows) =>
           rows.find((row) => row.action === "status"),
         );
@@ -818,8 +837,12 @@ describe("the outbox drains in bounded batches with backoff", () => {
         yield* drain;
         assert.lengthOf(github.requests, 0);
         const rows = yield* outboxRows;
-        const quietRow = rows.find((row) => row.task_id === quietDelivery.id && row.action === "status");
-        const goneRow = rows.find((row) => row.task_id === goneDelivery.id && row.action === "status");
+        const quietRow = rows.find(
+          (row) => row.task_id === quietDelivery.id && row.action === "status",
+        );
+        const goneRow = rows.find(
+          (row) => row.task_id === goneDelivery.id && row.action === "status",
+        );
         assert.include(quietRow?.last_error ?? "", "tracker is disabled");
         assert.isNull(quietRow?.receipt_json);
         assert.include(goneRow?.last_error ?? "", "tracker configuration was removed");
@@ -882,12 +905,15 @@ describe("the marker namespace is fixed once written", () => {
       const baseDir = NodePath.join(channel, "v2");
       NodeFS.mkdirSync(baseDir);
       const source = NodePath.join(channel, "houston.db");
-      const root = HostProcess.Platform.defaultValue() === "win32" ? "C:\\work\\shop" : "/work/shop";
+      const root =
+        HostProcess.Platform.defaultValue() === "win32" ? "C:\\work\\shop" : "/work/shop";
       const v1Namespace = "feedfacefeedfacefeedfacefeedface";
       writeV1Database(source, { nextNumber: 1, tasks: [] });
       writeV1TrackerTables(source, {
         namespace: v1Namespace,
-        settings: [v1Settings(root, "github_issues", { github_repository: REPO, github_label: "import" })],
+        settings: [
+          v1Settings(root, "github_issues", { github_repository: REPO, github_label: "import" }),
+        ],
         links: [],
         outbox: [],
         pollState: [],

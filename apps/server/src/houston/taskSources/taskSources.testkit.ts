@@ -33,6 +33,7 @@ import {
 } from "../tasks/tasks.testkit.ts";
 import { layerTaskSources } from "./layer.ts";
 import * as NotionClient from "./NotionClient.ts";
+import * as HoustonTaskSourceOutbox from "./Outbox.ts";
 import * as HoustonTaskSourceStore from "./SourceStore.ts";
 
 /** The token GitHubCredentials hands out in tests, as a Settings token would be. */
@@ -233,6 +234,8 @@ export const layerSources = (options: SourcesTestOptions = {}) =>
     Layer.provideMerge(HoustonTaskSourceStore.layer),
     Layer.provideMerge(layerMemory(options.keychain ?? makeMemory())),
     Layer.provideMerge(HoustonTaskStore.layer),
+    // Below the Tasks store, which hands it every write's transitions, as in server.ts.
+    Layer.provideMerge(HoustonTaskSourceOutbox.layer),
     Layer.provideMerge(layerInstances(CONFIGURED_INSTANCES)),
     Layer.provideMerge(ProjectEnrichmentService.layer),
     Layer.provideMerge(layerWorkspacePaths),

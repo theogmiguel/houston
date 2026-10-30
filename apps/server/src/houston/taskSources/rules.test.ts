@@ -527,26 +527,30 @@ describe("write-back eligibility follows the transition and the source", () => {
     },
   ];
 
-  for (const { transition, input, actions } of transitions) {
-    it(`${transition} of a linked task with an enabled source enqueues`, () => {
+  it.each(transitions)(
+    "$transition of a linked task with an enabled source enqueues",
+    ({ input, actions }) => {
       expect(actionsOf(input)).toEqual(actions);
-    });
-    it(`${transition} of an unassigned task enqueues nothing`, () => {
-      expect(
-        actionsOf({
-          ...input,
-          task: { ...input.task, projectId: null },
-          ...(input.delivery === null ? {} : { delivery: { ...input.delivery, projectId: null } }),
-        }),
-      ).toEqual([]);
-    });
-    it(`${transition} of a task without a domain row enqueues nothing`, () => {
+    },
+  );
+  it.each(transitions)("$transition of an unassigned task enqueues nothing", ({ input }) => {
+    expect(
+      actionsOf({
+        ...input,
+        task: { ...input.task, projectId: null },
+        ...(input.delivery === null ? {} : { delivery: { ...input.delivery, projectId: null } }),
+      }),
+    ).toEqual([]);
+  });
+  it.each(transitions)(
+    "$transition of a task without a domain row enqueues nothing",
+    ({ input }) => {
       expect(actionsOf({ ...input, task: { ...input.task, domain: null } })).toEqual([]);
-    });
-    it(`${transition} with the source disabled enqueues nothing`, () => {
-      expect(actionsOf({ ...input, enabled: [] })).toEqual([]);
-    });
-  }
+    },
+  );
+  it.each(transitions)("$transition with the source disabled enqueues nothing", ({ input }) => {
+    expect(actionsOf({ ...input, enabled: [] })).toEqual([]);
+  });
 
   it("an unknown transition is refused naming it", () => {
     const refused = writebackActions(writeback({ transition: "renamed" }));
@@ -650,7 +654,7 @@ describe("close keywords are removed and pull request urls are pinned to the rep
     );
   });
 
-  for (const url of [
+  it.each([
     "https://evil.example/octo-org/project/pull/4",
     "https://github.com/octo-org/other/pull/4",
     "http://github.com/octo-org/project/pull/4",
@@ -658,9 +662,7 @@ describe("close keywords are removed and pull request urls are pinned to the rep
     "https://github.com/octo-org/project/pull/4/files",
     "https://github.com.evil.example/octo-org/project/pull/4",
     "https://github.com/octo-org/project/issues/4",
-  ]) {
-    it(`${url} is refused`, () => {
-      expect(githubPullRequestUrl(url, repository)).toBeNull();
-    });
-  }
+  ])("%s is refused", (url) => {
+    expect(githubPullRequestUrl(url, repository)).toBeNull();
+  });
 });
