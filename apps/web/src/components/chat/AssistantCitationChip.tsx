@@ -208,7 +208,8 @@ export function AssistantCitationChip({
               }
               ref={commentPopupRef}
               aria-label="Edit citation comment"
-              width="md"
+              variant="dialog"
+              className="w-[min(520px,calc(100vw-2rem))]"
               padding="none"
               onPointerDown={(event) => event.stopPropagation()}
             >
