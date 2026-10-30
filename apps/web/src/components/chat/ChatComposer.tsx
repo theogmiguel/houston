@@ -1024,7 +1024,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
   const isComposerCollapsedMobile =
-    (isMobileViewport || paneDensity === "glance") &&
+    (isMobileViewport || paneDensity === "compact" || paneDensity === "glance") &&
     !forceExpandedOnMobile &&
     !isComposerFocused &&
     !hasMultilinePrompt &&
@@ -2315,6 +2315,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       toggleInteractionMode={toggleInteractionMode}
       handleRuntimeModeChange={handleRuntimeModeChange}
       composerControlsCollapsed={composerControlsCollapsed}
+      paneDensity={paneDensity}
       effortDisplay={settings.effortDisplay}
       permissionsShownInStrip={props.permissionsShownInStrip}
       composerControlsHidden={composerControlsHidden}
@@ -3211,6 +3212,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (showProviderUnavailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
+                {paneDensity === "compact" ? (
+                  <div className="flex min-w-0 shrink items-center">{composerControls}</div>
+                ) : null}
                 <ComposerStashBadge
                   count={stashQueue.length}
                   menuOpen={isStashMenuOpen}
@@ -3223,7 +3227,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-full disabled:opacity-64",
                     showResumeAction || prompt.trim() || composerSendState.hasSendableContent
-                      ? "bg-foreground text-background hover:bg-foreground/90"
+                      ? "bg-foreground text-(--pane) hover:bg-foreground/90"
                       : "bg-(--sel) text-muted-foreground",
                   )}
                   disabled={collapsedComposerPrimaryActionDisabled}

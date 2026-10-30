@@ -7,6 +7,7 @@ import {
   type LayoutNode,
   type ThreadNode,
   appendThread,
+  arrangeThreads,
   gridPreset,
   insertThreadAtSlot,
   isGridPreset,
@@ -470,8 +471,7 @@ export const useGridStore = create<GridStoreState>()(
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) => {
             if (grid.tree === null) return grid;
-            const ids = preorderThreads(grid.tree).map((leaf) => leaf.threadId);
-            return withTree(grid, gridPreset(ids));
+            return withTree(grid, arrangeThreads(grid.tree));
           }),
         })),
       detachThreadForShelf: (threadId) =>
