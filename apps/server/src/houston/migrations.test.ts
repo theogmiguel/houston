@@ -14,6 +14,24 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { runHoustonMigrations } from "./migrations.ts";
 
 const UPSTREAM_HEAD = Math.max(...migrationManifest.map(([id]) => id));
+const HOUSTON_TRACK: Array<readonly [number, string]> = [
+  [1, "ReviewFilesViewed"],
+  [2, "TasksBacklog"],
+];
+const TASK_TABLES = [
+  "houston_task_acceptance",
+  "houston_task_blocks",
+  "houston_task_comments",
+  "houston_task_counter",
+  "houston_task_domain",
+  "houston_task_history",
+  "houston_task_import",
+  "houston_task_initiatives",
+  "houston_task_planning",
+  "houston_task_runs",
+  "houston_task_settings",
+  "houston_tasks",
+];
 
 const upstreamHistory = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -52,11 +70,11 @@ const openThroughSqlite = (file: string) =>
   Layer.fresh(SqlitePersistence.layerFromPath(file)).pipe(Layer.provide(NodeServices.layer));
 
 describe("the Houston track runs beside upstream's", () => {
-  it.effect("a fresh database records Houston migration 1 and upstream stays at its head", () =>
+  it.effect("a fresh database records the Houston migrations and upstream stays at its head", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
         const first = yield* Effect.gen(function* () {
-          assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* primaryKey, ["worktree_root", "ref_name", "path"]);
           const upstream = yield* upstreamHistory;
           assert.equal(UPSTREAM_HEAD, 72);
@@ -67,7 +85,7 @@ describe("the Houston track runs beside upstream's", () => {
         // A reopen applies nothing on either track.
         yield* Effect.gen(function* () {
           assert.deepEqual(yield* runHoustonMigrations(), []);
-          assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* upstreamHistory, first);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
@@ -76,7 +94,7 @@ describe("the Houston track runs beside upstream's", () => {
 
   it.effect("the in-memory layer runs the Houston track too", () =>
     Effect.gen(function* () {
-      assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
       assert.deepEqual(yield* primaryKey, ["worktree_root", "ref_name", "path"]);
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
@@ -85,7 +103,7 @@ describe("the Houston track runs beside upstream's", () => {
     withDatabaseFile((file) =>
       Effect.gen(function* () {
         yield* Effect.gen(function* () {
-          assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
         }).pipe(Effect.provide(openThroughSqlite(file)));
 
         yield* Effect.gen(function* () {
@@ -99,8 +117,64 @@ describe("the Houston track runs beside upstream's", () => {
             }),
           });
           assert.deepEqual(applied, [[nextId, "FutureUpstreamMigration"]]);
-          assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
+      }),
+    ),
+  );
+});
+
+describe("the tasks migration runs on the Houston track", () => {
+  const taskTables = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND (name = 'houston_tasks' OR name LIKE 'houston_task_%')
+      ORDER BY name
+    `).map((row) => row.name);
+  });
+
+  it.effect("every houston_task table exists, numbers are unique and the counter is one row", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+          assert.deepEqual(yield* taskTables, TASK_TABLES);
+          assert.deepEqual(yield* sql`SELECT id, next_number FROM houston_task_counter`, [
+            { id: 1, next_number: 1 },
+          ]);
+          // The counter holds exactly one row.
+          const second = yield* Effect.exit(
+            sql`INSERT INTO houston_task_counter (id, next_number) VALUES (2, 1)`,
+          );
+          assert.isTrue(second._tag === "Failure");
+          yield* sql`
+            INSERT INTO houston_tasks (number, title, status, created_by, created_at, updated_at)
+            VALUES (1, 'a', 'backlog', 'user', 'now', 'now')
+          `;
+          const duplicate = yield* Effect.exit(sql`
+            INSERT INTO houston_tasks (number, title, status, created_by, created_at, updated_at)
+            VALUES (1, 'b', 'backlog', 'user', 'now', 'now')
+          `);
+          assert.isTrue(duplicate._tag === "Failure");
+          assert.isFalse(
+            (yield* upstreamHistory).some(
+              (row) =>
+                row.name.toLowerCase().includes("task") &&
+                row.name.toLowerCase().includes("backlog"),
+            ),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        // A reopen applies nothing and keeps upstream's history as it was.
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+          assert.strictEqual(Math.max(...upstream.map((row) => row.migration_id)), UPSTREAM_HEAD);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
     ),
   );
@@ -122,7 +196,7 @@ describe("an upstream database gains the Houston track", () => {
         assert.equal(Math.max(...before.map((row) => row.migration_id)), UPSTREAM_HEAD);
 
         yield* Effect.gen(function* () {
-          assert.deepEqual(yield* houstonHistory, [[1, "ReviewFilesViewed"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* primaryKey, ["worktree_root", "ref_name", "path"]);
           assert.deepEqual(yield* upstreamHistory, before);
         }).pipe(Effect.provide(openThroughSqlite(file)));
