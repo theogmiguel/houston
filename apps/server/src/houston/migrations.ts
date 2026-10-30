@@ -284,10 +284,22 @@ const TaskSources = Effect.gen(function* () {
   `;
 });
 
+// Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
+const TaskRunsCursor = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_runs_cursor (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      sequence INTEGER NOT NULL
+    )
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
+  [4, "TaskRunsCursor", TaskRunsCursor],
 ] as const;
 
 const run = Migrator.make({});

@@ -1588,7 +1588,18 @@ const make = Effect.gen(function* () {
     }
   };
 
-  let cursor = yield* eventSink.latestSequence().pipe(Effect.orDie);
+  // The last applied event survives a restart, so events stored but not applied before a crash
+  // are replayed; the first boot starts at the latest event.
+  const [storedCursor] = yield* run(
+    sql<{ readonly sequence: number }>`SELECT sequence FROM houston_task_runs_cursor WHERE id = 1`,
+  );
+  let cursor = storedCursor?.sequence ?? (yield* eventSink.latestSequence().pipe(Effect.orDie));
+  const saveCursor = (sequence: number) =>
+    run(sql`
+      INSERT INTO houston_task_runs_cursor (id, sequence) VALUES (1, ${sequence})
+      ON CONFLICT (id) DO UPDATE SET sequence = excluded.sequence
+    `);
+  if (storedCursor === undefined) yield* saveCursor(cursor);
   const catchUpLock = yield* Semaphore.make(1);
   const catchUp: HoustonTaskRuns["Service"]["catchUp"] = catchUpLock.withPermits(1)(
     Effect.gen(function* () {
@@ -1610,6 +1621,7 @@ const make = Effect.gen(function* () {
           ),
         );
         cursor = stored.sequence;
+        yield* saveCursor(cursor);
       }
     }),
   );
@@ -1643,6 +1655,8 @@ const make = Effect.gen(function* () {
     for (const row of planning) yield* settlePlanning(row.thread_id, "exited");
   });
   yield* recover;
+  // Then replay what was stored but not applied: a thread deleted in that gap closes its run.
+  yield* catchUp;
 
   yield* orchestrator.streamDomainEvents.pipe(
     Stream.runForEach(() => catchUp),

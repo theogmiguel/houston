@@ -28,6 +28,7 @@ import {
   runWith,
   selection,
   threadOf,
+  withThreadsOnly,
   type RunsContext,
 } from "./taskRuns.testkit.ts";
 
@@ -741,6 +742,51 @@ describe("a lost thread interrupts the run and a live one restores it", () => {
               harness.doubles.script.hold.add("after-restart");
               yield* context.send(threadId, "after-restart", "continue");
               yield* waitForRunState(context, task, "running");
+            }),
+          { databaseFile, projectId, restarted: true },
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "a thread deleted after the last applied event closes its run at the next boot",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("cursor");
+        const databaseFile = join(mkdtempSync(join(tmpdir(), "houston-task-runs-db-")), "t.db");
+        const { task, threadId, projectId } = yield* runWith(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              const task = yield* context.readyTask("Deleted in the gap");
+              const run = yield* startAndPrepare(context, task);
+              yield* waitForRunState(context, task, "waiting_for_input");
+              return { task, threadId: yield* threadOf(run), projectId: context.projectId };
+            }),
+          { databaseFile },
+        );
+        // The deletion is stored while task runs follow nothing, as after a crash before applying.
+        yield* withThreadsOnly(
+          harness,
+          (orchestrator) =>
+            orchestrator.dispatch({
+              type: "thread.delete",
+              commandId: CommandId.make(`delete-in-gap:${threadId}`),
+              threadId,
+            } as never),
+          { databaseFile },
+        );
+        yield* runWith(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              const detail = yield* detailOf(context, task);
+              assert.strictEqual(newestRun(detail).state, "interrupted");
+              assert.strictEqual(newestRun(detail).reason, "thread deleted");
+              // The closed run no longer holds the task: a new start is not refused as busy.
+              const again = yield* context.runs.start({ id: task.key });
+              assert.notStrictEqual(again.run.id, newestRun(detail).id);
             }),
           { databaseFile, projectId, restarted: true },
         );

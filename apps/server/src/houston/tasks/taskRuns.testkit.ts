@@ -181,15 +181,17 @@ export interface RunsOptions {
   readonly restarted?: boolean;
 }
 
-/** Everything a task run touches, over one database. */
-export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
-  const database =
-    options.databaseFile === undefined
-      ? SqlitePersistence.layerMemory
-      : SqlitePersistence.layerFromPath(options.databaseFile).pipe(
-          Layer.provide(NodeServices.layer),
-        );
-  const orchestration = ProviderReplayHarness.layerWithRegistry(
+const databaseOf = (options: RunsOptions) =>
+  options.databaseFile === undefined
+    ? SqlitePersistence.layerMemory
+    : SqlitePersistence.layerFromPath(options.databaseFile).pipe(Layer.provide(NodeServices.layer));
+
+const layerOrchestration = (
+  harness: RunsHarness,
+  options: RunsOptions,
+  database: ReturnType<typeof databaseOf>,
+) =>
+  ProviderReplayHarness.layerWithRegistry(
     { name: `tasks-${harness.name}` },
     harness.doubles.registry,
     {
@@ -204,6 +206,21 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
       ...(options.restarted === true ? { recoverOnStartup: true } : { runEffectWorker: false }),
     },
   );
+
+/** The threads alone over the runs' database file: what happens while task runs follow nothing. */
+export const withThreadsOnly = <A, E, R>(
+  harness: RunsHarness,
+  body: (orchestrator: Orchestrator.OrchestratorV2["Service"]) => Effect.Effect<A, E, R>,
+  options: RunsOptions & { readonly databaseFile: string },
+) =>
+  Effect.flatMap(Orchestrator.OrchestratorV2, body).pipe(
+    Effect.provide(layerOrchestration(harness, options, databaseOf(options))),
+  );
+
+/** Everything a task run touches, over one database. */
+export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
+  const database = databaseOf(options);
+  const orchestration = layerOrchestration(harness, options, database);
   const tasks = layerTasks({ databaseLayer: database });
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
   const threadManagement = ThreadManagement.layer.pipe(
