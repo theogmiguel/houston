@@ -28,13 +28,15 @@ export interface GridHostProps {
   onTreeChange: (tree: LayoutNode) => void;
   onFocusThread: (threadId: string) => void;
   renderThread: (cell: GridCellRenderProps) => ReactNode;
+  renderEmpty?: () => ReactNode;
 }
 
 export function GridHost(props: GridHostProps) {
-  const { grid, onTreeChange, onFocusThread, renderThread } = props;
+  const { grid, onTreeChange, onFocusThread, renderThread, renderEmpty } = props;
   const tree = grid.tree;
 
   if (tree === null) {
+    if (renderEmpty !== undefined) return <>{renderEmpty()}</>;
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-8">
         <div className="flex max-w-sm flex-col items-center gap-2 text-center">

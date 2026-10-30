@@ -25,6 +25,7 @@ import {
   type EnvMode,
   type EnvironmentOption,
   resolveContextStripLabelsCompact,
+  resolveContextStripLabelsNarrow,
   resolveCurrentWorkspaceLabel,
   resolveEnvModeLabel,
   resolveLockedWorkspaceLabel,
@@ -160,6 +161,7 @@ interface RunContextSelectorProps {
   onUsePreviousWorktree: () => void;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId) => void;
+  narrowLabels?: boolean;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -183,6 +185,7 @@ const RunContextSelector = memo(function RunContextSelector({
   onUsePreviousWorktree,
   addTargets,
   onAddToMachine,
+  narrowLabels = false,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -194,12 +197,12 @@ const RunContextSelector = memo(function RunContextSelector({
         ? FolderGitIcon
         : FolderIcon;
   const workspaceLabel = forceNewWorktree
-    ? resolveEnvModeLabel("worktree")
+    ? resolveEnvModeLabel("worktree", narrowLabels)
     : envModeLocked
-      ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
+      ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode, narrowLabels)
       : effectiveEnvMode === "worktree"
-        ? resolveEnvModeLabel("worktree")
-        : resolveCurrentWorkspaceLabel(activeWorktreePath);
+        ? resolveEnvModeLabel("worktree", narrowLabels)
+        : resolveCurrentWorkspaceLabel(activeWorktreePath, narrowLabels);
   const isPanel = displayMode === "panel";
   const isLocked = envLocked || (envModeLocked && (!isPanel || !showEnvironmentPicker));
   const workspacePath =
@@ -288,7 +291,7 @@ const RunContextSelector = memo(function RunContextSelector({
     <Menu>
       <MenuTrigger
         render={isPanel ? <ThreadDetailsControl part="select" /> : <ComposerControl size="xs" />}
-        className={isPanel ? undefined : "min-w-0 max-w-[48%] flex-initial justify-start"}
+        className={isPanel ? undefined : "min-w-0 max-w-[48%] justify-start"}
         onContextMenu={handleContextMenu}
         onMouseDownCapture={
           isPanel
@@ -323,10 +326,12 @@ const RunContextSelector = memo(function RunContextSelector({
         {...(!isPanel ? composerFloatingLayerProps : {})}
       >
         {availableEnvironments &&
-        ((showEnvironmentPicker && onEnvironmentChange) || addTargets.length > 0) ? (
+        ((showEnvironmentPicker && onEnvironmentChange) ||
+          addTargets.length > 0 ||
+          activeEnvironment !== null) ? (
           <>
             <MenuGroup>
-              <MenuGroupLabel>Run on</MenuGroupLabel>
+              <MenuGroupLabel>Machine</MenuGroupLabel>
               <MenuRadioGroup
                 value={autoEnvironmentLabel ? "auto" : environmentId}
                 onValueChange={(value) =>
@@ -396,7 +401,7 @@ const RunContextSelector = memo(function RunContextSelector({
           </>
         ) : null}
         <MenuGroup>
-          <MenuGroupLabel>Workspace</MenuGroupLabel>
+          <MenuGroupLabel>Where</MenuGroupLabel>
           <MenuRadioGroup
             value={effectiveEnvMode}
             onValueChange={(value) => {
@@ -435,76 +440,22 @@ const RunContextSelector = memo(function RunContextSelector({
   );
 });
 
-const COMPOSER_CONTEXT_MOTION_DURATION_MS = 180;
-const COMPOSER_CONTEXT_MOTION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_CONTEXT_LABEL_SELECTOR = "[data-composer-label]";
 
-/** A hidden or squeezed label's scrollWidth loses its tail, causing label/icon flapping. */
-function labelTextWidth(label: HTMLElement, range: Range): number {
-  const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
-  let width = 0;
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    range.selectNodeContents(node);
-    width += range.getBoundingClientRect().width;
-  }
-  const motion = label.querySelector<HTMLElement>("[data-composer-label-motion]");
-  const maxWidth = motion ? Number.parseFloat(getComputedStyle(motion).maxWidth) : Number.NaN;
-  return Number.isFinite(maxWidth) ? Math.min(width, maxWidth) : width;
-}
-
-function animateLabelWidths(
-  previousRects: ReadonlyMap<HTMLElement, DOMRect>,
-  animations: Map<HTMLElement, Animation>,
-) {
-  for (const animation of animations.values()) animation.cancel();
-  animations.clear();
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  for (const [label, previousRect] of previousRects) {
-    if (!label.isConnected) continue;
-    const nextWidth = label.getBoundingClientRect().width;
-    if (Math.abs(previousRect.width - nextWidth) < 0.5) continue;
-
-    const animation = label.animate(
-      [
-        { width: `${previousRect.width}px`, maxWidth: `${previousRect.width}px` },
-        { width: `${nextWidth}px`, maxWidth: `${nextWidth}px` },
-      ],
-      {
-        duration: COMPOSER_CONTEXT_MOTION_DURATION_MS,
-        easing: COMPOSER_CONTEXT_MOTION_EASING,
-        fill: "backwards",
-      },
-    );
-    animations.set(label, animation);
-    animation.addEventListener(
-      "finish",
-      () => {
-        if (animations.get(label) === animation) animations.delete(label);
-      },
-      { once: true },
-    );
-  }
-}
-
 /**
- * Whether the strip's labels must collapse to icons. The strip is measured when
- * it, a control group or a hosted control resizes, when its text or children
- * change, and when fonts load, which covers everything the widths depend on.
+ * Whether the strip's labels must collapse to icons (below 300px) or use the
+ * short labels (below 520px). Widths are measured on the strip, not the window.
  */
 function useLabelsOverflow(): readonly [
   attach: (element: HTMLDivElement | null) => (() => void) | undefined,
-  overflows: boolean,
+  compact: boolean,
+  narrow: boolean,
 ] {
-  const [overflows, setOverflows] = useState(false);
-
+  const [layout, setLayout] = useState({ compact: false, narrow: false });
   const attach = (current: HTMLDivElement | null) => {
     if (!current) return;
-    const labelAnimations = new Map<HTMLElement, Animation>();
 
     const measure = () => {
-      // The committed attribute, not render state, so a stale closure cannot misread it.
-      const compact = current.hasAttribute("data-compact");
       const stripWidth = current.clientWidth;
       if (stripWidth === 0) return;
       const stripStyle = getComputedStyle(current);
@@ -512,52 +463,16 @@ function useLabelsOverflow(): readonly [
         stripWidth -
         (Number.parseFloat(stripStyle.paddingInlineStart) || 0) -
         (Number.parseFloat(stripStyle.paddingInlineEnd) || 0);
-      const contentWidth = (parent: Element): number => {
-        const gap = Number.parseFloat(getComputedStyle(parent).columnGap) || 0;
-        let width = 0;
-        let counted = 0;
-        for (const child of parent.children) {
-          if (!(child instanceof HTMLElement)) continue;
-          if (child.offsetWidth === 0) continue;
-          const style = getComputedStyle(child);
-          const position = style.position;
-          if (position === "absolute" || position === "fixed") continue;
-          width +=
-            child.offsetWidth +
-            (Number.parseFloat(style.marginInlineStart) || 0) +
-            (Number.parseFloat(style.marginInlineEnd) || 0);
-          counted += 1;
-        }
-        return width + gap * Math.max(0, counted - 1);
-      };
-      const stripGap = Number.parseFloat(stripStyle.columnGap) || 0;
-      let needed = 0;
-      let groups = 0;
-      for (const child of current.children) {
-        if (!(child instanceof HTMLElement)) continue;
-        const width = contentWidth(child);
-        if (width <= 1) continue;
-        groups += 1;
-        needed += width;
-      }
-      needed += stripGap * Math.max(0, groups - 1);
-      const range = document.createRange();
-      for (const label of current.querySelectorAll<HTMLElement>("[data-composer-label]")) {
-        needed += Math.max(0, labelTextWidth(label, range) - label.getBoundingClientRect().width);
-      }
-      const nextOverflows = resolveContextStripLabelsCompact({
-        compact,
-        neededWidth: needed,
+      const committedCompact = current.hasAttribute("data-compact");
+      const committedNarrow = current.hasAttribute("data-narrow");
+      const nextCompact = resolveContextStripLabelsCompact({
+        compact: committedCompact,
+        neededWidth: 0,
         availableWidth: available,
       });
-      if (nextOverflows === compact) return;
-      const previousRects = new Map(
-        Array.from(current.querySelectorAll<HTMLElement>(COMPOSER_CONTEXT_LABEL_SELECTOR)).map(
-          (label) => [label, label.getBoundingClientRect()] as const,
-        ),
-      );
-      flushSync(() => setOverflows(nextOverflows));
-      animateLabelWidths(previousRects, labelAnimations);
+      const nextNarrow = resolveContextStripLabelsNarrow(available);
+      if (nextCompact === committedCompact && nextNarrow === committedNarrow) return;
+      flushSync(() => setLayout({ compact: nextCompact, narrow: nextNarrow }));
     };
 
     let stopResize = () => {};
@@ -573,27 +488,18 @@ function useLabelsOverflow(): readonly [
       );
     };
     observeSizes();
-    // Text and control changes alter natural widths without resizing a hidden
-    // or squeezed label, so they re-measure too. Only added or removed elements
-    // can change the observed set; re-subscribing delivers a measure itself.
-    const mutations = new MutationObserver((records) => {
-      const elementsChanged = records.some((record) =>
-        [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element),
-      );
-      if (elementsChanged) observeSizes();
-      else measure();
-    });
+    // Text and control changes can alter the layout without resizing the strip.
+    const mutations = new MutationObserver(() => measure());
     mutations.observe(current, { childList: true, characterData: true, subtree: true });
     document.fonts.addEventListener("loadingdone", measure);
     return () => {
       stopResize();
       mutations.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
-      for (const animation of labelAnimations.values()) animation.cancel();
     };
   };
 
-  return [attach, overflows] as const;
+  return [attach, layout.compact, layout.narrow] as const;
 }
 
 export const BranchToolbar = memo(function BranchToolbar({
@@ -688,7 +594,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     activeEnvironment: activeEnvironmentOption,
     canPickEnvironment: hasMultipleEnvironments,
   });
-  const [attachStrip, labelsOverflow] = useLabelsOverflow();
+  const [attachStrip, labelsCompact, labelsNarrow] = useLabelsOverflow();
 
   if (!activeProject) return null;
 
@@ -743,11 +649,23 @@ export const BranchToolbar = memo(function BranchToolbar({
   return (
     <ComposerSurface.ContextStrip
       ref={attachStrip}
-      data-compact={labelsOverflow ? "" : undefined}
+      data-compact={labelsCompact ? "" : undefined}
+      data-narrow={labelsNarrow ? "" : undefined}
       className={cn("gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground")}
     >
+      {!isServerThread ? (
+        <>
+          <span
+            className="inline-flex h-7 min-w-0 max-w-[7rem] shrink-0 items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/80 text-xs sm:h-6"
+            data-composer-context-control
+          >
+            <FolderIcon className="size-3 shrink-0" />
+            <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
+          </span>
+        </>
+      ) : null}
       {showGitControls ? (
-        <div className="contents @3xl/composer-surface:hidden">
+        <div className={cn("contents", isServerThread && "@3xl/composer-surface:hidden")}>
           <RunContextSelector
             forceNewWorktree={forceNewWorktree}
             autoEnvironmentLabel={autoEnvironmentLabel}
@@ -767,10 +685,11 @@ export const BranchToolbar = memo(function BranchToolbar({
             onUsePreviousWorktree={onUsePreviousWorktree}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+            narrowLabels={labelsNarrow}
           />
         </div>
       ) : null}
-      {showGitControls || showEnvironmentIndicator ? (
+      {isServerThread && (showGitControls || showEnvironmentIndicator) ? (
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
@@ -817,7 +736,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
-          className="min-w-0 flex-initial justify-end @3xl/composer-surface:ml-auto"
+          className="min-w-0 flex-1 justify-end @3xl/composer-surface:ml-auto"
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}
