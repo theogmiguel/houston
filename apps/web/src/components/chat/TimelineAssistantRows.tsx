@@ -10,6 +10,7 @@ import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
+import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
@@ -368,6 +369,7 @@ function AssistantChangedFilesSectionInner({
     <ChangedFilesCard
       runId={turnSummary.runId}
       files={checkpointFiles}
+      totals={checkpointFileTotals(turnSummary)}
       allDirectoriesExpanded={allDirectoriesExpanded}
       resolvedTheme={resolvedTheme}
       onToggleAllDirectories={() =>
