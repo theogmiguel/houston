@@ -130,39 +130,6 @@ export function partitionShelfThreads(
   };
 }
 
-export interface OnHoldSummary {
-  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
-  readonly nextWakeAt: string | null;
-}
-
-export function summarizeOnHold(
-  grids: ReadonlyArray<GridRecord>,
-  threads: ReadonlyArray<EnvironmentThreadShell>,
-  now: string,
-): OnHoldSummary {
-  const inAnyGrid = new Set(
-    grids.flatMap((grid) =>
-      (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
-    ),
-  );
-  const held = threads
-    .filter(
-      (thread) =>
-        thread.archivedAt === null && inAnyGrid.has(thread.id) && effectiveSnoozed(thread, { now }),
-    )
-    .toSorted((left, right) => {
-      const leftUntil =
-        left.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(left.snoozedUntil);
-      const rightUntil =
-        right.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(right.snoozedUntil);
-      return leftUntil - rightUntil;
-    });
-  return {
-    threads: held,
-    nextWakeAt: held.find((thread) => thread.snoozedUntil !== null)?.snoozedUntil ?? null,
-  };
-}
-
 export function resolveGridThreadAttentionState(state: GridThreadState): boolean {
   return state === "needs" || state === "ready";
 }
