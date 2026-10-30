@@ -86,7 +86,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   const variant = errorClass === "usage_limit" || chatGptLimit ? "warning" : "error";
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
-      <Alert variant={variant} surface="glass" controlAlignment="first-line" data-variant={variant}>
+      <Alert variant={variant} controlAlignment="first-line" data-variant={variant}>
         {chatGptLimit ? (
           <OpenAI className="size-4 text-foreground!" aria-hidden="true" />
         ) : (
@@ -103,7 +103,11 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
               </p>
             </div>
           ) : (
-            <ExpandableText text={error} collapsedText={getThreadErrorBannerMessage(error)} />
+            <ExpandableText
+              text={error}
+              collapsedText={getThreadErrorBannerMessage(error)}
+              className="text-sm font-medium text-foreground"
+            />
           )}
         </AlertDescription>
         {(chatGptLimit || onDismiss) && (
