@@ -52,6 +52,7 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { mayHoldT3Tools } from "../houston/sideThreads.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -422,11 +423,7 @@ export const layerWithOptions = (
               threadId,
               Effect.gen(function* () {
                 // Houston: a side thread gets no T3 MCP tools; they act outside its sandbox.
-                const sideThread = yield* projectionStore.getThread(threadId).pipe(
-                  Effect.map((thread) => thread.side !== undefined),
-                  Effect.orElseSucceed(() => false),
-                );
-                if (sideThread) {
+                if (!(yield* mayHoldT3Tools(projectionStore.getThread(threadId)))) {
                   yield* mcpSessionRegistry.revokeThread(threadId);
                   yield* mcpSessions.clear(threadId);
                   return { mcpCredentialId: undefined, issued: false };

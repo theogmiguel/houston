@@ -11,6 +11,7 @@ import {
   type RunId,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as Effect from "effect/Effect";
 
 import { isForkableSourceRunStatus } from "../orchestration-v2/ThreadForkService.ts";
 
@@ -110,6 +111,15 @@ export function sentReviewText(input: {
 
 export const isSideThread = (thread: Pick<OrchestrationV2AppThread, "side">) =>
   thread.side !== undefined;
+
+/** Whether a thread may hold T3 MCP tools; a thread that cannot be read gets none. */
+export const mayHoldT3Tools = <E, R>(
+  thread: Effect.Effect<Pick<OrchestrationV2AppThread, "side">, E, R>,
+) =>
+  thread.pipe(
+    Effect.map((read) => !isSideThread(read)),
+    Effect.orElseSucceed(() => false),
+  );
 
 export const hasReadOnlyRun = (capabilities: OrchestrationV2ProviderCapabilities) =>
   capabilities.runtimePolicy.readOnlyRun !== undefined;
