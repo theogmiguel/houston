@@ -212,6 +212,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
+import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -1308,6 +1309,7 @@ export const layerWsRpc = (
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
+      const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3015,6 +3017,12 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
+        [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
+        [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,
+        [WS_METHODS.houstonSlackConfigure]: (input) => houstonSlack.configure(input),
+        [WS_METHODS.houstonSlackRequestsList]: (input) => houstonSlack.requests(input),
+        [WS_METHODS.houstonSlackSubscribe]: () => houstonSlack.subscribe,
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
@@ -3321,10 +3329,7 @@ export const layer = Layer.unwrap(
           yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
-              Layer.merge(
-                RpcAuthorization.layer(session.scopes),
-                rpcInstrumentationLayer,
-              ),
+              Layer.merge(RpcAuthorization.layer(session.scopes), rpcInstrumentationLayer),
             ),
             Effect.forkScoped,
           );

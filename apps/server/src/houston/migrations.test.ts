@@ -19,6 +19,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [2, "TasksBacklog"],
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
+  [7, "SlackIntake"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -242,6 +243,84 @@ describe("the task sources migration runs on the Houston track", () => {
 
         yield* Effect.gen(function* () {
           assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
+describe("the slack intake migration runs on the Houston track", () => {
+  const SLACK_TABLES = [
+    "houston_slack_adjustments",
+    "houston_slack_channels",
+    "houston_slack_import",
+    "houston_slack_outbox",
+    "houston_slack_questions",
+    "houston_slack_requests",
+    "houston_slack_results",
+    "houston_slack_settings",
+  ];
+
+  it.effect("the slack intake migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          assert.deepEqual(history.at(-1), [7, "SlackIntake"]);
+          const names = history.map(([, name]) => name);
+          assert.isBelow(names.indexOf("TaskSources"), names.indexOf("SlackIntake"));
+          assert.isTrue(history.slice(0, -1).every(([id]) => id < 7));
+          const tables = (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'houston_slack_%' ORDER BY name
+          `).map((row) => row.name);
+          assert.deepEqual(tables, SLACK_TABLES);
+          const request = (ts: string) => sql`
+            INSERT INTO houston_slack_requests (channel_id, ts, author, project_id, state, created_at)
+            VALUES ('C1', ${ts}, 'U2', 'p', 'pending', 'now')
+          `;
+          yield* request("1.000100");
+          yield* request("1.000200");
+          assert.isTrue((yield* Effect.exit(request("1.000100")))._tag === "Failure");
+          const outbox = (key: string) => sql`
+            INSERT INTO houston_slack_outbox (request_id, dedupe_key, target, text, created_at)
+            VALUES (1, ${key}, 'thread', 'x', 'now')
+          `;
+          yield* outbox("a");
+          assert.isTrue((yield* Effect.exit(outbox("a")))._tag === "Failure");
+          const settings = (id: number) => sql`
+            INSERT INTO houston_slack_settings (id, enabled, language, updated_at)
+            VALUES (${id}, 0, 'en', 'now')
+          `;
+          yield* settings(1);
+          assert.isTrue((yield* Effect.exit(settings(2)))._tag === "Failure");
+          for (const table of SLACK_TABLES) {
+            const columns = yield* sql<{ readonly name: string }>`
+              SELECT name FROM pragma_table_info(${table})
+            `;
+            assert.isNotEmpty(columns, table);
+            for (const column of columns) {
+              assert.notMatch(column.name, /token|secret/i, `${table}.${column.name}`);
+            }
+          }
+          // Task sources' provider check is unchanged: Slack has no row there.
+          const refused = yield* Effect.exit(sql`
+            INSERT INTO houston_task_source_settings (
+              project_id, provider, enabled, settings_json, updated_at
+            ) VALUES ('p', 'slack', 0, '{}', 'now')
+          `);
+          assert.isTrue(refused._tag === "Failure");
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("slack")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* upstreamHistory, upstream);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),

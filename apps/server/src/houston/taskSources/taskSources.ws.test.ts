@@ -118,6 +118,7 @@ import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonReviewState from "../reviewState.ts";
+import * as HoustonSlackService from "../slack/Service.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
@@ -155,6 +156,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
