@@ -4633,6 +4633,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const selectionMustApplyNow =
       selectionChanged &&
       (providerInstanceChanged || selectionTransition?.type !== "apply_on_next_turn");
+    // Houston (AD-040): a steer that also changes the selection is still a steer, refused by name
+    // where the provider cannot steer rather than restarted.
+    if (!input.forceRestart && selectionMustApplyNow) {
+      yield* mapDispatchError(input.command)(
+        commandPolicy.decideSteeringExecution({
+          commandId: input.command.commandId,
+          threadId: input.command.threadId,
+          providerInstanceId: targetRun.providerInstanceId,
+          capabilities: session.providerSession.capabilities,
+          forceRestart: false,
+        }),
+      );
+    }
     const steeringPolicy = yield* mapDispatchError(input.command)(
       commandPolicy.decideSteeringExecution({
         commandId: input.command.commandId,
@@ -5324,7 +5337,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.deliveryIntent,
     );
     // Houston: the intent the sender chose, kept on the message's delivery record.
-    const requestedIntent =
+    let requestedIntent =
       command.deliveryIntent === "steer" ||
       (command.deliveryIntent === undefined && command.dispatchMode.type === "steer_active")
         ? ("steer" as const)
@@ -5404,6 +5417,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           goalStopRunId = target.id;
         }
         dispatchMode = { type: "queue_after_active" };
+        // Houston: a goal sent as an interrupt that stops nothing only waits in the queue.
+        if (requestedIntent === "interrupt" && goalStopRunId === undefined) {
+          requestedIntent = "queue";
+        }
       }
     }
     if (
