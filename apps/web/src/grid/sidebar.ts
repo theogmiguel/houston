@@ -4,12 +4,13 @@ import {
   isThreadWokeUnseen,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
-import type { GridRecord } from "./gridStore";
+import { workspaceKeyOf, type GridRecord } from "./gridStore";
 import { preorderThreads } from "./tree";
 
 /**
@@ -90,6 +91,43 @@ export function visibleGridThreads(
   );
 }
 
+export interface ShelfThreads {
+  readonly held: EnvironmentThreadShell[];
+  readonly closed: EnvironmentThreadShell[];
+}
+
+function wakeTimeMs(thread: EnvironmentThreadShell): number {
+  if (thread.snoozedUntil === null) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(thread.snoozedUntil);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/**
+ * The rail's two shelves cover every open workspace. Held threads wake in
+ * order; closed threads follow the settled order, newest first.
+ */
+export function partitionShelfThreads(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  workspaceKeys: ReadonlySet<string>,
+  now: string,
+): ShelfThreads {
+  const held: EnvironmentThreadShell[] = [];
+  const closed: EnvironmentThreadShell[] = [];
+  for (const thread of threads) {
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
+    if (effectiveSnoozed(thread, { now })) {
+      held.push(thread);
+    } else if (thread.settledOverride === "settled") {
+      closed.push(thread);
+    }
+  }
+  return {
+    held: held.toSorted((left, right) => wakeTimeMs(left) - wakeTimeMs(right)),
+    closed: sortSettledThreads(closed),
+  };
+}
+
 export interface OnHoldSummary {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly nextWakeAt: string | null;
@@ -108,12 +146,11 @@ export function summarizeOnHold(
   const held = threads
     .filter(
       (thread) =>
-        thread.archivedAt === null &&
-        inAnyGrid.has(thread.id) &&
-        effectiveSnoozed(thread, { now }),
+        thread.archivedAt === null && inAnyGrid.has(thread.id) && effectiveSnoozed(thread, { now }),
     )
     .toSorted((left, right) => {
-      const leftUntil = left.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(left.snoozedUntil);
+      const leftUntil =
+        left.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(left.snoozedUntil);
       const rightUntil =
         right.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(right.snoozedUntil);
       return leftUntil - rightUntil;
@@ -148,12 +185,9 @@ export interface AttentionNavigationEvent {
  * into `>` on most layouts, so both keys count. `Ctrl J` never matches: the
  * terminal drawer keeps it.
  */
-export function attentionNavigationDirection(
-  event: AttentionNavigationEvent,
-): 1 | -1 | null {
+export function attentionNavigationDirection(event: AttentionNavigationEvent): 1 | -1 | null {
   if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
-  const isPeriod =
-    event.code === "Period" || event.key === "." || event.key === ">";
+  const isPeriod = event.code === "Period" || event.key === "." || event.key === ">";
   if (!isPeriod) return null;
   return event.shiftKey ? -1 : 1;
 }
@@ -171,7 +205,8 @@ export function nextAttentionCard(
 ): AttentionCard | null {
   const candidates = cards.filter((card) => resolveGridThreadAttentionState(card.state));
   if (candidates.length === 0) return null;
-  if (current === null) return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
+  if (current === null)
+    return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
   const currentIndex = cards.findIndex(
     (card) => card.gridId === current.gridId && card.threadId === current.threadId,
   );

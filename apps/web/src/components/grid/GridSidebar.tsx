@@ -18,14 +18,15 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockIcon,
+  AlarmClockOffIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
-  EyeOffIcon,
   GitBranchIcon,
   MoreHorizontalIcon,
   PlusIcon,
   SearchIcon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -51,8 +52,8 @@ import {
   gridThreadStateLabel,
   nextAttentionCard,
   openPullRequestNumber,
+  partitionShelfThreads,
   resolveGridThreadState,
-  summarizeOnHold,
   threadMatchesGridSearch,
   updateThreadSelection,
   visibleGridThreads,
@@ -60,6 +61,7 @@ import {
   type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
+import { GridShelves } from "./GridShelves";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
@@ -176,7 +178,8 @@ export function GridSidebar() {
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
   const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? null;
-  const openGrid = openGridId === null ? null : (grids.find((grid) => grid.id === openGridId) ?? null);
+  const openGrid =
+    openGridId === null ? null : (grids.find((grid) => grid.id === openGridId) ?? null);
 
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
@@ -228,9 +231,7 @@ export function GridSidebar() {
       ),
     );
     setSelection((current) => ({
-      selectedThreadKeys: new Set(
-        [...current.selectedThreadKeys].filter((key) => !keys.has(key)),
-      ),
+      selectedThreadKeys: new Set([...current.selectedThreadKeys].filter((key) => !keys.has(key))),
       anchorThreadKey:
         current.anchorThreadKey !== null && keys.has(current.anchorThreadKey)
           ? null
@@ -241,7 +242,11 @@ export function GridSidebar() {
   const closeThreads = (threadsToClose: ReadonlyArray<EnvironmentThreadShell>) => {
     removeFromSelection(threadsToClose);
     const closedKeys = new Set<string>(threadsToClose.map((thread) => thread.id));
-    if (openGrid !== null && openGrid.focusedThreadId !== null && closedKeys.has(openGrid.focusedThreadId)) {
+    if (
+      openGrid !== null &&
+      openGrid.focusedThreadId !== null &&
+      closedKeys.has(openGrid.focusedThreadId)
+    ) {
       const remaining = visibleGridThreads(openGrid, threads, nowIso).filter(
         (thread) => !closedKeys.has(thread.id),
       );
@@ -251,15 +256,16 @@ export function GridSidebar() {
     }
     for (const thread of threadsToClose) {
       void (async () => {
-        const result = await actions.settleThread(
-          scopeThreadRef(thread.environmentId, thread.id),
-        );
+        const result = await actions.settleThread(scopeThreadRef(thread.environmentId, thread.id));
         reportFailure("Failed to close thread", result);
       })();
     }
   };
 
-  const holdThreads = (threadsToHold: ReadonlyArray<EnvironmentThreadShell>, snoozedUntil: string) => {
+  const holdThreads = (
+    threadsToHold: ReadonlyArray<EnvironmentThreadShell>,
+    snoozedUntil: string,
+  ) => {
     removeFromSelection(threadsToHold);
     for (const thread of threadsToHold) {
       void (async () => {
@@ -354,7 +360,10 @@ export function GridSidebar() {
     };
   });
 
-  const selectThread = (thread: EnvironmentThreadShell, input: { shiftKey: boolean; toggleKey: boolean }) => {
+  const selectThread = (
+    thread: EnvironmentThreadShell,
+    input: { shiftKey: boolean; toggleKey: boolean },
+  ) => {
     const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
     setSelection((current) =>
       updateThreadSelection(current, {
@@ -424,6 +433,31 @@ export function GridSidebar() {
     useGridStore.getState().focusThread(gridId, source.threadId);
   };
 
+  const wakeShelfThread = (thread: EnvironmentThreadShell) => {
+    void (async () => {
+      const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
+      reportFailure("Failed to bring thread back", result);
+    })();
+  };
+
+  const reopenShelfThread = (thread: EnvironmentThreadShell) => {
+    void (async () => {
+      const result = await actions.unsettleThread(scopeThreadRef(thread.environmentId, thread.id));
+      reportFailure("Failed to reopen thread", result);
+    })();
+  };
+
+  const workspaceKeys = new Set(
+    projects.map((project) => workspaceKeyOf(project.environmentId, project.id)),
+  );
+  const workspaceTitles = new Map(
+    projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
+  );
+  const shelves = partitionShelfThreads(threads, workspaceKeys, nowIso);
+  const threadById = new Map<string, EnvironmentThreadShell>(
+    threads.map((thread) => [thread.id, thread] as const),
+  );
+
   const query = search.trim();
   const searchMatchThreads = projects.flatMap((project) =>
     orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
@@ -488,113 +522,164 @@ export function GridSidebar() {
         />
       </SidebarHeader>
       <SidebarContent>
-        <div className="flex flex-col gap-px px-2 pb-2">
-          {projects.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-secondary-label">
-              Open a project to create its first grid.
-            </p>
-          ) : null}
-          {projects.map((project) => {
-            const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-            const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey);
-            const visibleGrids = workspaceGrids.filter((grid) => !grid.hidden);
-            const hiddenGrids = workspaceGrids.filter((grid) => grid.hidden);
-            const workspaceMatches =
-              query.length > 0 &&
-              project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-            const renderedGrids = visibleGrids.flatMap((grid) => {
-              const gridMatches =
+        <div className="flex min-h-full flex-col px-2 pb-2">
+          <div className="flex flex-col gap-px">
+            {projects.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-secondary-label">
+                Open a project to create its first grid.
+              </p>
+            ) : null}
+            {projects.map((project) => {
+              const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
+              const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey);
+              const visibleGrids = workspaceGrids.filter((grid) => !grid.hidden);
+              const workspaceMatches =
                 query.length > 0 &&
-                grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-              const gridThreads = visibleGridThreads(grid, threads, nowIso);
-              const matchedThreads =
-                query.length === 0 || workspaceMatches || gridMatches
-                  ? gridThreads
-                  : gridThreads.filter((thread) =>
-                      threadMatchesGridSearch(
-                        {
-                          title: thread.title,
-                          branch: thread.branch,
-                          pullRequests: thread.pullRequests,
-                        },
-                        query,
-                      ),
-                    );
-              if (
-                query.length > 0 &&
-                !workspaceMatches &&
-                !gridMatches &&
-                matchedThreads.length === 0
-              ) {
-                return [];
-              }
-              return [{ grid, threads: matchedThreads }];
-            });
-            if (query.length > 0 && !workspaceMatches && renderedGrids.length === 0) return null;
-            const collapsed = query.length === 0 && collapsedWorkspaces.has(workspaceKey);
-            const onHold = summarizeOnHold(visibleGrids, threads, nowIso);
-            const providerEntries =
-              providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
-            return (
-              <WorkspaceGroup
-                key={workspaceKey}
-                project={project}
-                collapsed={collapsed}
-                query={query}
-                grids={renderedGrids}
-                hiddenGrids={hiddenGrids}
-                onHold={onHold}
-                providerEntries={providerEntries}
-                openGridId={openGrid?.id ?? null}
-                nowIso={nowIso}
-                selection={selection}
-                dragging={dragging}
-                dropTarget={dropTarget}
-                onToggle={() =>
-                  setCollapsedWorkspaces((current) => {
-                    const next = new Set(current);
-                    if (next.has(workspaceKey)) next.delete(workspaceKey);
-                    else next.add(workspaceKey);
-                    return next;
-                  })
-                }
-                onCreateGrid={() => {
-                  const gridId = createGrid({
-                    environmentId: project.environmentId,
-                    projectId: project.id,
-                    workspaceKey,
-                  });
-                  void navigate({ to: "/grid/$gridId", params: { gridId } });
-                }}
-                onOpenThread={openThread}
-                onSelectThread={selectThread}
-                onCloseThread={(thread) => closeThreads([thread])}
-                onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
-                onPickHoldTime={pickHoldTime}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOverGrid={setDropTarget}
-                onDropOnGrid={(source, targetGridId) => moveThreadToGrid(source, targetGridId)}
-                onDropOnThread={dropThreadOnThread}
-                onDropOnWorkspace={(source) => moveThreadToWorkspace(project, source)}
-                onDragLeave={() => setDropTarget(null)}
-                readDragged={readDragged}
-                onRenameThread={renameThread}
-                onSetAutoClose={setAutoClose}
-                onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
-                onBringBack={(heldThreads) => {
-                  for (const thread of heldThreads) {
-                    void (async () => {
-                      const result = await actions.unsnoozeThread(
-                        scopeThreadRef(thread.environmentId, thread.id),
+                project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+              const renderedGrids = visibleGrids.flatMap((grid) => {
+                const gridMatches =
+                  query.length > 0 &&
+                  grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+                const gridThreads = visibleGridThreads(grid, threads, nowIso);
+                const matchedThreads =
+                  query.length === 0 || workspaceMatches || gridMatches
+                    ? gridThreads
+                    : gridThreads.filter((thread) =>
+                        threadMatchesGridSearch(
+                          {
+                            title: thread.title,
+                            branch: thread.branch,
+                            pullRequests: thread.pullRequests,
+                          },
+                          query,
+                        ),
                       );
-                      reportFailure("Failed to bring thread back", result);
-                    })();
+                if (
+                  query.length > 0 &&
+                  !workspaceMatches &&
+                  !gridMatches &&
+                  matchedThreads.length === 0
+                ) {
+                  return [];
+                }
+                return [{ grid, threads: matchedThreads }];
+              });
+              if (query.length > 0 && !workspaceMatches && renderedGrids.length === 0) return null;
+              const collapsed = query.length === 0 && collapsedWorkspaces.has(workspaceKey);
+              const providerEntries =
+                providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
+              return (
+                <WorkspaceGroup
+                  key={workspaceKey}
+                  project={project}
+                  collapsed={collapsed}
+                  query={query}
+                  grids={renderedGrids}
+                  providerEntries={providerEntries}
+                  openGridId={openGrid?.id ?? null}
+                  nowIso={nowIso}
+                  selection={selection}
+                  dragging={dragging}
+                  dropTarget={dropTarget}
+                  onToggle={() =>
+                    setCollapsedWorkspaces((current) => {
+                      const next = new Set(current);
+                      if (next.has(workspaceKey)) next.delete(workspaceKey);
+                      else next.add(workspaceKey);
+                      return next;
+                    })
                   }
-                }}
-              />
-            );
-          })}
+                  onCreateGrid={() => {
+                    const gridId = createGrid({
+                      environmentId: project.environmentId,
+                      projectId: project.id,
+                      workspaceKey,
+                    });
+                    void navigate({ to: "/grid/$gridId", params: { gridId } });
+                  }}
+                  onOpenThread={openThread}
+                  onSelectThread={selectThread}
+                  onCloseThread={(thread) => closeThreads([thread])}
+                  onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                  onPickHoldTime={pickHoldTime}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onDragOverGrid={setDropTarget}
+                  onDropOnGrid={(source, targetGridId) => moveThreadToGrid(source, targetGridId)}
+                  onDropOnThread={dropThreadOnThread}
+                  onDropOnWorkspace={(source) => moveThreadToWorkspace(project, source)}
+                  onDragLeave={() => setDropTarget(null)}
+                  readDragged={readDragged}
+                  onRenameThread={renameThread}
+                  onSetAutoClose={setAutoClose}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-auto flex flex-col gap-px pt-2">
+            <GridShelves
+              held={shelves.held}
+              closed={shelves.closed}
+              closedDropTarget={dropTarget === "shelf:closed"}
+              onClosedDragOver={(event) => {
+                if (readDragged(event) === null) return;
+                event.preventDefault();
+                setDropTarget("shelf:closed");
+              }}
+              onClosedDragLeave={() => {
+                if (dropTarget === "shelf:closed") setDropTarget(null);
+              }}
+              onClosedDrop={(event) => {
+                const source = readDragged(event);
+                event.preventDefault();
+                setDropTarget(null);
+                if (source === null) return;
+                const thread = threadById.get(source.threadId);
+                if (thread !== undefined) closeThreads([thread]);
+              }}
+              renderCard={(thread, shelf) => (
+                <ThreadCard
+                  key={thread.id}
+                  gridId={null}
+                  thread={thread}
+                  query=""
+                  providerEntries={
+                    providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+                  }
+                  nowIso={nowIso}
+                  focused={false}
+                  selected={false}
+                  dragging={false}
+                  workspaceTitle={
+                    workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+                    ""
+                  }
+                  timeLabel={
+                    shelf === "snoozed" && thread.snoozedUntil !== null
+                      ? wakeTimeLabel(thread.snoozedUntil)
+                      : null
+                  }
+                  shelf={shelf}
+                  onOpen={() => {
+                    if (shelf === "snoozed") wakeShelfThread(thread);
+                    else reopenShelfThread(thread);
+                  }}
+                  onSelect={() => {}}
+                  onClose={() => {}}
+                  onHold={() => {}}
+                  onPickHoldTime={pickHoldTime}
+                  onRename={() => {}}
+                  onSetAutoClose={() => {}}
+                  onWake={() => wakeShelfThread(thread)}
+                  onReopen={() => reopenShelfThread(thread)}
+                  onDragStart={() => {}}
+                  onDragEnd={() => {}}
+                  onDropOnThread={() => {}}
+                  readDragged={readDragged}
+                />
+              )}
+            />
+          </div>
         </div>
       </SidebarContent>
       {selection.selectedThreadKeys.size > 0 ? (
@@ -621,7 +706,9 @@ export function GridSidebar() {
                     onClick={() => holdThreads(selectedThreads, preset.snoozedUntil)}
                   >
                     {preset.label}
-                    <span className="ml-auto text-2xs text-secondary-label">{preset.whenLabel}</span>
+                    <span className="ml-auto text-2xs text-secondary-label">
+                      {preset.whenLabel}
+                    </span>
                   </MenuItem>
                 ))}
                 <MenuSeparator />
@@ -669,8 +756,6 @@ function WorkspaceGroup({
   collapsed,
   query,
   grids,
-  hiddenGrids,
-  onHold,
   providerEntries,
   openGridId,
   nowIso,
@@ -692,8 +777,6 @@ function WorkspaceGroup({
   onDropOnWorkspace,
   onDragLeave,
   readDragged,
-  onShowGrid,
-  onBringBack,
   onRenameThread,
   onSetAutoClose,
 }: {
@@ -701,8 +784,6 @@ function WorkspaceGroup({
   collapsed: boolean;
   query: string;
   grids: ReadonlyArray<{ grid: GridRecord; threads: EnvironmentThreadShell[] }>;
-  hiddenGrids: ReadonlyArray<GridRecord>;
-  onHold: ReturnType<typeof summarizeOnHold>;
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   openGridId: string | null;
   nowIso: string;
@@ -717,7 +798,10 @@ function WorkspaceGroup({
     input: { shiftKey: boolean; toggleKey: boolean },
   ) => void;
   onCloseThread: (thread: EnvironmentThreadShell) => void;
-  onHoldThread: (thread: EnvironmentThreadShell, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onHoldThread: (
+    thread: EnvironmentThreadShell,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+  ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
   onDragStart: (gridId: string, thread: EnvironmentThreadShell) => void;
   onDragEnd: () => void;
@@ -727,8 +811,6 @@ function WorkspaceGroup({
   onDropOnWorkspace: (source: DraggedThread) => void;
   onDragLeave: () => void;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
-  onShowGrid: (gridId: string) => void;
-  onBringBack: (threads: ReadonlyArray<EnvironmentThreadShell>) => void;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
 }) {
@@ -823,72 +905,6 @@ function WorkspaceGroup({
               onSetAutoClose={onSetAutoClose}
             />
           ))}
-          {query.length === 0 && onHold.threads.length > 0 ? (
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    className="flex h-6 items-center gap-1.5 rounded-(--r-ctl) pl-7 pr-2 text-left text-xs text-secondary-label hover:bg-sidebar-row-hover hover:text-secondary-foreground"
-                  />
-                }
-              >
-                <ClockIcon aria-hidden className="size-3" />
-                <span>
-                  {onHold.threads.length} on hold
-                  {onHold.nextWakeAt !== null ? ` · next ${wakeTimeLabel(onHold.nextWakeAt)}` : ""}
-                </span>
-              </MenuTrigger>
-              <MenuPopup side="bottom" align="start" className="w-60">
-                {onHold.threads.map((thread) => {
-                  const heldGrid = findGridForThread(grids, thread.id);
-                  return (
-                    <MenuItem
-                      key={thread.id}
-                      disabled={heldGrid === null}
-                      onClick={() => {
-                        if (heldGrid !== null) onOpenThread(heldGrid.id, thread.id);
-                      }}
-                    >
-                      <ClockIcon aria-hidden className="size-3.5" />
-                      <span className="min-w-0 flex-1 truncate">{thread.title}</span>
-                      <span className="text-2xs text-secondary-label">
-                        {thread.snoozedUntil === null ? "" : wakeTimeLabel(thread.snoozedUntil)}
-                      </span>
-                    </MenuItem>
-                  );
-                })}
-                <MenuSeparator />
-                <MenuItem onClick={() => onBringBack(onHold.threads)}>Bring all back now</MenuItem>
-              </MenuPopup>
-            </Menu>
-          ) : null}
-          {query.length === 0 && hiddenGrids.length > 0 ? (
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    className="flex h-6 items-center gap-1.5 rounded-(--r-ctl) pl-7 pr-2 text-left text-xs text-secondary-label hover:bg-sidebar-row-hover hover:text-secondary-foreground"
-                  />
-                }
-              >
-                <EyeOffIcon aria-hidden className="size-3" />
-                <span>
-                  {hiddenGrids.length} hidden {hiddenGrids.length === 1 ? "grid" : "grids"}
-                </span>
-              </MenuTrigger>
-              <MenuPopup side="bottom" align="start" className="w-56">
-                {hiddenGrids.map((grid) => (
-                  <MenuItem key={grid.id} onClick={() => onShowGrid(grid.id)}>
-                    <EyeOffIcon aria-hidden className="size-3.5" />
-                    <span className="min-w-0 flex-1 truncate">{grid.name}</span>
-                    <span className="text-2xs text-secondary-label">Show</span>
-                  </MenuItem>
-                ))}
-              </MenuPopup>
-            </Menu>
-          ) : null}
         </div>
       )}
     </section>
@@ -906,13 +922,6 @@ async function deleteGridWithConfirm(
       { variant: "destructive" },
     )) ?? false;
   if (confirmed) deleteGrid(grid.id);
-}
-
-function findGridForThread(
-  grids: ReadonlyArray<{ grid: GridRecord; threads: EnvironmentThreadShell[] }>,
-  threadId: string,
-): GridRecord | null {
-  return grids.find(({ threads }) => threads.some((thread) => thread.id === threadId))?.grid ?? null;
 }
 
 function GridRow({
@@ -959,7 +968,10 @@ function GridRow({
     input: { shiftKey: boolean; toggleKey: boolean },
   ) => void;
   onCloseThread: (thread: EnvironmentThreadShell) => void;
-  onHoldThread: (thread: EnvironmentThreadShell, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onHoldThread: (
+    thread: EnvironmentThreadShell,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+  ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
   onDragStart: (gridId: string, thread: EnvironmentThreadShell) => void;
   onDragEnd: () => void;
@@ -1111,9 +1123,7 @@ function GridRow({
             </MenuItem>
             <MenuSeparator />
             <MenuItem
-              onClick={() =>
-                grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id)
-              }
+              onClick={() => (grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id))}
             >
               {grid.pinnedAt === null ? "Pin grid" : "Unpin grid"}
             </MenuItem>
@@ -1122,10 +1132,7 @@ function GridRow({
               Delete grid
             </MenuItem>
             <MenuSeparator />
-            <MenuItem
-              disabled={readyThreads.length === 0}
-              onClick={closeAllReady}
-            >
+            <MenuItem disabled={readyThreads.length === 0} onClick={closeAllReady}>
               Close all ready
             </MenuItem>
           </MenuPopup>
@@ -1166,12 +1173,16 @@ function GridRow({
   );
 }
 
-function ThreadStateMark({ state, startedAt }: { state: GridThreadState; startedAt: string | null }) {
+function ThreadStateMark({
+  state,
+  startedAt,
+}: {
+  state: GridThreadState;
+  startedAt: string | null;
+}) {
   if (state === "idle") return null;
   const elapsed =
-    state === "running" && startedAt !== null ? (
-      <RunningElapsed startedAt={startedAt} />
-    ) : null;
+    state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null;
   return (
     <span
       className={cn(
@@ -1249,6 +1260,8 @@ function ThreadCard({
   selected,
   dragging,
   workspaceTitle,
+  timeLabel = null,
+  shelf = null,
   onOpen,
   onSelect,
   onClose,
@@ -1256,12 +1269,14 @@ function ThreadCard({
   onPickHoldTime,
   onRename,
   onSetAutoClose,
+  onWake,
+  onReopen,
   onDragStart,
   onDragEnd,
   onDropOnThread,
   readDragged,
 }: {
-  gridId: string;
+  gridId: string | null;
   thread: EnvironmentThreadShell;
   query: string;
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
@@ -1270,6 +1285,8 @@ function ThreadCard({
   selected: boolean;
   dragging: boolean;
   workspaceTitle: string;
+  timeLabel?: string | null;
+  shelf?: "snoozed" | "settled" | null;
   onOpen: () => void;
   onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
   onClose: () => void;
@@ -1277,6 +1294,8 @@ function ThreadCard({
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
   onRename: (title: string) => void;
   onSetAutoClose: (enabled: boolean) => void;
+  onWake?: () => void;
+  onReopen?: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDropOnThread: (source: DraggedThread) => void;
@@ -1314,8 +1333,9 @@ function ThreadCard({
       <TooltipTrigger
         render={
           <div
-            draggable={!renaming}
+            draggable={!renaming && gridId !== null}
             onDragStart={(event) => {
+              if (gridId === null) return;
               event.dataTransfer.setData(
                 THREAD_DRAG_TYPE,
                 JSON.stringify({ gridId, threadId: thread.id }),
@@ -1354,11 +1374,7 @@ function ThreadCard({
               "group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none",
               "cursor-pointer",
               dragging && "opacity-50",
-              selected
-                ? "bg-(--accent-muted)"
-                : focused
-                  ? "bg-(--sel)"
-                  : "hover:bg-(--hover)",
+              selected ? "bg-(--accent-muted)" : focused ? "bg-(--sel)" : "hover:bg-(--hover)",
             )}
           />
         }
@@ -1415,7 +1431,9 @@ function ThreadCard({
                 <HighlightedText text={thread.title} query={query} />
               </span>
               <span className="shrink-0 group-hover/th:invisible">
-                {state === "idle" ? (
+                {timeLabel !== null ? (
+                  <span className="text-xs text-secondary-label tabular-nums">{timeLabel}</span>
+                ) : state === "idle" ? (
                   <span className="text-xs text-secondary-label tabular-nums">
                     {threadTimeLabel(thread, nowMinute)}
                   </span>
@@ -1426,87 +1444,117 @@ function ThreadCard({
             </button>
           )}
           <span className="absolute top-[5px] right-2 hidden items-center gap-0.5 group-hover/th:flex">
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label="Hold"
-                    className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
-                  >
-                    <ClockIcon aria-hidden className="size-3.5" />
-                  </button>
-                }
-              />
-              <MenuPopup side="bottom" align="end">
-                <HoldMenuItems presets={presets} onPick={applyPreset} onPickTime={onPickHoldTime} />
-              </MenuPopup>
-            </Menu>
-            <button
-              type="button"
-              aria-label="Close thread"
-              onClick={close}
-              className="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
-            >
-              <XIcon aria-hidden className="size-3.5" />
-              Close
-            </button>
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`Thread actions for ${thread.title}`}
-                    className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
-                  >
-                    <MoreHorizontalIcon aria-hidden className="size-3.5" />
-                  </button>
-                }
-              />
-              <MenuPopup side="bottom" align="end">
-                <MenuItem onClick={onOpen}>
-                  Open in grid
-                  <MenuShortcut>Enter</MenuShortcut>
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setName(thread.title);
-                    setRenaming(true);
-                  }}
-                >
-                  Rename
-                  <MenuShortcut>F2</MenuShortcut>
-                </MenuItem>
-                <MenuSeparator />
-                <MenuSub>
-                  <MenuSubTrigger>
-                    Hold
-                    <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
-                  </MenuSubTrigger>
-                  <MenuSubPopup>
+            {shelf !== null ? (
+              <button
+                type="button"
+                aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                onClick={shelf === "snoozed" ? onWake : onReopen}
+                className="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+              >
+                {shelf === "snoozed" ? (
+                  <>
+                    <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                    Wake
+                  </>
+                ) : (
+                  <>
+                    <Undo2Icon aria-hidden className="size-3.5" />
+                    Reopen
+                  </>
+                )}
+              </button>
+            ) : (
+              <>
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Hold"
+                        className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                      >
+                        <ClockIcon aria-hidden className="size-3.5" />
+                      </button>
+                    }
+                  />
+                  <MenuPopup side="bottom" align="end">
                     <HoldMenuItems
                       presets={presets}
                       onPick={applyPreset}
                       onPickTime={onPickHoldTime}
                     />
-                  </MenuSubPopup>
-                </MenuSub>
-                <MenuItem onClick={close}>
-                  Close
-                  {closeShortcut ? <MenuShortcut>{closeShortcut}</MenuShortcut> : null}
-                </MenuItem>
-                <MenuSeparator />
-                <MenuCheckboxItem
-                  checked={thread.autoSettleDisabledAt == null}
-                  onCheckedChange={(checked) => onSetAutoClose(Boolean(checked))}
+                  </MenuPopup>
+                </Menu>
+                <button
+                  type="button"
+                  aria-label="Close thread"
+                  onClick={close}
+                  className="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
                 >
-                  Auto-close on merge
-                  {thread.autoSettleDisabledAt == null ? (
-                    <span className="ml-auto text-2xs text-secondary-label">On</span>
-                  ) : null}
-                </MenuCheckboxItem>
-              </MenuPopup>
-            </Menu>
+                  <XIcon aria-hidden className="size-3.5" />
+                  Close
+                </button>
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label={`Thread actions for ${thread.title}`}
+                        className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                      >
+                        <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                      </button>
+                    }
+                  />
+                  <MenuPopup side="bottom" align="end">
+                    <MenuItem onClick={onOpen}>
+                      Open in grid
+                      <MenuShortcut>Enter</MenuShortcut>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setName(thread.title);
+                        setRenaming(true);
+                      }}
+                    >
+                      Rename
+                      <MenuShortcut>F2</MenuShortcut>
+                    </MenuItem>
+                    <MenuSeparator />
+                    <MenuSub>
+                      <MenuSubTrigger>
+                        Hold
+                        <ChevronRightIcon
+                          aria-hidden
+                          className="ml-auto size-3.5 text-secondary-label"
+                        />
+                      </MenuSubTrigger>
+                      <MenuSubPopup>
+                        <HoldMenuItems
+                          presets={presets}
+                          onPick={applyPreset}
+                          onPickTime={onPickHoldTime}
+                        />
+                      </MenuSubPopup>
+                    </MenuSub>
+                    <MenuItem onClick={close}>
+                      Close
+                      {closeShortcut ? <MenuShortcut>{closeShortcut}</MenuShortcut> : null}
+                    </MenuItem>
+                    <MenuSeparator />
+                    <MenuCheckboxItem
+                      checked={thread.autoSettleDisabledAt == null}
+                      onCheckedChange={(checked) => onSetAutoClose(Boolean(checked))}
+                    >
+                      Auto-close on merge
+                      {thread.autoSettleDisabledAt == null ? (
+                        <span className="ml-auto text-2xs text-secondary-label">On</span>
+                      ) : null}
+                    </MenuCheckboxItem>
+                  </MenuPopup>
+                </Menu>
+              </>
+            )}
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
@@ -1534,9 +1582,7 @@ function ThreadCard({
       </TooltipTrigger>
       <TooltipPopup side="bottom" align="start" className="max-w-65">
         <div className="flex flex-col gap-1.5 px-3 py-2.5 text-xs leading-4 text-secondary-foreground">
-          <span className="text-xs leading-4 font-semibold text-foreground">
-            {thread.title}
-          </span>
+          <span className="text-xs leading-4 font-semibold text-foreground">{thread.title}</span>
           <span className="flex items-center gap-1.5">
             <ChevronRightIcon aria-hidden className="size-3" />
             {workspaceTitle}

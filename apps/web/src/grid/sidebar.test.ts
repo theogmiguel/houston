@@ -7,6 +7,7 @@ import {
   clearThreadSelection,
   nextAttentionCard,
   openPullRequestNumber,
+  partitionShelfThreads,
   resolveGridThreadState,
   threadCardsInPaneOrder,
   threadMatchesGridSearch,
@@ -320,11 +321,7 @@ describe("attention navigation", () => {
 
   it("returns null when no card needs attention", () => {
     expect(
-      nextAttentionCard(
-        [{ gridId: "g-1", threadId: "idle", state: "idle" }],
-        null,
-        1,
-      ),
+      nextAttentionCard([{ gridId: "g-1", threadId: "idle", state: "idle" }], null, 1),
     ).toBeNull();
   });
 });
@@ -351,5 +348,54 @@ describe("grid search and pull requests", () => {
         branchPullRequest: null,
       }),
     ).toBe(412);
+  });
+});
+
+describe("grid shelves", () => {
+  const workspaceKeys = new Set(["env-1:project-1"]);
+
+  it("sorts held threads by wake time and closed threads newest first", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({
+          id: "held-late",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T15:00:00.000Z",
+        }),
+        thread({
+          id: "closed-old",
+          settledOverride: "settled",
+          settledAt: "2026-10-28T10:00:00.000Z",
+        }),
+        thread({
+          id: "held-soon",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T13:00:00.000Z",
+        }),
+        thread({
+          id: "closed-new",
+          settledOverride: "settled",
+          settledAt: "2026-10-29T11:00:00.000Z",
+        }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held-soon", "held-late"]);
+    expect(shelves.closed.map((entry) => entry.id)).toEqual(["closed-new", "closed-old"]);
+  });
+
+  it("leaves out archived threads and other workspaces", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
+        thread({ id: "archived", archivedAt: "2026-10-29T11:00:00.000Z" }),
+        thread({ id: "other", projectId: "project-2" as never }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
+    expect(shelves.closed).toEqual([]);
   });
 });
