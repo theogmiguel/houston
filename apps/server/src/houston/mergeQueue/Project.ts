@@ -42,15 +42,30 @@ export interface GitResult {
   readonly stderr: string;
 }
 
-// No prompt, and no automatic gc or maintenance: their detached child keeps git's output pipe
-// open, so the queue would wait on it, and it holds the scratch worktree busy on Windows.
+// Command-scope config for every queue git process and the git it starts. Automatic gc and
+// maintenance leave a child holding the output pipe and, on Windows, the scratch worktree.
+const QUEUE_GIT_CONFIG: ReadonlyArray<readonly [string, string]> = [
+  ["gc.auto", "0"],
+  ["maintenance.auto", "false"],
+  // The user's config stops at the scratch worktree: no other branch, hook, tag or submodule.
+  ["rebase.updateRefs", "false"],
+  ["core.hooksPath", "/dev/null"],
+  ["commit.gpgSign", "false"],
+  ["rerere.enabled", "false"],
+  ["submodule.recurse", "false"],
+  ["fetch.recurseSubmodules", "false"],
+  ["push.followTags", "false"],
+  ["push.recurseSubmodules", "no"],
+  ["push.gpgSign", "false"],
+  ["core.fsmonitor", "false"],
+];
+
 const queueGitEnv = (): NodeJS.ProcessEnv => {
-  const base = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  const withGc = { ...base, ...VcsProcess.gitConfigEnv(base, "gc.auto", "0", process.platform) };
-  return {
-    ...withGc,
-    ...VcsProcess.gitConfigEnv(withGc, "maintenance.auto", "false", process.platform),
-  };
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  for (const [key, value] of QUEUE_GIT_CONFIG) {
+    Object.assign(env, VcsProcess.gitConfigEnv(env, key, value, process.platform));
+  }
+  return env;
 };
 
 /** Runs git in `cwd`; a git that could not run fails with its error's text. */

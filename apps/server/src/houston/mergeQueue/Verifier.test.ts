@@ -20,6 +20,7 @@ import {
   makeRepos,
   pushBranch,
   remoteHead,
+  tryGit,
   type Repos,
 } from "./mergeQueue.testkit.ts";
 import { failureFor } from "./rules.ts";
@@ -79,13 +80,74 @@ const registered = (repos: Repos) =>
     .filter((line) => line.startsWith("worktree "));
 const quoted = (path: string) => `"${path}"`;
 
-const checkoutState = (repos: Repos) => ({
-  status: git(repos.checkout, ["status", "--porcelain"]),
-  head: git(repos.checkout, ["rev-parse", "HEAD"]),
-  symbolic: git(repos.checkout, ["symbolic-ref", "HEAD"]),
-  index: NodeFS.readFileSync(NodePath.join(repos.checkout, ".git", "index")).toString("base64"),
-  refs: git(repos.checkout, ["for-each-ref", "refs/heads", "refs/remotes"]),
-});
+const checkoutState = (repos: Repos) => {
+  const dotGit = NodePath.join(repos.checkout, ".git");
+  const submodule = NodePath.join(dotGit, "modules", "sub");
+  const fetchHead = NodePath.join(dotGit, "FETCH_HEAD");
+  return {
+    status: git(repos.checkout, ["status", "--porcelain"]),
+    head: git(repos.checkout, ["rev-parse", "HEAD"]),
+    symbolic: git(repos.checkout, ["symbolic-ref", "HEAD"]),
+    index: NodeFS.readFileSync(NodePath.join(dotGit, "index")).toString("base64"),
+    refs: git(repos.checkout, ["for-each-ref", "refs/heads", "refs/remotes"]),
+    submoduleRefs: NodeFS.existsSync(submodule) ? git(submodule, ["for-each-ref"]) : null,
+    fetchHead: NodeFS.existsSync(fetchHead) ? NodeFS.readFileSync(fetchHead, "utf8") : null,
+  };
+};
+
+/** Commits `sub` as a gitlink to `sha` (and `.gitmodules` naming `url`) on `branch` and pushes it. */
+const pushGitlink = (repos: Repos, branch: string, sha: string, url: string) => {
+  const work = NodePath.join(
+    repos.root,
+    `gitlink-${branch.replaceAll("/", "-")}-${sha.slice(0, 7)}`,
+  );
+  git(repos.root, ["clone", "--quiet", repos.bare, work]);
+  const from = tryGit(work, ["rev-parse", "--verify", `origin/${branch}`]) ?? "origin/main";
+  git(work, ["checkout", "--quiet", "-B", branch, from]);
+  NodeFS.writeFileSync(
+    NodePath.join(work, ".gitmodules"),
+    `[submodule "sub"]\n\tpath = sub\n\turl = ${url}\n`,
+  );
+  git(work, ["add", ".gitmodules"]);
+  git(work, ["update-index", "--add", "--cacheinfo", `160000,${sha},sub`]);
+  git(work, ["commit", "--quiet", "-m", `sub at ${sha.slice(0, 7)}`]);
+  git(work, ["push", "--quiet", "--force", "origin", `HEAD:refs/heads/${branch}`]);
+  const head = git(work, ["rev-parse", "HEAD"]);
+  NodeFS.rmSync(work, { recursive: true, force: true });
+  return head;
+};
+
+/** A repository for the submodule with one commit on main; `advance` adds another. */
+const makeSubmoduleRemote = (repos: Repos) => {
+  const bare = NodePath.join(repos.root, "sub.git");
+  const seed = NodePath.join(repos.root, "sub-seed");
+  git(repos.root, ["init", "--bare", "--initial-branch=main", bare]);
+  git(repos.root, ["init", "--initial-branch=main", seed]);
+  const commit = (text: string) => {
+    NodeFS.writeFileSync(NodePath.join(seed, "sub.txt"), text);
+    git(seed, ["add", "."]);
+    git(seed, ["commit", "--quiet", "-m", text.trim()]);
+    git(seed, ["push", "--quiet", bare, "main"]);
+    return git(seed, ["rev-parse", "HEAD"]);
+  };
+  return {
+    url: bare.replaceAll("\\", "/"),
+    first: commit("one\n"),
+    advance: () => commit("two\n"),
+  };
+};
+
+/** A hook that records that it ran; the queue's git must run none of the checkout's hooks. */
+const installHooks = (repos: Repos, marker: string) => {
+  const hooks = NodePath.join(repos.checkout, ".git", "hooks");
+  for (const hook of ["post-checkout", "pre-rebase", "post-rewrite", "reference-transaction"]) {
+    NodeFS.writeFileSync(
+      NodePath.join(hooks, hook),
+      `#!/bin/sh\necho ${hook} >> "${marker.replaceAll("\\", "/")}"\n`,
+      { mode: 0o755 },
+    );
+  }
+};
 
 const alive = (pid: number) => {
   try {
@@ -172,7 +234,45 @@ describe("the project checkout is unchanged by every outcome", () => {
     withVerifier((verifier) =>
       Effect.gen(function* () {
         const repos = makeRepos();
+        // An initialised submodule whose gitlink the head moves, so a recursing fetch would
+        // move the submodule's remote-tracking refs.
+        const sub = makeSubmoduleRemote(repos);
+        pushGitlink(repos, "main", sub.first, sub.url);
+        git(repos.checkout, ["pull", "--quiet", "--ff-only", "origin", "main"]);
+        git(repos.checkout, ["-c", "protocol.file.allow=always", "submodule", "update", "--init"]);
+        git(NodePath.join(repos.checkout, ".git", "modules", "sub"), [
+          "config",
+          "protocol.file.allow",
+          "always",
+        ]);
+        git(repos.checkout, ["config", "protocol.file.allow", "always"]);
         branchBehindMain(repos, { "README.md": "head edit\n", "a.txt": "a\n" });
+        const head = pushGitlink(repos, "houston/7", sub.advance(), sub.url);
+        // The user's config moves every local branch in a rebased range, signs every commit
+        // with a program that fails, replays recorded resolutions and recurses into submodules.
+        for (const [key, value] of [
+          ["rebase.updateRefs", "true"],
+          ["commit.gpgSign", "true"],
+          ["gpg.program", "houston-no-such-gpg"],
+          ["rerere.enabled", "true"],
+          ["submodule.recurse", "true"],
+          ["fetch.recurseSubmodules", "true"],
+          ["fetch.prune", "true"],
+          ["fetch.pruneTags", "true"],
+        ] as const) {
+          git(repos.checkout, ["config", key, value]);
+        }
+        // Local branches on the head and on its parent, checked out nowhere; FETCH_HEAD written.
+        git(repos.checkout, [
+          "fetch",
+          "--quiet",
+          "--no-recurse-submodules",
+          "origin",
+          `+houston/7:refs/heads/houston/x`,
+        ]);
+        git(repos.checkout, ["branch", "houston/stack", `${head}^`]);
+        const marker = NodePath.join(repos.root, "hooks.txt");
+        installHooks(repos, marker);
         // An uncommitted edit, a staged file and an untracked one in the user's checkout.
         NodeFS.writeFileSync(NodePath.join(repos.checkout, "README.md"), "user edit\n");
         NodeFS.writeFileSync(NodePath.join(repos.checkout, "staged.txt"), "staged\n");
@@ -195,6 +295,7 @@ describe("the project checkout is unchanged by every outcome", () => {
         assert.strictEqual(conflict._tag, "Conflict", JSON.stringify(conflict));
         assert.deepEqual(checkoutState(repos), before);
         assert.isFalse(NodeFS.existsSync(scratch));
+        assert.isFalse(NodeFS.existsSync(marker), "a hook of the checkout ran");
       }),
     ),
   );

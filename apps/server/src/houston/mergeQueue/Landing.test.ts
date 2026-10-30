@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
+import { pushWithLease } from "./Landing.ts";
 import {
   entryOf,
   git,
@@ -564,6 +565,39 @@ describe("the merge queue has no push but the lease and no unpinned merge", () =
       assert.match(args, /`\$\{[^}]+\}:refs\/heads\/\$\{[^}]+\}`\s*,?\s*\]$/);
     }),
   );
+});
+
+describe("the lease push sends only the branch whatever the user's git config says", () => {
+  it.live("the lease push sends only the branch whatever the user's git config says", () => {
+    const repos = makeRepos();
+    const head = pushBranch(repos, "houston/7", { "a.txt": "a\n" });
+    git(repos.checkout, ["fetch", "--quiet", "origin", "+houston/7:refs/heads/houston/7"]);
+    git(repos.checkout, ["checkout", "--quiet", "houston/7"]);
+    NodeFS.writeFileSync(NodePath.join(repos.checkout, "b.txt"), "b\n");
+    git(repos.checkout, ["add", "b.txt"]);
+    git(repos.checkout, ["commit", "--quiet", "-m", "verified"]);
+    const commit = git(repos.checkout, ["rev-parse", "HEAD"]);
+    // A tag of the user's on the pushed commit, and config that would push it beside the branch.
+    git(repos.checkout, ["tag", "-a", "user-tag", "-m", "the user's", commit]);
+    git(repos.checkout, ["config", "push.followTags", "true"]);
+    git(repos.checkout, ["config", "push.gpgSign", "true"]);
+    git(repos.checkout, ["config", "gpg.program", "houston-no-such-gpg"]);
+    const marker = NodePath.join(repos.root, "pre-push.txt");
+    NodeFS.writeFileSync(
+      NodePath.join(repos.checkout, ".git", "hooks", "pre-push"),
+      `#!/bin/sh\necho ran >> "${marker.replaceAll("\\", "/")}"\n`,
+      { mode: 0o755 },
+    );
+    return withQueue(
+      makeGitHub(repos),
+      Effect.gen(function* () {
+        yield* pushWithLease(repos.checkout, "origin", "houston/7", head, commit);
+        assert.strictEqual(remoteHead(repos, "houston/7"), commit);
+        assert.strictEqual(git(repos.bare, ["tag", "--list"]), "");
+        assert.isFalse(NodeFS.existsSync(marker), "the checkout's pre-push hook ran");
+      }),
+    );
+  });
 });
 
 describe("the lease refuses a push once the branch moved on the remote", () => {

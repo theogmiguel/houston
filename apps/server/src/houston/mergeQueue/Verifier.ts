@@ -190,6 +190,10 @@ const make = Effect.gen(function* () {
           "fetch",
           "--no-tags",
           "--quiet",
+          // The checkout's FETCH_HEAD, submodules and other refs stay as the user left them.
+          "--no-write-fetch-head",
+          "--no-recurse-submodules",
+          "--no-prune",
           // No configured refmap: refs/remotes/* stay where the user's own fetch left them.
           "--refmap=",
           remote,
@@ -214,17 +218,20 @@ const make = Effect.gen(function* () {
     repo: string,
     scratch: string,
   ) {
+    // Removes only the scratch's own registration, also when its directory is gone;
+    // `worktree prune` would drop the user's other stale worktrees as well.
+    const unregister = withVcs(git(repo, ["worktree", "remove", "--force", scratch])).pipe(
+      Effect.ignore,
+    );
+    yield* unregister;
     if (NodeFS.existsSync(scratch)) {
-      yield* withVcs(git(repo, ["worktree", "remove", "--force", scratch])).pipe(Effect.ignore);
-      if (NodeFS.existsSync(scratch)) {
-        yield* Effect.sync(() => NodeFS.rmSync(scratch, { recursive: true, force: true })).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(`Removing the scratch worktree ${scratch} failed.`, cause),
-          ),
-        );
-      }
+      yield* Effect.sync(() => NodeFS.rmSync(scratch, { recursive: true, force: true })).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning(`Removing the scratch worktree ${scratch} failed.`, cause),
+        ),
+      );
+      yield* unregister;
     }
-    yield* withVcs(git(repo, ["worktree", "prune"])).pipe(Effect.ignore);
   });
 
   /** `-c` pairs naming the head's author as committer when git config names nobody. */
@@ -264,6 +271,9 @@ const make = Effect.gen(function* () {
           "rebase.autoSquash=false",
           "-c",
           "rebase.autoStash=false",
+          // A git older than the key ignores it; --no-update-refs would fail there.
+          "-c",
+          "rebase.updateRefs=false",
           "rebase",
           baseSha,
         ]),
