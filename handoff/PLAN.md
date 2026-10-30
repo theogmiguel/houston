@@ -138,9 +138,14 @@ not deleted: their code moves to the v2 stack. The removal runs in two parts, ea
    - Both: the `ci.yml` jobs that build or test them (`core-checks`, `core-integration`,
      `linux-native-checks`, the v1 renderer and Windows checks), the safety scripts that guard only
      the daemon, and the `docs/` pages that describe it.
-2. **What upstream lacks:** Night shift, task sources, workspace transfer, the merge queue and WSL.
-   Each is ported to the server (and its renderer side) in its own slice, and its Rust code leaves
-   in the same PR. `core/` is deleted when the last of them has moved.
+2. **What upstream lacks**, in port order: the Tasks backlog, task sources (GitHub, Notion), the
+   merge queue, harness review and defects, Slack intake, workspace transfer, and Night shift last
+   (its workers move from `pane_*` to orchestration-v2). WSL is the host's: upstream's server already
+   runs in a distro, and the host implements the desktop bridge. Each is ported to the server (and
+   its renderer side) in its own slice, and its Rust code leaves in the same PR. `core/` is deleted
+   when the last of them has moved. Upstream already covers routines, agent accounts, diagnostics
+   and pane handoff; those leave with part 1. Remote access, dictation, review requests, SSH panes,
+   skill sync and conflict prediction are decided (port or leave) before part 1's last step.
 
 `AGENTS.md`'s daemon, PTY and MCP invariants are replaced by the v2 invariants in the PR that
 removes what they guard.
