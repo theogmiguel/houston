@@ -34,6 +34,7 @@ import {
 } from "@t3tools/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
+import { isElectron } from "../../env";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { resolveHour12 } from "../../timestampFormat";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -67,7 +68,6 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
-import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -76,11 +76,11 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
-  WorkspaceBreadcrumbSeparator,
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
-import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
+import { SidebarInset } from "../ui/sidebar";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
+import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
@@ -359,232 +359,153 @@ export function UsagePage() {
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12)}`
       : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
-  const topbarContent = (
-    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
-      <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-        <WorkspaceBreadcrumbItem>
-          <h1>Usage</h1>
-        </WorkspaceBreadcrumbItem>
-        <WorkspaceBreadcrumbSeparator />
-        <WorkspaceBreadcrumbItem className="min-w-10 shrink">
-          <UsageEnvironmentFilter
-            environments={environments}
-            selectedEnvironments={selectedEnvironments}
-            selectedEnvironmentIds={selectedEnvironmentIds}
-            onSelectionChange={setSelectedEnvironmentIds}
-            showUsageStatus={!showingLimits}
-            refreshing={refreshingUsage}
-            isPartial={isPartial}
-            duplicateSources={merged.duplicateSources}
-            contractMismatches={merged.contractMismatches}
-            onOpenModelPrices={() => setPriceDialog({})}
-          />
-        </WorkspaceBreadcrumbItem>
-        <WorkspaceBreadcrumbSeparator />
-        <WorkspaceBreadcrumbItem current className="min-w-10">
-          <UsageProviderFilter
-            hiddenProviders={hiddenProviders}
-            onChange={(next) => updatePreferences({ hiddenProviders: next })}
-          />
-        </WorkspaceBreadcrumbItem>
-      </WorkspaceBreadcrumb>
-      {!showingLimits ? (
-        <span className="hidden min-w-0 truncate text-xs text-muted-foreground @7xl/usage-header:block">
-          {windowLabel}
-        </span>
-      ) : null}
-      <div className="ms-auto hidden shrink-0 items-center justify-end gap-2 @4xl/usage-header:flex">
-        {/* Limits are always current, so they have no period. The period sits before the metric
-            tabs so dropping it never moves them. */}
-        {showingLimits ? null : (
-          <ToggleGroup
-            aria-label="Usage period"
-            variant="segmented"
-            value={[String(windowDays)]}
-            onValueChange={(next) => {
-              const value = next[0];
-              if (value) selectWindow(Number(value));
-            }}
-          >
-            {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {option.label}
-              </Toggle>
-            ))}
-          </ToggleGroup>
-        )}
+  const usageActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      <UsageEnvironmentFilter
+        environments={environments}
+        selectedEnvironments={selectedEnvironments}
+        selectedEnvironmentIds={selectedEnvironmentIds}
+        onSelectionChange={setSelectedEnvironmentIds}
+        showUsageStatus={!showingLimits}
+        refreshing={refreshingUsage}
+        isPartial={isPartial}
+        duplicateSources={merged.duplicateSources}
+        contractMismatches={merged.contractMismatches}
+        onOpenModelPrices={() => setPriceDialog({})}
+      />
+      <UsageProviderFilter
+        hiddenProviders={hiddenProviders}
+        onChange={(next) => updatePreferences({ hiddenProviders: next })}
+      />
+      <div className="min-w-0 flex-1" />
+      {showingLimits ? null : (
         <ToggleGroup
-          aria-label="Usage metric"
+          aria-label="Usage period"
           variant="segmented"
-          value={[metric]}
+          value={[String(windowDays)]}
           onValueChange={(next) => {
             const value = next[0];
-            if (isUsageMetric(value)) selectMetric(value);
+            if (value) selectWindow(Number(value));
           }}
         >
-          {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+          {WINDOW_OPTIONS.map((option) => (
+            <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
               {option.label}
             </Toggle>
           ))}
         </ToggleGroup>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshIcon size="sm" refreshing={isRefreshing} />
-        </Button>
-      </div>
-      <div className="ms-auto flex shrink-0 items-center justify-end gap-1 @4xl/usage-header:hidden">
-        {showingLimits ? null : (
-          <Select value={String(windowDays)} onValueChange={(value) => selectWindow(Number(value))}>
-            <SelectTrigger
-              aria-label="Usage period"
-              size="compact"
-              variant="ghost"
-              className="w-auto min-w-0"
-            >
-              <SelectValue>
-                {WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {WINDOW_OPTIONS.map((option) => (
-                <SelectItem
-                  key={option.days}
-                  value={String(option.days)}
-                  title={shortcutTitle(option)}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        )}
-        <Select
-          value={metric}
-          onValueChange={(value) => {
-            if (isUsageMetric(value)) selectMetric(value);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Usage metric"
-            size="compact"
-            variant="ghost"
-            className="w-auto min-w-0"
-          >
-            <SelectValue>
-              {METRIC_OPTIONS.find((option) => option.value === metric)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {METRIC_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} title={shortcutTitle(option)}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshIcon size="sm" refreshing={isRefreshing} />
-        </Button>
-      </div>
+      )}
+      <ToggleGroup
+        aria-label="Usage metric"
+        variant="segmented"
+        value={[metric]}
+        onValueChange={(next) => {
+          const value = next[0];
+          if (isUsageMetric(value)) selectMetric(value);
+        }}
+      >
+        {METRIC_OPTIONS.map((option) => (
+          <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+            {option.label}
+          </Toggle>
+        ))}
+      </ToggleGroup>
+      <Button
+        onClick={refreshWindow}
+        aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+        aria-busy={isRefreshing}
+        disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+        size="icon-sm"
+        variant="ghost"
+      >
+        <RefreshIcon size="sm" refreshing={isRefreshing} />
+      </Button>
     </div>
   );
 
   return (
-    <AppRouteModal label="Usage">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header
-          data-tauri-drag-region="deep"
-          className="@container/usage-header flex min-h-12 shrink-0 items-center gap-1 border-b ps-5 pe-2 tauri:pe-(--workspace-native-controls-inset)"
-        >
-          {topbarContent}
-          <AppRouteModalClose />
-        </header>
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      <WorkspacePageHeader electron={isElectron}>
+        <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
+          <WorkspaceBreadcrumbItem current>
+            <h1 className="truncate">Usage</h1>
+          </WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
+      </WorkspacePageHeader>
 
-        <ScrollArea className="min-h-0 flex-1">
-          <WorkspacePageContainer width="wide">
-            <div className="flex flex-col gap-1">
+      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
+        <WorkspacePageContainer width="wide" className="gap-7">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="min-w-0 flex-1">
               <h1 className="text-large-title font-bold">Usage</h1>
               {showingLimits ? null : (
                 <>
-                  <p className="max-w-[62ch] text-sm leading-5 text-secondary-foreground">
+                  <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
                     What your Claude Code and Codex sessions on this machine would cost at API
                     prices. Houston reads their transcripts locally; nothing is sent anywhere.
                   </p>
-                  <p className="text-xs leading-4 text-muted-foreground">{windowLabel}</p>
+                  <p className="mt-1 text-xs leading-4 text-muted-foreground">{windowLabel}</p>
                 </>
               )}
             </div>
-            {selectedEnvironments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {environments.length === 0
-                  ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
-                  : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
-              </p>
-            ) : showingLimits ? (
-              <UsageLimitsSection
-                selectedEnvironmentIds={selectedEnvironmentIds}
-                hiddenProviders={hiddenProviders}
-                now={limitsNow}
-                cursorPrompt={
-                  cursorAccessEnvironments.length > 0 ? (
-                    <CursorEnableLimits
-                      environments={cursorAccessEnvironments}
-                      onEnabled={() => {
-                        void refresh();
-                        void refreshLimits(false, true);
-                      }}
-                    />
-                  ) : null
-                }
-              />
-            ) : shown === null ? (
-              <UsageSkeleton />
-            ) : !canReadDiagnostics ? (
-              <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
-                {selectedEnvironments.map((environment) => (
-                  <p key={environment.environmentId}>
-                    {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
-                    {environment.error}
-                  </p>
-                ))}
-              </div>
-            ) : (
-              <UsageOverview
-                merged={merged}
-                shownWindow={shownWindow}
-                hour12={hour12}
-                days={days}
-                hours={hours}
-                showingKept={showingKept}
-                metric={metric === "tokens" ? "tokens" : "cost"}
-                selectedEnvironments={selectedEnvironments}
-                hiddenProviders={hiddenProviders}
-                refreshingUsage={refreshingUsage}
-                cursorAccessEnvironments={cursorAccessEnvironments}
-                showChatGptSharing={showChatGptSharing}
-                onCursorEnabled={() => {
-                  void refresh();
-                  void refreshLimits(false, true);
-                }}
-                onSelectModel={selectUsageModel}
-              />
-            )}
-          </WorkspacePageContainer>
-        </ScrollArea>
+            <div className="flex min-w-0 flex-1 justify-end pt-1">{usageActions}</div>
+          </div>
+          {selectedEnvironments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {environments.length === 0
+                ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
+                : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
+            </p>
+          ) : showingLimits ? (
+            <UsageLimitsSection
+              selectedEnvironmentIds={selectedEnvironmentIds}
+              hiddenProviders={hiddenProviders}
+              now={limitsNow}
+              cursorPrompt={
+                cursorAccessEnvironments.length > 0 ? (
+                  <CursorEnableLimits
+                    environments={cursorAccessEnvironments}
+                    onEnabled={() => {
+                      void refresh();
+                      void refreshLimits(false, true);
+                    }}
+                  />
+                ) : null
+              }
+            />
+          ) : shown === null ? (
+            <UsageSkeleton />
+          ) : !canReadDiagnostics ? (
+            <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
+              {selectedEnvironments.map((environment) => (
+                <p key={environment.environmentId}>
+                  {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
+                  {environment.error}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <UsageOverview
+              merged={merged}
+              shownWindow={shownWindow}
+              hour12={hour12}
+              days={days}
+              hours={hours}
+              showingKept={showingKept}
+              metric={metric === "tokens" ? "tokens" : "cost"}
+              selectedEnvironments={selectedEnvironments}
+              hiddenProviders={hiddenProviders}
+              refreshingUsage={refreshingUsage}
+              cursorAccessEnvironments={cursorAccessEnvironments}
+              showChatGptSharing={showChatGptSharing}
+              onCursorEnabled={() => {
+                void refresh();
+                void refreshLimits(false, true);
+              }}
+              onSelectModel={selectUsageModel}
+            />
+          )}
+        </WorkspacePageContainer>
       </div>
       {showingLimits ? null : (
         <UsageModelDialogHost
@@ -612,7 +533,7 @@ export function UsagePage() {
           }}
         />
       ) : null}
-    </AppRouteModal>
+    </SidebarInset>
   );
 }
 
@@ -695,6 +616,8 @@ function UsageOverview({
   );
   const cursorInsertAt =
     Math.max(activeProviders.indexOf("codex"), activeProviders.indexOf("claude")) + 1;
+  const cacheReadShare = merged.totalTokens > 0 ? merged.cachedInputTokens / merged.totalTokens : 0;
+  const averageCostPerDay = merged.costUsd / Math.max(days.length, 1);
   const summaryRows: ReadonlyArray<
     | { readonly kind: "usage"; readonly provider: UsageProviderKind }
     | { readonly kind: "enable"; readonly environment: EnvironmentUsageStatus }
@@ -720,26 +643,31 @@ function UsageOverview({
           loading={loadingPartial}
           label="API-equivalent cost"
           value={formatUsd(merged.costUsd)}
+          detail={`${formatCount(merged.sessions)} sessions · ${formatUsd(averageCostPerDay)} a day`}
         />
         <Metric
           loading={loadingPartial}
           label="Tokens processed"
           value={formatTokens(merged.totalTokens)}
+          detail={`${formatPercent(cacheReadShare)} read from cache`}
         />
         <Metric
           loading={loadingPartial}
           label="Output tokens"
           value={formatTokens(merged.outputTokens)}
+          detail={`${formatTokens(merged.uncachedInputTokens)} uncached input`}
         />
         <Metric
           loading={loadingPartial}
           label="Saved by caching"
           value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+          detail="against full input prices"
         />
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+      <section className="flex flex-col gap-3">
         <div className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-card p-4">
+          <h2 className="text-headline font-semibold text-foreground">By agent</h2>
           <div className="flex flex-col gap-1">
             <span
               className={cn(
@@ -856,10 +784,24 @@ function UsageOverview({
           })}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
-          <h2 className="text-headline font-semibold text-foreground">
-            {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
-          </h2>
+        <div className="order-first flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-headline font-semibold text-foreground">
+              {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
+            </h2>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              {activeProviders.map((provider) => (
+                <span key={provider} className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: PROVIDER_PRESENTATION[provider].color }}
+                  />
+                  {PROVIDER_PRESENTATION[provider].label}
+                </span>
+              ))}
+            </div>
+          </div>
           <UsageProviderChart
             providers={activeProviders}
             loadingProviders={chartLoadingProviders}
@@ -1243,20 +1185,25 @@ function figureClass(loading: boolean) {
 function Metric({
   label,
   value,
+  detail,
   loading,
 }: {
   readonly label: string;
   readonly value: string;
+  readonly detail?: string;
   readonly loading: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3">
-      <span className="text-2xs font-medium text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-5 py-4">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span
         className={cn("text-stat font-semibold text-foreground tabular-nums", figureClass(loading))}
       >
         {value}
       </span>
+      {detail === undefined ? null : (
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      )}
     </div>
   );
 }

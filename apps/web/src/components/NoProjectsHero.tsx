@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
 import {
-  CircleCheckIcon,
+  CheckIcon,
   CircleMinusIcon,
   FolderPlusIcon,
   GitForkIcon,
@@ -111,7 +111,7 @@ export function NoProjectsHero() {
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
         {isElectron || isTauriHost() ? <WorkspacePageHeader electron={isElectron} /> : null}
         <Empty size="welcome" className="flex-1">
-          <div className="flex w-full max-w-[560px] flex-col items-center gap-3.5 px-8 py-12">
+          <div className="flex w-full max-w-[560px] flex-col items-center gap-3.5 py-12">
             <EmptyMedia className="mb-0">
               <HoustonMark className="size-14" />
             </EmptyMedia>
@@ -131,7 +131,7 @@ export function NoProjectsHero() {
               </Button>
             </div>
             {visibleProviders.length > 0 ? (
-              <div className="mt-4 w-full overflow-hidden rounded-lg border border-border bg-card text-left">
+              <div className="mt-5 w-full overflow-hidden rounded-[var(--r-group)] border border-border bg-card text-left">
                 {visibleProviders.map(({ driver, provider }, index) => {
                   const state = getOnboardingProviderState(provider);
                   const actionLabel =
@@ -146,10 +146,7 @@ export function NoProjectsHero() {
                       className={`flex h-9 items-center gap-2.5 px-3.5 ${index === 0 ? "" : "border-t border-border"}`}
                     >
                       {state === "ready" ? (
-                        <CircleCheckIcon
-                          className="size-3.5 shrink-0 text-success"
-                          aria-hidden="true"
-                        />
+                        <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
                       ) : (
                         <CircleMinusIcon
                           className="size-3.5 shrink-0 text-icon-muted"

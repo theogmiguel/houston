@@ -8,7 +8,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { WifiOffIcon } from "lucide-react";
+import { CircleDashedIcon, CircleHelpIcon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { environmentCatalog } from "../../connection/catalog";
 import { ConnectionDiagnosisHeadline } from "../settings/ConnectionDiagnosisDetails";
@@ -180,20 +180,26 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       unavailableConnection !== null &&
       !suppressUnavailableBanner;
     if (showUnavailableBanner) {
+      const environmentLabel = activeEnvironmentUnavailableState.label;
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
-        variant: "default",
+        variant: "warning",
         group: "environment",
-        icon: <WifiOffIcon />,
-        title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
+        icon: environmentReconnecting ? <CircleDashedIcon /> : <CircleHelpIcon />,
+        iconClassName: "text-warning [&>svg]:size-3.5",
+        title: environmentReconnecting
+          ? `Reconnecting to the ${environmentLabel} server`
+          : `Can't reach the ${environmentLabel} server`,
         description: activeEnvironment ? (
           <ConnectionDiagnosisHeadline environment={activeEnvironment} />
+        ) : environmentReconnecting ? (
+          "Threads keep running."
         ) : undefined,
         actions: (
           <>
             <Button
               size="xs"
-              variant="ghost"
+              variant="outline"
               onClick={() =>
                 void handleReconnectActiveEnvironmentStable(
                   activeEnvironmentUnavailableState.environmentId,
