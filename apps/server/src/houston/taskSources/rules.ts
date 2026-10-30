@@ -820,22 +820,25 @@ export const mergeProject = (input: {
   /** Null when the initiative was created by this record. */
   readonly initiative: LocalInitiative | null;
   readonly localIdentity: string | null;
+  /** The initiative's last remote values from another link; the base of a first link into it. */
+  readonly lastRemote?: HoustonTaskSourceProjectSnapshot | null;
 }): HoustonTaskSourceSnapshot => {
   const { previous, merged, project } = input;
   const key = project.externalId;
+  const lastRemote = previous === null ? (input.lastRemote ?? null) : null;
   const recorded = (field: string) =>
     previous?.conflicts.find((conflict) => conflict.field === field);
   const previousBase =
     previous !== null && previous.projectExternalId === key
       ? (previous.base["project.description"] ?? previous.project?.description ?? "")
-      : "";
+      : (lastRemote?.description ?? "");
   const conflicts: Array<HoustonTaskSourceConflict> = [];
   let localTitle = project.title;
   let localDescription = project.description;
   if (input.initiative !== null) {
     localTitle = input.initiative.name;
     localDescription = input.initiative.description;
-    const titleBase = previous?.project?.title ?? localTitle;
+    const titleBase = previous?.project?.title ?? lastRemote?.title ?? localTitle;
     const title = recorded("project.title");
     if (title !== undefined) {
       conflicts.push({

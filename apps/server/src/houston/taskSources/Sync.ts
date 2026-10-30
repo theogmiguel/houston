@@ -185,6 +185,17 @@ const make = Effect.gen(function* () {
       const current = yield* initiativeById(domain.initiative_id);
       localIdentity = current?.project_external_id ?? `local:${domain.initiative_id}`;
     }
+    // Another item's link holds what the tracker last said about this initiative.
+    const [other] =
+      existing === undefined
+        ? []
+        : yield* run(sql<{ readonly snapshot_json: string }>`
+            SELECT snapshot_json FROM houston_task_source_links
+            WHERE project_id = ${input.projectId} AND provider = ${input.provider}
+              AND source = 'source' AND task_id != ${input.taskId}
+              AND json_extract(snapshot_json, '$.projectExternalId') = ${key}
+            ORDER BY fetched_at DESC, task_id DESC LIMIT 1
+          `);
     return {
       initiative:
         existing === undefined
@@ -192,6 +203,7 @@ const make = Effect.gen(function* () {
           : { name: existing.name, description: existing.tracker_description ?? "" },
       localIdentity,
       initiativeId: initiative.id,
+      lastRemote: other === undefined ? null : decodeSnapshot(other.snapshot_json).project,
     };
   });
 
@@ -265,6 +277,7 @@ const make = Effect.gen(function* () {
             project: record.project,
             initiative: placed.initiative,
             localIdentity: placed.localIdentity,
+            lastRemote: placed.lastRemote,
           });
           if ((yield* tasks.taskById(taskId))?.revision !== before) touched.push(taskId);
         }

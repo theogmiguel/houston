@@ -548,6 +548,66 @@ describe("initiative conflicts keep local decisions until resolved", () => {
       }),
     ),
   );
+
+  it.effect("a new item joining a renamed initiative takes its base from the remote", () =>
+    withSources(() =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("initiative-join");
+        const sync = yield* HoustonTaskSourceSync;
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        yield* sync.apply(projectId, "github_issues", record({}, milestone()));
+        const [initiative] = yield* tasks.listInitiatives({ projectId });
+        if (initiative === undefined) return yield* Effect.die("no initiative");
+        yield* tasks.saveInitiative({
+          projectId,
+          id: initiative.id,
+          expectedRevision: initiative.revision,
+          name: "Local name",
+          trackerDescription: "Local why",
+          localDecisions: [],
+        });
+
+        // The remote milestone is unchanged: the new item's link is pending, with no conflict.
+        const joined = yield* sync.apply(
+          projectId,
+          "github_issues",
+          record({}, milestone(), "octo-org/project#2"),
+        );
+        const link = yield* linkOf(joined.taskId as number);
+        assert.deepEqual(link.snapshot.conflicts, []);
+        assert.deepEqual(link.syncState, { state: "pending" });
+        const id = String(joined.taskId);
+        yield* tasks.save({ id, expectedRevision: 1, patch: { acceptance: ["it works"] } });
+        assert.notInclude(
+          (yield* tasks.get({ id })).domain.readiness.reasons,
+          "the task has an unresolved tracker conflict",
+        );
+
+        // The inverse: the remote milestone changed too, so the new item records both conflicts.
+        const changed = yield* sync.apply(
+          projectId,
+          "github_issues",
+          record(
+            {},
+            milestone({ title: "Remote name", description: "Remote why" }),
+            "octo-org/project#3",
+          ),
+        );
+        assert.deepEqual(
+          (yield* linkOf(changed.taskId as number)).snapshot.conflicts.map((conflict) => [
+            conflict.field,
+            conflict.base,
+            conflict.local,
+            conflict.remote,
+          ]),
+          [
+            ["project.title", "Milestone", "Local name", "Remote name"],
+            ["project.description", "Why", "Local why", "Remote why"],
+          ],
+        );
+      }),
+    ),
+  );
 });
 
 describe("readiness follows the conflict", () => {
