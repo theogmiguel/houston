@@ -343,6 +343,27 @@ describe("send intents at dispatch", () => {
           }),
         );
 
+        // Only a terminal failure drops: a steer that fails once and is retried is delivered.
+        const retriedHarness = yield* makeHarness("steer-fails-once", {
+          steerFails: "Codex is busy",
+          steerFailures: 1,
+        });
+        yield* runWith(retriedHarness, ({ send, startFirst, deliveries, settle }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const messageId = MessageId.make("message:steer-fails-once");
+            yield* send(messageId, "steer", { type: "steer_active", targetRunId: runId });
+            yield* settle;
+            assert.lengthOf(retriedHarness.steered, 2, "the worker retried the steer once");
+            const history = deliveries(messageId);
+            assert.isFalse(
+              history.some((delivery) => delivery.state === "dropped"),
+              JSON.stringify(history),
+            );
+            assert.deepInclude(latest(history), { state: "delivered", adoption: "reported" });
+          }),
+        );
+
         const queuedId = MessageId.make("message:start-fails");
         const startError = "Codex refused to start the turn";
         const startHarness = yield* makeHarness("start-fails", {
