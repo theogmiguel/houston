@@ -72,14 +72,14 @@ export function useUpdateEverything(
   const {
     targets: behindServers,
     skipped: unreachable,
-    waitForNpm,
+    waitForPublished,
   } = channelSwitch
-    ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
+    ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForPublished: [] }
     : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
-  const published = useReleasePublished(waitForNpm.length > 0 ? targetVersion : null);
+  const published = useReleasePublished(waitForPublished.length > 0 ? targetVersion : null);
   const servers = published
     ? behindServers
-    : behindServers.filter((server) => !waitForNpm.includes(server));
+    : behindServers.filter((server) => !waitForPublished.includes(server));
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,
     ...behindServers

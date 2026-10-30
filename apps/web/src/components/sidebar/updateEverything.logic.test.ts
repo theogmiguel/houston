@@ -98,7 +98,7 @@ describe("collectServerUpdateTargets", () => {
         hosts,
         "0.1.5-nightly.20261029.3873",
         releaseArchivesPublished,
-      ).waitForNpm.map((target) => target.serverLabel);
+      ).waitForPublished.map((target) => target.serverLabel);
 
     expect(waits(true)).toEqual(["npm-service", "legacy-respawn"]);
     expect(waits(false)).toEqual(["archive-service", "npm-service", "legacy-respawn"]);
