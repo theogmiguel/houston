@@ -77,20 +77,23 @@ export function shouldShowComposerContextStrip(input: {
   );
 }
 
-// Hysteresis prevents labels and icons from flapping at the width boundary.
-const CONTEXT_STRIP_COMPACT_EXPAND_HYSTERESIS_PX = 16;
+export const CONTEXT_STRIP_ICON_ONLY_MAX_PX = 300;
+export const CONTEXT_STRIP_NARROW_MAX_PX = 520;
 
 export function resolveContextStripLabelsCompact(input: {
   compact: boolean;
   neededWidth: number;
   availableWidth: number;
 }): boolean {
-  return input.compact
-    ? input.neededWidth > input.availableWidth - CONTEXT_STRIP_COMPACT_EXPAND_HYSTERESIS_PX
-    : input.neededWidth > input.availableWidth;
+  return input.availableWidth < CONTEXT_STRIP_ICON_ONLY_MAX_PX;
 }
 
-export function resolveEnvModeLabel(mode: EnvMode): string {
+export function resolveContextStripLabelsNarrow(availableWidth: number): boolean {
+  return availableWidth < CONTEXT_STRIP_NARROW_MAX_PX;
+}
+
+export function resolveEnvModeLabel(mode: EnvMode, compact = false): string {
+  if (compact) return mode === "worktree" ? "Worktree" : "Local";
   return mode === "worktree" ? "New worktree" : "Local checkout";
 }
 
@@ -100,15 +103,21 @@ export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
   none: "Skip",
 };
 
-export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
+export function resolveCurrentWorkspaceLabel(
+  activeWorktreePath: string | null,
+  compact = false,
+): string {
+  if (compact) return activeWorktreePath ? "Worktree" : "Local";
   return activeWorktreePath ? "Current worktree" : resolveEnvModeLabel("local");
 }
 
 export function resolveLockedWorkspaceLabel(
   activeWorktreePath: string | null,
   effectiveEnvMode: EnvMode,
+  compact = false,
 ): string {
   if (activeWorktreePath) return "Worktree";
+  if (compact) return effectiveEnvMode === "worktree" ? "Worktree" : "Local";
   return effectiveEnvMode === "worktree" ? resolveEnvModeLabel("worktree") : "Local checkout";
 }
 
