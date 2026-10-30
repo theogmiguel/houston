@@ -230,10 +230,16 @@
     "apps/server/src/houston/taskSources/taskSources.testkit.ts",
     "apps/server/src/houston/taskSources/taskSources.ws.test.ts",
     "apps/server/src/houston/taskSources/v1TrackerFixture.ts",
+    "packages/shared/src/stableStringify.ts",
+    "packages/shared/src/stableStringify.test.ts",
     "apps/web/src/state/releasePublication.test.ts",
     "apps/web/src/state/releasePublication.ts"
   ],
   "removed": [
+    "apps/web/src/legalLinks.ts",
+    "apps/web/vercel.ts",
+    "packages/shared/src/relaySigning.ts",
+    "packages/shared/src/relaySigning.test.ts",
     "apps/web/src/state/npmRelease.test.ts",
     "apps/web/src/state/npmRelease.ts"
   ],
@@ -873,6 +879,26 @@
     "packages/contracts/src/index.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/contracts/src/scheduledTask.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/shared/package.json": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
-    "packages/shared/src/authScopeOptions.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)"
+    "packages/shared/src/authScopeOptions.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
+    "apps/server/src/http.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "apps/web/package.json": "T3 hosted web deployment config and its dependency removed",
+    "apps/web/tsconfig.json": "T3 hosted web deployment config removed",
+    "apps/web/src/components/promptLinks/copyPromptLink.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "apps/web/src/components/settings/pairingUrls.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "apps/web/src/hostedPairing.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "apps/web/src/hostedPairing.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/provider-core/src/server/subagentProjection.ts": "dead always-null guestShare projection field removed",
+    "packages/shared/src/codexAuthHandoff.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/connectAuth.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/connectAuth.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/dpop.ts": "stable stringify helper moved to a neutrally named module",
+    "packages/shared/src/promptLinks.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/providerAuthReturnUrl.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/providerAuthReturnUrl.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/remote.test.ts": "T3-hosted app URL and hosting leftovers removed (Houston has no hosted service)",
+    "packages/shared/src/t3ProjectFile.test.ts": "documentation link points at the Houston repository",
+    "packages/shared/src/threadLinks.test.ts": "sample URLs use example.test instead of the T3 domain",
+    "apps/web/src/terminal/ghostty/core.test.ts": "sample URLs use example.test instead of the T3 domain",
+    "apps/web/src/terminal/ghostty/surface.test.ts": "sample URLs use example.test instead of the T3 domain"
   }
 }

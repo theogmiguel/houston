@@ -1,7 +1,8 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "houston triage";
-const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases";
+const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases/latest";
+const NIGHTLY_DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases";
 const ISSUE_URL = "https://github.com/theogmiguel/houston/issues/new";
 const LAST_FAILURE_KEY = "t3code:boot-failed-at";
 const REPEAT_FAILURE_MS = 5 * 60_000;
@@ -357,7 +358,7 @@ export function showBootError(error: unknown) {
     ...(bridge
       ? [
           link(
-            nightly ? `${DOWNLOAD_URL}?channel=nightly` : DOWNLOAD_URL,
+            nightly ? NIGHTLY_DOWNLOAD_URL : DOWNLOAD_URL,
             nightly
               ? "Download and reinstall the latest nightly build"
               : "Download and reinstall Houston",

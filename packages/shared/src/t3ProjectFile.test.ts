@@ -24,7 +24,7 @@ describe("parseT3ProjectFile", () => {
   it("reads project defaults from JSONC with a URL in a block comment", () => {
     expect(
       parseT3ProjectFile(`{
-        /* See https://t3.codes/schema/t3.json */
+        /* See https://github.com/theogmiguel/houston */
         "defaultThreadEnvMode": "worktree"
       }`),
     ).toEqual({ defaultThreadEnvMode: "worktree" });
