@@ -63,7 +63,17 @@
     "t3.json",
     ".task-cache.json",
     ".vercelignore",
-    ".env.example"
+    ".env.example",
+    "apps/web/src/cloud",
+    "apps/web/src/components/cloud",
+    "apps/web/src/components/clerk",
+    "apps/web/src/routes/connect.tsx",
+    "apps/web/src/state/relay.ts",
+    "apps/web/src/lib/runtime.test.ts",
+    "packages/client-runtime/src/relay",
+    "packages/client-runtime/src/state/relayDiscovery.ts",
+    "packages/client-runtime/src/authorization/tokenStore.ts",
+    "packages/client-runtime/src/connection/errors.test.ts"
   ],
   "added": [
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
