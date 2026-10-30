@@ -19,6 +19,7 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { usageRemainingTone } from "../usage/usageRemaining";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
@@ -133,7 +134,6 @@ function ContextRow({
     <UsageRow
       label="Context"
       left={left}
-      muted
       className={cn(spaced && "mt-2")}
       tooltip={
         <>
@@ -156,7 +156,6 @@ function UsageRow({
   left,
   tooltip,
   value,
-  muted = false,
   className,
 }: {
   readonly label: string;
@@ -164,10 +163,9 @@ function UsageRow({
   readonly tooltip: ReactNode;
   /** Replaces the percentage when there is none. */
   readonly value?: string | undefined;
-  readonly muted?: boolean;
   readonly className?: string | undefined;
 }) {
-  const tone = left === null ? null : left <= 10 ? "error" : left <= 20 ? "warning" : null;
+  const tone = left === null ? null : usageRemainingTone(left);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -189,13 +187,7 @@ function UsageRow({
               <span
                 className={cn(
                   "absolute inset-y-0 left-0 rounded-full",
-                  tone === "error"
-                    ? "bg-error"
-                    : tone === "warning"
-                      ? "bg-warning"
-                      : muted
-                        ? "bg-muted-foreground"
-                        : "bg-foreground/80",
+                  tone === "empty" ? "bg-error" : "bg-muted-foreground",
                 )}
                 style={{ width: `max(${left}%, 6px)` }}
               />
@@ -205,15 +197,11 @@ function UsageRow({
         <span
           className={cn(
             // Text-only rows span the bar column so they never widen the shared value column.
-            "text-end font-medium tabular-nums",
+            "text-end tabular-nums",
             left === null && "col-span-2",
-            tone === "error"
-              ? "text-error-foreground"
-              : tone === "warning"
-                ? "text-warning-foreground"
-                : left === null
-                  ? "text-muted-foreground"
-                  : "text-foreground/80",
+            tone === "low" || tone === "empty"
+              ? "font-emphasis text-foreground"
+              : "font-medium text-muted-foreground",
           )}
         >
           {value ?? `${left}%`}

@@ -129,12 +129,7 @@ function UsageLimitsBannerBody({
               {notice ? (
                 <span className="text-xs text-muted-foreground">{notice}</span>
               ) : (
-                <LimitWindows
-                  compact
-                  driver={account.driver}
-                  windows={account.limits.windows}
-                  now={now}
-                />
+                <LimitWindows compact windows={account.limits.windows} now={now} />
               )}
               {externalUsage ? (
                 <Button
