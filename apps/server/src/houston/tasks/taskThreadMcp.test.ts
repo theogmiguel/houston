@@ -1,5 +1,6 @@
 // A task's planner or reviewer keeps a T3 MCP credential only to submit: the credential reaches
 // the two submit tools and nothing else, and its read-only run loads no user MCP server.
+import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -8,11 +9,12 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpServer } from "effect/http";
+import { HttpBody, HttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
@@ -32,6 +34,7 @@ import {
 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { ClaudeSettings } from "@t3tools/contracts";
 
 const environmentId = EnvironmentId.make("environment-task-threads");
@@ -168,6 +171,108 @@ describe("a planner's credential reaches only the submit tools", () => {
       );
     }).pipe(Effect.provide(layerMixedTools(calls)));
   });
+});
+
+describe("the submit-only guard is on the MCP call path", () => {
+  it.effect(
+    "tools registered outside the helpers, image tools included, refuse the credential",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const calls: Array<string> = [];
+          const addDirect = (name: string, image: boolean) =>
+            Effect.gen(function* () {
+              const server = yield* McpServer.McpServer;
+              yield* server.addTool({
+                tool: new McpSchema.Tool({ name, inputSchema: { type: "object" } }),
+                annotations: Context.empty(),
+                handle: () =>
+                  Effect.sync(() => {
+                    calls.push(name);
+                    return new McpSchema.CallToolResult({
+                      isError: false,
+                      content: image
+                        ? [{ type: "image", data: new Uint8Array([1]), mimeType: "image/png" }]
+                        : [{ type: "text", text: "ran" }],
+                    });
+                  }),
+              });
+            });
+          const serverLayer = Layer.effectDiscard(
+            Effect.all([
+              addDirect("t3_thread_send", false),
+              addDirect("html_preview", true),
+              addDirect("houston_task_plan_submit", false),
+            ]),
+          ).pipe(
+            Layer.provideMerge(
+              McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
+            ),
+            Layer.provide(
+              Layer.mock(McpSessionRegistry.McpSessionRegistry)({
+                resolve: (token) =>
+                  Effect.succeed(
+                    token === "submit-only"
+                      ? (scopeOf(
+                          new Set(["houston-task-submit"]),
+                        ) as McpInvocationContext.McpThreadInvocationScope)
+                      : undefined,
+                  ),
+              }),
+            ),
+          );
+          yield* HttpRouter.serve(serverLayer, {
+            disableListenLog: true,
+            disableLogger: true,
+          }).pipe(Layer.build);
+          const httpClient = yield* HttpClient.HttpClient;
+          const headers = {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer submit-only",
+          };
+          const initialize = yield* httpClient.post("/mcp", {
+            headers,
+            body: HttpBody.text(
+              `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"planner","version":"1.0.0"}}}`,
+              "application/json",
+            ),
+          });
+          assert.strictEqual(initialize.status, 200);
+          const call = (id: number, name: string) =>
+            httpClient
+              .post("/mcp", {
+                headers: {
+                  ...headers,
+                  "mcp-session-id": initialize.headers["mcp-session-id"]!,
+                  "mcp-protocol-version": "2025-06-18",
+                },
+                body: HttpBody.text(
+                  JSON.stringify({
+                    jsonrpc: "2.0",
+                    id,
+                    method: "tools/call",
+                    params: { name, arguments: {} },
+                  }),
+                  "application/json",
+                ),
+              })
+              .pipe(Effect.flatMap((response) => response.text));
+
+          for (const [id, name] of [
+            [2, "t3_thread_send"],
+            [3, "html_preview"],
+          ] as const) {
+            const text = yield* call(id, name);
+            assert.include(text, "capability_denied", name);
+            assert.include(text, `"id":${id}`, name);
+          }
+          assert.deepEqual(calls, [], "no refused tool reached its handler");
+          const submitted = yield* call(4, "houston_task_plan_submit");
+          assert.notInclude(submitted, "capability_denied");
+          assert.deepEqual(calls, ["houston_task_plan_submit"]);
+        }),
+      ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
 });
 
 const fakeHttpServer = HttpServer.HttpServer.of({
