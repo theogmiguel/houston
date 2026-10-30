@@ -6,6 +6,8 @@
 @custom-variant light (&:not(.dark, .dark *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
+/* Tauri frameless window: Houston draws the title bar and its window controls. */
+@custom-variant tauri (&:is(.tauri, .tauri *));
 
 /* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
 @custom-variant any-hover {
@@ -130,6 +132,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      docked sheets, then the floating preview player (47–49, see
      previewMiniPlayerLayout.ts), then dialogs and popovers (50 and up). */
   --z-sheet: 46;
+  /* Frameless window chrome: above dialogs, below menus, tooltips and toasts. */
+  --z-window: 70;
+  --z-window-resize: 69;
   --glass-blur: 12px;
   --glass-opacity: 80%;
   --glass-saturation: 1.14;
@@ -176,6 +181,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: calc(
     100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
   );
+}
+
+/* `decorations: false` removes the native title bar, so Houston's own 30px
+   window buttons occupy the right end of the 40px top bar and reserve a gap
+   before the content that shares it. */
+.tauri {
+  --desktop-window-right-resize-inset: 0px;
+  --workspace-controls-right: calc(3 * var(--w-window-control) + 0.75rem);
+  --workspace-native-controls-inset: calc(3 * var(--w-window-control) + 0.75rem);
 }
 
 /* The font tokens are declared outside the inline theme so utilities reference

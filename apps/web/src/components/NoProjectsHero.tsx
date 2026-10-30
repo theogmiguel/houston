@@ -4,6 +4,7 @@ import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
+import { isTauriHost } from "../lib/desktopWindow";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./ui/empty";
@@ -25,7 +26,7 @@ export function NoProjectsHero() {
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
-        {isElectron ? <WorkspacePageHeader electron /> : null}
+        {isElectron || isTauriHost() ? <WorkspacePageHeader electron={isElectron} /> : null}
         <Empty size="welcome" className="flex-1">
           <div className="flex w-full max-w-[560px] flex-col items-center px-8 py-12">
             <EmptyMedia className="mb-3.5">

@@ -1,7 +1,9 @@
 import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
+import { DesktopWindowControls } from "./components/DesktopWindowControls";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
+import { WindowResizeGrips } from "./components/WindowResizeGrips";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
 
@@ -9,8 +11,10 @@ import type { AppRouter } from "./router";
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
     <AppAtomRegistryProvider>
+      <WindowResizeGrips />
       <RouterProvider router={router} />
       <ElectronBrowserHost />
+      <DesktopWindowControls />
       <QuitHoldOverlay />
     </AppAtomRegistryProvider>
   );

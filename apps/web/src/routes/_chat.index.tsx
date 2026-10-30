@@ -5,6 +5,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
+import { isTauriHost } from "../lib/desktopWindow";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
@@ -94,7 +95,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
       role="main"
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
-      {isElectron ? <WorkspacePageHeader electron /> : null}
+      {isElectron || isTauriHost() ? <WorkspacePageHeader electron={isElectron} /> : null}
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">
           <EmptyTitle>Couldn’t start a new thread</EmptyTitle>

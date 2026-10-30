@@ -37,6 +37,7 @@ import {
 } from "./hooks/useSettings";
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
+import { isTauriHost } from "./lib/desktopWindow";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
 import {
   syncDocumentElectronPlatformClasses,
@@ -161,6 +162,9 @@ export function startAppServices(): AppRouter {
   if (isElectron) {
     syncDocumentElectronPlatformClasses(navigator.platform);
     syncDocumentWindowControlsOverlayClass();
+  }
+  if (isTauriHost()) {
+    document.documentElement.classList.add("tauri");
   }
 
   installDesktopPasteAsText(window.desktopBridge, window);
