@@ -25,7 +25,7 @@ import {
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 
 const version = "1.2.3";
-const archiveName = `t3-${version}-linux-x64.tar.gz`;
+const archiveName = `houston-${version}-linux-x64.tar.gz`;
 const archiveBytes = new TextEncoder().encode("not really a tarball");
 const archiveHex = (bytes: Uint8Array) =>
   Effect.promise(() => crypto.subtle.digest("SHA-256", bytes)).pipe(
@@ -52,7 +52,7 @@ const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, commands: 
         if (input.command !== "tar" || stagingDir === undefined) {
           return yield* Effect.die(`unexpected command ${input.command}`);
         }
-        yield* fs.writeFileString(path.join(stagingDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+        yield* fs.writeFileString(path.join(stagingDir, "houston"), "#!/bin/sh\n").pipe(Effect.orDie);
         return {
           stdout: "",
           stderr: "",
@@ -71,7 +71,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-archive-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-archive-" });
       const requests: string[] = [];
       const commands: string[] = [];
       const paths = yield* ensurePinnedRuntimeInstalled({
@@ -90,7 +90,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
             Effect.orDie,
           ),
       });
-      assert.equal(paths.entryPath, path.join(paths.versionDir, "t3"));
+      assert.equal(paths.entryPath, path.join(paths.versionDir, "houston"));
       assert.deepEqual(pinnedRuntimeCommand(paths), { command: paths.entryPath, args: [] });
       assert.deepEqual(requests, [
         `https://releases.example/download/v${version}/SHA256SUMS`,
@@ -98,7 +98,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       ]);
       assert.deepEqual(commands, ["tar"]);
       assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
-      assert.isFalse(yield* fs.exists(path.join(paths.versionDir, "t3-runtime-archive")));
+      assert.isFalse(yield* fs.exists(path.join(paths.versionDir, "houston-runtime-archive")));
     }),
   );
 
@@ -106,7 +106,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-progress-failed-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-progress-failed-" });
       const checksums = yield* validChecksums;
       const progress: PinnedRuntimeProgress[] = [];
       let cancelled = false;
@@ -159,7 +159,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-archive-bad-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-archive-bad-" });
       const commands: string[] = [];
       const error = yield* ensurePinnedRuntimeInstalled({
         baseDir,
@@ -173,7 +173,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         validate: () => Effect.die("must not validate an unverified archive"),
       }).pipe(Effect.flip);
       assert.instanceOf(error, PinnedRuntimeInstallError);
-      assert.equal(error.step, "verifying the t3 release archive checksum");
+      assert.equal(error.step, "verifying the houston release archive checksum");
       assert.deepEqual(commands, []);
       assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
     }),
@@ -183,7 +183,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-test-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-test-" });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
       let validatedDirectory = "";
 
@@ -215,7 +215,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-test-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-test-" });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
 
       yield* ensurePinnedRuntimeInstalled({
@@ -245,7 +245,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-repair-" });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
       yield* fs.makeDirectory(finalPaths.versionDir, { recursive: true });
       yield* fs.writeFileString(path.join(finalPaths.versionDir, "partial"), "incomplete\n");
@@ -271,7 +271,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-repair-" });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
       yield* fs.makeDirectory(path.dirname(finalPaths.entryPath), { recursive: true });
       yield* fs.writeFileString(finalPaths.entryPath, "broken\n");
@@ -324,7 +324,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
   const setup = Effect.fn(function* (versions: ReadonlyArray<string>) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-prune-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-prune-" });
     const versionsDir = path.join(baseDir, "runtime", "versions");
     const now = Duration.toMillis(Duration.days(1));
     yield* TestClock.setTime(now);
@@ -334,7 +334,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
     ) {
       const directory = path.join(versionsDir, version);
       yield* fs.makeDirectory(directory, { recursive: true });
-      yield* fs.writeFileString(path.join(directory, "t3"), "");
+      yield* fs.writeFileString(path.join(directory, "houston"), "");
       if (completed === "never") return;
       const sentinel = path.join(directory, ".install-complete");
       yield* fs.writeFileString(sentinel, `${version}\n`);
@@ -373,9 +373,9 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       yield* fs.makeDirectory(binDir);
       yield* fs.makeDirectory(customBinDir);
       // Chained: the launcher reaches its runtime through a second link.
-      yield* fs.symlink(path.join(versionsDir, "1.2.0", "t3"), path.join(baseDir, "alias-t3"));
+      yield* fs.symlink(path.join(versionsDir, "1.2.0", "houston"), path.join(baseDir, "alias-t3"));
       yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "houston"));
-      yield* fs.symlink(path.join(versionsDir, "1.2.5", "t3"), path.join(customBinDir, "houston"));
+      yield* fs.symlink(path.join(versionsDir, "1.2.5", "houston"), path.join(customBinDir, "houston"));
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "launchers"),
         `${path.join(customBinDir, "houston")}\n`,
@@ -392,11 +392,11 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       const removed = yield* prunePinnedRuntimes({
         baseDir,
         keep: ["2.0.0"],
-        references: [`ExecStart=${path.join(versionsDir, "1.3.5", "t3")} __service-launcher`],
+        references: [`ExecStart=${path.join(versionsDir, "1.3.5", "houston")} __service-launcher`],
       }).pipe(
         Effect.provideService(
           ProcessRunner.ProcessRunner,
-          lsofRunner(`p42\nftxt\nn${path.join(versionsDir, "1.3.0", "t3")}\n`),
+          lsofRunner(`p42\nftxt\nn${path.join(versionsDir, "1.3.0", "houston")}\n`),
         ),
         Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(HostProcess.Environment, { T3CODE_INSTALL_BIN_DIR: binDir }),
@@ -436,7 +436,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       const shim = path.join(baseDir, "houston.cmd");
       yield* fs.writeFileString(
         shim,
-        `@echo off\r\n"${path.join(versionsDir, "1.0.0", "t3.exe").toUpperCase()}" %*`,
+        `@echo off\r\n"${path.join(versionsDir, "1.0.0", "houston.exe").toUpperCase()}" %*`,
       );
       yield* fs.writeFileString(path.join(baseDir, "runtime", "launchers"), `${shim}\n`);
 
@@ -486,7 +486,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
-        const entry = path.join(versionsDir, "1.0.0", "t3");
+        const entry = path.join(versionsDir, "1.0.0", "houston");
         // Multicall coreutils (Ubuntu's uutils) refuse to run renamed, so copy Node instead.
         yield* fs.copyFile(process.execPath, entry);
         yield* fs.chmod(entry, 0o755);
