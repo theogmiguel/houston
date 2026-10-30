@@ -95,7 +95,6 @@ describe("searchSettings", () => {
 
   it("hides settings whose controls are unavailable", () => {
     const available = filterAvailableSettingsSearchItems({
-      hasCloudPublicConfig: false,
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
       hasMacProviderSettingsEnvironment: false,
@@ -129,7 +128,6 @@ describe("searchSettings", () => {
 
   it("finds linked environments on a remote host without local maintenance access", () => {
     const availability = {
-      hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       hasMacProviderSettingsEnvironment: false,
@@ -221,7 +219,6 @@ describe("auto-settlement search availability", () => {
     const availability = getThreadAutoSettlementSearchAvailability(environments);
     expect(availability.eligibleEnvironmentIds).toEqual([capable.environmentId]);
     const items = filterAvailableSettingsSearchItems({
-      hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       hasMacProviderSettingsEnvironment: false,

@@ -1,9 +1,5 @@
-import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
 
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
-import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -18,8 +14,7 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
-        {/* Clerk is only mounted when this build has Houston Connect. */}
-        {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
+        <GuestLinksRow />
         <LinkedEnvironmentsRow />
         <SimlockHostsRow />
       </SettingsSection>
@@ -69,25 +64,6 @@ function BoringSidebarMultilineRow() {
   );
 }
 
-/** Signed out of Houston Connect, the row offers to sign in instead of its switch. */
-function GuestLinksRowWithSignIn() {
-  const { isSignedIn } = useAuth();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
-  // `isSignedIn` is undefined until Clerk loads.
-  if (isSignedIn !== false) return <GuestLinksRow />;
-  return (
-    <SettingsRow
-      {...searchableSetting("guest-links")}
-      description="Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to Houston Connect to use guest links."
-      control={
-        <Button size="sm" variant="outline" onClick={openAuthPrompt}>
-          Sign in
-        </Button>
-      }
-    />
-  );
-}
-
 function GuestLinksRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -99,7 +75,7 @@ function GuestLinksRow() {
       description={
         <>
           Share a thread with a guest who watches it live in their browser and sends messages you
-          approve. Needs Houston Connect: sign in and link this machine in{" "}
+          approve. Needs a reachable address for this machine: see{" "}
           <Link to="/settings/access" className="underline underline-offset-2">
             Sharing & access
           </Link>

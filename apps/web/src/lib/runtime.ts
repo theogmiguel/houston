@@ -1,38 +1,35 @@
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";
 
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
-import * as RelayTracing from "@t3tools/shared/relayTracing";
 import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClient";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 
-import * as Dpop from "../cloud/dpop";
-import * as ManagedRelayLayer from "../cloud/managedRelayLayer";
-import { resolveCloudPublicConfig, resolveRelayTracingConfig } from "../cloud/publicConfig";
 import * as ClientTracer from "../observability/clientTracer";
 
-function configuredRelayUrl(): string {
-  return resolveCloudPublicConfig().relayUrl ?? "http://relay.invalid";
-}
-
 const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
-const layerRelayTracing = RelayTracing.layer(resolveRelayTracingConfig(), {
-  serviceName: "t3code-web",
-  serviceVersion: import.meta.env.APP_VERSION,
-  runtime: "browser",
-  serviceInstanceId: ClientTracer.serviceInstanceId,
-  client: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "web",
-}).pipe(Layer.provide(layerHttpClient));
+
+const layerCrypto = Layer.succeed(
+  Crypto.Crypto,
+  Crypto.make({
+    randomBytes: (size) => crypto.getRandomValues(new Uint8Array(size)),
+    digest: (algorithm, data) =>
+      Effect.promise(async () => {
+        const bytes = new Uint8Array(data.byteLength);
+        bytes.set(data);
+        return new Uint8Array(await crypto.subtle.digest(algorithm, bytes));
+      }),
+  }),
+);
 
 type RuntimeLayerSource =
   | typeof layerHttpClient
-  | typeof Dpop.layer
+  | typeof layerCrypto
   | typeof Socket.layerWebSocketConstructorGlobal
-  | typeof layerRelayTracing
-  | typeof ClientTracer.layer
-  | ReturnType<typeof ManagedRelayLayer.layer>;
+  | typeof ClientTracer.layer;
 
 const primaryHttpRuntime = ManagedRuntime.make(
   PrimaryEnvironmentHttpClient.layer.pipe(Layer.provide(PrimaryEnvironmentHttpLayer.layer)),
@@ -57,13 +54,9 @@ export function __setPrimaryHttpRunnerForTests(runner?: PrimaryHttpEffectRunner)
 
 const layerRuntime = Layer.mergeAll(
   layerHttpClient,
-  Dpop.layer,
+  layerCrypto,
   Socket.layerWebSocketConstructorGlobal,
   ClientTracer.layer,
-  layerRelayTracing,
-  ManagedRelayLayer.layer(configuredRelayUrl()).pipe(
-    Layer.provide(Layer.mergeAll(layerHttpClient, Dpop.layer)),
-  ),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<

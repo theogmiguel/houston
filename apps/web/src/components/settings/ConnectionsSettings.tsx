@@ -6,8 +6,6 @@ import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
-  AuthRelayReadScope,
-  AuthRelayWriteScope,
   type AuthClientSession,
   type AuthPairingLink,
   type AuthPairingCredentialResult,
@@ -83,8 +81,6 @@ import {
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { RemoveT3ConnectEnvironmentDialog } from "../clerk/RemoveT3ConnectEnvironmentDialog";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -128,8 +124,6 @@ import {
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import {
-  CloudLinkRow,
-  CloudRemoteEnvironmentRows,
   SavedBackendListRow,
 } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
@@ -280,9 +274,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   );
   const canReadAccess = useEnvironmentScope(primaryEnvironmentId, AuthAccessReadScope);
   const canWriteAccess = useEnvironmentScope(primaryEnvironmentId, AuthAccessWriteScope);
-  const canReadRelay = useEnvironmentScope(primaryEnvironmentId, AuthRelayReadScope);
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
-  const canManageRelay = useEnvironmentScope(primaryEnvironmentId, AuthRelayWriteScope);
   const canManageLocalBackend = !isLocalEnvironmentDisabled() && canMaintain;
   const showsAccess = view === "access";
   const authAccessChanges = useEnvironmentQuery(
@@ -592,15 +584,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     }
   };
 
-  // Removing a Houston Connect route preserves account registration; use a separate dialog pointing to
-  // deregistration.
-  const [pendingT3ConnectRemoval, setPendingT3ConnectRemoval] =
-    useState<EnvironmentPresentation | null>(null);
   const handleRemoveSavedBackend = async (environment: EnvironmentPresentation) => {
-    if (environment.relayManaged && hasCloudPublicConfig()) {
-      setPendingT3ConnectRemoval(environment);
-      return;
-    }
     const confirmed = await requestConfirmDialog(
       `Remove ${environment.label} from this device?\nThis forgets its pairing, credentials, and cached threads here. Switch it off instead to keep it saved.`,
       { variant: "destructive" },
@@ -1116,16 +1100,10 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                 {renderEndpointRows()}
                 {renderTailscaleRow()}
                 {renderWslRow()}
-                {canReadRelay || canManageRelay ? (
-                  <CloudLinkRow canReadRelay={canReadRelay} canManageRelay={canManageRelay} />
-                ) : null}
               </>
             ) : canManageLocalBackend ? (
               <>
                 {renderDisabledNetworkAccessRow()}
-                {canReadRelay || canManageRelay ? (
-                  <CloudLinkRow canReadRelay={canReadRelay} canManageRelay={canManageRelay} />
-                ) : null}
               </>
             ) : null}
             {primaryEnvironment ? (
@@ -1204,7 +1182,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                 <AlertDialogDescription>
                   {pendingDesktopServerExposureMode === "network-accessible"
                     ? "Let your other devices connect to Houston over the network. Pair devices to give them access. Houston will restart."
-                    : "Devices connected over your local network will disconnect. Existing tunnels, such as Houston Connect or Tailscale HTTPS, keep working. Houston will restart."}
+                    : "Devices connected over your local network will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Houston will restart."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1460,9 +1438,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             title="No environment selected"
             description="Connect an environment to view its settings and access."
           />
-          {canReadRelay || canManageRelay ? (
-            <CloudLinkRow canReadRelay={canReadRelay} canManageRelay={canManageRelay} />
-          ) : null}
         </SettingsSection>
       )}
     </>
@@ -1510,22 +1485,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             }}
           />
         ))}
-        <CloudRemoteEnvironmentRows
-          primaryEnvironmentId={primaryEnvironmentId}
-          savedEnvironments={savedEnvironments}
-        />
       </SettingsSection>
-      {hasCloudPublicConfig() ? (
-        <RemoveT3ConnectEnvironmentDialog
-          environmentLabel={pendingT3ConnectRemoval?.label ?? null}
-          onCancel={() => setPendingT3ConnectRemoval(null)}
-          onConfirm={() => {
-            if (!pendingT3ConnectRemoval) return;
-            setPendingT3ConnectRemoval(null);
-            void removeSavedBackend(pendingT3ConnectRemoval);
-          }}
-        />
-      ) : null}
       {peerLinkHosts.map((environment, index) => (
         <LinkedEnvironmentsSettings
           key={environment.environmentId}
