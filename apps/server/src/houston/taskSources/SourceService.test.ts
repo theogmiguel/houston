@@ -12,7 +12,7 @@ import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject, deleteProject } from "../tasks/tasks.testkit.ts";
 import { HoustonTaskSourcePoller, TOKEN_MISSING, TOKEN_UNAVAILABLE } from "./Poller.ts";
 import { HoustonTaskSourceService } from "./SourceService.ts";
-import { HoustonTaskSourceStore } from "./SourceStore.ts";
+import { HoustonTaskSourceStore, sweep } from "./SourceStore.ts";
 import {
   NOTION_PROJECTS,
   NOTION_SOURCE,
@@ -438,6 +438,66 @@ describe("deleting a project removes its sources and token", () => {
         assert.isFalse(keychainOf(doomed));
         assert.isTrue(keychainOf(kept));
         assert.strictEqual((yield* store.linksOf(task.id)).length, 1);
+      }),
+    ),
+  );
+
+  it.effect("deleting a project removes a token set before any settings", () =>
+    withSources((_fake, keychain) =>
+      Effect.gen(function* () {
+        const sources = yield* HoustonTaskSourceService;
+        const store = yield* HoustonTaskSourceStore;
+        const sql = yield* SqlClient.SqlClient;
+        const entry = (projectId: string) =>
+          `${store.tokenService(projectId, "notion")}\u0000integration-token`;
+        const early = yield* createProject("token-only");
+        const live = yield* createProject("token-live");
+        for (const projectId of [early, live] as Array<ProjectId>) {
+          yield* sources.setCredential({
+            projectId,
+            provider: "notion",
+            token: Redacted.make(TOKEN),
+          });
+        }
+        // The record of each entry set holds the project and provider, never the token.
+        const records = yield* sql`
+          SELECT * FROM houston_task_source_credentials ORDER BY project_id
+        `;
+        assert.deepEqual(records, [
+          { project_id: live, provider: "notion" },
+          { project_id: early, provider: "notion" },
+        ]);
+        assert.notInclude(JSON.stringify(records), TOKEN);
+        assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_task_source_settings`, [
+          { n: 0 },
+        ]);
+
+        // Through the server: the deletion hook removes the entry and its record.
+        yield* deleteProject(early);
+        assert.isFalse(keychain.entries.has(entry(early)));
+        assert.isTrue(keychain.entries.has(entry(live)));
+        assert.deepEqual(yield* sql`SELECT project_id FROM houston_task_source_credentials`, [
+          { project_id: live },
+        ]);
+
+        // Outside the server (`t3 project` deletes without the hook): the startup sweep removes it.
+        keychain.entries.set(entry(early), TOKEN);
+        yield* sql`
+          INSERT INTO houston_task_source_credentials (project_id, provider)
+          VALUES (${early}, 'notion')
+        `;
+        yield* sweep;
+        assert.isFalse(keychain.entries.has(entry(early)));
+        assert.isTrue(keychain.entries.has(entry(live)));
+        assert.deepEqual(yield* sql`SELECT project_id FROM houston_task_source_credentials`, [
+          { project_id: live },
+        ]);
+
+        // Clearing a token drops its record too.
+        yield* sources.clearCredential({ projectId: live, provider: "notion" });
+        assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_task_source_credentials`, [
+          { n: 0 },
+        ]);
       }),
     ),
   );

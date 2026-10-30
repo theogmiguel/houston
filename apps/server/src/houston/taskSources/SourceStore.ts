@@ -152,7 +152,12 @@ export class HoustonTaskSourceStore extends Context.Service<
     readonly settingsOf: (
       projectId: ProjectId,
     ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceSettings>>;
-    /** Removes a deleted project's settings, poll state and token; its tasks keep their links. */
+    /** Drops the record of a keychain entry once the entry is removed. */
+    readonly forgetCredential: (
+      projectId: string,
+      provider: HoustonTaskSourceProvider,
+    ) => Effect.Effect<void>;
+    /** Removes a deleted project's settings, poll state and tokens; its tasks keep their links. */
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
 >()("t3/houston/taskSources/SourceStore/HoustonTaskSourceStore") {}
@@ -238,28 +243,43 @@ const make = Effect.gen(function* () {
       Effect.orDie,
     );
 
-  const projectRemoved = (projectId: ProjectId) =>
+  const forgetCredential = (projectId: string, provider: HoustonTaskSourceProvider) =>
     write(
+      Effect.gen(function* () {
+        yield* sql`
+          DELETE FROM houston_task_source_credentials
+          WHERE project_id = ${projectId} AND provider = ${provider}
+        `;
+        return { result: undefined, touched: [], events: [] };
+      }),
+    ).pipe(Effect.orDie);
+
+  // A record whose keychain removal fails stays, so the next startup sweep tries again.
+  const projectRemoved = Effect.fn("HoustonTaskSourceStore.projectRemoved")(function* (
+    projectId: ProjectId,
+  ) {
+    const recorded = yield* write(
       Effect.gen(function* () {
         yield* sql`DELETE FROM houston_task_source_settings WHERE project_id = ${projectId}`;
         yield* sql`DELETE FROM houston_task_source_poll WHERE project_id = ${projectId}`;
-        return { result: undefined, touched: [], events: [] };
+        const rows = yield* sql<{ readonly provider: HoustonTaskSourceProvider }>`
+            SELECT provider FROM houston_task_source_credentials WHERE project_id = ${projectId}
+          `;
+        return { result: rows, touched: [], events: [] };
       }),
-    ).pipe(
-      Effect.orDie,
-      Effect.andThen(
-        keychain
-          .remove(tokenService(projectId, "notion"), TOKEN_ACCOUNT)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning(
-                `Failed to remove the tracker token of deleted project ${projectId}.`,
-                cause,
-              ),
-            ),
+    ).pipe(Effect.orDie);
+    for (const { provider } of recorded) {
+      yield* keychain.remove(tokenService(projectId, provider), TOKEN_ACCOUNT).pipe(
+        Effect.andThen(forgetCredential(projectId, provider)),
+        Effect.catchCause((cause) =>
+          Effect.logWarning(
+            `Failed to remove the ${provider} token of deleted project ${projectId}.`,
+            cause,
           ),
-      ),
-    );
+        ),
+      );
+    }
+  });
 
   return HoustonTaskSourceStore.of({
     write,
@@ -273,6 +293,7 @@ const make = Effect.gen(function* () {
     tokenService,
     hasCredential,
     settingsOf,
+    forgetCredential,
     projectRemoved,
   });
 });
@@ -290,7 +311,8 @@ export const sweep = Effect.gen(function* () {
       .map((project) => project.projectId as string),
   );
   const configured = yield* sql<{ readonly project_id: string }>`
-    SELECT DISTINCT project_id FROM houston_task_source_settings
+    SELECT project_id FROM houston_task_source_settings
+    UNION SELECT project_id FROM houston_task_source_credentials
   `;
   for (const { project_id } of configured) {
     if (!live.has(project_id)) yield* store.projectRemoved(project_id as ProjectId);

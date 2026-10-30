@@ -187,9 +187,21 @@ const make = Effect.gen(function* () {
         { limit: HOUSTON_TASK_SOURCE_LIMITS.tokenBytes, actual: size },
       );
     }
-    yield* keychain
-      .set(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT, Redacted.make(token))
-      .pipe(Effect.mapError((error) => refuse("keychain_unavailable", operation, error.message)));
+    // The record commits only if the keychain write succeeds, so every entry set is on record.
+    yield* store.write(
+      Effect.gen(function* () {
+        yield* sql`
+          INSERT INTO houston_task_source_credentials (project_id, provider)
+          VALUES (${input.projectId}, 'notion') ON CONFLICT DO NOTHING
+        `.pipe(Effect.orDie);
+        yield* keychain
+          .set(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT, Redacted.make(token))
+          .pipe(
+            Effect.mapError((error) => refuse("keychain_unavailable", operation, error.message)),
+          );
+        return { result: undefined, touched: [], events: [] };
+      }),
+    );
     return { hasCredential: true };
   });
 
@@ -204,6 +216,7 @@ const make = Effect.gen(function* () {
     yield* keychain
       .remove(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT)
       .pipe(Effect.mapError((error) => refuse("keychain_unavailable", operation, error.message)));
+    yield* store.forgetCredential(input.projectId, "notion");
     return { hasCredential: false };
   });
 

@@ -274,6 +274,14 @@ const TaskSources = Effect.gen(function* () {
       counts_json TEXT NOT NULL
     )
   `;
+  // Which projects have an OS keychain entry, so a deleted project's entry can be found.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_source_credentials (
+      project_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('github_issues', 'notion')),
+      PRIMARY KEY (project_id, provider)
+    )
+  `;
 });
 
 const houstonMigrationEntries = [

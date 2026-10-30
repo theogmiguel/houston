@@ -184,6 +184,7 @@ describe("the tasks migration runs on the Houston track", () => {
 
 describe("the task sources migration runs on the Houston track", () => {
   const SOURCE_TABLES = [
+    "houston_task_source_credentials",
     "houston_task_source_identity",
     "houston_task_source_import",
     "houston_task_source_links",
