@@ -43,6 +43,7 @@ import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failu
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
+import { ReadinessLedger, reportTurnTerminal } from "../houston/providerReadiness.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -340,6 +341,7 @@ export const layer: Layer.Layer<
     const agentScope = yield* AgentScope;
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const scope = yield* Effect.scope;
+    const readinessLedger = yield* Effect.serviceOption(ReadinessLedger);
     const completedTurnAnalytics = new Set<string>();
 
     const makeDomainEvent =
@@ -798,6 +800,9 @@ export const layer: Layer.Layer<
           },
           (effect, input) =>
             effect.pipe(
+              Effect.tap((storedEvents) =>
+                reportTurnTerminal(readinessLedger, input, storedEvents),
+              ),
               Effect.tap((storedEvents) =>
                 Effect.gen(function* () {
                   if (
