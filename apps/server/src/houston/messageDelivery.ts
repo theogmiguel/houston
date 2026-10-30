@@ -222,7 +222,7 @@ export interface MessageDeliveryWriterShape {
 export class MessageDeliveryWriter extends Context.Service<
   MessageDeliveryWriter,
   MessageDeliveryWriterShape
->()("t3/houston/messageDelivery/MessageDeliveryWriter") {}
+>()("houston/houston/messageDelivery/MessageDeliveryWriter") {}
 
 // Provider turns repeat `running` with each usage update; remember the ones already applied.
 const SEEN_TURN_LIMIT = 4_096;

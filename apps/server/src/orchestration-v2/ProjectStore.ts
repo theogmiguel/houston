@@ -94,7 +94,7 @@ export class ProjectStoreV2 extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectStoreV2Error>;
   }
->()("t3/orchestration-v2/ProjectStore/ProjectStoreV2") {}
+>()("houston/orchestration-v2/ProjectStore/ProjectStoreV2") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

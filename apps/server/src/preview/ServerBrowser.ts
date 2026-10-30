@@ -243,7 +243,7 @@ export class ServerBrowser extends Context.Service<
 
     readonly reportProfiles: (input: PreviewReportProfilesInput) => Effect.Effect<void>;
   }
->()("t3/preview/ServerBrowser") {}
+>()("houston/preview/ServerBrowser") {}
 
 interface ViewerState {
   readonly id: string;

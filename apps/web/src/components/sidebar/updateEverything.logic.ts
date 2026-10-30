@@ -68,7 +68,7 @@ const RELEASE_ARCHIVE_SELF_UPDATE_SINCE = "0.0.41-nightly.20260914.1700";
 
 /** Skip current and app-hosted servers; the latter update with the app and would relaunch mid-run.
  * Desktop-managed servers use their own feed. `waitForNpm` lists targets that need
- * `t3@<targetVersion>` on npm first. `releaseArchivesPublished` means the version came from the
+ * `houston@<targetVersion>` on npm first. `releaseArchivesPublished` means the version came from the
  * desktop feed: its GitHub Release goes public with the CLI archives that boot services download. */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
@@ -275,7 +275,7 @@ export function collectChannelSwitchTargets(
       compareSemverVersions(release.version, serverVersion) <= 0
     ) {
       skip(
-        `run \`t3 update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
+        `run \`houston update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
       );
       continue;
     }

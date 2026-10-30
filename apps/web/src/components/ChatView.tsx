@@ -173,7 +173,6 @@ import {
 } from "../previewMiniPlayerStore";
 import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.logic";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
-import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
@@ -2886,35 +2885,6 @@ export default function ChatView(props: ChatViewProps) {
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
-  // Read from the projection the footer renders, so the scroll below sees the new message.
-  const pendingGuestMessageIds =
-    serverProjection?.thread.guestShare?.messages.flatMap((message) =>
-      message.status === "pending" ? [message.id] : [],
-    ) ?? [];
-  const pendingGuestMessageCount = pendingGuestMessageIds.length;
-  const pendingGuestMessageKey = pendingGuestMessageIds.join(",");
-  const previousPendingGuestMessagesRef = useRef({
-    threadKey: routeThreadKey,
-    key: pendingGuestMessageKey,
-  });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the timeline list to the end when a new pending guest message joins its footer
-  useEffect(() => {
-    const previous = previousPendingGuestMessagesRef.current;
-    previousPendingGuestMessagesRef.current = {
-      threadKey: routeThreadKey,
-      key: pendingGuestMessageKey,
-    };
-    // Opening another thread is not a new message; its own scroll position wins.
-    if (previous.threadKey !== routeThreadKey) return;
-    // Pending guest messages sit in the list footer, which the list does not follow on its own.
-    // The follow flag reflects the owner's position before the footer grew; a live measure may not.
-    // Any new id counts, even when another one was resolved in the same update.
-    const previousIds = new Set(previous.key.split(","));
-    const hasNewMessage = pendingGuestMessageKey
-      .split(",")
-      .some((id) => id !== "" && !previousIds.has(id));
-    if (hasNewMessage && timelineLiveFollowEnabled) scrollToEnd(true);
-  }, [routeThreadKey, pendingGuestMessageKey, timelineLiveFollowEnabled, scrollToEnd]);
   const queuedRunsControl =
     isServerThread && activeThread ? (
       <>
@@ -3010,12 +2980,11 @@ export default function ChatView(props: ChatViewProps) {
       .filter((part) => part !== null)
       .join(" · ") || null;
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
-  // its lifecycle status, guest messages awaiting you, then your queued messages.
+  // its lifecycle status, then your queued messages.
   const timelineFooter =
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
-    pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
         {pendingHandoff === null ? null : (
@@ -3036,13 +3005,6 @@ export default function ChatView(props: ChatViewProps) {
           goal={goalNow}
         />
         {threadStatusLine}
-        {pendingGuestMessageCount > 0 && isServerThread && activeThread ? (
-          <GuestPendingMessages
-            threadRef={scopeThreadRef(activeThread.environmentId, activeThread.id)}
-            onImageExpand={onExpandTimelineImageStable}
-            onFileOpen={openFileAttachmentStable}
-          />
-        ) : null}
         {hasQueuedTurns ? queuedRunsControl : null}
       </>
     );

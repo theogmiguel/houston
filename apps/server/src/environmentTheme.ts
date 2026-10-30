@@ -51,7 +51,7 @@ export class EnvironmentThemeService extends Context.Service<
     /** Subscribes before reading to retain changes during connection. */
     readonly streamChanges: Stream.Stream<ReadonlyArray<EnvironmentTheme>>;
   }
->()("t3/environmentTheme/EnvironmentThemeService") {}
+>()("houston/environmentTheme/EnvironmentThemeService") {}
 
 /** Validates and reads one handle; rejects symlinked files, allows symlinked directories.
  * Uses non-blocking opens against FIFOs; Windows lacks these flags and checks symlinks with lstat. */

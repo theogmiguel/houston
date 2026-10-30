@@ -42,7 +42,7 @@ export const triageSourceCacheDir = (baseDir: string, path: Path.Path) =>
 
 /**
  * Writes `context.md` and the playbook prompt into a fresh `<stateDir>/triage/<time>`
- * folder. Both `t3 triage` and the in-app entry point start from these files.
+ * folder. Both `houston triage` and the in-app entry point start from these files.
  */
 export const writeTriageSession = Effect.fn("triage.writeTriageSession")(function* (input: {
   readonly baseDir: string;

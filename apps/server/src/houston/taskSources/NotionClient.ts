@@ -41,7 +41,7 @@ export class NotionClient extends Context.Service<
       body?: unknown,
     ) => Effect.Effect<unknown, string>;
   }
->()("t3/houston/taskSources/NotionClient") {}
+>()("houston/houston/taskSources/NotionClient") {}
 
 /** The origin a client may use: api.notion.com over HTTPS, or loopback when a test allows it. */
 export const checkOrigin = (origin: string, allowLoopback: boolean): string | null => {

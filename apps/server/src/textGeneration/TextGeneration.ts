@@ -36,7 +36,7 @@ export type {
 } from "@t3tools/provider-core/server/textGeneration";
 
 export class TextGeneration extends Context.Service<TextGeneration, ProviderTextGeneration>()(
-  "t3/textGeneration/TextGeneration",
+  "houston/textGeneration/TextGeneration",
 ) {}
 
 type TextGenerationOp =

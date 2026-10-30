@@ -99,7 +99,7 @@ export class HoustonReviewState extends Context.Service<
       input: HoustonReviewMapAnchorsInput,
     ) => Effect.Effect<HoustonReviewAnchorMapResult, ReviewDiffPreviewError>;
   }
->()("t3/houston/reviewState/HoustonReviewState") {}
+>()("houston/houston/reviewState/HoustonReviewState") {}
 
 interface Repository {
   readonly root: string;

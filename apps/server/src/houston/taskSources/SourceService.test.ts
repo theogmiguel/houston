@@ -494,7 +494,7 @@ describe("deleting a project removes its sources and token", () => {
           { project_id: live },
         ]);
 
-        // Outside the server (`t3 project` deletes without the hook): the startup sweep removes it.
+        // Outside the server (`houston project` deletes without the hook): the startup sweep removes it.
         keychain.entries.set(entry(early), TOKEN);
         yield* sql`
           INSERT INTO houston_task_source_credentials (project_id, provider)

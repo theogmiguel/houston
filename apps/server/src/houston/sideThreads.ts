@@ -134,7 +134,7 @@ export class HoustonReadOnlyThreads extends Context.Service<
     /** The submit tool of the thread's role, or undefined when it has none or the read fails. */
     readonly submitToolOf: (threadId: ThreadId) => Effect.Effect<HoustonTaskSubmitTool | undefined>;
   }
->()("t3/houston/sideThreads/HoustonReadOnlyThreads") {}
+>()("houston/houston/sideThreads/HoustonReadOnlyThreads") {}
 
 export type HoustonTaskSubmitTool = NonNullable<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy["houstonTaskSubmitTool"]

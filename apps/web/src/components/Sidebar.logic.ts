@@ -624,7 +624,6 @@ export interface ThreadStatusPill {
     | "Failed"
     | "Pending Approval"
     | "Needs you"
-    | "Guest Request"
     | "Waiting"
     | "Plan Ready";
   colorClass: string;
@@ -635,7 +634,6 @@ export interface ThreadStatusPill {
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
   "Needs you": 4,
-  "Guest Request": 3.75,
   Failed: 3.5,
   Running: 3,
   Connecting: 3,
@@ -650,7 +648,6 @@ type ThreadStatusInput = Pick<
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "pendingSubagentRequest"
-  | "pendingGuestMessageCount"
   | "interactionMode"
   | "latestRun"
   | "runtime"
@@ -804,7 +801,6 @@ export function resolveAdjacentThreadId<T>(input: {
 export type SidebarThreadStatus =
   | "approval"
   | "input"
-  | "request"
   | "working"
   | "waiting"
   | "failed"
@@ -821,8 +817,7 @@ export function shouldRecedeSidebarThread(input: {
   if (
     input.isActive ||
     input.isSelected ||
-    input.status === "input" ||
-    input.status === "request"
+    input.status === "input"
   ) {
     return false;
   }
@@ -838,7 +833,6 @@ type SidebarThreadStatusInput = Pick<
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "pendingSubagentRequest"
-  | "pendingGuestMessageCount"
   | "runtime"
   | "blockedOnThreadWait"
 >;
@@ -849,10 +843,6 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   }
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
-  }
-  // A guest is waiting on the owner; the agent's own requests come first.
-  if ((thread.pendingGuestMessageCount ?? 0) > 0) {
-    return "request";
   }
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
@@ -883,7 +873,6 @@ export function resolveSidebarFolderDot(
   if (
     statuses.has("input") ||
     statuses.has("approval") ||
-    statuses.has("request") ||
     statuses.has("limited")
   ) {
     return "attention";
@@ -954,7 +943,6 @@ export type SidebarV2TopStatusKind =
   | "failed"
   | "limited"
   | "input"
-  | "request"
   | "waiting"
   | "woke"
   | "working";
@@ -1093,15 +1081,6 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if ((thread.pendingGuestMessageCount ?? 0) > 0) {
-    return {
-      label: "Guest Request",
-      colorClass: "text-guest-foreground",
-      dotClass: "bg-guest",
-      pulse: false,
-    };
-  }
-
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
     thread.runtime?.status === "waiting"
@@ -1206,7 +1185,6 @@ export function resolveSidebarStatusGlyphState(
       return "working";
     case "Pending Approval":
     case "Needs you":
-    case "Guest Request":
     case "Plan Ready":
       return "needs";
     case "Ready":

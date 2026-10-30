@@ -281,19 +281,6 @@ describe("resolveSidebarThreadStatus", () => {
     ).toBe("approval");
   });
 
-  it("shows a waiting guest message as a Request, below the agent's own requests", () => {
-    expect(resolveSidebarThreadStatus({ ...idle, pendingGuestMessageCount: 1, runtime })).toBe(
-      "request",
-    );
-    expect(
-      resolveSidebarThreadStatus({
-        ...idle,
-        hasPendingUserInput: true,
-        pendingGuestMessageCount: 1,
-      }),
-    ).toBe("input");
-  });
-
   it("keeps usage-limit stops Limited and visible until the thread recovers", () => {
     const limited = {
       ...runtime,
@@ -595,12 +582,7 @@ describe("resolveSidebarStatusGlyphState", () => {
     for (const label of ["Running", "Connecting", "Waiting"] as const) {
       expect(resolveSidebarStatusGlyphState(pill(label))).toBe("working");
     }
-    for (const label of [
-      "Pending Approval",
-      "Needs you",
-      "Guest Request",
-      "Plan Ready",
-    ] as const) {
+    for (const label of ["Pending Approval", "Needs you", "Plan Ready"] as const) {
       expect(resolveSidebarStatusGlyphState(pill(label))).toBe("needs");
     }
     expect(resolveSidebarStatusGlyphState(pill("Ready"))).toBe("done");

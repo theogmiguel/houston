@@ -174,7 +174,7 @@ export class HoustonTaskRuns extends Context.Service<
     /** Applies every thread event stored since the last call. */
     readonly catchUp: Effect.Effect<void>;
   }
->()("t3/houston/tasks/TaskRuns/HoustonTaskRuns") {}
+>()("houston/houston/tasks/TaskRuns/HoustonTaskRuns") {}
 
 interface InitiativeRow {
   readonly id: number;

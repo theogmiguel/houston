@@ -71,7 +71,7 @@ export class HoustonTaskSourceService extends Context.Service<
       input: HoustonTaskSourceProjectInput,
     ) => Stream.Stream<HoustonTaskSourceStreamEvent, HoustonTaskSourceError>;
   }
->()("t3/houston/taskSources/SourceService/HoustonTaskSourceService") {}
+>()("houston/houston/taskSources/SourceService/HoustonTaskSourceService") {}
 
 const failIf = (error: HoustonTaskSourceError | undefined) =>
   error === undefined ? Effect.void : Effect.fail(error);

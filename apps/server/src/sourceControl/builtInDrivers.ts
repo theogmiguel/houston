@@ -19,7 +19,7 @@ export interface SourceControlDriverEntry {
 export class SourceControlDrivers extends Context.Service<
   SourceControlDrivers,
   ReadonlyArray<SourceControlDriverEntry>
->()("t3/sourceControl/builtInDrivers/SourceControlDrivers") {}
+>()("houston/sourceControl/builtInDrivers/SourceControlDrivers") {}
 
 const make = Effect.forEach(BUILT_IN_SOURCE_CONTROL_DRIVER_LIST, (driver) =>
   driver.make.pipe(Effect.map((instance) => ({ driver, instance }))),

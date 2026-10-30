@@ -32,7 +32,6 @@ import { cn } from "~/lib/utils";
 import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
-import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
 
@@ -121,15 +120,14 @@ export function QueuedRunsControl({
     (message) => message.inputIntent === "queued_turn" && !acknowledgedMessageIds.has(message.id),
   );
   const items = [
-    ...queued.map(({ run, text, attachments, context, message }, serverIndex) => ({
+    ...queued.map(({ run, text, attachments, message }, serverIndex) => ({
       key: run.id,
       message,
       runId: run.id,
       messageId: run.userMessageId,
       serverIndex,
       text,
-      // A guest's message keeps the guest's words; the owner can cancel it, not rewrite it.
-      editable: context?.guest === undefined,
+      editable: true,
       attachments,
       thumbnails: attachments
         .filter((attachment) => attachment.type === "image")
@@ -191,7 +189,6 @@ export function QueuedRunsControl({
       const latest = queued.at(-1);
       if (
         !latest ||
-        latest.context?.guest !== undefined ||
         props.editingRunId !== null ||
         props.editBlockedReason !== null ||
         busyRunId !== null
@@ -432,18 +429,13 @@ function QueuedMessage(props: {
       {attribution === "t3code" ? (
         <p className="me-1 text-2xs text-muted-foreground/70">Sent by Houston</p>
       ) : null}
-      {presentation?.guestName === undefined ? null : (
-        <GuestMessageName name={presentation.guestName} />
-      )}
       {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(
           "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
           props.isEditing
             ? "border-primary/60 text-foreground"
-            : attribution === "guest"
-              ? "border-guest/50 text-muted-foreground"
-              : "border-muted-foreground/40 text-muted-foreground",
+            : "border-muted-foreground/40 text-muted-foreground",
           fold === null && "px-3 py-2",
           fold !== null && expanded && "w-full",
         )}

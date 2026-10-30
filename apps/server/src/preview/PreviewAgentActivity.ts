@@ -27,7 +27,7 @@ export class PreviewAgentActivity extends Context.Service<
       Scope.Scope
     >;
   }
->()("t3/preview/PreviewAgentActivity") {}
+>()("houston/preview/PreviewAgentActivity") {}
 
 const make = Effect.gen(function* () {
   const changes = yield* PubSub.unbounded<PreviewAgentTurnChange>();

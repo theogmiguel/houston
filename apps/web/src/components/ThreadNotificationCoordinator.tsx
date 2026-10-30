@@ -93,9 +93,7 @@ export function startThreadNotifications(
             ? "Usage limit reached"
             : status === "failed"
               ? "Thread failed"
-              : status === "request"
-                ? "Guest request"
-                : "Input needed";
+              : "Input needed";
     if (hasNotificationSound(mode)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
@@ -201,7 +199,6 @@ export function startThreadNotifications(
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const attention =
         status === "input" ||
-        status === "request" ||
         status === "approval" ||
         status === "failed" ||
         status === "limited"
