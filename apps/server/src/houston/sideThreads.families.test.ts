@@ -4,6 +4,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
+  ClaudeSettings,
   CommandId,
   MessageId,
   type ModelSelection,
@@ -30,8 +31,13 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import type * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import {
+  claudeRuntimeQueryPolicyForRuntimePolicy,
+  makeClaudeQueryOptions,
+} from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { makeAntigravityAcpAdapterFlavor } from "../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
 import { AcpRegistryOrchestratorReplayHarness } from "../orchestration-v2/Adapters/AcpRegistryAdapterV2.testkit.ts";
 import {
@@ -61,7 +67,10 @@ import {
 } from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { materializeReplayTranscriptRuntimeInstructions } from "../orchestration-v2/testkit/ReplayRuntimeInstructions.ts";
 import { makeHarness, runWith, selection } from "./sideThreads.testkit.ts";
-import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import {
+  CodexProviderCapabilitiesV2,
+  codexThreadRuntimeParams,
+} from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 
 const READ_ONLY_POLICY = {
   runtimeMode: "full-access",
@@ -723,5 +732,73 @@ describe("the reviewed diff", () => {
         );
       }),
     ),
+  );
+});
+
+describe("user MCP servers", () => {
+  it.effect("a side thread loads no user MCP servers", () =>
+    Effect.gen(function* () {
+      // Claude: only the servers Houston passes, and launch arguments cannot add one.
+      const queryPolicy = claudeRuntimeQueryPolicyForRuntimePolicy(READ_ONLY_POLICY);
+      assert.isTrue(queryPolicy.strictMcpConfig);
+      const options = makeClaudeQueryOptions({
+        modelSelection: selection("claudeAgent", "claude-sonnet-4-6"),
+        nativeThreadId: "native:side-mcp",
+        resume: false,
+        cwd: "/work",
+        settings: Schema.decodeSync(ClaudeSettings)({
+          launchArgs: "--mcp-config /home/user/mcp.json",
+        }),
+        permissionMode: queryPolicy.permissionMode,
+        strictMcpConfig: true,
+      });
+      assert.isTrue(options.strictMcpConfig);
+      assert.isUndefined(options.mcpServers);
+      assert.isUndefined(options.extraArgs?.["mcp-config"]);
+      // A thread without side keeps upstream's MCP loading.
+      const plain = claudeRuntimeQueryPolicyForRuntimePolicy({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/work",
+      });
+      assert.isUndefined(plain.strictMcpConfig);
+
+      // The Claude side thread's query, as the adapter opens it.
+      const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
+      const raw = yield* readFixture(fixture("tool_call_read_only/claude_transcript.ndjson"));
+      const modelSelection = selection("claudeAgent", "claude-sonnet-4-6");
+      const transcript = yield* ClaudeOrchestratorReplayHarness.decodeTranscript(
+        withRuntimeInstructions(raw, modelSelection, "claudeAgent"),
+      );
+      const { harness, assertComplete } = makeClaudeObservedReplayHarness(transcript, (input) =>
+        opened.push(input),
+      );
+      const threadId = ThreadId.make("thread:claude-side");
+      yield* replayOnSideThread({
+        name: "houston_side_read_only/claude-mcp",
+        harness,
+        transcript,
+        threadId,
+        modelSelection,
+        prompt: TOOL_CALL_READ_ONLY_PROMPT,
+        worktreePath: yield* workspace("claude-mcp"),
+      });
+      yield* assertComplete;
+      assert.isTrue(opened[0]?.options.strictMcpConfig);
+      assert.deepEqual(Object.keys(opened[0]?.options.mcpServers ?? {}), []);
+
+      // Codex: every thread start, resume and fork replaces the configured servers with none.
+      const params = codexThreadRuntimeParams({
+        mcpSession: undefined,
+        runtimePolicy: READ_ONLY_POLICY,
+      });
+      assert.deepEqual(params.config.mcp_servers, {});
+      assert.isFalse(Object.keys(params.config).some((key) => key.startsWith("mcp_servers.")));
+      const plainParams = codexThreadRuntimeParams({
+        mcpSession: undefined,
+        runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: "/work" },
+      });
+      assert.notProperty(plainParams.config, "mcp_servers");
+    }).pipe(Effect.scoped),
   );
 });
