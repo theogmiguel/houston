@@ -1,6 +1,6 @@
 import {
+  BearerConnectionTarget,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
   SshConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { buildRemoteOpenUrl, EnvironmentId } from "@t3tools/contracts";
@@ -113,9 +113,9 @@ describe("resolveRemoteOpenState", () => {
     );
   });
 
-  it("uses the advertised login username in editor links over a relay", () => {
+  it("uses the advertised login username in editor links over a remote address", () => {
     const state = resolveRemoteOpenState({
-      target: new RelayConnectionTarget({ environmentId, label: "server" }),
+      target: new BearerConnectionTarget({ environmentId, label: "server", connectionId: "remote-1" }),
       sshTarget: null,
       isDesktopRenderer: false,
       remoteOpenTargets: [
@@ -133,7 +133,7 @@ describe("resolveRemoteOpenState", () => {
     for (const remoteOpenTargets of [[], undefined] as const) {
       expect(
         resolveRemoteOpenState({
-          target: new RelayConnectionTarget({ environmentId, label: "sol" }),
+          target: new BearerConnectionTarget({ environmentId, label: "sol", connectionId: "remote-2" }),
           sshTarget: null,
           isDesktopRenderer: false,
           remoteOpenTargets,

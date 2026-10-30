@@ -67,7 +67,7 @@ export const makeCli = () =>
       doctorCommand,
       triageCommand,
     ]),
-  ) as unknown as Command.Command<"t3", void, {}, never, never>;
+  );
 
 export const cli = makeCli();
 
