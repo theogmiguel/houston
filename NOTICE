@@ -49,7 +49,7 @@ T3 Code — MIT
 
 Portions of Houston's thread server, provider adapters, orchestration and
 thread interface are adapted from T3 Code, https://github.com/pingdotgg/t3code,
-starting from commit 6d450a42. MIT asks that a copy of the software carry this
+starting from commit 5b357b3b8. MIT asks that a copy of the software carry this
 notice, so here it is in full:
 
   MIT License

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { resolveUserMessagePresentation } from "./userMessage.ts";
 
 describe("resolveUserMessagePresentation", () => {
@@ -19,6 +20,18 @@ describe("resolveUserMessagePresentation", () => {
     }
   });
 
+  it("hides the prompt that stands in for an attachment-only message", () => {
+    for (const text of [
+      ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      `Ultrathink:\n${ATTACHMENT_ONLY_BOOTSTRAP_PROMPT}`,
+    ]) {
+      expect(resolveUserMessagePresentation({ role: "user", text })).toEqual({
+        text: "",
+        attribution: null,
+        scheduledTaskId: undefined,
+      });
+    }
+  });
   it("attributes older server-sent restart continuations to T3 Code, not another agent", () => {
     const text = "Note: the T3 server restarted.";
     expect(

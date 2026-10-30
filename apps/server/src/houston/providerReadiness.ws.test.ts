@@ -83,6 +83,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderEventIngestor from "../orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistryMutator from "../provider/ProviderInstanceRegistryMutator.ts";
 import * as ProviderMaintenanceRunner from "../provider/providerMaintenanceRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
@@ -185,19 +186,25 @@ const makeFakeInstance = Effect.fn("makeFakeInstance")(function* (initial: Serve
 });
 
 const layerInstances = (instances: ReadonlyArray<FakeInstance>) =>
-  Layer.effect(
-    ProviderInstanceRegistry.ProviderInstanceRegistry,
-    Effect.gen(function* () {
-      const changes = yield* PubSub.unbounded<void>();
-      const list = instances.map((entry) => entry.instance);
-      return {
-        getInstance: (instanceId) =>
-          Effect.succeed(list.find((instance) => instance.instanceId === instanceId)),
-        listInstances: Effect.succeed(list),
-        listUnavailable: Effect.succeed([]),
-        streamChanges: Stream.never,
-        subscribeChanges: PubSub.subscribe(changes),
-      } satisfies ProviderInstanceRegistry.ProviderInstanceRegistry["Service"];
+  Layer.merge(
+    Layer.effect(
+      ProviderInstanceRegistry.ProviderInstanceRegistry,
+      Effect.gen(function* () {
+        const changes = yield* PubSub.unbounded<void>();
+        const list = instances.map((entry) => entry.instance);
+        return {
+          getInstance: (instanceId) =>
+            Effect.succeed(list.find((instance) => instance.instanceId === instanceId)),
+          listInstances: Effect.succeed(list),
+          listUnavailable: Effect.succeed([]),
+          streamChanges: Stream.never,
+          subscribeChanges: PubSub.subscribe(changes),
+        } satisfies ProviderInstanceRegistry.ProviderInstanceRegistry["Service"];
+      }),
+    ),
+    Layer.succeed(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator, {
+      reconcile: () => Effect.void,
+      reloadSecrets: () => Effect.void,
     }),
   );
 
