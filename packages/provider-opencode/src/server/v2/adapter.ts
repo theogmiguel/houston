@@ -366,11 +366,21 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
         { action: `${mcpServerName}_*`, resource: "*", effect: "allow" },
       ];
 
-// Houston: OpenCode has no OS sandbox; a read-only policy denies every write action last.
+// Houston: OpenCode has no OS sandbox; a read-only policy denies every action, including MCP
+// tools and web access, and allows only reads, as OpenCode 1's rules do.
 const isReadOnly = (policy: RulesPolicy) =>
   typeof policy.sandboxPolicy === "object" &&
   policy.sandboxPolicy !== null &&
   (policy.sandboxPolicy as { readonly type?: unknown }).type === "readOnly";
+
+const READ_ONLY_RULES: ReadonlyArray<Rule> = [
+  rule("*", "deny"),
+  ...["read", "glob", "grep", "question", "external_directory"].map((action) =>
+    rule(action, "allow"),
+  ),
+  { action: "read", resource: "*.env", effect: "deny" },
+  { action: "read", resource: "*.env.*", effect: "deny" },
+];
 
 export const sessionRules = (
   policy: RulesPolicy,
@@ -379,13 +389,7 @@ export const sessionRules = (
   mcpServerName: string | null,
 ): ReadonlyArray<Rule> =>
   isReadOnly(policy)
-    ? [
-        rule("*", "allow"),
-        ...mcpRules(mcpServerName),
-        rule("shell", "deny"),
-        rule("edit", "deny"),
-        rule("subagent", "deny"),
-      ]
+    ? READ_ONLY_RULES
     : [
         ...(policy.runtimeMode === "full-access"
           ? [rule("*", "allow")]

@@ -32,7 +32,6 @@ export const houstonSideReadOnly = {
     transcriptFile: new URL("./opencode2_transcript.ndjson", import.meta.url),
     modelSelection: OPENCODE2_MODEL_SELECTION,
     prompt: OPENCODE2_SIMPLE_PROMPT,
-    // The recorded rules name this thread's T3 MCP server.
     threadId: ThreadId.make("thread:opencode2-side"),
   },
 } as const;
