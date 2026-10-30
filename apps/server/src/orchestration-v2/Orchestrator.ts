@@ -172,6 +172,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { acceptedDelivery, nextDelivery } from "../houston/messageDelivery.ts";
 import {
   ASIDE_NEEDS_FINISHED_TURN,
+  asideForkRefusal,
   asideSourceRun,
   finalAssistantText,
   ONLY_FINISHED_REVIEW_SENDS,
@@ -4482,6 +4483,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const sourceRun = asideSourceRun(source.runs);
     if (sourceRun === undefined)
       return yield* refuseSideCommand(command, ASIDE_NEEDS_FINISHED_TURN);
+    const sourceAdapter = yield* providerAdapters
+      .get(source.thread.modelSelection.instanceId)
+      .pipe(mapDispatchError(command));
+    const forkRefusal = asideForkRefusal(sourceAdapter.driver, source.runs);
+    if (forkRefusal !== undefined) return yield* refuseSideCommand(command, forkRefusal);
     yield* dispatchThreadFork(
       {
         type: "thread.fork",

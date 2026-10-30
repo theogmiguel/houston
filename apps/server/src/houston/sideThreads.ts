@@ -2,6 +2,8 @@
 // functions here; the orchestrator applies them and emits upstream's events only.
 import {
   MessageId,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderDriverKind,
   type OrchestrationV2AppThread,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2Run,
@@ -23,6 +25,27 @@ export const ONLY_FINISHED_REVIEW_SENDS =
   "Only a finished second opinion can be sent to the thread.";
 export const SIDE_THREAD_READ_ONLY = "A side thread is read-only.";
 export const NO_DIFF_RECORDED = "No diff is recorded for this turn.";
+export const asideWaitsForTurn = (provider: string) =>
+  `${provider} cannot fork a thread while its turn runs, so an aside has to wait for this turn to finish.`;
+
+// OpenCode 1 forkThread and OpenCode 2 ensureQuiet refuse a session with a turn in progress.
+const FORKS_ONLY_IDLE_SESSIONS: ReadonlySet<string> = new Set(["opencode"]);
+const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
+  "preparing",
+  "starting",
+  "running",
+  "waiting",
+]);
+
+/** The refusal for an aside whose source's provider cannot fork it now, or undefined. */
+export function asideForkRefusal(
+  driver: ProviderDriverKind,
+  runs: ReadonlyArray<OrchestrationV2Run>,
+): string | undefined {
+  if (!FORKS_ONLY_IDLE_SESSIONS.has(driver)) return undefined;
+  if (!runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status))) return undefined;
+  return asideWaitsForTurn(PROVIDER_DISPLAY_NAMES[driver] ?? driver);
+}
 
 // One turn must not fill a reviewer's context window; the diff gets most of the room.
 export const REVIEW_REQUEST_LIMIT = 4_000;

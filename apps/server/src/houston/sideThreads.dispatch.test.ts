@@ -366,8 +366,8 @@ describe("an aside", () => {
             // Once the turn has finished, the aside starts.
             yield* harness.release("message:source:2");
             yield* context.settle;
-            yield* startAside(context, { source, aside: "aside" });
-            const aside = yield* projectionOf(context, "aside");
+            yield* startAside(context, { source, aside: "aside-later" });
+            const aside = yield* projectionOf(context, "aside-later");
             assert.equal(aside.thread.side?.kind, "aside");
           }),
         );
