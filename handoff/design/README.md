@@ -64,10 +64,11 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
   An icon with no lucide match is reported, not hand-drawn.
 - **Theme control** uses the moon icon (`MoonIcon`, with `SunIcon`/`MonitorIcon` per mode), not
   the half-filled circle the boards draw.
-- **Top bar controls**, left to right: Thread details (lucide `SquareMenuIcon`, upstream's
-  toggle), Terminal (lucide `PanelBottomIcon`, upstream's toggle; Ctrl J), Grid layout (grid icon with a chevron; the menu holds Auto arrange
-  and the GridSystem presets), Right panel (Ctrl Alt B), then the window controls. There is no
-  "Add thread to grid" button in the top bar.
+- **Top bar controls**, left to right: Grid layout (grid icon with a chevron; the menu holds
+  Auto arrange and the GridSystem presets), a 6px gap, then the thread surface toggles in the
+  order of where they open: Thread details (lucide `SquareMenuIcon`), Terminal (lucide
+  `PanelBottomIcon`, Ctrl J), Right panel (lucide `PanelRightIcon`, Ctrl Alt B), then the window
+  controls. There is no "Add thread to grid" button in the top bar.
 - **New thread** opens a draft pane in the current grid, split beside the focused pane, with the
   composer focused. The composer's top row holds project, Local checkout / New worktree /
   Existing worktree, base branch and machine, defaulting to the focused pane's. Nothing is
