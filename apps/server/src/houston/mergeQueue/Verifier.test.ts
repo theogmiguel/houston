@@ -434,6 +434,44 @@ describe("a command past its limit times out and its children are gone", () => {
   );
 });
 
+describe("a process the command leaves running is killed when it exits", () => {
+  it.live("a process the command leaves running is killed when it exits", () =>
+    withVerifier((verifier) =>
+      Effect.gen(function* () {
+        const repos = makeRepos();
+        branchBehindMain(repos);
+        const childPid = NodePath.join(repos.root, "child.pid");
+        const command = WINDOWS
+          ? `powershell -NoProfile -Command "$c = Start-Process -PassThru -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-Command','Start-Sleep 600'; Set-Content -Path '${childPid}' -Value $c.Id"`
+          : `sleep 600 > /dev/null 2>&1 & echo $! > ${quoted(childPid)}; exit 0`;
+        const slot = yield* HoustonBuildSlot;
+        const scratch = scratchOf(verifier);
+        const outcome = yield* slot.withSlot(
+          "project-leftover #7",
+          verifier.verify(request(repos, scratch, { command })),
+        );
+        const value = outcome._tag === "Some" ? outcome.value : null;
+        assert.strictEqual(value?._tag, "Passed", JSON.stringify(value));
+        assert.isNull(yield* slot.holder);
+        const pid = Number(NodeFS.readFileSync(childPid, "utf8").trim());
+        if (WINDOWS) {
+          // A Windows tree ends with its shell: the leftover lives on and may hold the scratch
+          // directory, which the next verification replaces once it is free.
+          assert.isTrue(alive(pid), `the leftover ${pid} is still running`);
+          killProcessTree(pid);
+          for (let waited = 0; waited < 100 && alive(pid); waited += 1) yield* liveSleep(50);
+          passed(yield* verifier.verify(request(repos, scratch)));
+        } else {
+          for (let waited = 0; waited < 100 && alive(pid); waited += 1) yield* liveSleep(50);
+          assert.isFalse(alive(pid), `the leftover ${pid} is still running`);
+        }
+        assert.isFalse(NodeFS.existsSync(scratch));
+        assert.deepEqual(registered(repos), [`worktree ${repos.checkout.replaceAll("\\", "/")}`]);
+      }),
+    ),
+  );
+});
+
 describe("the kill refuses a pid that is not an integer above 1", () => {
   it.live("the kill refuses a pid that is not an integer above 1", () =>
     Effect.gen(function* () {

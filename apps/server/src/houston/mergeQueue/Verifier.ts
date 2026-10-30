@@ -110,13 +110,22 @@ const runCommand = Effect.fn("HoustonMergeVerifier.runCommand")(function* (
     },
     catch: (error) => `could not start the verification command: ${String(error)}`,
   });
+  // A process the command left running would hold the pipes and the scratch directory. Its POSIX
+  // group outlives the shell; a Windows tree does not, so there it is left (plan, door 3).
+  const killLeftovers = () => {
+    if (process.platform !== "win32" && child.pid !== undefined) killProcessTree(child.pid);
+  };
   // The shell's own exit, not `close`: a process it left behind can hold the pipes open.
   const exited = Effect.callback<number | null>((resume) => {
     if (child.exitCode !== null || child.signalCode !== null) {
+      killLeftovers();
       resume(Effect.succeed(child.exitCode));
       return;
     }
-    child.once("exit", (code) => resume(Effect.succeed(code)));
+    child.once("exit", (code) => {
+      killLeftovers();
+      resume(Effect.succeed(code));
+    });
     child.once("error", () => resume(Effect.succeed(null)));
   });
   const drained = Effect.callback<void>((resume) => {
