@@ -132,6 +132,16 @@ reload are available. The element picker and agent DOM actions currently return
 an unsupported-platform error because isolated script worlds are unavailable in
 the Windows implementation. Reloading without cache is also unsupported.
 
+### Signing in to sites
+
+Google refuses sign-in from embedded browsers: starting a Google sign-in (or a
+site's "Sign in with Google" button) ends at "This browser or app may not be
+secure". Google identifies the embedded browser from signals a user-agent
+change cannot cover, so this is a limitation of browser panes, not a setting.
+Use the page's own email/password login instead — a browser pane keeps its own
+cookie store, so the login survives restarts — or open the page in the system
+browser for the Google sign-in and continue in the pane afterwards.
+
 ### Why this needs a consent gate
 
 An agent acting inside a browser pane can be acting inside a session that is logged in
