@@ -20,11 +20,20 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
-import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import {
+  ClaudeProviderCapabilitiesV2,
+  claudeRuntimeQueryPolicyForRuntimePolicy,
+} from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import {
+  buildCodexTurnStartParams,
+  CodexProviderCapabilitiesV2,
+} from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { CommandPolicyCapabilityUnsupportedError } from "../orchestration-v2/CommandPolicy.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { reviewPrompt } from "./sideThreads.ts";
@@ -296,6 +305,66 @@ describe("the side-thread policy", () => {
         );
       }),
     ),
+  );
+});
+
+const claude = ProviderInstanceId.make("claudeAgent");
+
+// The production policy assembly over providers that report their real capabilities.
+const layerServerRuntimePolicy = RuntimeLayer.layerRuntimePolicyProvided.pipe(
+  Layer.provide(
+    Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+      getInstance: (instanceId: ProviderInstanceId) =>
+        Effect.succeed({
+          instanceId,
+          driverKind: instanceId,
+          orchestrationAdapter: adapterWith(
+            instanceId,
+            instanceId === claude ? ClaudeProviderCapabilitiesV2 : CodexProviderCapabilitiesV2,
+          ),
+          snapshot: { getSnapshot: Effect.succeed({} as ServerProvider) },
+        } as unknown as ProviderInstance),
+      listInstances: Effect.succeed([]),
+      listUnavailable: Effect.succeed([]),
+      streamChanges: Stream.empty,
+      subscribeChanges: Effect.never,
+    }),
+  ),
+  Layer.provide(SqlitePersistence.layerMemory),
+);
+
+describe("the server's side-thread policy", () => {
+  it.effect("the server runtime runs a full-access side thread read-only", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const resolver = yield* RuntimePolicy.RuntimePolicyV2;
+      for (const instanceId of [claude, codex]) {
+        const thread = makeThread({
+          now,
+          runtimeMode: "full-access",
+          interactionMode: instanceId === claude ? "plan" : "default",
+          side: true,
+          worktreePath: "/work/tree",
+          instanceId,
+        });
+        const policy = yield* resolver.resolve({ thread, modelSelection: thread.modelSelection });
+        assert.deepInclude(policy, READ_ONLY, instanceId);
+        if (instanceId === claude) {
+          const query = claudeRuntimeQueryPolicyForRuntimePolicy(policy);
+          assert.equal(query.permissionMode, "dontAsk");
+          assert.isUndefined(query.allowDangerouslySkipPermissions);
+        } else {
+          const start = yield* buildCodexTurnStartParams({
+            nativeThreadId: "native:side",
+            codexInput: [],
+            runtimePolicy: policy,
+            modelSelection: thread.modelSelection,
+          });
+          assert.deepEqual(start.sandboxPolicy, { type: "readOnly", networkAccess: false } as never);
+          assert.equal(start.approvalPolicy, "never");
+        }
+      }
+    }).pipe(Effect.provide(layerServerRuntimePolicy)),
   );
 });
 
