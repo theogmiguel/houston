@@ -27,8 +27,10 @@ import {
   OWNER,
   connectSlack,
   makeFakeRuns,
+  realTurn,
   runSlack,
   until,
+  untilAdvancing,
   untilConnected,
   type FakeRuns,
 } from "./slack.testkit.ts";
@@ -162,7 +164,10 @@ describe("a mention is filed pending once and the owner is told", () => {
         assert.strictEqual(detail.task.description, `${firstLine}\n${body}`);
         assert.strictEqual(detail.task.createdBy, "slack:U2");
         assert.strictEqual(detail.task.projectId, projectId);
-        assert.strictEqual(detail.task.refUrl, "https://acme.slack.com/archives/C1/p1700000000000100");
+        assert.strictEqual(
+          detail.task.refUrl,
+          "https://acme.slack.com/archives/C1/p1700000000000100",
+        );
         assert.deepEqual(
           detail.history.filter((entry) => entry.action === "houston:slack-filed").length,
           1,
@@ -199,9 +204,14 @@ describe("a mention is filed pending once and the owner is told", () => {
         yield* deliver(fake, envelope);
         fake.history.set("C1", [{ ...mentionEvent(ts, `${firstLine}\n${body}`), type: "message" }]);
         fake.sockets.at(-1)?.close();
-        yield* until(
+        yield* untilAdvancing(
           "the replay",
-          Effect.sync(() => fake.callsOf("conversations.history").length >= 2),
+          Effect.flatMap(HoustonSlackService, (slack) => slack.get).pipe(
+            Effect.map(
+              (info) =>
+                fake.callsOf("conversations.history").length >= 2 && info.lastCatchupAt !== null,
+            ),
+          ),
         );
         yield* Effect.flatMap(HoustonSlackService, (slack) => slack.get);
         yield* flush;
@@ -238,10 +248,10 @@ describe("a request over the text limit is marked and the owner is told why", ()
         assert.strictEqual(yield* taskCount, 0);
         yield* flush;
         const threads = fake.callsOf("chat.postMessage").filter((call) => call.body.thread_ts);
-        assert.deepEqual(
-          threads.map((call) => call.body.thread_ts).sort(),
-          ["1700000000.000100", "1700000000.000200"],
-        );
+        assert.deepEqual(threads.map((call) => call.body.thread_ts).sort(), [
+          "1700000000.000100",
+          "1700000000.000200",
+        ]);
         for (const call of threads) assert.include(call.body.text ?? "", "Reply right here");
         const dms = fake.callsOf("chat.postMessage").filter((call) => !call.body.thread_ts);
         assert.lengthOf(dms, 2);
@@ -300,7 +310,12 @@ describe("images are bounded, sniffed and fetched only from slack hosts", () => 
         big.set(PNG);
         const serve = (name: string, body: Uint8Array) => {
           fake.files.set(`/files/${name}`, { body });
-          return { id: `F${name}`, name, mimetype: "image/png", url_private_download: `${fake.origin}/files/${name}` };
+          return {
+            id: `F${name}`,
+            name,
+            mimetype: "image/png",
+            url_private_download: `${fake.origin}/files/${name}`,
+          };
         };
         const files = [
           serve("a.png", PNG),
@@ -408,6 +423,7 @@ describe("only the owner's check mark, accept or start starts the request", () =
           const projectId = yield* connected(fake, "gestures");
           const houstonRuns = yield* HoustonTaskRuns;
           const slack = yield* HoustonSlackService;
+          const replies = yield* HoustonSlackReplies;
           // Each start's run is handed back at once, so the cap never queues one.
           const release = sql`UPDATE houston_task_runs SET state = 'handed_back'`;
           const gestures: ReadonlyArray<{
@@ -415,17 +431,37 @@ describe("only the owner's check mark, accept or start starts the request", () =
             readonly starts: boolean;
             readonly act: (row: RequestRow & { readonly key: string }) => Effect.Effect<unknown>;
           }> = [
-            { label: "owner check mark", starts: true, act: (row) => reaction(fake, OWNER, "white_check_mark", row.ts) },
-            { label: "owner accept", starts: true, act: (row) => click(fake, OWNER, "houston_slack_accept", row.id) },
+            {
+              label: "owner check mark",
+              starts: true,
+              act: (row) => reaction(fake, OWNER, "white_check_mark", row.ts),
+            },
+            {
+              label: "owner accept",
+              starts: true,
+              act: (row) => click(fake, OWNER, "houston_slack_accept", row.id),
+            },
             {
               label: "start in houston",
               starts: true,
               act: (row) =>
-                houstonRuns.start({ id: row.key }).pipe(Effect.andThen(tick), Effect.orDie),
+                houstonRuns.start({ id: row.key }).pipe(Effect.andThen(replies.tick), Effect.orDie),
             },
-            { label: "someone's check mark", starts: false, act: (row) => reaction(fake, "U2", "white_check_mark", row.ts) },
-            { label: "someone's accept", starts: false, act: (row) => click(fake, "U2", "houston_slack_accept", row.id) },
-            { label: "owner eyes", starts: false, act: (row) => reaction(fake, OWNER, "eyes", row.ts) },
+            {
+              label: "someone's check mark",
+              starts: false,
+              act: (row) => reaction(fake, "U2", "white_check_mark", row.ts),
+            },
+            {
+              label: "someone's accept",
+              starts: false,
+              act: (row) => click(fake, "U2", "houston_slack_accept", row.id),
+            },
+            {
+              label: "owner eyes",
+              starts: false,
+              act: (row) => reaction(fake, OWNER, "eyes", row.ts),
+            },
             {
               label: "no owner",
               starts: false,
@@ -463,9 +499,7 @@ describe("only the owner's check mark, accept or start starts the request", () =
               yield* release;
             } else {
               yield* Effect.flatMap(HoustonSlackService, (s) => s.get);
-              for (let turn = 0; turn < 20; turn += 1) {
-                yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
-              }
+              for (let turn = 0; turn < 20; turn += 1) yield* realTurn;
               yield* tick;
               assert.strictEqual((yield* requestAt(ts))?.state, "pending", gesture.label);
               assert.strictEqual(runs.starts.length, starts, gesture.label);
@@ -539,13 +573,19 @@ describe("accepted requests past the working cap wait in a queue", () => {
           const accept = (index: number, state: string) =>
             Effect.gen(function* () {
               yield* reaction(fake, OWNER, "white_check_mark", rows[index]?.ts ?? "");
-              yield* until(`request ${index + 1} ${state}`, stateOf(index).pipe(Effect.map((s) => s === state)));
+              yield* until(
+                `request ${index + 1} ${state}`,
+                stateOf(index).pipe(Effect.map((s) => s === state)),
+              );
             });
           yield* accept(0, "started");
           yield* accept(1, "started");
           yield* accept(2, "queued");
           const listed = (yield* slack.requests({})) as ReadonlyArray<HoustonSlackRequest>;
-          assert.strictEqual(listed.find((entry) => entry.taskId === rows[2]?.task_id)?.queuePosition, 1);
+          assert.strictEqual(
+            listed.find((entry) => entry.taskId === rows[2]?.task_id)?.queuePosition,
+            1,
+          );
           yield* flush;
           const queuedDm = fake
             .callsOf("chat.postMessage")
@@ -563,7 +603,10 @@ describe("accepted requests past the working cap wait in a queue", () => {
             VALUES (${rows[0]?.id ?? 0}, ${firstRun?.id ?? 0}, 'task-1', '{}', '2026-10-30T00:00:00.000Z')
           `;
           yield* tick;
-          yield* until("the queued one started", stateOf(2).pipe(Effect.map((s) => s === "started")));
+          yield* until(
+            "the queued one started",
+            stateOf(2).pipe(Effect.map((s) => s === "started")),
+          );
           assert.strictEqual(runs.starts.length, 3);
 
           // Two more queue in acceptance order and start oldest first as slots free.
@@ -608,7 +651,10 @@ describe("the owner refuses with a reason that reaches the thread as written", (
         const second = yield* fileReady(fake, "1700000000.000200", "Second");
 
         yield* click(fake, OWNER, "houston_slack_refuse", first.id);
-        yield* until("the dialog", Effect.sync(() => fake.callsOf("views.open").length === 1));
+        yield* until(
+          "the dialog",
+          Effect.sync(() => fake.callsOf("views.open").length === 1),
+        );
         const opened = fake.callsOf("views.open")[0];
         assert.isString(opened?.body.trigger_id);
         const view = JSON.parse(opened?.body.view ?? "{}") as Record<string, unknown>;
@@ -618,16 +664,22 @@ describe("the owner refuses with a reason that reaches the thread as written", (
 
         // Over the dialog's bound: nothing changes.
         yield* submitRefusal(fake, OWNER, first.id, "x".repeat(2_001));
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 100)));
+        for (let turn = 0; turn < 20; turn += 1) yield* realTurn;
         assert.strictEqual((yield* requestAt(first.ts))?.state, "pending");
 
         yield* submitRefusal(fake, OWNER, first.id, "Not this quarter <@U9>");
-        yield* until("refused", requestAt(first.ts).pipe(Effect.map((row) => row?.state === "refused")));
+        yield* until(
+          "refused",
+          requestAt(first.ts).pipe(Effect.map((row) => row?.state === "refused")),
+        );
         assert.strictEqual((yield* tasks.get({ id: first.key })).task.status, "canceled");
         assert.strictEqual((yield* requestAt(first.ts))?.status_reaction, "no_entry_sign");
 
         yield* submitRefusal(fake, OWNER, second.id, "");
-        yield* until("refused", requestAt(second.ts).pipe(Effect.map((row) => row?.state === "refused")));
+        yield* until(
+          "refused",
+          requestAt(second.ts).pipe(Effect.map((row) => row?.state === "refused")),
+        );
         yield* flush;
         const threads = fake.callsOf("chat.postMessage").filter((call) => call.body.thread_ts);
         assert.lengthOf(threads, 1);

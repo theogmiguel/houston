@@ -21,7 +21,12 @@ import { HoustonTaskRuns } from "../tasks/TaskRuns.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { refuse } from "../tasks/rules.ts";
 import * as HoustonTaskStore from "../tasks/TaskStore.ts";
-import { HoustonTaskStore as TaskStoreService, nowIso, toRun, type RunRow } from "../tasks/TaskStore.ts";
+import {
+  HoustonTaskStore as TaskStoreService,
+  nowIso,
+  toRun,
+  type RunRow,
+} from "../tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import {
   CONFIGURED_INSTANCES,
@@ -89,6 +94,7 @@ export const layerFakeRuns = (fake: FakeRuns) =>
         reviewStart: unused,
         planSubmit: unused,
         reviewSubmit: unused,
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         agentWriteRefusal: () => Effect.succeed(undefined),
         catchUp: Effect.void,
       });
@@ -103,9 +109,7 @@ export interface SlackTestOptions {
   readonly slackOrigin: string;
   readonly runs?: FakeRuns;
   /** Wraps the socket transport, to block a write. */
-  readonly transport?: (
-    base: SlackSocketTransport["Service"],
-  ) => SlackSocketTransport["Service"];
+  readonly transport?: (base: SlackSocketTransport["Service"]) => SlackSocketTransport["Service"];
 }
 
 const layerTransport = (options: SlackTestOptions) =>
@@ -149,9 +153,13 @@ export const layerSlackTest = (options: SlackTestOptions) =>
 /** Runs `body` against a fresh fake Slack and the Slack layers over it. */
 export const runSlack = <A, E>(
   body: (fake: SlackFake) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof layerSlackTest>>>,
-  options: Omit<SlackTestOptions, "slackOrigin"> = {},
+  options: Omit<SlackTestOptions, "slackOrigin"> & {
+    /** The test clock's time before the layers start their 5-second loops. */
+    readonly startAtMs?: number;
+  } = {},
 ) =>
   Effect.gen(function* () {
+    if (options.startAtMs !== undefined) yield* TestClock.setTime(options.startAtMs);
     const fake = yield* makeSlackFake;
     return yield* body(fake).pipe(
       Effect.provide(layerSlackTest({ ...options, slackOrigin: fake.origin })),
@@ -159,7 +167,10 @@ export const runSlack = <A, E>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 /** One real event-loop turn, so loopback sockets and HTTP make progress. */
-export const realTurn = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)));
+export const realTurn = Effect.promise(
+  // @effect-diagnostics-next-line globalTimers:off - real time, not the test clock: sockets need it.
+  () => new Promise<void>((resolve) => setTimeout(resolve, 5)),
+);
 
 /** Waits in real time until `check` holds; dies naming `label` after about five seconds. */
 export const until = <E, R>(label: string, check: Effect.Effect<boolean, E, R>) =>

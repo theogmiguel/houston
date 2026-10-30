@@ -34,7 +34,11 @@ import {
 
 const requestRows = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  return yield* sql<{ readonly ts: string; readonly state: string; readonly task_id: number | null }>`
+  return yield* sql<{
+    readonly ts: string;
+    readonly state: string;
+    readonly task_id: number | null;
+  }>`
     SELECT ts, state, task_id FROM houston_slack_requests ORDER BY ts
   `;
 });
@@ -59,9 +63,15 @@ describe("socket mode acks each envelope and accepts only wss", () => {
           assert.strictEqual(opens[0]?.token, APP_TOKEN);
 
           fake.sockets[0]?.send(mentionEnvelope("e1", mentionEvent("1700000000.000100", "fix it")));
-          yield* until("the ack", Effect.sync(() => fake.sockets[0]?.received.length === 1));
+          yield* until(
+            "the ack",
+            Effect.sync(() => fake.sockets[0]?.received.length === 1),
+          );
           assert.deepEqual(fake.sockets[0]?.received[0], { envelope_id: "e1" });
-          yield* until("the intake", Effect.sync(() => log.includes("intake")));
+          yield* until(
+            "the intake",
+            Effect.sync(() => log.includes("intake")),
+          );
           assert.deepEqual(log.slice(0, 2), ["ack e1", "intake"]);
 
           // Slack asks for a refresh: a new connection after the backoff.
@@ -75,7 +85,9 @@ describe("socket mode acks each envelope and accepts only wss", () => {
           fake.sockets[1]?.send({ type: "disconnect", reason: "link_disabled" });
           yield* untilAdvancing(
             "link_disabled",
-            info.pipe(Effect.map((current) => current.error === "Socket Mode was turned off for the app")),
+            info.pipe(
+              Effect.map((current) => current.error === "Socket Mode was turned off for the app"),
+            ),
           );
 
           // A URL that is not wss is refused by scheme and never opened.
@@ -163,7 +175,9 @@ describe("a silent or blocked socket reconnects with backoff", () => {
           yield* connectSlack(projectId);
           yield* untilConnected;
           blocking.acks = true;
-          fake.sockets[0]?.send(mentionEnvelope("e9", mentionEvent("1700000000.000900", "blocked")));
+          fake.sockets[0]?.send(
+            mentionEnvelope("e9", mentionEvent("1700000000.000900", "blocked")),
+          );
           yield* advance(19);
           assert.lengthOf(fake.callsOf("apps.connections.open"), 1);
           yield* untilAdvancing(
@@ -201,7 +215,10 @@ describe("a silent or blocked socket reconnects with backoff", () => {
           return failing ? { body: { ok: false, error: "internal_error" } } : null;
         };
         fake.sockets[0]?.close();
-        yield* until("the close", Effect.sync(() => fake.sockets[0]?.closed === true));
+        yield* until(
+          "the close",
+          Effect.sync(() => fake.sockets[0]?.closed === true),
+        );
         for (let step = 0; step < 250; step += 1) {
           second += 1;
           yield* TestClock.adjust("1 second");
@@ -211,11 +228,17 @@ describe("a silent or blocked socket reconnects with backoff", () => {
         assert.strictEqual(attempts[0], 1);
         assert.deepEqual(gaps.slice(0, 7), [2, 4, 8, 16, 32, 60, 60]);
         failing = false;
-        yield* untilAdvancing("connected again", info.pipe(Effect.map((c) => c.connection === "connected")));
+        yield* untilAdvancing(
+          "connected again",
+          info.pipe(Effect.map((c) => c.connection === "connected")),
+        );
         const helloAt = second;
         attempts.length = 0;
         fake.sockets.at(-1)?.close();
-        yield* untilAdvancing("the reconnect after hello", Effect.sync(() => attempts.length === 1));
+        yield* untilAdvancing(
+          "the reconnect after hello",
+          Effect.sync(() => attempts.length === 1),
+        );
         assert.isAtMost((attempts[0] ?? 0) - helloAt, 2);
       }),
     ),
@@ -233,12 +256,22 @@ describe("a reconnect replays what was missed within 24 hours", () => {
           const slack = yield* HoustonSlackService;
           const projectId = yield* createProject("catchup");
           const t0 = 1_800_000_000;
-          yield* TestClock.setTime(t0 * 1000);
-          yield* slack.configure({ ownerUserId: OWNER, channels: [{ channelId: "C1", projectId }] });
           const now = t0 + 30 * 3600;
-          yield* TestClock.setTime(now * 1000);
+          yield* slack.configure({
+            ownerUserId: OWNER,
+            channels: [{ channelId: "C1", projectId }],
+          });
+          // The channel was mapped 30 hours ago.
+          yield* sql`UPDATE houston_slack_channels SET cursor_ts = ${`${t0}.000000`}`;
           const ready = yield* tasks.save(
-            { patch: { title: "Filed earlier", acceptance: ["it works"], projectId, status: "todo" } },
+            {
+              patch: {
+                title: "Filed earlier",
+                acceptance: ["it works"],
+                projectId,
+                status: "todo",
+              },
+            },
             "slack:U2",
           );
           const filedTs = `${now - 3600}.000000`;
@@ -255,7 +288,10 @@ describe("a reconnect replays what was missed within 24 hours", () => {
           }));
           fake.history.set("C1", [
             { ...mentionEvent(`${now - 7200}.000000`, "two hours ago"), type: "message" },
-            { ...mentionEvent(`${now - 25 * 3600}.000000`, "a day and an hour ago"), type: "message" },
+            {
+              ...mentionEvent(`${now - 25 * 3600}.000000`, "a day and an hour ago"),
+              type: "message",
+            },
             {
               ...mentionEvent(filedTs, "filed earlier"),
               type: "message",
@@ -268,7 +304,10 @@ describe("a reconnect replays what was missed within 24 hours", () => {
             botToken: Redacted.make(BOT_TOKEN),
           });
           yield* untilConnected;
-          yield* until("the catch-up", info.pipe(Effect.map((current) => current.lastCatchupAt !== null)));
+          yield* until(
+            "the catch-up",
+            info.pipe(Effect.map((current) => current.lastCatchupAt !== null)),
+          );
 
           const history = fake.callsOf("conversations.history");
           assert.isAtLeast(history.length, 2);
@@ -290,7 +329,8 @@ describe("a reconnect replays what was missed within 24 hours", () => {
           const [channel] = yield* sql<{ readonly cursor_ts: string }>`
             SELECT cursor_ts FROM houston_slack_channels WHERE channel_id = 'C1'
           `;
-          assert.strictEqual(channel?.cursor_ts, `${now - 7200 + 205}.000000`);
+          // The newest message read is the filed request, an hour old.
+          assert.strictEqual(channel?.cursor_ts, filedTs);
           assert.isString((yield* info).lastCatchupAt);
 
           // The same history again files and accepts nothing more.
@@ -304,7 +344,7 @@ describe("a reconnect replays what was missed within 24 hours", () => {
           assert.lengthOf(yield* requestRows, 2);
           assert.deepEqual(runs.starts, [ready.key]);
         }),
-      { runs },
+      { runs, startAtMs: (1_800_000_000 + 30 * 3600) * 1000 },
     );
   });
 });
@@ -323,7 +363,8 @@ describe("each attempt and tick reads the current tokens", () => {
           const projectId = yield* createProject("tokens");
           yield* connectSlack(projectId);
           yield* untilConnected;
-          const reads = () => keychain.calls.filter((call) => call.op === "get" && call.service === service).length;
+          const reads = () =>
+            keychain.calls.filter((call) => call.op === "get" && call.service === service).length;
 
           yield* slack.connect({
             appToken: Redacted.make("xapp-1-A0NEW-replaced"),
@@ -331,7 +372,9 @@ describe("each attempt and tick reads the current tokens", () => {
           });
           yield* until(
             "the attempt with the new app token",
-            Effect.sync(() => fake.callsOf("apps.connections.open").at(-1)?.token === "xapp-1-A0NEW-replaced"),
+            Effect.sync(
+              () => fake.callsOf("apps.connections.open").at(-1)?.token === "xapp-1-A0NEW-replaced",
+            ),
           );
           yield* sql`
             INSERT INTO houston_slack_requests (channel_id, ts, author, project_id, state, created_at)
@@ -381,7 +424,10 @@ describe("the server and the harness start one slack loop", () => {
           `;
         }
         yield* advance(5);
-        yield* until("one batch", Effect.sync(() => fake.callsOf("chat.postMessage").length >= 10));
+        yield* until(
+          "one batch",
+          Effect.sync(() => fake.callsOf("chat.postMessage").length >= 10),
+        );
         yield* realTurn;
         assert.lengthOf(fake.callsOf("chat.postMessage"), 10);
 
@@ -390,7 +436,8 @@ describe("the server and the harness start one slack loop", () => {
         const server = NodeFS.readFileSync(NodePath.join(root, "server.ts"), "utf8");
         assert.strictEqual(server.split("layerSlack(").length - 1, 1);
         assert.include(server, "SlackWebApi.layer,");
-        assert.include(server, "HoustonKeychain.layerLive");
+        // HoustonKeychain.test.ts proves server.ts is the only assembly of the live keychain.
+        assert.include(server, "Layer.provideMerge(HoustonSlackStore.layer)");
         const tests = NodeFS.readdirSync(root, { recursive: true, withFileTypes: true })
           .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))
           .map((entry) => NodePath.join(entry.parentPath, entry.name));

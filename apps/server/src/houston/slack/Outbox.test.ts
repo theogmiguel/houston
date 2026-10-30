@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - names the database file of a restart.
 // The outbox against the loopback fake: one status reaction at a time, bounded batches, the
 // plain-text fallback, dropping after five refusals, and what a restart resends.
 import * as NodePath from "node:path";
@@ -54,7 +55,10 @@ describe("a status change swaps one reaction for another", () => {
         assert.deepEqual(
           fake.calls
             .filter((call) => call.method.startsWith("reactions."))
-            .map((call) => `${call.method} ${call.body.name} ${call.body.channel} ${call.body.timestamp}`),
+            .map(
+              (call) =>
+                `${call.method} ${call.body.name} ${call.body.channel} ${call.body.timestamp}`,
+            ),
           [
             "reactions.add eyes C1 1700000000.000100",
             "reactions.remove eyes C1 1700000000.000100",
@@ -128,18 +132,26 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
           messageTs: "1700000000.000100",
         });
         const sql = yield* SqlClient.SqlClient;
-        const [count] = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM houston_slack_outbox`;
+        const [count] = yield* sql<{
+          readonly n: number;
+        }>`SELECT COUNT(*) AS n FROM houston_slack_outbox`;
         assert.strictEqual(count?.n, 25);
 
         yield* advance(5);
-        yield* until("the first batch", Effect.sync(() => postedTexts().length >= 10));
+        yield* until(
+          "the first batch",
+          Effect.sync(() => postedTexts().length >= 10),
+        );
         for (let turn = 0; turn < 20; turn += 1) yield* realTurn;
         assert.deepEqual(
           postedTexts(),
           Array.from({ length: 10 }, (_, index) => `row ${index + 1}`),
         );
         yield* advance(5);
-        yield* until("the second batch", Effect.sync(() => postedTexts().length >= 20));
+        yield* until(
+          "the second batch",
+          Effect.sync(() => postedTexts().length >= 20),
+        );
         for (let turn = 0; turn < 20; turn += 1) yield* realTurn;
         assert.lengthOf(postedTexts(), 20);
       }).pipe(Effect.provide(layer()));
@@ -166,7 +178,9 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
           messageTs: "1700000000.000100",
         });
         yield* outbox.tick;
-        const fallback = fake.callsOf("chat.postMessage").filter((call) => call.body.text === "with blocks");
+        const fallback = fake
+          .callsOf("chat.postMessage")
+          .filter((call) => call.body.text === "with blocks");
         assert.lengthOf(fallback, 2);
         assert.isString(fallback[0]?.body.blocks);
         assert.isUndefined(fallback[1]?.body.blocks);

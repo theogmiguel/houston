@@ -124,7 +124,10 @@ export const makeSlackFake = Effect.acquireRelease(
           };
         case "apps.connections.open":
           return {
-            body: { ok: true, url: `${fake.origin.replace("http:", "ws:")}/link?n=${socketIds + 1}` },
+            body: {
+              ok: true,
+              url: `${fake.origin.replace("http:", "ws:")}/link?n=${socketIds + 1}`,
+            },
           };
         case "chat.getPermalink":
           return {

@@ -43,8 +43,12 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
       assert.strictEqual(fake.calls[0]?.token, Redacted.value(TOKEN));
 
       fake.override = (call) =>
-        call.method === "conversations.info" ? { body: { ok: false, error: "channel_not_found" } } : null;
-      const notFound = yield* Effect.flip(client.call(TOKEN, "conversations.info", { channel: "C9" }));
+        call.method === "conversations.info"
+          ? { body: { ok: false, error: "channel_not_found" } }
+          : null;
+      const notFound = yield* Effect.flip(
+        client.call(TOKEN, "conversations.info", { channel: "C9" }),
+      );
       assert.strictEqual(notFound.method, "conversations.info");
       assert.strictEqual(notFound.code, "channel_not_found");
       assert.include(notFound.message, "conversations.info");
@@ -55,12 +59,19 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
       let limited = 0;
       fake.override = (call) =>
         call.method === "chat.postMessage" && (limited += 1) === 1
-          ? { status: 429, headers: { "retry-after": "2" }, body: { ok: false, error: "ratelimited" } }
+          ? {
+              status: 429,
+              headers: { "retry-after": "2" },
+              body: { ok: false, error: "ratelimited" },
+            }
           : null;
       const waiting = yield* client
         .call(TOKEN, "chat.postMessage", { channel: "C1", text: "hi" })
         .pipe(Effect.forkChild);
-      yield* until("the first attempt", Effect.sync(() => limited === 1));
+      yield* until(
+        "the first attempt",
+        Effect.sync(() => limited === 1),
+      );
       yield* TestClock.adjust("1 second");
       assert.strictEqual(limited, 1);
       yield* TestClock.adjust("1 second");
@@ -80,7 +91,10 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
       const twice = yield* client
         .call(TOKEN, "chat.postMessage", { channel: "C1" })
         .pipe(Effect.flip, Effect.forkChild);
-      yield* until("the first 429", Effect.sync(() => fake.calls.length === before + 1));
+      yield* until(
+        "the first 429",
+        Effect.sync(() => fake.calls.length === before + 1),
+      );
       yield* TestClock.adjust("1 second");
       const again = yield* Fiber.join(twice);
       assert.strictEqual(fake.calls.length, before + 2);
@@ -91,7 +105,10 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
       const stalled = yield* client
         .call(TOKEN, "reactions.add", { channel: "C1" })
         .pipe(Effect.flip, Effect.forkChild);
-      yield* until("the stalled call", Effect.sync(() => fake.calls.at(-1)?.method === "reactions.add"));
+      yield* until(
+        "the stalled call",
+        Effect.sync(() => fake.calls.at(-1)?.method === "reactions.add"),
+      );
       yield* TestClock.adjust("29 seconds");
       assert.isUndefined(stalled.pollUnsafe());
       yield* TestClock.adjust("1 second");

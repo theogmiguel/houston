@@ -248,7 +248,10 @@ describe("an unreachable keychain is refused by name", () => {
           const slack = yield* HoustonSlackService;
           const projectId = yield* createProject("keychain");
           keychain.failWith = "the Secret Service is not running";
-          yield* slack.configure({ ownerUserId: OWNER, channels: [{ channelId: "C1", projectId }] });
+          yield* slack.configure({
+            ownerUserId: OWNER,
+            channels: [{ channelId: "C1", projectId }],
+          });
           const refused = yield* refusal(
             slack.connect({
               appToken: Redacted.make(APP_TOKEN),
@@ -265,6 +268,10 @@ describe("an unreachable keychain is refused by name", () => {
           keychain.failWith = null;
           yield* connectSlack(projectId);
           yield* untilConnected;
+          yield* until(
+            "the catch-up",
+            slack.get.pipe(Effect.map((info) => info.lastCatchupAt !== null)),
+          );
           keychain.failWith = "the Secret Service is not running";
           const sent = fake.calls.length;
           for (const socket of fake.sockets) socket.close();
@@ -356,7 +363,10 @@ describe("disconnect closes the socket and removes both tokens", () => {
           yield* advance(60);
           assert.strictEqual(fake.calls.length, sent);
           assert.strictEqual(keychain.calls.length, reads);
-          assert.lengthOf(fake.sockets.filter((socket) => !socket.closed), 0);
+          assert.lengthOf(
+            fake.sockets.filter((socket) => !socket.closed),
+            0,
+          );
         }),
       { keychain },
     );
@@ -383,29 +393,30 @@ describe("configure refuses by name and checks the revision", () => {
           channelId: `C${index + 10}`,
           projectId,
         }));
-        const cases: ReadonlyArray<readonly [Parameters<typeof slack.configure>[0], string, string]> =
+        const cases: ReadonlyArray<
+          readonly [Parameters<typeof slack.configure>[0], string, string]
+        > = [
+          [{ ownerUserId: "X1", channels: [] }, "invalid", "X1"],
+          [{ ownerUserId: "u12", channels: [] }, "invalid", "u12"],
+          [{ channels: [{ channelId: "c123", projectId }] }, "invalid", "c123"],
           [
-            [{ ownerUserId: "X1", channels: [] }, "invalid", "X1"],
-            [{ ownerUserId: "u12", channels: [] }, "invalid", "u12"],
-            [{ channels: [{ channelId: "c123", projectId }] }, "invalid", "c123"],
-            [
-              {
-                channels: [
-                  { channelId: "C1", projectId },
-                  { channelId: "C1", projectId },
-                ],
-              },
-              "invalid",
-              "C1",
-            ],
-            [{ channels: many }, "limit", "16"],
-            [
-              { channels: [{ channelId: "C1", projectId: "project-missing" as typeof projectId }] },
-              "not_found",
-              "project-missing",
-            ],
-            [{ expectedRevision: 0, channels: [] }, "conflict", "1"],
-          ];
+            {
+              channels: [
+                { channelId: "C1", projectId },
+                { channelId: "C1", projectId },
+              ],
+            },
+            "invalid",
+            "C1",
+          ],
+          [{ channels: many }, "limit", "16"],
+          [
+            { channels: [{ channelId: "C1", projectId: "project-missing" as typeof projectId }] },
+            "not_found",
+            "project-missing",
+          ],
+          [{ expectedRevision: 0, channels: [] }, "conflict", "1"],
+        ];
         for (const [input, kind, named] of cases) {
           const refused = yield* refusal(slack.configure(input));
           assert.strictEqual(refused.kind, kind, JSON.stringify(input).slice(0, 80));
@@ -464,46 +475,50 @@ describe("deleting a project unmaps its channels", () => {
 
 describe("a newly mapped channel starts from the moment it is mapped", () => {
   it.effect("a newly mapped channel starts from the moment it is mapped", () =>
-    runSlack((fake) =>
-      Effect.gen(function* () {
-        const slack = yield* HoustonSlackService;
-        const sql = yield* SqlClient.SqlClient;
-        const first = yield* createProject("cursor");
-        const second = yield* createProject("cursor-two");
-        yield* TestClock.setTime(1_800_000_000_000);
-        yield* slack.configure({ ownerUserId: OWNER, channels: [{ channelId: "C1", projectId: first }] });
-        const cursor = () =>
-          sql<{ readonly cursor_ts: string }>`
+    runSlack(
+      (fake) =>
+        Effect.gen(function* () {
+          const slack = yield* HoustonSlackService;
+          const sql = yield* SqlClient.SqlClient;
+          const first = yield* createProject("cursor");
+          const second = yield* createProject("cursor-two");
+          yield* slack.configure({
+            ownerUserId: OWNER,
+            channels: [{ channelId: "C1", projectId: first }],
+          });
+          const cursor = () =>
+            sql<{ readonly cursor_ts: string }>`
             SELECT cursor_ts FROM houston_slack_channels WHERE channel_id = 'C1'
           `.pipe(Effect.map((rows) => rows[0]?.cursor_ts));
-        assert.strictEqual(yield* cursor(), "1800000000.000000");
-        fake.history.set("C1", [
-          { ...mentionEvent("1799999999.000000", "before mapping"), type: "message" },
-          { ...mentionEvent("1800000001.000000", "after mapping"), type: "message" },
-        ]);
-        yield* TestClock.setTime(1_800_000_002_000);
-        yield* slack.connect({
-          appToken: Redacted.make(APP_TOKEN),
-          botToken: Redacted.make(BOT_TOKEN),
-        });
-        yield* untilConnected;
-        yield* until(
-          "the catch-up",
-          slack.get.pipe(Effect.map((info) => info.lastCatchupAt !== null)),
-        );
-        const filed = yield* sql<{ readonly ts: string }>`
+          assert.strictEqual(yield* cursor(), "1800000000.000000");
+          fake.history.set("C1", [
+            { ...mentionEvent("1799999999.000000", "before mapping"), type: "message" },
+            { ...mentionEvent("1800000001.000000", "after mapping"), type: "message" },
+          ]);
+          yield* TestClock.adjust("2 seconds");
+          yield* slack.connect({
+            appToken: Redacted.make(APP_TOKEN),
+            botToken: Redacted.make(BOT_TOKEN),
+          });
+          yield* untilConnected;
+          yield* until(
+            "the catch-up",
+            slack.get.pipe(Effect.map((info) => info.lastCatchupAt !== null)),
+          );
+          const filed = yield* sql<{ readonly ts: string }>`
           SELECT ts FROM houston_slack_requests ORDER BY ts
         `;
-        assert.deepEqual(
-          filed.map((row) => row.ts),
-          ["1800000001.000000"],
-        );
-        const moved = yield* cursor();
-        assert.strictEqual(moved, "1800000001.000000");
-        yield* TestClock.setTime(1_800_000_100_000);
-        yield* slack.configure({ channels: [{ channelId: "C1", projectId: second }] });
-        assert.strictEqual(yield* cursor(), moved);
-      }),
+          assert.deepEqual(
+            filed.map((row) => row.ts),
+            ["1800000001.000000"],
+          );
+          const moved = yield* cursor();
+          assert.strictEqual(moved, "1800000001.000000");
+          yield* TestClock.adjust("98 seconds");
+          yield* slack.configure({ channels: [{ channelId: "C1", projectId: second }] });
+          assert.strictEqual(yield* cursor(), moved);
+        }),
+      { startAtMs: 1_800_000_000_000 },
     ),
   );
 });

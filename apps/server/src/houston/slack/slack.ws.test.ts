@@ -12,6 +12,7 @@ import {
   AuthSessionId,
   AuthSettingsWriteScope,
   EnvironmentId,
+  ProjectId,
   WS_METHODS,
   WsRpcGroup,
   type AuthEnvironmentScope,
@@ -118,7 +119,7 @@ import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonReviewState from "../reviewState.ts";
-import { makeMemory, type MemoryKeychain } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
@@ -400,10 +401,11 @@ describe("a malformed connect never echoes a token", () => {
         const raw = yield* makeRawClient();
         const bodies = [
           connectRequest({ appToken: APP_TOKEN, [BOT_TOKEN]: true }),
-          connectRequest({ appToken: APP_TOKEN, botToken: BOT_TOKEN, extra: { BOT_TOKEN } }).replace(
-            '"extra"',
-            `"${BOT_TOKEN}"`,
-          ),
+          connectRequest({
+            appToken: APP_TOKEN,
+            botToken: BOT_TOKEN,
+            extra: { BOT_TOKEN },
+          }).replace('"extra"', `"${BOT_TOKEN}"`),
           connectRequest({ appToken: 42, botToken: BOT_TOKEN }),
           connectRequest({ appToken: APP_TOKEN, botToken: BOT_TOKEN }).slice(0, -12),
           `${APP_TOKEN}"}`,
@@ -460,8 +462,13 @@ describe("slack tokens reach no file, log, trace or reply", () => {
               assert.isNull(failureOf(reply), `${method}: ${JSON.stringify(failureOf(reply))}`);
               replies.push(reply);
             }
-            yield* until("connected", Effect.sync(() => fake.sockets.length === 1));
-            fake.sockets[0]?.send(mentionEnvelope("e1", mentionEvent("1700000000.000100", "leak test")));
+            yield* until(
+              "connected",
+              Effect.sync(() => fake.sockets.length === 1),
+            );
+            fake.sockets[0]?.send(
+              mentionEnvelope("e1", mentionEvent("1700000000.000100", "leak test")),
+            );
             const outbox = yield* HoustonSlackOutbox;
             yield* until(
               "filed",
@@ -485,7 +492,10 @@ describe("slack tokens reach no file, log, trace or reply", () => {
               return null;
             };
             fake.sockets[0]?.close();
-            yield* untilAdvancing("two failed attempts and a reconnect", Effect.sync(() => opens >= 3));
+            yield* untilAdvancing(
+              "two failed attempts and a reconnect",
+              Effect.sync(() => opens >= 3),
+            );
             yield* advance(3);
 
             for (const [method, payload] of [
@@ -535,7 +545,10 @@ describe("slack tokens reach no file, log, trace or reply", () => {
         assert.notInclude(logs.join("\n"), token);
         assert.notInclude(JSON.stringify(replies), token);
       }
-      assert.isTrue(logs.some((line) => line.includes("Slack")), "the Socket Mode errors were logged");
+      assert.isTrue(
+        logs.some((line) => line.includes("Slack")),
+        "the Socket Mode errors were logged",
+      );
       assert.isAtLeast(replies.length, 6);
     }).pipe(
       Effect.provide(Logger.layer([logger])),
@@ -608,9 +621,10 @@ describe("subscribe sends the snapshot then each change", () => {
           ["C1"],
         );
         assert.isUndefined(listed[0]?.queuePosition);
-        const all = (yield* client.call(WS_METHODS.houstonSlackRequestsList, {})) as ReadonlyArray<
-          HoustonSlackRequest
-        >;
+        const all = (yield* client.call(
+          WS_METHODS.houstonSlackRequestsList,
+          {},
+        )) as ReadonlyArray<HoustonSlackRequest>;
         assert.lengthOf(all, 2);
         yield* listener.interrupt(subscription);
       }),
@@ -642,25 +656,42 @@ describe("each slack method requires its declared scope", () => {
               scope: AuthSettingsWriteScope,
               payload: { ownerUserId: OWNER, channels: [{ channelId: "C1", projectId }] },
             },
-            { method: WS_METHODS.houstonSlackConnect, scope: AuthSettingsWriteScope, payload: TOKENS },
-            { method: WS_METHODS.houstonSlackDisconnect, scope: AuthSettingsWriteScope, payload: {} },
+            {
+              method: WS_METHODS.houstonSlackConnect,
+              scope: AuthSettingsWriteScope,
+              payload: TOKENS,
+            },
+            {
+              method: WS_METHODS.houstonSlackDisconnect,
+              scope: AuthSettingsWriteScope,
+              payload: {},
+            },
             {
               method: WS_METHODS.houstonSlackRequestsList,
               scope: AuthOrchestrationReadScope,
               payload: { projectId },
             },
-            { method: WS_METHODS.houstonSlackSubscribe, scope: AuthOrchestrationReadScope, payload: {} },
+            {
+              method: WS_METHODS.houstonSlackSubscribe,
+              scope: AuthOrchestrationReadScope,
+              payload: {},
+            },
           ];
           for (const entry of methods) {
             const before = yield* fingerprint;
-            const without = yield* makeWsClient(ALL_SCOPES.filter((scope) => scope !== entry.scope));
+            const without = yield* makeWsClient(
+              ALL_SCOPES.filter((scope) => scope !== entry.scope),
+            );
             const denied = failureOf(yield* without.call(entry.method, entry.payload));
             assert.strictEqual(denied?._tag, "EnvironmentAuthorizationError", entry.method);
             assert.strictEqual(yield* fingerprint, before, `${entry.method} changed state`);
             const only = yield* makeWsClient([entry.scope]);
             const id = yield* only.send(entry.method, entry.payload);
             const allowed = yield* Queue.take(only.responses);
-            assert.isNull(failureOf(allowed), `${entry.method}: ${JSON.stringify(failureOf(allowed))}`);
+            assert.isNull(
+              failureOf(allowed),
+              `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+            );
             if (entry.method === WS_METHODS.houstonSlackSubscribe) yield* only.interrupt(id);
           }
         }),
@@ -759,10 +790,13 @@ describe("slack state survives a restart", () => {
         const info = (yield* client.call(WS_METHODS.houstonSlackGet, {})) as HoustonSlackInfo;
         assert.strictEqual(info.ownerUserId, OWNER);
         assert.strictEqual(info.language, "pt-BR");
-        assert.deepEqual(info.channels, [{ channelId: "C1", projectId: "project-restart" }]);
-        const requests = (yield* client.call(WS_METHODS.houstonSlackRequestsList, {})) as ReadonlyArray<
-          HoustonSlackRequest
-        >;
+        assert.deepEqual(info.channels, [
+          { channelId: "C1", projectId: ProjectId.make("project-restart") },
+        ]);
+        const requests = (yield* client.call(
+          WS_METHODS.houstonSlackRequestsList,
+          {},
+        )) as ReadonlyArray<HoustonSlackRequest>;
         assert.lengthOf(requests, 1);
       }).pipe(Effect.provide(layerServer(options)));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

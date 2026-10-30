@@ -266,14 +266,31 @@ describe("a slack-filed task's brief fences the request and carries its images",
               },
               "slack:U2",
             );
-            const images = ["slack-request-1-00000000-0000-4000-8000-000000000001", "slack-request-1-00000000-0000-4000-8000-000000000002"].map(
-              (id, index) => {
-                const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, index]);
-                mkdirSync(config.attachmentsDir, { recursive: true });
-                writeFileSync(join(config.attachmentsDir, `${id}.png`), bytes);
-                return { type: "image", id, name: `shot-${index}.png`, mimeType: "image/png", sizeBytes: bytes.length };
-              },
-            );
+            const images = [
+              "slack-request-1-00000000-0000-4000-8000-000000000001",
+              "slack-request-1-00000000-0000-4000-8000-000000000002",
+            ].map((id, index) => {
+              const bytes = Uint8Array.from([
+                0x89,
+                0x50,
+                0x4e,
+                0x47,
+                0x0d,
+                0x0a,
+                0x1a,
+                0x0a,
+                index,
+              ]);
+              mkdirSync(config.attachmentsDir, { recursive: true });
+              writeFileSync(join(config.attachmentsDir, `${id}.png`), bytes);
+              return {
+                type: "image",
+                id,
+                name: `shot-${index}.png`,
+                mimeType: "image/png",
+                sizeBytes: bytes.length,
+              };
+            });
             yield* sql`
               INSERT INTO houston_slack_requests (
                 channel_id, ts, author, project_id, task_id, state, created_at, attachments_json
