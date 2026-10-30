@@ -469,6 +469,31 @@ describe("the tail is the last lines without colour or secrets", () => {
   });
 });
 
+describe("secrets behind quoted json keys are redacted", () => {
+  it("secrets behind quoted json keys are redacted", () => {
+    const values = {
+      access_token: "s3cr3tValue0123456789",
+      token: "plainTokenValue42",
+      password: "hunter two words",
+      client_secret: "clientSecretValue7",
+      apiKey: "apiKeyValue99",
+    };
+    const tail = reportTail(
+      Buffer.from(
+        [
+          JSON.stringify({ access_token: values.access_token }),
+          JSON.stringify(values, null, 2),
+          `{'token': '${values.token}'}`,
+        ].join("\n"),
+      ),
+    );
+    for (const value of Object.values(values)) expect(tail).not.toContain(value);
+    expect(tail).toContain('"access_token": "[redacted]"');
+    expect(tail).toContain('"password": "[redacted]"');
+    expect(tail).toContain("'token': '[redacted]'");
+  });
+});
+
 describe("a verification and a failure hold only for their head and base", () => {
   it("a verification and a failure hold only for their head and base", () => {
     const verification = {
