@@ -40,8 +40,14 @@ const buttonVariants = cva(
       variant: {
         default:
           "border-transparent bg-primary text-primary-foreground [:hover,[data-pressed]]:bg-[var(--primary-hover)]",
+        primary:
+          "border-transparent bg-[var(--accent)] text-white [:hover,[data-pressed]]:bg-[var(--accent-hover)]",
         destructive:
-          "border-transparent bg-destructive text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--destructive)_90%,black)]",
+          "border-transparent bg-[var(--danger-fill)] text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--danger-fill)_90%,black)]",
+        danger:
+          "border-transparent bg-transparent text-destructive-foreground [:hover,[data-pressed]]:bg-[var(--danger-wash)]",
+        "danger-solid":
+          "border-transparent bg-[var(--danger-fill)] text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--danger-fill)_90%,black)]",
         "destructive-outline":
           "border-border bg-transparent text-destructive-foreground [:hover,[data-pressed]]:border-destructive/32 [:hover,[data-pressed]]:bg-error-surface",
         ghost:
