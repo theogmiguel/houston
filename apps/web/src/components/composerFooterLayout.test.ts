@@ -7,15 +7,15 @@ import {
 import { resolveRestingComposerControlsLayout } from "./composerFooterLayout";
 
 describe("context strip labels", () => {
-  it("keeps labels above 300px and collapses below it", () => {
+  it("keeps labels above the icon-only floor and collapses below it", () => {
     expect(
       resolveContextStripLabelsCompact({ compact: false, neededWidth: 1200, availableWidth: 724 }),
     ).toBe(false);
     expect(
-      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 300 }),
+      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 220 }),
     ).toBe(false);
     expect(
-      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 299 }),
+      resolveContextStripLabelsCompact({ compact: false, neededWidth: 0, availableWidth: 219 }),
     ).toBe(true);
   });
 

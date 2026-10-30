@@ -77,7 +77,8 @@ export function shouldShowComposerContextStrip(input: {
   );
 }
 
-export const CONTEXT_STRIP_ICON_ONLY_MAX_PX = 300;
+// The composer's 48px side gutters mean a ~300px pane measures about 204px here.
+export const CONTEXT_STRIP_ICON_ONLY_MAX_PX = 220;
 export const CONTEXT_STRIP_NARROW_MAX_PX = 520;
 
 export function resolveContextStripLabelsCompact(input: {

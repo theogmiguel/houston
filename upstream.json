@@ -907,8 +907,8 @@
     "apps/web/src/terminal/ghostty/core.test.ts": "sample URLs use example.test instead of the T3 domain",
     "apps/web/src/terminal/ghostty/surface.test.ts": "sample URLs use example.test instead of the T3 domain",
     "packages/contracts/src/ipc.ts": "upstream 476590d0a not ported: desktop-only trackpad navigation bridge",
-    "apps/web/src/components/BranchToolbar.logic.ts": "Where labels and copy for the new-thread context row",
-    "apps/web/src/components/BranchToolbar.tsx": "new-thread context row with project, Where and machine",
+    "apps/web/src/components/BranchToolbar.logic.ts": "Where labels and copy; label width thresholds for the new-thread context row",
+    "apps/web/src/components/BranchToolbar.tsx": "new-thread context row with project, Where, machine and narrow labels",
     "apps/web/src/components/BranchToolbarEnvModeSelector.tsx": "Where label",
     "apps/web/src/components/PreviousWorktreeItemContent.tsx": "Existing worktree wording",
     "apps/web/src/components/chat/ChatHeader.tsx": "project breadcrumb without a new-thread action",
@@ -918,6 +918,10 @@
     "apps/web/src/components/grid/GridHost.tsx": "empty grid renders the draft composer",
     "apps/web/src/components/grid/GridSidebar.tsx": "grid row + opens a new draft pane",
     "apps/web/src/components/grid/GridThreadCell.tsx": "draft pane head and discard",
-    "apps/web/src/hooks/useHandleNewThread.ts": "optional grid-pane draft navigation"
+    "apps/web/src/hooks/useHandleNewThread.ts": "optional grid-pane draft navigation",
+    "apps/web/src/components/BranchToolbarBranchSelector.tsx": "new-thread context row branch label shrinks at narrow widths",
+    "apps/web/src/components/ComposerContextPermissions.tsx": "new-thread strip permissions label collapses to an icon at narrow widths",
+    "apps/web/src/components/chat/ComposerSurface.tsx": "composer context row sits inside the composer border",
+    "apps/web/src/components/composerFooterLayout.test.ts": "context strip label width thresholds"
   }
 }

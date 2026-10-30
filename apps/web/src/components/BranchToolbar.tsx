@@ -291,7 +291,7 @@ const RunContextSelector = memo(function RunContextSelector({
     <Menu>
       <MenuTrigger
         render={isPanel ? <ThreadDetailsControl part="select" /> : <ComposerControl size="xs" />}
-        className={isPanel ? undefined : "min-w-0 max-w-[48%] flex-initial justify-start"}
+        className={isPanel ? undefined : "min-w-0 max-w-[48%] justify-start"}
         onContextMenu={handleContextMenu}
         onMouseDownCapture={
           isPanel
@@ -656,7 +656,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       {!isServerThread ? (
         <>
           <span
-            className="inline-flex h-7 min-w-0 max-w-[40%] shrink items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/80 text-xs sm:h-6"
+            className="inline-flex h-7 min-w-0 max-w-[7rem] shrink-0 items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/80 text-xs sm:h-6"
             data-composer-context-control
           >
             <FolderIcon className="size-3 shrink-0" />
@@ -736,7 +736,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
-          className="min-w-0 flex-initial justify-end @3xl/composer-surface:ml-auto"
+          className="min-w-0 flex-1 justify-end @3xl/composer-surface:ml-auto"
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}
