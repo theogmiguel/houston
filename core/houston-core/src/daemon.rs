@@ -3406,6 +3406,11 @@ impl Daemon {
             .as_ref()
             .map(|v| v.iter().map(|(s, _)| s.info.id).collect())
             .unwrap_or_default();
+        let scrollback_dir = cfg
+            .db_path
+            .parent()
+            .map(|p| p.join("scrollback"))
+            .ok_or_else(|| anyhow!("db path {} has no parent dir", cfg.db_path.display()))?;
         if adopted.is_none() {
             for ws in db.list_workspaces().unwrap_or_default() {
                 match crate::paths::migrate_legacy_project_dir(Path::new(&ws.path)) {
@@ -3441,6 +3446,17 @@ impl Daemon {
                 tracing::info!(
                     "settled {unsettled_plans} task planning session(s) after daemon restart"
                 );
+            }
+            // A retained exited root keeps its saved output across restarts; see
+            // `Db::close_unretained_exited_roots`.
+            if let Some(closed) = db.close_unretained_exited_roots(|id| {
+                scrollback_dir.join(format!("{id}.bin")).exists()
+            })? {
+                if closed > 0 {
+                    tracing::info!(
+                        "closed {closed} exited session(s) left by a version that did not retain exited panes"
+                    );
+                }
             }
         }
         // Non-running tiles must survive a handoff too. list_interrupted()
@@ -3484,11 +3500,6 @@ impl Daemon {
             );
         }
         let next_id = db.next_session_id()?;
-        let scrollback_dir = cfg
-            .db_path
-            .parent()
-            .map(|p| p.join("scrollback"))
-            .ok_or_else(|| anyhow!("db path {} has no parent dir", cfg.db_path.display()))?;
         std::fs::create_dir_all(&scrollback_dir)
             .with_context(|| format!("creating {}", scrollback_dir.display()))?;
         if let Ok(entries) = std::fs::read_dir(&scrollback_dir) {
