@@ -69,8 +69,8 @@ export function RelayClientInstallDialog() {
           </DialogTitle>
           <DialogDescription>
             {isInstalling
-              ? "Houston is preparing this environment for secure access through T3 Connect."
-              : "Houston needs the relay client to make this environment available through T3 Connect."}
+              ? "Houston is preparing this environment for secure access through Houston Connect."
+              : "Houston needs the relay client to make this environment available through Houston Connect."}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel scrollFade={false}>
