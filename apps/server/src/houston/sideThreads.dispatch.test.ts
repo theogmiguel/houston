@@ -31,6 +31,7 @@ import {
   makeHarness,
   runWith,
   selection,
+  withReadOnlyRun,
 } from "./sideThreads.testkit.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 
@@ -321,6 +322,53 @@ describe("an aside", () => {
             assert.equal(userFacingDispatchErrorMessage(error), ASIDE_NEEDS_FINISHED_TURN);
             const shell = yield* context.orchestrator.getShellSnapshot();
             assert.isFalse(shell.threads.some((thread) => thread.id === "aside"));
+          }),
+        );
+      }),
+    ),
+  );
+
+  it.effect("an aside waits for a running turn on a provider that forks only idle sessions", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("aside-opencode-running", [
+          CODEX,
+          {
+            driver: "opencode",
+            capabilities: withReadOnlyRun(CodexProviderCapabilitiesV2, "permissionRules"),
+          },
+        ]);
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { source } = yield* sourceWithTurn(context, harness, {
+              threadId: "source",
+              driver: "opencode",
+            });
+            harness.script.hold.add("message:source:2");
+            yield* context.turn(source, "message:source:2", "still going");
+            const before = yield* context.orchestrator.getThreadProjection(source);
+            const startedBefore = harness.log.started.length;
+            const error = yield* Effect.flip(startAside(context, { source, aside: "aside" }));
+            assert.equal((error as { readonly _tag: string })._tag, "OrchestratorDispatchError");
+            assert.equal(
+              userFacingDispatchErrorMessage(error),
+              "OpenCode cannot fork a thread while its turn runs, so an aside has to wait for this turn to finish.",
+            );
+            yield* context.settle;
+            const shell = yield* context.orchestrator.getShellSnapshot();
+            assert.isFalse(shell.threads.some((thread) => thread.id === "aside"));
+            assert.lengthOf(harness.log.forks, 0);
+            assert.equal(harness.log.started.length, startedBefore);
+            const after = yield* context.orchestrator.getThreadProjection(source);
+            assert.deepEqual(after.runs, before.runs);
+            assert.deepEqual(after.messages, before.messages);
+
+            // Once the turn has finished, the aside starts.
+            yield* harness.release("message:source:2");
+            yield* context.settle;
+            yield* startAside(context, { source, aside: "aside" });
+            const aside = yield* projectionOf(context, "aside");
+            assert.equal(aside.thread.side?.kind, "aside");
           }),
         );
       }),
