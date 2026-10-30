@@ -88,24 +88,24 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
       <Collapsible open={expanded} onOpenChange={toggleExpanded} data-subagent-group>
         <CollapsibleTrigger
           aria-label={fullSummary}
-          className="group/subagent-group flex w-full min-w-0 items-center gap-2 py-2 text-left text-secondary-foreground transition-colors hover:text-foreground"
+          className="group/subagent-group flex min-h-6 w-full min-w-0 items-center gap-2 text-left text-headline text-(--t2) transition-colors hover:text-(--t1)"
         >
           <ChevronDownIcon
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3.25 shrink-0 text-(--t3) transition-transform",
               !expanded && "-rotate-90",
             )}
           />
           <span className="shrink-0">{summary.label}</span>
           {summary.running === null ? null : (
-            <span className="min-w-0 truncate text-muted-foreground">· {summary.running}</span>
+            <span className="min-w-0 truncate text-(--t3)">· {summary.running}</span>
           )}
         </CollapsibleTrigger>
         {/* Virtualized rows must settle before disclosure scroll anchoring resumes. */}
         <CollapsiblePanel animate={false}>
           {expanded ? (
-            <div className="ms-5 mb-1 grid gap-0.5 border-l border-border ps-2.5">
+            <div className="-mt-1 ms-[22px] mb-1 grid gap-0.5 border-l border-border ps-2.5">
               {members.map((item) => (
                 <V2LifecycleRow
                   environmentId={ctx.activeThreadEnvironmentId}

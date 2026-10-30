@@ -45,7 +45,7 @@ function PopoverPopup({
   ...props
 }: PopoverPrimitive.Popup.Props & {
   padding?: keyof typeof popoverViewportPaddingClassName;
-  variant?: "default" | "panel";
+  variant?: "default" | "panel" | "dialog";
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
@@ -88,11 +88,12 @@ function PopoverPopup({
         <PopoverPrimitive.Popup
           className={cn(
             "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-[var(--r-group)] text-popover-foreground outline-none transition-[width,height,scale,opacity] has-data-[slot=calendar]:rounded-[var(--r-dialog)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
-            variant !== "panel" && "dropdown-glass",
+            variant === "default" && "dropdown-glass",
+            variant === "dialog" && "dialog-glass",
             tooltipStyle &&
               "w-fit text-balance rounded-[var(--r-ctl)] text-xs",
             !tooltipStyle &&
-              variant !== "panel" &&
+              variant === "default" &&
               "shadow-[var(--shadow-1)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
             variant === "panel" &&
