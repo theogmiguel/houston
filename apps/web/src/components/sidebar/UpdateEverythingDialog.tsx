@@ -146,7 +146,10 @@ function UpdateEverythingDialogContent({
       <ScrollArea scrollFade>
         <div className="flex flex-col gap-3 px-6 pb-4">
           {notes.map((note) => (
-            <p key={note} className="text-muted-foreground text-sm">
+            <p
+              key={note}
+              className="rounded-lg bg-muted px-3 py-2.5 text-xs leading-4 text-muted-foreground"
+            >
               {note}
             </p>
           ))}

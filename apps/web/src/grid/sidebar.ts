@@ -134,11 +134,35 @@ export interface AttentionCard {
   readonly state: GridThreadState;
 }
 
+export interface AttentionNavigationEvent {
+  readonly key: string;
+  readonly code?: string | undefined;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+}
+
 /**
- * `Ctrl J` walks Needs you and Ready cards across every workspace in rail
+ * `Ctrl .` is next and `Ctrl Shift .` is previous. Shift turns the period key
+ * into `>` on most layouts, so both keys count. `Ctrl J` never matches: the
+ * terminal drawer keeps it.
+ */
+export function attentionNavigationDirection(
+  event: AttentionNavigationEvent,
+): 1 | -1 | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const isPeriod =
+    event.code === "Period" || event.key === "." || event.key === ">";
+  if (!isPeriod) return null;
+  return event.shiftKey ? -1 : 1;
+}
+
+/**
+ * `Ctrl .` walks Needs you and Ready cards across every workspace in rail
  * order: workspaces, then grids, then panes left to right, top to bottom.
- * It wraps, and a focused card that needs nothing starts the walk at the
- * following card.
+ * `Ctrl Shift .` walks back. It wraps, and a focused card that needs nothing
+ * starts the walk at the following card. `Ctrl J` stays the terminal drawer.
  */
 export function nextAttentionCard(
   cards: ReadonlyArray<AttentionCard>,

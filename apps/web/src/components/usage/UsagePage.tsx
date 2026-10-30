@@ -516,6 +516,14 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
+            <div className="flex flex-col gap-1">
+              <h1 className="text-large-title font-bold">Usage</h1>
+              {showingLimits ? null : (
+                <p className="max-w-[62ch] text-xs leading-4 text-muted-foreground">
+                  {windowLabel}
+                </p>
+              )}
+            </div>
             {selectedEnvironments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {environments.length === 0
@@ -703,8 +711,8 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
             <span
               className={cn(
@@ -821,8 +829,8 @@ function UsageOverview({
           })}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3">
-          <h2 className="text-sm font-medium text-foreground">
+        <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
+          <h2 className="text-headline font-semibold text-foreground">
             {shownHourly ? "Hourly" : "Daily"} {metric === "tokens" ? "processed tokens" : "cost"}
           </h2>
           <UsageProviderChart
@@ -842,8 +850,10 @@ function UsageOverview({
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-foreground">Totals</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
+        <h2 className="px-1 text-2xs font-semibold text-muted-foreground">
+          Totals
+        </h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           <Metric
             loading={loadingPartial}
             label="Processed tokens"
@@ -874,7 +884,10 @@ function UsageOverview({
 
       {merged.totalTokens > 0 ? (
         <section
-          className={cn("grid gap-x-12 gap-y-8 lg:grid-cols-2", figureClass(loadingPartial))}
+          className={cn(
+            "grid gap-x-12 gap-y-8 rounded-lg border border-border bg-card p-4 lg:grid-cols-2",
+            figureClass(loadingPartial),
+          )}
         >
           {metric === "tokens" ? (
             <UsageShareBar
@@ -902,9 +915,11 @@ function UsageOverview({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
+          <h2 className="px-1 text-2xs font-semibold text-muted-foreground">
+            Breakdown
+          </h2>
           <ToggleGroup
             aria-label="Usage breakdown"
             variant="segmented"
@@ -1243,10 +1258,13 @@ function Metric({
   readonly loading: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3">
+      <span className="text-2xs font-medium text-muted-foreground">{label}</span>
       <span
-        className={cn("text-base font-medium text-foreground tabular-nums", figureClass(loading))}
+        className={cn(
+          "text-stat font-semibold text-foreground tabular-nums",
+          figureClass(loading),
+        )}
       >
         {value}
       </span>

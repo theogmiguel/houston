@@ -1,13 +1,11 @@
-import { ArrowLeftIcon, LayoutGridIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ContrastIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
-import { useGridStore, workspaceKeyOf } from "../../grid/gridStore";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useTheme } from "../../hooks/useTheme";
 import { cn } from "../../lib/utils";
-import { useProjects } from "../../state/entities";
-import { toastManager } from "../ui/toast";
 import { HoustonWordmark } from "../HoustonWordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -26,6 +24,7 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { nextRailThemeMode, railThemeLabel } from "./railTheme";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -161,39 +160,18 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
+  const { appearanceMode, setAppearanceMode } = useTheme();
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
-  const projects = useProjects();
-  const grids = useGridStore((state) => state.grids);
-  const createGrid = useGridStore((state) => state.createGrid);
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
   };
-  const handleGridsClick = () => {
-    closeMobileSidebar();
-    const last = grids.at(-1);
-    if (last !== undefined) {
-      void navigate({ to: "/grid/$gridId", params: { gridId: last.id } });
-      return;
-    }
-    const project = projects[0];
-    if (project === undefined) {
-      toastManager.add({
-        type: "info",
-        title: "Open a project to create its first grid",
-        description: "A grid holds threads from one project's workspace.",
-      });
-      return;
-    }
-    const gridId = createGrid({
-      environmentId: project.environmentId,
-      projectId: project.id,
-      workspaceKey: workspaceKeyOf(project.environmentId, project.id),
-    });
-    void navigate({ to: "/grid/$gridId", params: { gridId } });
+  const themeLabel = railThemeLabel(appearanceMode);
+  const cycleTheme = () => {
+    setAppearanceMode(nextRailThemeMode(appearanceMode));
   };
   const handleSettingsClick = () => {
     closeMobileSidebar();
@@ -215,11 +193,15 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
-          <SidebarUtilityItem icon={<LayoutGridIcon />} label="Grids" onClick={handleGridsClick} />
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
             onClick={handleSettingsClick}
+          />
+          <SidebarUtilityItem
+            icon={<ContrastIcon />}
+            label={`Theme: ${themeLabel}`}
+            onClick={cycleTheme}
           />
         </>
       )}

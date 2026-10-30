@@ -243,6 +243,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-caption--line-height: 0.875rem;
   --text-mono: 0.75rem;
   --text-mono--line-height: 1.125rem;
+  /* Full-contrast emphasis for a plan-limit number with little room left. */
+  --font-weight-emphasis: 650;
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
   --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);

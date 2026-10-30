@@ -7,6 +7,7 @@ const emptySizeClassName = {
     "min-h-64 gap-4 p-6 md:p-10 [&_[data-slot=empty-media]]:mb-0 [&_[data-slot=empty-title]]:text-[1.0625rem] [&_[data-slot=empty-title]]:leading-6 [&_[data-slot=empty-description]]:text-[0.8125rem] [&_[data-slot=empty-description]]:leading-[1.125rem]",
   default: "gap-6 p-6 md:p-12",
   hero: "gap-6 p-6 md:p-12 [&_[data-slot=empty-title]]:text-2xl sm:[&_[data-slot=empty-title]]:text-3xl",
+  welcome: "gap-0 p-6 md:p-12",
 } as const;
 
 function Empty({
@@ -87,20 +88,40 @@ function EmptyMedia({
   );
 }
 
-function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div className={cn("font-semibold text-xl", className)} data-slot="empty-title" {...props} />
-  );
-}
-
-function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
+function EmptyTitle({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"div"> & { variant?: "default" | "display" }) {
   return (
     <div
       className={cn(
-        "text-muted-foreground text-sm [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
+        variant === "display"
+          ? "font-serif text-[34px] leading-10 font-medium tracking-[-0.01em]"
+          : "font-semibold text-xl",
+        className,
+      )}
+      data-slot="empty-title"
+      data-variant={variant}
+      {...props}
+    />
+  );
+}
+
+function EmptyDescription({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"p"> & { variant?: "default" | "welcome" }) {
+  return (
+    <div
+      className={cn(
+        "text-muted-foreground [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
+        variant === "welcome" ? "text-headline" : "text-sm",
         className,
       )}
       data-slot="empty-description"
+      data-variant={variant}
       {...props}
     />
   );

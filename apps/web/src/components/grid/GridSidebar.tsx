@@ -46,6 +46,7 @@ import {
   workspaceKeyOf,
 } from "../../grid/gridStore";
 import {
+  attentionNavigationDirection,
   clearThreadSelection,
   gridThreadStateLabel,
   nextAttentionCard,
@@ -76,7 +77,6 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { openCommandPalette } from "../../commandPaletteBus";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailNav } from "../sidebar/SidebarRailNav";
@@ -167,10 +167,8 @@ export function GridSidebar() {
   const threads = useQuietThreadShells();
   const grids = useGridStore((store) => store.grids);
   const createGrid = useGridStore((store) => store.createGrid);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
-  const newThreadShortcutLabel = shortcutLabelForCommand(keybindings, "chat.new");
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const sidebarVisible = useSidebarVisibility();
@@ -190,14 +188,6 @@ export function GridSidebar() {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-
-  const handleNewThread = () => {
-    if (projects.length === 0) {
-      openCommandPalette({ open: "add-project" });
-      return;
-    }
-    openCommandPalette({ open: "new-thread-in" });
-  };
 
   const openThread = (gridId: string, threadId: string) => {
     useGridStore.getState().focusThread(gridId, threadId);
@@ -327,13 +317,12 @@ export function GridSidebar() {
     [closeThreads, threads],
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the window's Esc and Ctrl J shortcuts in step with the visible rail while it is mounted
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the window's Esc and attention shortcuts in step with the visible rail while it is mounted
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !sidebarVisible) return;
-      const commandKey = event.metaKey || event.ctrlKey;
-      if (!commandKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "j") return;
+      const direction = attentionNavigationDirection(event);
+      if (direction === null) return;
       if (
         isEditableFocused(event.target) ||
         isTerminalFocused() ||
@@ -344,7 +333,7 @@ export function GridSidebar() {
       ) {
         return;
       }
-      const card = nextAttentionCard(allCards, currentFocus, event.shiftKey ? -1 : 1);
+      const card = nextAttentionCard(allCards, currentFocus, direction);
       if (card === null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -496,9 +485,6 @@ export function GridSidebar() {
               ) : null}
             </label>
           }
-          onNewThread={handleNewThread}
-          newThreadDisabled={projects.length === 0}
-          newThreadShortcutLabel={newThreadShortcutLabel}
         />
       </SidebarHeader>
       <SidebarContent>
