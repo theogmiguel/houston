@@ -1,5 +1,6 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
+  type ModelCapabilities,
   type ProviderInstanceId,
   type EnvironmentId,
   type ProviderDriverKind,
@@ -24,6 +25,7 @@ import {
 import { ChevronRightIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
+import { resolveModelPickerTraits } from "./modelPickerTraits";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
   modelPickerLegacySectionKey,
@@ -80,6 +82,7 @@ type ModelPickerItem = {
   continuationGroupKey?: string | undefined;
   isLegacy?: boolean | undefined;
   isUnavailable?: boolean | undefined;
+  capabilities?: ModelCapabilities | null | undefined;
 };
 
 export function resolveModelPickerSelectedModel(input: {
@@ -572,6 +575,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           ...(entry.continuationGroupKey
             ? { continuationGroupKey: entry.continuationGroupKey }
             : {}),
+          ...(model.capabilities ? { capabilities: model.capabilities } : {}),
         });
       }
     }
@@ -827,7 +831,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className="relative flex max-h-86.5 w-screen max-w-90 flex-row overflow-hidden"
+        className="relative flex max-h-86.5 w-screen max-w-lg flex-row overflow-hidden"
         style={
           isSearching
             ? { height: searchHeight }
@@ -1011,6 +1015,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     providerAccentColor={model.instanceAccentColor}
                     acpRegistryAgentId={model.acpRegistryAgentId}
                     acpRegistryIconUrl={model.acpRegistryIconUrl}
+                    traits={resolveModelPickerTraits(model.capabilities)}
                     isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
                     isSelected={
                       selectedModelKeys !== undefined

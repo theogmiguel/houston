@@ -9,6 +9,7 @@ import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
+import { formatModelPickerTraits, type ModelPickerTraits } from "./modelPickerTraits";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
 export const ModelListRow = memo(function ModelListRow(props: {
@@ -22,6 +23,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
+  traits?: ModelPickerTraits | undefined;
   isFavorite: boolean;
   isSelected: boolean;
   showProvider: boolean;
@@ -37,6 +39,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     subProvider: props.subProvider,
   };
   const providerLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
+  const traitsLabel = props.traits ? formatModelPickerTraits(props.traits) : null;
 
   const row = (
     <ComboboxItem
@@ -87,6 +90,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {traitsLabel ? (
+          <span
+            className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground/70"
+            data-model-picker-traits="true"
+          >
+            {traitsLabel}
+          </span>
+        ) : null}
         {props.jumpLabel ? <Kbd>{props.jumpLabel}</Kbd> : null}
         <Tooltip>
           <TooltipTrigger

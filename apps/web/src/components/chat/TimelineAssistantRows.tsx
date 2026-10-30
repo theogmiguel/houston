@@ -1,6 +1,7 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type RunId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
+import { useAtomValue } from "@effect/atom-react";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
@@ -20,6 +21,9 @@ import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
+import { serverEnvironment } from "../../state/server";
+import { resolveAssistantModelAttribution } from "./assistantModelAttribution";
+import { AssistantModelAttributionLine } from "./AssistantModelAttributionLine";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 
@@ -53,6 +57,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
+        {row.message.runId ? <AssistantModelAttributionRow runId={row.message.runId} /> : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
@@ -72,6 +77,22 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * Subscribes to the answer's run: attribution needs the model it ran on, which imported or
+ * run-less messages do not carry.
+ */
+function AssistantModelAttributionRow({ runId }: { runId: RunId | null | undefined }) {
+  const ctx = use(TimelineRowCtx);
+  const providers = useAtomValue(
+    serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
+  );
+  return (
+    <AssistantModelAttributionLine
+      attribution={resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers })}
+    />
   );
 }
 
