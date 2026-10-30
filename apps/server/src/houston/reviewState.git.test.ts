@@ -617,6 +617,48 @@ describe("outside a git worktree there is nothing to mark", () => {
   );
 });
 
+describe("a path outside the worktree is refused", () => {
+  it.effect("a relative and an absolute outside path fail every method and store nothing", () =>
+    withRepo((repo, review) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* initRepo(repo, { "a.ts": LINES_20 });
+        const outsideDir = path.join(repo, "..");
+        const outsideName = `houston-review-outside-${path.basename(repo)}.txt`;
+        const outside = path.join(outsideDir, outsideName);
+        yield* fs.writeFileString(outside, "outside the worktree\n");
+        yield* Effect.addFinalizer(() => fs.remove(outside).pipe(Effect.ignore));
+        const outsideBlob = yield* git(repo, ["hash-object", "--", outside]);
+        const real = yield* review.anchorLines({
+          cwd: repo,
+          path: "a.ts",
+          side: "new",
+          startLine: 1,
+          endLine: 1,
+        });
+
+        for (const file of [`../${outsideName}`, outside]) {
+          const operations = [
+            tick(review, repo, file),
+            review.anchorLines({ cwd: repo, path: file, side: "new", startLine: 1, endLine: 1 }),
+            review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file }] }),
+            review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file, side: "old" }] }),
+          ];
+          for (const operation of operations) {
+            const error = yield* (
+              operation as Effect.Effect<unknown, { readonly _tag: string }>
+            ).pipe(Effect.flip);
+            assert.equal(error._tag, "GitCommandError", file);
+          }
+        }
+        assert.deepEqual(yield* rows, []);
+        assert.notEqual(yield* gitExit(repo, ["cat-file", "-e", outsideBlob]), 0);
+      }),
+    ),
+  );
+});
+
 describe("marks on an unborn head are judged by content", () => {
   it.effect("head_sha is null and the mark follows the content", () =>
     withRepo((repo, review) =>

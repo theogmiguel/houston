@@ -411,8 +411,8 @@ export const make = Effect.gen(function* () {
       side: ReviewLineAnchor["side"],
       file: string,
     ) {
+      const absolute = yield* worktreePath(operation, root, file);
       if (side === "new") {
-        const absolute = yield* worktreePath(operation, root, file);
         if (!(yield* isFile(absolute))) return null;
         return yield* fileSystem
           .readFileString(absolute)
