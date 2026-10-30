@@ -11,7 +11,6 @@ import * as PlatformError from "effect/PlatformError";
 import * as References from "effect/References";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { CLOUD_LINKED_USER_ID } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
 import * as Identify from "./Identify.ts";
 
@@ -155,13 +154,11 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
     }).pipe(Effect.provide(layerIdentity("t3-telemetry-identify-read-", logs)));
   });
 
-  it.effect("reads the Connect account and each provider account as owners", () =>
+  it.effect("reads each provider account as owners", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
-      const secrets = yield* ServerSecretStore.ServerSecretStore;
       const path = yield* Path.Path;
       const homeDirectory = path.join(config.baseDir, "home");
-      yield* secrets.set(CLOUD_LINKED_USER_ID, new TextEncoder().encode("user_connect"));
       yield* writeHomeFile(
         homeDirectory,
         ".codex/auth.json",
@@ -187,7 +184,6 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
       const owners = yield* Identify.getServerOwnersForHome(homeDirectory);
 
       assert.deepEqual(owners, [
-        { source: "connect", ownerId: yield* sha256("user_connect") },
         { source: "openai", ownerId: yield* sha256("user-openai-person") },
         { source: "claude", ownerId: yield* sha256("claude-person") },
       ]);

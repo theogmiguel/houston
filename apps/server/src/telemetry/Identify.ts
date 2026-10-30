@@ -11,8 +11,6 @@ import * as Schema from "effect/Schema";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { hashTelemetryId } from "@t3tools/shared/telemetryId";
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { CLOUD_LINKED_USER_ID } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
 
 /**
@@ -307,19 +305,9 @@ export const getTelemetryIdentity = Effect.flatMap(
 export const getServerOwnersForHome = Effect.fn("getServerOwnersForHome")(function* (
   homeDirectory: string,
 ) {
-  const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const connectUser = yield* secrets.get(CLOUD_LINKED_USER_ID).pipe(
-    Effect.map(Option.map((bytes) => new TextDecoder().decode(bytes))),
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to read the linked T3 Connect account for telemetry", {
-        errorTag: cause._tag,
-      }).pipe(Effect.as(Option.none<string>())),
-    ),
-  );
   const { codexTokens, claudeJson } = yield* readProviderLogins(homeDirectory);
 
   const raw: ReadonlyArray<readonly [TelemetryOwnerSource, Option.Option<string>]> = [
-    ["connect", connectUser],
     [
       "openai",
       Option.flatMap(codexTokens, (tokens) =>
