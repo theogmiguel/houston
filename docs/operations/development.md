@@ -330,23 +330,8 @@ pastes its first prompt without waiting for a hook to confirm it.
 
 Daemon and UI ship wire changes in the same commit, with one
 `PROTOCOL_VERSION` bump and `protocol/protocol.md` updated alongside. The
-committed TypeScript bindings need regenerating:
-
-```
-./scripts/gen-protocol-types.sh
-```
-
-This wipes `ui/src/renderer/src/houston/generated/` then runs
-`TS_RS_EXPORT_DIR=$OUT cargo test -p houston-protocol --features ts-gen
-export_bindings --quiet` (`ts-gen` is an optional Cargo feature on
-`houston-protocol`). It then hand-extracts several `pub const`s via `sed` and
-re-emits them as `PROTOCOL_VERSION.ts` and `DEFAULTS.ts`, because `ts-rs`
-exports types but not consts — covering `PROTOCOL_VERSION`,
-`DEFAULT_RMS_FLOOR`, the Routines caps, the v70
-daemon knobs (restore budget, mailbox retention, orchestration cap,
-ignore-glob caps), `AGENT_PURPOSE_MAX`, and the usage-window constants. Each
-extraction hard-fails if the constant can't be found — a silent empty value
-would be worse than a build break.
+TypeScript bindings under `ui/src/renderer/src/houston/generated/` are no longer
+generated: they are committed, frozen and never hand-edited.
 
 `./scripts/check-protocol-sync.sh` (one of the safety scripts below) then
 verifies daemon, UI, and `protocol/protocol.md` all agree on

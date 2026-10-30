@@ -35,28 +35,22 @@ pub const NIGHT_SHIFT_CLAIMS_MAX: usize = 12;
 pub const NIGHT_SHIFT_CLAIM_TEXT_MAX: usize = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightClock {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub hour: u8,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub minute: u8,
 }
 
 /// Local clock times. `nights` are the weekdays a scheduled run starts on,
 /// 1 = Sunday … 7 = Saturday; an empty list never starts on its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightWindow {
     pub start: NightClock,
     pub wrap_up: NightClock,
     pub hard_stop: NightClock,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
     pub nights: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightFocusLevel {
     Off,
@@ -66,7 +60,6 @@ pub enum NightFocusLevel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightFocus {
     pub reliability: NightFocusLevel,
     pub performance: NightFocusLevel,
@@ -78,16 +71,13 @@ pub struct NightFocus {
 
 /// A provider and, optionally, its model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightAgent {
     pub provider: AgentKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightOutput {
     /// Draft pull requests only.
@@ -100,7 +90,6 @@ pub enum NightOutput {
 /// and checks that change's claims plus the smoke flows. On only when
 /// `enabled` and a start command is set.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightAppQa {
     pub enabled: bool,
     pub start_command: String,
@@ -115,7 +104,6 @@ pub struct NightAppQa {
 
 /// What a run studies for Competitor gaps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NightCompetitor {
     /// A GitHub repository, `owner/repo`, cloned read-only.
@@ -130,7 +118,6 @@ pub enum NightCompetitor {
 
 /// An app installed on this computer, as Setup offers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightInstalledApp {
     pub name: String,
     /// Empty when the app reports none.
@@ -140,7 +127,6 @@ pub struct NightInstalledApp {
 
 /// A command every change passes, and where Houston found it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCheck {
     pub command: String,
     /// `ci.yml · core-checks`, `package.json`, `AGENTS.md` or `added by you`.
@@ -149,7 +135,6 @@ pub struct NightCheck {
 
 /// How hard the independent verifier tries to break a change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightVerification {
     /// Re-runs every proof and confirms each test exists and asserts its claim.
@@ -161,39 +146,31 @@ pub enum NightVerification {
 
 /// What Houston found in the workspace, for Setup to offer.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightDetected {
     /// From CI workflows, package manifests and AGENTS.md, runnable here.
     pub checks: Vec<NightCheck>,
     /// How the app starts, from a harness, package scripts or AGENTS.md.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub start_command: Option<NightCheck>,
     /// Apps installed on this computer, by name.
     #[serde(default)]
     pub apps: Vec<NightInstalledApp>,
     /// Why `apps` is empty on this platform, when it cannot list them.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub apps_note: Option<String>,
 }
 
 /// How finished changes become pull requests. A change is one plan entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NightPrSize {
     /// One change per pull request.
     One,
     /// Changes of one theme together, at most `max_changes` per pull request.
-    Related {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-        max_changes: u32,
-    },
+    Related { max_changes: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightQuestions {
     /// Parked for the morning report; nothing is sent during the night.
@@ -202,9 +179,7 @@ pub enum NightQuestions {
 
 /// The stored document is `{"v":2,...}`; a v1 document is upgraded on read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightShiftSettings {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub v: u32,
     pub enabled: bool,
     pub window: NightWindow,
@@ -216,11 +191,9 @@ pub struct NightShiftSettings {
     pub orchestrator: NightAgent,
     /// The worker providers in fallback order.
     pub workers: Vec<NightAgent>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub live_workers: u32,
     /// Absent means the orchestrator's provider and model.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub reviewer: Option<NightAgent>,
     pub output: NightOutput,
     pub pr_size: NightPrSize,
@@ -234,7 +207,6 @@ pub struct NightShiftSettings {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PreflightStatus {
     Ok,
@@ -245,22 +217,18 @@ pub enum PreflightStatus {
 /// One preflight check under a stable `id` (`memory`, `hooks_off:<provider>`,
 /// …); `limit` and `actual` name a threshold's numbers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PreflightItem {
     pub id: String,
     pub status: PreflightStatus,
     pub label: String,
     pub detail: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub limit: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub actual: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightRunPhase {
     /// Preflight or the launch refused it; nothing ran.
@@ -272,7 +240,6 @@ pub enum NightRunPhase {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightStopReason {
     /// The report was published and the orchestrator's turn ended.
@@ -286,7 +253,6 @@ pub enum NightStopReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightKeepAwake {
     /// No run holds it.
@@ -297,11 +263,8 @@ pub enum NightKeepAwake {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightInterruption {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub resumed_at_ms: i64,
     pub detail: String,
     /// False when the run was settled instead of resumed.
@@ -309,30 +272,24 @@ pub struct NightInterruption {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCostLine {
     pub provider: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub panes: u32,
     pub pane_hours: f64,
     /// The provider's own token counts for the run's window; `None` when its
     /// CLI exposes none to Houston. Never a zero standing in for "unknown".
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub tokens: Option<UsageTokenTotals>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCost {
     pub pane_hours: f64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub panes: u32,
     pub per_provider: Vec<NightCostLine>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightEntryKind {
     Plan,
@@ -347,7 +304,6 @@ pub enum NightEntryKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NightGate {
     #[default]
@@ -361,7 +317,6 @@ pub enum NightGate {
 /// observed (Houston ran the checks; the verifier's per-claim verdicts);
 /// `review` and `qa` are agents' verdicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightGates {
     #[serde(default)]
     pub checks: NightGate,
@@ -377,18 +332,15 @@ pub struct NightGates {
     pub verify: NightGate,
     /// CI re-runs Houston asked for after a known flaky failure.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reruns: u32,
     /// Fixer panes Houston started for this PR's CI failures.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub fixes: u32,
 }
 
 /// What a planned change must make true, with a concrete value, and the
 /// specific test that proves it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightClaim {
     pub claim: String,
     pub proof: String,
@@ -396,13 +348,11 @@ pub struct NightClaim {
 
 /// One check Houston ran on a pull request's head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCheckRun {
     pub command: String,
     pub passed: bool,
     /// Absent when the command timed out or could not start.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub code: Option<i32>,
     /// The output's last lines, for a failure.
     pub tail: String,
@@ -410,44 +360,35 @@ pub struct NightCheckRun {
 
 /// The independent verifier's verdict on one claim of a plan entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightVerdict {
     /// The plan entry's id.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub plan: u32,
     /// The claim's index in that entry's claims.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub claim: u32,
     pub passed: bool,
     /// `file:line` of the proof that ran, and what it showed.
     pub evidence: String,
     /// With Standard depth: the fault injected and the test failing on it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub fault: Option<String>,
     /// The pane that verified.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub verifier: u32,
 }
 
 /// What a plan or pull request entry carries beyond its row.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightEntryDetail {
     /// A plan entry's claims.
     #[serde(default)]
     pub claims: Vec<NightClaim>,
     /// A pull request's plan entries.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
     pub plans: Vec<u32>,
     /// The commit Houston ran the checks on.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub head_sha: Option<String>,
     /// Panes that built the change; none of them may verify it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
     pub built_by: Vec<u32>,
     #[serde(default)]
     pub checks_run: Vec<NightCheckRun>,
@@ -457,30 +398,21 @@ pub struct NightEntryDetail {
 
 /// One row of the run ledger.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightEntry {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub run_id: u32,
     pub kind: NightEntryKind,
     pub title: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub theme: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub status: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub pr_number: Option<u32>,
     /// A change the user can see in the app.
     pub visible: bool,
     pub qa_passed: bool,
     pub body: String,
     pub gates: NightGates,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub choice: Option<String>,
     #[serde(default)]
     pub detail: NightEntryDetail,
@@ -488,47 +420,31 @@ pub struct NightEntry {
 
 /// A pane of a live run, the orchestrator first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightCrewMember {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub session_id: u32,
     pub provider: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub role: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
     pub limited: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightRun {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub run_id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub routine_id: u32,
     pub workspace: String,
     pub trigger: RoutineTrigger,
     pub phase: NightRunPhase,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session_id: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub wrap_up_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub hard_stop_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
     pub report_path: String,
     pub report_published: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub summary: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub stop_reason: Option<NightStopReason>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub stop_detail: Option<String>,
     pub interruptions: Vec<NightInterruption>,
     pub cost: NightCost,
@@ -537,7 +453,6 @@ pub struct NightRun {
     pub preflight: Vec<PreflightItem>,
     pub keep_awake: NightKeepAwake,
     /// PR numbers in the order the orchestrator suggests merging them.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
     pub merge_order: Vec<u32>,
     pub entries: Vec<NightEntry>,
     pub crew: Vec<NightCrewMember>,
@@ -545,13 +460,9 @@ pub struct NightRun {
 
 /// The machine as preflight last read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct NightMachine {
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub memory_free_mib: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub disk_free_mib: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "boolean | null"))]
     pub on_battery: Option<bool>,
     pub keep_awake: NightKeepAwake,
 }
