@@ -67,9 +67,8 @@ different code depending on it:
 
 - How is Houston running on this machine: `npx houston serve` in a terminal, the
   background service, or the desktop app?
-- Which surface is the user connecting from: the website (app.t3.codes), the
-  desktop app against a local server, the desktop app against a remote server,
-  or the mobile app?
+- Which surface is the user connecting from: the desktop app against a local
+  server, the desktop app against a remote server, or the mobile app?
 
 Then work from evidence, not assumption. In rough order of value:
 

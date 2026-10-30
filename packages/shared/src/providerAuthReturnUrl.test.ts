@@ -13,6 +13,14 @@ describe("provider auth return destinations", () => {
       ).toBe(`${scheme}://app/settings/providers?instanceId=work`);
     },
   );
+  it("keeps loopback web return destinations", () => {
+    expect(
+      providerAuthReturnUrl("http://127.0.0.1:5173/welcome?code=secret#agents:machine-id"),
+    ).toBe("http://127.0.0.1:5173/welcome#agents:machine-id");
+    expect(providerAuthReturnUrl("http://localhost:5173/settings/providers?code=secret")).toBe(
+      "http://localhost:5173/settings/providers",
+    );
+  });
   it.each([
     "t3code://attacker/welcome",
     "t3code://app/welcome/../evil",
