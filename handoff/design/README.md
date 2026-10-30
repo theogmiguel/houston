@@ -65,7 +65,7 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
 - **Theme control** uses the moon icon (`MoonIcon`, with `SunIcon`/`MonitorIcon` per mode), not
   the half-filled circle the boards draw.
 - **Top bar controls**, left to right: Thread details (lucide `SquareMenuIcon`, upstream's
-  toggle), Terminal (Ctrl J), Grid layout (grid icon with a chevron; the menu holds Auto arrange
+  toggle), Terminal (lucide `PanelBottomIcon`, upstream's toggle; Ctrl J), Grid layout (grid icon with a chevron; the menu holds Auto arrange
   and the GridSystem presets), Right panel (Ctrl Alt B), then the window controls. There is no
   "Add thread to grid" button in the top bar.
 - **New thread** opens a draft pane in the current grid, split beside the focused pane, with the
