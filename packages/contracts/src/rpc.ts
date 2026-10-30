@@ -217,6 +217,16 @@ import {
   HoustonTaskSourceStreamEvent,
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
+import {
+  HoustonSlackConfigureInput,
+  HoustonSlackConnectInput,
+  HoustonSlackEmptyInput,
+  HoustonSlackError,
+  HoustonSlackInfo,
+  HoustonSlackRequest,
+  HoustonSlackRequestsListInput,
+  HoustonSlackStreamEvent,
+} from "./houston/slack.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -545,6 +555,12 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
+  houstonSlackGet: "houston.slack.get",
+  houstonSlackConnect: "houston.slack.connect",
+  houstonSlackDisconnect: "houston.slack.disconnect",
+  houstonSlackConfigure: "houston.slack.configure",
+  houstonSlackRequestsList: "houston.slack.requests.list",
+  houstonSlackSubscribe: "houston.slack.subscribe",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1820,6 +1836,45 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
+const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
+
+const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConnectRpc = Rpc.make(WS_METHODS.houstonSlackConnect, {
+  payload: HoustonSlackConnectInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackDisconnectRpc = Rpc.make(WS_METHODS.houstonSlackDisconnect, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConfigureRpc = Rpc.make(WS_METHODS.houstonSlackConfigure, {
+  payload: HoustonSlackConfigureInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackRequestsListRpc = Rpc.make(WS_METHODS.houstonSlackRequestsList, {
+  payload: HoustonSlackRequestsListInput,
+  success: Schema.Array(HoustonSlackRequest),
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackSubscribeRpc = Rpc.make(WS_METHODS.houstonSlackSubscribe, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackStreamEvent,
+  error: HoustonSlackRpcError,
+  stream: true,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2429,6 +2484,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
+  WsHoustonSlackGetRpc,
+  WsHoustonSlackConnectRpc,
+  WsHoustonSlackDisconnectRpc,
+  WsHoustonSlackConfigureRpc,
+  WsHoustonSlackRequestsListRpc,
+  WsHoustonSlackSubscribeRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

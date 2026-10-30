@@ -120,6 +120,10 @@ import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import * as SlackConnection from "./houston/slack/Connection.ts";
+import { layerSlack } from "./houston/slack/layer.ts";
+import * as HoustonSlackStore from "./houston/slack/Store.ts";
+import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -567,11 +571,17 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
-  HoustonTaskRuns.layer.pipe(
-    Layer.provide(
-      Layer.merge(
-        RuntimeLayer.layerEventSink,
-        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+  Layer.effectDiscard(HoustonSlackStore.sweep),
+  // Slack accepts requests through the same task runs the server offers.
+  layerSlack(Layer.mergeAll(SlackWebApi.layer, SlackConnection.layerSocketTransport)).pipe(
+    Layer.provideMerge(
+      HoustonTaskRuns.layer.pipe(
+        Layer.provide(
+          Layer.merge(
+            RuntimeLayer.layerEventSink,
+            ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+          ),
+        ),
       ),
     ),
   ),
@@ -593,6 +603,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
   Layer.provideMerge(HoustonTaskSourceStore.layer),
+  Layer.provideMerge(HoustonSlackStore.layer),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),

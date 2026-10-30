@@ -42,6 +42,10 @@
     "./houston/taskSources": {
       "types": "./src/houston/taskSources.ts",
       "import": "./src/houston/taskSources.ts"
+    },
+    "./houston/slack": {
+      "types": "./src/houston/slack.ts",
+      "import": "./src/houston/slack.ts"
     }
   },
   "scripts": {

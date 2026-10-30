@@ -1,6 +1,7 @@
 // Task runs as threads: Start launches a thread in a worktree through upstream's launcher, the
 // run follows that thread's stored events, and planners and reviewers run read-only (AD-048).
 import {
+  ChatAttachment,
   CommandId,
   MessageId,
   OrchestratorMcpFailure,
@@ -69,6 +70,7 @@ import {
   taskBranch,
   taskRunStateOf,
 } from "./rules.ts";
+import { fenceSlackRequest } from "../slack/rules.ts";
 import * as TaskGit from "./TaskGit.ts";
 import { HoustonTaskService, USER_ACTOR } from "./TaskService.ts";
 import {
@@ -197,6 +199,9 @@ const decodeDecisions = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Array(Schema.String)),
 );
 const encodePlan = Schema.encodeSync(Schema.fromJsonString(HoustonTaskPlan));
+const decodeAttachments = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(ChatAttachment)),
+);
 
 const runningAfterUserStatus = (row: TaskRow) => row.status === "todo" || row.status === "backlog";
 
@@ -279,16 +284,45 @@ const make = Effect.gen(function* () {
       WHERE d.task_id = ${taskId}
     `).pipe(Effect.map((rows) => rows[0]));
 
+  /** The Slack request a task was filed from, if any. */
+  const slackRequestOf = (row: TaskRow) =>
+    row.created_by.startsWith("slack:")
+      ? run(sql<{
+          readonly author: string;
+          readonly channel_id: string;
+          readonly attachments_json: string | null;
+        }>`
+          SELECT author, channel_id, attachments_json FROM houston_slack_requests
+          WHERE task_id = ${row.id} ORDER BY id LIMIT 1
+        `).pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])))
+      : Effect.succeedNone;
+
+  /** A Slack request's images, attached to its run's brief message. */
+  const slackImagesOf = (row: TaskRow) =>
+    Effect.map(slackRequestOf(row), (request): ReadonlyArray<ChatAttachment> =>
+      Option.isNone(request) || request.value.attachments_json === null
+        ? []
+        : Option.getOrElse(decodeAttachments(request.value.attachments_json), () => []),
+    );
+
   const briefFor = Effect.fn("HoustonTaskRuns.briefFor")(function* (
     row: TaskRow,
     findings?: ReadonlyArray<HoustonTaskReviewFinding>,
   ) {
     const detail = yield* store.detail(row);
     const initiative = yield* initiativeOf(row.id);
+    // A requester's words from Slack reach the agent only attributed and fenced.
+    const slack = yield* slackRequestOf(row);
     return buildBrief({
       key: keyOf(row),
       title: row.title,
-      description: row.description,
+      description: Option.isNone(slack)
+        ? row.description
+        : fenceSlackRequest({
+            author: slack.value.author,
+            channel: slack.value.channel_id,
+            text: row.description,
+          }),
       acceptance: detail.acceptance.map((item) => item.text),
       links: row.ref_url === null ? [] : [row.ref_url],
       initiative:
@@ -428,6 +462,7 @@ const make = Effect.gen(function* () {
       readonly modelSelection: ModelSelection;
       readonly workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
       readonly message: string | null;
+      readonly attachments?: ReadonlyArray<ChatAttachment>;
     },
   ) {
     const launched = yield* launcher
@@ -446,7 +481,7 @@ const make = Effect.gen(function* () {
               initialMessage: {
                 messageId: briefMessageId(runRow.id),
                 text: input.message,
-                attachments: [],
+                attachments: input.attachments ?? [],
               },
             }),
         createdBy: "user",
@@ -557,6 +592,7 @@ const make = Effect.gen(function* () {
         modelSelection,
         workspaceStrategy: { type: "worktree", baseRef, branch },
         message: send ? brief : null,
+        attachments: yield* slackImagesOf(row),
       });
       return { run: toRun(launched), ...(send ? {} : { brief }) };
     },
