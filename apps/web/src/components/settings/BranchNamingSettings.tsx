@@ -60,6 +60,7 @@ export function WorktreeBranchNamingRow() {
         <Input
           key={`${scopeKey}:${prefixMixed}:${settings.branchNamePrefix}`}
           className="w-full sm:w-[190px]"
+          font="mono"
           aria-label="Worktree branch naming"
           autoCapitalize="none"
           spellCheck={false}

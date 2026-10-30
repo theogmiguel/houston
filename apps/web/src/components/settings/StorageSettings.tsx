@@ -83,6 +83,7 @@ export function WorktreesDirectoryRow() {
             key={`${scopeKey}:${mixed}:${settings.worktreesDirectory}`}
             ref={inputRef}
             className="w-full sm:w-[190px]"
+            font="mono"
             aria-label="Worktree location"
             autoCapitalize="none"
             spellCheck={false}
