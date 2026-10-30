@@ -111,6 +111,7 @@ export function RightPanelSurfaceContent(props: {
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceMutationId}
             visible={visible}
+            onClose={() => props.onCloseSurface(surface)}
           />
         </Suspense>
       );
