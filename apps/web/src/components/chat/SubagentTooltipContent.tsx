@@ -154,7 +154,7 @@ export function SubagentTooltipContent(props: {
           ) : null}
         </span>
       </div>
-      <div className="flex min-w-0 items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-2">
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-sm font-medium capitalize",
