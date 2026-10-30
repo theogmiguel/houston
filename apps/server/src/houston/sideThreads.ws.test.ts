@@ -24,7 +24,6 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { Headers } from "effect/http";
 import { RpcMessage, RpcServer } from "effect/rpc";
-import { TestClock } from "effect/testing";
 
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
@@ -109,7 +108,7 @@ import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 
 import * as HoustonReviewState from "./reviewState.ts";
-import { type Context, makeHarness, runWith } from "./sideThreads.testkit.ts";
+import { makeHarness, runWith } from "./sideThreads.testkit.ts";
 import * as HoustonTaskService from "./tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./tasks/V1Import.ts";
@@ -302,19 +301,6 @@ const threadRecords = (
   return found;
 };
 
-/** The thread's first run once it completes. On a file database, reads run on worker threads that
- * start in real time, so settling the test clock alone can return before the run ends. */
-const untilCompleted = (context: Context, threadId: ThreadId) =>
-  Effect.gen(function* () {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      const run = (yield* context.orchestrator.getThreadProjection(threadId)).runs[0];
-      if (run?.status === "completed") return run;
-      yield* Effect.sleep("10 millis").pipe(TestClock.withLive);
-      yield* context.settle;
-    }
-    return yield* Effect.die(`the first run of ${threadId} did not complete`);
-  });
-
 /** The reads `/ws` makes through ThreadManagement and the event store, served by the runtime. */
 const withRuntimeReads = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -380,7 +366,7 @@ describe("side threads reach the renderer's reads", () => {
               Effect.gen(function* () {
                 const source = yield* context.createThread({ threadId: "source", driver: "codex" });
                 yield* context.turn(source, "message:source:1", "first");
-                sourceRunId = (yield* untilCompleted(context, source)).id;
+                sourceRunId = (yield* context.orchestrator.getThreadProjection(source)).runs[0]!.id;
                 const before = yield* makeWsClient();
                 yield* before.request("shell", ORCHESTRATION_V2_WS_METHODS.subscribeShell, {});
                 assert.lengthOf(threadRecords(yield* Queue.take(before.responses), "aside"), 0);
