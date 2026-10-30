@@ -27,8 +27,7 @@
     "infra/task-cache/src/remoteCache.ts",
     "assets/prod/t3-black-web-apple-touch-180.png",
     "native/libghostty-vt",
-    ".github/triage/PLAYBOOK.md",
-    "docs/user/t3-connect-troubleshooting.md"
+    ".github/triage/PLAYBOOK.md"
   ],
   "excluded": [
     "apps/desktop",
