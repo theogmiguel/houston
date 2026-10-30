@@ -53,7 +53,6 @@ import * as EnvironmentTheme from "../../environmentTheme.ts";
 import * as ExternalLauncher from "../../process/externalLauncher.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
-import * as GuestShareService from "../../guest/GuestShareService.ts";
 import * as HostResources from "../../resourceTelemetry/HostResources.ts";
 import * as Keybindings from "../../keybindings.ts";
 import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
@@ -164,7 +163,6 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
-  Layer.mock(GuestShareService.GuestShareService)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
