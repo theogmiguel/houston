@@ -205,7 +205,7 @@ for fails in (False, True):
     else:
         assert calls == [
             "npx -y pnpm@12.14.0 --filter @t3tools/web build",
-            "npx -y pnpm@12.14.0 --filter t3 build:bundle",
+            "npx -y pnpm@12.14.0 --filter houston build:bundle",
             "cargo build --bin houston-core --bin houston-supervisor --bin tr-helper",
             "cargo build",
             "houston-tauri --channel dev",

@@ -31,7 +31,7 @@ it("launch prompt stays a single argv-safe line naming the prompt file", () => {
 it("context file labels the CLI version as the CLI's, not the user's build", () => {
   const context = buildTriageContext({
     ...contextInput,
-    entry: { kind: "cli", cliVersion: "0.0.42", launchedAs: "npx t3 triage" },
+    entry: { kind: "cli", cliVersion: "0.0.42", launchedAs: "npx houston triage" },
     server: "running (pid 42, http://127.0.0.1:3773, version 0.0.43-nightly.20260923.2173)",
   });
   assert.notInclude(context, "Installed version");

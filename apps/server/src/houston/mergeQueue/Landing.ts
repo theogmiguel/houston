@@ -93,7 +93,7 @@ export class HoustonMergeLanding extends Context.Service<
       unattended: boolean,
     ) => Effect.Effect<void>;
   }
->()("t3/houston/mergeQueue/Landing/HoustonMergeLanding") {}
+>()("houston/houston/mergeQueue/Landing/HoustonMergeLanding") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonMergeQueueStore;

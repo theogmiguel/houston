@@ -27,7 +27,7 @@ import * as PeerMcpClient from "./PeerMcpClient.ts";
 
 /**
  * A peer's `/mcp` holds a wait open for its whole timeout without sending
- * anything, and T3 Connect's edge drops a request idle for about 100 s, so a
+ * anything, and intermediaries may drop a request idle for about 100 s, so a
  * forwarded wait goes out in pieces no longer than this.
  */
 export const FORWARDED_WAIT_CHUNK_MS = 50_000;
@@ -78,7 +78,7 @@ export class PeerForwarding extends Context.Service<
       scope: Scope,
     ) => Effect.Effect<OrchestratorMcpEnvironmentLinksResult, OrchestratorMcpFailure>;
   }
->()("t3/peer/PeerForwarding") {}
+>()("houston/peer/PeerForwarding") {}
 
 /** What an agent hears when it names another machine while the beta is off here. */
 export const linkedEnvironmentsOff = new OrchestratorMcpFailure({

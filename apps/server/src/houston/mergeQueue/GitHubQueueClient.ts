@@ -92,7 +92,7 @@ export class HoustonMergeQueueGitHub extends Context.Service<
     /** Tells upstream's pull request state the queue merged it. */
     readonly reportMerged: (target: ProjectTarget, number: number) => Effect.Effect<void>;
   }
->()("t3/houston/mergeQueue/GitHubQueueClient/HoustonMergeQueueGitHub") {}
+>()("houston/houston/mergeQueue/GitHubQueueClient/HoustonMergeQueueGitHub") {}
 
 const make = Effect.gen(function* () {
   const pullRequests = yield* PullRequestService.PullRequestService;

@@ -169,7 +169,7 @@ export class HoustonMergeVerifier extends Context.Service<
     /** Drops a branch's private ref once its entry leaves the queue. */
     readonly forget: (repo: string, remote: string, branch: string) => Effect.Effect<void>;
   }
->()("t3/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
+>()("houston/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

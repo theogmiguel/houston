@@ -49,7 +49,7 @@ export interface RuntimePolicyV2Shape {
 }
 
 export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePolicyV2Shape>()(
-  "t3/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
+  "houston/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
 ) {}
 
 export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {

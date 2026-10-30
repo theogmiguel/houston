@@ -32,7 +32,7 @@ export interface TurnItemPositionStoreV2Shape {
 export class TurnItemPositionStoreV2 extends Context.Service<
   TurnItemPositionStoreV2,
   TurnItemPositionStoreV2Shape
->()("t3/orchestration-v2/TurnItemPositionStore/TurnItemPositionStoreV2") {}
+>()("houston/orchestration-v2/TurnItemPositionStore/TurnItemPositionStoreV2") {}
 
 export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlClient> = Layer.effect(
   TurnItemPositionStoreV2,

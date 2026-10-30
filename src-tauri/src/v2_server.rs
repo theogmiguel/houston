@@ -102,7 +102,7 @@ pub fn resolve_server_entry(override_entry: Option<PathBuf>) -> Result<PathBuf, 
         return Ok(dev);
     }
     Err(format!(
-        "cannot find the v2 server entry {}: build it with `pnpm --filter t3 build:bundle` \
+        "cannot find the v2 server entry {}: build it with `pnpm --filter houston build:bundle` \
          or set HOUSTON_V2_SERVER_ENTRY. A bundled runtime is not shipped yet.",
         dev.display()
     ))

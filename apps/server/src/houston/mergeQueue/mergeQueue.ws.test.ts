@@ -21,7 +21,6 @@ import type {
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as RelayClient from "@t3tools/shared/relayClient";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -52,7 +51,6 @@ import * as EnvironmentTheme from "../../environmentTheme.ts";
 import * as ExternalLauncher from "../../process/externalLauncher.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
-import * as GuestShareService from "../../guest/GuestShareService.ts";
 import * as HostResources from "../../resourceTelemetry/HostResources.ts";
 import * as Keybindings from "../../keybindings.ts";
 import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
@@ -174,12 +172,10 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
-  Layer.mock(RelayClient.RelayClient)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
-  Layer.mock(GuestShareService.GuestShareService)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),

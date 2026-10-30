@@ -26,7 +26,7 @@ export class HoustonMergeQueueReader extends Context.Service<
     /** How many read loops this reader started; one per server. */
     readonly loopsStarted: Effect.Effect<number>;
   }
->()("t3/houston/mergeQueue/Reader/HoustonMergeQueueReader") {}
+>()("houston/houston/mergeQueue/Reader/HoustonMergeQueueReader") {}
 
 export const failedFacts = (error: string, readAt: string, row: QueueRow): Facts => ({
   readAt,

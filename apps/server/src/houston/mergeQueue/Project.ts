@@ -134,7 +134,7 @@ export class HoustonMergeQueueProject extends Context.Service<
     /** Branches recorded on a Houston task run of the project. */
     readonly taskBranches: (projectId: ProjectId) => Effect.Effect<ReadonlySet<string>>;
   }
->()("t3/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
+>()("houston/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
 
 interface RunRow {
   readonly task_id: number;

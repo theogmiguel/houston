@@ -37,7 +37,7 @@ export class HoustonMergeQueueRunner extends Context.Service<
     /** How many runner loops this runner started; one per server. */
     readonly loopsStarted: Effect.Effect<number>;
   }
->()("t3/houston/mergeQueue/Runner/HoustonMergeQueueRunner") {}
+>()("houston/houston/mergeQueue/Runner/HoustonMergeQueueRunner") {}
 
 export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (options: {
   readonly loops: boolean;
