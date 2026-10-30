@@ -30,6 +30,10 @@
     "./houston/reviewState": {
       "types": "./src/houston/reviewState.ts",
       "import": "./src/houston/reviewState.ts"
+    },
+    "./houston/messageDelivery": {
+      "types": "./src/houston/messageDelivery.ts",
+      "import": "./src/houston/messageDelivery.ts"
     }
   },
   "scripts": {

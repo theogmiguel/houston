@@ -1422,7 +1422,7 @@ export function PullRequestDetailPanel({
             inert={!condensed}
           >
             {detail ? (
-              <div className="col-span-2 min-w-0 px-4 pb-2 pt-1">
+              <div className="col-span-2 min-w-0 px-9 pb-2 pt-1">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
                     <PullRequestActorLabel

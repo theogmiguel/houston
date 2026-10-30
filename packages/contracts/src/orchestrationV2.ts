@@ -42,6 +42,7 @@ import {
   TurnItemId,
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
+import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import {
@@ -1286,6 +1287,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
       taskIds: Schema.Array(NodeId),
     }),
   ),
+  /** Houston: a queued message's delivery while it waits; its user_message item takes it on start. */
+  delivery: Schema.optionalKey(MessageDelivery),
 });
 export type OrchestrationV2ConversationMessage = typeof OrchestrationV2ConversationMessage.Type;
 
@@ -1564,6 +1567,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
+    /** Houston: present only for a queued, steered or interrupting message. */
+    delivery: Schema.optionalKey(MessageDelivery),
     text: Schema.String,
     /** Same as the text of message `messageId`. */
     textOmitted: DedupedBodyMarker,
@@ -2353,6 +2358,7 @@ export const OrchestrationV2ConversationMessageJson = OrchestrationV2Conversatio
     ...fields,
     createdAt: Schema.DateTimeUtcFromString,
     updatedAt: Schema.DateTimeUtcFromString,
+    delivery: Schema.optionalKey(MessageDeliveryJson),
   }),
 );
 export type OrchestrationV2ConversationMessageJson =
@@ -2393,6 +2399,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
+    delivery: Schema.optionalKey(MessageDeliveryJson),
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),

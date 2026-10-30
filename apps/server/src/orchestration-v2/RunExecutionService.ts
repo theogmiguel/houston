@@ -376,6 +376,14 @@ export function routeProviderEvent(
   switch (event.type) {
     case "provider_session.updated":
       return [false, state];
+    // Houston: a report about a message sent into one of this run's turns.
+    case "message.delivery":
+      return [
+        event.providerThreadId === input.providerThreadId ||
+          state.ownedProviderThreadIds.has(event.providerThreadId) ||
+          state.ownedProviderTurns.has(event.providerTurnId),
+        state,
+      ];
     case "app_thread.created": {
       if (event.appThread.id === input.threadId) {
         return [true, state];

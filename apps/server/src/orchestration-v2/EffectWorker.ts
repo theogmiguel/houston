@@ -1,4 +1,4 @@
-import { CommandId } from "@t3tools/contracts";
+import { CommandId, type MessageId, type ProviderTurnId, type RunId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -28,6 +28,8 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
+import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
+import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
@@ -94,6 +96,16 @@ export const layerExecutor: Layer.Layer<
       yield* ThreadTitleRegenerationService.ThreadTitleRegenerationService;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const deliveries = yield* Effect.serviceOption(MessageDeliveryWriter);
+    const withDeliveries = (
+      record: (writer: MessageDeliveryWriter["Service"]) => Effect.Effect<void>,
+    ): Effect.Effect<void> =>
+      Option.match(deliveries, { onNone: () => Effect.void, onSome: record });
+    // Houston: a message's effect that fails for good drops its delivery with the error.
+    const failedDelivery = (cause: unknown) => ({
+      type: "failed" as const,
+      message: userFacingDispatchErrorMessage(cause) ?? "The provider did not take the message.",
+    });
     return OrchestrationEffectExecutorV2.of({
       execute: Effect.fn("OrchestrationEffectExecutorV2.execute")(function (effect, options) {
         const willRetry = options?.willRetry ?? false;
@@ -138,19 +150,39 @@ export const layerExecutor: Layer.Layer<
                     }),
                 ),
               );
-          case "provider-turn.start":
-            return providerTurnStart
-              .start({ threadId: effect.threadId, runId: effect.request.runId, willRetry })
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new OrchestrationEffectExecutionError({
-                      effectId: effect.id,
-                      effectType: effect.request.type,
-                      cause,
-                    }),
+          case "provider-turn.start": {
+            const runId = effect.request.runId;
+            return providerTurnStart.start({ threadId: effect.threadId, runId, willRetry }).pipe(
+              Effect.tap(() =>
+                withDeliveries((writer) =>
+                  writer.settleTurnStart({ threadId: effect.threadId, runId }),
                 ),
-              );
+              ),
+              Effect.tapError((cause) =>
+                willRetry
+                  ? Effect.void
+                  : withDeliveries((writer) =>
+                      DateTime.now.pipe(
+                        Effect.flatMap((at) =>
+                          writer.applyToRun({
+                            threadId: effect.threadId,
+                            runId,
+                            signal: { ...failedDelivery(cause), at },
+                          }),
+                        ),
+                      ),
+                    ),
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationEffectExecutionError({
+                    effectId: effect.id,
+                    effectType: effect.request.type,
+                    cause,
+                  }),
+              ),
+            );
+          }
           case "provider-turn.interrupt": {
             const request = effect.request;
             return providerTurnControl
@@ -226,6 +258,29 @@ export const layerExecutor: Layer.Layer<
                 messageId: effect.request.messageId,
               })
               .pipe(
+                Effect.tap((receipt) =>
+                  effect.request.type !== "provider-turn.steer" || receipt === undefined
+                    ? Effect.void
+                    : withDeliveries((writer) =>
+                        DateTime.now.pipe(
+                          Effect.flatMap((at) =>
+                            writer.apply({
+                              threadId: effect.threadId,
+                              messageId: (effect.request as { readonly messageId: MessageId })
+                                .messageId,
+                              signal: {
+                                type: "delivered",
+                                providerTurnId: (
+                                  effect.request as { readonly providerTurnId: ProviderTurnId }
+                                ).providerTurnId,
+                                adoption: receipt.adoption,
+                                at,
+                              },
+                            }),
+                          ),
+                        ),
+                      ),
+                ),
                 Effect.tap(() =>
                   Effect.gen(function* () {
                     if (effect.request.type !== "provider-turn.steer") return;
@@ -263,6 +318,17 @@ export const layerExecutor: Layer.Layer<
                     const message = projection.messages.find((item) => item.id === messageId);
                     const run = projection.runs.find((item) => item.id === message?.runId);
                     if (message === undefined || run === undefined) return yield* error;
+                    yield* withDeliveries((writer) =>
+                      DateTime.now.pipe(
+                        Effect.flatMap((at) =>
+                          writer.apply({
+                            threadId: effect.threadId,
+                            messageId,
+                            signal: { type: "rerouted", reason: "turnEnded", at },
+                          }),
+                        ),
+                      ),
+                    );
                     // Reuse message ids and receipts so retries cannot duplicate messages or follow-ups.
                     yield* threads
                       .dispatch({
@@ -314,6 +380,22 @@ export const layerExecutor: Layer.Layer<
                       );
                   }),
                 ),
+                Effect.tapError((cause) =>
+                  willRetry || effect.request.type !== "provider-turn.steer"
+                    ? Effect.void
+                    : withDeliveries((writer) =>
+                        DateTime.now.pipe(
+                          Effect.flatMap((at) =>
+                            writer.apply({
+                              threadId: effect.threadId,
+                              messageId: (effect.request as { readonly messageId: MessageId })
+                                .messageId,
+                              signal: { ...failedDelivery(cause), at },
+                            }),
+                          ),
+                        ),
+                      ),
+                ),
                 Effect.mapError(
                   (cause) =>
                     new OrchestrationEffectExecutionError({
@@ -360,6 +442,29 @@ export const layerExecutor: Layer.Layer<
                     runId: effect.request.runId,
                     willRetry,
                   }),
+                ),
+                Effect.tap(() =>
+                  withDeliveries((writer) =>
+                    writer.settleTurnStart({
+                      threadId: effect.threadId,
+                      runId: (effect.request as { readonly runId: RunId }).runId,
+                    }),
+                  ),
+                ),
+                Effect.tapError((cause) =>
+                  willRetry
+                    ? Effect.void
+                    : withDeliveries((writer) =>
+                        DateTime.now.pipe(
+                          Effect.flatMap((at) =>
+                            writer.applyToRun({
+                              threadId: effect.threadId,
+                              runId: (effect.request as { readonly runId: RunId }).runId,
+                              signal: { ...failedDelivery(cause), at },
+                            }),
+                          ),
+                        ),
+                      ),
                 ),
                 Effect.mapError(
                   (cause) =>

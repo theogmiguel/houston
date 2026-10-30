@@ -944,10 +944,11 @@ it.effect("starts a steer that missed the turn on the saved next-turn selection"
 );
 
 // regression: #26695 cancelling a Copilot prompt to steer it kills its background agents
-it.effect("queues a steer until the turn ends when the provider cannot steer it", () =>
+// Houston (AD-040): the steer is refused by name instead of queued; nothing is interrupted.
+it.effect("refuses a steer by name when the provider cannot steer it", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { events, started, steered, interrupted, layer, startFirstTurn } =
+      const { started, steered, interrupted, layer, startFirstTurn } =
         yield* nextTurnSelectionHarness("steering-unsupported", false, false);
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -955,19 +956,22 @@ it.effect("queues a steer until the turn ends when the provider cannot steer it"
         const threadId = yield* startFirstTurn;
         const first = started[0]!;
         const messageId = MessageId.make("message:steer");
-        yield* orchestrator.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make("steer"),
-          threadId,
-          messageId,
-          text: "follow up",
-          attachments: [],
-          modelSelection: runSelection,
-          dispatchMode: { type: "start_immediately" },
-          deliveryIntent: "steer",
-          createdBy: "user",
-          creationSource: "web",
-        });
+        const refused = yield* orchestrator
+          .dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("steer"),
+            threadId,
+            messageId,
+            text: "follow up",
+            attachments: [],
+            modelSelection: runSelection,
+            dispatchMode: { type: "start_immediately" },
+            deliveryIntent: "steer",
+            createdBy: "user",
+            creationSource: "web",
+          })
+          .pipe(Effect.flip);
+        assert.include(JSON.stringify(refused), '"capability":"active_steering"');
         yield* worker.drain();
 
         const held = yield* orchestrator.getThreadProjection(threadId);
@@ -975,45 +979,8 @@ it.effect("queues a steer until the turn ends when the provider cannot steer it"
         assert.deepEqual(interrupted, []);
         assert.equal(started.length, 1);
         assert.equal(held.runs.find((run) => run.id === first.runId)?.status, "running");
-        const queued = held.runs.find((run) => run.userMessageId === messageId);
-        assert.equal(queued?.status, "queued");
-
-        const settled = yield* orchestrator.streamDomainEvents.pipe(
-          Stream.filter(
-            (event) =>
-              event.type === "run.updated" &&
-              event.payload.id === first.runId &&
-              event.payload.status === "waiting",
-          ),
-          Stream.take(1),
-          Stream.runDrain,
-          Effect.forkScoped,
-        );
-        const turn = held.providerTurns[0]!;
-        yield* Queue.offer(events, {
-          type: "provider_turn.updated",
-          driver,
-          providerTurn: { ...turn, status: "completed", completedAt: yield* DateTime.now },
-        });
-        yield* Queue.offer(events, {
-          type: "turn.terminal",
-          driver,
-          providerThreadId: turn.providerThreadId,
-          providerTurnId: turn.id,
-          runOrdinal: first.runOrdinal,
-          status: "completed",
-          failure: null,
-          threadDisposition: "reusable",
-        });
-        yield* Fiber.join(settled);
-        yield* worker.drain();
-        yield* orchestrator.resumeQueuedRuns;
-        yield* worker.drain();
-
-        assert.deepEqual(interrupted, []);
-        assert.equal(started.length, 2);
-        assert.equal(started[1]?.runId, queued?.id);
-        assert.equal(started[1]?.message.text, "follow up");
+        assert.isUndefined(held.runs.find((run) => run.userMessageId === messageId));
+        assert.isUndefined(held.messages.find((message) => message.id === messageId));
       }).pipe(Effect.provide(layer));
     }),
   ),

@@ -163,8 +163,12 @@ export function PullRequestsColumn({
       {...contentArea}
       inert={maximizedAway}
       className={cn(
-        "@container/pr-list flex min-h-0 min-w-0 flex-col overflow-x-hidden bg-background",
-        maximizedAway ? "w-0 flex-none" : "flex-1",
+        "@container/pr-list flex min-h-0 min-w-0 flex-col overflow-x-hidden border-border bg-background",
+        maximizedAway
+          ? "w-0 flex-none"
+          : rightPanelOpen
+            ? "w-[360px] flex-none border-r"
+            : "flex-1",
       )}
     >
       <WorkspacePageHeader

@@ -4,12 +4,13 @@ import {
   isThreadWokeUnseen,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
-import type { GridRecord } from "./gridStore";
+import { workspaceKeyOf, type GridRecord } from "./gridStore";
 import { preorderThreads } from "./tree";
 
 /**
@@ -35,7 +36,9 @@ export function resolveGridThreadState(
     case "idle":
       break;
   }
-  const wokeAt = threadWokeAt(thread, { now });
+  // A reopened thread uses the same Back mark as a woken one: its unsettle
+  // time is the last thing the user has not seen.
+  const wokeAt = threadWokeAt(thread, { now }) ?? thread.unsettledAt;
   return isThreadWokeUnseen({
     wokeAt,
     settled: thread.settledOverride === "settled",
@@ -90,37 +93,40 @@ export function visibleGridThreads(
   );
 }
 
-export interface OnHoldSummary {
-  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
-  readonly nextWakeAt: string | null;
+export interface ShelfThreads {
+  readonly held: EnvironmentThreadShell[];
+  readonly closed: EnvironmentThreadShell[];
 }
 
-export function summarizeOnHold(
-  grids: ReadonlyArray<GridRecord>,
+function wakeTimeMs(thread: EnvironmentThreadShell): number {
+  if (thread.snoozedUntil === null) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(thread.snoozedUntil);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/**
+ * The rail's two shelves cover every open workspace. Held threads wake in
+ * order; closed threads follow the settled order, newest first.
+ */
+export function partitionShelfThreads(
   threads: ReadonlyArray<EnvironmentThreadShell>,
+  workspaceKeys: ReadonlySet<string>,
   now: string,
-): OnHoldSummary {
-  const inAnyGrid = new Set(
-    grids.flatMap((grid) =>
-      (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
-    ),
-  );
-  const held = threads
-    .filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        inAnyGrid.has(thread.id) &&
-        effectiveSnoozed(thread, { now }),
-    )
-    .toSorted((left, right) => {
-      const leftUntil = left.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(left.snoozedUntil);
-      const rightUntil =
-        right.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(right.snoozedUntil);
-      return leftUntil - rightUntil;
-    });
+): ShelfThreads {
+  const held: EnvironmentThreadShell[] = [];
+  const closed: EnvironmentThreadShell[] = [];
+  for (const thread of threads) {
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
+    if (effectiveSnoozed(thread, { now })) {
+      held.push(thread);
+    } else if (thread.settledOverride === "settled") {
+      closed.push(thread);
+    }
+  }
   return {
-    threads: held,
-    nextWakeAt: held.find((thread) => thread.snoozedUntil !== null)?.snoozedUntil ?? null,
+    held: held.toSorted((left, right) => wakeTimeMs(left) - wakeTimeMs(right)),
+    closed: sortSettledThreads(closed),
   };
 }
 
@@ -134,11 +140,47 @@ export interface AttentionCard {
   readonly state: GridThreadState;
 }
 
+/** Attention cards in rail order. Hidden grids stay reachable with Ctrl . */
+export function attentionCardsForGrids(
+  grids: ReadonlyArray<GridRecord>,
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): AttentionCard[] {
+  return grids.flatMap((grid) =>
+    visibleGridThreads(grid, threads, now).map((thread) => ({
+      gridId: grid.id,
+      threadId: thread.id,
+      state: resolveGridThreadState(thread, now),
+    })),
+  );
+}
+
+export interface AttentionNavigationEvent {
+  readonly key: string;
+  readonly code?: string | undefined;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+}
+
 /**
- * `Ctrl J` walks Needs you and Ready cards across every workspace in rail
+ * `Ctrl .` is next and `Ctrl Shift .` is previous. Shift turns the period key
+ * into `>` on most layouts, so both keys count. `Ctrl J` never matches: the
+ * terminal drawer keeps it.
+ */
+export function attentionNavigationDirection(event: AttentionNavigationEvent): 1 | -1 | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const isPeriod = event.code === "Period" || event.key === "." || event.key === ">";
+  if (!isPeriod) return null;
+  return event.shiftKey ? -1 : 1;
+}
+
+/**
+ * `Ctrl .` walks Needs you and Ready cards across every workspace in rail
  * order: workspaces, then grids, then panes left to right, top to bottom.
- * It wraps, and a focused card that needs nothing starts the walk at the
- * following card.
+ * `Ctrl Shift .` walks back. It wraps, and a focused card that needs nothing
+ * starts the walk at the following card. `Ctrl J` stays the terminal drawer.
  */
 export function nextAttentionCard(
   cards: ReadonlyArray<AttentionCard>,
@@ -147,7 +189,8 @@ export function nextAttentionCard(
 ): AttentionCard | null {
   const candidates = cards.filter((card) => resolveGridThreadAttentionState(card.state));
   if (candidates.length === 0) return null;
-  if (current === null) return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
+  if (current === null)
+    return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
   const currentIndex = cards.findIndex(
     (card) => card.gridId === current.gridId && card.threadId === current.threadId,
   );

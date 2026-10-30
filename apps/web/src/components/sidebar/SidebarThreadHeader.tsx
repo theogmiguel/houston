@@ -2,7 +2,6 @@ import { SearchIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -16,11 +15,6 @@ export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   hasProjects: boolean;
   projectScope: ReactNode;
-  onNewThread: (event: ReactMouseEvent) => void;
-  newThreadDisabled: boolean;
-  newThreadShortcutLabel: string | null | undefined;
-  newThreadInProjectShortcutLabel: string | null | undefined;
-  showNewThreadInProjectHint: boolean;
   searchShortcutLabel: string | null | undefined;
   searchInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
@@ -36,11 +30,6 @@ export function SidebarThreadHeader({
   searchFieldRef,
   hasProjects,
   projectScope,
-  onNewThread,
-  newThreadDisabled,
-  newThreadShortcutLabel,
-  newThreadInProjectShortcutLabel,
-  showNewThreadInProjectHint,
   searchShortcutLabel,
   searchInputRef,
   searchQuery,
@@ -54,9 +43,6 @@ export function SidebarThreadHeader({
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
-  const newThreadLabel = newThreadShortcutLabel
-    ? `New thread (${newThreadShortcutLabel})`
-    : "New thread";
 
   return (
     <SidebarRailNav
@@ -101,22 +87,6 @@ export function SidebarThreadHeader({
             <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
           ) : null}
         </div>
-      }
-      onNewThread={onNewThread}
-      newThreadDisabled={newThreadDisabled}
-      newThreadShortcutLabel={newThreadShortcutLabel}
-      newThreadTooltip={
-        showNewThreadInProjectHint ? (
-          <span className="flex flex-col gap-0.5">
-            <span>{newThreadLabel}</span>
-            <span className="text-muted-foreground">
-              New thread in current project: Shift+click
-              {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
-            </span>
-          </span>
-        ) : (
-          newThreadLabel
-        )
       }
       workspaceActions={
         hasProjects ? <span className="-my-1.5 flex items-center">{projectScope}</span> : null

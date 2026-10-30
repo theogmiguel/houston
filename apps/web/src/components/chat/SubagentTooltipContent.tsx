@@ -29,6 +29,7 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 import { deriveProviderInstanceEntries, shouldShowInstanceBadge } from "../../providerInstances";
+import { subagentStatusLabel } from "./TimelineV2EventRow.logic";
 
 export function SubagentTooltipContent(props: {
   title: string;
@@ -37,9 +38,11 @@ export function SubagentTooltipContent(props: {
   origin: OrchestrationV2Subagent["origin"];
   modelSelection?: OrchestrationV2Subagent["modelSelection"];
   provider?: ServerProvider | undefined;
+  providerLabel?: string | undefined;
   providers?: ReadonlyArray<ServerProvider> | undefined;
   driver?: ProviderDriverKind | undefined;
   elapsed?: ReactNode;
+  parentTitle?: string | undefined;
   parentThread?: Pick<OrchestrationV2ThreadShell, "projectId" | "worktreePath"> | undefined;
   childThread?:
     | Pick<OrchestrationV2ThreadShell, "branch" | "worktreePath" | "modelSelection">
@@ -137,6 +140,7 @@ export function SubagentTooltipContent(props: {
         )}
         <span className="inline-flex min-w-0 items-center gap-1 text-foreground/75">
           <span className="min-w-0 truncate">
+            {props.providerLabel ? `${props.providerLabel} · ` : ""}
             {showInstanceBadge ? `${modelLabel} · ${entry.displayName}` : modelLabel}
           </span>
           {effort || speed?.speedIcon ? (
@@ -150,7 +154,7 @@ export function SubagentTooltipContent(props: {
           ) : null}
         </span>
       </div>
-      <div className="flex min-w-0 items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-2">
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-sm font-medium capitalize",
@@ -164,7 +168,7 @@ export function SubagentTooltipContent(props: {
           )}
         >
           <StatusIcon aria-hidden className="size-3 shrink-0" />
-          {props.status.replaceAll("_", " ")}
+          {subagentStatusLabel(props.status)}
         </span>
         {props.elapsed}
       </div>
@@ -183,6 +187,9 @@ export function SubagentTooltipContent(props: {
           <TerminalIcon aria-hidden className="size-3 shrink-0" />
           <MiddleTruncate value={preview} className="flex" showTitle={false} />
         </div>
+      ) : null}
+      {props.parentTitle ? (
+        <div className="truncate text-muted-foreground">Started by {props.parentTitle}</div>
       ) : null}
     </ThreadHoverCard>
   );

@@ -13,7 +13,7 @@ function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
     "flex items-center justify-between gap-2",
     mode === "embedded" ? "px-2" : "px-4",
     shouldUseDragRegion
-      ? "drag-region h-[var(--workspace-topbar-height)] border-b border-border wco:pr-(--workspace-native-controls-inset)"
+      ? "drag-region h-[var(--workspace-topbar-height)] border-b border-border wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)"
       : "flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent",
   );
 }
@@ -35,7 +35,9 @@ export function DiffPanelShell(props: {
       )}
     >
       {shouldUseDragRegion ? (
-        <div className={getDiffPanelHeaderRowClassName(props.mode)}>{props.header}</div>
+        <div data-tauri-drag-region="deep" className={getDiffPanelHeaderRowClassName(props.mode)}>
+          {props.header}
+        </div>
       ) : (
         <div className={getDiffPanelHeaderRowClassName(props.mode)} data-surface-subheader>
           {props.header}
