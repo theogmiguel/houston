@@ -113,7 +113,9 @@
     "apps/server/src/houston/tasks/V1Import.test.ts",
     "apps/server/src/houston/tasks/v1Fixture.ts",
     "apps/server/src/houston/tasks/tasks.testkit.ts",
-    "apps/server/src/houston/tasks/tasks.ws.test.ts"
+    "apps/server/src/houston/tasks/tasks.ws.test.ts",
+    "apps/server/src/houston/tasks/ProjectSweep.ts",
+    "apps/server/src/houston/tasks/projectCli.test.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -261,7 +263,7 @@
     "apps/server/src/vcs/GitVcsDriverCore.ts": "Git 2.56 reworded 'not a git repository' for a broken gitfile",
     "apps/server/src/cli/server.ts": "skips the launcher-loss watch under T3CODE_DESKTOP_DETACHED=1 so the host owns the server lifetime; a hosted server takes its base dir only from the envelope's t3Home and ignores T3CODE_TRACE_FILE, and every OTLP export is cleared",
     "apps/server/src/os-jank.ts": "resolveBaseDir refuses a blank hosted t3Home and a v1 channel directory (exit 64)",
-    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one, and no relay-client tracer in place of the OTLP one; the review layer also provides HoustonReviewState; tasks backlog: provides the task store below the orchestration runtime, and the task service and v1 import",
+    "apps/server/src/server.ts": "provides Houston's no-op AnalyticsService in place of the PostHog one, and no relay-client tracer in place of the OTLP one; the review layer also provides HoustonReviewState; tasks backlog: provides the task store below the orchestration runtime, and the task service and v1 import; sweeps tasks of deleted projects at startup",
     "packages/contracts/src/server.ts": "ServerProvider carries Houston provider readiness",
     "apps/server/src/provider/ProviderRegistry.ts": "published provider lists carry readiness from the Houston readiness ledger",
     "apps/server/src/orchestration-v2/ProviderEventIngestor.ts": "stored terminal turns report to the Houston readiness ledger; send intents: hands stored provider events to the delivery writer",
@@ -312,6 +314,7 @@
     "apps/server/src/cli/service.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/cli/theme.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/cli/thread.ts": "user-visible product name: Houston instead of T3 Code",
+    "apps/server/src/cli/project.ts": "tasks backlog: the offline runtime provides the task store, so removing a project unassigns its tasks",
     "apps/server/src/cli/triage.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/cli/uninstall.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/cli/update.ts": "user-visible product name: Houston instead of T3 Code",
@@ -485,6 +488,6 @@
     "apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts": "send intents: a steer to a provider that cannot steer is refused by name instead of queued (AD-040)",
     "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts": "send intents: a root userMessage item with the steered text reports the steer read",
     "packages/provider-opencode/src/server/adapter.ts": "send intents: an assistant reply whose parentID is the steer reports it read",
-    "apps/server/src/project/ProjectService.ts": "tasks backlog: deleting a project unassigns its tasks and interrupts their open runs"
+    "apps/server/src/project/ProjectService.ts": "tasks backlog: deleting a project unassigns its tasks and interrupts their open runs, when the task store is provided"
   }
 }

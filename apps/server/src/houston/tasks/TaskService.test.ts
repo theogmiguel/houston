@@ -15,6 +15,7 @@ import * as Queue from "effect/Queue";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
+import * as HoustonTaskProjectSweep from "./ProjectSweep.ts";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
 import { createProject, deleteProject, layerTasks } from "./tasks.testkit.ts";
@@ -775,6 +776,51 @@ describe("settings default and refuse out-of-range values", () => {
         settings: { ...withReviewer, reviewMode: "manual" },
       });
       assert.strictEqual(manual.reviewMode, "manual");
+    }).pipe(Effect.provide(layerTasks())),
+  );
+});
+
+describe("startup unassigns tasks of a project that no longer exists", () => {
+  it.effect("a task left on a deleted project is unassigned; live and unassigned tasks stay", () =>
+    Effect.gen(function* () {
+      const tasks = yield* service;
+      const sql = yield* SqlClient.SqlClient;
+      const gone = yield* createProject("sweep-gone");
+      const live = yield* createProject("sweep-live");
+      const orphan = yield* create({ title: "orphan", projectId: gone });
+      const kept = yield* create({ title: "kept", projectId: live });
+      const loose = yield* create({ title: "loose" });
+      yield* sql`
+        INSERT INTO houston_task_runs (
+          task_id, attempt, kind, state, provider, initial_revision, started_at
+        ) VALUES (${orphan.id}, 1, 'implementation', 'running', 'claude', 1, '2026-01-01T00:00:00.000Z')
+      `;
+      // The deletion committed but its hook never ran: the server stopped in between.
+      yield* deleteProject(gone);
+      yield* sql`DELETE FROM houston_task_history WHERE action = 'houston:project-removed'`;
+      yield* sql`
+        UPDATE houston_tasks SET project_id = ${gone}, revision = 1 WHERE id = ${orphan.id}
+      `;
+      yield* sql`UPDATE houston_task_runs SET state = 'running', reason = NULL, ended_at = NULL`;
+      const keptBefore = yield* tasks.get({ id: kept.key });
+      const looseBefore = yield* tasks.get({ id: loose.key });
+
+      yield* HoustonTaskProjectSweep.sweep;
+
+      const swept = yield* tasks.get({ id: orphan.key });
+      assert.isNull(swept.task.projectId);
+      assert.strictEqual(swept.history[0]?.action, "houston:project-removed");
+      assert.deepEqual(changesOf(swept.history[0]?.changes ?? "{}").projectId, {
+        old: gone,
+        new: null,
+      });
+      assert.strictEqual(swept.runs[0]?.state, "interrupted");
+      assert.strictEqual(swept.runs[0]?.reason, "project removed");
+      assert.deepEqual(yield* tasks.get({ id: kept.key }), keptBefore);
+      assert.deepEqual(yield* tasks.get({ id: loose.key }), looseBefore);
+      // A second start finds nothing left to sweep.
+      yield* HoustonTaskProjectSweep.sweep;
+      assert.deepEqual(yield* tasks.get({ id: orphan.key }), swept);
     }).pipe(Effect.provide(layerTasks())),
   );
 });

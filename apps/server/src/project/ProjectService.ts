@@ -163,7 +163,8 @@ export const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  // Houston: absent where no Tasks backlog is provided, such as the project CLI.
+  // Houston: the server and the project CLI provide the Tasks store; upstream's own test
+  // assemblies do not, and a deletion that misses it is swept at the next server start.
   const houstonTasks = yield* Effect.serviceOption(HoustonTaskStore.HoustonTaskStore);
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
