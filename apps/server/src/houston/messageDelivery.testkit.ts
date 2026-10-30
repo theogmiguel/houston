@@ -37,6 +37,8 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 export interface DoubleOptions {
   /** The double's driver and capabilities; Codex's by default. */
   readonly driver?: string;
+  /** The double's provider instance; its driver's name by default. */
+  readonly instanceId?: string;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
   /** What a successful steer returns: a receipt, or nothing as non-Houston adapters do. */
   readonly steerReturns?: "reported" | "void";
@@ -46,6 +48,10 @@ export interface DoubleOptions {
   readonly steerFails?: string;
   /** Fail every turn start for this message id with this provider message. */
   readonly startFails?: { readonly messageId: MessageId; readonly detail: string };
+  /** How many steers `steerFails` fails before one succeeds; every one by default. */
+  readonly steerFailures?: number;
+  /** The steered turn ends while `steerTurn` is still delivering, then the steer returns. */
+  readonly steerEndsTurn?: boolean;
 }
 
 export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
@@ -58,10 +64,11 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
   const steered: ProviderAdapter.ProviderAdapterV2SteerInput[] = [];
   const turns = new Map<ProviderTurnId, OrchestrationV2ProviderTurn>();
   const driver = ProviderDriverKind.make(options.driver ?? "codex");
-  const instanceId = ProviderInstanceId.make(options.driver ?? "codex");
+  const instanceId = ProviderInstanceId.make(options.instanceId ?? options.driver ?? "codex");
   const modelSelection = { instanceId, model: "test-model" };
   const capabilities = options.capabilities ?? CodexProviderCapabilitiesV2;
   const interrupted: ProviderTurnId[] = [];
+  let steerFailures = 0;
   const endTurn = (turn: OrchestrationV2ProviderTurn, status: "completed" | "interrupted") =>
     Effect.gen(function* () {
       const ended = { ...turn, status, completedAt: yield* DateTime.now };
@@ -148,7 +155,11 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
           steerTurn: (turn) =>
             Effect.gen(function* () {
               steered.push(turn);
-              if (options.steerFails !== undefined) {
+              steerFailures += 1;
+              if (
+                options.steerFails !== undefined &&
+                steerFailures <= (options.steerFailures ?? Number.POSITIVE_INFINITY)
+              ) {
                 return yield* new ProviderAdapter.ProviderAdapterSteerRunError({
                   driver,
                   providerThreadId: turn.providerThread.id,
@@ -167,6 +178,14 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
                   state: "adopted",
                   evidence: "codex.userMessage",
                 });
+              }
+              const steeredTurn = turns.get(turn.providerTurnId);
+              if (options.steerEndsTurn === true && steeredTurn !== undefined) {
+                yield* endTurn(steeredTurn, "completed");
+                for (let round = 0; round < 20; round += 1) {
+                  yield* Effect.yieldNow;
+                  yield* TestClock.adjust("1 millis");
+                }
               }
               return options.steerReturns === "void"
                 ? undefined
@@ -208,10 +227,16 @@ export type HarnessError =
 export type Harness = Effect.Success<ReturnType<typeof makeHarness>>;
 
 /** The orchestration runtime around the double; a database path keeps state across a restart. */
-export const harnessLayer = (harness: Harness, options: { readonly databasePath?: string } = {}) =>
+export const harnessLayer = (
+  harness: Harness,
+  options: { readonly databasePath?: string; readonly others?: ReadonlyArray<Harness> } = {},
+) =>
   ProviderReplayHarness.layerWithRegistry(
     { name: `message-delivery-${harness.name}` },
-    ProviderAdapterRegistry.layerSingle(harness.adapter),
+    ProviderAdapterRegistry.layerFromAdapters([
+      harness.adapter,
+      ...(options.others ?? []).map((other) => other.adapter),
+    ]),
     {
       runEffectWorker: false,
       ...(options.databasePath === undefined
@@ -245,6 +270,8 @@ export const runWith = <A, E, R>(
     /** False when a previous run on the same database already created the thread. */
     readonly createThread?: boolean;
     readonly databasePath?: string;
+    /** More provider instances in the registry, for a provider switch. */
+    readonly others?: ReadonlyArray<Harness>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -345,10 +372,10 @@ export const runWith = <A, E, R>(
     return result;
   }).pipe(
     Effect.provide(
-      harnessLayer(
-        harness,
-        options.databasePath === undefined ? {} : { databasePath: options.databasePath },
-      ),
+      harnessLayer(harness, {
+        ...(options.databasePath === undefined ? {} : { databasePath: options.databasePath }),
+        ...(options.others === undefined ? {} : { others: options.others }),
+      }),
     ),
   );
 
