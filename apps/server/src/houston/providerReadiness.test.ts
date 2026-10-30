@@ -255,6 +255,22 @@ describe("snapshot precedence", () => {
     assert.isDefined(readiness);
     assert.deepInclude(readiness, expected);
   });
+
+  it("a ledger entry outranks a failed health check", () => {
+    const readiness = withReadiness(
+      makeProvider("codex", { status: "error", auth: { status: "unknown" } }),
+      {
+        state: "rejected",
+        code: "subscription_sharing_v2_invalid_user",
+        message: "ChatGPT could not validate this connection.",
+        at: "2026-10-29T12:00:00.000Z",
+      },
+    ).readiness;
+    assert.deepInclude(readiness, {
+      state: "rejected",
+      code: "subscription_sharing_v2_invalid_user",
+    });
+  });
 });
 
 describe("every non-ready state names its cause", () => {
@@ -566,6 +582,14 @@ describe("request-level failures leave readiness unchanged", () => {
       }),
     ],
     ["acpRegistry", ACP_INTERNAL],
+    [
+      "opencode",
+      failure({
+        class: "provider_error",
+        message: "Provider rejected the request",
+        code: "provider",
+      }),
+    ],
   ];
 
   it.each(REQUEST_LEVEL)(

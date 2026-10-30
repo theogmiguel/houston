@@ -680,6 +680,26 @@ describe("refresh clears turn-derived states except a named reset", () => {
       }),
     ),
   );
+  it.effect("refreshing one driver clears only that driver's default instance", () =>
+    withWs([CLAUDE, CODEX], () =>
+      Effect.gen(function* () {
+        const ledger = yield* ReadinessLedger;
+        const registry = yield* ProviderRegistry.ProviderRegistry;
+        for (const provider of [CLAUDE, CODEX]) {
+          yield* ledger.report({
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            status: "failed",
+            failure: provider === CODEX ? CODEX_SIGNED_OUT : CLAUDE_FORBIDDEN,
+            occurredAt: T,
+          });
+        }
+        const refreshed = yield* registry.refresh(CLAUDE.driver);
+        assert.deepEqual(readinessIn(refreshed, CLAUDE), { state: "ready" });
+        assert.equal(readinessIn(refreshed, CODEX)?.state, "signedOut");
+      }),
+    ),
+  );
 });
 
 describe("an unstored failure leaves readiness unchanged", () => {
