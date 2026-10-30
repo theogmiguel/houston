@@ -207,7 +207,7 @@ export function AssistantCitationChip({
               ref={commentPopupRef}
               aria-label="Edit citation comment"
               width="md"
-              padding="compact"
+              padding="none"
               onPointerDown={(event) => event.stopPropagation()}
             >
               <AssistantCitationCommentEditor

@@ -30,6 +30,8 @@ const buttonVariants = cva(
         micro:
           "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
         sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        selection:
+          "h-[26px] gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":
           "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
         xl: "h-10 px-4 text-base [&_svg:not([class*='size-'])]:size-5",
@@ -60,6 +62,8 @@ const buttonVariants = cva(
         overlay: "border-transparent bg-black/70 text-white/65 [:hover,[data-pressed]]:bg-black/90",
         secondary:
           "border-border bg-card text-foreground [:active,[data-pressed]]:bg-secondary [:hover,[data-pressed]]:border-[var(--border-hover)] [:hover,[data-pressed]]:bg-[var(--surface-raised)]",
+        raised:
+          "border-transparent bg-[var(--surface-raised)] text-foreground shadow-[var(--shadow-2)] [:hover,[data-pressed]]:bg-[var(--surface-raised)]",
         "warning-outline":
           "border-warning/32 bg-warning-surface text-warning-foreground shadow-xs/5 [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
       },

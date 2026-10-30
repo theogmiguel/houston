@@ -700,14 +700,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @layer base {
   ::highlight(t3-assistant-citation) {
+    color: var(--foreground);
     background-color: color-mix(
       in oklab,
-      var(--primary) calc(var(--assistant-citation-highlight-opacity) * 100%),
+      var(--accent-muted) calc(var(--assistant-citation-highlight-opacity) * 100%),
       transparent
     );
   }
   ::highlight(t3-assistant-citation-comment) {
-    background-color: color-mix(in oklab, var(--primary) 45%, transparent);
+    color: var(--foreground);
+    background-color: var(--accent-muted);
   }
   :root {
     /* Keep the original Houston artwork palettes as the defaults. Built-in
