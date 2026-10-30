@@ -8,6 +8,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { isTauriHost } from "../lib/desktopWindow";
 import { useGrid, useGridStore } from "../grid/gridStore";
 import { containsThread, insertBeside, preorderThreads, threadLeaf } from "../grid/tree";
 import { useQuietThreadShells } from "../state/entities";
@@ -110,8 +111,12 @@ function GridRoute() {
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {isElectron ? (
-        <WorkspacePageHeader electron reserveNativeControls className="border-b border-border">
+      {isElectron || isTauriHost() ? (
+        <WorkspacePageHeader
+          electron={isElectron}
+          reserveNativeControls
+          className="border-b border-border"
+        >
           <span className="truncate text-xs font-medium text-muted-foreground">{grid.name}</span>
         </WorkspacePageHeader>
       ) : null}

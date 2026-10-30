@@ -3219,7 +3219,7 @@ export default function ChatView(props: ChatViewProps) {
                       !inlineRightPanelOwnsTitleBar &&
                       "wco:pr-(--workspace-native-controls-inset)",
                   )
-                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
+                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) tauri:pr-(--workspace-native-controls-inset)",
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
