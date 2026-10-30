@@ -497,7 +497,7 @@ export function showContextMenuFallback<T extends string>(
             button.style.background = isHighlighted
               ? isLeafDestructive
                 ? "color-mix(in srgb, var(--destructive) 10%, transparent)"
-                : "var(--accent)"
+                : "var(--hover)"
               : "transparent";
             button.style.color = isHighlighted
               ? isLeafDestructive

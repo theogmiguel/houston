@@ -12,7 +12,7 @@ cd "$repo_root"
 conf="src-tauri/tauri.windows.conf.json"
 stage="src-tauri/wsl"
 names=(houston-core tr-helper houston-supervisor)
-expected_resources='"resources":["resources/third-party-licenses.json","wsl/"]'
+expected_resources='"resources":["resources/third-party-licenses.json","wsl/","v2-server/"]'
 fail=0
 
 if [ ! -f "$conf" ]; then
@@ -23,7 +23,7 @@ if tr -d ' \t\r\n' < "$conf" | grep -qF "$expected_resources"; then
   echo "ok: $conf bundles wsl/ (wsl/houston-core, wsl/tr-helper, wsl/houston-supervisor)"
 else
   echo "FAIL: $conf must set bundle.resources to" >&2
-  echo "      [\"resources/third-party-licenses.json\", \"wsl/\"]" >&2
+  echo "      [\"resources/third-party-licenses.json\", \"wsl/\", \"v2-server/\"]" >&2
   echo "      (a platform file replaces the base list, so the licence file is listed again)." >&2
   fail=1
 fi

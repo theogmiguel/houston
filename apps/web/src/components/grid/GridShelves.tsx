@@ -56,6 +56,7 @@ export function GridShelves({
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
       <div>
         <SidebarShelfHeader
+          variant="rail"
           shelf="snoozed"
           label="On hold"
           count={held.length}
@@ -78,6 +79,7 @@ export function GridShelves({
         onDrop={onClosedDrop}
       >
         <SidebarShelfHeader
+          variant="rail"
           shelf="settled"
           label="Closed"
           count={closed.length}

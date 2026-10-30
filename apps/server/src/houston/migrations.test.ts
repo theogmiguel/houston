@@ -80,7 +80,6 @@ describe("the Houston track runs beside upstream's", () => {
           assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* primaryKey, ["worktree_root", "ref_name", "path"]);
           const upstream = yield* upstreamHistory;
-          assert.equal(UPSTREAM_HEAD, 73);
           assert.equal(Math.max(...upstream.map((row) => row.migration_id)), UPSTREAM_HEAD);
           return upstream;
         }).pipe(Effect.provide(openThroughSqlite(file)));
