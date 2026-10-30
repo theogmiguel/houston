@@ -119,13 +119,17 @@ describe("import status names each state", () => {
     ),
   );
 
-  it.effect("unavailable when the base dir is not a hosted v2 directory", () =>
+  it.effect("unavailable when the server is not hosted, even in a base dir named v2", () =>
     withChannel((dirs) =>
       Effect.gen(function* () {
-        // A v1 database sits beside the base dir, but the base dir is not named v2.
+        // A v1 database sits beside the base dir, but no host launched this server.
         writeV1Database(dirs.source, simpleFixture());
-        assert.deepEqual(yield* (yield* importer).status, { state: "unavailable" });
-      }).pipe(Effect.provide(layerTasks({ baseDir: NodePath.join(dirs.channel, "elsewhere") }))),
+        const imports = yield* importer;
+        assert.deepEqual(yield* imports.status, { state: "unavailable" });
+        const refused = failureOf(yield* Effect.exit(imports.run));
+        assert.strictEqual(refused.kind, "unsupported");
+        assert.include(refused.message, "not hosted");
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir, hosted: false }))),
     ),
   );
 
@@ -540,6 +544,51 @@ describe("v1 settings follow matched workspaces", () => {
   );
 });
 
+describe("unmapped v1 agents are reported", () => {
+  it.effect("each agent v2 cannot run is named with the choice made instead", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        const SECOND = WINDOWS ? "C:\\work\\second" : "/work/second";
+        writeV1Database(dirs.source, {
+          ...simpleFixture(V1_ROOT),
+          settings: {
+            [`tasks_start_agent:${V1_ROOT}`]: "antigravity",
+            [`tasks_default_reviewer:${V1_ROOT}`]: "zcode",
+            [`tasks_review_mode:${V1_ROOT}`]: "every_push",
+            [`tasks_start_agent:${SECOND}`]: "codex",
+            [`tasks_default_reviewer:${SECOND}`]: "cursor",
+          },
+        });
+        const project = yield* createProject("shop", ROOT);
+        const second = yield* createProject("second", SECOND);
+        const tasks = yield* service;
+        const result = yield* (yield* importer).run;
+        const shop = yield* tasks.getSettings({ projectId: project });
+        assert.deepEqual(shop.startModel, {
+          instanceId: "claudeAgent",
+          model: "claude-opus-5-5",
+        } as never);
+        assert.isNull(shop.reviewer);
+        // A review mode without a reviewer is turned off, never kept reviewer-less.
+        assert.strictEqual(shop.reviewMode, "manual");
+        const other = yield* tasks.getSettings({ projectId: second });
+        assert.deepEqual(other.startModel, { instanceId: "codex", model: "gpt-6-astra" } as never);
+        assert.isNull(other.reviewer);
+        assert.strictEqual(other.reviewMode, "manual");
+        assert.sameMembers(
+          [...result.notes],
+          [
+            `${project}: start agent antigravity has no v2 driver; chose claudeAgent claude-opus-5-5`,
+            `${project}: reviewer zcode has no v2 driver; chose no reviewer`,
+            `${project}: review mode every_push needs a reviewer; chose manual`,
+            `${second}: reviewer cursor has no v2 driver; chose no reviewer`,
+          ],
+        );
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+});
+
 const hashes = (source: string) =>
   Object.fromEntries(
     ["", "-wal", "-shm"].map((suffix) => {
@@ -586,6 +635,24 @@ describe("the v1 database is never written", () => {
         }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
       ),
   );
+
+  it.effect("a cleanly closed WAL database gets no -wal or -shm beside it", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        // v1 has stopped: its WAL database was checkpointed and closed, leaving only the file.
+        writeV1Database(dirs.source, simpleFixture(), { wal: true });
+        const listing = () => NodeFS.readdirSync(dirs.channel).toSorted();
+        const before = { files: listing(), hashes: hashes(dirs.source) };
+        assert.deepEqual(before.files, ["houston.db", "v2"]);
+        const imports = yield* importer;
+        assert.strictEqual((yield* imports.status).state, "available");
+        const result = yield* imports.run;
+        assert.strictEqual(result.imported.tasks, 2);
+        yield* imports.status;
+        assert.deepEqual({ files: listing(), hashes: hashes(dirs.source) }, before);
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
 });
 
 describe("an import into a non-empty backlog is refused", () => {
@@ -610,6 +677,117 @@ describe("an import into a non-empty backlog is refused", () => {
         assert.strictEqual(again.kind, "invalid");
         if (status.state === "imported") assert.include(again.message, status.at);
         else assert.fail(`expected imported, got ${status.state}`);
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+
+  it.effect("a v2 setting wins over v1's and is reported; status and run agree", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        writeV1Database(dirs.source, {
+          ...simpleFixture(V1_ROOT),
+          settings: {
+            [`tasks_access:${V1_ROOT}`]: "read",
+            [`tasks_rework_rounds:${V1_ROOT}`]: "3",
+          },
+        });
+        const project = yield* createProject("shop", ROOT);
+        const tasks = yield* service;
+        const imports = yield* importer;
+        const chosen = yield* tasks.setSettings({
+          projectId: project,
+          settings: {
+            access: "off",
+            startModel: { instanceId: "codex", model: "gpt-6-astra" },
+            delivery: "prefill",
+            reviewer: null,
+            focus: "security",
+            reworkRounds: 1,
+          } as never,
+        });
+        assert.strictEqual((yield* imports.status).state, "available");
+        const result = yield* imports.run;
+        assert.strictEqual(result.imported.tasks, 2);
+        assert.strictEqual(result.imported.settings, 0);
+        assert.deepEqual(yield* tasks.getSettings({ projectId: project }), chosen);
+        assert.include(
+          result.notes,
+          `${project}: settings set in v2 kept; Houston 1's tasks_access, tasks_rework_rounds dropped`,
+        );
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+
+  it.effect("a v1 initiative whose id is taken gets a fresh id; its tasks follow it", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        writeV1Database(dirs.source, {
+          nextNumber: 3,
+          tasks: [
+            { id: 1, workspace: V1_ROOT, number: 1, title: "d", status: "todo", createdAtMs: T0 },
+            { id: 2, workspace: V1_ROOT, number: 2, title: "e", status: "todo", createdAtMs: T0 },
+          ],
+          projects: [
+            { id: 1, workspace: V1_ROOT, name: "v1 first", updatedAtMs: T0 },
+            { id: 2, workspace: V1_ROOT, name: "v1 second", updatedAtMs: T0 },
+          ],
+          domains: [
+            { taskId: 1, kind: "delivery", projectId: 1 },
+            { taskId: 2, kind: "delivery", projectId: 2 },
+          ],
+        });
+        const project = yield* createProject("shop", ROOT);
+        const tasks = yield* service;
+        const imports = yield* importer;
+        const v2 = yield* tasks.saveInitiative({ projectId: project, name: "made in v2" });
+        assert.strictEqual(v2.id, 1);
+        assert.strictEqual((yield* imports.status).state, "available");
+        const result = yield* imports.run;
+        assert.strictEqual(result.imported.initiatives, 2);
+        const listed = yield* tasks.listInitiatives({ projectId: project });
+        const byName = new Map(listed.map((initiative) => [initiative.name, initiative.id]));
+        assert.strictEqual(byName.get("made in v2"), 1);
+        assert.strictEqual(byName.get("v1 second"), 2);
+        const remapped = byName.get("v1 first");
+        assert.isDefined(remapped);
+        assert.notInclude([1, 2], remapped);
+        assert.strictEqual((yield* tasks.get({ id: "HOU-1" })).domain.initiativeId, remapped);
+        assert.strictEqual((yield* tasks.get({ id: "HOU-2" })).domain.initiativeId, 2);
+        assert.include(
+          result.notes,
+          `initiative 1 "v1 first" was taken in v2; imported as ${remapped}`,
+        );
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+
+  it.effect("a row that fails to copy is named by its table and row", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        writeV1Database(dirs.source, {
+          ...simpleFixture(),
+          comments: [
+            { taskId: 1, body: "fine", author: "user", createdAtMs: T0 },
+            { taskId: 2, body: "the disk fills here", author: "user", createdAtMs: T0 },
+          ],
+        });
+        // The disk fills while the second comment is written.
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql.unsafe(`
+          CREATE TRIGGER houston_test_disk_full BEFORE INSERT ON houston_task_comments
+          WHEN NEW.body = 'the disk fills here'
+          BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END
+        `);
+        const error = failureOf(yield* Effect.exit((yield* importer).run));
+        assert.strictEqual(error.kind, "unsupported");
+        assert.include(error.message, "houston_task_comments");
+        assert.include(error.message, "row 2");
+        assert.include(error.message, "database or disk is full");
+        const counts = yield* houstonTableCounts;
+        assert.isTrue(
+          Object.values(counts).every((count) => count === 0),
+          JSON.stringify(counts),
+        );
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
     ),
   );

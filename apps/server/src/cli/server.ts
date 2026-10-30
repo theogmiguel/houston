@@ -7,7 +7,7 @@ import { Command, GlobalFlag } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
-import { withHostedBaseDir } from "../houston/baseDir.ts";
+import { HostedLaunch, isHostedLaunch, withHostedBaseDir } from "../houston/baseDir.ts";
 import { withoutTelemetry } from "../houston/noTelemetry.ts";
 import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
@@ -36,7 +36,10 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
       resolveServerConfig(hostedFlags, logLevel, options),
     ),
   );
-  const run = runServer.pipe(Effect.provideService(ServerConfig.ServerConfig, config));
+  const run = runServer.pipe(
+    Effect.provideService(ServerConfig.ServerConfig, config),
+    Effect.provideService(HostedLaunch, yield* isHostedLaunch(flags)),
+  );
   if (config.mode !== "desktop" || config.desktopBootstrapToken === undefined) return yield* run;
   yield* Effect.sync(() => {
     process.stdout.on("error", ignoreClosedLauncherPipe);

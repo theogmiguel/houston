@@ -25,7 +25,7 @@ export class HoustonLaunchRefusedError extends Schema.TaggedError<HoustonLaunchR
   }
 }
 
-/** True while a server launched with a bootstrap envelope resolves its config. */
+/** True for a server launched with a bootstrap envelope: while it resolves its config, and while it runs. */
 export const HostedLaunch = Context.Reference<boolean>("houston/HostedLaunch", {
   defaultValue: () => false,
 });
@@ -41,6 +41,14 @@ const withoutVariable = (provider: ConfigProvider.ConfigProvider, name: string) 
       : provider.load(path),
   );
 
+/** A host launches the server with a bootstrap envelope, by flag or environment. */
+export const isHostedLaunch = Effect.fn("houston.isHostedLaunch")(function* (flags: {
+  readonly bootstrapFd: Option.Option<number>;
+}) {
+  const envBootstrapFd = yield* Config.Int("T3CODE_BOOTSTRAP_FD").pipe(Config.option);
+  return Option.isSome(flags.bootstrapFd) || Option.isSome(envBootstrapFd);
+});
+
 /** Hosted, the envelope's `t3Home` is the only base dir; its overrides and `T3CODE_TRACE_FILE` are ignored. */
 export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function* <
   Flags extends {
@@ -51,10 +59,7 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
   E,
   R,
 >(flags: Flags, resolve: (flags: Flags) => Effect.Effect<A, E, R>) {
-  const envBootstrapFd = yield* Config.Int("T3CODE_BOOTSTRAP_FD").pipe(Config.option);
-  if (Option.isNone(flags.bootstrapFd) && Option.isNone(envBootstrapFd)) {
-    return yield* resolve(flags);
-  }
+  if (!(yield* isHostedLaunch(flags))) return yield* resolve(flags);
   const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
   const ignored = [
     ...(nonBlank(flags.baseDir) ? ["--base-dir"] : []),

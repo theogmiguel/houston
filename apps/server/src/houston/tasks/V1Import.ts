@@ -1,5 +1,6 @@
-// The one-time import of a Houston 1 backlog. v1's database beside a hosted `<channel dir>/v2`
-// base dir is opened read-only and read in one transaction; the copy lands in one transaction.
+// The one-time import of a Houston 1 backlog. v1's database beside a hosted server's base dir is
+// copied to a temporary directory and read there, so nothing is created beside it; the copy
+// lands in one transaction and merges with settings and initiatives already saved in v2.
 import * as NodeSqlite from "node:sqlite";
 
 import {
@@ -26,17 +27,20 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import type * as SqlError from "effect/sql/SqlError";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import { HostedLaunch } from "../baseDir.ts";
 import { isOpenRun, priorityFromValue, priorityValue, refuse, v1PathMatches } from "./rules.ts";
-import { encodeSelection } from "./TaskService.ts";
+import { DEFAULT_START_MODEL, encodeSelection } from "./TaskService.ts";
 import { HoustonTaskStore, nowIso } from "./TaskStore.ts";
 
 const OPERATION = "houston.tasks.importV1.run";
 const V1_DATABASE = "houston.db";
-const HOSTED_BASE_DIR = "v2";
+// SQLite keeps a WAL database's uncheckpointed pages and its index beside the file.
+const V1_COMPANIONS = ["-wal", "-shm"] as const;
 const IMPORTED_REASON = "imported from Houston 1";
 
 const RUN_STATES = new Set([
@@ -190,7 +194,7 @@ const convertPlan = (raw: SqlValue | undefined) =>
     ),
   );
 
-// Houston 1 agent names that a v2 driver runs; other agents keep the default.
+// Houston 1 agent names that a v2 driver runs; the import reports every other one.
 const V1_AGENT_DRIVERS: Readonly<Record<string, string>> = {
   claude: "claudeAgent",
   codex: "codex",
@@ -216,6 +220,13 @@ export class HoustonTaskV1Import extends Context.Service<
   }
 >()("t3/houston/tasks/V1Import/HoustonTaskV1Import") {}
 
+/** SQLite's own message: the innermost cause, which each wrapping error replaces with its own. */
+const causeMessage = (error: Error) => {
+  let inner = error;
+  while (inner.cause instanceof Error) inner = inner.cause;
+  return inner.message;
+};
+
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
@@ -224,14 +235,30 @@ const make = Effect.gen(function* () {
   const store = yield* HoustonTaskStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const platform = yield* HostProcess.Platform;
+  const hosted = yield* HostedLaunch;
 
-  const hosted = path.basename(config.baseDir) === HOSTED_BASE_DIR;
   const sourcePath = path.join(path.dirname(config.baseDir), V1_DATABASE);
   const source = Effect.gen(function* () {
     if (!hosted) return null;
     const exists = yield* fs.exists(sourcePath).pipe(Effect.orElseSucceed(() => false));
     return exists ? sourcePath : null;
   });
+
+  /** Runs `read` on a temporary copy of v1's file and its companions, taken once. */
+  const fromCopy = <A>(file: string, read: (copy: string) => A) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-v1-copy-" });
+        const copy = path.join(dir, V1_DATABASE);
+        yield* fs.copyFile(file, copy);
+        for (const suffix of V1_COMPANIONS) {
+          if (yield* fs.exists(`${file}${suffix}`)) {
+            yield* fs.copyFile(`${file}${suffix}`, `${copy}${suffix}`);
+          }
+        }
+        return yield* Effect.try(() => read(copy));
+      }),
+    );
 
   const importRow = sql<{ readonly imported_at: string; readonly counts_json: string }>`
     SELECT imported_at, counts_json FROM houston_task_import WHERE id = 1
@@ -240,6 +267,7 @@ const make = Effect.gen(function* () {
     Effect.orDie,
   );
 
+  // Settings and initiatives need no task, so they may exist already; they merge.
   const backlogEmpty = Effect.gen(function* () {
     const count = yield* store.taskCount;
     const [counter] = yield* sql<{ readonly next_number: number }>`
@@ -258,210 +286,296 @@ const make = Effect.gen(function* () {
       };
     }
     const found = yield* source;
-    const taskCount = found === null ? null : probeV1(found);
+    const taskCount =
+      found === null
+        ? null
+        : yield* fromCopy(found, probeV1).pipe(Effect.orElseSucceed(() => null));
     if (found === null || taskCount === null) return { state: "unavailable" as const };
     const v2 = yield* backlogEmpty;
     if (!v2.empty) return { state: "blocked" as const, taskCount: v2.count };
     return { state: "available" as const, source: found, taskCount };
   });
 
-  const copy = Effect.fn("HoustonTaskV1Import.copy")(
-    function* (file: string, v1: V1Snapshot) {
-      const now = yield* nowIso;
-      const roots = (yield* projects.list().pipe(Effect.orDie)).filter(
-        (project) => project.deletedAt === null,
-      );
-      const projectOf = (workspace: SqlValue | undefined) =>
-        typeof workspace !== "string"
-          ? null
-          : (roots.find((project) => v1PathMatches(workspace, project.workspaceRoot, platform))
-              ?.projectId ?? null);
-      const unsupported = (message: string) => refuse("unsupported", OPERATION, message);
-
-      const ids: Array<number> = [];
-      let highest = 0;
-      for (const task of v1.tasks) {
-        const key = `HOU-${task.number}`;
-        if (typeof task.status !== "string" || !isStatus(task.status)) {
-          return yield* unsupported(
-            `${key} has status ${String(task.status)}, which this version does not know`,
-          );
-        }
-        const priority = priorityFromValue(Number(task.priority));
-        if (priority === undefined) {
-          return yield* unsupported(`${key} has priority ${task.priority} (expected 0 to 4)`);
-        }
-        highest = Math.max(highest, Number(task.number));
-        ids.push(Number(task.id));
-        yield* sql`
-          INSERT INTO houston_tasks (
-            id, number, project_id, title, description, status, priority, parent_id, ref_url,
-            revision, created_by, created_at, updated_at, archived_at
-          ) VALUES (
-            ${task.id}, ${task.number}, ${projectOf(task.workspace)}, ${task.title},
-            ${task.description}, ${task.status}, ${priorityValue(priority)}, ${task.parent_id},
-            ${task.ref_url}, ${task.revision}, ${task.created_by}, ${iso(task.created_at)},
-            ${iso(task.updated_at)}, ${iso(task.archived_at)}
-          )
-        `;
-      }
-      for (const item of v1.acceptance) {
-        yield* sql`
-          INSERT INTO houston_task_acceptance (task_id, position, text, checked_at, checked_by)
-          VALUES (${item.task_id}, ${item.position}, ${item.text}, ${iso(item.checked_at)},
-            ${item.checked_by})
-        `;
-      }
-      for (const comment of v1.comments) {
-        yield* sql`
-          INSERT INTO houston_task_comments (task_id, body, author, created_at)
-          VALUES (${comment.task_id}, ${comment.body}, ${comment.author},
-            ${iso(comment.created_at)})
-        `;
-      }
-      for (const entry of v1.history) {
-        yield* sql`
-          INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
-          VALUES (${entry.task_id}, ${entry.actor}, ${entry.action}, ${entry.changes},
-            ${iso(entry.created_at)})
-        `;
-      }
-      for (const block of v1.blocks) {
-        yield* sql`
-          INSERT INTO houston_task_blocks (task_id, blocked_by_id)
-          VALUES (${block.task_id}, ${block.blocked_by_id})
-        `;
-      }
-      for (const run of v1.runs) {
-        const state = String(run.state);
-        if (!RUN_STATES.has(state) || (run.kind !== "implementation" && run.kind !== "review")) {
-          return yield* unsupported(`run ${run.id} has kind ${run.kind} and state ${state}`);
-        }
-        // A v1 run is a pane, which this version cannot resume.
-        const open = isOpenRun(state as Parameters<typeof isOpenRun>[0]);
-        yield* sql`
-          INSERT INTO houston_task_runs (
-            id, task_id, attempt, kind, state, provider, reviewer, worktree_path, branch,
-            base_commit, initial_revision, summary, reason, started_at, ended_at, pr_url,
-            review_head_sha, review_focus, review_verdict, review_findings, review_skipped_reason
-          ) VALUES (
-            ${run.id}, ${run.task_id}, ${run.attempt}, ${run.kind},
-            ${open ? "interrupted" : state}, ${run.provider}, ${run.reviewer},
-            ${run.worktree_path}, ${run.branch}, ${run.base_commit}, ${run.initial_revision},
-            ${run.summary}, ${open ? IMPORTED_REASON : run.reason}, ${iso(run.started_at)},
-            ${open ? (iso(run.ended_at) ?? now) : iso(run.ended_at)}, ${run.pr_url},
-            ${run.review_head_sha}, ${run.review_focus}, ${run.review_verdict},
-            ${run.review_findings}, ${run.review_skipped_reason}
-          )
-        `;
-      }
-      for (const project of v1.projects) {
-        yield* sql`
-          INSERT INTO houston_task_initiatives (
-            id, project_id, name, external_url, project_external_id, tracker_description,
-            local_decisions, revision, updated_at, archived_at
-          ) VALUES (
-            ${project.id}, ${projectOf(project.workspace)}, ${project.name},
-            ${project.external_url}, ${project.project_external_id},
-            ${project.tracker_description}, ${project.local_decisions}, ${project.revision},
-            ${iso(project.updated_at)}, ${iso(project.archived_at)}
-          )
-        `;
-      }
-      for (const domain of v1.domains) {
-        yield* sql`
-          INSERT INTO houston_task_domain (
-            task_id, kind, initiative_id, user_status_override, plan_json, plan_revision,
-            approved_task_revision, plan_context_bound, plan_initiative_id,
-            plan_initiative_revision
-          ) VALUES (
-            ${domain.task_id}, ${domain.kind}, ${domain.project_id},
-            ${domain.user_status_override}, ${convertPlan(domain.plan_json)},
-            ${domain.plan_revision}, ${domain.approved_task_revision},
-            ${domain.plan_context_bound ?? 0}, ${domain.plan_project_id ?? null},
-            ${domain.plan_project_revision ?? null}
-          )
-        `;
-      }
-
-      const byProject = new Map<string, Partial<Record<SettingPrefix, string>>>();
-      for (const setting of v1.settings) {
-        const key = String(setting.key);
-        const prefix = SETTING_PREFIXES.find((candidate) => key.startsWith(candidate));
-        if (prefix === undefined) continue;
-        const projectId = projectOf(key.slice(prefix.length));
-        if (projectId === null) continue;
-        byProject.set(projectId, { ...byProject.get(projectId), [prefix]: String(setting.value) });
-      }
-      for (const [projectId, values] of byProject) {
-        const rounds = Number(values["tasks_rework_rounds:"]);
-        const reviewer = values["tasks_default_reviewer:"];
-        const startModel =
-          v1Agent(values["tasks_start_agent:"]) ?? (v1Agent("claude") as ModelSelection);
-        const reviewerModel = reviewer === "none" ? undefined : v1Agent(reviewer);
-        yield* sql`
-          INSERT INTO houston_task_settings (
-            project_id, access, start_model, delivery, reviewer, review_mode, focus,
-            rework_rounds, updated_at
-          ) VALUES (
-            ${projectId},
-            ${pick(values["tasks_access:"], ["off", "read", "write"]) ?? "write"},
-            ${encodeSelection(startModel)},
-            ${pick(values["tasks_prompt_delivery:"], ["send", "prefill"]) ?? "send"},
-            ${reviewerModel === undefined ? null : encodeSelection(reviewerModel)},
-            ${pick(values["tasks_review_mode:"], ["manual", "handback", "every_push"]) ?? null},
-            ${pick(values["tasks_review_focus:"], ["bugs", "security", "performance", "full"]) ?? "bugs"},
-            ${
-              Number.isInteger(rounds) && rounds >= 0 && rounds <= HOUSTON_TASK_LIMITS.reworkRounds
-                ? rounds
-                : 0
-            },
-            ${now}
-          )
-        `;
-      }
-
-      for (const task of v1.tasks) {
-        yield* store.recordHistory(Number(task.id), "houston:imported", "houston:imported", {
-          source: file,
-          key: `HOU-${task.number}`,
-          workspace: task.workspace,
-          projectId: projectOf(task.workspace),
-        });
-      }
-      const next = Math.max(v1.nextNumber ?? 1, highest + 1);
-      yield* sql`UPDATE houston_task_counter SET next_number = ${next} WHERE id = 1`;
-      const counts: HoustonTaskImportCounts = {
-        tasks: v1.tasks.length,
-        acceptance: v1.acceptance.length,
-        comments: v1.comments.length,
-        history: v1.history.length,
-        blockers: v1.blocks.length,
-        domains: v1.domains.length,
-        initiatives: v1.projects.length,
-        runs: v1.runs.length,
-        settings: byProject.size,
-      };
-      yield* sql`
-        INSERT INTO houston_task_import (id, source, imported_at, counts_json)
-        VALUES (1, ${file}, ${now}, ${encodeCounts(counts)})
-      `;
-      return { result: { imported: counts }, touched: ids };
-    },
-    (effect, file) =>
-      effect.pipe(
-        Effect.catchTags({
-          SqlError: (error) =>
-            Effect.fail(
-              refuse(
-                "unsupported",
-                OPERATION,
-                `a row of the Houston 1 database at ${file} could not be copied: ${error.message}`,
-              ),
+  const copy = Effect.fn("HoustonTaskV1Import.copy")(function* (file: string, v1: V1Snapshot) {
+    const now = yield* nowIso;
+    const roots = (yield* projects.list().pipe(Effect.orDie)).filter(
+      (project) => project.deletedAt === null,
+    );
+    const projectOf = (workspace: SqlValue | undefined) =>
+      typeof workspace !== "string"
+        ? null
+        : (roots.find((project) => v1PathMatches(workspace, project.workspaceRoot, platform))
+            ?.projectId ?? null);
+    const unsupported = (message: string) => refuse("unsupported", OPERATION, message);
+    /** A row SQLite refuses is named by its table and v1 row. */
+    const row =
+      (table: string, key: SqlValue | undefined) =>
+      <A>(effect: Effect.Effect<A, SqlError.SqlError>) =>
+        effect.pipe(
+          Effect.mapError((error) =>
+            unsupported(
+              `${table} row ${String(key)} of the Houston 1 database at ${file} could not be copied: ${causeMessage(error)}`,
             ),
-        }),
-      ),
-  );
+          ),
+        );
+    const notes: Array<string> = [];
+
+    const ids: Array<number> = [];
+    let highest = 0;
+    for (const task of v1.tasks) {
+      const key = `HOU-${task.number}`;
+      if (typeof task.status !== "string" || !isStatus(task.status)) {
+        return yield* unsupported(
+          `${key} has status ${String(task.status)}, which this version does not know`,
+        );
+      }
+      const priority = priorityFromValue(Number(task.priority));
+      if (priority === undefined) {
+        return yield* unsupported(`${key} has priority ${task.priority} (expected 0 to 4)`);
+      }
+      highest = Math.max(highest, Number(task.number));
+      ids.push(Number(task.id));
+      yield* row(
+        "houston_tasks",
+        key,
+      )(sql`
+        INSERT INTO houston_tasks (
+          id, number, project_id, title, description, status, priority, parent_id, ref_url,
+          revision, created_by, created_at, updated_at, archived_at
+        ) VALUES (
+          ${task.id}, ${task.number}, ${projectOf(task.workspace)}, ${task.title},
+          ${task.description}, ${task.status}, ${priorityValue(priority)}, ${task.parent_id},
+          ${task.ref_url}, ${task.revision}, ${task.created_by}, ${iso(task.created_at)},
+          ${iso(task.updated_at)}, ${iso(task.archived_at)}
+        )
+      `);
+    }
+    for (const item of v1.acceptance) {
+      yield* row(
+        "houston_task_acceptance",
+        item.id,
+      )(sql`
+        INSERT INTO houston_task_acceptance (task_id, position, text, checked_at, checked_by)
+        VALUES (${item.task_id}, ${item.position}, ${item.text}, ${iso(item.checked_at)},
+          ${item.checked_by})
+      `);
+    }
+    for (const comment of v1.comments) {
+      yield* row(
+        "houston_task_comments",
+        comment.id,
+      )(sql`
+        INSERT INTO houston_task_comments (task_id, body, author, created_at)
+        VALUES (${comment.task_id}, ${comment.body}, ${comment.author},
+          ${iso(comment.created_at)})
+      `);
+    }
+    for (const entry of v1.history) {
+      yield* row(
+        "houston_task_history",
+        entry.id,
+      )(sql`
+        INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
+        VALUES (${entry.task_id}, ${entry.actor}, ${entry.action}, ${entry.changes},
+          ${iso(entry.created_at)})
+      `);
+    }
+    for (const block of v1.blocks) {
+      yield* row(
+        "houston_task_blocks",
+        `${block.task_id} blocked by ${block.blocked_by_id}`,
+      )(sql`
+        INSERT INTO houston_task_blocks (task_id, blocked_by_id)
+        VALUES (${block.task_id}, ${block.blocked_by_id})
+      `);
+    }
+    for (const run of v1.runs) {
+      const state = String(run.state);
+      if (!RUN_STATES.has(state) || (run.kind !== "implementation" && run.kind !== "review")) {
+        return yield* unsupported(`run ${run.id} has kind ${run.kind} and state ${state}`);
+      }
+      // A v1 run is a pane, which this version cannot resume.
+      const open = isOpenRun(state as Parameters<typeof isOpenRun>[0]);
+      yield* row(
+        "houston_task_runs",
+        run.id,
+      )(sql`
+        INSERT INTO houston_task_runs (
+          id, task_id, attempt, kind, state, provider, reviewer, worktree_path, branch,
+          base_commit, initial_revision, summary, reason, started_at, ended_at, pr_url,
+          review_head_sha, review_focus, review_verdict, review_findings, review_skipped_reason
+        ) VALUES (
+          ${run.id}, ${run.task_id}, ${run.attempt}, ${run.kind},
+          ${open ? "interrupted" : state}, ${run.provider}, ${run.reviewer},
+          ${run.worktree_path}, ${run.branch}, ${run.base_commit}, ${run.initial_revision},
+          ${run.summary}, ${open ? IMPORTED_REASON : run.reason}, ${iso(run.started_at)},
+          ${open ? (iso(run.ended_at) ?? now) : iso(run.ended_at)}, ${run.pr_url},
+          ${run.review_head_sha}, ${run.review_focus}, ${run.review_verdict},
+          ${run.review_findings}, ${run.review_skipped_reason}
+        )
+      `);
+    }
+
+    // A v1 initiative keeps its id unless v2 already uses it; then it takes a fresh one, and
+    // the ones that keep theirs go first so a fresh id never lands on them.
+    const taken = new Set(
+      (yield* sql<{ readonly id: number }>`SELECT id FROM houston_task_initiatives`.pipe(
+        Effect.orDie,
+      )).map((initiative) => initiative.id),
+    );
+    const initiativeIds = new Map<number, number>();
+    const insertInitiative = (project: Row, id: SqlValue | undefined) =>
+      row(
+        "houston_task_initiatives",
+        project.id,
+      )(sql<{ readonly id: number }>`
+        INSERT INTO houston_task_initiatives (
+          id, project_id, name, external_url, project_external_id, tracker_description,
+          local_decisions, revision, updated_at, archived_at
+        ) VALUES (
+          ${id ?? null}, ${projectOf(project.workspace)}, ${project.name},
+          ${project.external_url}, ${project.project_external_id},
+          ${project.tracker_description}, ${project.local_decisions}, ${project.revision},
+          ${iso(project.updated_at)}, ${iso(project.archived_at)}
+        ) RETURNING id
+      `);
+    for (const project of v1.projects) {
+      if (taken.has(Number(project.id))) continue;
+      yield* insertInitiative(project, project.id);
+      initiativeIds.set(Number(project.id), Number(project.id));
+    }
+    for (const project of v1.projects) {
+      if (!taken.has(Number(project.id))) continue;
+      const [fresh] = yield* insertInitiative(project, null);
+      const id = fresh?.id ?? 0;
+      initiativeIds.set(Number(project.id), id);
+      notes.push(`initiative ${project.id} "${project.name}" was taken in v2; imported as ${id}`);
+    }
+    const initiativeOf = (v1Id: SqlValue | undefined) =>
+      v1Id === null || v1Id === undefined ? null : (initiativeIds.get(Number(v1Id)) ?? v1Id);
+    for (const domain of v1.domains) {
+      yield* row(
+        "houston_task_domain",
+        domain.task_id,
+      )(sql`
+        INSERT INTO houston_task_domain (
+          task_id, kind, initiative_id, user_status_override, plan_json, plan_revision,
+          approved_task_revision, plan_context_bound, plan_initiative_id,
+          plan_initiative_revision
+        ) VALUES (
+          ${domain.task_id}, ${domain.kind}, ${initiativeOf(domain.project_id)},
+          ${domain.user_status_override}, ${convertPlan(domain.plan_json)},
+          ${domain.plan_revision}, ${domain.approved_task_revision},
+          ${domain.plan_context_bound ?? 0}, ${initiativeOf(domain.plan_project_id)},
+          ${domain.plan_project_revision ?? null}
+        )
+      `);
+    }
+
+    const byProject = new Map<string, Partial<Record<SettingPrefix, string>>>();
+    for (const setting of v1.settings) {
+      const key = String(setting.key);
+      const prefix = SETTING_PREFIXES.find((candidate) => key.startsWith(candidate));
+      if (prefix === undefined) continue;
+      const projectId = projectOf(key.slice(prefix.length));
+      if (projectId === null) continue;
+      byProject.set(projectId, { ...byProject.get(projectId), [prefix]: String(setting.value) });
+    }
+    // Every v2 settings row holds all of a project's keys, each set by the user in v2.
+    const setInV2 = new Set(
+      (yield* sql<{ readonly project_id: string }>`
+        SELECT project_id FROM houston_task_settings
+      `.pipe(Effect.orDie)).map((settings) => settings.project_id),
+    );
+    let settingsImported = 0;
+    for (const [projectId, values] of byProject) {
+      if (setInV2.has(projectId)) {
+        const dropped = SETTING_PREFIXES.filter((prefix) => values[prefix] !== undefined);
+        notes.push(
+          `${projectId}: settings set in v2 kept; Houston 1's ${dropped
+            .map((prefix) => prefix.slice(0, -1))
+            .join(", ")} dropped`,
+        );
+        continue;
+      }
+      const rounds = Number(values["tasks_rework_rounds:"]);
+      const startAgent = values["tasks_start_agent:"];
+      const startModel = v1Agent(startAgent) ?? DEFAULT_START_MODEL;
+      if (startAgent !== undefined && v1Agent(startAgent) === undefined) {
+        notes.push(
+          `${projectId}: start agent ${startAgent} has no v2 driver; chose ${startModel.instanceId} ${startModel.model}`,
+        );
+      }
+      const reviewer = values["tasks_default_reviewer:"];
+      const reviewerModel = reviewer === "none" ? undefined : v1Agent(reviewer);
+      if (reviewer !== undefined && reviewer !== "none" && reviewerModel === undefined) {
+        notes.push(`${projectId}: reviewer ${reviewer} has no v2 driver; chose no reviewer`);
+      }
+      let reviewMode = pick(values["tasks_review_mode:"], ["manual", "handback", "every_push"]);
+      // A review mode is never stored without a reviewer to run it.
+      if (reviewerModel === undefined && reviewMode !== undefined && reviewMode !== "manual") {
+        notes.push(`${projectId}: review mode ${reviewMode} needs a reviewer; chose manual`);
+        reviewMode = "manual";
+      }
+      settingsImported += 1;
+      yield* row(
+        "houston_task_settings",
+        projectId,
+      )(sql`
+        INSERT INTO houston_task_settings (
+          project_id, access, start_model, delivery, reviewer, review_mode, focus,
+          rework_rounds, updated_at
+        ) VALUES (
+          ${projectId},
+          ${pick(values["tasks_access:"], ["off", "read", "write"]) ?? "write"},
+          ${encodeSelection(startModel)},
+          ${pick(values["tasks_prompt_delivery:"], ["send", "prefill"]) ?? "send"},
+          ${reviewerModel === undefined ? null : encodeSelection(reviewerModel)},
+          ${reviewMode ?? null},
+          ${pick(values["tasks_review_focus:"], ["bugs", "security", "performance", "full"]) ?? "bugs"},
+          ${
+            Number.isInteger(rounds) && rounds >= 0 && rounds <= HOUSTON_TASK_LIMITS.reworkRounds
+              ? rounds
+              : 0
+          },
+          ${now}
+        )
+      `);
+    }
+
+    for (const task of v1.tasks) {
+      yield* store.recordHistory(Number(task.id), "houston:imported", "houston:imported", {
+        source: file,
+        key: `HOU-${task.number}`,
+        workspace: task.workspace,
+        projectId: projectOf(task.workspace),
+      });
+    }
+    const next = Math.max(v1.nextNumber ?? 1, highest + 1);
+    yield* row(
+      "houston_task_counter",
+      1,
+    )(sql`UPDATE houston_task_counter SET next_number = ${next} WHERE id = 1`);
+    const counts: HoustonTaskImportCounts = {
+      tasks: v1.tasks.length,
+      acceptance: v1.acceptance.length,
+      comments: v1.comments.length,
+      history: v1.history.length,
+      blockers: v1.blocks.length,
+      domains: v1.domains.length,
+      initiatives: v1.projects.length,
+      runs: v1.runs.length,
+      settings: settingsImported,
+    };
+    yield* row(
+      "houston_task_import",
+      1,
+    )(sql`
+      INSERT INTO houston_task_import (id, source, imported_at, counts_json)
+      VALUES (1, ${file}, ${now}, ${encodeCounts(counts)})
+    `);
+    return { result: { imported: counts, notes }, touched: ids };
+  });
 
   const run = store.write(
     Effect.gen(function* () {
@@ -478,7 +592,7 @@ const make = Effect.gen(function* () {
         return yield* refuse(
           "invalid",
           OPERATION,
-          `the backlog already holds ${v2.count} task(s); the import needs an empty backlog`,
+          `the backlog already holds ${v2.count} task(s); the import needs a backlog without tasks`,
         );
       }
       const found = yield* source;
@@ -488,20 +602,18 @@ const make = Effect.gen(function* () {
           OPERATION,
           hosted
             ? `no Houston 1 database at ${sourcePath}`
-            : `the base dir ${config.baseDir} is not a hosted <channel dir>/v2, so no Houston 1 database sits beside it`,
+            : `the server is not hosted, so no Houston 1 database sits beside its base dir ${config.baseDir}`,
         );
       }
-      const v1 = yield* Effect.try({
-        try: () => readV1(found),
-        catch: (cause) =>
+      const v1 = yield* fromCopy(found, readV1).pipe(
+        Effect.mapError((error) =>
           refuse(
             "unsupported",
             OPERATION,
-            `could not read the Houston 1 database at ${found}: ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`,
+            `could not read the Houston 1 database at ${found}: ${causeMessage(error)}`,
           ),
-      });
+        ),
+      );
       if (v1.tasks.length > HOUSTON_TASK_LIMITS.tasks) {
         return yield* refuse(
           "limit",

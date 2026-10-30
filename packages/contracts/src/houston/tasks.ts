@@ -394,7 +394,11 @@ export const HoustonTaskImportStatus = Schema.Union([
 ]);
 export type HoustonTaskImportStatus = typeof HoustonTaskImportStatus.Type;
 
-export const HoustonTaskImportResult = Schema.Struct({ imported: HoustonTaskImportCounts });
+/** `notes` names each v1 value the import could not keep and what it stored instead. */
+export const HoustonTaskImportResult = Schema.Struct({
+  imported: HoustonTaskImportCounts,
+  notes: Schema.Array(Schema.String),
+});
 export type HoustonTaskImportResult = typeof HoustonTaskImportResult.Type;
 
 export const HoustonTaskScope = Schema.Union([

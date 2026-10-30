@@ -14,6 +14,7 @@ import * as ProjectService from "../../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import { HostedLaunch } from "../baseDir.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
@@ -50,6 +51,8 @@ export interface TasksTestOptions {
   /** The server base dir the v1 import looks beside. */
   readonly baseDir?: string;
   readonly configuredInstances?: ReadonlyArray<string>;
+  /** Whether a host launched the server; true by default when `baseDir` is given. */
+  readonly hosted?: boolean;
 }
 
 export const layerTasks = (options: TasksTestOptions = {}) =>
@@ -71,6 +74,9 @@ export const layerTasks = (options: TasksTestOptions = {}) =>
       ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-tasks-test-" }),
     ),
     Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(
+      Layer.succeed(HostedLaunch, options.hosted ?? options.baseDir !== undefined),
+    ),
   );
 
 let projectCommands = 0;
