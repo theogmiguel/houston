@@ -3171,12 +3171,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </ComposerBanner.Attachment>
           ) : null}
         </ComposerBanner.Column>
-        <ComposerStashBadge
-          count={stashQueue.length}
-          menuOpen={isStashMenuOpen}
-          pulseKey={stashPulseKey}
-          onToggleMenu={toggleStashMenuStable}
-        />
       </ComposerBanner.Dock>
       <div className="relative">
         <ComposerSurface.Main
@@ -3213,6 +3207,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (showProviderUnavailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
+                <ComposerStashBadge
+                  count={stashQueue.length}
+                  menuOpen={isStashMenuOpen}
+                  pulseKey={stashPulseKey}
+                  onToggleMenu={toggleStashMenuStable}
+                />
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
@@ -3446,6 +3446,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   >
                     {composerControls}
                   </div>
+                  <ComposerStashBadge
+                    count={stashQueue.length}
+                    menuOpen={isStashMenuOpen}
+                    pulseKey={stashPulseKey}
+                    onToggleMenu={toggleStashMenuStable}
+                  />
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}

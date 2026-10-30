@@ -7,6 +7,7 @@ import {
   type LayoutNode,
   type ThreadNode,
   appendThread,
+  insertThreadAtSlot,
   isLayoutNode,
   preorderThreads,
   reconcileThreads,
@@ -14,6 +15,17 @@ import {
   swapThread,
   threadLeaf,
 } from "./tree";
+
+/** A thread that left a grid keeps the grid and pane slot it came from. */
+export interface ThreadOrigin {
+  gridId: string;
+  slot: number;
+}
+
+export type ThreadOrigins = Readonly<Record<string, ThreadOrigin>>;
+
+/** The most threads a grid can show before a returning thread needs a new one. */
+export const MAX_GRID_THREADS = 6;
 
 /**
  * A grid is a named layout of threads inside one workspace. It is renderer state:
@@ -36,6 +48,7 @@ export interface GridRecord {
 
 export interface GridStoreState {
   grids: GridRecord[];
+  threadOrigins: ThreadOrigins;
   createGrid: (input: {
     environmentId: string;
     projectId: string;
@@ -57,6 +70,14 @@ export interface GridStoreState {
   setGridHidden: (gridId: string, hidden: boolean) => void;
   /** Swaps two panes so the dragged thread takes the target's place. */
   reorderGridThreads: (gridId: string, draggedThreadId: string, targetThreadId: string) => void;
+  /** Removes a held or closed thread from its grid, remembering where it sat. */
+  detachThreadForShelf: (threadId: string) => void;
+  /** Places a woken or reopened thread back in its origin grid, or a new one. */
+  returnThreadToOrigin: (input: {
+    threadId: string;
+    environmentId: string;
+    projectId: string;
+  }) => string | null;
 }
 
 export const GRID_STORAGE_KEY = "houston:grids:v1";
@@ -185,6 +206,102 @@ export function parseGrids(value: unknown): GridRecord[] {
   return grids;
 }
 
+export function parseThreadOrigins(value: unknown): Record<string, ThreadOrigin> {
+  if (!value || typeof value !== "object") return {};
+  const origins: Record<string, ThreadOrigin> = {};
+  for (const [threadId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Partial<ThreadOrigin>;
+    if (typeof raw.gridId !== "string" || raw.gridId.length === 0) continue;
+    if (typeof raw.slot !== "number" || !Number.isFinite(raw.slot) || raw.slot < 0) continue;
+    origins[threadId] = { gridId: raw.gridId, slot: Math.trunc(raw.slot) };
+  }
+  return origins;
+}
+
+/**
+ * Takes a thread out of the grid it is shown in and remembers that pane. An
+ * action from outside any grid leaves the store untouched.
+ */
+export function detachThreadForShelf(
+  grids: ReadonlyArray<GridRecord>,
+  origins: ThreadOrigins,
+  threadId: string,
+): { grids: GridRecord[]; threadOrigins: ThreadOrigins } {
+  const grid = grids.find(
+    (candidate) => candidate.tree !== null && containsThreadId(candidate.tree, threadId),
+  );
+  if (grid === undefined || grid.tree === null)
+    return { grids: [...grids], threadOrigins: origins };
+  const slot = preorderThreads(grid.tree).findIndex((leaf) => leaf.threadId === threadId);
+  return {
+    grids: updateGrid(grids, grid.id, (candidate) =>
+      withTree(candidate, candidate.tree === null ? null : removeThread(candidate.tree, threadId)),
+    ),
+    threadOrigins: { ...origins, [threadId]: { gridId: grid.id, slot: Math.max(0, slot) } },
+  };
+}
+
+export interface ReturnedThread {
+  readonly grids: GridRecord[];
+  readonly threadOrigins: ThreadOrigins;
+  readonly gridId: string | null;
+}
+
+function withoutOrigin(origins: ThreadOrigins, threadId: string): ThreadOrigins {
+  const { [threadId]: _origin, ...rest } = origins;
+  return rest;
+}
+
+/**
+ * Puts a returning thread back in the pane it left. A missing, hidden or full
+ * origin grid sends it to a new grid in the same workspace instead.
+ */
+export function returnThreadToOrigin(
+  grids: ReadonlyArray<GridRecord>,
+  origins: ThreadOrigins,
+  input: {
+    readonly threadId: string;
+    readonly environmentId: string;
+    readonly projectId: string;
+    readonly now?: string;
+  },
+): ReturnedThread {
+  const origin = origins[input.threadId];
+  if (origin === undefined) return { grids: [...grids], threadOrigins: origins, gridId: null };
+  const remaining = withoutOrigin(origins, input.threadId);
+  const current = grids.find(
+    (grid) => grid.tree !== null && containsThreadId(grid.tree, input.threadId),
+  );
+  if (current !== undefined) {
+    return { grids: [...grids], threadOrigins: remaining, gridId: current.id };
+  }
+  const originGrid = gridById(grids, origin.gridId);
+  const originCount =
+    originGrid?.tree === null || originGrid === null ? 0 : preorderThreads(originGrid.tree).length;
+  if (originGrid !== null && !originGrid.hidden && originCount < MAX_GRID_THREADS) {
+    return {
+      grids: updateGrid(grids, originGrid.id, (grid) =>
+        withTree(grid, insertThreadAtSlot(grid.tree, threadLeaf(input.threadId), origin.slot)),
+      ),
+      threadOrigins: remaining,
+      gridId: originGrid.id,
+    };
+  }
+  const workspaceKey = workspaceKeyOf(input.environmentId, input.projectId);
+  const created = createGridRecord(grids, {
+    environmentId: input.environmentId,
+    projectId: input.projectId,
+    workspaceKey,
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+  return {
+    grids: [...grids, addThreadToGrid(created, input.threadId)],
+    threadOrigins: remaining,
+    gridId: created.id,
+  };
+}
+
 export function createGridRecord(
   grids: readonly GridRecord[],
   input: {
@@ -226,6 +343,7 @@ export const useGridStore = create<GridStoreState>()(
   persist(
     (set, get) => ({
       grids: [],
+      threadOrigins: {},
       createGrid: (input) => {
         const grid = createGridRecord(get().grids, input);
         set((state) => ({ grids: [...state.grids, grid] }));
@@ -302,17 +420,28 @@ export const useGridStore = create<GridStoreState>()(
               : withTree(grid, swapThread(grid.tree, draggedThreadId, targetThreadId)),
           ),
         })),
+      detachThreadForShelf: (threadId) =>
+        set((state) => detachThreadForShelf(state.grids, state.threadOrigins, threadId)),
+      returnThreadToOrigin: (input) => {
+        const returned = returnThreadToOrigin(get().grids, get().threadOrigins, input);
+        set({ grids: returned.grids, threadOrigins: returned.threadOrigins });
+        return returned.gridId;
+      },
     }),
     {
       name: GRID_STORAGE_KEY,
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      version: 1,
-      migrate: (persisted) => ({
-        grids: parseGrids((persisted as Partial<GridStoreState> | null)?.grids),
-      }),
-      partialize: ({ grids }) => ({ grids }),
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as Partial<GridStoreState> | null;
+        return {
+          grids: parseGrids(state?.grids),
+          threadOrigins: parseThreadOrigins(state?.threadOrigins),
+        };
+      },
+      partialize: ({ grids, threadOrigins }) => ({ grids, threadOrigins }),
     },
   ),
 );

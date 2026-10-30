@@ -258,14 +258,15 @@ import {
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
 } from "./sidebar/SidebarListMarkers";
+import {
+  SETTLED_SHELF_EXPANDED_KEY,
+  SETTLED_TAIL_INITIAL_COUNT,
+  SETTLED_TAIL_PAGE_COUNT,
+  SNOOZED_SHELF_EXPANDED_KEY,
+  WORKING_SHELF_EXPANDED_KEY,
+} from "./sidebar/shelfState";
 
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
-
-const SETTLED_TAIL_INITIAL_COUNT = 10;
-const SETTLED_TAIL_PAGE_COUNT = 25;
-const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
-const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
-const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -2028,8 +2029,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         case "settle": {
           settlingThreadKeysRef.current.add(activeKey);
           const navigateAfterSettle = planForwardNavigation(activeKey);
-          const settled = await run(settleThread(threadRef), "Failed to close thread").finally(
-            () => settlingThreadKeysRef.current.delete(activeKey),
+          const settled = await run(settleThread(threadRef), "Failed to close thread").finally(() =>
+            settlingThreadKeysRef.current.delete(activeKey),
           );
           if (
             settled &&
@@ -2046,10 +2047,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         }
         case "move-active":
           if (plan.unpin && !(await run(unpinThread(threadRef), "Failed to unpin thread"))) return;
-          if (
-            plan.unsettle &&
-            !(await run(unsettleThread(threadRef), "Failed to reopen thread"))
-          )
+          if (plan.unsettle && !(await run(unsettleThread(threadRef), "Failed to reopen thread")))
             return;
           if (plan.unsnooze && !(await run(unsnoozeThread(threadRef), "Failed to wake thread")))
             return;

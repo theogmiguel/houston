@@ -109,6 +109,24 @@ export function resolveMessageDispatchIntent(
   return mode;
 }
 
+// Houston (AD-040): an automatic send resolves as upstream's steer did, never meeting the refusal
+// meant for explicit steers: steer, else interrupt and restart, else queue.
+export function resolveAutomaticSteer(
+  projection: Pick<OrchestrationV2ThreadProjection, "providerThreads" | "providerSessions">,
+  run: OrchestrationV2Run,
+): MessageDispatchMode {
+  const turns = providerTurnCapabilities(projection, run);
+  if (turns === undefined || turns.supportsActiveSteering) {
+    return { type: "steer_active", targetRunId: run.id };
+  }
+  if (turns.supportsInterrupt && turns.supportsSteeringByInterruptRestart) {
+    return { type: "restart_active", targetRunId: run.id };
+  }
+  return turns.supportsQueuedMessages
+    ? { type: "queue_after_active" }
+    : { type: "steer_active", targetRunId: run.id };
+}
+
 function isActiveRun(run: OrchestrationV2Run): boolean {
   return (
     run.status === "preparing" ||
@@ -119,7 +137,7 @@ function isActiveRun(run: OrchestrationV2Run): boolean {
 }
 
 function providerTurnCapabilities(
-  projection: OrchestrationV2ThreadProjection,
+  projection: Pick<OrchestrationV2ThreadProjection, "providerThreads" | "providerSessions">,
   run: OrchestrationV2Run,
 ) {
   const providerThread = projection.providerThreads.find(

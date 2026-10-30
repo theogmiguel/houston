@@ -88,9 +88,10 @@ export function SidebarUpdateCapsule({
     <Popover>
       <div
         className={cn(
-          "relative flex h-8 min-w-0 flex-1 items-center rounded-full bg-sidebar-control-surface text-sidebar-foreground",
-          view.tone === "slow" && "ring-1 ring-warning/40 ring-inset",
-          view.tone === "failed" && "ring-1 ring-destructive/40 ring-inset",
+          "relative flex h-7 min-w-0 w-full items-center rounded-md text-headline leading-4.5 font-medium",
+          view.tone === "failed"
+            ? "bg-destructive/12 text-destructive"
+            : "bg-(--accent-muted) text-(--update-foreground)",
         )}
       >
         <PopoverTrigger
@@ -100,26 +101,26 @@ export function SidebarUpdateCapsule({
               aria-label={
                 view.slow ? `${view.label} ${view.slow.status} ${view.slow.elapsed}` : view.label
               }
-              className="absolute inset-0 cursor-pointer rounded-full outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset"
+              className="absolute inset-0 cursor-pointer rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset"
             />
           }
         />
-        <span className="pointer-events-none relative min-w-0 flex-1 truncate pl-3 text-xs">
-          <span className={cn(view.tone === "failed" && "text-destructive")}>{view.label}</span>
+        <span className="pointer-events-none relative min-w-0 flex-1 truncate pl-2">
+          <span>{view.label}</span>
           {view.slow ? (
-            <span className="text-warning tabular-nums"> {view.slow.elapsed}</span>
+            <span className="ml-1 font-normal opacity-80 tabular-nums"> {view.slow.elapsed}</span>
           ) : null}
         </span>
         {view.action !== null ? (
           <button
             type="button"
-            className="relative shrink-0 cursor-pointer pr-3 pl-1.5 text-xs underline decoration-muted-foreground/60 underline-offset-3 hover:decoration-current"
+            className="relative shrink-0 cursor-pointer pr-2 pl-1.5 text-headline underline decoration-current/40 underline-offset-3 hover:decoration-current"
             onClick={runAction}
           >
             {actionLabel}
           </button>
         ) : (
-          <span className="pointer-events-none relative grid size-8 shrink-0 place-items-center">
+          <span className="pointer-events-none relative grid size-7 shrink-0 place-items-center">
             {icon}
           </span>
         )}
@@ -179,3 +180,4 @@ export function SidebarUpdateCapsule({
     </Popover>
   );
 }
+

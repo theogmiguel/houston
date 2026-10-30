@@ -39,6 +39,40 @@ describe("send intents at dispatch", () => {
             }),
           );
         }
+
+        // The same intents asked through deliveryIntent, and a /goal (which never joins a running
+        // turn): one that stops the run interrupts it, one that stops nothing waits in the queue.
+        const intentRows = [
+          ["restart", "plain", "restart now", { intent: "interrupt", route: "ownTurn" }],
+          ["steer", "plain", "steer now", { intent: "steer", route: "activeTurn" }],
+          ["restart", "goal-set", "/goal ship it", { intent: "interrupt", route: "ownTurn" }],
+          ["restart", "goal-show", "/goal", { intent: "queue", route: "ownTurn" }],
+          [
+            "steer",
+            "goal-set",
+            "/goal ship it",
+            { intent: "steer", route: "ownTurn", rerouted: "turnBusy" },
+          ],
+        ] as const;
+        for (const [deliveryIntent, name, text, expected] of intentRows) {
+          const harness = yield* makeHarness(`accepted-${deliveryIntent}-${name}`);
+          yield* runWith(harness, ({ send, startFirst, deliveries }) =>
+            Effect.gen(function* () {
+              yield* startFirst;
+              const messageId = MessageId.make(`message:${deliveryIntent}-${name}`);
+              yield* send(messageId, text, { type: "start_immediately" }, deliveryIntent);
+              const first = deliveries(messageId)[0];
+              assert.deepInclude(
+                first,
+                { ...expected, state: "accepted", adoption: null, evidence: null },
+                `${deliveryIntent}/${name}`,
+              );
+              if (!("rerouted" in expected)) {
+                assert.isUndefined(first?.rerouted, `${deliveryIntent}/${name}`);
+              }
+            }),
+          );
+        }
       }),
     ),
   );
@@ -265,6 +299,35 @@ describe("send intents at dispatch", () => {
     ),
   );
 
+  it.effect("a steer whose turn ends while it is delivered is unconfirmed", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("ends-during-steer", { steerEndsTurn: true });
+        yield* runWith(harness, ({ send, startFirst, deliveries, settle, runningTurn }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const turn = yield* runningTurn;
+            const messageId = MessageId.make("message:ends-during-steer");
+            yield* send(messageId, "steer", { type: "steer_active", targetRunId: runId });
+            yield* settle;
+            assert.lengthOf(harness.steered, 1);
+            assert.equal(harness.turns.get(turn.id)?.status, "completed");
+            const history = deliveries(messageId);
+            assert.isTrue(
+              history.some((delivery) => delivery.state === "delivered"),
+              JSON.stringify(history),
+            );
+            assert.deepInclude(latest(history), {
+              state: "unconfirmed",
+              adoption: "reported",
+              providerTurnId: turn.id,
+            });
+          }),
+        );
+      }),
+    ),
+  );
+
   it.effect("a cancelled queued message is dropped", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -311,6 +374,27 @@ describe("send intents at dispatch", () => {
               reason: "failed",
               message: steerError,
             });
+          }),
+        );
+
+        // Only a terminal failure drops: a steer that fails once and is retried is delivered.
+        const retriedHarness = yield* makeHarness("steer-fails-once", {
+          steerFails: "Codex is busy",
+          steerFailures: 1,
+        });
+        yield* runWith(retriedHarness, ({ send, startFirst, deliveries, settle }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const messageId = MessageId.make("message:steer-fails-once");
+            yield* send(messageId, "steer", { type: "steer_active", targetRunId: runId });
+            yield* settle;
+            assert.lengthOf(retriedHarness.steered, 2, "the worker retried the steer once");
+            const history = deliveries(messageId);
+            assert.isFalse(
+              history.some((delivery) => delivery.state === "dropped"),
+              JSON.stringify(history),
+            );
+            assert.deepInclude(latest(history), { state: "delivered", adoption: "reported" });
           }),
         );
 

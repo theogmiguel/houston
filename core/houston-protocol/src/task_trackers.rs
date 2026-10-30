@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskTrackerProvider {
     GithubIssues,
@@ -11,7 +10,6 @@ pub enum TaskTrackerProvider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskExternalLinkSource {
     Source,
@@ -19,7 +17,6 @@ pub enum TaskExternalLinkSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskTrackerFieldConflict {
     pub field: String,
     pub base: String,
@@ -28,13 +25,11 @@ pub struct TaskTrackerFieldConflict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskTrackerSnapshot {
     pub base: BTreeMap<String, String>,
     pub local: BTreeMap<String, String>,
     pub remote: BTreeMap<String, String>,
     pub conflicts: Vec<TaskTrackerFieldConflict>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     #[serde(default)]
     pub project_external_id: Option<String>,
@@ -43,7 +38,6 @@ pub struct TaskTrackerSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskTrackerProjectSnapshot {
     pub external_id: String,
     pub url: String,
@@ -53,7 +47,6 @@ pub struct TaskTrackerProjectSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskTrackerStatusMapping {
     pub todo: Option<String>,
     pub in_progress: Option<String>,
@@ -63,7 +56,6 @@ pub struct TaskTrackerStatusMapping {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum TaskTrackerSyncState {
     Current,
@@ -73,18 +65,14 @@ pub enum TaskTrackerSyncState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskExternalLink {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
     pub provider: TaskTrackerProvider,
     pub external_id: String,
     pub url: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub fetched_at_ms: Option<i64>,
     pub body_hash: Option<String>,
     pub remote_rev: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub synced_at_ms: Option<i64>,
     pub source: TaskExternalLinkSource,
     pub snapshot: TaskTrackerSnapshot,
@@ -92,7 +80,6 @@ pub struct TaskExternalLink {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskTrackerWorkspaceSettings {
     pub workspace: String,
     pub provider: TaskTrackerProvider,
@@ -114,13 +101,11 @@ pub struct TaskTrackerWorkspaceSettings {
     pub notion_pr_url_property_id: Option<String>,
     pub notion_status_mapping: TaskTrackerStatusMapping,
     pub has_credential: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub last_sync_at_ms: Option<i64>,
     pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskTrackerConflictResolution {
     Local,

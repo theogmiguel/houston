@@ -4,7 +4,7 @@ import {
   type AssistantCitation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { QuoteIcon } from "lucide-react";
+import { MessageSquarePlusIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -189,10 +189,10 @@ export function AssistantSelectionToolbar({
     <Button
       ref={toolbarRef}
       type="button"
-      size="xs"
-      variant="glass"
+      size="selection"
+      variant="raised"
       disabled={tooLong}
-      aria-label={tooLong ? "Selection is too long to cite" : "Cite selection in composer"}
+      aria-label={tooLong ? "Selection is too long to comment on" : "Comment on selected text"}
       className="fixed z-50 max-w-[calc(100vw-1rem)]"
       style={{ left: selection.position.x, top: selection.position.y }}
       onPointerDown={(event) => event.preventDefault()}
@@ -205,8 +205,8 @@ export function AssistantSelectionToolbar({
         }
       }}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
-      {tooLong ? "Shorten selection" : "Cite"}
+      <MessageSquarePlusIcon aria-hidden="true" className="size-3.5" />
+      {tooLong ? "Shorten selection" : "Comment"}
     </Button>,
     document.body,
   );

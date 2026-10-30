@@ -4,12 +4,14 @@ import {
   isThreadWokeUnseen,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
+  isSidebarSubagentThread,
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
-import type { GridRecord } from "./gridStore";
+import { workspaceKeyOf, type GridRecord } from "./gridStore";
 import { preorderThreads } from "./tree";
 
 /**
@@ -35,7 +37,9 @@ export function resolveGridThreadState(
     case "idle":
       break;
   }
-  const wokeAt = threadWokeAt(thread, { now });
+  // A reopened thread uses the same Back mark as a woken one: its unsettle
+  // time is the last thing the user has not seen.
+  const wokeAt = threadWokeAt(thread, { now }) ?? thread.unsettledAt;
   return isThreadWokeUnseen({
     wokeAt,
     settled: thread.settledOverride === "settled",
@@ -76,7 +80,7 @@ export function threadCardsInPaneOrder(
   });
 }
 
-/** Threads that still belong on the rail: not archived, closed or on hold. */
+/** Threads that still belong on the rail: not archived, closed, held or a subagent child. */
 export function visibleGridThreads(
   grid: GridRecord,
   threads: ReadonlyArray<EnvironmentThreadShell>,
@@ -86,41 +90,76 @@ export function visibleGridThreads(
     (thread) =>
       thread.archivedAt === null &&
       thread.settledOverride !== "settled" &&
+      !isSidebarSubagentThread(thread) &&
       !effectiveSnoozed(thread, { now }),
   );
 }
 
-export interface OnHoldSummary {
-  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
-  readonly nextWakeAt: string | null;
+export interface ShelfThreads {
+  readonly held: EnvironmentThreadShell[];
+  readonly closed: EnvironmentThreadShell[];
 }
 
-export function summarizeOnHold(
-  grids: ReadonlyArray<GridRecord>,
+/** A parent's key for the rail's folded-in subagent counts. */
+export function subagentParentKey(
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "id">,
+): string {
+  return `${thread.environmentId}:${thread.id}`;
+}
+
+/**
+ * Running subagents per parent thread, by `subagentParentKey`. A child folded
+ * under its parent counts while it runs: its own card is not on the rail, so
+ * the parent card carries the number. Finished, archived and deleted children
+ * count nothing.
+ */
+export function runningSubagentsByParentThread(
   threads: ReadonlyArray<EnvironmentThreadShell>,
   now: string,
-): OnHoldSummary {
-  const inAnyGrid = new Set(
-    grids.flatMap((grid) =>
-      (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
-    ),
-  );
-  const held = threads
-    .filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        inAnyGrid.has(thread.id) &&
-        effectiveSnoozed(thread, { now }),
-    )
-    .toSorted((left, right) => {
-      const leftUntil = left.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(left.snoozedUntil);
-      const rightUntil =
-        right.snoozedUntil === null ? Number.POSITIVE_INFINITY : Date.parse(right.snoozedUntil);
-      return leftUntil - rightUntil;
-    });
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const thread of threads) {
+    if (!isSidebarSubagentThread(thread)) continue;
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    const parentThreadId = thread.lineage.parentThreadId;
+    if (parentThreadId === null) continue;
+    if (resolveGridThreadState(thread, now) !== "running") continue;
+    const key = subagentParentKey({ environmentId: thread.environmentId, id: parentThreadId });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function wakeTimeMs(thread: EnvironmentThreadShell): number {
+  if (thread.snoozedUntil === null) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(thread.snoozedUntil);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/**
+ * The rail's two shelves cover every open workspace. Held threads wake in
+ * order; closed threads follow the settled order, newest first.
+ */
+export function partitionShelfThreads(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  workspaceKeys: ReadonlySet<string>,
+  now: string,
+): ShelfThreads {
+  const held: EnvironmentThreadShell[] = [];
+  const closed: EnvironmentThreadShell[] = [];
+  for (const thread of threads) {
+    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (isSidebarSubagentThread(thread)) continue;
+    if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
+    if (effectiveSnoozed(thread, { now })) {
+      held.push(thread);
+    } else if (thread.settledOverride === "settled") {
+      closed.push(thread);
+    }
+  }
   return {
-    threads: held,
-    nextWakeAt: held.find((thread) => thread.snoozedUntil !== null)?.snoozedUntil ?? null,
+    held: held.toSorted((left, right) => wakeTimeMs(left) - wakeTimeMs(right)),
+    closed: sortSettledThreads(closed),
   };
 }
 
@@ -132,6 +171,21 @@ export interface AttentionCard {
   readonly gridId: string;
   readonly threadId: string;
   readonly state: GridThreadState;
+}
+
+/** Attention cards in rail order. Hidden grids stay reachable with Ctrl . */
+export function attentionCardsForGrids(
+  grids: ReadonlyArray<GridRecord>,
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): AttentionCard[] {
+  return grids.flatMap((grid) =>
+    visibleGridThreads(grid, threads, now).map((thread) => ({
+      gridId: grid.id,
+      threadId: thread.id,
+      state: resolveGridThreadState(thread, now),
+    })),
+  );
 }
 
 export interface AttentionNavigationEvent {
@@ -148,12 +202,9 @@ export interface AttentionNavigationEvent {
  * into `>` on most layouts, so both keys count. `Ctrl J` never matches: the
  * terminal drawer keeps it.
  */
-export function attentionNavigationDirection(
-  event: AttentionNavigationEvent,
-): 1 | -1 | null {
+export function attentionNavigationDirection(event: AttentionNavigationEvent): 1 | -1 | null {
   if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
-  const isPeriod =
-    event.code === "Period" || event.key === "." || event.key === ">";
+  const isPeriod = event.code === "Period" || event.key === "." || event.key === ">";
   if (!isPeriod) return null;
   return event.shiftKey ? -1 : 1;
 }
@@ -171,7 +222,8 @@ export function nextAttentionCard(
 ): AttentionCard | null {
   const candidates = cards.filter((card) => resolveGridThreadAttentionState(card.state));
   if (candidates.length === 0) return null;
-  if (current === null) return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
+  if (current === null)
+    return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
   const currentIndex = cards.findIndex(
     (card) => card.gridId === current.gridId && card.threadId === current.threadId,
   );

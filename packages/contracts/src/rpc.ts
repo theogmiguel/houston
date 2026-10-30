@@ -155,6 +155,16 @@ import {
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
 } from "./review.ts";
+import {
+  HoustonReviewAnchorLinesInput,
+  HoustonReviewAnchorMapResult,
+  HoustonReviewAnchorRangeError,
+  HoustonReviewFilesViewedInput,
+  HoustonReviewFilesViewedResult,
+  HoustonReviewMapAnchorsInput,
+  HoustonReviewSetFilesViewedInput,
+  ReviewLineAnchor,
+} from "./houston/reviewState.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -456,6 +466,10 @@ export const WS_METHODS = {
 
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
+  houstonReviewFilesViewed: "houston.review.filesViewed",
+  houstonReviewSetFilesViewed: "houston.review.setFilesViewed",
+  houstonReviewAnchorLines: "houston.review.anchorLines",
+  houstonReviewMapAnchors: "houston.review.mapAnchors",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1509,6 +1523,33 @@ const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileCont
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
+const WsHoustonReviewFilesViewedRpc = Rpc.make(WS_METHODS.houstonReviewFilesViewed, {
+  payload: HoustonReviewFilesViewedInput,
+  success: HoustonReviewFilesViewedResult,
+  error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonReviewSetFilesViewedRpc = Rpc.make(WS_METHODS.houstonReviewSetFilesViewed, {
+  payload: HoustonReviewSetFilesViewedInput,
+  error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonReviewAnchorLinesRpc = Rpc.make(WS_METHODS.houstonReviewAnchorLines, {
+  payload: HoustonReviewAnchorLinesInput,
+  success: ReviewLineAnchor,
+  error: Schema.Union([
+    ReviewDiffPreviewError,
+    HoustonReviewAnchorRangeError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
+const WsHoustonReviewMapAnchorsRpc = Rpc.make(WS_METHODS.houstonReviewMapAnchors, {
+  payload: HoustonReviewMapAnchorsInput,
+  success: HoustonReviewAnchorMapResult,
+  error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2085,6 +2126,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
+  WsHoustonReviewFilesViewedRpc,
+  WsHoustonReviewSetFilesViewedRpc,
+  WsHoustonReviewAnchorLinesRpc,
+  WsHoustonReviewMapAnchorsRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

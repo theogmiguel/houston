@@ -2,12 +2,16 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attentionCardsForGrids,
   attentionNavigationDirection,
   type AttentionCard,
   clearThreadSelection,
   nextAttentionCard,
   openPullRequestNumber,
+  partitionShelfThreads,
   resolveGridThreadState,
+  runningSubagentsByParentThread,
+  subagentParentKey,
   threadCardsInPaneOrder,
   threadMatchesGridSearch,
   updateThreadSelection,
@@ -69,8 +73,7 @@ function thread(
   } as EnvironmentThreadShell;
 }
 
-function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {
-  return {
+function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {  return {
     id: "g-1",
     name: "Grid 1",
     environmentId: "env-1",
@@ -83,6 +86,22 @@ function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): Gr
     createdAt: "2026-10-29T10:00:00.000Z",
     ...overrides,
   };
+}
+
+function subagentChild(
+  id: string,
+  parentThreadId: string,
+  runtime: Partial<EnvironmentThreadShell["runtime"]> | null = null,
+): EnvironmentThreadShell {
+  return thread({
+    id,
+    lineage: {
+      relationshipToParent: "subagent",
+      parentThreadId: parentThreadId as never,
+      rootThreadId: parentThreadId as never,
+    },
+    runtime: runtime === null ? null : ({ ...runtime, updatedAt: NOW } as never),
+  });
 }
 
 describe("grid thread state", () => {
@@ -140,6 +159,29 @@ describe("grid thread state", () => {
     ).toBe("back");
   });
 
+  it("marks a reopened thread as Back until it is opened", () => {
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T10:00:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("back");
+    expect(
+      resolveGridThreadState(
+        thread({
+          settledOverride: null,
+          unsettledAt: "2026-10-29T11:30:00.000Z",
+          lastVisitedAt: "2026-10-29T11:45:00.000Z",
+        }),
+        NOW,
+      ),
+    ).toBe("idle");
+  });
+
   it("shows a read thread as idle so the card shows its age", () => {
     expect(
       resolveGridThreadState(
@@ -153,6 +195,56 @@ describe("grid thread state", () => {
         NOW,
       ),
     ).toBe("idle");
+  });
+});
+
+describe("running subagent count", () => {
+  const parent = thread({ id: "thread-parent" });
+
+  it("counts nothing when no subagent runs", () => {
+    const counts = runningSubagentsByParentThread(
+      [parent, subagentChild("child-a", "thread-parent", { status: "idle" })],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBeUndefined();
+  });
+
+  it("counts the subagents still running when some finished", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-running", "thread-parent", { status: "running" }),
+        subagentChild("child-done", "thread-parent", { status: "completed" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBe(1);
+  });
+
+  it("counts every running subagent of the parent, not its grandchildren", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-a", "thread-parent", { status: "running" }),
+        subagentChild("child-b", "thread-parent", { status: "running" }),
+        subagentChild("grandchild", "child-a", { status: "running" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBe(2);
+    expect(counts.get(subagentParentKey(thread({ id: "child-a" })))).toBe(1);
+  });
+
+  it("counts nothing when every subagent finished", () => {
+    const counts = runningSubagentsByParentThread(
+      [
+        parent,
+        subagentChild("child-a", "thread-parent", { status: "completed" }),
+        subagentChild("child-b", "thread-parent", { status: "interrupted" }),
+      ],
+      NOW,
+    );
+    expect(counts.get(subagentParentKey(parent))).toBeUndefined();
   });
 });
 
@@ -211,6 +303,32 @@ describe("grid tree order", () => {
     ];
     expect(visibleGridThreads(order, threads, NOW).map((entry) => entry.id)).toEqual([
       "thread-open",
+    ]);
+  });
+
+  it("drops a subagent child thread from the rail", () => {
+    const order = grid({
+      kind: "split",
+      dir: "row",
+      weights: [50, 50],
+      children: [
+        { kind: "thread", threadId: "thread-parent", id: "p1" },
+        { kind: "thread", threadId: "thread-child", id: "p2" },
+      ],
+    });
+    const threads = [
+      thread({ id: "thread-parent" }),
+      thread({
+        id: "thread-child",
+        lineage: {
+          relationshipToParent: "subagent",
+          parentThreadId: "thread-parent" as never,
+          rootThreadId: "thread-parent" as never,
+        },
+      }),
+    ];
+    expect(visibleGridThreads(order, threads, NOW).map((entry) => entry.id)).toEqual([
+      "thread-parent",
     ]);
   });
 });
@@ -318,13 +436,23 @@ describe("attention navigation", () => {
     );
   });
 
+  it("keeps a hidden grid's threads reachable with Ctrl .", () => {
+    const hidden = grid(
+      { kind: "thread", threadId: "thread-b", id: "p1" },
+      { hidden: true },
+    );
+    const cards = attentionCardsForGrids(
+      [hidden],
+      [thread({ id: "thread-b", hasPendingApprovals: true })],
+      NOW,
+    );
+    expect(cards).toEqual([{ gridId: "g-1", threadId: "thread-b", state: "needs" }]);
+    expect(nextAttentionCard(cards, null, 1)?.threadId).toBe("thread-b");
+  });
+
   it("returns null when no card needs attention", () => {
     expect(
-      nextAttentionCard(
-        [{ gridId: "g-1", threadId: "idle", state: "idle" }],
-        null,
-        1,
-      ),
+      nextAttentionCard([{ gridId: "g-1", threadId: "idle", state: "idle" }], null, 1),
     ).toBeNull();
   });
 });
@@ -351,5 +479,86 @@ describe("grid search and pull requests", () => {
         branchPullRequest: null,
       }),
     ).toBe(412);
+  });
+});
+
+describe("grid shelves", () => {
+  const workspaceKeys = new Set(["env-1:project-1"]);
+
+  it("sorts held threads by wake time and closed threads newest first", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({
+          id: "held-late",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T15:00:00.000Z",
+        }),
+        thread({
+          id: "closed-old",
+          settledOverride: "settled",
+          settledAt: "2026-10-28T10:00:00.000Z",
+        }),
+        thread({
+          id: "held-soon",
+          snoozedAt: "2026-10-29T10:00:00.000Z",
+          snoozedUntil: "2026-10-29T13:00:00.000Z",
+        }),
+        thread({
+          id: "closed-new",
+          settledOverride: "settled",
+          settledAt: "2026-10-29T11:00:00.000Z",
+        }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held-soon", "held-late"]);
+    expect(shelves.closed.map((entry) => entry.id)).toEqual(["closed-new", "closed-old"]);
+  });
+
+  it("leaves out archived threads and other workspaces", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
+        thread({ id: "archived", archivedAt: "2026-10-29T11:00:00.000Z" }),
+        thread({ id: "other", projectId: "project-2" as never }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
+    expect(shelves.closed).toEqual([]);
+  });
+
+  it("leaves a subagent child thread off the shelves", () => {
+    const shelves = partitionShelfThreads(
+      [
+        thread({ id: "held", snoozedUntil: "2026-10-29T13:00:00.000Z" }),
+        thread({
+          id: "held-child",
+          snoozedUntil: "2026-10-29T13:00:00.000Z",
+          snoozedAt: "2026-10-29T11:00:00.000Z",
+          lineage: {
+            relationshipToParent: "subagent",
+            parentThreadId: "held" as never,
+            rootThreadId: "held" as never,
+          },
+        }),
+        thread({
+          id: "closed-child",
+          settledOverride: "settled",
+          settledAt: "2026-10-29T11:00:00.000Z",
+          lineage: {
+            relationshipToParent: "subagent",
+            parentThreadId: "held" as never,
+            rootThreadId: "held" as never,
+          },
+        }),
+      ],
+      workspaceKeys,
+      NOW,
+    );
+    expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
+    expect(shelves.closed).toEqual([]);
   });
 });

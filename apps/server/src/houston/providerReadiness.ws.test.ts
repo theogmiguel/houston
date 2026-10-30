@@ -129,6 +129,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 import { ReadinessLedger } from "./providerReadiness.ts";
+import * as HoustonReviewState from "./reviewState.ts";
 
 const decodeReadiness = Schema.decodeUnknownSync(ProviderReadiness);
 
@@ -406,6 +407,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
+  Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),

@@ -53,7 +53,7 @@ import {
 import { type PendingApproval, type TimelineEntry } from "../../session-logic";
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 import { type ChatFileAttachment, type TurnDiffSummary } from "../../types";
-import { ArrowRightIcon, BotIcon, CircleAlertIcon, Minimize2Icon } from "lucide-react";
+import { ArrowRightIcon, CircleAlertIcon, Minimize2Icon } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { Skeleton } from "../ui/skeleton";
@@ -90,7 +90,7 @@ import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
-import { TimelineSystemDivider } from "./TimelineSystemDivider";
+import { SubagentParentHeader } from "./SubagentParentHeader";
 
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import { TimelineMinimap } from "./TimelineMinimap";
@@ -1088,18 +1088,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
       )
     ) : (
       <div className="messages-timeline-row-frame">
-        <div className="chat-content-lane pt-1 sm:pt-2">
-          <TimelineSystemDivider
-            label="Subagent of"
-            detail={
-              parentThreadLink.environmentLabel === undefined
-                ? parentThreadLink.title
-                : `${parentThreadLink.title} on ${parentThreadLink.environmentLabel}`
-            }
-            icon={BotIcon}
-            {...(parentThreadLink.open === undefined
-              ? {}
-              : { actionLabel: "Open parent thread", onAction: parentThreadLink.open })}
+        <div className="chat-content-lane">
+          <SubagentParentHeader
+            title={parentThreadLink.title}
+            environmentLabel={parentThreadLink.environmentLabel}
+            onOpen={parentThreadLink.open}
           />
         </div>
       </div>

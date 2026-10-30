@@ -25,7 +25,7 @@ doc_version=$(grep -oP '^# Wire protocol v\K[0-9]+' "$DOC_SRC" || true)
 [ -n "$doc_version" ] || fail "could not read the version from $DOC_SRC (expected a first-line header like '# Wire protocol v35')"
 
 if [ "$rust_version" != "$ts_version" ]; then
-  fail "daemon and UI disagree on the wire protocol: $RUST_SRC says $rust_version, $TS_SRC says $ts_version. The TS file is ts-rs generated — regenerate it rather than editing it by hand. A daemon and a UI that disagree on this number cannot complete the hello handshake."
+  fail "daemon and UI disagree on the wire protocol: $RUST_SRC says $rust_version, $TS_SRC says $ts_version. The TS file is frozen output of the retired generator; revert the bump instead, because the v1 renderer and its generated types are not regenerated. A daemon and a UI that disagree on this number cannot complete the hello handshake."
 fi
 
 if [ "$rust_version" != "$doc_version" ]; then

@@ -25,6 +25,17 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   return msg ? `${label}: ${kind}. ${msg}` : `${label}: ${kind}.`;
 }
 
+/** The short reason the row shows beneath an unavailable provider's name. */
+function unavailableInstanceReason(entry: ProviderInstanceEntry): string | null {
+  if (!entry.enabled || entry.status === "disabled") {
+    return "Disabled";
+  }
+  if (entry.status === "ready" && entry.isAvailable) {
+    return null;
+  }
+  return entry.snapshot.message?.trim() || (entry.status === "error" ? "Unavailable" : "Not ready");
+}
+
 const PICKER_TOOLTIP_SIDE = "left" as const;
 const PICKER_TOOLTIP_SIDE_OFFSET = 8;
 
@@ -68,7 +79,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className="w-44 shrink-0 overflow-hidden bg-muted/30"
       data-model-picker-sidebar="true"
       aria-label="Providers"
       orientation="vertical"
@@ -82,12 +93,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
       }}
     >
       <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div ref={sidebarContentRef} className="relative flex min-h-full flex-col gap-1 p-1">
+        <div ref={sidebarContentRef} className="relative flex min-h-full flex-col gap-0.5 p-1.5">
           {selectedIndicatorTop !== null ? (
             <div
               data-model-picker-selected-indicator="true"
-              className="pointer-events-none absolute right-1 z-10 h-5 w-0.75 rounded-full bg-primary transition-[top] duration-200 ease-out"
-              style={{ top: selectedIndicatorTop }}
+              className="pointer-events-none absolute right-1 z-10 w-0.75 rounded-full bg-primary transition-[top,height] duration-200 ease-out"
+              style={{ top: selectedIndicatorTop, height: 20 }}
             />
           ) : null}
           {showFavorites ? (
@@ -97,15 +108,16 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                        )}
+                        className="relative isolate flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none"
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label="Favorites"
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+                        <StarIcon className="size-4 shrink-0 fill-current" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-xs font-normal leading-tight">
+                          Favorites
+                        </span>
                       </Toolbar.Button>
                     }
                   />
@@ -118,7 +130,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   </TooltipPopup>
                 </Tooltip>
               </div>
-              <div className="border-b border-border/70" aria-hidden="true" />
+              <div className="my-1 border-b border-border/70" aria-hidden="true" />
             </>
           ) : null}
 
@@ -132,6 +144,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const reason =
+              unavailableInstanceReason(entry) ??
+              (isContextDisabled ? "Unavailable in this thread" : null);
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry)
@@ -142,7 +157,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  "relative isolate flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
                   isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
                 )}
                 data-provider-accent-color={entry.accentColor}
@@ -168,8 +183,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   acpRegistryAgentId={entry.acpRegistryAgentId}
                   acpRegistryIconUrl={entry.acpRegistryIconUrl}
                   showBadge={showInstanceBadge}
-                  className="size-6 z-30"
-                  iconClassName="size-5"
+                  className="size-5 z-30 shrink-0"
+                  iconClassName="size-4"
                   indicatorBackground={
                     isHovered && !isDisabled
                       ? "var(--muted)"
@@ -179,6 +194,19 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-normal leading-tight">
+                    {entry.displayName}
+                  </span>
+                  {reason !== null ? (
+                    <span
+                      className="mt-0.5 block truncate text-3xs leading-tight text-muted-foreground"
+                      data-model-picker-provider-reason="true"
+                    >
+                      {reason}
+                    </span>
+                  ) : null}
+                </span>
               </Toolbar.Button>
             );
 

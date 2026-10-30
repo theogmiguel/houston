@@ -1,34 +1,34 @@
 import { type OrchestrationV2TurnItem } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
 
-export function subagentGroupTiming(
-  agents: ReadonlyArray<{
-    status: OrchestrationV2TurnItem["status"];
-    startedAt: DateTime.Utc | null;
-    completedAt: DateTime.Utc | null;
-  }>,
-) {
-  let startMs: number | null = null;
-  let endMs: number | null = null;
-  let endUnknown = false;
-  for (const agent of agents) {
-    if (agent.startedAt) {
-      const ms = DateTime.toEpochMillis(agent.startedAt);
-      startMs = startMs === null ? ms : Math.min(startMs, ms);
-    }
-    if (agent.completedAt) {
-      const ms = DateTime.toEpochMillis(agent.completedAt);
-      endMs = endMs === null ? ms : Math.max(endMs, ms);
-    } else {
-      endUnknown = true;
-    }
-  }
-  const live = agents.some(
-    ({ status }) => status === "pending" || status === "running" || status === "waiting",
-  );
+type SubagentStatus = OrchestrationV2TurnItem["status"];
+
+export function isSubagentRunning(status: SubagentStatus): boolean {
+  return status === "pending" || status === "running" || status === "waiting";
+}
+
+export function subagentGroupSummaryText(statuses: ReadonlyArray<SubagentStatus>) {
+  const count = statuses.length;
+  const running = statuses.filter(isSubagentRunning).length;
   return {
-    status: live ? ("running" as const) : ("completed" as const),
-    startedAt: startMs === null ? null : new Date(startMs).toISOString(),
-    completedAt: live || endUnknown || endMs === null ? null : new Date(endMs).toISOString(),
+    label: `Started ${count} ${count === 1 ? "subagent" : "subagents"}`,
+    running: running > 0 ? `${running} running` : null,
   };
+}
+
+export function subagentStatusLabel(status: SubagentStatus): string {
+  switch (status) {
+    case "completed":
+      return "Ready";
+    case "running":
+    case "waiting":
+    case "pending":
+      return "Running";
+    case "failed":
+      return "Failed";
+    case "idle":
+      return "Idle";
+    case "cancelled":
+    case "interrupted":
+      return "Stopped";
+  }
 }

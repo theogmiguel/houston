@@ -35,6 +35,7 @@ export function AssistantCitationCommentEditor({
   return (
     <div
       data-citation-comment-editor="true"
+      className="grid gap-2 p-2.5 px-3 text-headline"
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -44,6 +45,9 @@ export function AssistantCitationCommentEditor({
         }
       }}
     >
+      <p className="line-clamp-3 border-(--line-strong) border-l-2 pl-2 text-muted-foreground text-xs">
+        {citation.text}
+      </p>
       <textarea
         ref={inputRef}
         aria-label="Comment on selected text"
@@ -51,7 +55,7 @@ export function AssistantCitationCommentEditor({
         aria-invalid={commentTooLong || undefined}
         placeholder="Add an optional comment..."
         rows={2}
-        className="field-sizing-content block max-h-40 min-h-16 w-full resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-muted-foreground sm:text-sm"
+        className="field-sizing-content block max-h-40 min-h-9 w-full resize-none rounded-(--r-ctl) bg-(--field) px-2 py-1.5 text-headline outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-(--accent-ink) focus-visible:ring-inset"
         value={comment}
         onChange={(event) => {
           setComment(event.currentTarget.value);
@@ -79,7 +83,7 @@ export function AssistantCitationCommentEditor({
           characters.
         </p>
       ) : null}
-      <div className="mt-2 flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2">
         <Button
           variant="outline"
           size="xs"
@@ -94,7 +98,7 @@ export function AssistantCitationCommentEditor({
           onPointerDown={(event) => event.preventDefault()}
           onClick={submit}
         >
-          {commentTooLong ? "Shorten comment" : "Save"}
+          {commentTooLong ? "Shorten comment" : "Comment"}
         </Button>
       </div>
     </div>

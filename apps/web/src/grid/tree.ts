@@ -158,6 +158,50 @@ export function appendThread(tree: LayoutNode | null, threadId: string): LayoutN
   return appendToRoot(tree, threadLeaf(threadId));
 }
 
+function insertChildAt(split: SplitNode, index: number, node: ThreadNode): SplitNode {
+  const count = split.children.length + 1;
+  const scaled = normalize(split.weights).map((weight) => weight * ((count - 1) / count));
+  const children = [...split.children];
+  children.splice(index, 0, node);
+  const weights = [...scaled];
+  weights.splice(index, 0, 100 / count);
+  return { ...split, children, weights };
+}
+
+/**
+ * Inserts a thread at a preorder slot, so a thread that left a grid returns to
+ * the pane it left. Slots past the end append.
+ */
+export function insertThreadAtSlot(
+  tree: LayoutNode | null,
+  node: ThreadNode,
+  slot: number,
+): LayoutNode {
+  if (tree === null) return node;
+  const position = Number.isFinite(slot) ? Math.max(0, Math.trunc(slot)) : 0;
+  if (tree.kind !== "split") {
+    return position <= 0
+      ? { kind: "split", dir: "row", children: [node, tree], weights: [50, 50] }
+      : { kind: "split", dir: "row", children: [tree, node], weights: [50, 50] };
+  }
+  let start = 0;
+  for (let index = 0; index < tree.children.length; index += 1) {
+    const child = tree.children[index]!;
+    const count = preorderThreads(child).length;
+    if (position === start) return insertChildAt(tree, index, node);
+    if (position < start + count) {
+      return {
+        ...tree,
+        children: tree.children.map((entry, entryIndex) =>
+          entryIndex === index ? insertThreadAtSlot(child, node, position - start) : entry,
+        ),
+      };
+    }
+    start += count;
+  }
+  return insertChildAt(tree, tree.children.length, node);
+}
+
 export function insertThreadAt(
   tree: LayoutNode | null,
   threadId: string,
