@@ -15,6 +15,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import {
   entryOf,
+  git,
   layerMergeQueueTest,
   makeGitHub,
   makeGitLog,
@@ -493,6 +494,40 @@ describe("a refused push runs no git push and records the failure", () => {
     );
   });
 
+  it.live(
+    "a refused push runs no git push and records the failure: a houston branch in the user's checkout",
+    () => {
+      const github = makeGitHub(makeRepos());
+      const gitLog = makeGitLog();
+      const repos = github.repos!;
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const runner = yield* HoustonMergeQueueRunner;
+          // No managed worktree and no task run: houston/9 is checked out only in the project's
+          // own checkout, which Houston does not manage.
+          const projectId = yield* queueScenario(github, [9], {
+            command: "git --version",
+            mergeWhenVerified: true,
+            managed: [],
+          });
+          git(repos.checkout, ["fetch", "--quiet", "origin", "+houston/9:refs/heads/houston/9"]);
+          git(repos.checkout, ["checkout", "--quiet", "houston/9"]);
+          const remoteBefore = remoteHead(repos, "houston/9");
+          yield* runner.pass;
+          assert.strictEqual(remoteHead(repos, "houston/9"), remoteBefore);
+          assert.deepEqual(pushesOf(gitLog), []);
+          const refused = entryOf(yield* queue.get({ projectId }), 9);
+          assert.strictEqual(refused.failure?.kind, "refused", JSON.stringify(refused));
+          assert.include(refused.failure?.message, "houston/9");
+          assert.include(refused.failure?.message, "Houston created no worktree on that branch");
+          assert.deepEqual(mergesOf(github), []);
+        }),
+        gitLog,
+      );
+    },
+  );
 });
 
 describe("the merge queue has no push but the lease and no unpinned merge", () => {
