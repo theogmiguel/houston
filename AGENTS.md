@@ -103,8 +103,9 @@ Before completing a change, identify which of these checks apply:
   hook installation paths. Support each relevant provider or refuse it by name. Cursor,
   Grok, Droid, Copilot and Aider are recognised identities only; they are not spawnable.
 - **Protocol:** type all `/ws` messages in `core/houston-protocol`. Bump
-  `PROTOCOL_VERSION` once per wire-changing batch, regenerate TypeScript and update
-  `protocol/protocol.md` in the same commit. Run `check-protocol-sync.sh`.
+  `PROTOCOL_VERSION` once per wire-changing batch and update `protocol/protocol.md` in the
+  same commit. The TypeScript mirror under `ui/` is no longer generated and stays frozen.
+  Run `check-protocol-sync.sh`.
 - **State transitions:** provide reversal and visibility: spawn/kill, pin/unpin, and
   settings with a visible current value. Errors for limits name the limit, actual value
   and requested operation.
@@ -194,7 +195,7 @@ detach drive persistence; terminal bytes use binary frames. Agent orchestration 
 on the daemon port with per-pane bearer tokens. See the
 [architecture overview](docs/internals/overview.md).
 
-- `core/houston-protocol`: Rust wire schema and generated TypeScript source types.
+- `core/houston-protocol`: Rust wire schema; its TypeScript mirror under `ui/` is frozen.
 - `core/houston-core`: daemon, PTYs, persistence, hooks, orchestration and provider logic.
 - `src-tauri`: desktop application, daemon connection, native browser, watchdog and tray.
 - `ui/src/renderer/src`: React renderer, terminal engine, layout, components and transport.

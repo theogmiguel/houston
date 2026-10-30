@@ -30,7 +30,7 @@ ts_version=$(grep -oP 'export const PROTOCOL_VERSION = \K[0-9]+' "$TS_SRC" || tr
 [ -n "$ts_version" ] || fail "could not read PROTOCOL_VERSION from $TS_SRC (expected a line like 'export const PROTOCOL_VERSION = 39')"
 
 if [ "$rust_version" != "$ts_version" ]; then
-  fail "daemon and renderer sources disagree on the wire protocol before anything was even built: $RUST_SRC says $rust_version, $TS_SRC says $ts_version. Regenerate the TS side (scripts/gen-protocol-types.sh) -- it is generated, not hand-edited."
+  fail "daemon and renderer sources disagree on the wire protocol before anything was even built: $RUST_SRC says $rust_version, $TS_SRC says $ts_version. The TS side is frozen output of the retired generator; revert the bump instead of editing it by hand."
 fi
 
 if [ "$TS_SRC" -nt "$INDEX" ]; then
