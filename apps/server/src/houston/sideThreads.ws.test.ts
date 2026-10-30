@@ -109,6 +109,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 
+import * as HoustonReviewState from "./reviewState.ts";
 import { makeHarness, runWith } from "./sideThreads.testkit.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
@@ -133,6 +134,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
+  Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
