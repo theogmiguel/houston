@@ -3349,7 +3349,10 @@ export const layer = Layer.unwrap(
           yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
-              Layer.merge(RpcAuthorization.layer(session.scopes), rpcInstrumentationLayer),
+              Layer.merge(
+                RpcAuthorization.layer(session.scopes),
+                rpcInstrumentationLayer,
+              ),
             ),
             Effect.forkScoped,
           );
