@@ -5324,7 +5324,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.deliveryIntent,
     );
     // Houston: the intent the sender chose, kept on the message's delivery record.
-    const requestedIntent =
+    let requestedIntent =
       command.deliveryIntent === "steer" ||
       (command.deliveryIntent === undefined && command.dispatchMode.type === "steer_active")
         ? ("steer" as const)
@@ -5404,6 +5404,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           goalStopRunId = target.id;
         }
         dispatchMode = { type: "queue_after_active" };
+        // Houston: a goal sent as an interrupt that stops nothing only waits in the queue.
+        if (requestedIntent === "interrupt" && goalStopRunId === undefined) {
+          requestedIntent = "queue";
+        }
       }
     }
     if (
