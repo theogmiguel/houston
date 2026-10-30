@@ -64,9 +64,10 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
   An icon with no lucide match is reported, not hand-drawn.
 - **Theme control** uses the moon icon (`MoonIcon`, with `SunIcon`/`MonitorIcon` per mode), not
   the half-filled circle the boards draw.
-- **Top bar controls**, left to right: Terminal (Ctrl J), Grid layout (grid icon with a chevron;
-  the menu holds Auto arrange and the GridSystem presets), Right panel (Ctrl Alt B), then the
-  window controls. There is no "Add thread to grid" button in the top bar.
+- **Top bar controls**, left to right: Thread details (lucide `SquareMenuIcon`, upstream's
+  toggle), Terminal (Ctrl J), Grid layout (grid icon with a chevron; the menu holds Auto arrange
+  and the GridSystem presets), Right panel (Ctrl Alt B), then the window controls. There is no
+  "Add thread to grid" button in the top bar.
 - **New thread** opens a draft pane in the current grid, split beside the focused pane, with the
   composer focused. The composer's top row holds project, Local checkout / New worktree /
   Existing worktree, base branch and machine, defaulting to the focused pane's. Nothing is
@@ -74,3 +75,9 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
   composer centred at 760px with no pane head. Entry points: `T` when focus is outside a text
   field, the `+` on a grid row in the sidebar (tooltip "New thread · T"), and the existing
   `chat.new` / `chat.newLocal` keybindings.
+- **Thread details card keeps upstream's behaviour** (an approved exception to rule 1): inline,
+  floating at the top right of the thread when there is room; a popover from the Thread details
+  button when there is not; density (full, compact, essential) from the available height;
+  right-click opens "Show in thread details". Only the look changes: board tokens, 28px rows with
+  no icons, a title on every section (Workspace, Version control, Servers, Automations, Lineage,
+  Usage), `--raised` surface and `--shadow-1`.
