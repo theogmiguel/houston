@@ -17,8 +17,10 @@ export const PROVIDER_STATUS_STYLES = {
   ready: {
     dot: "bg-success",
   },
+  // Amber marks only a thread that needs you. Signed out, offline and out of
+  // usage read as secondary ink here.
   warning: {
-    dot: "bg-warning",
+    dot: "bg-muted-foreground",
   },
 } as const;
 

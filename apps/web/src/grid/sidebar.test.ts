@@ -2,6 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attentionNavigationDirection,
   type AttentionCard,
   clearThreadSelection,
   nextAttentionCard,
@@ -255,6 +256,37 @@ describe("grid thread selection", () => {
       toggleKey: true,
     });
     expect([...removed.selectedThreadKeys]).toEqual(["c"]);
+  });
+});
+
+describe("attention navigation shortcut", () => {
+  const chord = (overrides: Partial<Parameters<typeof attentionNavigationDirection>[0]>) => ({
+    key: ".",
+    code: "Period",
+    metaKey: false,
+    ctrlKey: true,
+    altKey: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  it("uses Ctrl . for next and Ctrl Shift . for previous", () => {
+    expect(attentionNavigationDirection(chord({}))).toBe(1);
+    expect(attentionNavigationDirection(chord({ metaKey: true, ctrlKey: false }))).toBe(1);
+    expect(attentionNavigationDirection(chord({ shiftKey: true }))).toBe(-1);
+  });
+
+  it("accepts the shifted period key on layouts that produce >", () => {
+    expect(attentionNavigationDirection(chord({ key: ">", code: "Period", shiftKey: true }))).toBe(
+      -1,
+    );
+  });
+
+  it("leaves Ctrl J to the terminal drawer and ignores extra modifiers", () => {
+    expect(attentionNavigationDirection(chord({ key: "j", code: "KeyJ" }))).toBeNull();
+    expect(attentionNavigationDirection(chord({ altKey: true }))).toBeNull();
+    expect(attentionNavigationDirection(chord({ ctrlKey: false, metaKey: false }))).toBeNull();
+    expect(attentionNavigationDirection(chord({ key: ",", code: "Comma" }))).toBeNull();
   });
 });
 
