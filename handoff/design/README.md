@@ -56,3 +56,21 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
    every state the board shows (empty, loading, error, long text, narrow width). Typecheck and
    tests passing is not enough.
 7. Keep upstream's tests green; update a test only when it asserts a visual detail you changed.
+
+## Decisions that override the boards
+
+- **Icons come from lucide**, as in the ported code (`TerminalIcon`, `PanelRightIcon`, `MoonIcon`,
+  ...). A board sets where an icon sits and its size (15px in a 28px control), not its drawing.
+  An icon with no lucide match is reported, not hand-drawn.
+- **Theme control** uses the moon icon (`MoonIcon`, with `SunIcon`/`MonitorIcon` per mode), not
+  the half-filled circle the boards draw.
+- **Top bar controls**, left to right: Terminal (Ctrl J), Grid layout (grid icon with a chevron;
+  the menu holds Auto arrange and the GridSystem presets), Right panel (Ctrl Alt B), then the
+  window controls. There is no "Add thread to grid" button in the top bar.
+- **New thread** opens a draft pane in the current grid, split beside the focused pane, with the
+  composer focused. The composer's top row holds project, Local checkout / New worktree /
+  Existing worktree, base branch and machine, defaulting to the focused pane's. Nothing is
+  created until Enter; Esc or the pane's close discards the draft. An empty grid shows the same
+  composer centred at 760px with no pane head. Entry points: `T` when focus is outside a text
+  field, the `+` on a grid row in the sidebar (tooltip "New thread · T"), and the existing
+  `chat.new` / `chat.newLocal` keybindings.
