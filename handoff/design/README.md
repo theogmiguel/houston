@@ -47,6 +47,10 @@ rm handoff/design/boards/.render.html
    the board's structure would put it (a menu, the right panel, settings), never back into an
    upstream-only popover or card. Never drop a setting, handler or test; never invent behaviour
    a board shows but the code lacks: report it instead. Copy text from the code when it differs.
+   **Only the boards and mocks are approved.** Everything a board draws ships exactly as drawn:
+   controls, labels, order, sizes. When unsure, match the board. What a board does not draw stays,
+   styled with the board's tokens and components, and is listed in the PR under "Not on the board
+   (kept, restyled)" for a later decision.
 2. The accent is used only where a board uses it (selection, running state, primary actions such
    as Allow). Send buttons, focus rings of fields and banners stay neutral unless their board
    colours them.
