@@ -30,6 +30,7 @@ import {
   pushGuard,
   refuse,
   shortSha,
+  unreportedChecks,
   verificationHolds,
   type QueueRow,
 } from "./rules.ts";
@@ -265,6 +266,11 @@ const make = Effect.gen(function* () {
             ),
           );
           if (leased._tag === "Failure") return yield* fail(leased.failure);
+          // Until CI registers on the pushed commit GitHub may call it clean with no checks.
+          yield* store.setVerification(target.projectId, number, {
+            ...verification,
+            headChecks: row.facts?.checks.length ?? 0,
+          });
           yield* store.appendLog(target.projectId, {
             kind: "push",
             number,
@@ -342,6 +348,14 @@ const make = Effect.gen(function* () {
             OPERATION,
             `GitHub's checks failed on the verified commit of PR #${number}; it left the line`,
           );
+        }
+        const reported = row.facts?.checks.length ?? 0;
+        const awaited = unreportedChecks(row);
+        if (held !== null && awaited !== null) {
+          return {
+            outcome: "waiting" as const,
+            message: `GitHub reports ${reported} of ${awaited} checks on the pushed commit ${shortSha(held.verifiedSha)} of PR #${number}; it merges once every check the previous head had has reported and passed`,
+          };
         }
         if (entry.status === "blocked") {
           const reason = entry.reason ?? "";

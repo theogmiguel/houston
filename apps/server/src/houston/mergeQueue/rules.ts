@@ -346,6 +346,15 @@ export const verificationHolds = (row: QueueRow): HoustonMergeQueueVerification 
     : null;
 };
 
+/** The pushed commit's awaited check count while GitHub reports fewer than its old head had. */
+export const unreportedChecks = (row: QueueRow): number | null => {
+  const held = verificationHolds(row);
+  if (held === null || held.headChecks === undefined || row.headSha !== held.verifiedSha) {
+    return null;
+  }
+  return (row.facts?.checks.length ?? 0) < held.headChecks ? held.headChecks : null;
+};
+
 /** A failure keeps the entry out of line only for the head it names. */
 export const failureHolds = (row: QueueRow): HoustonMergeQueueFailure | null =>
   row.failure !== null && row.failure.headSha === row.headSha ? row.failure : null;

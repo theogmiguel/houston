@@ -76,6 +76,8 @@ export const HoustonMergeQueueVerification = Schema.Struct({
   headSha: Schema.String,
   verifiedSha: Schema.String,
   at: IsoDateTime,
+  /** Checks GitHub reported on `headSha` when the queue pushed `verifiedSha` over it. */
+  headChecks: Schema.optionalKey(NonNegativeInt),
 });
 export type HoustonMergeQueueVerification = typeof HoustonMergeQueueVerification.Type;
 

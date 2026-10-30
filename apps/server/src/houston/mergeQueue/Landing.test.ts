@@ -352,6 +352,87 @@ describe("a pushed commit merges only once its checks are green", () => {
     );
   });
 
+  it.live(
+    "a pushed commit merges only once its checks are green: none reported yet after the push",
+    () => {
+      const github = makeGitHub(makeRepos());
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const pull = github.pulls.get(7)!;
+          pull.checks = [
+            { name: "build", status: "success", required: true },
+            { name: "lint", status: "success", required: false },
+          ];
+          yield* (yield* HoustonMergeQueueReader).readProject(projectId);
+          const entry = yield* verified(projectId, 7);
+          // CI has not registered on the pushed commit yet, and GitHub calls it clean.
+          pull.checks = [];
+          const first = yield* queue.mergeHead({
+            projectId,
+            number: 7,
+            expectedHeadSha: entry.headSha,
+          });
+          assert.strictEqual(first.outcome, "waiting", first.message);
+          assert.include(first.message, "0 of 2 checks");
+          assert.deepEqual(mergesOf(github), []);
+          const pushed = remoteHead(github.repos!, "houston/7")!;
+          assert.strictEqual(pushed, entry.verification!.verifiedSha);
+
+          pull.checks = [{ name: "build", status: "success", required: true }];
+          const partial = yield* queue.mergeHead({
+            projectId,
+            number: 7,
+            expectedHeadSha: pushed,
+          });
+          assert.strictEqual(partial.outcome, "waiting", partial.message);
+          assert.include(partial.message, "1 of 2 checks");
+          assert.deepEqual(mergesOf(github), []);
+
+          pull.checks = [
+            { name: "build", status: "success", required: true },
+            { name: "lint", status: "success", required: false },
+          ];
+          const merged = yield* queue.mergeHead({ projectId, number: 7, expectedHeadSha: pushed });
+          assert.strictEqual(merged.outcome, "merged", merged.message);
+          assert.deepEqual(
+            mergeBodies(github).map((body) => body.sha),
+            [pushed],
+          );
+        }),
+      );
+    },
+  );
+
+  it.live(
+    "a pushed commit merges only once its checks are green: a repository without checks",
+    () => {
+      const github = makeGitHub(makeRepos());
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          github.pulls.get(7)!.checks = [];
+          yield* (yield* HoustonMergeQueueReader).readProject(projectId);
+          const entry = yield* verified(projectId, 7);
+          const result = yield* queue.mergeHead({
+            projectId,
+            number: 7,
+            expectedHeadSha: entry.headSha,
+          });
+          assert.strictEqual(result.outcome, "merged", result.message);
+          assert.deepEqual(
+            mergeBodies(github).map((body) => body.sha),
+            [entry.verification!.verifiedSha],
+          );
+        }),
+      );
+    },
+  );
+
   it.live("a pushed commit merges only once its checks are green: a failing check", () => {
     const github = makeGitHub(makeRepos());
     return withQueue(
@@ -411,6 +492,7 @@ describe("a refused push runs no git push and records the failure", () => {
       gitLog,
     );
   });
+
 });
 
 describe("the merge queue has no push but the lease and no unpinned merge", () => {
