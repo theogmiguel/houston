@@ -1,11 +1,14 @@
-import { BookmarkIcon, FileIcon, FileTextIcon } from "lucide-react";
+import { FileIcon, FileTextIcon, ImageIcon, XIcon } from "lucide-react";
 import { memo, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
-import { RelativeTime } from "../RelativeTime";
+import { formatShortcutLabel } from "~/keybindings";
 import { cn } from "~/lib/utils";
+import { RelativeTime } from "../RelativeTime";
+import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
+import { ScrollArea } from "../ui/scroll-area";
 import { type PromptStashEntry } from "../../promptStashStore";
-import { ComposerBanner } from "./ComposerBanner";
 
 const SNIPPET_MAX_CHARS = 90;
 
@@ -42,6 +45,15 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
 
   const highlightedEntry = entries.find((entry) => entry.id === highlightedId) ?? entries[0];
   const drawerRef = useRef<HTMLDivElement>(null);
+  // The menu deletes with the modifier plus Backspace; the hint names the current platform's key.
+  const deleteShortcutLabel = formatShortcutLabel({
+    key: "Backspace",
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    modKey: true,
+  });
 
   // Both listeners read entries, highlight and callbacks at event time, so they subscribe
   // once for the menu's lifetime instead of on every highlight change.
@@ -124,58 +136,57 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
   }, []);
 
   return (
-    <ComposerBanner.Root ref={drawerRef} data-composer-stash-drawer="true">
-      <ComposerBanner.Row
-        render={<button type="button" />}
-        aria-label="Close stash"
-        aria-expanded="true"
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={onClose}
-      >
-        <ComposerBanner.Icon>
-          <BookmarkIcon />
-        </ComposerBanner.Icon>
-        <ComposerBanner.Content className="text-muted-foreground">Stash</ComposerBanner.Content>
-        <ComposerBanner.Actions>
-          <ComposerBanner.Count>{entries.length}</ComposerBanner.Count>
-          <ComposerBanner.ToggleIcon expanded />
-        </ComposerBanner.Actions>
-      </ComposerBanner.Row>
-      <ComposerBanner.Scroll>
-        <ComposerBanner.Children render={<ul role="list" />} aria-label="Stashed prompts">
+    <div
+      ref={drawerRef}
+      data-composer-stash-drawer="true"
+      className="dialog-glass mb-2 grid gap-px rounded-(--r-group) p-1 text-headline text-popover-foreground"
+    >
+      <div className="flex h-7.5 items-center ps-2 pe-1 text-xs font-semibold text-muted-foreground">
+        <span>Stashed prompts</span>
+        <span className="flex-1" />
+        <Button
+          variant="ghost-muted"
+          size="icon-sm"
+          aria-label="Close stash"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={onClose}
+        >
+          <XIcon />
+        </Button>
+      </div>
+      <ScrollArea radius="none" scrollFade className="h-auto max-h-[min(24rem,40dvh)]">
+        <ul role="list" aria-label="Stashed prompts" className="grid gap-px">
           {entries.length === 0 ? (
-            <ComposerBanner.Row render={<li />}>
-              <ComposerBanner.Icon />
-              <ComposerBanner.Content className="text-muted-foreground">
-                Nothing stashed yet.
-                {stashShortcutLabel
-                  ? ` Press ${stashShortcutLabel} with a prompt in the composer to stash it.`
-                  : null}
-              </ComposerBanner.Content>
-            </ComposerBanner.Row>
+            <li className="flex min-h-8.5 items-center rounded-(--r-ctl) px-2 py-1.5 text-xs text-muted-foreground">
+              Nothing stashed yet.
+              {stashShortcutLabel
+                ? ` Press ${stashShortcutLabel} with a prompt in the composer to stash it.`
+                : null}
+            </li>
           ) : (
-            entries.map((entry) => (
-              <ComposerBanner.Row
-                render={<li />}
-                key={entry.id}
-                data-stash-entry={entry.id}
-                data-highlighted={highlightedEntry?.id === entry.id || undefined}
-                className={cn(
-                  "relative rounded-sm",
-                  highlightedEntry?.id === entry.id && "bg-accent text-accent-foreground",
-                )}
-                onMouseMove={() => {
-                  if (highlightedId !== entry.id) setHighlightedId(entry.id);
-                }}
-                onFocus={() => setHighlightedId(entry.id)}
-              >
-                <ComposerBanner.Icon>
-                  <FileTextIcon />
-                </ComposerBanner.Icon>
-                <ComposerBanner.Content>
+            entries.map((entry) => {
+              const highlighted = highlightedEntry?.id === entry.id;
+              const imageCount = entry.attachments.length;
+              const fileCount = entry.files?.length ?? 0;
+              const droppedCount = missingImageCount(entry);
+              return (
+                <li
+                  key={entry.id}
+                  data-stash-entry={entry.id}
+                  data-highlighted={highlighted || undefined}
+                  className={cn(
+                    "group/se relative flex h-8.5 items-center gap-2 rounded-(--r-ctl) ps-2 pe-1.5",
+                    highlighted && "bg-(--sel)",
+                  )}
+                  onMouseMove={() => {
+                    if (highlightedId !== entry.id) setHighlightedId(entry.id);
+                  }}
+                  onFocus={() => setHighlightedId(entry.id)}
+                >
+                  <FileTextIcon className="size-3.25 shrink-0 text-muted-foreground" aria-hidden />
                   <button
                     type="button"
-                    className="min-w-0 flex-1 cursor-pointer truncate text-left text-foreground/80 outline-none before:absolute before:inset-0 before:rounded-sm focus-visible:before:ring-2 focus-visible:before:ring-inset focus-visible:before:ring-ring"
+                    className="min-w-0 flex-1 cursor-pointer truncate text-left text-foreground outline-none before:absolute before:inset-0 before:rounded-(--r-ctl) focus-visible:before:outline-2 focus-visible:before:-outline-offset-2 focus-visible:before:outline-ring"
                     data-stash-restore={entry.id}
                     aria-label={`Restore stashed prompt: ${stashEntrySnippet(entry)}`}
                     onPointerDown={(event) => event.preventDefault()}
@@ -183,56 +194,58 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                   >
                     {stashEntrySnippet(entry)}
                   </button>
-                </ComposerBanner.Content>
-                <ComposerBanner.Actions>
-                  {entry.pendingImageCount ? (
-                    <span className="shrink-0 text-muted-foreground">
-                      saving {entry.pendingImageCount} image
-                      {entry.pendingImageCount === 1 ? "" : "s"}…
-                    </span>
-                  ) : missingImageCount(entry) > 0 ? (
-                    <span className="shrink-0 text-warning-foreground">
-                      {missingImageCount(entry)} image
-                      {missingImageCount(entry) === 1 ? "" : "s"} dropped
-                    </span>
-                  ) : null}
-                  {entry.attachments.length > 0 ? (
-                    <span className="flex shrink-0 items-center -space-x-1.5">
-                      {entry.attachments.slice(0, 3).map((attachment) => (
-                        <img
-                          key={attachment.id}
-                          src={attachment.dataUrl}
-                          alt=""
-                          aria-hidden="true"
-                          className="size-4 rounded border border-border/70 object-cover"
-                        />
-                      ))}
-                    </span>
-                  ) : null}
-                  {(entry.files?.length ?? 0) > 0 ? (
-                    <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                      <FileIcon className="size-3" aria-hidden />
-                      {entry.files!.length}
-                    </span>
-                  ) : null}
-                  <time
-                    dateTime={entry.createdAt}
-                    className="shrink-0 text-muted-foreground tabular-nums max-sm:hidden"
-                  >
-                    <RelativeTime timestamp={entry.createdAt} />
-                  </time>
-                  <ComposerBanner.Dismiss
-                    className="z-10"
-                    aria-label="Delete stashed prompt"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => onDelete(entry)}
-                  />
-                </ComposerBanner.Actions>
-              </ComposerBanner.Row>
-            ))
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    {entry.pendingImageCount ? (
+                      <span>
+                        saving {entry.pendingImageCount} image
+                        {entry.pendingImageCount === 1 ? "" : "s"}…
+                      </span>
+                    ) : droppedCount > 0 ? (
+                      <span className="text-warning-foreground">
+                        {droppedCount} image
+                        {droppedCount === 1 ? "" : "s"} dropped
+                      </span>
+                    ) : null}
+                    {imageCount > 0 ? (
+                      <span className="inline-flex items-center gap-0.75 tabular-nums">
+                        <ImageIcon className="size-3.25" aria-hidden />
+                        {imageCount}
+                      </span>
+                    ) : null}
+                    {fileCount > 0 ? (
+                      <span className="inline-flex items-center gap-0.75 tabular-nums">
+                        <FileIcon className="size-3.25" aria-hidden />
+                        {fileCount}
+                      </span>
+                    ) : null}
+                    <time dateTime={entry.createdAt} className="shrink-0 tabular-nums max-sm:hidden">
+                      <RelativeTime timestamp={entry.createdAt} />
+                    </time>
+                    {highlighted ? (
+                      <Button
+                        variant="ghost-muted"
+                        size="icon-sm"
+                        className="relative z-10"
+                        aria-label="Delete stashed prompt"
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => onDelete(entry)}
+                      >
+                        <XIcon />
+                      </Button>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })
           )}
-        </ComposerBanner.Children>
-      </ComposerBanner.Scroll>
-    </ComposerBanner.Root>
+        </ul>
+      </ScrollArea>
+      <div className="mt-0.75 flex items-center gap-1.5 border-t border-border px-2 pt-2 pb-1.5 text-2xs text-muted-foreground">
+        <Kbd>↑↓</Kbd> choose
+        <Kbd>Enter</Kbd> restore
+        <Kbd>{deleteShortcutLabel}</Kbd> delete
+        <Kbd>Esc</Kbd> close
+      </div>
+    </div>
   );
 });

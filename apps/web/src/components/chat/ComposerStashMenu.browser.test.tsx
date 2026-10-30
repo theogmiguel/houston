@@ -3,8 +3,45 @@ import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { type PromptStashEntry } from "../../promptStashStore";
 import { Dialog, DialogPopup } from "../ui/dialog";
 import { ComposerStashMenu } from "./ComposerStashMenu";
+
+function entry(id: string, overrides: Partial<PromptStashEntry> = {}): PromptStashEntry {
+  return {
+    id,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    prompt: `${id} prompt`,
+    attachments: [],
+    droppedImageNames: [],
+    ...overrides,
+  };
+}
+
+function Menu({ entries }: { entries: ReadonlyArray<PromptStashEntry> }) {
+  const composerFormRef = useRef<HTMLFormElement>(null);
+  return (
+    <>
+      <form ref={composerFormRef}>
+        <textarea aria-label="Message" defaultValue="Unsent draft" />
+      </form>
+      <ComposerStashMenu
+        composerFormRef={composerFormRef}
+        entries={entries}
+        stashShortcutLabel="Ctrl+S"
+        onRestore={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    </>
+  );
+}
+
+const drawer = () => document.querySelector<HTMLElement>('[data-composer-stash-drawer="true"]')!;
+const rows = () => Array.from(document.querySelectorAll<HTMLElement>("[data-stash-entry]"));
+const deleteCounts = () =>
+  rows().map((row) => row.querySelectorAll('[aria-label="Delete stashed prompt"]').length);
+
 
 function Composer({ dialog = false }: { dialog?: boolean }) {
   const composerFormRef = useRef<HTMLFormElement>(null);
@@ -107,4 +144,58 @@ it("leaves dialog, unrelated input and question button shortcuts alone while the
   expect(stash().element().textContent).toContain("first prompt");
   expect(stash().element().textContent).toContain("second prompt");
   await expect.element(editor()).toHaveValue("Unsent draft");
+});
+
+it("names the drawer, its shortcut keys and every entry's attachments", async () => {
+  await using _screen = await render(
+    <Menu
+      entries={[
+        entry("first", {
+          attachments: ["one", "two"].map((id) => ({
+            id,
+            name: `${id}.png`,
+            mimeType: "image/png",
+            sizeBytes: 1_024,
+            dataUrl: "data:image/png;base64,AA==",
+          })),
+        }),
+        entry("second", {
+          prompt: "",
+          files: ["a", "b", "c"].map((id) => ({
+            id,
+            name: `${id}.txt`,
+            mimeType: "text/plain",
+            sizeBytes: 1_024,
+            attachmentId: `upload-${id}`,
+            environmentId: "local" as never,
+          })),
+        }),
+      ]}
+    />,
+  );
+
+  expect(drawer().textContent).toContain("Stashed prompts");
+  expect(page.getByRole("button", { name: "Close stash" }).element()).toBeTruthy();
+  const rowText = rows().map((row) => row.textContent);
+  expect(rowText[0]).toContain("first prompt");
+  expect(rowText[0]).toContain("2");
+  expect(rowText[1]).toContain("(3 files)");
+  expect(rowText[1]).toContain("3");
+  expect(drawer().textContent).toContain("choose");
+  expect(drawer().textContent).toContain("restore");
+  expect(drawer().textContent).toContain("Backspace");
+  expect(drawer().textContent).toContain("close");
+});
+
+it("offers Delete only on the highlighted entry", async () => {
+  await using _screen = await render(
+    <Menu entries={[entry("first"), entry("second")]} />,
+  );
+
+  expect(deleteCounts()).toEqual([1, 0]);
+
+  await press("{ArrowDown}");
+
+  expect(deleteCounts()).toEqual([0, 1]);
+  expect(rows()[1]!.querySelector('[aria-label="Delete stashed prompt"]')).not.toBeNull();
 });
