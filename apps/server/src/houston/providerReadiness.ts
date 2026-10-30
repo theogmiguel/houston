@@ -315,36 +315,33 @@ export const layerReadinessLedger = Layer.effect(
   }),
 );
 
-/** Reports a terminal turn the ingestor stored; an unstored failure changes nothing. */
+/**
+ * Reports a terminal turn the ingestor stored. A completion usually stores nothing, so one
+ * is reported unless a write guard (stale run, non-owner) could have refused it.
+ */
 export const reportTurnTerminal = Effect.fn("reportTurnTerminal")(function* (
   ledger: Option.Option<ReadinessLedgerShape>,
   input: {
     readonly providerInstanceId: ProviderInstanceId;
     readonly event: ProviderAdapter.ProviderAdapterV2Event;
+    readonly writeIfRunCurrent?: unknown;
+    readonly writeIfProviderThreadOwner?: unknown;
   },
   storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
 ) {
   if (Option.isNone(ledger) || input.event.type !== "turn.terminal") return;
   const { event } = input;
-  if (event.status === "failed") {
-    // The failure item is stamped before the write, so a late older completion loses to it.
-    const stored = storedEvents.at(-1);
-    if (stored === undefined) return;
-    yield* ledger.value.report({
-      instanceId: input.providerInstanceId,
-      driver: event.driver,
-      status: "failed",
-      failure: event.failure,
-      occurredAt: stored.event.occurredAt,
-    });
-    return;
-  }
+  const guarded =
+    input.writeIfRunCurrent !== undefined || input.writeIfProviderThreadOwner !== undefined;
+  // Stamped before the write, so a late older completion loses to a newer failure.
+  const stored = storedEvents.at(-1);
+  if (stored === undefined && (event.status === "failed" || guarded)) return;
   yield* ledger.value.report({
     instanceId: input.providerInstanceId,
     driver: event.driver,
     status: event.status,
-    failure: null,
-    occurredAt: yield* DateTime.now,
+    failure: event.status === "failed" ? event.failure : null,
+    occurredAt: stored === undefined ? yield* DateTime.now : stored.event.occurredAt,
   });
 });
 

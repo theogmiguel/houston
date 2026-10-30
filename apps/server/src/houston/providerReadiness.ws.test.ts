@@ -706,6 +706,31 @@ describe("an unstored failure leaves readiness unchanged", () => {
   );
 });
 
+describe("a stale completion leaves readiness unchanged", () => {
+  it.effect("a stale run's completion keeps a rejection; a current one clears it", () =>
+    withWs([CLAUDE], () =>
+      Effect.gen(function* () {
+        const registry = yield* ProviderRegistry.ProviderRegistry;
+        yield* ingestTerminal({ provider: CLAUDE, failure: CLAUDE_FORBIDDEN });
+        assert.deepInclude(readinessIn(yield* registry.getProviders, CLAUDE), {
+          state: "rejected",
+          code: "api_error_403",
+        });
+
+        const stale = yield* ingestTerminal({ provider: CLAUDE, failure: null, stale: true });
+        assert.isEmpty(stale);
+        assert.deepInclude(readinessIn(yield* registry.getProviders, CLAUDE), {
+          state: "rejected",
+          code: "api_error_403",
+        });
+
+        yield* ingestTerminal({ provider: CLAUDE, failure: null });
+        assert.deepEqual(readinessIn(yield* registry.getProviders, CLAUDE), { state: "ready" });
+      }),
+    ),
+  );
+});
+
 describe("an ingested usage limit reaches the config stream", () => {
   // Live clock: the 200 ms status debounce fires on its own.
   it.live("a subscribed client receives outOfUsage with the failure's reset", () =>
