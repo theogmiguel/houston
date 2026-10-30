@@ -46,6 +46,10 @@ export interface DoubleOptions {
   readonly steerFails?: string;
   /** Fail every turn start for this message id with this provider message. */
   readonly startFails?: { readonly messageId: MessageId; readonly detail: string };
+  /** How many steers `steerFails` fails before one succeeds; every one by default. */
+  readonly steerFailures?: number;
+  /** The steered turn ends while `steerTurn` is still delivering, then the steer returns. */
+  readonly steerEndsTurn?: boolean;
 }
 
 export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
@@ -62,6 +66,7 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
   const modelSelection = { instanceId, model: "test-model" };
   const capabilities = options.capabilities ?? CodexProviderCapabilitiesV2;
   const interrupted: ProviderTurnId[] = [];
+  let steerFailures = 0;
   const endTurn = (turn: OrchestrationV2ProviderTurn, status: "completed" | "interrupted") =>
     Effect.gen(function* () {
       const ended = { ...turn, status, completedAt: yield* DateTime.now };
@@ -148,7 +153,11 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
           steerTurn: (turn) =>
             Effect.gen(function* () {
               steered.push(turn);
-              if (options.steerFails !== undefined) {
+              steerFailures += 1;
+              if (
+                options.steerFails !== undefined &&
+                steerFailures <= (options.steerFailures ?? Number.POSITIVE_INFINITY)
+              ) {
                 return yield* new ProviderAdapter.ProviderAdapterSteerRunError({
                   driver,
                   providerThreadId: turn.providerThread.id,
@@ -167,6 +176,14 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
                   state: "adopted",
                   evidence: "codex.userMessage",
                 });
+              }
+              const steeredTurn = turns.get(turn.providerTurnId);
+              if (options.steerEndsTurn === true && steeredTurn !== undefined) {
+                yield* endTurn(steeredTurn, "completed");
+                for (let round = 0; round < 20; round += 1) {
+                  yield* Effect.yieldNow;
+                  yield* TestClock.adjust("1 millis");
+                }
               }
               return options.steerReturns === "void"
                 ? undefined

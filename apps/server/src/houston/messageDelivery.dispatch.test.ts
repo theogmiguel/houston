@@ -265,6 +265,35 @@ describe("send intents at dispatch", () => {
     ),
   );
 
+  it.effect("a steer whose turn ends while it is delivered is unconfirmed", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("ends-during-steer", { steerEndsTurn: true });
+        yield* runWith(harness, ({ send, startFirst, deliveries, settle, runningTurn }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const turn = yield* runningTurn;
+            const messageId = MessageId.make("message:ends-during-steer");
+            yield* send(messageId, "steer", { type: "steer_active", targetRunId: runId });
+            yield* settle;
+            assert.lengthOf(harness.steered, 1);
+            assert.equal(harness.turns.get(turn.id)?.status, "completed");
+            const history = deliveries(messageId);
+            assert.isTrue(
+              history.some((delivery) => delivery.state === "delivered"),
+              JSON.stringify(history),
+            );
+            assert.deepInclude(latest(history), {
+              state: "unconfirmed",
+              adoption: "reported",
+              providerTurnId: turn.id,
+            });
+          }),
+        );
+      }),
+    ),
+  );
+
   it.effect("a cancelled queued message is dropped", () =>
     Effect.scoped(
       Effect.gen(function* () {

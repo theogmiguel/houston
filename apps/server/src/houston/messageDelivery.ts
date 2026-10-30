@@ -77,6 +77,13 @@ export const acceptedDelivery = (input: {
 
 const MAX_MESSAGE_LENGTH = 4_096;
 
+const ENDED_TURN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "interrupted",
+  "cancelled",
+  "failed",
+]);
+
 const adopt = (
   current: MessageDelivery,
   evidence: MessageDeliveryEvidence | null,
@@ -91,10 +98,8 @@ const adopt = (
   at,
 });
 
-/**
- * The next delivery, or `current` when the state diagram ignores `signal`. Only provider
- * evidence adopts: a report, or the message's own turn running.
- */
+// The next delivery, or `current` when the state diagram ignores `signal`. Only provider
+// evidence adopts: a report, or the message's own turn running.
 export function nextDelivery(current: MessageDelivery, signal: DeliverySignal): MessageDelivery {
   if (current.state === "adopted" || current.state === "dropped") return current;
   const ownTurnRunning = signal.type === "turnRunning" && current.route === "ownTurn";
@@ -289,7 +294,21 @@ export const layer: Layer.Layer<
         return;
       }
       const next = nextDelivery(current, signal);
-      if (next !== current) yield* writeItem(item, next);
+      if (next === current) return;
+      yield* writeItem(item, next);
+      // The turn may have ended while the steer was in flight; its end was observed before the
+      // steer carried a provider turn, so apply it now.
+      if (next.state === "delivered" && next.providerTurnId !== null) {
+        const providerTurnId = next.providerTurnId;
+        const records = yield* projections.getThreadRecords(item.threadId, ["providerTurns"]);
+        const turn = records.providerTurns.find((candidate) => candidate.id === providerTurnId);
+        if (turn !== undefined && ENDED_TURN_STATUSES.has(turn.status)) {
+          yield* writeItem(
+            item,
+            nextDelivery(next, { type: "turnEnded", providerTurnId, at: next.at }),
+          );
+        }
+      }
     });
 
     const readItem = (threadId: ThreadId, messageId: MessageId) =>
