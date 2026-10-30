@@ -188,7 +188,8 @@ export function backgroundWorkNowItem(input: {
     icon: rows.every(isCommand) ? <TerminalIcon /> : <CircleDashedIcon />,
     title: only ? (
       <>
-        {verb} <span className={cn(isCommand(only) && "font-mono")}>{only.task.label}</span>
+        <span className="text-(--accent-ink)">{verb}</span>{" "}
+        <span className={cn(isCommand(only) && "font-mono")}>{only.task.label}</span>
       </>
     ) : (
       presentation.title

@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useRef, useState } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -87,6 +87,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  /** Extra menu content below the model list, such as access in a compact pane. */
+  menuAccessory?: ReactNode;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -312,6 +314,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {props.selectedModels === undefined ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}
+        {props.menuAccessory}
       </PopoverPopup>
     </Popover>
   );

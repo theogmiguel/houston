@@ -357,6 +357,10 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
+import { ChangedFilesBar } from "./chat/ChangedFilesBar";
+import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
+import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { PaneDensity } from "../grid/density";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
@@ -394,6 +398,8 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** Rendered as one cell of a grid instead of the whole route. */
       embedded?: boolean;
+      /** The grid pane's density; omitted on the thread route. */
+      paneDensity?: PaneDensity;
       /** An empty grid centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
@@ -408,6 +414,8 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** Rendered as one cell of a grid instead of the whole route. */
       embedded?: boolean;
+      /** The grid pane's density; omitted on the thread route. */
+      paneDensity?: PaneDensity;
       /** An empty grid centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
@@ -426,6 +434,7 @@ export default function ChatView(props: ChatViewProps) {
     embedded = false,
     reserveTitleBarControlInset = !embedded,
     forceExpandedMobileComposer = false,
+    paneDensity,
   } = props;
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
@@ -1596,6 +1605,9 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadDetailRef);
+  const [dismissedChangeRuns, setDismissedChangeRuns] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const availableRevertTurnCounts = deriveAvailableRevertTurnCounts(serverProjection);
   // A paged history window cannot identify the first loaded run as the thread start.
   const threadStartCheckpointReady =
@@ -2618,6 +2630,12 @@ export default function ChatView(props: ChatViewProps) {
       }),
     ];
   })() as ComposerBannerStackItem[];
+  const environmentComposerBanners = composerBannerItems.filter(
+    (item) => (item.group ?? "attention") === "environment",
+  );
+  const inlineComposerBanners = composerBannerItems.filter(
+    (item) => (item.group ?? "attention") !== "environment",
+  );
 
   if (
     terminalUiLaunchContext !== null &&
@@ -2750,6 +2768,58 @@ export default function ChatView(props: ChatViewProps) {
       composerDraftTarget,
       setThreadError,
     });
+  const latestTurnDiff = turnDiffSummaries.at(-1) ?? null;
+  const latestTurnUserMessage =
+    latestTurnDiff === null
+      ? null
+      : (timelineMessages.findLast(
+          (message) => message.role === "user" && message.runId === latestTurnDiff.runId,
+        ) ?? null);
+  const changedFilesBar =
+    latestTurnDiff === null ||
+    latestTurnDiff.status !== "ready" ||
+    dismissedChangeRuns.has(latestTurnDiff.runId) ||
+    checkpointFileTotals(latestTurnDiff).count === 0 ? null : (
+      <ChangedFilesBar
+        summary={latestTurnDiff}
+        onReview={() => onOpenTurnDiffStable(latestTurnDiff.runId)}
+        onUndo={
+          latestTurnUserMessage === null
+            ? undefined
+            : () =>
+                onRevertTimelineTurnStable(
+                  latestTurnDiff.checkpointTurnCount,
+                  latestTurnUserMessage.id,
+                )
+        }
+        onKeep={() => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId))}
+        disabled={isRevertingCheckpoint || phase === "running"}
+      />
+    );
+  const timelinePendingApprovals =
+    activePendingApproval === null
+      ? pendingApprovals
+      : pendingApprovals.filter(
+          (approval) => approval.requestId !== activePendingApproval.requestId,
+        );
+  const activeApprovalIndex =
+    activePendingApproval === null
+      ? -1
+      : pendingApprovals.findIndex(
+          (approval) => approval.requestId === activePendingApproval.requestId,
+        );
+  const composerApprovalCard =
+    activePendingApproval === null ? null : (
+      <ComposerApprovalCard
+        approval={activePendingApproval}
+        density={paneDensity ?? "comfortable"}
+        index={Math.max(0, activeApprovalIndex)}
+        count={pendingApprovals.length}
+        canOperateThread={canOperateThread}
+        isResponding={activePendingIsResponding}
+        onRespond={onRespondToApprovalStable}
+      />
+    );
   const onCompactContext = () => {
     if (compactDisabled) return;
     void sendStandaloneCommand("/compact", "Failed to compact context.");
@@ -3285,7 +3355,7 @@ export default function ChatView(props: ChatViewProps) {
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               <ThreadTimeline
-                pendingApprovals={pendingApprovals}
+                pendingApprovals={timelinePendingApprovals}
                 heldApprovalRequestIds={heldApprovalRequestIds}
                 respondingRequestIds={respondingRequestIds}
                 onRespondToApproval={onRespondToApprovalStable}
@@ -3294,6 +3364,7 @@ export default function ChatView(props: ChatViewProps) {
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
                 activeThreadKey={activeThreadKey}
+                timelineDensity={paneDensity}
                 syncing={threadSyncPhase !== null}
                 detailLoading={threadDetailLoading}
                 citationRequest={citationRequest}
@@ -3436,7 +3507,17 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <ComposerSurface.Shell contextRow={showComposerContextStrip}>
+                    {changedFilesBar}
+                    {composerApprovalCard}
+                    {!isDraftHeroState && environmentComposerBanners.length > 0 ? (
+                      <div className="mb-1">
+                        <ComposerBannerStack items={environmentComposerBanners} detached />
+                      </div>
+                    ) : null}
+                    <ComposerSurface.Shell
+                      contextRow={showComposerContextStrip}
+                      className={activePendingApproval === null ? undefined : "hidden"}
+                    >
                       <ComposerSurface.Host
                         inert={queuedRunEdit.isSaving}
                         aria-busy={queuedRunEdit.isSaving}
@@ -3541,6 +3622,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
                               promptHistoryMessages={timelineMessages}
+                              paneDensity={paneDensity}
                               forceExpandedOnMobile={
                                 forceExpandedMobileComposer && isDraftHeroState
                               }
@@ -3575,7 +3657,7 @@ export default function ChatView(props: ChatViewProps) {
                                             : projectCloneSendBlockReason
                               }
                               isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
-                              bannerItems={isDraftHeroState ? [] : composerBannerItems}
+                              bannerItems={isDraftHeroState ? [] : inlineComposerBanners}
                               resumeCompactionTokens={resumeCompactionTokens}
                               keepFullHistory={keepFullHistory}
                               onToggleKeepFullHistory={toggleKeepFullHistoryStable}
