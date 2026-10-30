@@ -13,6 +13,7 @@ import {
   type HoustonTaskDetail,
   type HoustonTaskRun,
 } from "@t3tools/contracts/houston/tasks";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -773,6 +774,55 @@ describe("planning needs a read-only run", () => {
             assert.deepInclude(turn?.input.runtimePolicy, READ_ONLY);
             assert.include(turn?.input.message.text ?? "", "Plan me");
             assert.include(turn?.input.message.text ?? "", "From the tracker");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "a planner messaged on a provider without a read-only run starts no turn and is refused by name",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("plan-moved");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { task } = yield* plannableTask(context, "Moved planner");
+            const detail = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            const plannerId = detail.planning?.threadId as ThreadId;
+            yield* context.settle;
+            const turnsBefore = harness.doubles.log.started.length;
+            const sent = yield* Effect.exit(
+              context.orchestrator.dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make("moved-planner"),
+                threadId: plannerId,
+                messageId: "message:moved-planner" as never,
+                text: "Now write the code",
+                attachments: [],
+                modelSelection: selection("antigravity"),
+                dispatchMode: { type: "start_immediately" },
+                createdBy: "user",
+                creationSource: "web",
+              }),
+            );
+            yield* context.settle;
+            const projection = yield* projectionOf(context, plannerId);
+            const refusalText =
+              sent._tag === "Failure"
+                ? Cause.pretty(sent.cause)
+                : JSON.stringify(projection.runs.at(-1) ?? null);
+            assert.include(refusalText, "needs a read-only run");
+            assert.include(refusalText, "antigravity");
+            assert.strictEqual(
+              harness.doubles.log.started.length,
+              turnsBefore,
+              "no turn starts on the provider without a read-only run",
+            );
           }),
         );
       }),
