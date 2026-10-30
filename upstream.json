@@ -91,7 +91,18 @@
     "packages/provider-opencode/src/server/houston/steerDelivery.test.ts",
     "apps/server/src/orchestration-v2/testkit/fixtures/houston_claude_steer_lifecycle/claude_transcript.ndjson",
     "apps/server/src/houston/messageDelivery.ts",
-    "packages/contracts/src/houston/messageDelivery.ts"
+    "packages/contracts/src/houston/messageDelivery.ts",
+    "packages/contracts/src/houston/sideThreads.test.ts",
+    "apps/server/src/houston/sideThreads.test.ts",
+    "apps/server/src/houston/sideThreads.dispatch.test.ts",
+    "apps/server/src/houston/sideThreads.families.test.ts",
+    "apps/server/src/houston/sideThreads.ws.test.ts",
+    "apps/server/src/houston/sideThreads.testkit.ts",
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_side_read_only/codex_transcript.ndjson",
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_side_read_only/opencode_transcript.ndjson",
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_side_read_only/opencode2_transcript.ndjson",
+    "apps/server/src/orchestration-v2/testkit/fixtures/houston_side_read_only/input.ts",
+    "packages/provider-opencode/src/server/v2/adapter.test.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
