@@ -1881,7 +1881,13 @@ export const layerWsRpc = (
                     command.type === "delegated_task.completion-delivery.dispose" ||
                     command.type === "thread.created.record"
                   ? command.parentThreadId
-                  : command.threadId,
+                  : command.type === "houston.aside.start"
+                    ? command.asideThreadId
+                    : command.type === "houston.second-opinion.request"
+                      ? command.reviewThreadId
+                      : command.type === "houston.side-thread.send"
+                        ? command.sideThreadId
+                        : command.threadId,
             ...(command.type === "thread.fork" || command.type === "thread.merge_back"
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),

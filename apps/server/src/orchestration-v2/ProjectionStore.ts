@@ -1478,6 +1478,8 @@ export function threadShellFromProjection(
     ...(projection.thread.delegatedFrom === undefined
       ? {}
       : { delegatedFrom: projection.thread.delegatedFrom }),
+    // Houston: the renderer finds a source's side threads by this record.
+    ...(projection.thread.side === undefined ? {} : { side: projection.thread.side }),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -1760,6 +1762,8 @@ function shellFromState(input: {
     ...(input.state.thread.delegatedFrom === undefined
       ? {}
       : { delegatedFrom: input.state.thread.delegatedFrom }),
+    // Houston: the renderer finds a source's side threads by this record.
+    ...(input.state.thread.side === undefined ? {} : { side: input.state.thread.side }),
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,

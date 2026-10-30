@@ -32,6 +32,8 @@ export const CommandPolicyCapability = Schema.Literals([
   "rollback_snapshot",
   "context_handoff",
   "strong_terminal_status",
+  // Houston: a side thread needs a provider that enforces read-only itself.
+  "read_only_run",
 ]);
 export type CommandPolicyCapability = typeof CommandPolicyCapability.Type;
 
@@ -230,6 +232,9 @@ export interface CommandPolicyV2Shape {
       readonly strategy: "fork_delta_context" | "delta_context" | "full_thread_summary";
     },
   ) => Effect.Effect<void, CommandPolicyV2Error>;
+  readonly ensureReadOnlyRun: (
+    input: CapabilityCheckInput,
+  ) => Effect.Effect<void, CommandPolicyV2Error>;
 }
 
 export class CommandPolicyV2 extends Context.Service<CommandPolicyV2, CommandPolicyV2Shape>()(
@@ -406,6 +411,13 @@ const decideForkExecution: CommandPolicyV2Shape["decideForkExecution"] = (input)
   }).pipe(Effect.as("portable_context"));
 };
 
+const ensureReadOnlyRun: CommandPolicyV2Shape["ensureReadOnlyRun"] = (input) =>
+  input.capabilities.runtimePolicy.readOnlyRun !== undefined
+    ? Effect.void
+    : Effect.fail(
+        unsupported(input, "read_only_run", "providerInstanceId does not enforce a read-only run"),
+      );
+
 export const layer: Layer.Layer<CommandPolicyV2> = Layer.succeed(CommandPolicyV2, {
   ensureQueuedMessages,
   decideSteeringExecution,
@@ -414,4 +426,5 @@ export const layer: Layer.Layer<CommandPolicyV2> = Layer.succeed(CommandPolicyV2
   decideForkExecution,
   ensureRollback,
   ensureContextHandoff,
+  ensureReadOnlyRun,
 });

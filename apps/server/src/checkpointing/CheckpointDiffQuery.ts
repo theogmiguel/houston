@@ -80,11 +80,21 @@ function buildTurnDiffResult(
   };
 }
 
-/** @public */
-export const make = Effect.gen(function* () {
-  const threads = yield* ThreadManagement.ThreadManagementService;
-  const checkpointStore = yield* CheckpointStore.CheckpointStore;
-  const crypto = yield* Crypto.Crypto;
+/** Houston: the turn diff over any reader of a thread's checkpoint context, as the orchestrator has. */
+export function makeTurnDiff<E>(deps: {
+  readonly getCheckpointContext: (
+    threadId: ThreadId,
+  ) => Effect.Effect<
+    Effect.Success<
+      ReturnType<ThreadManagement.ThreadManagementService["Service"]["getCheckpointContext"]>
+    >,
+    E
+  >;
+  readonly checkpointStore: CheckpointStore.CheckpointStore["Service"];
+  readonly crypto: Crypto.Crypto;
+}): CheckpointDiffQuery["Service"]["getTurnDiff"] {
+  const threads = { getCheckpointContext: deps.getCheckpointContext };
+  const { checkpointStore, crypto } = deps;
 
   const getTurnDiff: CheckpointDiffQuery["Service"]["getTurnDiff"] = Effect.fn("getTurnDiff")(
     function* (input) {
@@ -263,6 +273,20 @@ export const make = Effect.gen(function* () {
       return turnDiff;
     },
   );
+  return getTurnDiff;
+}
+
+/** @public */
+export const make = Effect.gen(function* () {
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const checkpointStore = yield* CheckpointStore.CheckpointStore;
+  const crypto = yield* Crypto.Crypto;
+
+  const getTurnDiff = makeTurnDiff({
+    getCheckpointContext: threads.getCheckpointContext,
+    checkpointStore,
+    crypto,
+  });
 
   const getFullThreadDiff: CheckpointDiffQuery["Service"]["getFullThreadDiff"] = Effect.fn(
     "CheckpointDiffQuery.getFullThreadDiff",

@@ -177,7 +177,8 @@ const OpenCode2ProviderCapabilities = {
     nativeItemIds: "strong",
     nativeRequestIds: "strong",
   },
-  runtimePolicy: { enforcement: "native" },
+  // Houston: a read-only sandbox denies shell, edit and subagents (sideThreads families).
+  runtimePolicy: { enforcement: "native", readOnlyRun: "permissionRules" },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 type EventOf<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { readonly type: T }>;
@@ -320,7 +321,7 @@ type TurnTerminal =
 type Rule = Permission.Rule;
 type RulesPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode"
+  "runtimeMode" | "interactionMode" | "sandboxPolicy"
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
@@ -365,25 +366,44 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
         { action: `${mcpServerName}_*`, resource: "*", effect: "allow" },
       ];
 
-const sessionRules = (
+// Houston: OpenCode has no OS sandbox; a read-only policy denies every action, including MCP
+// tools and web access, and allows only reads, as OpenCode 1's rules do.
+const isReadOnly = (policy: RulesPolicy) =>
+  typeof policy.sandboxPolicy === "object" &&
+  policy.sandboxPolicy !== null &&
+  (policy.sandboxPolicy as { readonly type?: unknown }).type === "readOnly";
+
+const READ_ONLY_RULES: ReadonlyArray<Rule> = [
+  rule("*", "deny"),
+  ...["read", "glob", "grep", "question", "external_directory"].map((action) =>
+    rule(action, "allow"),
+  ),
+  { action: "read", resource: "*.env", effect: "deny" },
+  { action: "read", resource: "*.env.*", effect: "deny" },
+];
+
+export const sessionRules = (
   policy: RulesPolicy,
   paths: ReadonlyArray<Rule>,
   grants: ReadonlyArray<Rule>,
   mcpServerName: string | null,
-): ReadonlyArray<Rule> => [
-  ...(policy.runtimeMode === "full-access"
-    ? [rule("*", "allow")]
+): ReadonlyArray<Rule> =>
+  isReadOnly(policy)
+    ? READ_ONLY_RULES
     : [
-        rule("shell", "ask"),
-        rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
-        rule("external_directory", "ask"),
-      ]),
-  ...grants,
-  // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
-  ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
-  ...paths,
-  ...mcpRules(mcpServerName),
-];
+        ...(policy.runtimeMode === "full-access"
+          ? [rule("*", "allow")]
+          : [
+              rule("shell", "ask"),
+              rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
+              rule("external_directory", "ask"),
+            ]),
+        ...grants,
+        // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
+        ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
+        ...paths,
+        ...mcpRules(mcpServerName),
+      ];
 
 const sameRules = (left: ReadonlyArray<Rule> | undefined, right: ReadonlyArray<Rule>) =>
   left?.length === right.length &&
@@ -2770,7 +2790,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     ) {
       const plan = policy.interactionMode === "plan";
       const paths =
-        policy.runtimeMode === "full-access" && !plan
+        (policy.runtimeMode === "full-access" && !plan) || isReadOnly(policy)
           ? []
           : yield* pathsFor(thread.directory, plan ? [thread.agent, "plan"] : [thread.agent]);
       return sessionRules(

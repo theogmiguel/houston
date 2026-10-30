@@ -53,6 +53,8 @@ const CAPABILITY_REJECTION_MESSAGES: Record<string, (provider: string) => string
   context_handoff: (p) => `${p} cannot receive the context handoff needed for this switch.`,
   strong_terminal_status: (p) =>
     `${p} cannot confirm when its runs finish reliably enough for this.`,
+  read_only_run: (p) =>
+    `${p} cannot run read-only, so it cannot hold an aside or give a second opinion.`,
 };
 
 function providerDisplayName(instanceId: string): string {
