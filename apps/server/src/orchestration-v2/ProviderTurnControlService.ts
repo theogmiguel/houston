@@ -65,7 +65,11 @@ export interface ProviderTurnControlServiceV2Shape {
     readonly providerThreadId: ProviderThreadId;
     readonly providerTurnId: ProviderTurnId;
     readonly messageId: MessageId;
-  }) => Effect.Effect<void, ProviderTurnControlError>;
+    /** Houston: the provider's receipt, or nothing when no steer was sent. */
+  }) => Effect.Effect<
+    ProviderAdapter.ProviderAdapterV2SteerReceipt | void,
+    ProviderTurnControlError
+  >;
   readonly interruptAndAwaitTerminal: (input: {
     readonly threadId: ThreadId;
     readonly providerSessionId: ProviderSessionId;
@@ -349,7 +353,7 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
-          yield* loaded.session.value
+          const receipt = yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
               runId: run.id,
@@ -389,6 +393,7 @@ export const layer: Layer.Layer<
                 }),
               ),
             );
+          return receipt ?? { adoption: "notReported" as const };
         },
         (effect, input) =>
           effect.pipe(

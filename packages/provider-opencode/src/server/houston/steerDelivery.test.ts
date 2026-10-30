@@ -12,9 +12,12 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -53,7 +56,12 @@ function nativeEventStream() {
   };
 }
 
-const settleEvents = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 20)));
+// The SDK client hands events over through promises; let the adapter drain them.
+const settleEvents = Effect.forEach(
+  Array.from({ length: 200 }),
+  () => Effect.promise(() => Promise.resolve()).pipe(Effect.andThen(Effect.yieldNow)),
+  { discard: true },
+);
 
 describe("OpenCode 1 steer delivery", () => {
   it.live("an OpenCode 1 reply to the steer adopts it", () =>
@@ -128,7 +136,10 @@ describe("OpenCode 1 steer delivery", () => {
         const created = DateTime.toEpochMillis(now);
         const userMessage = (id: string) => ({
           type: "message.updated",
-          properties: { sessionID: SESSION, info: { id, sessionID: SESSION, role: "user", time: { created } } },
+          properties: {
+            sessionID: SESSION,
+            info: { id, sessionID: SESSION, role: "user", time: { created } },
+          },
         });
         const assistantReply = (id: string, parentID: string) => ({
           type: "message.updated",
@@ -182,7 +193,10 @@ describe("OpenCode 1 steer delivery", () => {
           })
           .pipe(Effect.forkScoped);
         yield* settleEvents;
-        native.push({ type: "session.status", properties: { sessionID: SESSION, status: { type: "busy" } } });
+        native.push({
+          type: "session.status",
+          properties: { sessionID: SESSION, status: { type: "busy" } },
+        });
         native.push(userMessage(prompts[0]!.messageID!));
         yield* settleEvents;
         const snapshot = yield* runtime.readThreadSnapshot({ providerThread });
@@ -229,6 +243,6 @@ describe("OpenCode 1 steer delivery", () => {
         yield* settleEvents;
         assert.lengthOf(deliveries(), 1);
       }),
-    ),
+    ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 });

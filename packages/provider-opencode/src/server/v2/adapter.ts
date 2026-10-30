@@ -30,7 +30,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
   type OrchestrationV2UserInputQuestion,
-  type MessageId,
+  MessageId,
   type ModelSelection,
   type ProviderApprovalDecision,
   type ProviderInstanceId,
@@ -2400,6 +2400,25 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         const turn = state.active;
         if (turn !== undefined && turn.steers.delete(event.data.inboxID)) {
           turn.settledInbox.add(event.data.inboxID);
+          // Houston: OpenCode's own report that the agent read, or took back, the steer.
+          const steerPrefix = `msg_t3_steer_${sessionId}:`;
+          if (event.data.inboxID.startsWith(steerPrefix)) {
+            yield* emit({
+              type: "message.delivery",
+              driver,
+              threadId: turn.input.threadId,
+              providerThreadId: turn.providerTurn.providerThreadId,
+              providerTurnId: turn.providerTurn.id,
+              messageId: MessageId.make(event.data.inboxID.slice(steerPrefix.length)),
+              ...(event.type === "session.inbox.delivered"
+                ? { state: "adopted" as const, evidence: "opencode.inboxDelivered" as const }
+                : {
+                    state: "dropped" as const,
+                    evidence: null,
+                    reason: "providerCancelled" as const,
+                  }),
+            });
+          }
           if (event.type === "session.inbox.cancelled") yield* endIfSettled(state, turn);
         }
         return;
@@ -3642,7 +3661,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             });
           }
           const inboxID = steerPromptId(sessionId, steerInput.message.messageId);
-          if (turn.settledInbox.has(inboxID)) return;
+          // OpenCode reports each inbox entry delivered or cancelled.
+          const receipt = { adoption: "reported" } as const;
+          if (turn.settledInbox.has(inboxID)) return receipt;
           turn.steers.add(inboxID);
           state.strandedSteers.delete(inboxID);
           const { files, messageText } = yield* Effect.gen(function* () {
@@ -3703,6 +3724,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                 ),
               ),
             );
+          return receipt;
         },
         (effect, steerInput) =>
           effect.pipe(

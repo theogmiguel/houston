@@ -31,6 +31,7 @@ import * as EffectOutbox from "../EffectOutbox.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
+import * as OrchestrationEventStore from "../../persistence/OrchestrationEventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
@@ -40,6 +41,7 @@ import * as ProviderAuthService from "../../provider/ProviderAuthService.ts";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
+import * as MessageDelivery from "../../houston/messageDelivery.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "../ProviderSessionManager.ts";
@@ -278,7 +280,8 @@ export function layerWithRegistry<Error>(
   | EffectWorker.OrchestrationEffectWorkerV2
   | EventSink.EventSinkV2
   | ProviderSessionManager.ProviderSessionManagerV2
-  | CommandOutputRecorder.CommandOutputRecorder,
+  | CommandOutputRecorder.CommandOutputRecorder
+  | OrchestrationEventStore.OrchestrationEventStore,
   Error | MigrationError | PlatformError.PlatformError | SqlError
 > {
   const layerServerConfig = Layer.effect(
@@ -304,8 +307,10 @@ export function layerWithRegistry<Error>(
       ? {}
       : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
   }).pipe(Layer.orDie);
+  // Houston: one application event store, shared with clients that tail it (the /ws thread stream).
+  const layerApplicationEvents = OrchestrationEventStore.layer.pipe(Layer.provide(layerDatabase));
   const layerStores = Layer.mergeAll(
-    EventStore.layer,
+    EventStore.layerFromOrchestrationEventStore.pipe(Layer.provide(layerApplicationEvents)),
     ProjectionStore.layer,
     ProjectStore.layer,
     CommandReceiptStore.layer,
@@ -318,9 +323,14 @@ export function layerWithRegistry<Error>(
   const layerCommandReceiptStoreProvided = CommandReceiptStore.layer.pipe(
     Layer.provide(layerDatabase),
   );
+  // Houston: one delivery writer for the ingestor and the effect executor, as the server has.
+  const layerMessageDeliveryProvided = MessageDelivery.layer.pipe(
+    Layer.provide(Layer.mergeAll(layerStores, layerEventSinkProvided, IdAllocator.layer)),
+  );
   const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        layerMessageDeliveryProvided,
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
           // @effect-diagnostics-next-line effectSucceedWithVoid:off - Optional instances require undefined rather than void.
           getInstance: () => Effect.succeed(undefined),
@@ -508,6 +518,7 @@ export function layerWithRegistry<Error>(
         layerThreadTitleRegenerationTest,
         layerServerSettings,
         layerThreadManagementProvided,
+        layerMessageDeliveryProvided,
       ),
     ),
   );
@@ -521,6 +532,7 @@ export function layerWithRegistry<Error>(
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
     layerCommandOutputHubProvided,
+    layerApplicationEvents,
   ).pipe(Layer.provide(ProviderTurnStartServiceTestkit.layer), Layer.provide(NodeServices.layer));
 
   if (options.runEffectWorker === false) {

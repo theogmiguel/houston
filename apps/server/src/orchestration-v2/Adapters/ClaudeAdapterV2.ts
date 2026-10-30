@@ -67,6 +67,7 @@ import {
 } from "@t3tools/shared/claudeCompaction";
 import {
   type ChatAttachment,
+  type MessageId,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   ClaudeSettings,
   TrimmedNonEmptyString,
@@ -4599,6 +4600,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         );
         const interruptedTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
+        // Houston: steers offered with a uuid, until Claude acknowledges or echoes that uuid.
+        const pendingSteers = new Map<
+          string,
+          {
+            readonly threadId: ThreadId;
+            readonly providerThreadId: OrchestrationV2ProviderThread["id"];
+            readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
+            readonly messageId: MessageId;
+          }
+        >();
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
         // A worktree handoff changes the project settings even within one session.
         let bypassCache: { cwd: string | null; availability: ClaudeBypassAvailability } | null =
@@ -9305,6 +9316,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly message: SDKMessage;
         }) {
           const message = input.message;
+          if (pendingSteers.size > 0) {
+            const lifecycle = claudePromptLifecycle(message);
+            const echoed = claudeEchoedPromptUuids(message);
+            for (const [uuid, steer] of pendingSteers) {
+              const evidence =
+                lifecycle?.uuid === uuid && lifecycle.state === "started"
+                  ? ("claude.commandStarted" as const)
+                  : echoed.includes(uuid)
+                    ? ("claude.promptEcho" as const)
+                    : null;
+              if (evidence === null) continue;
+              pendingSteers.delete(uuid);
+              yield* emitProviderEvent({
+                type: "message.delivery",
+                driver: CLAUDE_PROVIDER,
+                ...steer,
+                state: "adopted",
+                evidence,
+              });
+            }
+          }
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
           if (
@@ -10561,6 +10593,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }),
               persistAttachmentBudget(existing.nativeThreadId),
             );
+            const steerUuid = yield* crypto.randomUUIDv4().pipe(
+              Effect.filterOrFail(isClaudePromptUuid),
+              Effect.mapError(
+                (cause) =>
+                  new ProviderAdapter.ProviderAdapterProtocolError({
+                    driver: CLAUDE_PROVIDER,
+                    detail: "Failed to allocate a Claude steer uuid.",
+                    payload: cause,
+                  }),
+              ),
+            );
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
@@ -10568,6 +10611,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
+              uuid: steerUuid,
               attachmentsDir,
               fileSystem,
               pdfReservation,
@@ -10594,6 +10638,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               next.add(turnInput.providerTurnId);
               return next;
             });
+            // Bounded: an unacknowledged steer is forgotten once newer steers replace it.
+            if (pendingSteers.size >= 64) {
+              const oldest = pendingSteers.keys().next().value;
+              if (oldest !== undefined) pendingSteers.delete(oldest);
+            }
+            pendingSteers.set(steerUuid, {
+              threadId: turnInput.threadId,
+              providerThreadId: turnInput.providerThread.id,
+              providerTurnId: turnInput.providerTurnId,
+              messageId: turnInput.message.messageId,
+            });
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
                 existing.query.offer(userMessage, () => {
@@ -10606,7 +10661,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   }),
                 ),
               ),
-            );
+            ).pipe(Effect.onError(() => Effect.sync(() => pendingSteers.delete(steerUuid))));
+            // A CLI whose prompt acknowledgements were never seen may never report this steer.
+            return {
+              adoption: existing.promptEchoMode === "unknown" ? "notReported" : "reported",
+            } as const;
           },
           (effect, turnInput) =>
             effect.pipe(
