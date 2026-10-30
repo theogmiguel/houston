@@ -121,6 +121,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonTaskProjectSweep from "./houston/tasks/ProjectSweep.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
@@ -631,6 +632,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
+  HoustonTaskRuns.layer.pipe(
+    Layer.provide(
+      Layer.merge(
+        RuntimeLayer.layerEventSink,
+        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+      ),
+    ),
+  ),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
@@ -642,6 +651,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
+  // Planners and reviewers resolve read-only in the runtime policy and the MCP credential.
+  Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
   Layer.provideMerge(HoustonTaskStore.layer),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(

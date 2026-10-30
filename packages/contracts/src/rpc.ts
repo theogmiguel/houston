@@ -188,6 +188,15 @@ import {
   HoustonTaskSettingsSetInput,
   HoustonTaskStreamEvent,
   HoustonTaskSubscribeInput,
+  HoustonTaskHandbackInput,
+  HoustonTaskPlanAnswerInput,
+  HoustonTaskPlanApproveInput,
+  HoustonTaskPlanStartInput,
+  HoustonTaskReviewStartInput,
+  HoustonTaskRun,
+  HoustonTaskRunControlInput,
+  HoustonTaskStartInput,
+  HoustonTaskStartResult,
 } from "./houston/tasks.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
@@ -508,6 +517,13 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
+  houstonTasksStart: "houston.tasks.start",
+  houstonTasksRunControl: "houston.tasks.runControl",
+  houstonTasksHandback: "houston.tasks.handback",
+  houstonTasksPlanStart: "houston.tasks.plan.start",
+  houstonTasksPlanAnswer: "houston.tasks.plan.answer",
+  houstonTasksPlanApprove: "houston.tasks.plan.approve",
+  houstonTasksReviewStart: "houston.tasks.review.start",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1675,6 +1691,48 @@ const WsHoustonTasksImportV1RunRpc = Rpc.make(WS_METHODS.houstonTasksImportV1Run
   error: HoustonTaskRpcError,
 });
 
+const WsHoustonTasksStartRpc = Rpc.make(WS_METHODS.houstonTasksStart, {
+  payload: HoustonTaskStartInput,
+  success: HoustonTaskStartResult,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksRunControlRpc = Rpc.make(WS_METHODS.houstonTasksRunControl, {
+  payload: HoustonTaskRunControlInput,
+  success: HoustonTaskRun,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksHandbackRpc = Rpc.make(WS_METHODS.houstonTasksHandback, {
+  payload: HoustonTaskHandbackInput,
+  success: HoustonTaskRun,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanStartRpc = Rpc.make(WS_METHODS.houstonTasksPlanStart, {
+  payload: HoustonTaskPlanStartInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanAnswerRpc = Rpc.make(WS_METHODS.houstonTasksPlanAnswer, {
+  payload: HoustonTaskPlanAnswerInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanApproveRpc = Rpc.make(WS_METHODS.houstonTasksPlanApprove, {
+  payload: HoustonTaskPlanApproveInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksReviewStartRpc = Rpc.make(WS_METHODS.houstonTasksReviewStart, {
+  payload: HoustonTaskReviewStartInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2269,6 +2327,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
+  WsHoustonTasksStartRpc,
+  WsHoustonTasksRunControlRpc,
+  WsHoustonTasksHandbackRpc,
+  WsHoustonTasksPlanStartRpc,
+  WsHoustonTasksPlanAnswerRpc,
+  WsHoustonTasksPlanApproveRpc,
+  WsHoustonTasksReviewStartRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

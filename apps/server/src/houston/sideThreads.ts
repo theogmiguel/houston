@@ -9,8 +9,10 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 import { isForkableSourceRunStatus } from "../orchestration-v2/ThreadForkService.ts";
@@ -120,6 +122,13 @@ export const mayHoldT3Tools = <E, R>(
     Effect.map((read) => !isSideThread(read)),
     Effect.orElseSucceed(() => false),
   );
+
+/** Threads other than side threads that must run read-only: Tasks' planners and reviewers. */
+export const HoustonReadOnlyThreads = Context.Reference<{
+  readonly isReadOnly: (threadId: ThreadId) => Effect.Effect<boolean>;
+}>("t3/houston/sideThreads/HoustonReadOnlyThreads", {
+  defaultValue: () => ({ isReadOnly: () => Effect.succeed(false) }),
+});
 
 export const hasReadOnlyRun = (capabilities: OrchestrationV2ProviderCapabilities) =>
   capabilities.runtimePolicy.readOnlyRun !== undefined;

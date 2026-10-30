@@ -1035,6 +1035,44 @@ const withAdvertisedSchemas = Effect.fn("McpHttpServer.withAdvertisedSchemas")(f
   return yield* registration.pipe(Effect.provideService(McpServer.McpServer, advertisingServer));
 });
 
+// Houston: the only tools a task's planner or reviewer credential may call.
+const HOUSTON_TASK_SUBMIT_TOOLS: ReadonlySet<string> = new Set([
+  "houston_task_plan_submit",
+  "houston_task_review_submit",
+]);
+
+/** Refuses every other tool to a `houston-task-submit` credential before its handler runs. */
+const withHoustonTaskSubmitScope = Effect.fnUntraced(function* <A, E, R>(
+  registration: Effect.Effect<A, E, R>,
+) {
+  const server = yield* McpServer.McpServer;
+  const scopedServer = McpServer.McpServer.of({
+    ...server,
+    addTool: Effect.fn("McpServer.addTool")(function (options) {
+      if (HOUSTON_TASK_SUBMIT_TOOLS.has(options.tool.name)) return server.addTool(options);
+      return server.addTool({
+        ...options,
+        handle: Effect.fnUntraced(function* (payload) {
+          const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
+          if (Option.isSome(scope) && scope.value.capabilities.has("houston-task-submit")) {
+            return new McpSchema.CallToolResult({
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: `capability_denied: thread ${scope.value.thread?.threadId ?? "unknown"} plans or reviews a Houston task, so its credential may call only ${[...HOUSTON_TASK_SUBMIT_TOOLS].join(" and ")}, not ${options.tool.name}.`,
+                },
+              ],
+            });
+          }
+          return yield* options.handle(payload);
+        }),
+      });
+    }),
+  });
+  return yield* registration.pipe(Effect.provideService(McpServer.McpServer, scopedServer));
+});
+
 /**
  * `McpServer.toolkit` asks for every service its tools declare when it
  * registers them, but the auth middleware provides `McpInvocationContext` to
@@ -1047,7 +1085,9 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
 ) => {
   const registration = Layer.effectDiscard(
     withToolAnalytics(
-      withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+      withHoustonTaskSubmitScope(
+        withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+      ),
     ),
   ).pipe(Layer.provide(McpServer.McpServer.layer));
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
@@ -1063,7 +1103,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
-  Layer.effectDiscard(withToolAnalytics(register)).pipe(
+  Layer.effectDiscard(withToolAnalytics(withHoustonTaskSubmitScope(register))).pipe(
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 

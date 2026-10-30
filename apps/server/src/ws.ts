@@ -212,6 +212,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -1319,6 +1320,7 @@ export const layerWsRpc = (
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
+      const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3028,6 +3030,13 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksSettingsSet]: (input) => houstonTasks.setSettings(input),
         [WS_METHODS.houstonTasksImportV1Status]: () => houstonTaskImport.status,
         [WS_METHODS.houstonTasksImportV1Run]: () => houstonTaskImport.run,
+        [WS_METHODS.houstonTasksStart]: (input) => houstonTaskRuns.start(input),
+        [WS_METHODS.houstonTasksRunControl]: (input) => houstonTaskRuns.runControl(input),
+        [WS_METHODS.houstonTasksHandback]: (input) => houstonTaskRuns.handback(input),
+        [WS_METHODS.houstonTasksPlanStart]: (input) => houstonTaskRuns.planStart(input),
+        [WS_METHODS.houstonTasksPlanAnswer]: (input) => houstonTaskRuns.planAnswer(input),
+        [WS_METHODS.houstonTasksPlanApprove]: (input) => houstonTaskRuns.planApprove(input),
+        [WS_METHODS.houstonTasksReviewStart]: (input) => houstonTaskRuns.reviewStart(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
