@@ -45,7 +45,7 @@ describe("enabled sources poll every 20 seconds and on sync now", () => {
       };
       const github = makeGithubFake();
       issuePages(github, () => [githubIssue(1)]);
-      const projectId = yield* Effect.gen(function* () {
+      const [projectId, disabledId] = yield* Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
         const enabled = yield* createProject("polled", "/work/polled");
         const disabled = yield* createProject("idle", "/work/idle");
@@ -59,7 +59,7 @@ describe("enabled sources poll every 20 seconds and on sync now", () => {
           provider: "github_issues",
           settings: { ...GITHUB, enabled: false, githubRepository: "octo-org/idle" },
         });
-        return enabled;
+        return [enabled, disabled] as const;
       }).pipe(Effect.provide(layerSources({ ...options, github: makeGithubFake() })));
 
       yield* Effect.gen(function* () {
@@ -87,6 +87,14 @@ describe("enabled sources poll every 20 seconds and on sync now", () => {
         const none = yield* Effect.flip(sources.syncNow({ projectId: idle }));
         assert.strictEqual(none.kind, "invalid");
         assert.include(none.message, "no task source is enabled for this project");
+
+        // Sync now on a project whose source is stored but disabled sends nothing.
+        const requestsBefore = github.requests.length;
+        const disabled = yield* Effect.flip(sources.syncNow({ projectId: disabledId }));
+        assert.strictEqual(disabled.kind, "invalid");
+        assert.include(disabled.message, "no task source is enabled for this project");
+        assert.strictEqual(github.requests.length, requestsBefore);
+        assert.isFalse(github.requests.some((request) => request.url.includes("octo-org/idle")));
       }).pipe(Effect.provide(layerSources({ ...options, github })));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
