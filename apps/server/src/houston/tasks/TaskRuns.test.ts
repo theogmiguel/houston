@@ -795,6 +795,63 @@ describe("a lost thread interrupts the run and a live one restores it", () => {
   );
 });
 
+describe("a linked pull request is watched so every push is seen", () => {
+  it.effect(
+    "linking a pull request starts its watch; a watch that cannot start is noted",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("watch-on-link");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const watchOf = (threadId: ThreadId, number: number) =>
+              projectionOf(context, threadId).pipe(
+                Effect.map(
+                  (projection) =>
+                    projection.thread.pullRequests?.find((link) => link.number === number)?.watch,
+                ),
+              );
+            const watched = yield* context.readyTask("Watched link");
+            const watchedRun = yield* startAndPrepare(context, watched);
+            yield* waitForRunState(context, watched, "waiting_for_input");
+            const watchedThread = yield* threadOf(watchedRun);
+            yield* linkPullRequest(context, watchedThread, 11);
+            yield* context.settle;
+            assert.isDefined(
+              yield* watchOf(watchedThread, 11),
+              "the linked pull request is watched",
+            );
+
+            // A settled thread cannot watch: the task says why every_push will not see its pushes.
+            const settled = yield* context.readyTask("Settled link");
+            const settledRun = yield* startAndPrepare(context, settled);
+            yield* waitForRunState(context, settled, "waiting_for_input");
+            const settledThread = yield* threadOf(settledRun);
+            yield* context.orchestrator.dispatch({
+              type: "thread.settle",
+              commandId: CommandId.make(`settle:${settledThread}`),
+              threadId: settledThread,
+            });
+            yield* linkPullRequest(context, settledThread, 12);
+            yield* context.settle;
+            assert.isUndefined(yield* watchOf(settledThread, 12));
+            const comments = (yield* detailOf(context, settled)).comments.map(
+              (comment) => comment.body,
+            );
+            assert.isTrue(
+              comments.some(
+                (body) =>
+                  body.includes("https://github.com/houston/tasks/pull/12") &&
+                  body.includes("not watched"),
+              ),
+              JSON.stringify(comments),
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+});
+
 describe("a merged linked pull request completes the task", () => {
   it.effect(
     "merged moves an in-review task to done; closed and unlinked leave it in review",

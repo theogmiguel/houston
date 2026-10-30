@@ -10,6 +10,7 @@ import {
   type OrchestrationV2Run,
   type ProjectId,
   ThreadId,
+  type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import {
   HOUSTON_TASK_LIMITS,
@@ -1488,6 +1489,54 @@ const make = Effect.gen(function* () {
           }),
         );
 
+  /** An open linked pull request is watched, so every pushed head reaches the review trigger; a
+   * watch the user ended is not restarted, and one that cannot start is noted on the task. */
+  const watchLinkedPullRequest = Effect.fn("HoustonTaskRuns.watchLinkedPullRequest")(function* (
+    implementation: RunRow,
+    threadId: string,
+    link: ThreadPullRequestLink,
+  ) {
+    if (
+      link.watch !== undefined ||
+      link.endedWatch !== undefined ||
+      link.snapshot?.state === "merged" ||
+      link.snapshot?.state === "closed"
+    ) {
+      return;
+    }
+    yield* orchestrator
+      .dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make(`houston-task-watch:${implementation.id}:${link.url}`),
+        threadId: threadId as ThreadId,
+        host: link.host,
+        repository: link.repository,
+        number: link.number,
+        watching: true,
+      })
+      .pipe(
+        Effect.asVoid,
+        Effect.catch((error) =>
+          noteOnce(
+            implementation.task_id,
+            `watch:${link.url}`,
+            `Pull request ${link.url} is not watched, so pushes to it start no every_push review: ${error.message}`,
+          ),
+        ),
+      );
+  });
+
+  const watchLinkedPullRequests = Effect.fn("HoustonTaskRuns.watchLinkedPullRequests")(function* (
+    threadId: string,
+    links: ReadonlyArray<ThreadPullRequestLink>,
+  ) {
+    const [implementation] = (yield* runsOfThread(threadId)).filter(
+      (row) => row.kind === "implementation",
+    );
+    if (implementation === undefined) return;
+    for (const link of links) yield* watchLinkedPullRequest(implementation, threadId, link);
+  });
+
   const followPullRequest = Effect.fn("HoustonTaskRuns.followPullRequest")(function* (
     threadId: string,
     link: Extract<
@@ -1519,6 +1568,7 @@ const make = Effect.gen(function* () {
         return { result: undefined, touched };
       }),
     );
+    yield* watchLinkedPullRequest(implementation, threadId, link);
     const head = link.watch?.headSha ?? null;
     if (head === null) return;
     const [last] = yield* run(sql<{ readonly changes: string }>`
@@ -1583,6 +1633,8 @@ const make = Effect.gen(function* () {
         return recordWorkspace(event.threadId, event.payload.worktreePath, event.payload.branch);
       case "thread.pull-request-link-updated":
         return followPullRequest(event.threadId, event.payload);
+      case "thread.pull-request-synced":
+        return watchLinkedPullRequests(event.threadId, event.payload.pullRequests ?? []);
       default:
         return Effect.void;
     }
