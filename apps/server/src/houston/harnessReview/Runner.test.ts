@@ -1,0 +1,311 @@
+import { assert, describe, it } from "@effect/vitest";
+import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Logger from "effect/Logger";
+import * as Path from "effect/Path";
+import * as Result from "effect/Result";
+import { TestClock } from "effect/testing";
+
+import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
+
+import {
+  HoustonHarnessService,
+  HoustonHarnessStore,
+  createProject,
+  makeKit,
+  model,
+  reviewTask,
+  runKit,
+  seedPublished,
+  settle,
+} from "./harnessReview.testkit.ts";
+import { reviewMessageId } from "./Runner.ts";
+
+const service = HoustonHarnessService.HoustonHarnessService;
+const store = HoustonHarnessStore.HoustonHarnessStore;
+
+const kindOf = (error: unknown) => (error as { readonly kind?: string }).kind;
+const messageOf = (error: unknown) => (error as { readonly message?: string }).message ?? "";
+
+const readJson = (file: string) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file)).pipe(
+    Effect.map((text) => JSON.parse(text) as Record<string, any>),
+  );
+
+describe("one review at a time", () => {
+  it.effect("one review runs per project at a time", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("busy");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const reviews = yield* store;
+          const { projectId } = yield* createProject("busy");
+          yield* seedPublished({ projectId, findings: [], endedAt: "2026-10-01T00:00:00.000Z" });
+          yield* seedPublished({ projectId, findings: [], endedAt: "2026-10-10T00:00:00.000Z" });
+          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "weekly" });
+          kit.harness.script.hold.add(reviewMessageId(3));
+          const running = yield* harness.runNow({ projectId });
+          assert.equal(running.reviewId, 3);
+          yield* settle;
+          const third = (yield* reviews.getReview(3))!;
+          assert.equal(third.status, "running");
+
+          const busy = yield* Effect.flip(harness.runNow({ projectId }));
+          assert.equal(kindOf(busy), "busy");
+          assert.include(messageOf(busy), "review 3");
+          assert.include(messageOf(busy), running.threadId);
+
+          const task = (yield* reviewTask(projectId))!;
+          yield* TestClock.setTime(Date.parse(task.nextRunAt!) + 1_000);
+          yield* TestClock.adjust("6 seconds");
+          yield* settle;
+          const fired = (yield* reviewTask(projectId))!;
+          assert.equal(fired.lastRunStatus, "failed");
+          assert.include(fired.lastRunError ?? "", "review 3");
+          assert.lengthOf(yield* reviews.listReviews(projectId, 50), 3);
+
+          const other = yield* createProject("busy-race");
+          yield* harness.setup({
+            projectId: other.projectId,
+            modelSelection: model("codex"),
+            schedule: "manual",
+          });
+          const results = yield* Effect.all(
+            [
+              Effect.result(harness.runNow({ projectId: other.projectId })),
+              Effect.result(harness.runNow({ projectId: other.projectId })),
+            ],
+            { concurrency: 2 },
+          );
+          assert.equal(results.filter(Result.isSuccess).length, 1);
+          yield* settle;
+          const raced = yield* reviews.listReviews(other.projectId, 50);
+          assert.lengthOf(raced, 1);
+          const threads = new Set(
+            kit.harness.log.started
+              .map((turn) => turn.input.threadId)
+              .filter((threadId) => threadId === raced[0]!.threadId),
+          );
+          assert.equal(threads.size, 1);
+          const created = new Set(
+            kit.harness.log.started.map((turn) => turn.input.threadId as string),
+          );
+          assert.isFalse(
+            [...created].some(
+              (threadId) => threadId !== raced[0]!.threadId && threadId.includes("busy-race"),
+            ),
+          );
+        }),
+      );
+    }),
+  );
+});
+
+describe("the run directory", () => {
+  it.effect("the run directory holds the four inputs and the ignore file", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("run-directory");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const harness = yield* service;
+          const reviews = yield* store;
+          const { projectId, root } = yield* createProject("rundir");
+          yield* fs.writeFileString(path.join(root, "CLAUDE.md"), "# Project\n");
+          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          const first = yield* harness.runNow({ projectId });
+          yield* settle;
+          const dir = path.join(root, ".houston", "harness", `review-${first.reviewId}`);
+          for (const file of ["inventory.json", "digest.jsonl", "digest-meta.json", "decisions.json"]) {
+            assert.isTrue(yield* fs.exists(path.join(dir, file)), file);
+          }
+          assert.equal((yield* readJson(path.join(dir, "inventory.json"))).v, 1);
+          assert.equal((yield* reviews.getReview(first.reviewId))!.runDir, `.houston/harness/review-${first.reviewId}`);
+          const ignore = path.join(root, ".houston", "harness", ".gitignore");
+          assert.equal(yield* fs.readFileString(ignore), "*\n");
+
+          // Let the first review end, then edit the ignore file before the second.
+          const answered = (yield* reviews.getReview(first.reviewId))!;
+          if (answered.status === "running") {
+            yield* reviews.fail(first.reviewId, {
+              endedAt: "2026-10-30T09:05:00.000Z",
+              error: "ended for the test",
+            });
+          }
+          yield* fs.writeFileString(ignore, "*\n# kept by the user\n");
+          const second = yield* harness.runNow({ projectId });
+          yield* settle;
+          assert.notEqual(second.reviewId, first.reviewId);
+          assert.equal(yield* fs.readFileString(ignore), "*\n# kept by the user\n");
+
+          // A project root that is a file.
+          const fileRoot = path.join(yield* fs.makeTempDirectoryScoped(), "not-a-directory");
+          yield* fs.writeFileString(fileRoot, "plain file");
+          const asFile = yield* createProject("rundir-file", fileRoot);
+          yield* harness.setup({
+            projectId: asFile.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          const startedBefore = kit.harness.log.started.length;
+          yield* Effect.flip(harness.runNow({ projectId: asFile.projectId }));
+          const [failedRoot] = yield* reviews.listReviews(asFile.projectId, 50);
+          assert.equal(failedRoot!.status, "failed");
+          assert.include(failedRoot!.error ?? "", fileRoot);
+          assert.match(failedRoot!.error ?? "", /run directory|inventory/);
+          assert.isNull(failedRoot!.threadId);
+
+          // A run directory that cannot be created: `.houston/harness` is a file.
+          const blocked = yield* createProject("rundir-blocked");
+          yield* fs.makeDirectory(path.join(blocked.root, ".houston"), { recursive: true });
+          yield* fs.writeFileString(path.join(blocked.root, ".houston", "harness"), "a file");
+          yield* harness.setup({
+            projectId: blocked.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          yield* Effect.flip(harness.runNow({ projectId: blocked.projectId }));
+          const [failedDir] = yield* reviews.listReviews(blocked.projectId, 50);
+          assert.equal(failedDir!.status, "failed");
+          assert.include(failedDir!.error ?? "", "run directory");
+          assert.include(failedDir!.error ?? "", path.join(blocked.root, ".houston", "harness"));
+          assert.isNull(failedDir!.threadId);
+          assert.equal(kit.harness.log.started.length, startedBefore);
+        }),
+      );
+    }),
+  );
+
+  it.effect("digest content reaches only the run directory the review's provider reads", () => {
+    const logs: Array<string> = [];
+    const logger = Logger.make((options) => {
+      logs.push(`${String(options.message)} ${Cause.pretty(options.cause)}`);
+    });
+    return Effect.gen(function* () {
+      const kit = yield* makeKit("data-flow");
+      const MARKER = "MARKER-digest-7f3a";
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const harness = yield* service;
+          const { projectId, root } = yield* createProject("data-flow");
+          const workThread = ThreadId.make("thread:data-flow:work");
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("create:data-flow"),
+            threadId: workThread,
+            projectId,
+            title: "Work",
+            modelSelection: model("codex"),
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: root,
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("send:data-flow"),
+            threadId: workThread,
+            messageId: MessageId.make("message:data-flow"),
+            text: `Please fix ${MARKER}`,
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* settle;
+          yield* harness.setup({ projectId, modelSelection: model("claudeAgent"), schedule: "manual" });
+          kit.harness.script.hold.add(reviewMessageId(1));
+          const started = yield* harness.runNow({ projectId });
+          yield* settle;
+
+          const dir = path.join(root, ".houston", "harness", `review-${started.reviewId}`);
+          assert.include(yield* fs.readFileString(path.join(dir, "digest.jsonl")), MARKER);
+          assert.isTrue(dir.startsWith(root), "the run directory is inside the review's cwd");
+          // The prompt names the files; the provider reads them in its read-only run.
+          const reviewTurns = kit.harness.log.started.filter(
+            (turn) => turn.input.threadId === started.threadId,
+          );
+          assert.isAbove(reviewTurns.length, 0);
+          for (const turn of kit.harness.log.started) {
+            if (turn.input.threadId === workThread) continue;
+            assert.notInclude(turn.input.message.text, MARKER, turn.input.threadId);
+          }
+          assert.deepEqual(
+            new Set(
+              kit.harness.log.started
+                .filter((turn) => turn.input.threadId !== workThread)
+                .map((turn) => turn.input.threadId),
+            ),
+            new Set([started.threadId]),
+          );
+          assert.notInclude(JSON.stringify(yield* harness.get({ projectId })), MARKER);
+          assert.notInclude(JSON.stringify(yield* harness.overview({})), MARKER);
+          assert.lengthOf(kit.launches, 0);
+        }),
+      );
+      assert.notInclude(logs.join("\n"), MARKER);
+    }).pipe(Effect.provide(Logger.layer([logger])));
+  });
+
+  it.effect("decisions json lists each finding with its decision and linked tasks", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("decisions-json");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const harness = yield* service;
+          const p = yield* createProject("decisions-p");
+          const q = yield* createProject("decisions-q");
+          yield* seedPublished({
+            projectId: p.projectId,
+            findings: [
+              { key: "denied-push", title: "Denied git push" },
+              { key: "slow-tests", title: "Slow tests" },
+            ],
+            endedAt: "2026-10-20T00:00:00.000Z",
+          });
+          yield* seedPublished({
+            projectId: q.projectId,
+            findings: [{ key: "q-only", title: "Only in Q" }],
+            endedAt: "2026-10-20T00:00:00.000Z",
+          });
+          yield* harness.decide({ projectId: p.projectId, key: "denied-push", state: "dismissed" });
+          yield* harness.setup({
+            projectId: p.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          const started = yield* harness.runNow({ projectId: p.projectId });
+          const decisions = yield* readJson(
+            path.join(p.root, ".houston", "harness", `review-${started.reviewId}`, "decisions.json"),
+          );
+          assert.equal(decisions.schema, 2);
+          assert.equal(decisions.minimum_sessions_after_landing, 3);
+          const byKey = new Map(
+            (decisions.findings as Array<Record<string, any>>).map((finding) => [finding.key, finding]),
+          );
+          assert.deepEqual([...byKey.keys()].toSorted(), ["denied-push", "slow-tests"]);
+          assert.equal(byKey.get("denied-push")!.title, "Denied git push");
+          assert.equal(byKey.get("denied-push")!.state, "dismissed");
+          assert.equal(byKey.get("denied-push")!.decided_at, "2026-10-30T09:00:00.000Z");
+          assert.equal(byKey.get("slow-tests")!.state, "open");
+          assert.isNull(byKey.get("slow-tests")!.decided_at);
+          for (const finding of byKey.values()) assert.deepEqual(finding.tasks, []);
+        }),
+      );
+    }),
+  );
+});
