@@ -3,9 +3,9 @@
 import {
   CommandId,
   MessageId,
+  ModelSelection,
   OrchestratorMcpFailure,
   PROVIDER_DISPLAY_NAMES,
-  type ModelSelection,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
   type ProjectId,
@@ -15,6 +15,7 @@ import {
 import {
   HOUSTON_TASK_LIMITS,
   HoustonTaskPlan,
+  type HoustonTask,
   type HoustonTaskDetail,
   type HoustonTaskError,
   type HoustonTaskHandbackInput,
@@ -171,10 +172,48 @@ export class HoustonTaskRuns extends Context.Service<
     readonly agentWriteRefusal: (
       caller: ThreadId,
     ) => Effect.Effect<OrchestratorMcpFailure | undefined>;
+    /** Binds a run to the agent's own thread; an unassigned task joins the agent's project. */
+    readonly claim: (
+      agent: HoustonTaskAgent,
+      input: { readonly id: string },
+    ) => Effect.Effect<HoustonTaskRun, HoustonTaskError>;
+    /** A handback with a summary, or with `result{checked, summary}` naming acceptance items. */
+    readonly agentHandback: (
+      agent: HoustonTaskAgent,
+      input: { readonly id: string; readonly summary?: string; readonly result?: unknown },
+    ) => Effect.Effect<HoustonTaskRun, HoustonTaskError>;
+    /** Starts the task as Start does, with the brief sent from the agent's thread. */
+    readonly execute: (
+      agent: HoustonTaskAgent,
+      input: {
+        readonly id: string;
+        readonly modelSelection?: ModelSelection;
+        readonly reviewer?: ModelSelection;
+      },
+    ) => Effect.Effect<HoustonTaskRun, HoustonTaskError>;
+    readonly taskOfRun: (runId: number) => Effect.Effect<HoustonTask, HoustonTaskError>;
     /** Applies every thread event stored since the last call. */
     readonly catchUp: Effect.Effect<void>;
   }
 >()("houston/houston/tasks/TaskRuns/HoustonTaskRuns") {}
+
+/** An agent thread acting on tasks through MCP. */
+export interface HoustonTaskAgent {
+  readonly threadId: ThreadId;
+  readonly projectId: ProjectId;
+  /** `agent:<threadId> (<thread title>)`, fixed at write time. */
+  readonly actor: string;
+  readonly provider: string;
+}
+
+const HandbackResult = Schema.Struct({
+  checked: Schema.Array(Schema.String),
+  summary: Schema.String,
+});
+const decodeHandbackResult = Schema.decodeUnknownOption(HandbackResult);
+const decodeExecuteReviewer = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ reviewer: ModelSelection })),
+);
 
 interface InitiativeRow {
   readonly id: number;
@@ -428,6 +467,8 @@ const make = Effect.gen(function* () {
       readonly modelSelection: ModelSelection;
       readonly workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
       readonly message: string | null;
+      /** The thread the brief comes from, when an agent started the run. */
+      readonly senderThreadId?: ThreadId;
     },
   ) {
     const launched = yield* launcher
@@ -445,6 +486,9 @@ const make = Effect.gen(function* () {
           : {
               initialMessage: {
                 messageId: briefMessageId(runRow.id),
+                ...(input.senderThreadId === undefined
+                  ? {}
+                  : { senderThreadId: input.senderThreadId }),
                 text: input.message,
                 attachments: [],
               },
@@ -473,94 +517,128 @@ const make = Effect.gen(function* () {
     return (yield* runById(runRow.id)) as RunRow;
   });
 
-  const start: HoustonTaskRuns["Service"]["start"] = Effect.fn("HoustonTaskRuns.start")(
-    function* (input) {
-      const operation = "houston.tasks.start";
-      let row = yield* store.resolve(operation, input.id);
-      yield* refuseBusy(operation, row, yield* liveImplementation(row.id));
-      const brief = yield* briefFor(row);
-      yield* checkBrief(operation, brief);
-      if (row.project_id === null) {
-        if (input.projectId === undefined) {
-          return yield* refuse(
-            "invalid",
-            operation,
-            `${keyOf(row)} has no project; a project is required to start it`,
-          );
-        }
-        yield* tasks
-          .save({
+  /** Start, by the user or by an agent's execute: an agent's brief is always sent, from its thread. */
+  const startRun = Effect.fn("HoustonTaskRuns.startRun")(function* (
+    operation: string,
+    input: HoustonTaskStartInput,
+    by: {
+      readonly actor: string;
+      readonly action: "houston:start" | "houston:execute";
+      readonly agent?: HoustonTaskAgent;
+      readonly reviewer?: ModelSelection;
+    } = { actor: USER_ACTOR, action: "houston:start" },
+  ) {
+    let row = yield* store.resolve(operation, input.id);
+    yield* refuseBusy(operation, row, yield* liveImplementation(row.id));
+    const brief = yield* briefFor(row);
+    yield* checkBrief(operation, brief);
+    if (row.project_id === null) {
+      if (input.projectId === undefined) {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `${keyOf(row)} has no project; a project is required to start it`,
+        );
+      }
+      yield* tasks
+        .save(
+          {
             id: keyOf(row),
             expectedRevision: row.revision,
             patch: { projectId: input.projectId },
-          })
-          .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
-        row = yield* taskOf(row.id);
-      } else if (input.projectId !== undefined && input.projectId !== row.project_id) {
-        return yield* refuse(
-          "invalid",
-          operation,
-          `${keyOf(row)} belongs to project ${row.project_id}, not ${input.projectId}`,
-        );
-      }
-      const projectId = row.project_id as string;
-      const readiness = (yield* store.domain(row)).readiness;
-      if (!readiness.ready && input.overrideReadiness !== true) {
-        return yield* refuse(
-          "unready",
-          operation,
-          `${keyOf(row)} is not ready: ${readiness.reasons.join("; ")}`,
-        );
-      }
-      const settings = yield* settingsOf(operation, projectId);
-      const root = yield* workspaceRoot(operation, projectId);
-      const baseRef = input.baseRef ?? (yield* TaskGit.currentBranch(root)) ?? "HEAD";
-      const baseCommit = yield* TaskGit.resolveCommit(root, baseRef);
-      if (baseCommit === null) {
-        return yield* refuse(
-          "invalid",
-          operation,
-          `base ref "${baseRef}" does not name a commit in ${root}`,
-        );
-      }
-      const modelSelection = input.modelSelection ?? settings.startModel;
-      const send = settings.delivery === "send";
-      const branch = taskBranch(row.number, row.title);
-      const recorded = yield* store.write(
-        Effect.gen(function* () {
-          const current = yield* taskOf(row.id);
-          yield* refuseBusy(operation, current, yield* liveImplementation(current.id));
-          const touched =
-            send && current.status !== "in_progress"
-              ? yield* moveTask(current, "in_progress", USER_ACTOR, "houston:start", { branch })
-              : (yield* store.recordHistory(current.id, USER_ACTOR, "houston:start", { branch }),
-                [current.id]);
-          const after = yield* taskOf(current.id);
-          const runRow = yield* insertRun({
-            taskId: current.id,
-            attempt: yield* nextAttempt(current.id, "implementation"),
-            kind: "implementation",
-            state: send ? "preparing" : "waiting_for_input",
-            provider: modelSelection.instanceId,
-            reviewer: settings.reviewer?.instanceId ?? null,
-            threadId: yield* newThreadId("task"),
-            worktreePath: null,
-            branch,
-            baseCommit,
-            initialRevision: after.revision,
-          });
-          return { result: runRow, touched };
-        }),
+          },
+          by.actor,
+        )
+        .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
+      row = yield* taskOf(row.id);
+    } else if (input.projectId !== undefined && input.projectId !== row.project_id) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `${keyOf(row)} belongs to project ${row.project_id}, not ${input.projectId}`,
       );
-      const launched = yield* launchRun(operation, row, recorded, {
-        title: `${keyOf(row)} ${row.title}`,
-        modelSelection,
-        workspaceStrategy: { type: "worktree", baseRef, branch },
-        message: send ? brief : null,
-      });
-      return { run: toRun(launched), ...(send ? {} : { brief }) };
-    },
-  );
+    }
+    const projectId = row.project_id as string;
+    const readiness = (yield* store.domain(row)).readiness;
+    if (!readiness.ready && input.overrideReadiness !== true) {
+      return yield* refuse(
+        "unready",
+        operation,
+        `${keyOf(row)} is not ready: ${readiness.reasons.join("; ")}`,
+      );
+    }
+    const settings = yield* settingsOf(operation, projectId);
+    const root = yield* workspaceRoot(operation, projectId);
+    const baseRef = input.baseRef ?? (yield* TaskGit.currentBranch(root)) ?? "HEAD";
+    const baseCommit = yield* TaskGit.resolveCommit(root, baseRef);
+    if (baseCommit === null) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `base ref "${baseRef}" does not name a commit in ${root}`,
+      );
+    }
+    const modelSelection = input.modelSelection ?? settings.startModel;
+    const send = by.agent !== undefined || settings.delivery === "send";
+    const branch = taskBranch(row.number, row.title);
+    const started = {
+      branch,
+      ...(by.agent === undefined ? {} : { parent: by.agent.threadId }),
+      ...(by.reviewer === undefined ? {} : { reviewer: by.reviewer }),
+    };
+    const recorded = yield* store.write(
+      Effect.gen(function* () {
+        const current = yield* taskOf(row.id);
+        yield* refuseBusy(operation, current, yield* liveImplementation(current.id));
+        const touched =
+          send && current.status !== "in_progress"
+            ? yield* moveTask(current, "in_progress", by.actor, by.action, started)
+            : (yield* store.recordHistory(current.id, by.actor, by.action, started), [current.id]);
+        const after = yield* taskOf(current.id);
+        const runRow = yield* insertRun({
+          taskId: current.id,
+          attempt: yield* nextAttempt(current.id, "implementation"),
+          kind: "implementation",
+          state: send ? "preparing" : "waiting_for_input",
+          provider: modelSelection.instanceId,
+          reviewer: by.reviewer?.instanceId ?? settings.reviewer?.instanceId ?? null,
+          threadId: yield* newThreadId("task"),
+          worktreePath: null,
+          branch,
+          baseCommit,
+          initialRevision: after.revision,
+        });
+        return { result: runRow, touched };
+      }),
+    );
+    const launched = yield* launchRun(operation, row, recorded, {
+      title: `${keyOf(row)} ${row.title}`,
+      modelSelection,
+      workspaceStrategy: { type: "worktree", baseRef, branch },
+      message: send ? brief : null,
+      ...(by.agent === undefined ? {} : { senderThreadId: by.agent.threadId }),
+    });
+    return { run: toRun(launched), ...(send ? {} : { brief }) };
+  });
+
+  const start: HoustonTaskRuns["Service"]["start"] = (input) =>
+    startRun("houston.tasks.start", input);
+
+  const execute: HoustonTaskRuns["Service"]["execute"] = (agent, input) =>
+    startRun(
+      "houston_task_execute",
+      {
+        id: input.id,
+        projectId: agent.projectId,
+        ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+      },
+      {
+        actor: agent.actor,
+        action: "houston:execute",
+        agent,
+        ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
+      },
+    ).pipe(Effect.map((result) => result.run));
 
   const newestFailedFindings = (taskId: number) =>
     run(sql<{ readonly review_findings: string | null }>`
@@ -717,6 +795,21 @@ const make = Effect.gen(function* () {
     return toRun(next);
   });
 
+  /** The reviewer the task's newest attempt was executed with, when it was started that way. */
+  const executeReviewer = (taskId: number) =>
+    run(sql<{ readonly action: string; readonly changes: string }>`
+      SELECT action, changes FROM houston_task_history
+      WHERE task_id = ${taskId}
+        AND action IN ('houston:start', 'houston:execute', 'houston:resume', 'houston:retry', 'houston:rework')
+      ORDER BY id DESC LIMIT 1
+    `).pipe(
+      Effect.map(([latest]) =>
+        latest?.action === "houston:execute"
+          ? Option.getOrNull(Option.map(decodeExecuteReviewer(latest.changes), (c) => c.reviewer))
+          : null,
+      ),
+    );
+
   const handback: HoustonTaskRuns["Service"]["handback"] = Effect.fn("HoustonTaskRuns.handback")(
     function* (input, actor = USER_ACTOR) {
       const operation = "houston.tasks.handback";
@@ -747,16 +840,24 @@ const make = Effect.gen(function* () {
       );
       if (row.project_id !== null) {
         const settings = yield* settingsOf(operation, row.project_id);
+        // A reviewer named at execute reviews the handback whatever the project's review mode.
+        const named = yield* executeReviewer(row.id);
+        const reviewer = named ?? settings.reviewer;
         if (
-          settings.reviewer !== null &&
-          reviewTrigger({
-            mode: settings.reviewMode,
-            event: { type: "handback" },
-            reviewOpen: false,
-            reviewedHeads: [],
-          })
+          reviewer !== null &&
+          (named !== null ||
+            reviewTrigger({
+              mode: settings.reviewMode,
+              event: { type: "handback" },
+              reviewOpen: false,
+              reviewedHeads: [],
+            }))
         ) {
-          yield* startReview(operation, handed, { automatic: true, settings }).pipe(
+          yield* startReview(operation, handed, {
+            automatic: true,
+            settings,
+            model: reviewer,
+          }).pipe(
             Effect.catch((error) =>
               noteOnce(
                 row.id,
@@ -1362,6 +1463,142 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const claim: HoustonTaskRuns["Service"]["claim"] = Effect.fn("HoustonTaskRuns.claim")(
+    function* (agent, input) {
+      const operation = "houston_task_claim";
+      let row = yield* store.resolve(operation, input.id);
+      yield* refuseBusy(operation, row, yield* liveImplementation(row.id));
+      if (row.status !== "backlog" && row.status !== "todo") {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `${keyOf(row)} is ${row.status}; only a backlog or todo task can be claimed`,
+        );
+      }
+      // The assignment stays even when the task then turns out not to be ready.
+      if (row.project_id === null) {
+        yield* tasks
+          .save(
+            {
+              id: keyOf(row),
+              expectedRevision: row.revision,
+              patch: { projectId: agent.projectId },
+            },
+            agent.actor,
+          )
+          .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
+        row = yield* taskOf(row.id);
+      }
+      const readiness = (yield* store.domain(row)).readiness;
+      if (!readiness.ready) {
+        return yield* refuse(
+          "unready",
+          operation,
+          `${keyOf(row)} is not ready: ${readiness.reasons.join("; ")}`,
+        );
+      }
+      const claimed = yield* store.write(
+        Effect.gen(function* () {
+          const current = yield* taskOf(row.id);
+          yield* refuseBusy(operation, current, yield* liveImplementation(current.id));
+          const touched = yield* moveTask(current, "in_progress", agent.actor, "houston:claim", {
+            thread: agent.threadId,
+          });
+          const after = yield* taskOf(current.id);
+          const runRow = yield* insertRun({
+            taskId: current.id,
+            attempt: yield* nextAttempt(current.id, "implementation"),
+            kind: "implementation",
+            state: "running",
+            provider: agent.provider,
+            reviewer: null,
+            threadId: agent.threadId,
+            worktreePath: null,
+            branch: null,
+            baseCommit: null,
+            initialRevision: after.revision,
+          });
+          return { result: runRow, touched };
+        }),
+      );
+      return toRun(claimed);
+    },
+  );
+
+  const agentHandback: HoustonTaskRuns["Service"]["agentHandback"] = Effect.fn(
+    "HoustonTaskRuns.agentHandback",
+  )(function* (agent, input) {
+    const operation = "houston_task_handback";
+    if (input.result === undefined) {
+      if (input.summary === undefined) {
+        return yield* refuse("invalid", operation, "a handback needs a summary or a result");
+      }
+      return yield* handback({ id: input.id, summary: input.summary }, agent.actor);
+    }
+    const row = yield* store.resolve(operation, input.id);
+    const result = decodeHandbackResult(input.result);
+    if (Option.isNone(result)) {
+      const [open] = yield* liveImplementation(row.id);
+      if (open === undefined) {
+        return yield* refuse("invalid", operation, `${keyOf(row)} has no live run to hand back`);
+      }
+      // The task stays where it is: a person reads the raw result and decides.
+      const raw = toJsonText(input.result);
+      const settled = yield* store.write(
+        Effect.gen(function* () {
+          const result = yield* setRunState(
+            open.id,
+            "needs_review",
+            "the handback result is malformed",
+            {
+              summary: raw,
+            },
+          );
+          yield* addComment(
+            row.id,
+            `Handback result is not {checked, summary}; the raw result:\n${raw}`,
+            agent.actor,
+          );
+          yield* store.recordHistory(row.id, agent.actor, "houston:handback-malformed", {
+            run: open.id,
+          });
+          return { result, touched: [row.id] };
+        }),
+      );
+      return toRun(settled);
+    }
+    const acceptance = (yield* store.detail(row)).acceptance;
+    const items: Array<number> = [];
+    for (const name of result.value.checked) {
+      const item = acceptance.find((entry) => entry.text === name.trim());
+      if (item === undefined) {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `${keyOf(row)} has no acceptance item "${name}"; name items by their text`,
+        );
+      }
+      items.push(item.id);
+    }
+    // Handed back first, so the ticks below are not read as drift since the run started.
+    const handed = yield* handback({ id: input.id, summary: result.value.summary }, agent.actor);
+    for (const item of items) {
+      yield* tasks
+        .check({ id: keyOf(row), item, checked: true }, agent.actor)
+        .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
+    }
+    return handed;
+  });
+
+  const taskOfRun: HoustonTaskRuns["Service"]["taskOfRun"] = (runId) =>
+    runById(runId).pipe(
+      Effect.flatMap((found) =>
+        found === undefined
+          ? Effect.fail(refuse("not_found", "houston_task_review", `no task run ${runId}`))
+          : Effect.map(taskOf(found.task_id), toTask),
+      ),
+    );
+
   // Following threads.
 
   const runsOfThread = (threadId: string) =>
@@ -1376,7 +1613,7 @@ const make = Effect.gen(function* () {
         AND changes LIKE '%"status"%'
         AND id > COALESCE((
           SELECT MAX(id) FROM houston_task_history
-          WHERE task_id = ${taskId} AND action IN ('houston:start', 'houston:resume', 'houston:retry', 'houston:rework')
+          WHERE task_id = ${taskId} AND action IN ('houston:start', 'houston:execute', 'houston:claim', 'houston:resume', 'houston:retry', 'houston:rework')
         ), 0)
       LIMIT 1
     `).pipe(Effect.map((rows) => rows.length > 0));
@@ -1729,6 +1966,10 @@ const make = Effect.gen(function* () {
     planSubmit,
     reviewSubmit,
     agentWriteRefusal,
+    claim,
+    agentHandback,
+    execute,
+    taskOfRun,
     catchUp,
   });
 });

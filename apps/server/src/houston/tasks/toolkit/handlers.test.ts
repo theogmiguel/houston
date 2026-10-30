@@ -16,6 +16,7 @@ import type {
   HoustonTask,
   HoustonTaskAccess,
   HoustonTaskDetail,
+  HoustonTaskError,
 } from "@t3tools/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -31,7 +32,6 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as ServerSettings from "../../../serverSettings.ts";
 import { HoustonTaskRuns } from "../TaskRuns.ts";
 import { HoustonTaskService } from "../TaskService.ts";
-import { HoustonTaskStore } from "../TaskStore.ts";
 import {
   commitLines,
   makeRunsHarness,
@@ -91,21 +91,23 @@ interface ToolResult {
   readonly value: any;
 }
 
+type TaskServices = HoustonTaskService | HoustonTaskRuns;
+
 interface ToolkitContext extends RunsContext {
   readonly otherProjectId: ProjectId;
+  readonly services: Context.Context<TaskServices>;
   /** Registers a live caller thread and returns its MCP scope. */
-  readonly caller: (
-    id: string,
-    options: CallerOptions,
-  ) => McpInvocationContext.McpInvocationScope;
+  readonly caller: (id: string, options: CallerOptions) => McpInvocationContext.McpInvocationScope;
   readonly rename: (id: string, title: string) => void;
   readonly call: (
     scope: McpInvocationContext.McpInvocationScope,
     name: string,
     args: Record<string, unknown>,
   ) => Effect.Effect<ToolResult, never, McpServer.McpServer>;
-  readonly detail: (task: Pick<HoustonTask, "key">) => Effect.Effect<HoustonTaskDetail, unknown>;
-  readonly setAccess: (access: HoustonTaskAccess) => Effect.Effect<void, unknown>;
+  readonly detail: (
+    task: Pick<HoustonTask, "key">,
+  ) => Effect.Effect<HoustonTaskDetail, HoustonTaskError>;
+  readonly setAccess: (access: HoustonTaskAccess) => Effect.Effect<void, HoustonTaskError>;
 }
 
 const textOf = (result: McpSchema.CallToolResult) =>
@@ -146,7 +148,7 @@ const readOnlyClient: McpInvocationContext.McpInvocationScope = {
 };
 
 const toolkitLayer = (
-  services: Context.Context<HoustonTaskService | HoustonTaskRuns | HoustonTaskStore>,
+  services: Context.Context<TaskServices>,
   shells: Map<string, OrchestrationV2ThreadShell>,
 ) =>
   McpHttpServer.layerHoustonTaskToolkit.pipe(
@@ -172,9 +174,7 @@ const withToolkit = <A, E>(
     return yield* runWith(harness, (context) =>
       Effect.gen(function* () {
         const shells = new Map<string, OrchestrationV2ThreadShell>();
-        const services = yield* Effect.context<
-          HoustonTaskService | HoustonTaskRuns | HoustonTaskStore
-        >();
+        const services = yield* Effect.context<TaskServices>();
         const otherProjectId = yield* createProject(`toolkit-${name}-other`);
         const caller: ToolkitContext["caller"] = (id, options) => {
           const threadId = ThreadId.make(id);
@@ -202,11 +202,13 @@ const withToolkit = <A, E>(
         const call: ToolkitContext["call"] = (scope, toolName, args) =>
           Effect.gen(function* () {
             const server = yield* McpServer.McpServer;
-            const result = (yield* server.callTool({ name: toolName, arguments: args }).pipe(
-              Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
-              Effect.provideService(McpSchema.McpServerClient, client),
-              Effect.orDie,
-            )) as McpSchema.CallToolResult;
+            const result = (yield* server
+              .callTool({ name: toolName, arguments: args })
+              .pipe(
+                Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+                Effect.provideService(McpSchema.McpServerClient, client),
+                Effect.orDie,
+              )) as McpSchema.CallToolResult;
             const text = textOf(result);
             return { isError: result.isError === true, text, value: parse(text) };
           });
@@ -215,6 +217,7 @@ const withToolkit = <A, E>(
         return yield* body({
           ...context,
           otherProjectId,
+          services,
           caller,
           rename,
           call,
@@ -289,20 +292,18 @@ describe("task tools read every project", () => {
       withToolkit("mcp-door", (context) =>
         Effect.scoped(
           Effect.gen(function* () {
-            const services = yield* Effect.context<
-              HoustonTaskService | HoustonTaskRuns | HoustonTaskStore
-            >();
             const serverLayer = McpHttpServer.layerHoustonTaskToolkit.pipe(
               Layer.provideMerge(
                 McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
               ),
               Layer.provide(
                 Layer.mergeAll(
-                  Layer.succeedContext(services),
+                  Layer.succeedContext(context.services),
                   Layer.mock(ThreadManagement.ThreadManagementService)({
                     getThreadShell: () => Effect.succeed(null),
                   }),
                   Layer.mock(McpSessionRegistry.McpSessionRegistry)({
+                    // @effect-diagnostics-next-line effectSucceedWithVoid:off - no token resolves.
                     resolve: () => Effect.succeed(undefined),
                   }),
                   NodeServices.layer,
@@ -355,9 +356,6 @@ describe("a submit-only credential reaches only the two submit tools of the regi
               projectId: context.projectId,
               capabilities: ["houston-task-submit"],
             });
-            const services = yield* Effect.context<
-              HoustonTaskService | HoustonTaskRuns | HoustonTaskStore
-            >();
             const plannerShell = liveThreadShell(ThreadId.make("task-plan-unrecorded"), {
               activeRunId: RunId.make("run-planner"),
             });
@@ -367,7 +365,7 @@ describe("a submit-only credential reaches only the two submit tools of the regi
               ),
               Layer.provide(
                 Layer.mergeAll(
-                  Layer.succeedContext(services),
+                  Layer.succeedContext(context.services),
                   Layer.mock(ThreadManagement.ThreadManagementService)({
                     getThreadShell: () =>
                       Effect.succeed({ ...plannerShell, projectId: context.projectId }),
@@ -904,7 +902,10 @@ describe("execute starts a child for a delegating caller only", () => {
                 "a delegated subagent",
                 context.caller("subagent", { projectId: context.projectId, subagent: true }),
               ],
-              ["a side thread", context.caller("aside", { projectId: context.projectId, side: true })],
+              [
+                "a side thread",
+                context.caller("aside", { projectId: context.projectId, side: true }),
+              ],
               ["a read-only MCP client", readOnlyClient],
             ];
           for (const [label, scope] of denied) {
