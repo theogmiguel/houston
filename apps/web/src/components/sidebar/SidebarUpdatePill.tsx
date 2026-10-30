@@ -25,7 +25,6 @@ import {
 import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { SidebarMenuItem } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
@@ -108,6 +107,41 @@ function resolveSidebarUpdatePresentation({
     showUpdateDetails,
     showUpdateIconState: showUpdateDetails && !showCheckIcon,
   } as const;
+}
+
+function resolveSidebarUpdatePillCopy(
+  state: DesktopUpdateState | null,
+  action: ReturnType<typeof resolveDesktopUpdateButtonAction>,
+): { label: string | null; meta: string | null; tone: "update" | "error" } {
+  if (!state) return { label: null, meta: null, tone: "update" };
+  if (state.status === "error" && state.errorContext !== null) {
+    return {
+      label:
+        state.errorContext === "install"
+          ? "Install failed"
+          : state.errorContext === "download"
+            ? "Couldn't download"
+            : "Update failed",
+      meta: null,
+      tone: "error",
+    };
+  }
+  if (action === "install") return { label: "Restart to update", meta: null, tone: "update" };
+  if (state.status === "downloading") {
+    return {
+      label:
+        typeof state.downloadPercent === "number"
+          ? `Downloading ${Math.floor(state.downloadPercent)}%`
+          : "Downloading update",
+      meta: null,
+      tone: "update",
+    };
+  }
+  if (action === "download") {
+    const version = getDesktopUpdateDownloadedVersion(state) ?? state.availableVersion;
+    return { label: version ? `Update ${version}` : "Update available", meta: null, tone: "update" };
+  }
+  return { label: null, meta: null, tone: "update" };
 }
 
 export function SidebarUpdateArchitectureWarning() {
@@ -231,7 +265,7 @@ function SidebarUpdateControl() {
     isChecking: state?.status === "checking",
     prefersReducedMotion,
   });
-  const { iconStatus, showUpdateDetails, showUpdateIconState } = resolveSidebarUpdatePresentation({
+  const { iconStatus, showUpdateDetails } = resolveSidebarUpdatePresentation({
     action,
     showsEverything: runsEverything,
     run,
@@ -384,6 +418,8 @@ function SidebarUpdateControl() {
 
   if (!isElectron && !runsEverything && !isRunningEverything) return null;
 
+  const pillCopy = resolveSidebarUpdatePillCopy(state, action);
+
   const statusIcon = (
     <DesktopUpdateStatusIcon
       key={showCheckIcon ? checkAnimationKey : iconStatus}
@@ -413,7 +449,7 @@ function SidebarUpdateControl() {
           ? { status: "downloading", percent: state.downloadPercent }
           : { status: "waiting" };
     return (
-      <SidebarMenuItem className="ml-auto flex min-w-0 flex-1">
+      <div className="flex w-full min-w-0">
         <SidebarUpdateCapsule
           run={run}
           local={local}
@@ -436,9 +472,14 @@ function SidebarUpdateControl() {
             : {})}
         />
         {confirmDialog}
-      </SidebarMenuItem>
+      </div>
     );
   }
+
+  if (!showUpdateDetails) return null;
+
+  const pillLabel = pillCopy.label ?? (runsEverything ? everything.summary : null);
+  if (pillLabel === null) return null;
 
   const updateButton = (
     <button
@@ -446,18 +487,11 @@ function SidebarUpdateControl() {
       aria-label={idleTooltip?.detail ? `${tooltip}: ${idleTooltip.detail}` : tooltip}
       aria-disabled={isInteractionDisabled || undefined}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
-        isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
-        showUpdateIconState
-          ? cn(
-              "bg-sidebar-control-surface text-sidebar-foreground",
-              !isInteractionDisabled && "hover:bg-sidebar-row-hover",
-            )
-          : cn(
-              "text-(--sidebar-icon-color)",
-              !isInteractionDisabled && "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-            ),
-        disabled && !showUpdateIconState && "opacity-60",
+        "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-headline leading-4.5 font-medium outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
+        pillCopy.tone === "error"
+          ? "bg-destructive/12 text-destructive"
+          : "bg-(--accent-muted) text-(--update-foreground)",
+        isInteractionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
       )}
       onClick={handleAction}
       onBlur={() => {
@@ -484,11 +518,15 @@ function SidebarUpdateControl() {
       }}
     >
       {statusIcon}
+      <span className="min-w-0 flex-1 truncate">{pillLabel}</span>
+      {pillCopy.meta ? (
+        <span className="shrink-0 font-normal opacity-80">{pillCopy.meta}</span>
+      ) : null}
     </button>
   );
 
   return (
-    <SidebarMenuItem className="ml-auto shrink-0">
+    <div className="w-full min-w-0">
       <Popover
         handle={releaseNotesPopoverHandle}
         open={releaseNotesOpen && showReleaseNotesPopover}
@@ -554,9 +592,15 @@ function SidebarUpdateControl() {
             }}
             ref={releaseNotesPopupRef}
             side="top"
-            tooltipStyle
+            width="lg"
           >
             <SidebarUpdateReleaseNotes
+              action={action}
+              onAction={() => {
+                setReleaseNotesOpen(false);
+                void handleAction();
+              }}
+              onDismiss={() => setReleaseNotesOpen(false)}
               shell={window.desktopBridge}
               state={state}
               tooltip={tooltip}
@@ -565,6 +609,6 @@ function SidebarUpdateControl() {
         ) : null}
       </Popover>
       {confirmDialog}
-    </SidebarMenuItem>
+    </div>
   );
 }
