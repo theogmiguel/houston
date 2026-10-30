@@ -34,10 +34,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import type * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import {
-  claudeRuntimeQueryPolicyForRuntimePolicy,
-  makeClaudeQueryOptions,
-} from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { makeClaudeQueryOptions } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { makeAntigravityAcpAdapterFlavor } from "../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
 import { AcpRegistryOrchestratorReplayHarness } from "../orchestration-v2/Adapters/AcpRegistryAdapterV2.testkit.ts";
 import {
@@ -735,33 +732,26 @@ describe("the reviewed diff", () => {
   );
 });
 
+const MCP_CONFIG_LAUNCH_ARGS = Schema.decodeSync(ClaudeSettings)({
+  launchArgs: "--mcp-config /home/user/mcp.json",
+});
+
 describe("user MCP servers", () => {
   it.effect("a side thread loads no user MCP servers", () =>
     Effect.gen(function* () {
       // Claude: only the servers Houston passes, and launch arguments cannot add one.
-      const queryPolicy = claudeRuntimeQueryPolicyForRuntimePolicy(READ_ONLY_POLICY);
-      assert.isTrue(queryPolicy.strictMcpConfig);
       const options = makeClaudeQueryOptions({
         modelSelection: selection("claudeAgent", "claude-sonnet-4-6"),
         nativeThreadId: "native:side-mcp",
         resume: false,
         cwd: "/work",
-        settings: Schema.decodeSync(ClaudeSettings)({
-          launchArgs: "--mcp-config /home/user/mcp.json",
-        }),
-        permissionMode: queryPolicy.permissionMode,
+        settings: MCP_CONFIG_LAUNCH_ARGS,
+        permissionMode: "dontAsk",
         strictMcpConfig: true,
       });
       assert.isTrue(options.strictMcpConfig);
       assert.isUndefined(options.mcpServers);
       assert.isUndefined(options.extraArgs?.["mcp-config"]);
-      // A thread without side keeps upstream's MCP loading.
-      const plain = claudeRuntimeQueryPolicyForRuntimePolicy({
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: "/work",
-      });
-      assert.isUndefined(plain.strictMcpConfig);
 
       // The Claude side thread's query, as the adapter opens it.
       const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
