@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Houston interaction inventory</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+[data-theme=graphite]{color-scheme:dark;color:rgba(255,255,255,.92);--rail:#1c1c1f;--content:#161618;--card:#202023;--border:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);--field:rgba(255,255,255,.06);--sel:rgba(255,255,255,.09);--accent-ink:#64a0ff;--accent-muted:rgba(47,111,232,.15);--t1:rgba(255,255,255,.92);--t2:rgba(255,255,255,.66);--t3:rgba(255,255,255,.52);--raised:#26262a;--pane:#0f0f11;--pane-head:#18181b;--term:#0f0f11;--border-hover:rgba(255,255,255,.16);--hover:rgba(255,255,255,.05);--accent:#2f6fe8;--accent-hover:#4f85ec;--ok:#30d158;--ok-ink:#30d158;--warn:#f5a524;--stop:#ff6b61;--stop-ink:#ff6b61;--warn-wash:rgba(245,165,36,.08);--warn-line:rgba(245,165,36,.32);--add-bg:rgba(48,209,88,.10);--del-bg:rgba(255,107,97,.10);--code-bg:#18181b;--shadow-1:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--shadow-2:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--scrim:rgba(0,0,0,.28);--danger-fill:#d93a30;--danger-wash:rgba(255,107,97,.10);--tog-off:rgba(255,255,255,.18);--claude:#d97757;--codex:rgba(255,255,255,.92);--composer:#18181b}
+[data-theme=paper]{color-scheme:light;color:#1d1d1f;--rail:#ececef;--content:#f5f5f7;--card:#ffffff;--border:rgba(0,0,0,.09);--line-strong:rgba(0,0,0,.16);--field:rgba(0,0,0,.05);--sel:rgba(0,0,0,.09);--accent-ink:#0a5cd1;--accent-muted:rgba(10,99,224,.12);--t1:#1d1d1f;--t2:#424245;--t3:#5b5b60;--raised:#ffffff;--pane:#ffffff;--pane-head:#f7f7f9;--term:#ffffff;--border-hover:rgba(0,0,0,.16);--hover:rgba(0,0,0,.045);--accent:#0a63e0;--accent-hover:#0954be;--ok:#1d7a3a;--ok-ink:#1d7a3a;--warn:#b45309;--stop:#c0362c;--stop-ink:#c0362c;--warn-wash:rgba(180,83,9,.06);--warn-line:rgba(180,83,9,.3);--add-bg:rgba(29,122,58,.09);--del-bg:rgba(192,54,44,.08);--code-bg:#f7f7f9;--shadow-1:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--shadow-2:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--scrim:rgba(0,0,0,.12);--danger-fill:#c0362c;--danger-wash:rgba(192,54,44,.08);--tog-off:rgba(0,0,0,.22);--claude:#c25f3f;--codex:#1d1d1f;--composer:#ffffff}
+.hs{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-optical-sizing:auto;font-size:13px;line-height:18px;color:var(--t1);-webkit-font-smoothing:antialiased}
+.hs *{box-sizing:border-box}
+.hs h1,.hs h2,.hs p{margin:0;text-wrap:pretty}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11px}
+.t-large{font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em}
+.t-title{font-size:20px;line-height:26px;font-weight:650}
+.t-head{font-size:13px;line-height:18px;font-weight:600}
+.t-callout{font-size:12px;line-height:16px}
+.lbl{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.01em;color:var(--t3)}
+.c2{color:var(--t2)}.c3{color:var(--t3)}
+.tr{display:grid;grid-template-columns:220px minmax(0,1fr) minmax(0,1fr) 92px;gap:20px;padding:11px 14px;border-bottom:1px solid var(--border);align-items:start}
+.tr:last-child{border-bottom:0}
+.st{font-size:11px;font-weight:600;height:20px;padding:0 6px;border-radius:6px;display:inline-flex;align-items:center;justify-self:start;background:var(--sel);color:var(--t2)}
+.st.new{background:var(--accent-muted);color:var(--t1)}
+</style>
+</helmet>
+<div class="hs" data-theme="{{theme}}" style="background: var(--content); min-height: 2600px; padding: 56px 24px 96px">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px">
+<header style="display: flex; flex-direction: column; gap: 10px; max-width: 860px">
+<h1 class="t-large">Interaction inventory</h1>
+<p class="c2" style="font-size: 14px; line-height: 21px">Every front-end behaviour found in the imported renderer, and how it looks in Houston. Kept means the behaviour ships as upstream wrote it and only adopts Houston's tokens. Adapted means it also changes for the grid. Houston marks what upstream does not have.</p>
+<div style="display: flex; gap: 8px; padding-top: 4px"><span class="st">Kept</span><span class="st">Adapted</span><span class="st new">Houston</span></div>
+</header>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="8">
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 class="t-title">{{g.name}}</h2>
+<div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px">
+<div class="tr" style="padding-top: 8px; padding-bottom: 8px"><span class="lbl">Behaviour</span><span class="lbl">Upstream</span><span class="lbl">In Houston</span><span class="lbl">Status</span></div>
+<sc-for list="{{g.items}}" as="i" hint-placeholder-count="5">
+<div class="tr"><div style="display: flex; flex-direction: column; gap: 2px"><span class="t-head">{{i.n}}</span><span class="mono c3">{{i.src}}</span></div><span class="c2">{{i.up}}</span><span>{{i.hs}}</span><span class="st {{i.cls}}">{{i.st}}</span></div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["graphite","paper"],"default":"graphite"},"$preview":{"width":1440,"height":2600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const K = 'Kept', A = 'Adapted', H = 'Houston';
+    const i = (n, src, up, hs, st) => ({ n, src, up, hs, st, cls: st === H ? 'new' : '' });
+    return {
+      theme: this.props.theme ?? 'graphite',
+      groups: [
+        { name: 'Sidebar', items: [
+          i('Drag to reorder', 'Sidebar.drag.ts', 'Threads reorder and move between pinned and recent with a sortable list.', 'Same, inside a grid. Dropping on another grid moves the thread there.', A),
+          i('Drag out as context', 'threadContextDrag.ts', 'Dragging a thread outside the list onto a composer attaches it as a reference chip.', 'Kept, and the grid adds edge zones: drop on a pane edge to split, centre to replace.', A),
+          i('Hold and Back', 'Sidebar.snooze.ts', 'Snooze a thread with presets or a custom time; it returns when due.', 'On hold threads leave the grid pane empty with “On hold until 14:00 · Bring back”.', A),
+          i('Close thread', 'settleAndAdvance.ts', 'Mark a finished thread as handled and jump to the next one.', 'Kept. In a grid, the next thread opens in the same pane.', A),
+          i('Pin, rename, archive, mark unread', 'threadActionMenu.logic.ts', 'Context menu with pin, rename, archive with undo, mark unread, share with guest, turn into project.', 'Same menu on the sidebar row and on the pane header.', K),
+          i('Undo notice', 'SidebarThreadUndoNotice.tsx', 'Archiving shows an undo line in the sidebar footer that fades out.', 'Kept; it never covers the list.', K),
+          i('Hover card', 'ThreadHoverCard.tsx', 'Hovering a thread shows its latest state without opening it.', 'Kept for rows whose thread is not open in the current grid.', K),
+          i('Update pills', 'SidebarUpdatePill.tsx', 'Provider and app updates appear as small pills with release notes.', 'Kept; installing still needs an explicit click.', K),
+        ] },
+        { name: 'Timeline', items: [
+          i('Work groups', 'TimelineWorkGroupRows.tsx', 'Tool calls collapse into “Worked for …” with an expandable log.', 'Kept. Compact and glance panes show only the summary line.', A),
+          i('Minimap', 'TimelineMinimap.tsx', 'A thin map of the timeline beside the scrollbar; drag to scrub.', 'Shown in solo and comfortable panes; hidden below 560px.', A),
+          i('Find in thread', 'ThreadFindBar.tsx', 'Ctrl F opens a find bar with match highlights and navigation.', 'Kept; it searches the focused pane.', K),
+          i('Visit watermark', 'ThreadVisitWatermark.tsx', 'A line marks where you stopped reading last time.', 'Kept; it is what a glance pane scrolls to when you maximize it.', A),
+          i('Follow and anchoring', 'useTimelineFollow.ts', 'The timeline follows new output unless you scrolled up; position survives re-renders.', 'Kept, and position also survives a density change.', A),
+          i('Rewind', 'useTimelineRewind.ts', 'Revert to an earlier turn and restore that message into the composer.', 'Kept, with a confirm when files would change.', K),
+          i('Selection toolbar and citations', 'AssistantSelectionToolbar.tsx', 'Selecting agent text offers quote, comment and cite.', 'Kept.', K),
+          i('Rich markdown', 'ChatMarkdown.tsx', 'Code with copy, tables, Mermaid, math, images with zoom, HTML preview, file and thread links.', 'Kept; code and machine values use JetBrains Mono.', K),
+          i('Thread now line', 'ThreadNow.tsx', 'One status line at the end of the timeline for what is happening now.', 'Becomes the main line of compact and glance panes.', A),
+        ] },
+        { name: 'Composer', items: [
+          i('Slash commands, mentions, skills', 'ComposerCommandMenu.tsx', '/ for commands, @ for files and threads, skills inline.', 'Kept.', K),
+          i('Prompt history and stash', 'composerPromptHistory.ts', 'Up arrow recalls earlier prompts; a stash keeps drafts for later.', 'Kept, per thread.', K),
+          i('Queue and steer', 'QueuedRunsControl.tsx', 'While the agent works, Enter queues a follow-up; queued messages can be edited or sent as steering.', 'Kept. Compact panes show the queue count on the composer.', A),
+          i('Pending approval and questions', 'ComposerPendingApprovalActions.tsx', 'Approvals and agent questions take over the composer.', 'Kept as the only place approvals appear, at every density.', A),
+          i('Responsive footer', 'composerFooterLayout.ts', 'Below 620px the controls collapse into one menu.', 'Becomes the compact density; the threshold moves to the pane, not the window.', A),
+          i('Context window and limits', 'ContextWindowMeter.tsx', 'A meter for context use and a banner near usage limits.', 'Meter in solo and comfortable; limits banner everywhere.', A),
+          i('Multiple model send', 'useMultipleModelSend.ts', 'Send one prompt to several models at once.', 'Each result opens as a pane in the same grid.', H),
+          i('Attachments and paste', 'useComposerAttachmentIntake.ts', 'Drop or paste images and files; folders become context.', 'Kept; dropping on a pane outside its composer attaches to that pane.', A),
+        ] },
+        { name: 'Panels', items: [
+          i('Right panel tabs', 'RightPanelTabs.tsx', 'Changes, files, preview and pull request panels as reorderable tabs.', 'Kept beside a solo or comfortable thread; below that they open over the maximized thread.', A),
+          i('Preview mini player', 'previewMiniPlayerStore.ts', 'The preview can float as a draggable mini player.', 'Kept; it floats over the grid, not inside a pane.', A),
+          i('Terminal drawer', 'ThreadTerminalDrawer.tsx', 'Splits, new and close, terminal output as composer context.', 'One drawer per grid, under its thread.', A),
+          i('Diff and review comments', 'DiffPanel.tsx', 'Unified or split diff; comments on lines can go to the pull request.', 'Kept.', K),
+          i('Open in editor', 'OpenInPicker.tsx', 'Pick an editor to open the project or a file.', 'Kept, in the toolbar and pane menu.', K),
+          i('Git actions', 'GitActionsControl.tsx', 'Commit, push and create a pull request from the toolbar.', 'Kept; in a grid it acts on the focused thread.', A),
+        ] },
+        { name: 'Window and app', items: [
+          i('Command palette', 'CommandPalette.tsx', 'Threads, projects, themes and commands in one search.', 'Adds grid commands: split, arrange, maximize, move to grid.', A),
+          i('Reopen closed view', 'reopenClosedView.ts', 'Ctrl Shift T brings back the last closed thread or panel.', 'Also restores a closed pane to its old slot.', A),
+          i('Back and forward', 'keybindings.ts', 'Navigation history across threads.', 'Kept; in a grid it moves focus between panes you visited.', A),
+          i('Notifications and sounds', 'threadNotifications.ts', 'System notifications and two sounds: needs input, completed.', 'Kept; the taskbar badge counts threads waiting on you.', K),
+          i('Screen reader announcements', 'BackgroundThreadAnnouncer.tsx', 'Background threads announce state changes politely.', 'Kept; each announcement names the grid and the thread.', A),
+          i('Quit hold', 'QuitHoldOverlay.tsx', 'Quitting needs a hold or a double press, with a hint.', 'Copy changes: quitting closes the window, the server keeps running.', A),
+          i('Connection and freezes', 'ConnectionStatusDot.tsx', 'Connection state, slow requests and host freezes surface as toasts.', 'Kept; reconnecting never stops threads.', K),
+          i('Themes', 'vscodeThemeImport.ts', 'Import editor themes and pick from a palette.', 'Graphite and paper are the defaults; imports apply to code and terminal only.', A),
+        ] },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
