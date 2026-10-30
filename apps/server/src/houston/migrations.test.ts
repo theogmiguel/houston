@@ -17,6 +17,7 @@ const UPSTREAM_HEAD = Math.max(...migrationManifest.map(([id]) => id));
 const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
+  [3, "TaskSources"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -130,6 +131,7 @@ describe("the tasks migration runs on the Houston track", () => {
     return (yield* sql<{ readonly name: string }>`
       SELECT name FROM sqlite_master
       WHERE type = 'table' AND (name = 'houston_tasks' OR name LIKE 'houston_task_%')
+        AND name NOT LIKE 'houston_task_source_%'
       ORDER BY name
     `).map((row) => row.name);
   });
@@ -174,6 +176,71 @@ describe("the tasks migration runs on the Houston track", () => {
           assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* upstreamHistory, upstream);
           assert.strictEqual(Math.max(...upstream.map((row) => row.migration_id)), UPSTREAM_HEAD);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
+describe("the task sources migration runs on the Houston track", () => {
+  const SOURCE_TABLES = [
+    "houston_task_source_identity",
+    "houston_task_source_import",
+    "houston_task_source_links",
+    "houston_task_source_outbox",
+    "houston_task_source_poll",
+    "houston_task_source_settings",
+  ];
+
+  it.effect("the task sources migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          assert.deepEqual(history.slice(-2), [
+            [2, "TasksBacklog"],
+            [3, "TaskSources"],
+          ]);
+          const tables = (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'houston_task_source_%' ORDER BY name
+          `).map((row) => row.name);
+          assert.deepEqual(tables, SOURCE_TABLES);
+          // One source link per project, provider and item; pull request links may repeat it.
+          const link = (taskId: number, source: string) => sql`
+            INSERT INTO houston_task_source_links (
+              task_id, project_id, provider, external_id, source, url, snapshot_json,
+              sync_state_json
+            ) VALUES (${taskId}, 'p', 'github_issues', 'o/r#1', ${source}, 'u', '{}', '{}')
+          `;
+          yield* link(1, "source");
+          yield* link(1, "pull_request");
+          assert.isTrue((yield* Effect.exit(link(2, "source")))._tag === "Failure");
+          const refused = yield* Effect.exit(sql`
+            INSERT INTO houston_task_source_settings (
+              project_id, provider, enabled, settings_json, updated_at
+            ) VALUES ('p', 'slack', 0, '{}', 'now')
+          `);
+          assert.isTrue(refused._tag === "Failure");
+          for (const table of SOURCE_TABLES) {
+            const columns = yield* sql<{ readonly name: string }>`
+              SELECT name FROM pragma_table_info(${table})
+            `;
+            assert.isNotEmpty(columns, table);
+            for (const column of columns) {
+              assert.notMatch(column.name, /token|secret/i, `${table}.${column.name}`);
+            }
+          }
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("tasksource")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
     ),
