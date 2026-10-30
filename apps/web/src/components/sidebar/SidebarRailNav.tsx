@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, PlusIcon, SearchIcon, SquarePenIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, PlusIcon, SearchIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -104,22 +104,15 @@ export function SidebarRailSearchButton() {
 
 /**
  * The rail's fixed entries, shared by the thread and grid sidebars: search,
- * new thread, pull requests, usage, then the Workspaces heading with add.
+ * pull requests, usage, then the Workspaces heading with add. Ctrl N still
+ * starts a thread, but the row is gone: new threads start from a grid's +.
  */
 export function SidebarRailNav({
   search,
-  onNewThread,
-  newThreadDisabled = false,
-  newThreadShortcutLabel,
-  newThreadTooltip,
   workspaceActions,
   pullRequestCount = null,
 }: {
   search: ReactNode;
-  onNewThread: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  newThreadDisabled?: boolean;
-  newThreadShortcutLabel?: string | null | undefined;
-  newThreadTooltip?: ReactNode;
   workspaceActions?: ReactNode;
   pullRequestCount?: number | null;
 }) {
@@ -142,16 +135,6 @@ export function SidebarRailNav({
   return (
     <div className="flex flex-col gap-px">
       {search}
-      <SidebarRailActionRow
-        icon={<SquarePenIcon />}
-        label="New thread"
-        disabled={newThreadDisabled}
-        tooltip={newThreadTooltip}
-        trailing={
-          newThreadShortcutLabel ? <SidebarRailKbd>{newThreadShortcutLabel}</SidebarRailKbd> : null
-        }
-        onClick={onNewThread}
-      />
       {pullRequestsSupported ? (
         <SidebarRailActionRow
           icon={<PullRequestGlyph.pullRequest />}

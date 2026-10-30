@@ -3396,6 +3396,48 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }),
         });
 
+        // Houston: steers Codex answered, until the root turn records each as a userMessage item.
+        const pendingSteers = new Map<
+          string,
+          Array<{
+            readonly text: string;
+            readonly threadId: ThreadId;
+            readonly providerThreadId: OrchestrationV2ProviderThread["id"];
+            readonly providerTurnId: ProviderTurnId;
+            readonly messageId: ProviderAdapter.ProviderAdapterV2SteerInput["message"]["messageId"];
+          }>
+        >();
+        const adoptAnsweredSteer =
+          /* Provider events include streaming deltas; avoid a span for each update. */
+          Effect.fnUntraced(function* (
+            context: ActiveCodexTurnContext,
+            item: Extract<
+              | CodexSchema.V2ItemStartedNotification__ThreadItem
+              | CodexSchema.V2ItemCompletedNotification__ThreadItem,
+              { type: "userMessage" }
+            >,
+          ) {
+            if (context.subagent !== null) return;
+            const waiting = pendingSteers.get(context.nativeTurnId);
+            if (waiting === undefined) return;
+            const text = codexUserMessageText(item.content);
+            const index = waiting.findIndex((steer) => steer.text === text);
+            if (index === -1) return;
+            const [steer] = waiting.splice(index, 1);
+            if (waiting.length === 0) pendingSteers.delete(context.nativeTurnId);
+            if (steer === undefined) return;
+            yield* emitProviderEvent({
+              type: "message.delivery",
+              driver: CODEX_PROVIDER,
+              threadId: steer.threadId,
+              providerThreadId: steer.providerThreadId,
+              providerTurnId: steer.providerTurnId,
+              messageId: steer.messageId,
+              state: "adopted",
+              evidence: "codex.userMessage",
+            });
+          });
+
         const emitSubagentUserMessage =
           /* Provider events include streaming deltas; avoid a span for each update. */
           Effect.fnUntraced(function* (
@@ -4657,6 +4699,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
 
             if (payload.item.type === "userMessage") {
+              yield* adoptAnsweredSteer(context, payload.item);
               yield* emitSubagentUserMessage(
                 context,
                 payload.item,
@@ -4816,6 +4859,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
 
             if (payload.item.type === "userMessage") {
+              yield* adoptAnsweredSteer(context, payload.item);
               if (yield* emitSubagentUserMessage(context, payload.item)) {
                 return;
               }
@@ -6979,6 +7023,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 input: codexInput,
                 threadId,
               });
+              // Only a userMessage recorded after the answer can be this steer.
+              const waiting = pendingSteers.get(activeTurn.nativeTurnId) ?? [];
+              waiting.push({
+                text: codexInput
+                  .flatMap((item) => (item.type === "text" ? [item.text] : []))
+                  .join("\n")
+                  .trim(),
+                threadId: turnInput.threadId,
+                providerThreadId: turnInput.providerThread.id,
+                providerTurnId: turnInput.providerTurnId,
+                messageId: turnInput.message.messageId,
+              });
+              pendingSteers.set(activeTurn.nativeTurnId, waiting);
+              return { adoption: "reported" } as const;
             },
             (effect, turnInput) =>
               effect.pipe(

@@ -41,11 +41,11 @@ import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../u
 import {
   PaceIcon,
   ResetCreditDialog,
-  barColor,
   usePaceMark,
   resetCreditsSummary,
   useResetCredit,
 } from "./UsageLimits";
+import { usageRemainingFill, usageRemainingTone } from "./usageRemaining";
 
 function accountInitials(email: string): string {
   const [local = "", domain = ""] = email.split("@");
@@ -284,7 +284,6 @@ function PoolSegment({
   readonly window: LimitPoolMember["window"];
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
   readonly refillPercent: number;
-  readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
@@ -329,13 +328,11 @@ function SegmentTriggers({
   reset,
   redeem,
   refillPercent,
-  color,
   now,
   index,
   showAccountName,
 }: SegmentPayload & {
   readonly refillPercent: number;
-  readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
@@ -343,6 +340,7 @@ function SegmentTriggers({
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem };
   const remaining = remainingPercent(window);
+  const fill = usageRemainingFill(remaining);
   const timeLeft = paceRemainingPercent(window, now);
   const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const resetsIn = formatResetsIn(window, now);
@@ -369,7 +367,7 @@ function SegmentTriggers({
             <div
               aria-hidden
               className="absolute inset-y-0 left-0 rounded-md opacity-35"
-              style={{ width: `${remaining}%`, backgroundColor: color }}
+              style={{ width: `${remaining}%`, backgroundColor: fill }}
             />
             {remaining < 100 && reset && refillPercent > 0 ? (
               <div
@@ -377,7 +375,7 @@ function SegmentTriggers({
                 className="absolute inset-y-0 right-0 opacity-20"
                 style={{
                   width: `${Math.min(100 - remaining, refillPercent)}%`,
-                  backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
+                  backgroundImage: `repeating-linear-gradient(135deg, ${fill} 0 1px, transparent 1px 5px)`,
                 }}
               />
             ) : null}
@@ -405,7 +403,14 @@ function SegmentTriggers({
           ) : null}
           {/* A single-account bar repeats the headline percentage. */}
           {showAccountName ? (
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">
+            <span
+              className={cn(
+                "shrink-0 tabular-nums",
+                usageRemainingTone(remaining) === "low"
+                  ? "font-emphasis text-foreground"
+                  : "font-semibold text-muted-foreground",
+              )}
+            >
               {remaining}%
             </span>
           ) : null}
@@ -429,25 +434,24 @@ function SegmentTriggers({
           ) : null}
         </div>
       </PopoverTrigger>
-      <LegendRow payload={payload} color={color} now={now} index={index} />
+      <LegendRow payload={payload} now={now} index={index} />
     </>
   );
 }
 
 function LegendRow({
   payload,
-  color,
   now,
   index,
 }: {
   readonly payload: SegmentPayload;
-  readonly color: string;
   readonly now: number;
   readonly index: number;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const { account, window } = payload;
   const remaining = remainingPercent(window);
+  const fill = usageRemainingFill(remaining);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
@@ -462,13 +466,22 @@ function LegendRow({
         <span
           aria-hidden
           className="absolute inset-0 rounded-sm opacity-35"
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: fill }}
         />
         <span className="sr-only">Segment </span>
         <span className="relative">{index}</span>
       </span>
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
-      <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+      <span
+        className={cn(
+          "shrink-0 tabular-nums",
+          usageRemainingTone(remaining) === "low"
+            ? "font-emphasis text-foreground"
+            : "font-semibold text-muted-foreground",
+        )}
+      >
+        {remaining}%
+      </span>
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground tabular-nums">
         {resetsIn?.replace("resets in ", "↻ ") ?? ""}
         {credits ? (
@@ -491,15 +504,7 @@ function LegendRow({
   );
 }
 
-function PoolBar({
-  pool,
-  color,
-  now,
-}: {
-  readonly pool: LimitPoolWindow;
-  readonly color: string;
-  readonly now: number;
-}) {
+function PoolBar({ pool, now }: { readonly pool: LimitPoolWindow; readonly now: number }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
   return (
     <div className="@container/pool min-w-0">
@@ -515,7 +520,6 @@ function PoolBar({
               window={member.window}
               reset={restores.get(member.account.key)}
               refillPercent={member.refillPercent}
-              color={color}
               now={now}
               index={position + 1}
               showAccountName={pool.columns.length > 1}
@@ -529,13 +533,11 @@ function PoolBar({
 
 function PoolWindowCard({
   pool,
-  color,
   now,
   label,
   description,
 }: {
   readonly pool: LimitPoolWindow;
-  readonly color: string;
   readonly now: number;
   readonly label?: string | undefined;
   readonly description?: string | undefined;
@@ -546,7 +548,14 @@ function PoolWindowCard({
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
         <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
+          <span
+            className={cn(
+              "text-3xl tabular-nums",
+              usageRemainingTone(pool.remainingPercent) === "low"
+                ? "font-emphasis text-foreground"
+                : "font-semibold text-muted-foreground",
+            )}
+          >
             {pool.remainingPercent}%
           </span>
           <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
@@ -560,7 +569,7 @@ function PoolWindowCard({
           </span>
         ) : null}
       </div>
-      <PoolBar pool={pool} color={color} now={now} />
+      <PoolBar pool={pool} now={now} />
       {description ? (
         <p className="text-xs text-muted-foreground md:col-span-2">{description}</p>
       ) : null}
@@ -569,7 +578,6 @@ function PoolWindowCard({
 }
 
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
-  const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
   return (
@@ -590,7 +598,6 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           <PoolWindowCard
             key={`${window.kind}:${window.id}`}
             pool={window}
-            color={color}
             now={now}
             label={details?.label}
             description={details?.description}

@@ -121,7 +121,10 @@ function SettingsContentLayout() {
       <div className="relative flex min-h-0 flex-1">
         <SettingsSidebarNav pathname={location.pathname} />
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2">
+          <header
+            data-tauri-drag-region="deep"
+            className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 tauri:pe-(--workspace-native-controls-inset)"
+          >
             <SettingsBreadcrumb pathname={location.pathname} />
             <div className="ms-auto flex shrink-0 items-center gap-1">
               {location.pathname === "/settings/about" ||

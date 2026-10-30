@@ -26,6 +26,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
 
@@ -44,6 +45,7 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 import { ReadinessLedger, reportTurnTerminal } from "../houston/providerReadiness.ts";
+import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -342,6 +344,7 @@ export const layer: Layer.Layer<
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const scope = yield* Effect.scope;
     const readinessLedger = yield* Effect.serviceOption(ReadinessLedger);
+    const deliveries = yield* Effect.serviceOption(MessageDeliveryWriter);
     const completedTurnAnalytics = new Set<string>();
 
     const makeDomainEvent =
@@ -705,6 +708,9 @@ export const layer: Layer.Layer<
             case "command_output.delta":
               // Live output is routed to the command output hub before ingestion.
               return [];
+            case "message.delivery":
+              // Houston: applied to the message's turn item by the delivery writer.
+              return [];
             case "turn.terminal":
               const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);
               if (input.event.status !== "failed") {
@@ -802,6 +808,17 @@ export const layer: Layer.Layer<
             effect.pipe(
               Effect.tap((storedEvents) =>
                 reportTurnTerminal(readinessLedger, input, storedEvents),
+              ),
+              Effect.tap((storedEvents) =>
+                Option.isNone(deliveries) ||
+                (storedEvents.length === 0 && input.event.type !== "message.delivery")
+                  ? Effect.void
+                  : deliveries.value.observe({
+                      threadId: input.threadId,
+                      providerSessionId: input.providerSessionId,
+                      providerInstanceId: input.providerInstanceId,
+                      event: input.event,
+                    }),
               ),
               Effect.tap((storedEvents) =>
                 Effect.gen(function* () {

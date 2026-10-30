@@ -102,17 +102,9 @@ export function resolveMessageDispatchIntent(
   if (targetMessage !== undefined && isNativeMaintenanceCommand(targetMessage)) {
     return { type: "queue_after_active" };
   }
-  // A provider that can neither steer nor restart its turn takes the message after the turn.
-  const turns =
-    target === undefined || !isActiveRun(target)
-      ? undefined
-      : providerTurnCapabilities(projection, target);
-  return turns !== undefined &&
-    !turns.supportsActiveSteering &&
-    !(turns.supportsInterrupt && turns.supportsSteeringByInterruptRestart) &&
-    turns.supportsQueuedMessages
-    ? { type: "queue_after_active" }
-    : mode;
+  // Houston (AD-040): an explicit steer stays a steer; dispatch refuses it by name where the
+  // provider cannot steer, instead of queueing it. "auto" never resolves to such a steer.
+  return mode;
 }
 
 function isActiveRun(run: OrchestrationV2Run): boolean {
@@ -254,6 +246,12 @@ const ensureQueuedMessages: CommandPolicyV2Shape["ensureQueuedMessages"] = (inpu
 const decideSteeringExecution: CommandPolicyV2Shape["decideSteeringExecution"] = (input) => {
   if (!input.forceRestart && input.capabilities.turns.supportsActiveSteering) {
     return Effect.succeed("active_steering");
+  }
+  // Houston (AD-040): a steer is never turned into an interrupt the user did not ask for.
+  if (!input.forceRestart) {
+    return Effect.fail(
+      unsupported(input, "active_steering", "providerInstanceId cannot steer active turns"),
+    );
   }
   if (
     input.capabilities.turns.supportsInterrupt &&

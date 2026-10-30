@@ -26,7 +26,7 @@ export function PullRequestDetailHeaderBody({
   diffStat: ReactNode;
 }) {
   return (
-    <div className="col-span-2 mt-1 min-w-0 px-4 pb-4">
+    <div className="col-span-2 mt-1 min-w-0 px-9 pb-4">
       {title}
       <div className="mt-2 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground">
         <PullRequestMetaLine className="min-w-0 whitespace-nowrap">
@@ -79,7 +79,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
 }) {
   return (
     <nav
-      className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
+      className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-b border-border/60 px-9 pt-1 pb-2"
       aria-label="Pull request tabs"
       inert={inert}
     >
