@@ -57,6 +57,28 @@ describe("map input bounds", () => {
   });
 });
 
+describe("anchor object ids are hex", () => {
+  it("accepts 40- and 64-character lowercase hex ids and a null headSha", () => {
+    expect(decodeAnchor({ ...anchor, headSha: null })._tag).toBe("Success");
+    expect(decodeAnchor({ ...anchor, blob: "a".repeat(64), headSha: "b".repeat(64) })._tag).toBe(
+      "Success",
+    );
+  });
+
+  it.each([
+    ["an option", "--output=/tmp/victim"],
+    ["a revision name", "HEAD"],
+    ["uppercase hex", "0123456789ABCDEF0123456789ABCDEF01234567"],
+    ["39 hex characters", "0".repeat(39)],
+    ["41 hex characters", "0".repeat(41)],
+    ["a revision expression", `${"0".repeat(40)}:a.ts`],
+  ])("refuses %s as headSha or blob", (_, id) => {
+    expect(decodeAnchor({ ...anchor, headSha: id })._tag).toBe("Failure");
+    expect(decodeAnchor({ ...anchor, blob: id })._tag).toBe("Failure");
+    expect(decodeMap({ cwd: "/repo", anchors: [{ ...anchor, blob: id }] })._tag).toBe("Failure");
+  });
+});
+
 describe("review comment records with and without an anchor", () => {
   const record = {
     version: 1,

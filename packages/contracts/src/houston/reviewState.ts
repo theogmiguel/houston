@@ -8,7 +8,9 @@ const MAX_FILES_VIEWED_PRESSES = 500;
 const MAX_MAPPED_ANCHORS = 200;
 
 const FilePath = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(MAX_FILE_PATH_LENGTH));
-const Sha = TrimmedNonEmptyString;
+// A full SHA-1 or SHA-256 object id. Anchors come back from clients, and the server passes these
+// ids to git, so nothing but an object id may decode.
+const Sha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}([0-9a-f]{24})?$/));
 
 export const ReviewLineSide = Schema.Literals(["new", "old"]);
 export type ReviewLineSide = typeof ReviewLineSide.Type;

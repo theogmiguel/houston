@@ -1005,3 +1005,39 @@ describe("mappings come back in input order", () => {
     ),
   );
 });
+
+describe("an anchor id never reaches git as an option", () => {
+  it.effect("an --output headSha or blob leaves a file outside the repository unchanged", () =>
+    withRepo((repo, review) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const outside = yield* fs.makeTempDirectoryScoped({ prefix: "houston-review-victim-" });
+        const victim = path.join(outside, "victim.txt");
+        yield* fs.writeFileString(victim, "precious content\n");
+        yield* initRepo(repo, { "a.ts": LINES_20 });
+        const real = yield* review.anchorLines({
+          cwd: repo,
+          path: "a.ts",
+          side: "new",
+          startLine: 10,
+          endLine: 12,
+        });
+        const option = `--output=${victim}`;
+        // The service is called past the contract's decode, as a defect upstream of it would.
+        const result = yield* review.mapAnchors({
+          cwd: repo,
+          anchors: [
+            { ...real, path: "gone.ts", headSha: option },
+            { ...real, blob: option },
+          ],
+        });
+        assert.equal(yield* fs.readFileString(victim), "precious content\n");
+        assert.deepEqual(result.anchors, [
+          { state: "outdated", path: "gone.ts", reason: "deleted" },
+          { state: "outdated", path: "a.ts", reason: "unavailable" },
+        ]);
+      }),
+    ),
+  );
+});

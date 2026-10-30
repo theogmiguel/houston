@@ -224,7 +224,7 @@ export const make = Effect.gen(function* () {
     root: string,
     blob: string,
   ) {
-    const result = yield* run(operation, root, ["cat-file", "blob", blob]);
+    const result = yield* run(operation, root, ["cat-file", "blob", "--end-of-options", blob]);
     if (result.stdoutTruncated) {
       return yield* failure(
         operation,
@@ -238,9 +238,14 @@ export const make = Effect.gen(function* () {
 
   /** The blob id of `file` at `rev`, or null when the path is absent there. */
   const blobAt = (operation: Operation, root: string, rev: string, file: string) =>
-    run(operation, root, ["rev-parse", "--verify", "--quiet", `${rev}:${file}`], {
-      allowNonZeroExit: true,
-    }).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)));
+    run(
+      operation,
+      root,
+      ["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}:${file}`],
+      {
+        allowNonZeroExit: true,
+      },
+    ).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)));
 
   const mergeBaseOf = (operation: Operation, root: string, baseRef: string | undefined) =>
     baseRef === undefined
@@ -260,7 +265,7 @@ export const make = Effect.gen(function* () {
     const result = yield* run(
       operation,
       root,
-      ["diff", "-M", "--name-status", "--diff-filter=R", "-z", fromSha, "HEAD"],
+      ["diff", "-M", "--name-status", "--diff-filter=R", "-z", "--end-of-options", fromSha, "HEAD"],
       { allowNonZeroExit: true },
     );
     if (result.exitCode !== 0) return null;
@@ -434,9 +439,14 @@ export const make = Effect.gen(function* () {
         }
       }
       if (after === null) return { state: "outdated", path: anchor.path, reason: "deleted" };
-      const present = yield* run(operation, root, ["cat-file", "-e", anchor.blob], {
-        allowNonZeroExit: true,
-      });
+      const present = yield* run(
+        operation,
+        root,
+        ["cat-file", "-e", "--end-of-options", anchor.blob],
+        {
+          allowNonZeroExit: true,
+        },
+      );
       if (present.exitCode !== 0) {
         return { state: "outdated", path: currentPath, reason: "unavailable" };
       }
