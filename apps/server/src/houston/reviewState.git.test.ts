@@ -641,14 +641,16 @@ describe("a path outside the worktree is refused", () => {
         for (const file of [`../${outsideName}`, outside]) {
           const operations = [
             tick(review, repo, file),
-            review.anchorLines({ cwd: repo, path: file, side: "new", startLine: 1, endLine: 1 }),
-            review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file }] }),
-            review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file, side: "old" }] }),
+            Effect.asVoid(
+              review.anchorLines({ cwd: repo, path: file, side: "new", startLine: 1, endLine: 1 }),
+            ),
+            Effect.asVoid(review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file }] })),
+            Effect.asVoid(
+              review.mapAnchors({ cwd: repo, anchors: [{ ...real, path: file, side: "old" }] }),
+            ),
           ];
           for (const operation of operations) {
-            const error = yield* (
-              operation as Effect.Effect<unknown, { readonly _tag: string }>
-            ).pipe(Effect.flip);
+            const error = yield* Effect.flip(operation);
             assert.equal(error._tag, "GitCommandError", file);
           }
         }
