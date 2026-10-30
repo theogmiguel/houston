@@ -21,6 +21,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import { classifyCodexManagedError } from "../provider/CodexManagedErrors.ts";
+import { claudeSignedOutMessage } from "../provider/Drivers/ClaudeHome.ts";
 import type * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import {
   classifyTurnFailure,
@@ -369,7 +370,7 @@ describe("usage limits by family", () => {
 });
 
 describe("signed-out codes by family", () => {
-  it.effect("Claude 401, Codex unauthorized and ACP -32000 sign the instance out", () =>
+  it.effect("Claude's sign-out, Codex unauthorized and ACP -32000 sign the instance out", () =>
     withLedger(
       Effect.gen(function* () {
         const claude = makeProvider("claudeAgent");
@@ -378,11 +379,11 @@ describe("signed-out codes by family", () => {
         const vibe = makeProvider("acpRegistry");
         const { readinessAfter } = yield* makeHarness([claude, codex, antigravity, vibe]);
 
+        // The failure ClaudeAdapterV2.test.ts asserts for an assistant authentication_failed.
         const claudeFailure = failure({
           class: "provider_error",
-          message:
-            "Claude is signed out. Run `claude auth login` with CLAUDE_CONFIG_DIR=/synthetic.",
-          code: "api_error_401",
+          message: claudeSignedOutMessage({ configDir: "/synthetic", cwd: "/workspace" }),
+          code: "authentication_failed",
         });
         assert.deepEqual(yield* readinessAfter(claude, [failed(claude, claudeFailure)]), {
           state: "signedOut",

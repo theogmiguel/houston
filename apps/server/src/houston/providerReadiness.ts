@@ -53,7 +53,8 @@ const ACP_SIGNED_OUT: ReadonlySet<string> = new Set(["-32000"]);
 // no HTTP status and the ACP family no account refusal, so those states are refused by name.
 const FAMILY_CODES: Readonly<Record<string, FamilyCodes>> = {
   claudeAgent: {
-    signedOut: new Set(["api_error_401"]),
+    // The adapter stamps `authentication_failed` on its own sign-out message.
+    signedOut: new Set(["authentication_failed", "api_error_401"]),
     rejected: (failure) => failure.code === "api_error_402" || failure.code === "api_error_403",
     usageLimit: true,
   },
